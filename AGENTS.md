@@ -218,8 +218,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   The layout follows the soulslike editor (`../zig-soulslike/src/ui/editor.zig`): a two-row top bar (File dropdown,
   undo/redo, the viewers and Play; brush tabs `tool_catalog.Family` with Map/Graph), the brush panel on the left
   (Select and its clipboard, then the tab's tools; foes narrow by type), the node's panel on the right (node dropdown,
-  node actions, Things/Generator tabs, `Editor.Inspect`) and a full-width status line. `Editor.canvasOf` owns the
-  geometry; each side scrolls as an `Editor.Pane`; dropdowns are `Editor.popup` (`Which`).
+  node actions, Things/Generator tabs, `editor.Inspect`) and a full-width status line. `Editor.canvasOf` owns the
+  geometry; each side scrolls as an `editor.Pane`; dropdowns are `Editor.popup` (`Which`).
   `panel` (bars, brush panel, node panel, status), `knobs` (generator rows), `canvas` (map, cursor/paste ghost, graph),
   `modals` (modals, help, object viewer), `effects` (the Effects viewer), `plot` (Dialog and Script pages) and `tests` sit beside it in `src/edit/`.
 - Effects plays every particle effect, missile, gas puff, flame and status mark on a stage of its own (`effects.Viewer`:
@@ -366,12 +366,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   damaging hit (`attacks.resolve`, foe bites and sweeps) for half again, rounded up. Only shock has a source: lightning landing
   in water, on a wading body or none, shocks every grounded body in the water joined to it within `shock.CONDUCT` (`shock.conducted`,
   `combat.conduct`), the hero too. Sunder stacks lower armour in
-  `Simulation.combatStatsAt`, which every armour read uses. Blindness limits sight to adjacent cells; a blinded foe acts
+  `Simulation.combatStatsOn`, which every armour read uses. Blindness limits sight to adjacent cells; a blinded foe acts
   only beside the hero. Confusion sends half of moves a random way that also spends the move (`actor.stumble`, `game.astray`).
   Enfeeble cuts its body's blows by `enfeeble.LESS`%, rounded up, after armour and before shock (`attacks.landed`, from `attacks.resolve`, foe bites and sweeps).
   Maim makes every second step cost the next turn (`Actor.limp`, from `combat.foeStep` and `game.heroStep`).
 - `play/terrain.zig` owns typed tile modifiers for hit, dodge, elemental and status resistance.
-  `Simulation.combatStats/combatStatsAt` resolve them from base stats without mutating or saving bonuses.
+  `Simulation.combatStats/combatStatsOn` resolve them from base stats without mutating or saving bonuses.
   Combat, Character and inspection share this resolver; see `docs/TERRAIN.md`. Shoot is a fixed basic attack:
   it stays bindable and anchors the archer tree, but cannot consume points or gain rank scaling.
 - Burn/bleed begin next turn; refreshing does not stack or postpone a due tick. Bleed doubles on movement,

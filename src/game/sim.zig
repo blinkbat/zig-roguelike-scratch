@@ -35,7 +35,24 @@ pub const Visit = struct {
 };
 
 /// A body's harm ticks, each run at most once a turn.
-pub const Tick = enum { gassed, scalded, healed, scorched, burned, bled, worn };
+pub const Tick = enum {
+    gassed,
+    scalded,
+    healed,
+    scorched,
+    burned,
+    bled,
+    worn,
+
+    pub fn gas(t: Tick) ?grid.Gas {
+        return switch (t) {
+            .gassed => .caustic,
+            .scalded => .steam,
+            .healed => .healing,
+            .scorched, .burned, .bled, .worn => null,
+        };
+    }
+};
 /// The ticks a body's turn has run, which a half split off it mid-turn has had too.
 pub const Ran = std.EnumSet(Tick);
 
@@ -223,10 +240,10 @@ pub const Simulation = struct {
     }
 
     pub fn combatStats(self: *const Simulation, a: *const actor.Actor) terrain.Stats {
-        return self.combatStatsAt(a, a.at, a.resilience, a.sunder);
+        return self.combatStatsOn(a, self.lv.at(a.at), a.resilience, a.sunder);
     }
 
-    pub fn combatStatsAt(self: *const Simulation, a: *const actor.Actor, at: P, buildup: resilience.State, sundered: sunder.Sunder) terrain.Stats {
+    pub fn combatStatsOn(self: *const Simulation, a: *const actor.Actor, tile: grid.Tile, buildup: resilience.State, sundered: sunder.Sunder) terrain.Stats {
         var base = terrain.Stats{ .elements = a.resists, .armour = actor.row(a.kind).armour };
         if (!a.foe()) {
             const by = self.heroAttrs();
@@ -238,7 +255,7 @@ pub const Simulation = struct {
             base.statuses.set(k, @as(i16, actor.innateResist(a.kind, k)) + buildup.meters.get(k).percent);
         }
         if (!a.foe()) base.statuses.getPtr(.stun).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.resolve));
-        return base.onRained(self.lv.at(at), self.rainNow());
+        return base.onRained(tile, self.rainNow());
     }
 
     /// The rain falling on the open ground here, 0 under a roof.
@@ -269,11 +286,11 @@ pub const Simulation = struct {
     }
 
     /// Fire takes hold of `a` as far as its fire and burn resistance allow; true when it does.
-    pub fn ignite(self: *Simulation, a: *actor.Actor) bool {
-        return self.igniteBy(a, mathx.PERCENT);
+    pub fn ignite(self: *Simulation, slot: usize, a: *actor.Actor) bool {
+        return self.igniteFresh(slot, a, mathx.PERCENT);
     }
 
-    /// As `ignite`, from a fire that takes hold only `of` percent of the time.
+    /// Fire that takes hold of `a` only `of` percent of the time, past its fire and burn resistance.
     pub fn igniteBy(self: *Simulation, a: *actor.Actor, of: u32) bool {
         const chance = damage.resistedChance(of, self.combatStats(a).elements.get(.fire));
         if (!self.procStatus(a, .burn, chance)) return false;

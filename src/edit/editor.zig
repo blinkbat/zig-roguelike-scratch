@@ -930,6 +930,16 @@ pub fn popupRowH(w: Which) i32 {
     };
 }
 
+/// Row `k` of `which`'s list in `box`.
+pub fn popupRow(box: rl.Rectangle, which: Which, k: usize) rl.Rectangle {
+    const h = popupRowH(which);
+    const inset: i32 = switch (which) {
+        .node => NODE_GAP,
+        .algo, .feature, .file => 0,
+    };
+    return raster.rect(@intFromFloat(box.x), @as(i32, @intFromFloat(box.y)) + @as(i32, @intCast(k)) * h, @intFromFloat(box.width), h - inset);
+}
+
 fn popupW(w: Which) f32 {
     return switch (w) {
         .algo, .feature, .node => POPUP_W,
@@ -966,21 +976,19 @@ fn drawPopup(ed: *Editor, g: *game.Game) void {
     const w: i32 = @intFromFloat(box.width);
     widgets.framed(x, y, w, @intFromFloat(box.height));
     switch (p.which) {
-        .file => panel.fileRows(ed, g, x, y, w),
+        .file => panel.fileRows(ed, g, box),
         .node => {
             const shown = popupShown(ed, .node, g.screen.y);
-            const row_h = popupRowH(.node);
             ed.popup_top = widgets.clampTop(ed.popup_top, ed.map.node_n, shown);
             for (ed.popup_top..ed.popup_top + shown, 0..) |n, k| {
-                if (panel.nodeRow(ed, g, raster.rect(x, y + @as(i32, @intCast(k)) * row_h, w, row_h - NODE_GAP), n, true)) {
+                if (panel.nodeRow(ed, g, popupRow(box, .node, k), n, true)) {
                     ed.popup = null;
                     if (n == ed.node) ed.setView(.map) else ed.goTo(n);
                 }
             }
             widgets.scrollbarIn(box, ed.popup_top, shown, ed.map.node_n);
         },
-        .algo => knobs.choiceRows(ed, g, x, y, w, null),
-        .feature => |i| knobs.choiceRows(ed, g, x, y, w, i),
+        .algo, .feature => knobs.choiceRows(ed, g, box, p.which),
     }
 }
 

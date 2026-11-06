@@ -451,7 +451,7 @@ pub fn settle(g: *Game) void {
     g.sim.chronicle.restart(epitaph.turnStart(g));
     castSight(g, g.sim.heroActor().?.at);
     g.cloud.settle(&g.sim.lv);
-    g.pic.flames_shown = g.sim.lv.flames;
+    g.pic.showLaid(&g.sim.lv);
     g.pic.snapGlide(&g.sim.pool);
     g.pic.catchUp(&g.sim);
     g.pic.settleResources(&g.sim);

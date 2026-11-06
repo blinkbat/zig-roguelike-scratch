@@ -109,7 +109,7 @@ pub fn heroPinned(run: *const game.Game) bool {
 pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.simulation.Flasks, mana: i32, pinned: bool) ?Blocked {
     if (!run.sim.growth.unlocked(act)) return .locked;
     if (act.moves() and pinned) return .pinned;
-    if (act == .unyielding) if (run.sim.heroBody()) |h| if (h.tactics.unyielding) return null;
+    if (endingStance(&run.sim, act)) return null;
     if (run.sim.cooldown.get(act) > 0) return .cooling;
     if (act.flaskOf()) |k| {
         if (!run.sim.inventory.gear.holds(k)) return .unworn;
@@ -118,6 +118,11 @@ pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.sim
     if (act.supplyOf()) |k| if (run.sim.inventory.stacks.get(k) == 0) return .none_left;
     if (mana < needs(run, act)) return .mana;
     return null;
+}
+
+pub fn endingStance(sim: *const game.simulation.Simulation, act: skillbar.Act) bool {
+    const h = sim.heroBody() orelse return false;
+    return act == .unyielding and h.tactics.unyielding;
 }
 
 pub fn blockedNow(run: *const game.Game, act: skillbar.Act) ?Blocked {
@@ -299,8 +304,7 @@ fn openTargeting(run: *game.Game, selection: Use, reticle: skillbar.Act.Reticle)
 fn castSpell(run: *game.Game, comptime act: skillbar.Act) void {
     const Skill = skillbar.Act.skill(act);
     const hero = run.sim.heroActor() orelse return;
-    const ending_stance = act == .unyielding and hero.tactics.unyielding;
-    if (ending_stance) {
+    if (endingStance(&run.sim, act)) {
         acted(run, act);
     } else spend(run, act);
     if (comptime act.surrounds()) {

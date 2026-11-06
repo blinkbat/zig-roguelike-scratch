@@ -45,7 +45,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: P
         const r = rng.range(SIZE_MIN, most);
         const isle = rng.percent(p.island);
         const rf: f32 = @floatFromInt(r);
-        var cells = grid.Cells.around(c, r + 1);
+        var cells = grid.Cells.around(c, reachOf(rf));
         while (cells.next()) |q| {
             if (grid.Level.onRim(q) or !lv.walkable(q)) continue;
             const d = mathx.distEuclid(q, c) / rf;
@@ -58,6 +58,10 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: P
             }
         }
     }
+}
+
+fn reachOf(r: f32) i32 {
+    return @intFromFloat(@ceil(r * (FALLOFF - (EDGE - RING))));
 }
 
 test "lakes fill open ground, and an island stays dry" {

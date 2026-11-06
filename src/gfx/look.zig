@@ -471,7 +471,12 @@ pub const Focused = struct {
 /// `texture0` here and at its four sides, premultiplied; the sides share what the centre leaves.
 pub const FOCUS_CENTRE_W = 0.4;
 pub const FOCUS_SIDE_W = (1 - FOCUS_CENTRE_W) / 4.0;
-pub const FOCUS_WEIGHTS = shaders.glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W });
+pub const FOCUS_WEIGHTS = shaders.glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W }) ++
+    \\vec4 crossBlur(vec4 centre, vec4 sides) {
+    \\    return centre * FOCUS_CENTRE_W + sides * FOCUS_SIDE_W;
+    \\}
+    \\
+;
 /// `focused()`: `texture0` softened by `Focused`'s uniforms, premultiplied; `unpremultiplied(c)` its colour back.
 pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\uniform vec2 texel;
@@ -482,8 +487,7 @@ pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\}
     \\vec4 focused() {
     \\    vec4 base = tap(vec2(0.0));
-    \\    vec4 blur = base * FOCUS_CENTRE_W;
-    \\    blur += (tap(vec2(1.0, 0.0)) + tap(vec2(-1.0, 0.0)) + tap(vec2(0.0, 1.0)) + tap(vec2(0.0, -1.0))) * FOCUS_SIDE_W;
+    \\    vec4 blur = crossBlur(base, tap(vec2(1.0, 0.0)) + tap(vec2(-1.0, 0.0)) + tap(vec2(0.0, 1.0)) + tap(vec2(0.0, -1.0)));
     \\    return mix(base, blur, strength);
     \\}
     \\vec3 unpremultiplied(vec4 c) {

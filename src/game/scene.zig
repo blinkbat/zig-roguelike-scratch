@@ -500,9 +500,21 @@ fn sceneryTint(g: *const game.Game, p: P) rl.Color {
     return g.light.onBody(mathx.centre(p), false).tint(look.LIT);
 }
 
-fn mirrorSprite(g: *const game.Game, c: Cam, p: P, kind: grid.Tile, t: rl.Texture2D, tint: rl.Color) void {
+/// Whether water lies within a cell of where `rect`, standing on `foot`, is mirrored; the mirror shows nowhere else.
+fn mirrorsOnWater(ground: *const grid.Level, c: Cam, rect: rl.Rectangle, foot: f32) bool {
+    const lo = c.cellAt(.{ .x = @intFromFloat(@floor(rect.x)), .y = @intFromFloat(@floor(foot)) }).sub(.{ .x = 1, .y = 1 });
+    const hi = c.cellAt(.{ .x = @intFromFloat(@ceil(rect.x + rect.width)), .y = @intFromFloat(@ceil(2 * foot - rect.y)) }).add(.{ .x = 2, .y = 2 });
+    var cells = grid.Cells.of(lo, hi);
+    while (cells.next()) |q| {
+        if (grid.Level.inside(q) and look.reflects(ground.at(q))) return true;
+    }
+    return false;
+}
+
+fn mirrorSprite(g: *const game.Game, c: Cam, ground: *const grid.Level, p: P, kind: grid.Tile, t: rl.Texture2D, tint: rl.Color) void {
     const rect = tileRect(kind, t, c, p);
     const foot = g.light.footY(t, rect);
+    if (!mirrorsOnWater(ground, c, rect, foot)) return;
     const r = Reflection.begin(g, foot, mirrorFade(g, foot, g.light.topY(t, rect), foot));
     defer r.end();
     raster.stretch(t, rect, tint);
@@ -514,10 +526,10 @@ fn drawMirrorScenery(g: *game.Game, c: Cam, ground: *const grid.Level, view: gri
         const kind = ground.at(p);
         if (!footprintSeen(g, p, kind)) continue;
         if (look.standsOver(kind)) {
-            if (tileTexture(g, ground, kind, p, bags)) |t| mirrorSprite(g, c, p, kind, t, if (memory) look.LIT else sceneryTint(g, p));
+            if (tileTexture(g, ground, kind, p, bags)) |t| mirrorSprite(g, c, ground, p, kind, t, if (memory) look.LIT else sceneryTint(g, p));
         }
         if (!memory and looseBag(kind, bags, p)) {
-            if (g.sprites.item_bag) |t| mirrorSprite(g, c, p, kind, t, sceneryTint(g, p));
+            if (g.sprites.item_bag) |t| mirrorSprite(g, c, ground, p, kind, t, sceneryTint(g, p));
         }
         if (barrelShownAt(g, p)) {
             var b = Prop.at(g, c, p, false);
@@ -830,7 +842,7 @@ fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
         const i = grid.Level.idx(p);
         const x = c.sx(p);
         const y = c.sy(p);
-        if (g.sim.lv.caltrops[i].turns > 0) {
+        if (g.pic.caltrops_shown[i].turns > 0) {
             inline for (CALTROPS) |q| {
                 const tip = P{ .x = x + game.authored(q.x), .y = y + game.authored(q.y) - CALTROP_UP };
                 const left = P{ .x = x + game.authored(q.x) - CALTROP_HALF, .y = y + game.authored(q.y) + CALTROP_DOWN };
@@ -839,7 +851,7 @@ fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
                 rl.drawLine(tip.x, tip.y, right.x, right.y, look.UI_GOLD);
             }
         }
-        if (g.sim.lv.barrier[i] > 0) {
+        if (g.pic.barrier_shown[i] > 0) {
             fillCell(c, p, look.fade(look.WARD, BARRIER_FILL_A));
             outline(c, p, look.WARD);
             inline for (BARRIER_BARS) |bar_x| rl.drawLine(x + bar_x, y + BARRIER_INSET, x + bar_x, y + game.CELL - BARRIER_INSET, look.WARD);

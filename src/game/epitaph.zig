@@ -96,8 +96,8 @@ pub fn of(g: *const game.Game) ossuary.Entry {
 pub fn inscribe(g: *game.Game) void {
     var e = of(g);
     if (g.hall) |hall| if (hall.qualifies(e.renown)) {
-        e.sayEntombed();
         _ = hall.entomb(e);
+        e.sayEntombed();
     };
     g.epitaph = e;
 }

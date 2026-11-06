@@ -44,7 +44,7 @@ pub fn chance(resist: i16) u32 {
 }
 
 pub fn procs(rng: *mathx.Rng, resist: i16) bool {
-    return rng.percent(chance(resist));
+    return damage.procs(rng, chance(resist));
 }
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {

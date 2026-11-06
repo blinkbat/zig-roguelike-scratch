@@ -138,7 +138,7 @@ fn roll(seed: u64, k: Drive, c: Cycle, n: u64) f32 {
     var h = std.hash.Wyhash.init(seed);
     h.update(std.mem.asBytes(&@intFromEnum(k)));
     h.update(std.mem.asBytes(&n));
-    const u = @as(f32, @floatFromInt(h.final() >> 40)) / (1 << 24);
+    const u = mathx.unitOf(h.final());
     return std.math.pow(f32, u, c.lean);
 }
 

@@ -295,7 +295,7 @@ pub fn keys(ed: *editor.Editor) void {
         v.reveal = true;
     }
     if (d.enter) v.reset();
-    if (d.wheel != 0) widgets.scrollBy(&v.list.top, v.list.most, d.notch() * widgets.ROW_H);
+    if (d.wheel != 0) widgets.scrollBy(&v.list.top, v.list.most, d.notch() * widgets.WHEEL_PX);
 }
 
 const LIST_W: i32 = 320;
@@ -311,8 +311,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const col = page.column();
     const list = raster.rect(col.left(), f.y, LIST_W, page.bottom - f.y);
     drawList(ed, g, v, list);
-    const x = col.left() + LIST_W + widgets.PAD;
-    widgets.divider(x, f.y, page.bottom);
+    const x = widgets.besides(col.left(), LIST_W, f.y, page.bottom);
     const room = P{ .x = col.left() + col.inner() - x, .y = page.bottom - f.y - widgets.TITLE - widgets.GAP - widgets.ROW_STEP };
     const cell = stageCell(room);
     widgets.textFace(&g.face).draw(v.sample().name(), x, f.y, widgets.TITLE, look.TEXT);

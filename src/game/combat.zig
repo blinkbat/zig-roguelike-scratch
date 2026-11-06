@@ -526,11 +526,7 @@ fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
 /// The caustic gas or steam the body stands in eats at it, once a turn.
 fn gasTick(g: *game.Game, id: u16, comptime tick: game.simulation.Tick, comptime said: Said) void {
     const a = g.sim.pool.get(id) orelse return;
-    const kind: grid.Gas = switch (tick) {
-        .gassed => .caustic,
-        .scalded => .steam,
-        else => @compileError(@tagName(tick) ++ " is no gas's harm"),
-    };
+    const kind = comptime tick.gas().?;
     if (g.sim.lv.volumeAt(kind, a.at) == 0 or ranAlready(g, id, tick)) return;
     const harm = if (kind == .steam) gas.scald(g.sim.combatStats(a).elements) else gas.harm(a.max);
     const dmg = masked(g, id, harm);
@@ -548,7 +544,7 @@ fn masked(g: *game.Game, id: u16, dmg: i32) i32 {
 /// Brogue's `T_CAUSES_HEALING`: every hurt body in it, foe or hero.
 fn gasHeal(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
-    if (g.sim.lv.volumeAt(.healing, a.at) == 0 or ranAlready(g, id, .healed) or !a.hurt()) return;
+    if (g.sim.lv.volumeAt(comptime game.simulation.Tick.healed.gas().?, a.at) == 0 or ranAlready(g, id, .healed) or !a.hurt()) return;
     const n = a.heal(gas.heal(a.max));
     if (id == g.sim.hero) g.sim.log.push(.recovery, "The " ++ gas.HEALING_NAME ++ " mends {s} for {d}.", .{ g.sim.name.text(), n });
     g.pic.owe(.fromInt(id), .healed, g.pic.afterOf(&g.sim, .fromIndex(actor.Pool.slot(id))));

@@ -196,6 +196,18 @@ const Typed = struct {
     }
 };
 
+/// Touchpads and smooth wheels report fractions of a notch; they add up to whole scrolls.
+const Wheel = struct {
+    acc: f32 = 0,
+
+    fn notches(self: *Wheel, raw: f32) i32 {
+        self.acc += raw;
+        const whole: i32 = @intFromFloat(self.acc);
+        self.acc -= @floatFromInt(whole);
+        return whole;
+    }
+};
+
 const TYPING_RANGES = [_][2]rl.KeyboardKey{ .{ .a, .z }, .{ .zero, .nine }, .{ .kp_0, .kp_9 } };
 const TYPING_SINGLES = [_]rl.KeyboardKey{ .space, .period, .apostrophe, .minus };
 const TYPING_KEYS = blk: {
@@ -288,8 +300,7 @@ pub const State = struct {
     mouse_moved: bool = false,
     interact: bool = false,
     scroll: i32 = 0,
-    /// Touchpads and smooth wheels report fractions of a notch; they add up to whole scrolls.
-    wheel: f32 = 0,
+    wheel: Wheel = .{},
 
     pub fn hit(self: State, b: Button) bool {
         return self.pressed.contains(b);
@@ -334,6 +345,14 @@ pub const State = struct {
     }
 
     /// A way held over from a screen that used it walks nobody.
+    /// Takes the triggers and stick as they lie now, for a screen entered from one that did not poll.
+    pub fn resync(self: *State) void {
+        for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
+        self.stick = false;
+        const at = self.pad_at orelse return;
+        self.stick = stickWalks(mathx.deflection(rl.getGamepadAxisMovement(at, .left_x), rl.getGamepadAxisMovement(at, .left_y)), false);
+    }
+
     pub fn holdWalk(self: *State) void {
         self.step.hold();
         self.pan_hold = false;
@@ -414,9 +433,7 @@ pub const State = struct {
         self.middle_click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.middle);
         self.dragging = was_focused and self.pointer != null and rl.isMouseButtonDown(.middle);
         const wheel = if (self.pointer != null and was_focused) rl.getMouseWheelMove() else 0;
-        self.wheel += wheel;
-        self.scroll = @intFromFloat(self.wheel);
-        self.wheel -= @floatFromInt(self.scroll);
+        self.scroll = self.wheel.notches(wheel);
         return wheel;
     }
 
@@ -673,7 +690,9 @@ pub const Desk = struct {
 
     mouse: mathx.P = .{ .x = 0, .y = 0 },
     moved: mathx.P = .{ .x = 0, .y = 0 },
+    /// Whole notches this frame.
     wheel: f32 = 0,
+    wheel_acc: Wheel = .{},
     paint: bool = false,
     paint_hit: bool = false,
     erase: bool = false,
@@ -721,6 +740,7 @@ pub const Desk = struct {
     tool: ?usize = null,
     shape: ?usize = null,
     typed: Typed = .{},
+    focused: bool = true,
 
     pub fn text(self: *const Desk) []const u8 {
         return self.typed.text();
@@ -741,15 +761,18 @@ pub const Desk = struct {
     }
 
     pub fn update(self: *Desk) void {
+        const was_focused = self.focused;
+        self.focused = rl.isWindowFocused();
+        const live = was_focused and self.focused;
         const d = rl.getMouseDelta();
         self.mouse = mouseAt();
         self.moved = .{ .x = @intFromFloat(d.x), .y = @intFromFloat(d.y) };
-        self.wheel = rl.getMouseWheelMove();
-        self.paint = rl.isMouseButtonDown(PAINT_BUTTON);
-        self.paint_hit = rl.isMouseButtonPressed(PAINT_BUTTON);
-        self.erase = rl.isMouseButtonDown(ERASE_BUTTON);
-        self.erase_hit = rl.isMouseButtonPressed(ERASE_BUTTON);
-        self.grab = rl.isMouseButtonDown(GRAB_BUTTON);
+        self.wheel = if (live) @floatFromInt(self.wheel_acc.notches(rl.getMouseWheelMove())) else 0;
+        self.paint = live and rl.isMouseButtonDown(PAINT_BUTTON);
+        self.paint_hit = live and rl.isMouseButtonPressed(PAINT_BUTTON);
+        self.erase = live and rl.isMouseButtonDown(ERASE_BUTTON);
+        self.erase_hit = live and rl.isMouseButtonPressed(ERASE_BUTTON);
+        self.grab = live and rl.isMouseButtonDown(GRAB_BUTTON);
         const ctrl = either(CTRL_KEYS);
         self.shift = either(SHIFT_KEYS);
         self.pan = if (ctrl) .{ .x = 0, .y = 0 } else heldWalk(&PAN_KEYS, false);
@@ -945,6 +968,16 @@ test "mouse motion buttons and fractional wheel select keyboard hints without a 
     st.focus(false);
     try std.testing.expect(!st.mouseUsed(0) and !st.dragging and st.pointer == null);
     std.debug.print("mouse devices: motion, three buttons, fractional wheel, cursor entry, stationary cursor, controller return and focus loss\n", .{});
+}
+
+test "a smooth wheel's fractions add up to whole notches, in the game and the editor alike" {
+    var wheel = Wheel{};
+    var notches: i32 = 0;
+    for (0..25) |_| notches += wheel.notches(0.1);
+    for (0..10) |_| notches += wheel.notches(-0.1);
+    std.debug.print("smooth wheel: 25 tenths up then 10 down make {d} notches\n", .{notches});
+    try std.testing.expectEqual(@as(i32, 2), notches);
+    try std.testing.expectEqual(@as(i32, -2), wheel.notches(-2));
 }
 
 test "losing focus cancels unsettled movement and held actions without forgetting the controller" {

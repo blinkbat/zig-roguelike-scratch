@@ -112,7 +112,13 @@ const App = struct {
         app.note.say(fmt, args);
     }
 
+    fn also(app: *App, comptime fmt: []const u8, args: anytype) void {
+        if (app.note.n > 0) app.note.writer().writeAll(menu.SEP) catch return;
+        app.note.writer().print(fmt, args) catch {};
+    }
+
     fn toTitle(app: *App) void {
+        app.g.st.resync();
         app.scene = .title;
         app.goPage(.main);
     }
@@ -268,6 +274,7 @@ const App = struct {
         g.permadeath = back == .title;
         g.hall = if (back == .title and app.unread == null) &app.hall else null;
         g.back = back;
+        g.st.resync();
         game.holdWalk(g);
         app.scene = .play;
     }
@@ -283,7 +290,7 @@ const App = struct {
     fn reburied(app: *App) void {
         app.unburied = null;
         app.bury();
-        if (app.unburied) |e| app.say(ossuary.NOT_WRITTEN, .{@errorName(e)});
+        if (app.unburied) |e| app.also(ossuary.NOT_WRITTEN, .{@errorName(e)});
     }
 
     fn leaveRun(app: *App) void {
@@ -291,7 +298,7 @@ const App = struct {
             game.leave(app.g);
             if (app.g.mode == .dead) {
                 app.endDead(a);
-            } else if (a.close(app.g)) |e| app.say(save.NOT_WRITTEN, .{@errorName(e)});
+            } else if (a.close(app.g)) |e| app.also(save.NOT_WRITTEN, .{@errorName(e)});
         }
         app.autosave = null;
     }
@@ -337,7 +344,7 @@ const App = struct {
                         .title => {
                             app.toTitle();
                             app.leaveRun();
-                            if (app.undeleted) |e| app.say(save.NOT_DELETED, .{@errorName(e)});
+                            if (app.undeleted) |e| app.also(save.NOT_DELETED, .{@errorName(e)});
                             app.undeleted = null;
                             app.reburied();
                         },
@@ -497,7 +504,9 @@ const App = struct {
                 var rows: [ossuary.MAX][]const u8 = undefined;
                 for (bones, rows[0..bones.len], lines[0..bones.len], 0..) |*e, *l, *b, i| l.* = boneLine(e, b, i);
                 const picked = app.bones.stepAt(&g.st, bones.len, g.screen);
-                menu.draw(g.face, &g.sprites, g.screen, comptime menu.caps(OSSUARY), rows[0..bones.len], app.bones.at, if (bones.len == 0) NO_BONES else note);
+                var unread: [LINE + 1]u8 = undefined;
+                const empty: [:0]const u8 = if (app.unread) |e| std.fmt.bufPrintZ(&unread, ossuary.NOT_READ, .{@errorName(e)}) catch NO_BONES else NO_BONES;
+                menu.draw(g.face, &g.sprites, g.screen, comptime menu.caps(OSSUARY), rows[0..bones.len], app.bones.at, if (bones.len == 0) empty else note);
                 if (back) {
                     app.toTitle();
                 } else if (picked != null) app.goPage(.bones);
@@ -652,7 +661,15 @@ test "every type whose words the player may rename is registered under its own n
     };
     const wording = @import("core/wording.zig");
     try std.testing.expectEqual(wording.TYPES.len, types.len);
-    inline for (types, wording.TYPES) |T, row| try std.testing.expectEqualStrings(@typeName(T), row.name);
+    var tags: usize = 0;
+    inline for (types, wording.TYPES) |T, row| {
+        try std.testing.expectEqualStrings(@typeName(T), row.name);
+        for ([_][]const []const u8{ row.except, row.only orelse &.{} }) |list| for (list) |tag| {
+            try std.testing.expect(std.meta.stringToEnum(T, tag) != null);
+            tags += 1;
+        };
+    }
+    std.debug.print("wording registrations: {d} types, {d} excepted or only-listed tags name real tags\n", .{ types.len, tags });
 }
 
 test "mouse save deletion stays tied to its row through intermediate movement and needs two presses" {
@@ -700,10 +717,10 @@ test "mouse save deletion stays tied to its row through intermediate movement an
 fn fixtureHall() ossuary.Hall {
     const Bones = struct { name: []const u8, class: hero.Class, level: u16, kills: u32, renown: u32, said: []const u8 };
     const all = [_]Bones{
-        .{ .name = "Arwen the Bold", .class = .archer, .level = 14, .kills = 212, .renown = 9120, .said = "Arwen the Bold was shot dead by a bandit crossbowman on the Strand after dark. Arwen the Bold's last arrow hit a bandit crossbowman without killing it. " ++ ossuary.ENTOMBED },
-        .{ .name = "Merrow", .class = .wizard, .level = 9, .kills = 96, .renown = 4410, .said = "Merrow the wizard burst a caustic bloat in the Cistern, then died in its gas. There was nowhere left to step. " ++ ossuary.ENTOMBED },
-        .{ .name = "Sir Gallant-Rhys", .class = .knight, .level = 7, .kills = 61, .renown = 2875, .said = "Sir Gallant-Rhys the knight was bitten to death by a rat in the Wilds. Sir Gallant-Rhys drank a life flask on the final turn. Sir Gallant-Rhys was surrounded. " ++ ossuary.ENTOMBED },
-        .{ .name = "Pell", .class = .archer, .level = 2, .kills = 4, .renown = 120, .said = "Pell the archer was bitten to death by a rat in the Cistern. Pell's last arrow missed. " ++ ossuary.ENTOMBED },
+        .{ .name = "Arwen the Bold", .class = .archer, .level = 14, .kills = 212, .renown = 9120, .said = "Arwen the Bold was shot dead by a bandit crossbowman on the Strand after dark. Arwen the Bold's last arrow hit a bandit crossbowman without killing it." },
+        .{ .name = "Merrow", .class = .wizard, .level = 9, .kills = 96, .renown = 4410, .said = "Merrow the wizard burst a caustic bloat in the Cistern, then died in its gas. There was nowhere left to step." },
+        .{ .name = "Sir Gallant-Rhys", .class = .knight, .level = 7, .kills = 61, .renown = 2875, .said = "Sir Gallant-Rhys the knight was bitten to death by a rat in the Wilds. Sir Gallant-Rhys drank a life flask on the final turn. Sir Gallant-Rhys was surrounded." },
+        .{ .name = "Pell", .class = .archer, .level = 2, .kills = 4, .renown = 120, .said = "Pell the archer was bitten to death by a rat in the Cistern. Pell's last arrow missed." },
     };
     var hall = ossuary.Hall{};
     for (all, 0..) |b, i| {

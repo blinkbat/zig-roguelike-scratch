@@ -95,7 +95,7 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
 }
 
 const OPEN_TIPS = std.EnumArray(listing.Listing.Entry, [:0]const u8).init(.{
-    .up = "The folder above (" ++ input.RUB_CAPTION ++ ")",
+    .up = widgets.keyed("The folder above", input.RUB_CAPTION),
     .folder = "Into this folder",
     .map = "Open this map",
 });

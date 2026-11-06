@@ -18,7 +18,7 @@ pub const MANA_GAIN: i32 = 10;
 pub const Life = struct {
     pub const KIND: Kind = .life;
     const TEXT = "Recover {d}{s}% of life.";
-    pub const EFFECT = std.fmt.comptimePrint("Recover {d}% of life", .{LIFE_PCT});
+    pub const EFFECT = std.fmt.comptimePrint(TEXT[0 .. TEXT.len - 1], .{ LIFE_PCT, "" });
     pub const DESCRIPTION = EFFECT ++ ".";
 
     pub fn describe(w: anytype, bonus: Bonus) void {
@@ -32,7 +32,7 @@ pub const Life = struct {
 pub const Mana = struct {
     pub const KIND: Kind = .mana;
     const TEXT = "Recover {d} mana.";
-    pub const EFFECT = std.fmt.comptimePrint("Recover {d} mana", .{MANA_GAIN});
+    pub const EFFECT = std.fmt.comptimePrint(TEXT[0 .. TEXT.len - 1], .{MANA_GAIN});
     pub const DESCRIPTION = EFFECT ++ ".";
 
     pub fn describe(w: anytype, bonus: Bonus) void {
@@ -41,7 +41,7 @@ pub const Mana = struct {
 };
 
 pub fn manaOf(bonus: i32) i32 {
-    return @divTrunc(MANA_GAIN * (mathx.PERCENT + bonus), mathx.PERCENT);
+    return mathx.percentOf(MANA_GAIN, mathx.PERCENT + bonus);
 }
 
 pub fn effect(k: Kind) [:0]const u8 {

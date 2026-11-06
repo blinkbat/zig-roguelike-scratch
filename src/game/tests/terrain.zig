@@ -106,14 +106,14 @@ test "rain out of doors dampens fire hits and ignition, and the card names it be
     g.sim.rng = mathx.Rng.init(0xF1AE);
     for (0..2048) |_| {
         a.resilience = .{};
-        dry_lit += @intFromBool(g.sim.ignite(a));
+        dry_lit += @intFromBool(g.sim.ignite(harness.foeSlot(0), a));
     }
     g.sim.outdoors = true;
     var wet_lit: usize = 0;
     g.sim.rng = mathx.Rng.init(0xF1AE);
     for (0..2048) |_| {
         a.resilience = .{};
-        wet_lit += @intFromBool(g.sim.ignite(a));
+        wet_lit += @intFromBool(g.sim.ignite(harness.foeSlot(0), a));
     }
     try std.testing.expectEqual(dry.elements.get(.fire) + 5, wet.elements.get(.fire));
     try std.testing.expectEqual(dry.statuses.get(.burn) + 10, wet.statuses.get(.burn));

@@ -435,6 +435,7 @@ comptime {
         }
         std.debug.assert(n >= 1);
     }
+    for (consumable.KINDS) |k| std.debug.assert(Act.ofSupply(k).supplyOf() == k);
 }
 
 pub const Set = enum {

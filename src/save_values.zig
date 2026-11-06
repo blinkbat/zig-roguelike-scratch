@@ -64,7 +64,9 @@ comptime {
         if (std.meta.eql(NodeKey.of(node), NodeKey.of(other))) @compileError("passive save identities must be unique");
     };
     for (std.meta.fields(progress.State)) |f| {
-        if (carried(f.name) and (!@hasField(SavedProgress, f.name) or @FieldType(SavedProgress, f.name) != f.type)) @compileError("SavedProgress does not keep progress.State." ++ f.name);
+        if (!carried(f.name)) continue;
+        if (!@hasField(SavedProgress, f.name) or @FieldType(SavedProgress, f.name) != f.type) @compileError("SavedProgress does not keep progress.State." ++ f.name);
+        if (!std.meta.eql(@field(SavedProgress{}, f.name), f.defaultValue().?)) @compileError("SavedProgress defaults progress.State." ++ f.name ++ " differently");
     }
 }
 

@@ -66,7 +66,7 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
 
 fn shortcuts(ed: *Editor, bounds: rl.Rectangle, over_canvas: bool) void {
     const desk = &ed.desk;
-    for ([_]panel.FileItem{ .save, .save_as, .open, .new }) |f| f.onKey(ed);
+    for (panel.FILE_ITEMS) |f| f.onKey(ed);
     if (desk.help) ed.ask(.help);
     if (desk.objects) ed.ask(.objects);
     if (desk.undo) ed.undo();
@@ -108,7 +108,7 @@ fn moveViewport(ed: *Editor, bounds: rl.Rectangle, over_canvas: bool, dt: f32) v
 fn scrollPanel(ed: *Editor) void {
     const desk = &ed.desk;
     if (desk.wheel == 0) return;
-    for (std.enums.values(editor.Pane)) |p| ed.pane.getPtr(p).wheel(desk.mouse, desk.notch() * widgets.ROW_H);
+    for (std.enums.values(editor.Pane)) |p| ed.pane.getPtr(p).wheel(desk.mouse, desk.notch());
 }
 
 /// `px` screen pixels a unit of `cam`.

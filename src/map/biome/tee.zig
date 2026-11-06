@@ -38,6 +38,13 @@ const CAMP_SPAN: f32 = 0.4;
 const PATH_WANDER: f32 = 0.4;
 const RIVER_WANDER: f32 = 0.2;
 const TRIES: usize = 60;
+const OVERHANG: i32 = 2;
+const ROAD_JITTER: i32 = 1;
+const LANDING: i32 = 2;
+const KEEP_CLEAR: f32 = 1;
+const BARREL_REACH: i32 = 2;
+const PROP_NEAR: f32 = 0.35;
+const PROP_EDGE: f32 = 1;
 
 pub const Params = struct {
     /// Rows the crossbar is tall.
@@ -100,11 +107,11 @@ const Plan = struct {
 
     fn of(rng: *mathx.Rng, p: Params) Plan {
         const fray: i32 = p.fray;
-        const out = fray + 2;
+        const out = fray + OVERHANG;
         const top = BAR_FLOOR - @as(i32, p.bar);
         const river_w = if (p.river == 0) grid.W else grid.W - 1 - @as(i32, p.bank) - @as(i32, p.river);
         const stem_x = @divTrunc(river_w, 2) + rng.range(-SHIFT, SHIFT);
-        const road_y = @min(top + @divTrunc(@as(i32, p.bar), 2) + rng.range(-1, 1), lowestFor(@max(p.path, p.bridge)));
+        const road_y = @min(top + @divTrunc(@as(i32, p.bar), 2) + rng.range(-ROAD_JITTER, ROAD_JITTER), lowestFor(@max(p.path, p.bridge)));
         const half = @divTrunc(@as(i32, p.stem), 2);
         return .{
             .bar = .{ .lo = .{ .x = -out, .y = top }, .hi = .{ .x = grid.W + out, .y = BAR_FLOOR } },
@@ -161,7 +168,8 @@ fn dry(t: grid.Tile) bool {
 }
 
 fn camp(lv: *grid.Level, edge: carve.Noise, c: P, radius: u8) void {
-    carve.blobIn(lv, edge, c, @floatFromInt(radius), CAMP_SCALE, CAMP_LO, CAMP_SPAN, TRAIL, grid.Box.around(c, radius + 1), campable);
+    const r: f32 = @floatFromInt(radius);
+    carve.blobIn(lv, edge, c, r, CAMP_SCALE, CAMP_LO, CAMP_SPAN, TRAIL, carve.blobBox(c, r, CAMP_LO, CAMP_SPAN), campable);
 }
 
 fn campable(t: grid.Tile) bool {
@@ -170,19 +178,21 @@ fn campable(t: grid.Tile) bool {
 
 fn woods(lv: *grid.Level, rng: *mathx.Rng, seed: u64, plan: Plan, p: Params) void {
     if (p.forest == 0) return;
+    const pal = palette(p);
     const clumps = carve.Noise.init(seed, .tee_woods);
     const reach: f32 = @floatFromInt(p.forest);
     const wood = grid.Box.sized(.{ .x = 1, .y = plan.bar.lo.y - p.fray }, p.forest, plan.bar.height() + p.fray);
     var cells = wood.cells();
     while (cells.next()) |q| {
-        if (lv.at(q) != .grass) continue;
+        if (lv.at(q) != pal.open) continue;
         const thin = 1 - @as(f32, @floatFromInt(q.x)) / reach;
-        if (swing(clumps.at(q, THICKET_SCALE, 2)) * 0.5 + 0.5 < mathx.fraction(p.thicket) * thin) lv.set(q, .shrub);
+        if (rise(clumps.at(q, THICKET_SCALE, 2)) < mathx.fraction(p.thicket) * thin) lv.set(q, pal.solid);
     }
-    cells = wood.cells();
-    while (cells.next()) |q| {
-        if (lv.at(q) == .grass and carve.clearAround(lv, q) and rng.perMille(p.trees)) lv.set(q, .large_tree);
-    }
+    carve.scatterIn(lv, rng, p.trees, .{ .tile = pal.open }, .large_tree, true, wood);
+}
+
+fn rise(v: f32) f32 {
+    return swing(v) * 0.5 + 0.5;
 }
 
 fn roads(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params, kept: *grid.CellSet) void {
@@ -197,8 +207,8 @@ fn roads(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params, kept: *grid.Ce
         return;
     }
     const span = wetSpan(lv, c) orelse return;
-    const near = P{ .x = span[0] - 2, .y = c.y };
-    const far = P{ .x = span[1] + 2, .y = c.y };
+    const near = P{ .x = span[0] - LANDING, .y = c.y };
+    const far = P{ .x = span[1] + LANDING, .y = c.y };
     road(lv, rng, c, near, p.path, PATH_WANDER, lowest, kept);
     carve.lane(lv, rng, near, far, p.bridge, 0, TRAIL, .road);
     road(lv, rng, far, .{ .x = grid.W - 1, .y = c.y }, p.path, 0, lowest, kept);
@@ -220,7 +230,7 @@ fn lowestFor(width: u8) i32 {
 
 fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lowest: i32, kept: *grid.CellSet) void {
     const r = carve.laneRadius(width);
-    const clear: i32 = @intFromFloat(@ceil(r) + 1);
+    const clear: i32 = @intFromFloat(@ceil(r) + KEEP_CLEAR);
     var m = carve.Meander.init(a, b, wander);
     while (m.next(rng)) |step| {
         const c = P{ .x = step.x, .y = @min(step.y, lowest) };
@@ -274,7 +284,7 @@ fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.Ce
     }
     for (0..p.barrels) |_| {
         const near = if (n > 0) carts[rng.below(@intCast(n))] else c;
-        const at = grid.Box.around(near, 2).rollWhere(rng, TRIES, spot, Spot.free) orelse continue;
+        const at = grid.Box.around(near, BARREL_REACH).rollWhere(rng, TRIES, spot, Spot.free) orelse continue;
         lv.putBarrel(at);
     }
 }
@@ -282,7 +292,7 @@ fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.Ce
 fn around(rng: *mathx.Rng, c: P, r: f32, t: grid.Tile, spot: Spot) ?P {
     for (0..TRIES) |_| {
         const a = rng.unit() * std.math.tau;
-        const d = rng.between(r * 0.35, r - 1);
+        const d = rng.between(r * PROP_NEAR, r - PROP_EDGE);
         const q = P{ .x = c.x + @as(i32, @intFromFloat(@round(@cos(a) * d))), .y = c.y + @as(i32, @intFromFloat(@round(@sin(a) * d))) };
         if (spot.roomy(q, t)) return q;
     }
@@ -391,4 +401,16 @@ test "a tee's carts stand whole and its roads reach the west, north and east edg
     }
     std.debug.print("{d} tees: the bridge walks to the west edge {d}, the north {d}, the east {d} times\n", .{ RUNS, reached[0], reached[1], reached[2] });
     for (reached) |got| try std.testing.expectEqual(RUNS, got);
+}
+
+test "the biggest camp frays as far as its blob reaches, past a box of its radius" {
+    const c = P{ .x = grid.W / 2, .y = grid.H / 2 };
+    var past: usize = 0;
+    for (0..RUNS) |i| {
+        var lv = grid.openFloor();
+        camp(&lv, carve.Noise.init(0xCA4 +% i *% grid.TEST_SEED_STRIDE, .tee), c, CAMP_MAX);
+        for (lv.tile, 0..) |t, k| past += @intFromBool(t == TRAIL and mathx.dist(grid.Level.of(k), c) > CAMP_MAX + 1);
+    }
+    std.debug.print("{d} camps of radius {d}: {d} trail cells beyond {d} of the middle\n", .{ RUNS, CAMP_MAX, past, CAMP_MAX + 1 });
+    try std.testing.expect(past > 0);
 }

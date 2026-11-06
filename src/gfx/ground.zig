@@ -286,9 +286,13 @@ const Corners = struct {
     pub fn edgeMask(self: Corners, upper: Ground, lower: Ground) ?u4 {
         if (!self.holds(upper) or !self.holds(lower)) return null;
         for (self.rank) |r| {
-            if (r != Ground.dirt.rank() and r != Ground.shallows.rank() and r != Ground.water.rank()) return null;
+            if (!isGround(r) or !sprite_assets.EDGE_GROUNDS.contains(Ground.ofRank(r))) return null;
         }
         return self.mask(upper);
+    }
+
+    comptime {
+        std.debug.assert(sprite_assets.EDGE_GROUNDS.contains(.dirt) and sprite_assets.EDGE_GROUNDS.contains(.shallows));
     }
 
     pub fn edgeQuarter(self: Corners, upper: Ground, lower: Ground, quarter: usize) bool {
@@ -399,15 +403,20 @@ fn bankLand(t: grid.Tile) bool {
     };
 }
 
-const SHALLOW_BANK_PX: f32 = 6;
-const DEEP_BANK_PX: f32 = 24;
+const BankDepth = struct { px: f32, feet: Profile, lip: Profile };
+
+const BANK_DEPTHS = std.EnumArray(Ground, ?BankDepth).initDefault(@as(?BankDepth, null), .{
+    .shallows = .{ .px = 6, .feet = cliffFeet(@embedFile("shallows-cliff-foot.txt")), .lip = cliffFeet(@embedFile("shallows-cliff-lip.txt")) },
+    .water = .{ .px = 24, .feet = cliffFeet(@embedFile("water-cliff-foot.txt")), .lip = cliffFeet(@embedFile("water-cliff-lip.txt")) },
+});
+
+fn depthOf(g: Ground) ?*const BankDepth {
+    return if (BANK_DEPTHS.getPtrConst(g).*) |*d| d else null;
+}
 
 pub fn bankHeight(t: grid.Tile) f32 {
-    return switch (of(t) orelse return 0) {
-        .shallows => SHALLOW_BANK_PX / look.SPRITE_PX,
-        .water => DEEP_BANK_PX / look.SPRITE_PX,
-        .lava, .chasm, .bridge, .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .cobble => 0,
-    };
+    const d = depthOf(of(t) orelse return 0) orelse return 0;
+    return d.px / @as(f32, look.SPRITE_PX);
 }
 
 pub fn bankAbove(north: grid.Tile, south: grid.Tile) bool {
@@ -417,18 +426,17 @@ pub fn bankAbove(north: grid.Tile, south: grid.Tile) bool {
 pub const BANK_LIFT_PX: f32 = 8;
 pub const BANK_LIFT: f32 = BANK_LIFT_PX / look.SPRITE_PX;
 
-/// Per pixel column across every `BankPiece`, shallow then deep.
+/// Per pixel column across every `BankPiece`.
 const Profile = [BankPiece.COUNT * look.SPRITE_PX]u8;
+const Heights = fn (*const BankDepth) *const Profile;
 
-const BANK_FEET = [2]Profile{
-    cliffFeet(@embedFile("shallows-cliff-foot.txt")),
-    cliffFeet(@embedFile("water-cliff-foot.txt")),
-};
+fn feetOf(d: *const BankDepth) *const Profile {
+    return &d.feet;
+}
 
-const BANK_LIPS = [2]Profile{
-    cliffFeet(@embedFile("shallows-cliff-lip.txt")),
-    cliffFeet(@embedFile("water-cliff-lip.txt")),
-};
+fn lipOf(d: *const BankDepth) *const Profile {
+    return &d.lip;
+}
 
 fn cliffFeet(comptime text: []const u8) Profile {
     @setEvalBranchQuota(100000);
@@ -451,41 +459,41 @@ fn bankCell(lv: *const grid.Level, p: P) bool {
 }
 
 pub fn bankFoot(lv: *const grid.Level, q: [2]f32) ?f32 {
-    return bankProfile(lv, q, &BANK_FEET);
+    return bankProfile(lv, q, feetOf);
 }
 
 pub fn bankLip(lv: *const grid.Level, q: [2]f32) ?f32 {
-    return bankProfile(lv, q, &BANK_LIPS);
+    return bankProfile(lv, q, lipOf);
 }
 
-fn bankProfile(lv: *const grid.Level, q: [2]f32, heights: *const [2]Profile) ?f32 {
+fn bankProfile(lv: *const grid.Level, q: [2]f32, comptime heights: Heights) ?f32 {
     const c = mathx.cellOf(q);
     return (BankShape.of(lv, c) orelse return null).profile(c, q, heights);
 }
 
-/// A bank cell's depth and the piece of its bank at the points on its west and east edges.
+/// A bank cell's water ground and the piece of its bank at the points on its west and east edges.
 const BankShape = struct {
-    deep: bool,
+    water: Ground,
     pieces: [2]BankPiece,
 
     fn of(lv: *const grid.Level, c: P) ?BankShape {
         if (!bankCell(lv, c)) return null;
         const north = bedAt(lv, c.add(.{ .x = 0, .y = -1 }), false).?;
         const bank = Bank.of(north.tile(), lv.at(c)).?;
-        var s = BankShape{ .deep = lv.at(c) == .water, .pieces = undefined };
+        var s = BankShape{ .water = bedAt(lv, c, false).?, .pieces = undefined };
         for (&s.pieces, 0..) |*piece, h| piece.* = pieceAt(lv, bank, c.add(.{ .x = @intCast(h), .y = 0 }));
         return s;
     }
 
-    fn profile(s: BankShape, c: P, q: [2]f32, heights: *const [2]Profile) ?f32 {
+    fn profile(s: BankShape, c: P, q: [2]f32, comptime heights: Heights) ?f32 {
         const p = mathx.cellOf(.{ q[0] + 0.5, q[1] });
         const h: usize = @intCast(p.x - c.x);
         const piece = s.pieces[h];
         const col: usize = @intFromFloat((q[0] - @as(f32, @floatFromInt(p.x)) + 0.5) * look.SPRITE_PX);
-        const depth = @intFromBool(s.deep);
+        const depth = depthOf(s.water).?;
         const offset = @as(usize, @intFromEnum(piece)) * look.SPRITE_PX + @min(col, look.SPRITE_PX - 1);
-        if (BANK_FEET[depth][offset] == 0) return null;
-        const foot = heights[depth][offset];
+        if (depth.feet[offset] == 0) return null;
+        const foot = heights(depth)[offset];
         return @as(f32, @floatFromInt(p.y)) + (@as(f32, @floatFromInt(foot)) - BANK_LIFT_PX) / look.SPRITE_PX;
     }
 };
@@ -540,14 +548,14 @@ pub const Banks = struct {
     }
 
     pub fn foot(b: *const Banks, q: [2]f32) ?f32 {
-        return b.profile(q, &BANK_FEET);
+        return b.profile(q, feetOf);
     }
 
     pub fn lip(b: *const Banks, q: [2]f32) ?f32 {
-        return b.profile(q, &BANK_LIPS);
+        return b.profile(q, lipOf);
     }
 
-    fn profile(b: *const Banks, q: [2]f32, heights: *const [2]Profile) ?f32 {
+    fn profile(b: *const Banks, q: [2]f32, comptime heights: Heights) ?f32 {
         const c = mathx.cellOf(q);
         if (!grid.Level.inside(c)) return null;
         const i = grid.Level.idx(c);
@@ -750,8 +758,13 @@ test "water cliff faces dry north banks with joined middles and separate ends" {
     try std.testing.expectEqual(@as(?BankPiece, .repeat), b.pointAt(.{ .x = 11, .y = 10 }).corners.waterCliffFor(.shallow_deep));
     try std.testing.expect(bankLip(&lv, .{ 10.75, 10 }) != null);
     try std.testing.expect(bankFoot(&lv, .{ 10.75, 10 }) != null);
-    const top_lips = [2]Profile{ @splat(0), @splat(0) };
-    try std.testing.expectEqual(@as(?f32, 10 - BANK_LIFT), bankProfile(&lv, .{ 10.75, 10 }, &top_lips));
+    const top_lips = struct {
+        const TOP: Profile = @splat(0);
+        fn at(_: *const BankDepth) *const Profile {
+            return &TOP;
+        }
+    }.at;
+    try std.testing.expectEqual(@as(?f32, 10 - BANK_LIFT), bankProfile(&lv, .{ 10.75, 10 }, top_lips));
     for ([_]Ground{ .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .cobble }) |land| {
         for ([_]Ground{ .shallows, .water }) |water| {
             lv.set(.{ .x = 10, .y = 9 }, land.tile());

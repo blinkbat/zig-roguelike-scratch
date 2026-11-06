@@ -165,6 +165,15 @@ pub const WATER_EDGES = [_]struct { upper: ground.Ground, lower: ground.Ground, 
     .{ .upper = .dirt, .lower = .water, .name = "dirt_water_edges" },
 };
 
+pub const EDGE_GROUNDS = blk: {
+    var s = ground.Grounds.initEmpty();
+    for (WATER_EDGES) |e| {
+        s.insert(e.upper);
+        s.insert(e.lower);
+    }
+    break :blk s;
+};
+
 const Cliff = struct { face: [:0]const u8, cap: [:0]const u8 };
 pub const CLIFFS = std.EnumArray(ground.Ground, ?Cliff).initDefault(@as(?Cliff, null), .{
     .shallows = .{ .face = "shallows_cliff", .cap = "shallows_cliff_cap" },

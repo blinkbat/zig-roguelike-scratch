@@ -571,6 +571,21 @@ test "a modal, rename, view or tool change disarms a node deletion" {
     try std.testing.expectEqual(nodes, ed.map.node_n);
 }
 
+test "the Dialog page forgets a folk pick whose list changed while it was shut" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    for (0..3) |i| _ = ed.map.script.addFolk(.{ .at = .{ .x = @intCast(2 + i), .y = 2 } }).?;
+    editor.plot.openFolk(ed, 1);
+    ed.plot.seen = editor.plot.Seen.of(&ed.map.script);
+    ed.modal = .none;
+    editor.plot.open(ed, .dialogs);
+    try std.testing.expectEqual(editor.plot.Pick{ .folk = 1 }, ed.plot.pick);
+    ed.modal = .none;
+    ed.map.script.dropFolk(0);
+    editor.plot.open(ed, .dialogs);
+    try std.testing.expect(ed.plot.pick != .folk);
+}
+
 test "a node added is named as it is added, one undo for both" {
     const ed = try testBespoke();
     defer ed.destroy();

@@ -163,8 +163,9 @@ class ReleaseTests(unittest.TestCase):
 
     def test_packages_the_executable_build_zig_names(self):
         build = (release.ROOT / 'build.zig').read_text(encoding='utf-8')
-        named = re.search(r'b\.addExecutable\(\.\{ \.name = "([^"]+)"', build)
+        named = re.search(r'^const EXE = "([^"]+)";$', build, re.M)
         self.assertIsNotNone(named)
+        self.assertIn('b.addExecutable(.{ .name = EXE,', build)
         self.assertEqual(named.group(1), release.EXE)
         toolchain = (release.ROOT / '_zig.cmd').read_text(encoding='utf-8')
         self.assertIn('set "EXE=' + release.EXE + '.exe"', toolchain)

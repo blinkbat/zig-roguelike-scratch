@@ -127,7 +127,7 @@ new stats.
 Searing, Rimed and Charged weapons roll fire, cold or lightning and add that chance to
 burn, chill or shock to the weapon's own physical hits, rolled after the skill's own ailment
 like bleed and stun (`attacks.IMBUED`). Resolve adds to the hero's stun resistance in
-`Simulation.combatStatsAt`. The Lantern adds to the hero's carried light, both sight
+`Simulation.combatStatsOn`. The Lantern adds to the hero's carried light, both sight
 (`Simulation.heroLight`) and its drawn glow (`Light.carry_r`). Siphoning recovers mana on
 any kill, as flasks refill, and the orb shows it as the death is drawn (`Presentation.mana_killed`).
 Draughts scales a mana drink as Plenty scales a life one. Masked helms cut the hero's caustic gas

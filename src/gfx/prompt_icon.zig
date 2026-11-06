@@ -6,6 +6,8 @@ const font = @import("font.zig");
 const look = @import("look.zig");
 const raster = @import("raster.zig");
 
+pub const MouseIcon = enum { left, right, middle, wheel };
+
 /// Device-specific input icons: PlayStation shapes, Xbox letters, or keyboard caps.
 pub const Prompt = union(enum) {
     face: struct { button: FaceButton, sony: bool },
@@ -16,7 +18,7 @@ pub const Prompt = union(enum) {
     stick: enum { left, right },
     dpad,
     arrows,
-    mouse: enum { left, right, middle, wheel },
+    mouse: MouseIcon,
 
     pub fn menuOf(st: *const input.State, b: input.Button) Prompt {
         return if (st.device.pad()) of(st, b) else .{ .key = st.caption(b) };

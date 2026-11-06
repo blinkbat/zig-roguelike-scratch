@@ -4,6 +4,8 @@ const source_rules = @import("tools/source_rules.zig");
 const SRC = "src";
 const ROOT = SRC ++ "/main.zig";
 const ASSETS = "assets";
+const EXE = "cistern";
+const SCRIPTS = "_zig.cmd";
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -40,7 +42,8 @@ pub fn build(b: *std.Build) void {
         }
     }
 
-    const exe = b.addExecutable(.{ .name = "cistern", .root_module = root.module() });
+    checkScriptsName(b);
+    const exe = b.addExecutable(.{ .name = EXE, .root_module = root.module() });
     if (target.result.os.tag == .windows) exe.dll_export_fns = true;
     b.installArtifact(exe);
 
@@ -185,6 +188,13 @@ fn embedded(name: []const u8) bool {
 
 const MIN_SRC: u64 = 512;
 const READ_MAX = 1 << 20;
+
+fn checkScriptsName(b: *std.Build) void {
+    const want = "set \"EXE=" ++ EXE ++ ".exe\"";
+    const file = b.build_root.handle.readFileAlloc(b.allocator, SCRIPTS, READ_MAX) catch |e|
+        std.debug.panic(SCRIPTS ++ " could not be read ({s})", .{@errorName(e)});
+    if (std.mem.indexOf(u8, file, want) == null) std.debug.panic(SCRIPTS ++ " must name the executable: " ++ want, .{});
+}
 
 fn checkTestRoster(b: *std.Build) void {
     const file = b.build_root.handle.readFileAlloc(b.allocator, ROOT, READ_MAX) catch |e|

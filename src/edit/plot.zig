@@ -51,7 +51,7 @@ const LINES_MAX_W: i32 = 300;
 const KIND_MIN_W: i32 = 150;
 const KIND_MAX_W: i32 = 200;
 const SAY_ROWS: i32 = 4;
-const WHEEL_PX: i32 = ROW * 2;
+const WHEEL_NOTCH: i32 = 2;
 
 pub const Page = enum {
     dialogs,
@@ -105,16 +105,32 @@ pub const State = struct {
     claimed: bool = false,
     list: widgets.Scrolled = .{},
     detail: widgets.Scrolled = .{},
+    /// The script's lists as the page last drew them; a picked index means nothing once they changed elsewhere.
+    seen: Seen = .{},
+};
+
+pub const Seen = struct {
+    folk: usize = 0,
+    dialogs: usize = 0,
+    triggers: usize = 0,
+
+    pub fn of(m: *const script.Script) Seen {
+        return .{ .folk = m.folk_n, .dialogs = m.dialog_n, .triggers = m.trigger_n };
+    }
 };
 
 pub fn openFolk(ed: *editor.Editor, i: u8) void {
-    ed.plot.pick = .{ .folk = i };
     open(ed, .dialogs);
+    ed.plot.pick = .{ .folk = i };
 }
 
 pub fn open(ed: *editor.Editor, p: Page) void {
     ed.plot.focus = null;
     ed.plot.detail.top = 0;
+    if (!std.meta.eql(ed.plot.seen, Seen.of(&ed.map.script))) {
+        ed.plot.pick = .none;
+        ed.plot.trigger = null;
+    }
     if (p == .dialogs and ed.plot.pick == .none and ed.map.script.dialog_n > 0) ed.plot.pick = .{ .dialog = 0 };
     if (p == .script and ed.plot.trigger == null and ed.map.script.trigger_n > 0) ed.plot.trigger = 0;
     ed.ask(.{ .plot = p });
@@ -131,7 +147,7 @@ pub fn keys(ed: *editor.Editor) void {
     if (d.clicked()) ed.gesture();
     if (d.undo or d.redo) return;
     if (d.wheel != 0) {
-        const by = d.notch() * WHEEL_PX;
+        const by = d.notch() * WHEEL_NOTCH;
         s.list.wheel(d.mouse, by);
         s.detail.wheel(d.mouse, by);
     }
@@ -274,6 +290,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         .dialogs => drawDialogs(ed, g),
     }
     if (clicked and !s.claimed and !ed.fresh) s.focus = null;
+    s.seen = Seen.of(&ed.map.script);
 }
 
 const Frame = struct {
@@ -304,8 +321,7 @@ fn listArea(ed: *editor.Editor, f: Frame) widgets.Scroll {
 /// Ends the list at `y`; the column right of it, past its divider.
 fn rightOf(ed: *editor.Editor, f: Frame, list: widgets.Scroll, y: i32) widgets.Column {
     list.close(&ed.clip, y, 0);
-    const x = f.x + f.listW() + PAD;
-    widgets.divider(x, f.y, f.bottom);
+    const x = widgets.besides(f.x, f.listW(), f.y, f.bottom);
     return .{ .x = x, .w = f.x + f.w - x };
 }
 
@@ -576,28 +592,26 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
         }
         y += STEP;
     }
-    const third = @divTrunc(lines_w - 3 * GAP, 3);
-    var tools = widgets.Lay{ .x = lx, .y = y };
-    if (button(ed, g, tools.take(third), "+ Line", false, d.line_n < script.MAX_LINES, "Another line, reached by a choice or a then")) {
+    const tools_w = lines_w - GAP;
+    if (button(ed, g, widgets.slotOf(lx, tools_w, y, 0, 3), "+ Line", false, d.line_n < script.MAX_LINES, "Another line, reached by a choice or a then")) {
         if (d.addLine()) |l| {
             ed.bank();
             s.line = l;
         }
     }
-    if (button(ed, g, tools.take(third), "Up", false, s.line > 0, "Earlier in the list; the first is where it opens")) {
+    if (button(ed, g, widgets.slotOf(lx, tools_w, y, 1, 3), "Up", false, s.line > 0, "Earlier in the list; the first is where it opens")) {
         d.swapLines(s.line, s.line - 1);
         s.line -= 1;
         ed.bank();
     }
-    if (button(ed, g, tools.take(third), "Delete", false, d.line_n > 1, "Delete this line; every way into it ends the dialog instead")) {
+    if (button(ed, g, widgets.slotOf(lx, tools_w, y, 2, 3), "Delete", false, d.line_n > 1, "Delete this line; every way into it ends the dialog instead")) {
         d.dropLine(s.line);
         s.line = @min(s.line, d.line_n - 1);
         ed.bank();
     }
-    const dx = x + lines_w + PAD;
+    const dx = widgets.besides(x, lines_w, top + STEP + GAP, bottom);
     const dw = x + w - dx;
     const area = s.detail.at(raster.rect(dx, top + STEP + GAP, dw, bottom - top - STEP - GAP));
-    widgets.divider(dx, top + STEP + GAP, bottom);
     const end = drawLine(ed, g, di, s.line, dx, area.begin(&ed.clip), dw - PAD);
     area.close(&ed.clip, end, 0);
 }
@@ -925,7 +939,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
             const ws = split(fw, &.{ 3, 2 }, &.{ REGION_W, BTN_W });
             caption(g, fx, y, ws[0], std.fmt.bufPrint(&buf, "node {d}: {d},{d} to {d},{d}", .{ c.node, c.from.x, c.from.y, c.to.x, c.to.y }) catch "", look.TEXT);
             _ = lay.take(ws[0]);
-            if (button(ed, g, lay.take(ws[1]), "From selection", false, ed.selection != null, "This node and the cells selected on it (" ++ comptime editor.Shape.select.caption() ++ ")")) {
+            if (button(ed, g, lay.take(ws[1]), "From selection", false, ed.selection != null, widgets.keyed("This node and the cells selected on it", comptime editor.Shape.select.caption()))) {
                 const before = c.*;
                 fitCond(ed, c);
                 if (!std.meta.eql(before, c.*)) ed.bank();

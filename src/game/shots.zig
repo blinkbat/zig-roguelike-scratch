@@ -2367,6 +2367,18 @@ pub fn benchWalk(g: *game.Game) !void {
     poseWaterMirrors(g, day.NOON, true);
     std.debug.print("smooth water with mirrors and glints: {d:.3} ms mean draw over {d} frames\n", .{ try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
     try benchGrass(g, target);
+    try benchStrand(g, target);
+}
+
+fn benchStrand(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const w = try std.heap.c_allocator.create(atlas.Atlas);
+    defer std.heap.c_allocator.destroy(w);
+    defer g.sim.map = null;
+    try loadStrand(g, w);
+    g.sim.clock = day.Clock.at(day.NOON);
+    game.settle(g);
+    game.prepare(g);
+    std.debug.print("strand at noon: {d:.3} ms mean draw over {d} frames\n", .{ try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
 }
 
 fn benchGrass(g: *game.Game, target: rl.RenderTexture2D) !void {

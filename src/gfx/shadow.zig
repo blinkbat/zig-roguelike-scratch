@@ -358,7 +358,7 @@ test "scenery shadow margins include the drawn height and width of loaded terrai
     const ordinary: i32 = @intFromFloat(@ceil(CAST_REACH));
     const doubled: i32 = @intFromFloat(@ceil(CAST_REACH * 2));
     try std.testing.expectEqual(ordinary, sceneryMargin(&sprites));
-    const tree = rl.Texture2D{ .id = 1, .width = 64, .height = 128, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    const tree = rl.Texture2D{ .id = 1, .width = look.SPRITE_PX, .height = 2 * look.SPRITE_PX, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
     sprites.tiles.set(.large_tree, tree);
     try std.testing.expectEqual(doubled, sceneryMargin(&sprites));
     sprites.tiles.set(.large_tree, null);

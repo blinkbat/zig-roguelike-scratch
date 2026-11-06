@@ -156,7 +156,7 @@ pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
         if (h.hit) ed.openFamily(f);
     }
     var views = Bar.back(ed, g, g.screen.x - widgets.PAD, tabs_y);
-    if (views.button("Fit", false, ed.view == .map, "Fit the map in view (" ++ Desk.FIT_CAPTION ++ ")")) interaction.fitView(ed, editor.Editor.canvas(g));
+    if (views.button("Fit", false, ed.view == .map, widgets.keyed("Fit the map in view", Desk.FIT_CAPTION))) interaction.fitView(ed, editor.Editor.canvas(g));
     views.group();
     const order = std.enums.values(editor.View);
     for (0..order.len) |k| {
@@ -191,13 +191,13 @@ fn familyFigure(ed: *editor.Editor, g: *game.Game, f: editor.Family, r: rl.Recta
     }
 }
 
-/// The File dropdown's rows below `top`; a row picked closes it and does what it names.
-pub fn fileRows(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32) void {
+/// The File dropdown's rows in `box`; a row picked closes it and does what it names.
+pub fn fileRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle) void {
     for (FILE_ITEMS, 0..) |f, k| {
-        const r = widgets.row(x, top + @as(i32, @intCast(k)) * editor.popupRowH(.file), w);
+        const r = editor.popupRow(box, .file, k);
         const hit = widgets.buttonSized(ed.controls(), &g.face, r, f.label(), DETAIL, false, true, true, null);
         const key_w = widgets.textFace(&g.face).width(f.key(), DETAIL);
-        widgets.textFace(&g.face).draw(f.key(), x + w - widgets.GAP - key_w, @as(i32, @intFromFloat(r.y)) + widgets.DETAIL_DY, DETAIL, look.DIM);
+        widgets.textFace(&g.face).draw(f.key(), widgets.rightX(r) - widgets.GAP - key_w, @as(i32, @intFromFloat(r.y)) + widgets.DETAIL_DY, DETAIL, look.DIM);
         if (hit) {
             ed.popup = null;
             f.act(ed);
@@ -456,7 +456,7 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     const armed = ed.delete_armed == ed.node;
     if (smallButton(ed, g, node.next(), if (armed) "Delete it?" else "Delete", armed, ed.map.node_n > 1, if (armed) "Again deletes it; its doors' links go with it" else "Delete this node; it asks first")) {
         if (armed) editor.deleteNode(ed) else ed.delete_armed = ed.node;
-    }
+    } else if (armed and ed.desk.clicked()) ed.delete_armed = null;
     node.done();
     y += widgets.ROW_STEP;
     var adds = widgets.Across{ .col = col, .y = y, .n = 2 };

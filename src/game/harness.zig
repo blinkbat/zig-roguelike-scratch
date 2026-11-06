@@ -227,7 +227,7 @@ fn combatant(g: *const game.Game, id: u16) *const actor.Actor {
 
 fn bitesHold(g: *const game.Game, hero_at: P, bites: []const Bite, rng: *mathx.Rng) bool {
     const hero = g.sim.heroBody().?;
-    const defender = g.sim.combatStatsAt(hero, hero_at, hero.resilience, hero.sunder);
+    const defender = g.sim.combatStatsOn(hero, g.sim.lv.at(hero_at), hero.resilience, hero.sunder);
     for (bites, 0..) |b, i| {
         const a = combatant(g, b.id);
         const strike = actor.row(a.kind).blow.strike;
@@ -316,6 +316,11 @@ pub fn barrelRng(item: bool) mathx.Rng {
 
 pub fn slay(g: *game.Game, id: u16, from: P) void {
     combat.wound(g, id, .{ .dmg = 1000 }, combat.SHOOT, .{ .from = from, .wait = 0.2 });
+}
+
+/// As `slay`, past any dodge, landing `wait` seconds on.
+pub fn kill(g: *game.Game, id: u16, from: P, wait: f32) void {
+    combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = wait });
 }
 
 pub fn meleeThenBites(g: *const game.Game, target: u16, attackers: []const u16) mathx.Rng {

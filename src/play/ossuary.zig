@@ -38,6 +38,12 @@ pub const Entry = struct {
         @memcpy(self.summary[n..][0..BURIED.len], BURIED);
         self.summary_n = @intCast(n + BURIED.len);
     }
+
+    fn unbury(self: *Entry) bool {
+        if (!std.mem.endsWith(u8, self.text(), BURIED)) return false;
+        self.summary_n -= BURIED.len;
+        return true;
+    }
 };
 
 /// What a run did that history counts.
@@ -131,9 +137,16 @@ pub fn decode(bytes: []const u8) Error!Hall {
     const body = store.open(bytes, MAGIC, VERSION) catch |e| return opened(e);
     var bones: Bones = undefined;
     try Code.read(body, &bones);
-    const hall = Hall{ .entries = bones.entries, .n = bones.n };
+    var hall = Hall{ .entries = bones.entries, .n = bones.n };
     try validate(&hall);
+    unbury(&hall);
     return hall;
+}
+
+fn unbury(hall: *Hall) void {
+    for (hall.entries[0..hall.n]) |*e| if (e.unbury()) {
+        hall.dirty = true;
+    };
 }
 
 fn opened(e: anytype) Error {
@@ -163,6 +176,7 @@ fn decodeLegacy(bytes: []const u8) Error!Hall {
         _ = store.legacy.take(&b, e);
     }
     try validate(&hall);
+    unbury(&hall);
     return hall;
 }
 
@@ -213,9 +227,9 @@ test "the ossuary keeps the most renowned deaths, earlier first on a tie, and re
     try std.testing.expectEqual(first_six, h.entries[0].seed);
     try std.testing.expectEqual(@as(u32, 0), h.entries[MAX - 1].renown);
     var e = testEntry(9);
-    e.say("A long story. " ++ ENTOMBED);
+    e.say("A long story.");
     try std.testing.expectEqual(@as(?usize, 0), h.entomb(e));
-    try std.testing.expect(std.mem.endsWith(u8, h.entries[0].text(), ENTOMBED));
+    try std.testing.expectEqualStrings("A long story.", h.entries[0].text());
     std.debug.print("ossuary: {d} kept, lowest renown {d}, a tie entombed below its elders\n", .{ h.n, h.entries[MAX - 1].renown });
 }
 
@@ -224,10 +238,15 @@ test "the ossuary file round-trips, and a damaged, cut, foreign or reordered one
     for (0..5) |i| {
         var e = testEntry(@intCast(10 * i));
         e.class = @enumFromInt(i % 3);
-        e.say("Slain by a rat. " ++ ENTOMBED);
+        e.say("Slain by a rat.");
         _ = h.entomb(e);
     }
     var buf: [FILE_MAX]u8 = undefined;
+    var told = h;
+    told.entries[0].sayEntombed();
+    const untold = try decode(encode(&told, &buf));
+    try std.testing.expectEqualStrings("Slain by a rat.", untold.entries[0].text());
+    try std.testing.expect(untold.dirty);
     const bytes = encode(&h, &buf);
     const back = try decode(bytes);
     try std.testing.expectEqual(h.n, back.n);

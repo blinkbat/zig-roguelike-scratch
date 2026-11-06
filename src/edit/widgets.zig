@@ -42,6 +42,7 @@ pub const STEP_W: i32 = 30;
 pub const STEP_PITCH: i32 = STEP_W + GAP;
 pub const DROP = "x";
 pub const SCROLL_W: i32 = 3;
+pub const WHEEL_PX: i32 = ROW_H;
 const THUMB_MIN: f32 = 24;
 const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
 pub const PANEL_BG = look.EDIT_PANEL;
@@ -336,8 +337,8 @@ pub const Scrolled = struct {
         return .{ .box = box, .top = &s.top, .most = &s.most };
     }
 
-    pub fn wheel(s: *Scrolled, mouse: P, by: i32) void {
-        if (raster.holds(s.box, mouse)) scrollBy(&s.top, s.most, by);
+    pub fn wheel(s: *Scrolled, mouse: P, notches: i32) void {
+        if (raster.holds(s.box, mouse)) scrollBy(&s.top, s.most, notches * WHEEL_PX);
     }
 };
 
@@ -403,6 +404,13 @@ pub const LayEnd = struct {
 /// The rule between two columns, in the gutter left of `x`.
 pub fn divider(x: i32, top: i32, bottom: i32) void {
     rl.drawRectangle(x - @divTrunc(PAD, 2), top, 1, bottom - top, look.EDGE);
+}
+
+/// The column after one `w` wide from `x`, with the rule between them.
+pub fn besides(x: i32, w: i32, top: i32, bottom: i32) i32 {
+    const next = x + w + PAD;
+    divider(next, top, bottom);
+    return next;
 }
 
 pub const GAPS = P{ .x = GAP, .y = GAP };

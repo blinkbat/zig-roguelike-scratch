@@ -165,7 +165,7 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
         const pictured = g.pic.heroShown(&g.sim);
         const buildup = if (pictured) |shown| shown.resilience else h.resilience;
         const sundered = if (pictured) |shown| shown.sunder else h.sunder;
-        const stats = g.sim.combatStatsAt(h, at, buildup, sundered);
+        const stats = g.sim.combatStatsOn(h, g.pic.tileShown(&g.sim, at), buildup, sundered);
         v.defence = .{ .dodge = stats.dodge, .armour = stats.armour };
         v.resists = stats.elements;
         for (std.enums.values(resilience.Kind)) |k| v.status_resist.set(k, .{ .percent = stats.statuses.get(k), .turns = buildup.meters.get(k).turns });

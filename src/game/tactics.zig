@@ -19,6 +19,7 @@ const P = mathx.P;
 pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
     const h = g.sim.heroActor() orelse return;
     const rank = g.sim.growth.ranks.get(act);
+    const ending = skills.endingStance(&g.sim, act);
     switch (act) {
         .steady_aim => h.tactics.steady = rank,
         .guard => h.tactics.guard = rank,
@@ -38,7 +39,7 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
         },
         else => @compileError(@tagName(act) ++ " has no instant tactical use"),
     }
-    g.sim.log.say("{s}: {s}{s}.", .{ g.sim.name.text(), act.name(), if (act == .unyielding and !h.tactics.unyielding) " ended" else "" });
+    g.sim.log.say("{s}: {s}{s}.", .{ g.sim.name.text(), act.name(), if (ending) " ended" else "" });
     g.pic.fx.shimmer(mathx.centre(h.at), look.UI_GOLD);
 }
 
@@ -123,6 +124,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
                 if (!g.sim.lv.isLit(p)) continue;
                 g.sim.lv.caltrops[grid.Level.idx(p)] = .{ .turns = rules.Caltrops.laid(rank), .rank = rank };
             }
+            g.pic.holdFlames(&g.sim.lv, game.CAST_S);
         },
         .gravity_well => {
             const area = rules.GravityWell.area(&g.sim.lv, at);
@@ -147,6 +149,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
         .arcane_barrier => {
             const area = span(g, act, from, aim.anchor().?, at).?;
             for (area.slice()) |p| g.sim.lv.barrier[grid.Level.idx(p)] = rules.ArcaneBarrier.laid(rank);
+            g.pic.holdFlames(&g.sim.lv, game.CAST_S);
         },
         .fire_wall => {
             const area = span(g, act, from, aim.anchor().?, at).?;
@@ -155,7 +158,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
             for (area.slice()) |p| {
                 const id = g.sim.lv.who(p);
                 const a = g.sim.pool.get(id) orelse continue;
-                if (a.foe() and ignite(g, id)) g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(id)));
+                if (a.foe() and g.sim.ignite(actor.Pool.slot(id), a)) g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(id)));
             }
         },
         else => @compileError(@tagName(act) ++ " has no ground tactical use"),
@@ -186,12 +189,6 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     }
     if (comptime Skill.ELEMENT == .fire) combat.fireLands(g, at, Skill.REACH, Skill.KINDLE, s.wait);
     if (comptime Skill.ELEMENT == .cold) combat.coldLands(g, &area, s.wait);
-}
-
-/// Flames take hold of a foe unless its fire or burn resistance holds; true when they do.
-fn ignite(g: *game.Game, id: u16) bool {
-    const a = g.sim.pool.get(id) orelse return false;
-    return g.sim.igniteFresh(actor.Pool.slot(id), a, mathx.PERCENT);
 }
 
 pub fn beforeAction(sim: *Simulation) void {
@@ -252,7 +249,7 @@ pub fn landed(g: *game.Game, id: u16) void {
         g.pic.recordWear(&g.sim, .fromInt(id));
         g.sim.sayOf(a, "The {s} steps into caltrops.", .{actor.row(a.kind).name});
     }
-    if (g.sim.lv.burning(a.at) and ignite(g, id)) g.pic.recordWear(&g.sim, .fromInt(id));
+    if (g.sim.lv.burning(a.at) and g.sim.ignite(actor.Pool.slot(id), a)) g.pic.recordWear(&g.sim, .fromInt(id));
 }
 
 pub fn counter(g: *game.Game, id: u16) void {

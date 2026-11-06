@@ -225,6 +225,7 @@ test "a hero bitten to death gets an epitaph naming the rat, entombed only while
     try std.testing.expect(std.mem.startsWith(u8, said, "Archer was bitten to death by a rat on a nameless floor."));
     try std.testing.expect(std.mem.endsWith(u8, said, " " ++ game.ossuary.ENTOMBED));
     try std.testing.expectEqual(@as(usize, 1), hall.n);
+    try std.testing.expectEqualStrings(said[0 .. said.len - game.ossuary.ENTOMBED.len - 1], hall.entries[0].text());
     for (&hall.entries) |*e| {
         e.* = g.epitaph.?;
         e.renown = std.math.maxInt(u32);

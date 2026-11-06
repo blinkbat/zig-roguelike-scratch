@@ -67,26 +67,25 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
     refit(ed, pg, was);
 }
 
-pub fn choiceRows(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32, feature: ?usize) void {
+pub fn choiceRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, which: editor.Which) void {
     const pg = ed.rolled() orelse {
         ed.popup = null;
         return;
     };
     const was = pg.*;
-    if (feature) |i| {
-        if (i < pg.feature_n) popupRows(ed, g, atlas.Feature, &pg.feature[i], x, top, w);
-    } else popupRows(ed, g, atlas.Floor, &pg.floor, x, top, w);
+    switch (which) {
+        .feature => |i| if (i < pg.feature_n) popupRows(ed, g, atlas.Feature, &pg.feature[i], box, which),
+        .algo, .node, .file => popupRows(ed, g, atlas.Floor, &pg.floor, box, which),
+    }
     if (ed.popup == null) refit(ed, pg, was);
 }
 
-fn popupRows(ed: *editor.Editor, g: *game.Game, comptime U: type, v: *U, x: i32, top: i32, w: i32) void {
-    var y = top;
-    for (std.enums.values(std.meta.Tag(U))) |t| {
-        if (editor.modalButton(ed, g, widgets.row(x, y, w), @tagName(t), t == std.meta.activeTag(v.*), true, null)) {
+fn popupRows(ed: *editor.Editor, g: *game.Game, comptime U: type, v: *U, box: rl.Rectangle, which: editor.Which) void {
+    for (std.enums.values(std.meta.Tag(U)), 0..) |t, k| {
+        if (editor.modalButton(ed, g, editor.popupRow(box, which, k), @tagName(t), t == std.meta.activeTag(v.*), true, null)) {
             retag(U, v, t);
             ed.popup = null;
         }
-        y += widgets.ROW_H;
     }
 }
 

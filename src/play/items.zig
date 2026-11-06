@@ -185,6 +185,8 @@ pub const Mod = enum {
 /// The elements a weapon is imbued with, each the ailment it brings on a hit.
 pub const IMBUES = [_]damage.Element{ .fire, .cold, .lightning };
 
+const ON_HIT_FMT = "{d}% chance to {s} on hit";
+
 pub fn imbued(e: damage.Element) resilience.Kind {
     return switch (e) {
         .fire => .burn,
@@ -359,7 +361,7 @@ pub const Affix = struct {
             .penetration => w.print("Ignore {d}% " ++ attrs.REDUCTION_LABEL, .{n}) catch {},
             .thorns => w.print("Return {d} damage to melee attackers", .{n}) catch {},
             .spoils => w.print("+{d}% gold and item rarity", .{n}) catch {},
-            .imbue => w.print("{d}% chance to {s} on hit", .{ n, wording.word(imbued(m.element)) }) catch {},
+            .imbue => w.print(ON_HIT_FMT, .{ n, wording.word(imbued(m.element)) }) catch {},
             .resolve => w.print("+{d}% stun resistance", .{n}) catch {},
             .lantern => w.print("+{d} light radius", .{n}) catch {},
             .mana_on_kill => w.print("+{d} mana on kill", .{n}) catch {},
@@ -441,8 +443,8 @@ pub const Innate = union(enum) {
             .spell_crit => |n| w.print("+{d}% " ++ attrs.SPELL_CRIT_LABEL, .{n}) catch {},
             .physical_damage => |n| w.print("+{d}% " ++ attrs.PHYSICAL_LABEL, .{n}) catch {},
             .element => |e| w.print("+{d}% {s} damage", .{ e.percent, wording.word(e.kind) }) catch {},
-            .bleed => |b| w.print("{d}% chance to bleed on hit", .{b.chance}) catch {},
-            .stun => |n| w.print("{d}% chance to stun on hit", .{n}) catch {},
+            .bleed => |b| w.print(ON_HIT_FMT, .{ b.chance, wording.word(resilience.Kind.bleed) }) catch {},
+            .stun => |n| w.print(ON_HIT_FMT, .{ n, wording.word(resilience.Kind.stun) }) catch {},
             .penetration => |n| w.print("Ignore {d}% physical reduction", .{n}) catch {},
             .flask => |k| w.writeAll(flask.effect(k)) catch {},
         }

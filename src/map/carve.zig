@@ -62,7 +62,7 @@ pub const Noise = struct {
         h ^= h >> 31;
         h *%= 0xBF58476D1CE4E5B9;
         h ^= h >> 29;
-        return @as(f32, @floatFromInt(h >> 40)) / @as(f32, @floatFromInt(@as(u64, 1) << 24));
+        return mathx.unitOf(h);
     }
 
     fn value(self: Noise, x: f32, y: f32) f32 {
@@ -211,10 +211,16 @@ fn near(lv: *const grid.Level, p: P, r: i32, which: anytype) bool {
 
 /// `lone` puts it only where it closes no way.
 pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool) void {
+    scatterIn(lv, rng, per_mille, on, put, lone, grid.Box.inMap(0));
+}
+
+pub fn scatterIn(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool, within: grid.Box) void {
     var over = grid.CellSet.initEmpty();
-    for (0..grid.CELLS) |i| over.setValue(i, on.at(lv, grid.Level.of(i)));
-    for (0..grid.CELLS) |i| {
-        const p = grid.Level.of(i);
+    var cells = within.cells();
+    while (cells.next()) |p| over.setValue(grid.Level.idx(p), on.at(lv, p));
+    cells = within.cells();
+    while (cells.next()) |p| {
+        const i = grid.Level.idx(p);
         if (!over.isSet(i)) continue;
         if (grid.Level.onRim(p) or (lone and !clearAround(lv, p))) continue;
         if (rng.perMille(per_mille)) lv.tile[i] = put;
@@ -281,7 +287,12 @@ pub const CAVE_SCALE: f32 = 3;
 
 /// `t` round `c` off the rim, its edge frayed: in where a cell's distance over `r` is under `lo + span` times the noise.
 pub fn blob(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile) void {
-    blobIn(lv, noise, c, r, scale, lo, span, t, grid.Box.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span)))), null);
+    blobIn(lv, noise, c, r, scale, lo, span, t, blobBox(c, r, lo, span), null);
+}
+
+/// Every cell a blob of radius `r` about `c` may reach.
+pub fn blobBox(c: P, r: f32, lo: f32, span: f32) grid.Box {
+    return grid.Box.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span))));
 }
 
 pub fn blobIn(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile, within: grid.Box, comptime over: ?fn (grid.Tile) bool) void {

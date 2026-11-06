@@ -1983,3 +1983,30 @@ test "piercing shot strikes every foe in its line, each as the arrow reaches it,
     try std.testing.expectEqual(g.sim.pool.get(far).?.hp, g.pic.pictured[actor.Pool.slot(far)].hp);
     std.debug.print("piercing shot: 2 rats struck in a {d}-cell flight, the near one pictured first; the barrel at {d} shields the rat behind it\n", .{ bow.RANGE, bow.RANGE });
 }
+
+test "caltrops and an arcane barrier are drawn as their cast lands, not as it begins" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
+    harness.aimAt(g, .caltrops, .{ .x = 23, .y = 20 });
+    var laid: usize = 0;
+    for (g.sim.lv.caltrops, g.pic.caltrops_shown) |c, shown| {
+        if (c.turns > 0) laid += 1;
+        try std.testing.expectEqual(@as(u8, 0), shown.turns);
+    }
+    try std.testing.expect(laid > 0);
+    harness.drawnOut(g);
+    for (g.sim.lv.caltrops, g.pic.caltrops_shown) |c, shown| try std.testing.expectEqual(c.turns, shown.turns);
+    harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    harness.useAct(g, .arcane_barrier);
+    g.mode.aim.mark = .{ .x = 23, .y = 19 };
+    skills.confirmAim(g);
+    g.mode.aim.mark = .{ .x = 23, .y = 21 };
+    skills.confirmAim(g);
+    const raised = grid.CELLS - std.mem.count(u8, &g.sim.lv.barrier, &.{0});
+    try std.testing.expect(raised > 0);
+    try std.testing.expect(std.mem.allEqual(u8, &g.pic.barrier_shown, 0));
+    harness.drawnOut(g);
+    try std.testing.expectEqualSlices(u8, &g.sim.lv.barrier, &g.pic.barrier_shown);
+    std.debug.print("tactical ground: {d} caltrops and {d} barrier cells drawn only once the cast lands\n", .{ laid, raised });
+}

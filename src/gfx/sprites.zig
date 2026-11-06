@@ -221,10 +221,7 @@ pub const Sprites = struct {
                         raster.blit(tex, src, pointRect(at, px), look.LIT);
                     } else for (0..4) |q| {
                         if (!corners.edgeQuarter(pair.upper, pair.lower, q)) continue;
-                        const dx = sideShift(q % 2);
-                        const dy = sideShift(q / 2);
-                        const quarter_src = rl.Rectangle{ .x = src.x + dx * look.SPRITE_PX, .y = src.y + dy * look.SPRITE_PX, .width = look.SPRITE_PX / 2, .height = look.SPRITE_PX / 2 };
-                        raster.blit(tex, quarter_src, quarterRect(at, px, q), look.LIT);
+                        raster.blit(tex, quarterOf(src, q), quarterRect(at, px, q), look.LIT);
                     }
                 }
                 if (surface or face != null) rl.endShaderMode();
@@ -297,6 +294,10 @@ pub const Sprites = struct {
         return .{ .x = at[0] + (sideShift(q % 2) - 0.5) * px, .y = at[1] + (sideShift(q / 2) - 0.5) * px, .width = px / 2, .height = px / 2 };
     }
 
+    fn quarterOf(src: rl.Rectangle, q: usize) rl.Rectangle {
+        return .{ .x = src.x + sideShift(q % 2) * src.width, .y = src.y + sideShift(q / 2) * src.height, .width = src.width / 2, .height = src.height / 2 };
+    }
+
     pub fn drawWaterCliffCaps(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
         for (std.enums.values(ground.Bank)) |bank| self.drawWaterBankCaps(beds, origin, px, water, bank);
     }
@@ -341,17 +342,7 @@ pub const Sprites = struct {
 
         /// Where its picture continues in the lower quarter of the cell north-west (side 0) or north-east (side 1) of a point.
         fn lowerQuarter(self: BankFill, side: usize) rl.Rectangle {
-            const shift = sideShift(side);
-            var src = self.piece.src;
-            if (self.sheet) {
-                src.x += shift * src.width;
-            } else {
-                src.x += (0.5 - shift) * src.width;
-                src.y += src.height / 2;
-            }
-            src.width /= 2;
-            src.height /= 2;
-            return src;
+            return quarterOf(self.piece.src, if (self.sheet) side else 3 - side);
         }
 
         /// The cap shader's shift from the cap cell, `BANK_LIFT` above the point's row, into this picture's frame.

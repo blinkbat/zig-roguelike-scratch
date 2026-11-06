@@ -28,8 +28,10 @@ fn next(s: []const u8, at: usize) ?Part {
 }
 
 fn icon(text: [:0]const u8) prompt_icon.Prompt {
-    inline for (.{ .left, .right, .middle }) |b| {
-        if (std.mem.eql(u8, text, input.mouseName(b))) return .{ .mouse = b };
+    inline for (comptime std.enums.values(prompt_icon.MouseIcon)) |b| {
+        if (comptime b != .wheel) {
+            if (std.mem.eql(u8, text, input.mouseName(@field(rl.MouseButton, @tagName(b))))) return .{ .mouse = b };
+        }
     }
     if (std.mem.eql(u8, text, input.WHEEL)) return .{ .mouse = .wheel };
     if (std.mem.eql(u8, text, input.ARROWS)) return .arrows;

@@ -1071,7 +1071,7 @@ test "a mimic stands as a closed chest until opened, then bites, and dies leavin
     harness.drawnOut(g);
     try std.testing.expect(harness.drawn(g, slot));
     const drops = g.sim.ground.n;
-    combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    harness.kill(g, id, from, 0);
     try std.testing.expect(g.sim.pool.get(id) == null);
     try std.testing.expectEqual(drops + 1, g.sim.ground.n);
     try std.testing.expect(g.sim.ground.hasItems(at));
@@ -1088,7 +1088,7 @@ test "a mimic always leaves a rare" {
         const id = harness.openMimic(g, at);
         game.settle(g);
         g.sim.loot_rng = mathx.Rng.init(seed);
-        combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+        harness.kill(g, id, from, 0);
         try std.testing.expectEqual(@as(usize, 1), g.sim.ground.n);
         try std.testing.expectEqual(items.Rarity.rare, g.sim.ground.drops[0].item.rarity());
     }
@@ -1116,7 +1116,7 @@ test "an arrow into a submerged leech strikes it unseen: no line names it until 
     }
     std.debug.print("submerged leech: struck by {d} of 8 arrows, none said\n", .{struck});
     try std.testing.expect(struck > 0);
-    combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    harness.kill(g, id, from, 0);
     try std.testing.expect(harness.logged(g, name));
 }
 
@@ -1404,7 +1404,7 @@ test "a mimic killed in its chest stays the chest until the killing blow lands" 
     const id = harness.spawnAt(g, .mimic, at, false);
     game.settle(g);
     const slot = actor.Pool.slot(id);
-    combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0.3 });
+    harness.kill(g, id, from, 0.3);
     try std.testing.expect(g.sim.pool.get(id) == null);
     try std.testing.expect(g.sim.lv.at(at) != .chest);
     var frames: usize = 0;

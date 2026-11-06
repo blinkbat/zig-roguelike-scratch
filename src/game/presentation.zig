@@ -203,7 +203,7 @@ pub const Fields = struct {
     /// Defaulted as the hero is spawned.
     pub const facing = [_][]const u8{"facing"};
     /// Snapped to the simulation as the game settles, then moved or eased on toward it.
-    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "hour_shown", "weather_shown" };
+    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "hour_shown", "weather_shown" };
     /// Rebuilt from the simulation each time it is read.
     pub const scratch = [_][]const u8{"ground_shown"};
     /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
@@ -247,8 +247,10 @@ pub const Presentation = struct {
     bursting: ?Bursting = null,
     /// Sight before a glowbulb's burst darkened it or a pyre's smoke hid what lies past it, drawn until that lands.
     lit: Held([grid.CELLS]bool) = .{ .before = @splat(false) },
-    /// The ground's flames as drawn: the simulation's, but kept as they were while `tiles` holds.
+    /// The ground's flames, barrier and caltrops as drawn: the simulation's, but kept as they were while `tiles` holds.
     flames_shown: [grid.CELLS]u8 = @splat(0),
+    barrier_shown: [grid.CELLS]u8 = @splat(0),
+    caltrops_shown: @FieldType(grid.Level, "caltrops") = @splat(.{}),
     /// The ground till the fire or cold not yet landed: what burns down, freezes or melts meanwhile is drawn as it was.
     tiles: Held([grid.CELLS]grid.Tile) = .{ .before = @splat(.floor) },
     /// The level with `tileShown` laid over it, rebuilt by `groundShown` while any tile is drawn as it was.
@@ -553,9 +555,7 @@ pub const Presentation = struct {
         if (self.bursting) |b| if (b.at.eq(p)) return b.was;
         if (self.mimicAt(sim, p)) return .chest;
         if (!self.tiles.on()) return t;
-        const was = grid.cellOr(grid.Tile, &self.tiles.before, p, t);
-        if (fire.burntDown(was, t) or ice.turned(was, t)) return was;
-        return t;
+        return heldBack(grid.cellOr(grid.Tile, &self.tiles.before, p, t), t);
     }
 
     /// Some tile is drawn otherwise than the simulation has it.
@@ -571,7 +571,7 @@ pub const Presentation = struct {
         self.ground_shown = sim.lv;
         const tiles = &self.ground_shown.tile;
         if (self.tiles.on()) for (tiles, self.tiles.before) |*t, was| {
-            if (fire.burntDown(was, t.*) or ice.turned(was, t.*)) t.* = was;
+            t.* = heldBack(was, t.*);
         };
         var masked = self.masked.iterator(.{});
         while (masked.next()) |i| if (grid.Level.inside(sim.pool.items[i].at)) {
@@ -611,6 +611,12 @@ pub const Presentation = struct {
 
     pub fn flamesShown(self: *const Presentation, i: usize) bool {
         return self.flames_shown[i] > 0;
+    }
+
+    pub fn showLaid(self: *Presentation, lv: *const grid.Level) void {
+        self.flames_shown = lv.flames;
+        self.barrier_shown = lv.barrier;
+        self.caltrops_shown = lv.caltrops;
     }
 
     pub fn litShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
@@ -754,7 +760,7 @@ pub const Presentation = struct {
         if (self.bursting) |*b| b.left -= dt;
         self.lit.tick(dt);
         self.tiles.tick(dt);
-        if (!self.tiles.on()) self.flames_shown = sim.lv.flames;
+        if (!self.tiles.on()) self.showLaid(&sim.lv);
         for (self.glide[0..sim.pool.n]) |*gl| gl.t += dt;
         for (&self.dives) |*d| if (d.*) |*left| {
             left.* -= dt;
@@ -998,12 +1004,13 @@ pub const Presentation = struct {
         const mark: ?[2]f32 = if (timing.shown) mathx.centre(timing.at) else null;
         const drip: ?fx.Drip = if (mark) |m| .{ .at = m, .matter = fx.matterOf(timing.body.kind) } else null;
         const in_view = timing.shown or timing.staggered;
-        if (owed.gassed) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .puff = fx.Puff.over(mark, look.gasInk(.caustic)) });
-        if (owed.scalded) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .puff = fx.Puff.over(mark, look.gasInk(.steam)) });
-        if (owed.healed) |after| self.fx.settle(timing.finishes_in, .{ .slot = timing.slot, .after = after, .puff = fx.Puff.over(mark, look.gasInk(.healing)) });
-        if (owed.scorched) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, true, in_view, .{ .slot = timing.slot, .fire_at = mark });
-        if (owed.burned) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, true, in_view, .{ .slot = timing.slot, .fire_at = mark });
-        if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .drip = drip });
+        inline for (comptime std.enums.values(simulation.Tick)) |t| switch (t) {
+            .worn => {},
+            .healed => if (owed.healed) |after| self.fx.settle(timing.finishes_in, .{ .slot = timing.slot, .after = after, .puff = fx.Puff.over(mark, look.gasInk(comptime t.gas().?)) }),
+            .gassed, .scalded => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .puff = fx.Puff.over(mark, look.gasInk(comptime t.gas().?)) }),
+            .scorched, .burned => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, true, in_view, .{ .slot = timing.slot, .fire_at = mark }),
+            .bled => if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .drip = drip }),
+        };
         if (timing.body.submerged != self.under.isSet(timing.slot.index)) {
             const emerges_in = if (timing.staggered) @max(0, timing.starts_at - turn.late) else start;
             self.dives[timing.slot.index] = if (timing.body.submerged or timing.moved) timing.finishes_in else emerges_in;
@@ -1118,6 +1125,10 @@ fn hides(at: rl.Vector2, p: P, t: grid.Tile) bool {
     const bottom = y + if (look.tall(t)) 0 else game.CELL_F;
     return at.x + game.CELL_F * (1 - FIGURE_INSET_X) > x and at.x + game.CELL_F * FIGURE_INSET_X < x + game.CELL_F * @as(f32, @floatFromInt(t.footprint(p).width())) and
         at.y + game.CELL_F * (1 - FIGURE_INSET_Y) > top and at.y + game.CELL_F * FIGURE_INSET_Y < bottom;
+}
+
+fn heldBack(was: grid.Tile, now: grid.Tile) grid.Tile {
+    return if (fire.burntDown(was, now) or ice.turned(was, now)) was else now;
 }
 
 fn facingOf(dx: i32) ?actor.Facing {

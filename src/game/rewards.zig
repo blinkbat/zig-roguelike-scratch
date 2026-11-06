@@ -161,7 +161,7 @@ fn ignite(sim: *Simulation, at: P, name: []const u8) Caught {
     const area = pyre(&sim.lv, at);
     for (sim.pool.slice(), 0..) |*a, i| {
         if (!a.alive or !area.has(a.at)) continue;
-        if (sim.igniteFresh(i, a, mathx.PERCENT)) out.set(i);
+        if (sim.ignite(i, a)) out.set(i);
     }
     return out;
 }

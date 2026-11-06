@@ -285,9 +285,8 @@ const CLOUD_NOISE = shaders.glslConsts(.{
     \\    vec2 drift = DRIFT * time;
     \\    vec2 w = vec2(fbm(c * 0.7 + drift), fbm(c * 0.7 - drift.yx + 4.0)) - 0.5;
     \\    vec2 q = c + w * WARP * 2.0;
-    \\    vec4 s = cloudTap(field, q) * FOCUS_CENTRE_W
-    \\        + (cloudTap(field, q + vec2(SOFT, 0.0)) + cloudTap(field, q - vec2(SOFT, 0.0))
-    \\        + cloudTap(field, q + vec2(0.0, SOFT)) + cloudTap(field, q - vec2(0.0, SOFT))) * FOCUS_SIDE_W;
+    \\    vec4 s = crossBlur(cloudTap(field, q), cloudTap(field, q + vec2(SOFT, 0.0)) + cloudTap(field, q - vec2(SOFT, 0.0))
+    \\        + cloudTap(field, q + vec2(0.0, SOFT)) + cloudTap(field, q - vec2(0.0, SOFT)));
     \\    if (s.a < CLEAR_A) discard;
     \\    float n = fbm(c * 1.3 + w * 1.5 - drift * 0.6);
     \\    return vec4(s.rgb / s.a * mix(0.75, 1.2, n), clamp(s.a * mix(0.5, 1.1, n), 0.0, TINT_HI));
