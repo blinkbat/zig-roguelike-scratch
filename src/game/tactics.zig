@@ -4,6 +4,7 @@ const std = @import("std");
 const game = @import("../game.zig");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
+const fire = @import("../map/fire.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const burning = @import("../play/burning.zig");
@@ -150,7 +151,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
         },
         .fire_wall => {
             const area = span(g, act, from, aim.anchor().?, at).?;
-            for (area.slice()) |p| g.sim.lv.flames[grid.Level.idx(p)] = rules.FireWall.laid(rank);
+            for (area.slice()) |p| fire.lay(&g.sim.lv, p, rules.FireWall.laid(rank), rules.FireWall.HEAT);
             for (area.slice()) |p| {
                 const id = g.sim.lv.who(p);
                 const a = g.sim.pool.get(id) orelse continue;
@@ -183,7 +184,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
         const hit = attacks.heroScaled(&g.sim, act, raw);
         combat.wound(g, id, hit.against(g.sim.combatStats(a).elements), Skill.VERB, s);
     }
-    if (comptime Skill.ELEMENT == .fire) combat.boil(g, at, Skill.REACH, s.wait);
+    if (comptime Skill.ELEMENT == .fire) combat.fireLands(g, at, Skill.REACH, Skill.KINDLE, s.wait);
 }
 
 /// Fire Wall's flames take hold of a body unless its fire or burn resistance holds; true when they do.
@@ -212,7 +213,6 @@ pub fn startTurn(sim: *Simulation) void {
         }
     }
     for (&sim.lv.barrier) |*t| t.* -|= 1;
-    for (&sim.lv.flames) |*t| t.* -|= 1;
     for (&sim.lv.caltrops) |*c| {
         c.turns -|= 1;
         if (c.turns == 0) c.rank = 0;

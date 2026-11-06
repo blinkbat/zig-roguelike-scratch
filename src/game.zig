@@ -451,11 +451,13 @@ pub fn settle(g: *Game) void {
     g.sim.chronicle.restart(epitaph.turnStart(g));
     castSight(g, g.sim.heroActor().?.at);
     g.cloud.settle(&g.sim.lv);
+    g.pic.flames_shown = g.sim.lv.flames;
     g.pic.snapGlide(&g.sim.pool);
     g.pic.catchUp(&g.sim);
     g.pic.settleResources(&g.sim);
     g.cam = camWant(g);
     g.pic.hour_shown = g.sim.clock.hour();
+    g.pic.weather_shown = presentation.weatherOf(&g.sim);
     g.light.sky = skyNow(g);
     g.light.settle(&g.sim.lv);
     carryLight(g);
@@ -794,11 +796,14 @@ pub fn overLog(g: *const Game) bool {
 }
 
 fn skyNow(g: *const Game) ?sky.Sky {
-    return if (g.sim.outdoors) sky.under(g.pic.hour_shown, g.sim.climateNow().light) else null;
+    if (!g.sim.outdoors) return null;
+    const flash = if (g.debug.visuals.weather) g.rain.flash() else 0;
+    return sky.under(g.pic.hour_shown, g.pic.weather_shown.get(.overcast)).flashed(flash);
 }
 
-pub fn weatherNow(g: *const Game) ?climate.Weather {
-    return if (g.sim.outdoors) g.sim.climateNow().weather else null;
+/// The weather as drawn; null under a roof.
+pub fn weatherNow(g: *const Game) ?climate.Now {
+    return if (g.sim.outdoors) g.pic.weather_shown else null;
 }
 
 fn drawnTurn(g: *Game) void {

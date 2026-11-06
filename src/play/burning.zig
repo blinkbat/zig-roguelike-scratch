@@ -10,6 +10,7 @@ pub const PER_TURN: i32 = 4;
 pub const VERB = "shoots a burning arrow into";
 pub const TAKES = "catches fire";
 pub const ELEMENT: damage.Element = .fire;
+pub const KINDLE = @import("../map/fire.zig").Kindle{ .chance = 15, .heat = 2 };
 /// Its chance to burn, as every fire skill's description says it.
 pub const BURN_NOTE = std.fmt.comptimePrint("{d}% burn chance", .{CHANCE});
 pub const STATUS = std.fmt.comptimePrint("Take {d} fire damage per turn, reduced by fire resistance.", .{PER_TURN});

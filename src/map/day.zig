@@ -24,8 +24,15 @@ comptime {
 pub const Clock = struct {
     minute: u16 = START_MINUTE,
 
-    pub fn turn(c: *Clock) void {
+    /// Whether the turn began a new day.
+    pub fn turn(c: *Clock) bool {
         c.minute = (c.minute + TURN_MINUTES) % MINUTES;
+        return c.minute < TURN_MINUTES;
+    }
+
+    /// Minutes since the first day began, `days` whole days on.
+    pub fn since(c: Clock, days: u32) u64 {
+        return @as(u64, days) * MINUTES + c.minute;
     }
 
     pub fn hour(c: Clock) f32 {
@@ -75,11 +82,13 @@ fn sunUp(hour: f32) f32 {
 test "a turn moves the clock on, a day is 240 turns, and it comes round to where it began" {
     var c = Clock{};
     const turns = MINUTES / TURN_MINUTES;
-    for (0..turns) |_| c.turn();
+    var dawns: usize = 0;
+    for (0..turns) |_| dawns += @intFromBool(c.turn());
     std.debug.print("a day is {d} turns\n", .{turns});
     try std.testing.expectEqual(START_MINUTE, c.minute);
+    try std.testing.expectEqual(@as(usize, 1), dawns);
     c = Clock.at(23.99);
-    c.turn();
+    try std.testing.expect(c.turn());
     try std.testing.expect(c.hour() < @as(f32, @floatFromInt(TURN_MINUTES)) / PER_HOUR);
     try std.testing.expectApproxEqAbs(@as(f32, -0.5), toward(0.25, 23.75), 1e-4);
 }

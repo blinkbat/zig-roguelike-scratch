@@ -346,6 +346,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Fire landing on deep water or shallows boils it into steam (`gas.boil`, `rewards.boilRound`): fireball and Combustion blasts over `glacial.wetIn`,
   a fire arrow's impact cell, a pyre bloat's burst. Steam also loses a third of each cell a pass (`gas.CONDENSE`) and scalds for `gas.SCALD` fire damage, resisted.
   `gfx/cloud.zig` draws them in one premultiplied texture; gas harm and heals shed `fx.Puff` wisps of their gas's colour as they land.
+- `map/fire.zig` owns ground fire on `Level.flames` (turns left, Fire Wall's too) and `Level.heat` (cells it may still leap).
+  `Tile.burns` tiles (grass, litter, reeds, crops, bridges; never walls or trees) catch from fire landing by each source's `KINDLE`
+  chance and heat (`rewards.kindleRound`, from `combat.fireLands` and a pyre's burst), damped by rain (`fire.damped`, harder rain more).
+  Each turn, at `combat.beginTurn`, a burning tile smokes, every fire may catch its burnable neighbours at one less heat and boil
+  wet ones into steam, and a burnt-out tile becomes dirt (`fire.ASH`; `Light.retile` follows). Standing in flames scorches
+  (`Tick.scorched`) and may ignite through fire/burn resistance. `Presentation.flames_shown` holds new flames until their fire lands.
 - `play/resilience.zig` owns separate stun/burn/bleed/chill/pin buildup for every body. Successful applications
   add resistance until expiry on spent turns; failed applications and free actions never extend or age it.
   `Simulation.takeStatus/procStatus` combine innate resistance, buildup and terrain before gating combat applications.
@@ -453,7 +459,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Bloom uses bright visible light sources and actual water glints; atmosphere is outdoor and live-visible only.
   Composite before bars, reticle outlines, speech and HUD. Copy scene RGB without applying its lighting alpha again.
   Depth of field affects only foliage/decorative sprites beyond the hero's sharp band, never ground, bodies or interactables.
-- Weather, water reflections, FX and vignette are cosmetic. Weather stays fixed to map coordinates and visible
+- Weather is a profile (`climate.PROFILES`: overcast, rain, mist and lightning layers, each spanning a seeded storm or haze
+  drive that holds, then eases spell to spell), a pure function of run seed and `Clock.since(days)`; nothing of it is saved
+  but `Simulation.days`. Rain alone reaches the rules: `terrain.rained` adds fire and burn resistance out of doors, shown on
+  unit cards beneath the tile. `Presentation.weather_shown` eases the drawn sky, rain, fog and lightning toward it.
+  Water reflections, FX and vignette are cosmetic. Weather stays fixed to map coordinates and visible
   lit outdoor cells. Water stays smooth: fixed art/UVs, subtle light glints and undistorted mirrored scenery,
   bodies and flames, clipped by the authored water alpha and dry ground layers. Static scenery reflections
   persist in explored fog under memory lighting; bodies, animated flames and glints require live visibility.

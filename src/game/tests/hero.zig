@@ -34,7 +34,7 @@ test "a bandage stops bleeding for a turn and one from the stack, and none left 
     h.bleed.startWith(3);
     const hp = h.hp;
     var next = g.sim.clock;
-    next.turn();
+    _ = next.turn();
     harness.use(g, .bandage);
     try std.testing.expectEqual(next, g.sim.clock);
     try std.testing.expectEqual(@as(u8, 0), h.bleed.turns);
@@ -79,7 +79,7 @@ test "a frost vial thrown from the bag splashes cold on every foe round its mark
     try std.testing.expect(g.bar.slotOf(.frost_vial) == null and g.mode.aim.by == null);
     try std.testing.expectEqual(@as(u8, 2), g.sim.inventory.stacks.get(.frost_vial));
     var next = g.sim.clock;
-    next.turn();
+    _ = next.turn();
     harness.press(g, menu.CONFIRM);
     try std.testing.expectEqual(next, g.sim.clock);
     try std.testing.expectEqual(@as(u8, 1), g.sim.inventory.stacks.get(.frost_vial));
@@ -447,7 +447,7 @@ test "a flask drink spends a turn, recovers on it and the next two, and kills re
     h.hp = 1;
     g.sim.mana = 0;
     var next = g.sim.clock;
-    next.turn();
+    _ = next.turn();
     harness.use(g, .life_flask);
     try std.testing.expectEqual(next, g.sim.clock);
     const per = firstLifeTick(h.max);
@@ -498,7 +498,7 @@ test "each flask drink is a whole turn: foes, ailments, cooldowns, regeneration 
         g.sim.flasks.getPtr(other).drink(9);
         const other_before = g.sim.flasks.get(other);
         var next = g.sim.clock;
-        next.turn();
+        _ = next.turn();
         const rng = g.sim.rng;
         g.sim.unsaved = false;
         g.pic.catchUp(&g.sim);

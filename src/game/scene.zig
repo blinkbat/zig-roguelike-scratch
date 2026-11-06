@@ -627,7 +627,7 @@ pub fn drawMap(g: *game.Game) void {
     const o = c.origin();
     g.pic.fx.draw(o[0], o[1], game.CELL_F);
     g.light.drawMap(-c.x, -c.y, game.CELL);
-    g.cinema.drawAir(g.light, o, game.CELL_F, g.screen);
+    g.cinema.drawAir(g.light, o, game.CELL_F, g.screen, if (game.weatherNow(g)) |w| w.get(.mist) else 0);
     drawTacticalGround(g, c, lo, hi);
     const level_up_at: ?[2]f32 = if (g.sim.heroSlot()) |i| (if (g.pic.drawnAt(&g.sim, i)) |v| game.middle(v) else null) else null;
     if (level_up_at) |at| g.pic.fx.level_up.drawBeam(at, o[0], o[1], game.CELL_F);
@@ -851,7 +851,7 @@ fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
             outline(c, p, look.WARD);
             inline for (BARRIER_BARS) |bar_x| rl.drawLine(x + bar_x, y + BARRIER_INSET, x + bar_x, y + game.CELL - BARRIER_INSET, look.WARD);
         }
-        if (g.sim.lv.flames[i] > 0) drawFlames(&g.pic.fx, @floatFromInt(x), @floatFromInt(y), game.CELL_F, i);
+        if (g.pic.flamesShown(i)) drawFlames(&g.pic.fx, @floatFromInt(x), @floatFromInt(y), game.CELL_F, i);
     }
 }
 
@@ -896,7 +896,7 @@ pub fn effectLights(g: *game.Game) void {
         } else continue;
         g.light.emit(&g.sim.lv, source);
     }
-    for (&g.sim.lv.flames, 0..) |turns, i| {
+    for (&g.pic.flames_shown, 0..) |turns, i| {
         const p = grid.Level.of(i);
         if (turns == 0 or !g.sim.lv.isLit(p)) continue;
         const mid = mathx.centre(p);

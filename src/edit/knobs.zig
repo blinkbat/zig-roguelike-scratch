@@ -464,8 +464,8 @@ const FEATURE_CHOICE = Choice{ .label = "Feature", .tip = "What this feature lay
 const ADD_FEATURE_TIP = "Lay another feature over the base: " ++ menu.joined(std.meta.fieldNames(atlas.Kind), .@"or");
 
 const SKY_ROWS = [_]Knob{
-    .{ .field = "light", .tips = &.{listing(climate.Light, 2, "How its daylight looks: clear, or a bleak overcast; shown only open to the sky")} },
-    .{ .field = "weather", .tips = &.{listing(climate.Weather, 2, "What falls from its sky: nothing, or a soft drizzle; shown only open to the sky")} },
+    .{ .field = "light", .tips = &.{listing(climate.Light, 2, "Its daylight at the clearest: clear, or always a bleak overcast; shown only open to the sky")} },
+    .{ .field = "weather", .tips = &.{listing(climate.Weather, 5, "How its sky changes: clear; a steady drizzle; coastal squalls and sea fog; thunderstorms; or long fogs. Rain dampens fire")} },
 };
 
 pub const FOE_ROWS = [_]Knob{

@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const fov = @import("../map/fov.zig");
 const gas = @import("../map/gas.zig");
+const fire = @import("../map/fire.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const attrs = @import("../play/attrs.zig");
@@ -236,14 +237,19 @@ pub fn burstHit(g: *game.Game, comptime act: skillbar.Act, hit: bow.Hit, impact:
     boilUnder(g, act, impact, s.wait);
 }
 
-/// A fire missile come down at `at` boils the water its blast reaches, or its own cell's.
+/// A fire missile come down at `at` boils the water its blast reaches, or its own cell's, and may set what burns there alight.
 pub fn boilUnder(g: *game.Game, comptime act: skillbar.Act, at: P, wait: f32) void {
-    if (comptime act.element() == .fire) boil(g, at, if (comptime act.bursts()) skillbar.Act.elemental(act).BLAST else 0, wait);
+    if (comptime act.element() != .fire) return;
+    const M = skillbar.Act.elemental(act);
+    fireLands(g, at, if (comptime act.bursts()) M.BLAST else 0, M.KINDLE, wait);
 }
 
-/// Fire on water: its steam is drawn as the blow lands.
-pub fn boil(g: *game.Game, at: P, range: i32, wait: f32) void {
+/// Fire within `range` of `at`: its steam and the flames it kindles are drawn as the blow lands.
+pub fn fireLands(g: *game.Game, at: P, range: i32, kindle: fire.Kindle, wait: f32) void {
     if (rewards.boilRound(&g.sim, at, range) != null) g.cloud.hold(wait);
+    if (!rewards.kindleRound(&g.sim, at, range, kindle)) return;
+    g.pic.holdFlames(wait);
+    g.cloud.hold(wait);
 }
 
 /// `direct` is struck even where the burst spreads no further, as a body in deep water.
@@ -437,8 +443,9 @@ pub fn endTurn(g: *game.Game) void {
 
 fn beginTurn(g: *game.Game, from: P) void {
     g.sim.unsaved = true;
-    g.sim.clock.turn();
+    if (g.sim.clock.turn()) g.sim.days +|= 1;
     tactics.startTurn(&g.sim);
+    if (fire.turn(&g.sim.lv, &g.sim.rng, g.sim.rainNow())) g.light.retile(&g.sim.lv);
     skills.recover(g);
     for (&g.sim.cooldown.values) |*c| c.* -|= 1;
     game.castSight(g, from);
@@ -498,6 +505,7 @@ fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
     gasTick(g, id, .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." });
     gasTick(g, id, .scalded, .{ .hero = "The " ++ gas.STEAM_NAME ++ " scalds {s} for {d}." });
     gasHeal(g, id);
+    scorch(g, id);
     burnHarm(g, id);
     bleedHarm(g, id, moved or g.sim.displaced.isSet(actor.Pool.slot(id)));
 }
@@ -531,6 +539,19 @@ fn gasHeal(g: *game.Game, id: u16) void {
     const n = a.heal(gas.heal(a.max));
     if (id == g.sim.hero) g.sim.log.push(.recovery, "The " ++ gas.HEALING_NAME ++ " mends {s} for {d}.", .{ g.sim.name.text(), n });
     g.pic.owe(.fromInt(id), .healed, g.pic.afterOf(&g.sim, .fromIndex(actor.Pool.slot(id))));
+}
+
+/// The flames a body stands in scorch it and may set it burning, once a turn.
+fn scorch(g: *game.Game, id: u16) void {
+    const a = g.sim.pool.get(id) orelse return;
+    if (!g.sim.lv.burning(a.at) or ranAlready(g, id, .scorched)) return;
+    const fresh = a.burn.turns == 0;
+    const caught = g.sim.igniteBy(a, fire.CATCH);
+    if (caught and fresh) g.sim.sayTakes(actor.Pool.slot(id), a, burning.TAKES);
+    const dmg = damage.resisted(fire.SCORCH, g.sim.combatStats(a).elements.get(.fire));
+    if (dmg > 0) {
+        _ = harmTick(g, id, dmg, .scorched, .{ .hero = "The " ++ fire.NAME ++ " scorch {s} for {d}.", .foe = "The " ++ fire.NAME ++ " scorch the {s} for {d}." });
+    } else if (caught) g.pic.recordWear(&g.sim, .fromInt(id));
 }
 
 /// Mark a tick consumed; split halves inherit the parent's consumed ticks.
@@ -576,7 +597,7 @@ fn harmTick(g: *game.Game, id: u16, dmg: i32, comptime owed: game.simulation.Tic
         const by: chronicle.Source = switch (owed) {
             .gassed => .gas,
             .scalded => .steam,
-            .burned => .burn,
+            .burned, .scorched => .burn,
             .bled => .bleed,
             .healed, .worn => unreachable,
         };

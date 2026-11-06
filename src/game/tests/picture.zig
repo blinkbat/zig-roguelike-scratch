@@ -1264,7 +1264,7 @@ test "a flask pressed mid-walk is drunk once the step is drawn, ahead of the hel
     game.update(g, 0);
     try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);
     var next = g.sim.clock;
-    next.turn();
+    _ = next.turn();
     g.st = .{ .walk = .e };
     game.update(g, game.GLIDE_S + mathx.FRAME_DT);
     try std.testing.expect(g.pending == null);

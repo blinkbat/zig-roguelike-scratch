@@ -28,7 +28,7 @@ const Focus = struct { shader: rl.Shader, texel: i32, strength: i32 };
 
 const Focused = look.Focused;
 const Bloom = struct { shader: rl.Shader, field: i32, visibility: i32, glints: i32, origin: i32, cell: i32, screen: i32, direction: i32, extract: i32 };
-const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, sunlight: i32, brightness: i32, direction: i32 };
+const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, sunlight: i32, brightness: i32, direction: i32, fog: i32 };
 const Grade = struct { shader: rl.Shader, visibility: i32, origin: i32, cell: i32, screen: i32 };
 
 /// How far toward grey remembered cells are drawn.
@@ -59,6 +59,9 @@ const DUST_GAIN: f32 = 0.20;
 const DUST_EMPTY: f32 = 0.88;
 /// Cells a second the mist and dust drift east.
 const AIR_DRIFT: f32 = 0.025;
+/// In the thickest weather fog, how many times over the water mist thickens, and the peak opacity of the fog over land.
+const FOG_WATER: f32 = 2;
+const FOG_LAND: f32 = 0.11;
 
 fn focusStrength(t: grid.Tile, at: [2]f32, hero: ?[2]f32) f32 {
     if (!look.SOFTENED.contains(t)) return 0;
@@ -202,7 +205,8 @@ pub const Cinema = struct {
         return Focused{ .texel = .{ 1 / size[0], 1 / size[1] }, .strength = strength };
     }
 
-    pub fn drawAir(self: *Cinema, l: *light.Light, origin: [2]f32, cell: f32, screen: mathx.P) void {
+    /// `fog` the weather's mist, 0 none to 1 its thickest.
+    pub fn drawAir(self: *Cinema, l: *light.Light, origin: [2]f32, cell: f32, screen: mathx.P, fog: f32) void {
         if (!self.options.atmosphere) return;
         const k = l.sky orelse return;
         const a = self.air orelse return;
@@ -214,6 +218,7 @@ pub const Cinema = struct {
         shaders.setUniform(a.shader, a.sunlight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
         shaders.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));
         shaders.setUniform(a.shader, a.direction, k.across());
+        shaders.setUniform(a.shader, a.fog, std.math.clamp(fog, 0, 1));
         rl.drawRectangle(0, 0, screen.x, screen.y, rl.Color.white);
         rl.endShaderMode();
     }
@@ -294,11 +299,12 @@ const GRADE_FS = shaders.FS_HEAD ++ shaders.MAP_VIEW_FS ++ shaders.glslConsts(.{
     \\}
 ;
 
-const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR, .MIST_TINT = look.MIST_TINT, .SHAFT_TINT = look.SHAFT_TINT, .MIST_GAIN = MIST_GAIN, .SHAFT_GAIN = SHAFT_GAIN, .DUST_GAIN = DUST_GAIN, .DUST_EMPTY = DUST_EMPTY, .AIR_DRIFT = AIR_DRIFT }) ++
+const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR, .MIST_TINT = look.MIST_TINT, .SHAFT_TINT = look.SHAFT_TINT, .MIST_GAIN = MIST_GAIN, .SHAFT_GAIN = SHAFT_GAIN, .DUST_GAIN = DUST_GAIN, .DUST_EMPTY = DUST_EMPTY, .AIR_DRIFT = AIR_DRIFT, .FOG_WATER = FOG_WATER, .FOG_LAND = FOG_LAND }) ++
     \\uniform float time;
     \\uniform float sunlight;
     \\uniform float brightness;
     \\uniform vec2 direction;
+    \\uniform float fog;
     \\
 ++ shaders.SIN_HASH_FS ++ shaders.VALUE_NOISE_FS ++
     \\vec4 softField(vec2 p) {
@@ -311,7 +317,9 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR 
     \\    if (live < CLEAR_A) { finalColor = vec4(0.0); return; }
     \\    vec4 f = softField(p);
     \\    float mist = f.WATER * (0.35 + 0.65 * noise(p * vec2(0.7, 2.2) + vec2(time * AIR_DRIFT, time * 0.012)));
-    \\    mist *= MIST_GAIN * brightness;
+    \\    mist *= MIST_GAIN * (1.0 + fog * FOG_WATER);
+    \\    mist += fog * FOG_LAND * (0.4 + 0.6 * noise(p * vec2(0.35, 0.9) + vec2(time * AIR_DRIFT * 1.6, time * 0.008)));
+    \\    mist *= brightness;
     \\    float trees = (softField(p + direction * SHAFT_NEAR).CROWN + softField(p + direction * SHAFT_FAR).CROWN) * 0.5;
     \\    float band = dot(p, vec2(-direction.y, direction.x));
     \\    float shafts = pow(max(0.0, sin(band * 4.7 + noise(p * 0.3) * 2.0)), 10.0);

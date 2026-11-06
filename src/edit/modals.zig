@@ -221,6 +221,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             f.put("{s}; {s}", .{ if (t.solid()) "Blocks a step" else "Walked on", if (t.blind()) "blocks sight" else "seen through" });
             if (t.liquid()) f.put("A liquid: gas spreads over it, a trail bridges it", .{});
             if (t.wet()) f.put("Fire landing on it boils off as " ++ gas.STEAM_NAME, .{});
+            if (t.burns()) f.put("Catches fire, spreads it and burns down to dirt", .{});
             if (look.under(t)) |u| f.put("Drawn over the ground beside it, else {s}", .{@tagName(u)});
             if (dual.of(t)) |gr| if (sprite_assets.GROUND_SHEETS.contains(gr)) f.put("Ground {s}: its edges meet the grounds below it", .{@tagName(gr)});
             if (look.castsPicture(t)) f.put("Stands up and throws a shadow", .{});

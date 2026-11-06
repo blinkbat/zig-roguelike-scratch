@@ -111,6 +111,11 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).bursts;
     }
 
+    /// Catches fire, and burns down to dirt.
+    pub fn burns(t: Tile) bool {
+        return TERRAIN.getPtrConst(t).burns;
+    }
+
     pub fn isChest(t: Tile) bool {
         return t == .chest or t == .chest_open;
     }
@@ -284,12 +289,14 @@ const Terrain = struct {
     opens: ?Tile = null,
     glows: bool = false,
     bursts: bool = false,
+    burns: bool = false,
     wide: u8 = 1,
     part: bool = false,
 };
 const OPEN = Terrain{ .solid = false, .blind = false };
 const BARE = Terrain{ .solid = false, .blind = false, .rewards = true };
-const LITTER = Terrain{ .solid = false, .blind = false, .ground = .grass, .rewards = true, .litter = true };
+const KINDLING = Terrain{ .solid = false, .blind = false, .rewards = true, .burns = true };
+const LITTER = Terrain{ .solid = false, .blind = false, .ground = .grass, .rewards = true, .litter = true, .burns = true };
 const SHUT = Terrain{ .solid = true, .blind = true };
 const MOAT = Terrain{ .solid = true, .blind = false };
 const LIQUID = Terrain{ .solid = true, .blind = false, .liquid = true };
@@ -302,7 +309,7 @@ const CART_PART = Terrain{ .solid = true, .blind = true, .ground = .grass, .part
 const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .wall = .{ .solid = true, .blind = true, .shaped = true },
     .floor = BARE,
-    .grass = BARE,
+    .grass = KINDLING,
     .shrub = .{ .solid = true, .blind = true, .ground = .grass, .shaped = true },
     .rock = SHUT,
     .dirt = BARE,
@@ -310,8 +317,8 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .snow = OPEN,
     .water = .{ .solid = true, .blind = false, .liquid = true, .wet = true },
     .shallows = .{ .solid = false, .blind = false, .wet = true },
-    .bridge = OPEN,
-    .reeds = .{ .solid = false, .blind = true, .ground = .grass },
+    .bridge = .{ .solid = false, .blind = false, .burns = true },
+    .reeds = .{ .solid = false, .blind = true, .ground = .grass, .burns = true },
     .rubble = BARE,
     .fence = MOAT,
     .lava = LIQUID,
@@ -319,7 +326,7 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .chasm = LIQUID,
     .ice = OPEN,
     .grave = LOW_PROP,
-    .crop = .{ .solid = false, .blind = true },
+    .crop = .{ .solid = false, .blind = true, .burns = true },
     .tiny_shrub = LITTER,
     .boulder = TALL_PROP,
     .tall_grass = LITTER,
@@ -505,6 +512,8 @@ pub const Level = struct {
     steam: [CELLS]u16 = @splat(0),
     /// Smoke, Brogue's: it hides what lies past it.
     smoke: [CELLS]u16 = @splat(0),
+    /// How many more cells a burning cell's fire may leap on.
+    heat: [CELLS]u8 = @splat(0),
 
     pub fn blank() Level {
         return .{

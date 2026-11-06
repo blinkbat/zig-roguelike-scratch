@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const gas = @import("../map/gas.zig");
+const fire = @import("../map/fire.zig");
 const actor = @import("../play/actor.zig");
 const burning = @import("../play/burning.zig");
 const damage = @import("../play/damage.zig");
@@ -121,6 +122,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
             .fire => {
                 caught = ignite(sim, fallen.at, actor.row(fallen.kind).name);
                 if (boilRound(sim, fallen.at, PYRE_REACH)) |steeped| caught.setUnion(steeped);
+                _ = kindleRound(sim, fallen.at, PYRE_REACH, PYRE_KINDLE);
                 sim.lv.release(.smoke, fallen.at, gas.SMOKE_BURST);
             },
         },
@@ -143,6 +145,7 @@ fn lootOf(sim: *Simulation, fallen: actor.Actor) items.Loot {
 }
 
 pub const PYRE_REACH: i32 = 1;
+pub const PYRE_KINDLE = fire.Kindle{ .chance = 40, .heat = 2 };
 comptime {
     std.debug.assert(PYRE_REACH <= glacial.BURST_MAX);
 }
@@ -179,6 +182,14 @@ pub fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
         if (a.alive and wet.has(a.at)) out.set(i);
     }
     return out;
+}
+
+/// Fire within `reach` of `at` may set what burns there alight, the less the harder it rains; true when any caught.
+pub fn kindleRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) bool {
+    const area = glacial.patch(&sim.lv, at, reach);
+    if (fire.kindle(&sim.lv, area.slice(), k, sim.rainNow(), &sim.rng) == 0) return false;
+    sim.sayAt(at, fire.CATCHES, .{});
+    return true;
 }
 
 fn gainExperience(sim: *Simulation, kind: actor.Kind) void {

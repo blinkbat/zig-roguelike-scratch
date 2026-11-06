@@ -1,7 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const day = @import("../map/day.zig");
-const climate = @import("../map/climate.zig");
 
 // Directions point toward light: x east, y south (screen-down), z up.
 
@@ -168,6 +167,13 @@ pub const Sky = struct {
     /// `day.daylight`: 1 in full day, 0 in full night.
     daylight: f32,
 
+    /// Lit by a lightning flash `f` of its brightest.
+    pub fn flashed(s: Sky, f: f32) Sky {
+        var lit_up = s;
+        lit_up.ambient += FLASH * splat(std.math.clamp(f, 0, 1));
+        return lit_up;
+    }
+
     /// How far the light that casts is the sun's.
     pub fn sun(s: Sky) f32 {
         return 1 - s.moon;
@@ -202,11 +208,21 @@ pub fn upright(flat: f32) bool {
 
 const Look = struct { key: f32 = 1, sky: f32 = 1, grey: f32 = 0, tint: Rgb = splat(1) };
 
-/// Bleak is an overcast: most of the sun's light spread into the sky, so shadows go soft and the day a little dark.
-const LOOKS = std.EnumArray(climate.Light, Look).init(.{
-    .clear = .{},
-    .bleak = .{ .key = 0.3, .sky = 1.75, .grey = 0.55, .tint = .{ 0.92, 0.98, 1.06 } },
-});
+/// A full overcast: most of the sun's light spread into the sky, so shadows go soft and the day a little dark.
+const CLEAR = Look{};
+const OVERCAST = Look{ .key = 0.3, .sky = 1.75, .grey = 0.55, .tint = .{ 0.92, 0.98, 1.06 } };
+/// What a lightning flash at its brightest adds to the light in shade.
+const FLASH = Rgb{ 0.62, 0.68, 0.85 };
+
+fn lookAt(overcast: f32) Look {
+    const k = std.math.clamp(overcast, 0, 1);
+    return .{
+        .key = mathx.lerpF(CLEAR.key, OVERCAST.key, k),
+        .sky = mathx.lerpF(CLEAR.sky, OVERCAST.sky, k),
+        .grey = mathx.lerpF(CLEAR.grey, OVERCAST.grey, k),
+        .tint = mix(CLEAR.tint, OVERCAST.tint, k),
+    };
+}
 
 /// Rec. 709's weights of red, green and blue in what the eye reads as brightness.
 pub const LUMA = [3]f32{ 0.2126, 0.7152, 0.0722 };
@@ -229,12 +245,13 @@ pub fn brightness(s: Sky) f32 {
 }
 
 pub fn at(hour: f32) Sky {
-    return under(hour, .clear);
+    return under(hour, 0);
 }
 
-pub fn under(hour: f32, light: climate.Light) Sky {
+/// At `hour` under `overcast`, 0 a clear sky to 1 a full overcast.
+pub fn under(hour: f32, overcast: f32) Sky {
     const p = paletteAt(hour);
-    const l = LOOKS.get(light);
+    const l = lookAt(overcast);
     const dir = acrossScreen(keyDir(hour));
     const moon = moonShare(hour);
     const gain = mathx.lerpF(1, MOON_LIFT / dir[2], moon);
@@ -269,8 +286,8 @@ test "a bleak sky is a little darker than a clear one, greyer, and its shadows s
         }
     }.f;
     for ([_]f32{ FULL_MORNING, day.NOON, LATE_DAY }) |h| {
-        const clear = under(h, .clear);
-        const bleak = under(h, .bleak);
+        const clear = under(h, 0);
+        const bleak = under(h, 1);
         const lit_clear = lit(clear);
         const lit_bleak = lit(bleak);
         const share_clear = luma(clear.key) / (luma(clear.key) + luma(clear.ambient));
@@ -280,7 +297,17 @@ test "a bleak sky is a little darker than a clear one, greyer, and its shadows s
         try std.testing.expect(share_bleak < share_clear * 0.6);
         try std.testing.expect(spread(bleak.key) / luma(bleak.key) < spread(clear.key) / luma(clear.key));
     }
-    try std.testing.expectEqual(at(day.NOON), under(day.NOON, .clear));
+    try std.testing.expectEqual(at(day.NOON), under(day.NOON, 0));
+    const half = lit(under(day.NOON, 0.5));
+    try std.testing.expect(half < lit(at(day.NOON)) and half > lit(under(day.NOON, 1)));
+}
+
+test "a lightning flash lights the dead of night as bright as a grey day, and none leaves the sky as it was" {
+    const night = at(day.DEAD_OF_NIGHT);
+    try std.testing.expectEqual(night, night.flashed(0));
+    const lit_up = brightness(night.flashed(1));
+    std.debug.print("a full flash at the dead of night: {d:.2} of a clear noon, against {d:.3} unlit\n", .{ lit_up, brightness(night) });
+    try std.testing.expect(lit_up > 0.5 and lit_up < 1);
 }
 
 test "a noon shadow reaches beyond a cell-tall sprite" {
@@ -292,7 +319,7 @@ test "a noon shadow reaches beyond a cell-tall sprite" {
 test "each climate is darkest halfway through the night, blue at night and warmer by day" {
     const middle = day.DEAD_OF_NIGHT;
     try std.testing.expectApproxEqAbs(day.toward(SUNSET, middle), day.toward(middle, SUNRISE), 1e-5);
-    for (std.enums.values(climate.Light)) |profile| {
+    for ([_]f32{ 0, 0.5, 1 }) |profile| {
         const darkest = lit(under(middle, profile));
         for (0..1440) |minute| {
             const hour = @as(f32, @floatFromInt(minute)) / 60;
@@ -308,7 +335,7 @@ test "each climate is darkest halfway through the night, blue at night and warme
         const before = lit(under(middle - 0.01, profile));
         const after = lit(under(middle + 0.01, profile));
         try std.testing.expectApproxEqAbs(before, after, 1e-5);
-        std.debug.print("{s} sky: 1440 minutes checked; minimum at {d:.1}h, night blue/red {d:.2}, noon key red/blue {d:.2}\n", .{ @tagName(profile), middle, night.key[2] / night.key[0], noon.key[0] / noon.key[2] });
+        std.debug.print("overcast {d:.1} sky: 1440 minutes checked; minimum at {d:.1}h, night blue/red {d:.2}, noon key red/blue {d:.2}\n", .{ profile, middle, night.key[2] / night.key[0], noon.key[0] / noon.key[2] });
     }
 }
 

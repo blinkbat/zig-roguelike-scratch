@@ -152,6 +152,13 @@ pub const Light = struct {
         self.hangPlants(lv);
     }
 
+    /// Tiles changed under it, as fire burns them down: sight and shadows take the ground as it now is.
+    pub fn retile(self: *Light, lv: *const grid.Level) void {
+        self.scratch.tile = lv.tile;
+        self.countCasters(&self.scratch);
+        self.visibility.terrain(&self.scratch);
+    }
+
     /// The glowing plants that give light and are not yet lit.
     fn hangPlants(self: *Light, lv: *const grid.Level) void {
         var glows = lv.glowing();

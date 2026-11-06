@@ -501,6 +501,11 @@ fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip 
     const w = stream.writer();
     w.print("{d}/{d} HP\n" ++ hud.TIP_RULE ++ "\n{s}", .{ pictured.hp, pictured.max, menu.titleOf(tile) }) catch {};
     terrain.of(tile).write(w);
+    const rain = g.sim.rainNow();
+    if (terrain.rainTitle(rain)) |t| {
+        w.print("\n{s}", .{t}) catch {};
+        terrain.rained(rain).write(w);
+    }
     if (g.sim.isHero(i)) return .{ .title = std.fmt.bufPrintZ(title_buf, "{s}", .{g.sim.name.text()}) catch row.name, .body = stream.getWritten() };
     return .{ .title = wording.recased(title_buf, std.fmt.bufPrintZ(title_buf, "{s}", .{row.name}) catch row.name, .title), .body = stream.getWritten() };
 }

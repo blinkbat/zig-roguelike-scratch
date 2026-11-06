@@ -294,7 +294,7 @@ pub fn shoot(g: *game.Game) !void {
                 game.beginMapAt(g, w, w.start, SHOT_SEED);
                 g.sim.clock = day.Clock.at(hour);
                 game.settle(g);
-                g.light.sky = sky.under(hour, .bleak);
+                g.light.sky = sky.under(hour, 1);
                 try capture(g, target, SHOTS_DIR ++ "/bleak-" ++ std.fmt.comptimePrint("{d:.1}", .{hour}) ++ ".png");
             }
             g.sim.clock = day.Clock.at(day.NOON);

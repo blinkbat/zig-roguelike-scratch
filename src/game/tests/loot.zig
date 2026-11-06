@@ -950,7 +950,7 @@ test "clicking the hero on the door it came through waits instead of going back"
     const at = g.sim.heroAt().?;
     try std.testing.expect(character.doorReached(g, at, at) != null);
     var next = g.sim.clock;
-    next.turn();
+    _ = next.turn();
     g.mouse.target = at;
     g.mouse.fresh = true;
     try std.testing.expect(game.mouseControls.step(g));

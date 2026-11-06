@@ -34,7 +34,7 @@ pub const Visit = struct {
 };
 
 /// A body's harm ticks, each run at most once a turn.
-pub const Tick = enum { gassed, scalded, healed, burned, bled, worn };
+pub const Tick = enum { gassed, scalded, healed, scorched, burned, bled, worn };
 /// The ticks a body's turn has run, which a half split off it mid-turn has had too.
 pub const Ran = std.EnumSet(Tick);
 
@@ -52,7 +52,7 @@ pub const Fields = struct {
     /// Defaulted as the hero is spawned: a run's first node and each node entered afresh.
     pub const hero = [_][]const u8{"pool"};
     /// Defaulted as a run starts, besides `hero`.
-    pub const start = [_][]const u8{ "visited", "node", "hero", "clock" };
+    pub const start = [_][]const u8{ "visited", "node", "hero", "clock", "days" };
     /// Worked out from the map as a run starts, a node is entered and a saved run resumes.
     pub const derived = [_][]const u8{"outdoors"};
     /// Defaulted as a run starts, and again as a saved one resumes.
@@ -79,6 +79,8 @@ pub const Simulation = struct {
     /// Set before a run begins.
     class: heroes.Class = heroes.DEFAULT,
     clock: day.Clock = .{},
+    /// Whole days the clock has come round.
+    days: u32 = 0,
     outdoors: bool = false,
     /// Kept across runs, never saved.
     unkillable: bool = false,
@@ -235,7 +237,12 @@ pub const Simulation = struct {
             base.statuses.set(k, @as(i16, actor.innateResist(a.kind, k)) + buildup.meters.get(k).percent);
         }
         if (!a.foe()) base.statuses.getPtr(.stun).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.resolve));
-        return base.on(self.lv.at(at));
+        return base.plus(terrain.rained(self.rainNow())).on(self.lv.at(at));
+    }
+
+    /// The rain falling on the open ground here, 0 under a roof.
+    pub fn rainNow(self: *const Simulation) f32 {
+        return if (self.outdoors) self.weatherNow().get(.rain) else 0;
     }
 
     pub fn takeStatus(self: *Simulation, a: *actor.Actor, kind: resilience.Kind) bool {
@@ -257,7 +264,12 @@ pub const Simulation = struct {
 
     /// Fire takes hold of `a` as far as its fire and burn resistance allow; true when it does.
     pub fn ignite(self: *Simulation, a: *actor.Actor) bool {
-        const chance = damage.resistedChance(mathx.PERCENT, self.combatStats(a).elements.get(.fire));
+        return self.igniteBy(a, mathx.PERCENT);
+    }
+
+    /// As `ignite`, from a fire that takes hold only `of` percent of the time.
+    pub fn igniteBy(self: *Simulation, a: *actor.Actor, of: u32) bool {
+        const chance = damage.resistedChance(of, self.combatStats(a).elements.get(.fire));
         if (!self.procStatus(a, .burn, chance)) return false;
         a.burn.start();
         return true;
@@ -300,6 +312,10 @@ pub const Simulation = struct {
     pub fn climateNow(self: *const Simulation) climate.Climate {
         const w = self.map orelse return .{};
         return w.node[self.node].sky();
+    }
+
+    pub fn weatherNow(self: *const Simulation) climate.Now {
+        return self.climateNow().now(self.seed, self.clock.since(self.days));
     }
 
     /// Cells round the hero its carried light reaches.

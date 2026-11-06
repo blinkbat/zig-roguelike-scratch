@@ -641,7 +641,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0x9418a3778aefda5a;
+const RECORDED_FINGERPRINT: Print = 0xe15742c26617e625;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
     game.beginMapAt(g, w, w.start, 7);
@@ -670,6 +670,8 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     const at = g.sim.heroActor().?.at.add(.{ .x = 2, .y = 0 });
     g.sim.lv.barrier[grid.Level.idx(at)] = 3;
     g.sim.lv.caltrops[grid.Level.idx(at)] = .{ .turns = 4, .rank = 2 };
+    g.sim.visits[0].lv.flames[grid.Level.idx(at)] = 2;
+    g.sim.visits[0].lv.heat[grid.Level.idx(at)] = 1;
     const cloud_at = grid.Level.idx(.{ .x = 69, .y = 49 });
     for ([_]*grid.Level{ &g.sim.lv, &g.sim.visits[0].lv }, 0..) |lv, floor| {
         for (std.enums.values(grid.Gas), 0..) |kind, i| lv.volumes(kind)[cloud_at] = @intCast(23 + floor * 100 + i * 7);
@@ -707,6 +709,8 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     try std.testing.expectEqualDeep(g.sim.heroActor().?.tactics, back.sim.heroActor().?.tactics);
     try std.testing.expectEqual(@as(u8, 3), back.sim.lv.barrier[grid.Level.idx(at)]);
     try std.testing.expectEqual(@as(u8, 2), back.sim.lv.caltrops[grid.Level.idx(at)].rank);
+    try std.testing.expectEqual(@as(u8, 2), back.sim.visits[0].lv.flames[grid.Level.idx(at)]);
+    try std.testing.expectEqual(@as(u8, 1), back.sim.visits[0].lv.heat[grid.Level.idx(at)]);
     for ([_]*const grid.Level{ &g.sim.lv, &g.sim.visits[0].lv }, [_]*const grid.Level{ &back.sim.lv, &back.sim.visits[0].lv }) |before, after| {
         for (std.enums.values(grid.Gas)) |kind| try std.testing.expectEqualSlices(u16, before.volumes(kind), after.volumes(kind));
     }

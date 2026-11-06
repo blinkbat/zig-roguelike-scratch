@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
+const fire = @import("../map/fire.zig");
 const damage = @import("damage.zig");
 const glacial = @import("glacial.zig");
 const bow = @import("bow.zig");
@@ -75,6 +76,7 @@ pub const Combustion = Detonation(struct {
     pub const ELEMENT = damage.Element.fire;
     pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding {d} damage per remaining burn turn.", .{DETONATION_FUEL});
     pub const FUEL = resilience.Kind.burn;
+    pub const KINDLE = fire.Kindle{ .chance = 50, .heat = 2 };
 });
 pub const ArcaneBarrier = struct {
     pub const COST: i32 = 6;
@@ -110,6 +112,8 @@ pub const FireWall = struct {
     pub const duration = ArcaneBarrier.duration;
     /// What its flames are laid with.
     pub const laid = ArcaneBarrier.laid;
+    /// The cells its flames may leap on through what burns beside them.
+    pub const HEAT: u8 = 1;
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("Flames: up to {d} cells, {d} turns.", .{ length(rank), duration(rank) }) catch {};
     }
@@ -203,6 +207,7 @@ fn Detonation(comptime Words: type) type {
         pub const DESCRIPTION = Words.DESCRIPTION;
         pub const FUEL = Words.FUEL;
         pub const FUEL_DAMAGE = DETONATION_FUEL;
+        pub const KINDLE = Words.KINDLE;
         pub const REACH = ADJACENT;
         pub const area = glacial.Patch(REACH).area;
     };

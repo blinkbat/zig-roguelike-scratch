@@ -88,6 +88,7 @@ test {
     _ = @import("map/feature/scatter.zig");
     _ = @import("map/feature/setpiece.zig");
     _ = @import("map/gas.zig");
+    _ = @import("map/fire.zig");
     _ = @import("map/day.zig");
     _ = @import("map/climate.zig");
     _ = @import("map/lume.zig");

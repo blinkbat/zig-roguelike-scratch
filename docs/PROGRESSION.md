@@ -182,8 +182,10 @@ length and duration. The straight wall blocks movement and projectiles while all
 sight, and expires on spent turns without replacing its underlying terrain. Fire Wall uses the
 same two-endpoint targeting over visible dry walkable ground, bodies allowed, but not water,
 barrels, chests or doors. Foes on its cells catch fire as it rises and foes entering later catch
-fire, both through burn resistance. Foes shun its flames as they shun gas. Barrier, flame and
-caltrop lifetimes persist with the node; hero preparations and stances persist with the hero.
+fire, both through burn resistance. Foes shun its flames as they shun gas. Its flames on
+grass, reeds, crops or bridges kindle them and may leap one cell on (`FireWall.HEAT`), as any
+ground fire does (`map/fire.zig`). Barrier, flame and caltrop lifetimes persist with the node;
+hero preparations and stances persist with the hero.
 
 ## Class balance and status resistance
 

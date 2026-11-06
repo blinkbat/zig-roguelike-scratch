@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const day = @import("../map/day.zig");
+const climate = @import("../map/climate.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const items = @import("../play/items.zig");
@@ -122,6 +123,7 @@ pub const Owed = struct {
     arrow: ?bow.Flight = null,
     gassed: ?Harm = null,
     scalded: ?Harm = null,
+    scorched: ?Harm = null,
     healed: ?fx.After = null,
     burned: ?Harm = null,
     bled: ?Harm = null,
@@ -199,6 +201,10 @@ pub const Presentation = struct {
     lit_held: f32 = 0,
     /// `lit_before` was taken as a pyre died, before the turn recast sight through its smoke; its strike keeps it.
     lit_due: bool = false,
+    /// The ground's flames as drawn: the simulation's, but kept as they were while fire not yet landed would light more.
+    flames_shown: [grid.CELLS]u8 = @splat(0),
+    /// Seconds `flames_shown` stays as it is.
+    flames_held: f32 = 0,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -220,6 +226,7 @@ pub const Presentation = struct {
     growth_shown: progress.State = .{},
     gold_shown: i32 = 0,
     hour_shown: f32 = day.Clock.hour(.{}),
+    weather_shown: climate.Now = .initFill(0),
 
     pub fn quiet(self: *const Presentation) bool {
         return self.busy <= PACE_SLACK;
@@ -340,7 +347,7 @@ pub const Presentation = struct {
     }
 
     pub fn freshTurn(self: *Presentation) void {
-        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "bursting", "lit_held", "lit_due", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
+        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "bursting", "lit_held", "lit_due", "flames_held", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
         self.fx.clear();
     }
 
@@ -520,6 +527,15 @@ pub const Presentation = struct {
         self.lit_held = @max(self.lit_held, wait);
     }
 
+    /// The flames drawn stay as they are for `wait` seconds, till the fire that lit the newest lands.
+    pub fn holdFlames(self: *Presentation, wait: f32) void {
+        self.flames_held = @max(self.flames_held, wait);
+    }
+
+    pub fn flamesShown(self: *const Presentation, i: usize) bool {
+        return self.flames_shown[i] > 0;
+    }
+
     pub fn litShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
         if (sim.lv.isLit(p)) return true;
         return self.lit_held > 0 and grid.cellOr(bool, &self.lit_before, p, false);
@@ -605,6 +621,7 @@ pub const Presentation = struct {
         self.stepOcclusion(sim, dt);
         self.stepSighted(sim, dt);
         self.hour_shown = day.wrapHour(self.hour_shown + day.toward(self.hour_shown, sim.clock.hour()) * mathx.easing(dt, HOUR_EASE));
+        self.weather_shown = climate.eased(self.weather_shown, weatherOf(sim), mathx.easing(dt, WEATHER_EASE));
         self.xp_shown = mathx.ease(self.xp_shown, self.xp_aim, mathx.easing(dt, XP_EASE), 1);
         const resource_ease = mathx.easing(dt, RESOURCE_EASE);
         self.life_fill = mathx.ease(self.life_fill, self.lifeFill(sim), resource_ease, resource_ease);
@@ -654,6 +671,8 @@ pub const Presentation = struct {
         self.busy -= dt;
         if (self.bursting) |*b| b.left -= dt;
         self.lit_held = @max(0, self.lit_held - dt);
+        self.flames_held = @max(0, self.flames_held - dt);
+        if (self.flames_held == 0) self.flames_shown = sim.lv.flames;
         for (self.glide[0..sim.pool.n]) |*gl| gl.t += dt;
         for (&self.dives) |*d| if (d.*) |*left| {
             left.* -= dt;
@@ -750,7 +769,7 @@ pub const Presentation = struct {
 
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, target: actor.ActorId, start: f32, turn: *TurnTiming) f32 {
         comptime for (std.enums.values(std.meta.FieldEnum(Owed))) |t| switch (t) {
-            .bit, .arrow, .gassed, .scalded, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended => {},
+            .bit, .arrow, .gassed, .scalded, .scorched, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended => {},
         };
         const owed = self.owed[target.slot().index];
         self.owed[target.slot().index] = .{};
@@ -900,6 +919,7 @@ pub const Presentation = struct {
         if (owed.gassed) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .puff = fx.Puff.over(mark, look.gasInk(.caustic)) });
         if (owed.scalded) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .puff = fx.Puff.over(mark, look.gasInk(.steam)) });
         if (owed.healed) |after| self.fx.settle(timing.finishes_in, .{ .slot = timing.slot, .after = after, .puff = fx.Puff.over(mark, look.gasInk(.healing)) });
+        if (owed.scorched) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, true, in_view, .{ .slot = timing.slot, .fire_at = mark });
         if (owed.burned) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, true, in_view, .{ .slot = timing.slot, .fire_at = mark });
         if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .drip = drip });
         if (timing.body.submerged != self.under.isSet(timing.slot.index)) {
@@ -958,6 +978,7 @@ pub const Presentation = struct {
                 .gas => gas.hold(s.wait),
                 .fire => {
                     gas.hold(s.wait);
+                    self.holdFlames(s.wait);
                     if (self.litShown(sim, at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
                     self.holdLit(&sim.lv, s.wait);
                 },
@@ -992,6 +1013,12 @@ const PACE_SLACK: f32 = 1e-4;
 pub const STEP_AT: f32 = 0.85;
 /// Per second, how fast the sky drawn catches the hour a turn moved on.
 const HOUR_EASE: f32 = 4;
+const WEATHER_EASE: f32 = 1.5;
+
+/// What the sky over the hero is doing now; nothing under a roof.
+pub fn weatherOf(sim: *const Simulation) climate.Now {
+    return if (sim.outdoors) sim.weatherNow() else .initFill(0);
+}
 const OCCLUSION_EASE: f32 = 12;
 /// Per second, how fast the experience bar fills toward a drawn turn's experience.
 const XP_EASE: f32 = 8;

@@ -26,7 +26,9 @@ Inspect navigation includes HUD parts and visible onscreen characters. Every uni
 its name (title case for foes, the hero's own name) and presented HP, followed by a divider and a separate terrain section:
 the tile name and its signed effects, also in title case. Status effects read as changes to
 application chance, such as "+15% Chance To Burn" on grass. Neutral terrain says "No Effects".
-The tile is the one beneath the presented body. Hidden, unborn and departed bodies have no inspect target.
+The tile is the one beneath the presented body. Out of doors in rain, the card adds the rain
+(Drizzle, Rain or Downpour) and its effects beneath the tile: `terrain.rained` lends fire and burn
+resistance in steps of five, up to +30% and -40% Chance To Burn in a downpour, stacking with the tile. Hidden, unborn and departed bodies have no inspect target.
 Long cards scroll through page controls or the mouse wheel. Inspection never spends a turn.
 
 Projectile target suggestions include only visible enemies reached by the preview flight,

@@ -1,6 +1,7 @@
 const std = @import("std");
 const game = @import("../../game.zig");
 const grid = @import("../../map/grid.zig");
+const atlas = @import("../../map/atlas.zig");
 const mathx = @import("../../core/mathx.zig");
 const actor = @import("../../play/actor.zig");
 const damage = @import("../../play/damage.zig");
@@ -10,7 +11,11 @@ const progress = @import("../../play/progress.zig");
 const combat = @import("../combat.zig");
 const overlay = @import("../overlay.zig");
 const skills = @import("../skills.zig");
+const rewards = @import("../rewards.zig");
 const harness = @import("../harness.zig");
+const fire = @import("../../map/fire.zig");
+const fireball = @import("../../play/fireball.zig");
+const heroes = @import("../../play/hero.zig");
 const P = mathx.P;
 
 test "terrain follows every actor across movement and leaves base and saved buildup unchanged" {
@@ -75,6 +80,54 @@ test "terrain fire damage burn ticks and burn application share effective resist
     try std.testing.expect(fresh[1] < fresh[0] and fresh[0] < fresh[2]);
     std.debug.print("terrain fire: 20 damage becomes 20/15/23 on floor/water/grass; real burn ticks checked; applications {d}/{d}/{d} of 2048\n", .{ accepted[0], accepted[1], accepted[2] });
     std.debug.print("terrain burn vulnerability: fresh 50% procs land {d}/{d}/{d} times on floor/water/grass without buildup\n", .{ fresh[0], fresh[1], fresh[2] });
+}
+
+test "rain out of doors dampens fire hits and ignition, and the card names it beneath the tile" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    w.* = .{};
+    _ = w.add(.{ .procgen = .{ .floor = .{ .wilds = .{} }, .sky = .{ .weather = .drizzle } } }).?;
+    const at = P{ .x = 23, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{at});
+    g.sim.map = w;
+    g.sim.node = 0;
+    const a = g.sim.pool.get(harness.foeId(0)).?;
+    harness.toughen(a);
+    g.sim.outdoors = true;
+    const wet = g.sim.combatStats(a);
+    g.sim.outdoors = false;
+    const dry = g.sim.combatStats(a);
+    var dry_lit: usize = 0;
+    g.sim.rng = mathx.Rng.init(0xF1AE);
+    for (0..2048) |_| {
+        a.resilience = .{};
+        dry_lit += @intFromBool(g.sim.ignite(a));
+    }
+    g.sim.outdoors = true;
+    var wet_lit: usize = 0;
+    g.sim.rng = mathx.Rng.init(0xF1AE);
+    for (0..2048) |_| {
+        a.resilience = .{};
+        wet_lit += @intFromBool(g.sim.ignite(a));
+    }
+    try std.testing.expectEqual(dry.elements.get(.fire) + 5, wet.elements.get(.fire));
+    try std.testing.expectEqual(dry.statuses.get(.burn) + 10, wet.statuses.get(.burn));
+    try std.testing.expect(wet_lit < dry_lit);
+    a.burn = .{};
+    a.resilience = .{};
+    const before = a.hp;
+    combat.arrowHit(g, harness.foeId(0), .{ .blow = .{ .elements = .initDefault(0, .{ .fire = 40 }) } }, .fireball, .{ .from = g.sim.heroAt().?, .wait = 0 });
+    try std.testing.expectEqual(damage.resisted(40, wet.elements.get(.fire)), before - a.hp);
+    try std.testing.expect(before - a.hp < damage.resisted(40, dry.elements.get(.fire)));
+    game.settle(g);
+    var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
+    var body: [overlay.TIP_BODY_MAX]u8 = undefined;
+    const tip = overlay.tipOf(g, .{ .actor = 2 }, &title, &body).?;
+    var expected: [256]u8 = undefined;
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d}/{d} HP\n---\nFloor\nNo Effects\nDrizzle\n+5% Fire Resistance\n-10% Chance To Burn", .{ g.pic.pictured[1].hp, a.max }), tip.body);
+    std.debug.print("rain: a drizzle takes 40 fire to {d} against {d} dry; ignitions {d} of 2048 against {d} dry\n", .{ before - a.hp, damage.resisted(40, dry.elements.get(.fire)), wet_lit, dry_lit });
 }
 
 test "terrain reeds affect real hero hits without applying harm or statuses on misses" {
@@ -276,4 +329,130 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
     try std.testing.expect(g.sim.unsaved);
     std.debug.print("open projectile simulation: 3 attacks check empty/dark fire, first collision, no out-of-LOS spending; Shoot cannot upgrade or gain legacy rank damage\n", .{});
     std.debug.print("nonpiercing misses: {d}/128 intercepted attacks missed; all 128 stopped at the first body, refunds apply once\n", .{missed});
+}
+
+fn meadow(g: *game.Game, around: P, r: i32) void {
+    var cells = grid.Cells.around(around, r);
+    while (cells.next()) |p| g.sim.lv.set(p, .grass);
+    game.settle(g);
+}
+
+fn alight(lv: *const grid.Level) usize {
+    return grid.CELLS - std.mem.count(u8, &lv.flames, &.{0});
+}
+
+test "a fireball on grass sets some alight as its blast lands, and the fire spreads, smokes and burns down to dirt within its heat" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 26, .y = 20 };
+    var caught: usize = 0;
+    var burnt: usize = 0;
+    var longest: usize = 0;
+    var smoked = false;
+    const blazes: usize = 40;
+    for (0..blazes) |seed| {
+        harness.heroArena(g, .wizard, from, &.{at});
+        harness.toughenFoes(g);
+        g.sim.unkillable = true;
+        meadow(g, at, 5);
+        g.sim.rng = mathx.Rng.init(seed);
+        harness.aimAt(g, .fireball, at);
+        const lit = alight(&g.sim.lv);
+        if (lit == 0) continue;
+        caught += 1;
+        try std.testing.expect(harness.logged(g, fire.CATCHES));
+        try std.testing.expect(std.mem.allEqual(u8, &g.pic.flames_shown, 0));
+        harness.drawnOut(g);
+        try std.testing.expectEqualSlices(u8, &g.sim.lv.flames, &g.pic.flames_shown);
+        var turns: usize = 0;
+        while (alight(&g.sim.lv) > 0) : (turns += 1) {
+            try std.testing.expect(turns < 30);
+            smoked = smoked or !std.mem.allEqual(u16, &g.sim.lv.smoke, 0);
+            harness.useAct(g, .wait);
+            harness.drawnOut(g);
+        }
+        longest = @max(longest, turns);
+        for (g.sim.lv.tile, 0..) |t, i| {
+            if (t != fire.ASH) continue;
+            burnt += 1;
+            try std.testing.expect(mathx.dist(at, grid.Level.of(i)) <= fireball.BLAST + @as(i32, fireball.KINDLE.heat));
+        }
+    }
+    g.sim.unkillable = false;
+    std.debug.print("a fireball into a meadow: {d}/{d} set it alight, {d:.1} cells burnt to dirt on average, out within {d} turns\n", .{ caught, blazes, @as(f32, @floatFromInt(burnt)) / @as(f32, @floatFromInt(@max(caught, 1))), longest });
+    try std.testing.expect(caught > blazes * 9 / 10 and smoked);
+}
+
+test "a burning arrow sets grass alight far less often than a fireball" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    var caught = [_]usize{ 0, 0 };
+    for ([_]heroes.Class{ .wizard, .archer }, [_]skillbar.Act{ .fireball, .burning_arrow }, &caught) |c, act, *n| {
+        for (0..harness.TRIES) |seed| {
+            harness.heroArena(g, c, .{ .x = 20, .y = 20 }, &.{});
+            meadow(g, .{ .x = 25, .y = 20 }, 2);
+            g.sim.rng = mathx.Rng.init(seed);
+            harness.aimAt(g, act, .{ .x = 25, .y = 20 });
+            n.* += @intFromBool(alight(&g.sim.lv) > 0);
+        }
+    }
+    std.debug.print("into empty grass: a fireball set it alight {d}/{d} times, a burning arrow {d}/{d}\n", .{ caught[0], harness.TRIES, caught[1], harness.TRIES });
+    try std.testing.expect(caught[1] > 0 and caught[1] * 3 < caught[0]);
+}
+
+test "flames scorch the body standing in them each turn and may set it burning, the picture taking it as it lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    var ignited: usize = 0;
+    for (0..harness.TRIES) |seed| {
+        harness.arena(g, at, &.{});
+        meadow(g, at, 1);
+        const h = g.sim.heroActor().?;
+        harness.toughen(h);
+        fire.lay(&g.sim.lv, at, fire.BURNS, 0);
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(seed);
+        const scorch = damage.resisted(fire.SCORCH, g.sim.combatStats(h).elements.get(.fire));
+        harness.useAct(g, .wait);
+        try std.testing.expectEqual(harness.TEST_HP - scorch, h.hp);
+        try std.testing.expectEqual(harness.TEST_HP, g.pic.heroShown(&g.sim).?.hp);
+        ignited += @intFromBool(h.burn.turns > 0);
+        g.st = .{};
+        var t: f32 = 0;
+        while (t < 1 and !harness.caughtUp(g, g.sim.heroSlot().?)) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
+        try std.testing.expect(t < 1);
+        try std.testing.expectEqual(h.burn.turns, g.pic.heroShown(&g.sim).?.status.get(.burning));
+    }
+    try std.testing.expect(harness.logged(g, fire.NAME));
+    std.debug.print("a turn standing in flames on grass: scorched for {d}, set burning {d}/{d} times\n", .{ damage.resisted(fire.SCORCH, -15), ignited, harness.TRIES });
+    try std.testing.expect(ignited > 0 and ignited < harness.TRIES);
+}
+
+test "rain out of doors sets less grass alight" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    w.* = .{};
+    _ = w.add(.{ .procgen = .{ .floor = .{ .wilds = .{} }, .sky = .{ .weather = .drizzle } } }).?;
+    const at = P{ .x = 25, .y = 20 };
+    var caught = [_]usize{ 0, 0 };
+    for ([_]bool{ false, true }, &caught) |wet, *n| {
+        g.sim.rng = mathx.Rng.init(0xA5);
+        for (0..harness.TRIES) |_| {
+            g.sim.map = null;
+            harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+            meadow(g, at, 1);
+            g.sim.map = w;
+            g.sim.node = 0;
+            g.sim.outdoors = wet;
+            _ = rewards.kindleRound(&g.sim, at, fireball.BLAST, fireball.KINDLE);
+            n.* += alight(&g.sim.lv);
+        }
+    }
+    g.sim.map = null;
+    std.debug.print("a fireball's kindling over {d} blasts: {d} cells caught dry, {d} in a drizzle\n", .{ harness.TRIES, caught[0], caught[1] });
+    try std.testing.expect(caught[1] < caught[0]);
 }
