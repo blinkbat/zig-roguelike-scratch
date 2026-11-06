@@ -7,7 +7,6 @@ const grid = @import("../map/grid.zig");
 const fire = @import("../map/fire.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
-const burning = @import("../play/burning.zig");
 const glacial = @import("../play/glacial.zig");
 const progress = @import("../play/progress.zig");
 const rules = @import("../play/tactics.zig");
@@ -152,6 +151,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
         .fire_wall => {
             const area = span(g, act, from, aim.anchor().?, at).?;
             for (area.slice()) |p| fire.lay(&g.sim.lv, p, rules.FireWall.laid(rank), rules.FireWall.HEAT);
+            g.pic.holdFlames(&g.sim.lv, game.CAST_S);
             for (area.slice()) |p| {
                 const id = g.sim.lv.who(p);
                 const a = g.sim.pool.get(id) orelse continue;
@@ -185,15 +185,13 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
         combat.wound(g, id, hit.against(g.sim.combatStats(a).elements), Skill.VERB, s);
     }
     if (comptime Skill.ELEMENT == .fire) combat.fireLands(g, at, Skill.REACH, Skill.KINDLE, s.wait);
+    if (comptime Skill.ELEMENT == .cold) combat.coldLands(g, &area, s.wait);
 }
 
-/// Fire Wall's flames take hold of a body unless its fire or burn resistance holds; true when they do.
+/// Flames take hold of a foe unless its fire or burn resistance holds; true when they do.
 fn ignite(g: *game.Game, id: u16) bool {
     const a = g.sim.pool.get(id) orelse return false;
-    const fresh = a.burn.turns == 0;
-    if (!g.sim.ignite(a)) return false;
-    if (fresh) g.sim.sayFoeTakes(a, burning.TAKES);
-    return true;
+    return g.sim.igniteFresh(actor.Pool.slot(id), a, mathx.PERCENT);
 }
 
 pub fn beforeAction(sim: *Simulation) void {
@@ -243,7 +241,7 @@ pub fn watches(lv: *const grid.Level, from: P, d: mathx.Dir, p: P) bool {
     return rules.covered(from, d, p) and bow.aimable(lv, from, p, rules.Overwatch.RANGE);
 }
 
-/// Caltrops and Fire Wall's flames take whatever comes to stand on them, a split half as well as a step.
+/// Caltrops and flames take whatever comes to stand on them, a split half as well as a step.
 pub fn landed(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     const cell = grid.Level.idx(a.at);

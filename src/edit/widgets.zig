@@ -26,6 +26,7 @@ pub const TEXT: i32 = font.HEAD;
 pub const DETAIL: i32 = font.BODY;
 pub const HEAD: i32 = 32;
 pub const LINE_STEP: i32 = TEXT + GAP;
+pub const DETAIL_STEP: i32 = DETAIL + GAP;
 pub const HEADING_H: i32 = DETAIL + GAP;
 pub const TEXT_DY: i32 = @divTrunc(ROW_H - TEXT, 2);
 pub const DETAIL_DY: i32 = @divTrunc(ROW_H - DETAIL, 2);
@@ -82,7 +83,7 @@ pub fn modalButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, 
     return buttonOn(controls, face, r, label, on, live, true, tip);
 }
 
-pub fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
+fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     return buttonSized(controls, face, r, label, TEXT, on, live, modal, tip);
 }
 
@@ -297,8 +298,7 @@ pub const Scroll = struct {
         return @max(0, @as(i32, @intFromFloat(s.box.height)));
     }
 
-    /// The content ran to `bottom`, wanting `margin` below it.
-    pub fn fit(s: Scroll, bottom: i32, margin: i32) void {
+    fn fit(s: Scroll, bottom: i32, margin: i32) void {
         s.most.* = @max(0, bottom + margin + s.top.* - @as(i32, @intFromFloat(s.box.y)) - s.shown());
     }
 
@@ -310,10 +310,11 @@ pub const Scroll = struct {
         if (below > 0) s.top.* += below;
     }
 
-    pub fn bar(s: Scroll) void {
+    fn bar(s: Scroll) void {
         if (s.most.* > 0) scrollbarIn(s.box, @intCast(s.top.*), @intCast(s.shown()), @intCast(s.shown() + s.most.*));
     }
 
+    /// The content ran to `bottom`, wanting `margin` below it: how far it scrolls, and its bar.
     pub fn end(s: Scroll, bottom: i32, margin: i32) void {
         s.fit(bottom, margin);
         s.bar();

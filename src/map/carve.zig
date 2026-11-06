@@ -240,9 +240,14 @@ pub const Lane = enum {
 
 pub fn lane(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, t: grid.Tile, comptime how: Lane) void {
     std.debug.assert(width >= LANE_MIN);
-    const r = @as(f32, @floatFromInt(width - 1)) / 2 + 0.5;
+    const r = laneRadius(width);
     var m = Meander.init(a, b, wander);
     while (m.next(rng)) |c| discOf(lv, c, r, t, how == .road, how == .road, null);
+}
+
+/// The `disc` radius a lane `width` cells wide lays at each step.
+pub fn laneRadius(width: u8) f32 {
+    return @as(f32, @floatFromInt(width - 1)) / 2 + 0.5;
 }
 
 /// Within `r` of `c`, as `disc` lays it.
@@ -269,13 +274,16 @@ pub const CAVE_SCALE: f32 = 3;
 
 /// `t` round `c` off the rim, its edge frayed: in where a cell's distance over `r` is under `lo + span` times the noise.
 pub fn blob(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile) void {
-    blobIn(lv, noise, c, r, scale, lo, span, t, grid.Box.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span)))));
+    blobIn(lv, noise, c, r, scale, lo, span, t, grid.Box.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span)))), null);
 }
 
-pub fn blobIn(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile, within: grid.Box) void {
+pub fn blobIn(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile, within: grid.Box, comptime over: ?fn (grid.Tile) bool) void {
     var cells = within.cells();
     while (cells.next()) |q| {
         if (grid.Level.onRim(q)) continue;
+        if (over) |ok| {
+            if (!ok(lv.at(q))) continue;
+        }
         if (mathx.distEuclid(q, c) / r < lo + span * noise.at(q, scale, 2)) lv.set(q, t);
     }
 }

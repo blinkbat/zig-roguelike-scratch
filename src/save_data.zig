@@ -33,8 +33,14 @@ pub const Visited = @FieldType(Header, "visited");
 pub const Visit = @FieldType(Header, "visits");
 pub const HEAD_FIELDS = std.meta.fieldNames(Header);
 
+/// The level's fields added to its end since raw saves were written.
+pub const LEVEL_ADDED = .{ "folk", "healing", "steam", "smoke", "heat", "thaw" };
 /// What raw saves wrote before fields were added to the end of the level and the map; the legacy reader takes them in this shape.
-pub const LegacyLevel = Without(Without(Without(Without(Without(@FieldType(Visit, "lv"), "folk"), "healing"), "steam"), "smoke"), "heat");
+pub const LegacyLevel = blk: {
+    var T = @FieldType(Visit, "lv");
+    for (LEVEL_ADDED) |name| T = Without(T, name);
+    break :blk T;
+};
 pub const LegacyMap = Without(Map, "script");
 pub const LegacyVisit = Replaced(Visit, "lv", LegacyLevel);
 pub const LegacyHeader = Replaced(Replaced(Header, "map", LegacyMap), "visits", LegacyVisit);
@@ -152,6 +158,8 @@ pub const UNSAVED = .{
         "lit_due",
         "flames_shown",
         "flames_held",
+        "flames_due",
+        "tiles_before",
         "busy",
         "lead",
         "fx",
@@ -243,6 +251,23 @@ comptime {
         for (UNSAVED.game) |name| {
             if (std.mem.eql(u8, name, l)) break;
         } else @compileError("game.Fields: " ++ l ++ " is not in save_data.UNSAVED.game");
+    };
+}
+
+comptime {
+    @setEvalBranchQuota(100_000);
+    const F = game.presentation.Fields;
+    const T = Of(.pic);
+    const lists = .{ F.turn, F.run, F.facing, F.settled, F.held, F.kept };
+    for (std.meta.fields(T)) |f| {
+        var n: usize = 0;
+        for (lists) |list| for (list) |name| {
+            if (std.mem.eql(u8, f.name, name)) n += 1;
+        };
+        if (n != 1) @compileError("presentation.Fields: say once when " ++ f.name ++ " is reset");
+    }
+    for (lists) |list| for (list) |name| {
+        if (!@hasField(T, name)) @compileError("presentation.Fields: " ++ @typeName(T) ++ " has no field " ++ name);
     };
 }
 
@@ -344,8 +369,8 @@ pub fn convert(dest: anytype, src: anytype) void {
 
 test "the legacy shapes keep every byte older raw saves wrote and convert both ways" {
     const grid = @import("map/grid.zig");
-    try std.testing.expect(!@hasField(LegacyMap, "script") and !@hasField(LegacyLevel, "folk") and !@hasField(LegacyLevel, "healing") and !@hasField(LegacyLevel, "steam") and !@hasField(LegacyLevel, "smoke") and !@hasField(LegacyLevel, "heat"));
     try std.testing.expectEqual(std.meta.fields(Map).len - 1, std.meta.fields(LegacyMap).len);
+    try std.testing.expectEqual(std.meta.fields(grid.Level).len - LEVEL_ADDED.len, std.meta.fields(LegacyLevel).len);
     const raw = try std.testing.allocator.create(LegacyVisit);
     defer std.testing.allocator.destroy(raw);
     const now = try std.testing.allocator.create(Visit);

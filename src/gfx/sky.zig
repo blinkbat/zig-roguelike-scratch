@@ -167,10 +167,10 @@ pub const Sky = struct {
     /// `day.daylight`: 1 in full day, 0 in full night.
     daylight: f32,
 
-    /// Lit by a lightning flash `f` of its brightest.
-    pub fn flashed(s: Sky, f: f32) Sky {
+    /// Lit by a lightning stroke `f` of its brightest.
+    pub fn struck(s: Sky, f: f32) Sky {
         var lit_up = s;
-        lit_up.ambient += FLASH * splat(std.math.clamp(f, 0, 1));
+        lit_up.ambient += LIGHTNING * splat(std.math.clamp(f, 0, 1));
         return lit_up;
     }
 
@@ -208,20 +208,17 @@ pub fn upright(flat: f32) bool {
 
 const Look = struct { key: f32 = 1, sky: f32 = 1, grey: f32 = 0, tint: Rgb = splat(1) };
 
-/// A full overcast: most of the sun's light spread into the sky, so shadows go soft and the day a little dark.
 const CLEAR = Look{};
+/// A full overcast: most of the sun's light spread into the sky, so shadows go soft and the day a little dark.
 const OVERCAST = Look{ .key = 0.3, .sky = 1.75, .grey = 0.55, .tint = .{ 0.92, 0.98, 1.06 } };
-/// What a lightning flash at its brightest adds to the light in shade.
-const FLASH = Rgb{ 0.62, 0.68, 0.85 };
+/// What a lightning stroke at its brightest adds to the light in shade.
+const LIGHTNING = Rgb{ 0.62, 0.68, 0.85 };
 
 fn lookAt(overcast: f32) Look {
     const k = std.math.clamp(overcast, 0, 1);
-    return .{
-        .key = mathx.lerpF(CLEAR.key, OVERCAST.key, k),
-        .sky = mathx.lerpF(CLEAR.sky, OVERCAST.sky, k),
-        .grey = mathx.lerpF(CLEAR.grey, OVERCAST.grey, k),
-        .tint = mix(CLEAR.tint, OVERCAST.tint, k),
-    };
+    var l: Look = undefined;
+    inline for (std.meta.fields(Look)) |field| @field(l, field.name) = if (field.type == Rgb) mix(@field(CLEAR, field.name), @field(OVERCAST, field.name), k) else mathx.lerpF(@field(CLEAR, field.name), @field(OVERCAST, field.name), k);
+    return l;
 }
 
 /// Rec. 709's weights of red, green and blue in what the eye reads as brightness.
@@ -279,7 +276,7 @@ fn acrossScreen(d: [3]f32) [3]f32 {
     return unit(.{ x, y, d[2] });
 }
 
-test "a bleak sky is a little darker than a clear one, greyer, and its shadows softer" {
+test "a full overcast is a little darker than a clear sky, greyer, and its shadows softer" {
     const spread = struct {
         fn f(c: Rgb) f32 {
             return @reduce(.Max, c) - @reduce(.Min, c);
@@ -304,8 +301,8 @@ test "a bleak sky is a little darker than a clear one, greyer, and its shadows s
 
 test "a lightning flash lights the dead of night as bright as a grey day, and none leaves the sky as it was" {
     const night = at(day.DEAD_OF_NIGHT);
-    try std.testing.expectEqual(night, night.flashed(0));
-    const lit_up = brightness(night.flashed(1));
+    try std.testing.expectEqual(night, night.struck(0));
+    const lit_up = brightness(night.struck(1));
     std.debug.print("a full flash at the dead of night: {d:.2} of a clear noon, against {d:.3} unlit\n", .{ lit_up, brightness(night) });
     try std.testing.expect(lit_up > 0.5 and lit_up < 1);
 }
@@ -316,13 +313,13 @@ test "a noon shadow reaches beyond a cell-tall sprite" {
     try std.testing.expect(reach > 1.05 and reach < 1.3);
 }
 
-test "each climate is darkest halfway through the night, blue at night and warmer by day" {
+test "every overcast is darkest halfway through the night, blue at night and warmer by day" {
     const middle = day.DEAD_OF_NIGHT;
     try std.testing.expectApproxEqAbs(day.toward(SUNSET, middle), day.toward(middle, SUNRISE), 1e-5);
     for ([_]f32{ 0, 0.5, 1 }) |profile| {
         const darkest = lit(under(middle, profile));
-        for (0..1440) |minute| {
-            const hour = @as(f32, @floatFromInt(minute)) / 60;
+        for (0..day.MINUTES) |minute| {
+            const hour = @as(f32, @floatFromInt(minute)) / day.MINUTES * day.HOURS;
             try std.testing.expect(lit(under(hour, profile)) >= darkest - 1e-6);
         }
         const night = under(middle, profile);
@@ -335,7 +332,7 @@ test "each climate is darkest halfway through the night, blue at night and warme
         const before = lit(under(middle - 0.01, profile));
         const after = lit(under(middle + 0.01, profile));
         try std.testing.expectApproxEqAbs(before, after, 1e-5);
-        std.debug.print("overcast {d:.1} sky: 1440 minutes checked; minimum at {d:.1}h, night blue/red {d:.2}, noon key red/blue {d:.2}\n", .{ profile, middle, night.key[2] / night.key[0], noon.key[0] / noon.key[2] });
+        std.debug.print("overcast {d:.1} sky: {d} minutes checked; minimum at {d:.1}h, night blue/red {d:.2}, noon key red/blue {d:.2}\n", .{ profile, day.MINUTES, middle, night.key[2] / night.key[0], noon.key[0] / noon.key[2] });
     }
 }
 

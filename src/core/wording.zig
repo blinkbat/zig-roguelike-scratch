@@ -110,7 +110,7 @@ pub fn spoken(comptime text: [:0]const u8) [:0]const u8 {
     return formatted(text, .sentence);
 }
 
-pub fn titled(comptime text: [:0]const u8) [:0]const u8 {
+fn titled(comptime text: [:0]const u8) [:0]const u8 {
     return formatted(text, .title);
 }
 
@@ -196,4 +196,9 @@ test "wording aliases share record replacement lookup and display casing" {
     try std.testing.expect(!allowed("game.PauseRow", "resume"));
     try std.testing.expect(!allowed("internal.Kind", "any"));
     std.debug.print("wording aliases: shared CRLF codec, duplicate replacement, casing and display registration checked\n", .{});
+}
+
+test "a tag is titled word by word" {
+    try std.testing.expectEqualStrings("Chain Lightning", comptime titled("chain_lightning"));
+    try std.testing.expectEqualStrings("Fireball", comptime titled("fireball"));
 }

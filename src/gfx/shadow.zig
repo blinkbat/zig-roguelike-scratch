@@ -74,7 +74,7 @@ pub fn sceneryMargin(sprites: *const sprite.Sprites) i32 {
 const TRUNK_OF: f32 = 0.6;
 fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *const light.Shine, contact: f32, opacity: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
     const lit = s.reached();
-    if (lit <= light.FAINT) return null;
+    if (lit <= model.FAINT) return null;
     const foot = self.gpu.art(tex).foot;
     const tall: f32 = @floatFromInt(tex.height);
     const share = foot / tall;
@@ -82,7 +82,7 @@ fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *c
     const x = raster.middle(dest).x;
     const y = dest.y + height;
     if (self.gpu.glow) |g| {
-        const a = CONTACT_A * @min(1, lit / lum(light.CARRY)) * opacity;
+        const a = CONTACT_A * @min(1, lit / lum(model.CARRY)) * opacity;
         light.glowAt(g, x, y, dest.width * CONTACT_W * 0.5 * contact, dest.width * CONTACT_H * 0.5 * contact, look.colourOf(model.SHADE_RGB, a));
     }
     return .{ .x = x, .y = y, .height = height, .share = share };
@@ -224,7 +224,7 @@ const Sides = packed struct(u4) {
 
     fn uniform(self: Sides) [4]f32 {
         var out: [4]f32 = undefined;
-        inline for (std.meta.fields(Sides), &out) |f, *o| o.* = light.mask(@field(self, f.name));
+        inline for (std.meta.fields(Sides), &out) |f, *o| o.* = model.mask(@field(self, f.name));
         return out;
     }
 };

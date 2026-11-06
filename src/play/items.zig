@@ -581,10 +581,11 @@ pub const Item = struct {
         return self.allows(a.kind);
     }
 
-    /// A loaded item's modifiers, raised to the least their rolls give.
+    /// A loaded item's modifiers, kept within what their rolls give.
     pub fn mend(self: *Item) void {
         for (&self.mods) |*maybe| if (maybe.*) |*m| {
-            m.value = @max(m.value, @as(i16, @intCast(affixOf(m.kind).lo)));
+            const a = affixOf(m.kind);
+            m.value = std.math.clamp(m.value, @as(i16, @intCast(a.lo)), @as(i16, @intCast(a.hi)));
         };
     }
 

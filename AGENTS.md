@@ -221,7 +221,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   node actions, Things/Generator tabs, `Editor.Inspect`) and a full-width status line. `Editor.canvasOf` owns the
   geometry; each side scrolls as an `Editor.Pane`; dropdowns are `Editor.popup` (`Which`).
   `panel` (bars, brush panel, node panel, status), `knobs` (generator rows), `canvas` (map, cursor/paste ghost, graph),
-  `modals` (modals, help, object viewer), `effects` (the Effects viewer) and `tests` sit beside it in `src/edit/`.
+  `modals` (modals, help, object viewer), `effects` (the Effects viewer), `plot` (Dialog and Script pages) and `tests` sit beside it in `src/edit/`.
 - Effects plays every particle effect, missile, gas puff, flame and status mark on a stage of its own (`effects.Viewer`:
   an open-floor level and its own `fx.Fx`), through the same calls play makes (`Shot.fly`, `scene.drawFlight`,
   `Fx.drawStatus`, `scene.drawFlames`); light pools are drawn as soft discs, the stage having no light map.
@@ -338,7 +338,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   action costs its next turn. Pyre bloats' burst (`rewards.pyre`) burns the bodies beside it. Pib shamans (`Row.mends`) heal
   the most hurt pib in reach or wake sleepers, keeping `Row.keeps` cells off the hero.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
-  each followed by gas, steam, healing gas, burn and bleed. Caustic and pyre bloats burst however killed; foes do not enter gas, steam or Fire Wall flames from outside them (`actor.shuns`).
+  each followed by gas, steam, healing gas, burn and bleed. Caustic and pyre bloats burst however killed; foes do not enter gas, steam or flames from outside them (`actor.shuns`).
   `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`), healing (`Level.healing`),
   steam (`Level.steam`) and smoke (`Level.smoke`) are separate volumes (`grid.Gas`), spread alike; healing gas mends every hurt body a fifteenth of its life a turn, as caustic gas eats at it.
   Smoke harms nothing and thins by `gas.THIN` a pass; at `grid.SMOKE_THICK` a cell hides what lies past it (`Level.hidesBeyond`) from
@@ -352,6 +352,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Each turn, at `combat.beginTurn`, a burning tile smokes, every fire may catch its burnable neighbours at one less heat and boil
   wet ones into steam, and a burnt-out tile becomes dirt (`fire.ASH`; `Light.retile` follows). Standing in flames scorches
   (`Tick.scorched`) and may ignite through fire/burn resistance. `Presentation.flames_shown` holds new flames until their fire lands.
+  Cold landing over an area (`combat.coldLands`: glacial/frost vial bursts, frost nova, Shatter) puts out each burning cell by `glacial.DOUSE`
+  and each burning body in it by `glacial.QUENCH` (`fire.douse`, `rewards.douseRound`), drawn as the blow lands.
+  The same cold freezes its shallows to ice (`map/ice.zig`, `rewards.freezeRound`) for `ice.THAWS` spent turns (`Level.thaw`), except
+  under a swimmer; deep water never freezes. Ice is dry, so it carries no wet modifiers or shock and takes no Fire Wall. Fire landing
+  (`rewards.boilRound`) or spreading beside it melts it back to shallows; `Presentation.tileShown` draws either change as its blow lands.
 - `play/resilience.zig` owns separate stun/burn/bleed/chill/pin buildup for every body. Successful applications
   add resistance until expiry on spent turns; failed applications and free actions never extend or age it.
   `Simulation.takeStatus/procStatus` combine innate resistance, buildup and terrain before gating combat applications.
@@ -462,7 +467,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Weather is a profile (`climate.PROFILES`: overcast, rain, mist and lightning layers, each spanning a seeded storm or haze
   drive that holds, then eases spell to spell), a pure function of run seed and `Clock.since(days)`; nothing of it is saved
   but `Simulation.days`. Rain alone reaches the rules: `terrain.rained` adds fire and burn resistance out of doors, shown on
-  unit cards beneath the tile. `Presentation.weather_shown` eases the drawn sky, rain, fog and lightning toward it.
+  unit cards beneath the tile, and `fire.damped` lessens every chance to catch. `Presentation.weather_shown` eases the drawn sky, rain, mist and lightning toward it.
   Water reflections, FX and vignette are cosmetic. Weather stays fixed to map coordinates and visible
   lit outdoor cells. Water stays smooth: fixed art/UVs, subtle light glints and undistorted mirrored scenery,
   bodies and flames, clipped by the authored water alpha and dry ground layers. Static scenery reflections

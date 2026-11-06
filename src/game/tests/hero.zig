@@ -307,7 +307,7 @@ test "life and mana fill and drain at XP speed after their presented impact" {
     h.hp = @divTrunc(h.max, 2);
     g.sim.mana = @divTrunc(max_mana, 2);
     g.pic.mana_held = max_mana - g.sim.mana;
-    var after = g.pic.afterOf(&g.sim, .fromIndex(g.sim.heroSlot().?));
+    var after = g.pic.heroAfter(&g.sim);
     after.mana = g.pic.mana_held;
     g.pic.fx.settle(1, .{ .slot = .fromIndex(g.sim.heroSlot().?), .after = after });
     g.pic.busy = 1;

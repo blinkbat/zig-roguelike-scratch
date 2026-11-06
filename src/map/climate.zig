@@ -1,7 +1,8 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const day = @import("day.zig");
 
-// Outdoor weather, a pure function of the profile, run seed and minutes; only its rain reaches the rules (`terrain.rained`).
+// Outdoor weather, a pure function of the profile, run seed and minutes; only its rain reaches the rules (`terrain.rained`, `fire.damped`).
 
 /// How the day's light looks under this sky.
 pub const Light = enum {
@@ -67,11 +68,14 @@ pub const Profile = struct {
     layer: std.EnumArray(Layer, Span) = .initFill(.{}),
 };
 
+/// The drizzle's rain, all day long.
+pub const DRIZZLE: f32 = 0.19;
+
 pub const PROFILES = std.EnumArray(Weather, Profile).init(.{
     .clear = .{},
     .drizzle = .{ .layer = .init(.{
         .overcast = .{},
-        .rain = .{ .least = 0.19, .most = 0.19 },
+        .rain = .{ .least = DRIZZLE, .most = DRIZZLE },
         .mist = .{},
         .lightning = .{},
     }) },
@@ -155,7 +159,7 @@ test "a sky left alone is the clear day it always was" {
 
 test "a profile's weather holds, changes by spells, keeps each layer in its span, and is the same for the same seed and time" {
     const days = 30;
-    const step = 6;
+    const step = day.TURN_MINUTES;
     for (std.enums.values(Weather)) |w| {
         const c = Climate{ .weather = w };
         const p = PROFILES.get(w);
@@ -164,7 +168,7 @@ test "a profile's weather holds, changes by spells, keeps each layer in its span
         var most_turn: f32 = 0;
         var before = c.now(42, 0);
         var m: u64 = step;
-        while (m < days * 1440) : (m += step) {
+        while (m < days * day.MINUTES) : (m += step) {
             const n = c.now(42, m);
             try std.testing.expectEqual(n, c.now(42, m));
             for (std.enums.values(Layer)) |l| {
@@ -176,7 +180,7 @@ test "a profile's weather holds, changes by spells, keeps each layer in its span
             if (n.get(.rain) > 0) wet += 1;
             before = n;
         }
-        const turns: f32 = @floatFromInt(days * 1440 / step);
+        const turns: f32 = @floatFromInt(days * day.MINUTES / step);
         std.debug.print("{s} over {d} days: raining {d:.0}% of turns; heaviest rain {d:.2}, mist {d:.2}, lightning {d:.2}; at most {d:.3} of a layer a turn\n", .{ @tagName(w), days, @as(f32, @floatFromInt(wet)) / turns * 100, shown.get(.rain), shown.get(.mist), shown.get(.lightning), most_turn });
         try std.testing.expect(most_turn < 0.2);
     }

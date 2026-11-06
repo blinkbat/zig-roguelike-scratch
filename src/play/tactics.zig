@@ -76,7 +76,7 @@ pub const Combustion = Detonation(struct {
     pub const ELEMENT = damage.Element.fire;
     pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding {d} damage per remaining burn turn.", .{DETONATION_FUEL});
     pub const FUEL = resilience.Kind.burn;
-    pub const KINDLE = fire.Kindle{ .chance = 50, .heat = 2 };
+    pub const KINDLE = fire.Kindle{ .chance = 50 };
 });
 pub const ArcaneBarrier = struct {
     pub const COST: i32 = 6;
@@ -207,7 +207,7 @@ fn Detonation(comptime Words: type) type {
         pub const DESCRIPTION = Words.DESCRIPTION;
         pub const FUEL = Words.FUEL;
         pub const FUEL_DAMAGE = DETONATION_FUEL;
-        pub const KINDLE = Words.KINDLE;
+        pub const KINDLE = if (@hasDecl(Words, "KINDLE")) Words.KINDLE else {};
         pub const REACH = ADJACENT;
         pub const area = glacial.Patch(REACH).area;
     };
@@ -228,7 +228,7 @@ fn raisable(lv: *const grid.Level, p: P) bool {
     return lv.vacant(p);
 }
 fn flammable(lv: *const grid.Level, p: P) bool {
-    return lv.walkable(p) and !lv.hasBarrel(p) and !lv.at(p).wet();
+    return lv.walkable(p) and !lv.hasBarrel(p) and !lv.at(p).wet() and !lv.frozen(p);
 }
 fn line(lv: *const grid.Level, hero: P, start: P, end: P, most: usize, range: i32, comptime fits: fn (*const grid.Level, P) bool) ?Wall {
     var out = Wall{};

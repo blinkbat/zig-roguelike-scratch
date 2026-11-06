@@ -2,10 +2,12 @@
 
 Terrain modifiers belong to `src/play/terrain.zig`. Its typed table covers hit chance,
 dodge, every elemental resistance and every harmful status resistance, with neutral defaults
-for tiles that have no effects. Balance values live only in that table.
+for tiles that have no effects. Tile balance values live only in that table; rain's live
+beside it (`RAIN_FIRE`, `RAIN_BURN`, `RAIN_STEP`).
 
 `Simulation.combatStats` resolves an actor's base resistances, hero dodge where applicable,
-innate status resistance and temporary buildup, then applies the occupied tile's modifiers.
+innate status resistance and temporary buildup, then applies the occupied tile's modifiers
+summed with the rain's out of doors (`Stats.onRained`).
 The tile is queried when needed, so walking, knockback, pulls, leaps, splits and travel
 cannot leave a cached terrain bonus behind. All occupants use the same rule, including
 flying bodies. Terrain bonuses are never written into actor stats or saved buildup.
@@ -28,7 +30,7 @@ the tile name and its signed effects, also in title case. Status effects read as
 application chance, such as "+15% Chance To Burn" on grass. Neutral terrain says "No Effects".
 The tile is the one beneath the presented body. Out of doors in rain, the card adds the rain
 (Drizzle, Rain or Downpour) and its effects beneath the tile: `terrain.rained` lends fire and burn
-resistance in steps of five, up to +30% and -40% Chance To Burn in a downpour, stacking with the tile. Hidden, unborn and departed bodies have no inspect target.
+resistance in steps of `RAIN_STEP`, up to `RAIN_FIRE` and `RAIN_BURN` in a downpour, stacking with the tile. Hidden, unborn and departed bodies have no inspect target.
 Long cards scroll through page controls or the mouse wheel. Inspection never spends a turn.
 
 Projectile target suggestions include only visible enemies reached by the preview flight,

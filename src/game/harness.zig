@@ -536,7 +536,7 @@ test "a strike with zero dodge draws only terrain hit chance and damage" {
     for ([_]grid.Tile{ .floor, .reeds }) |tile| for (0..256) |seed| {
         var rng = mathx.Rng.init(seed);
         var expected = rng;
-        const attacker = (terrain.Stats{}).on(tile);
+        const attacker = (terrain.Stats{}).onRained(tile, 0);
         const lands = attacker.hit == mathx.PERCENT or expected.percent(attacker.hit);
         const want: ?i32 = if (lands) strike.roll(&expected) else null;
         try std.testing.expectEqual(want, attacks.bite(&rng, attacker, .{}, strike));

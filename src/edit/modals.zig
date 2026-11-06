@@ -158,7 +158,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     seenFacts(s, &facts);
     for (facts.all()) |l| {
         widgets.drawFit(&g.face, l, DETAIL, x + w - widgets.PAD - dx, false, dx, dy, look.TEXT);
-        dy += DETAIL + widgets.GAP;
+        dy += widgets.DETAIL_STEP;
     }
     backButton(ed, g, f, y + cells_h, "Close");
     if (seenFoe(s) != null) {

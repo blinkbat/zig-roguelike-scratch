@@ -766,10 +766,10 @@ pub const Desk = struct {
                 @field(self, t[1]) = true;
             }
         }
-        self.fullscreen = fullscreenHit();
-        self.enter = !altDown() and anyHit(&ENTER_KEYS);
-        self.rub = rubbed();
         self.alt = altDown();
+        self.fullscreen = self.alt and anyHit(&ENTER_KEYS);
+        self.enter = !self.alt and anyHit(&ENTER_KEYS);
+        self.rub = rubbed();
         self.text_left = repeated(TEXT_LEFT);
         self.text_right = repeated(TEXT_RIGHT);
         self.text_home = hit(TEXT_HOME);

@@ -17,46 +17,46 @@ const P = model.P;
 const Rgb = model.Rgb;
 const mix = model.mix;
 pub const SUB = model.SUB;
-pub const MAP_W = model.MAP_W;
+const MAP_W = model.MAP_W;
 const MAP_H = model.MAP_H;
-pub const TEXELS = model.TEXELS;
-pub const Layer = model.Layer;
-pub const UNSEEN = model.UNSEEN;
+const TEXELS = model.TEXELS;
+const Layer = model.Layer;
+const UNSEEN = model.UNSEEN;
 pub const BODY_Z = model.BODY_Z;
-pub const CARRY = model.CARRY;
-pub const FAINT = model.FAINT;
+const CARRY = model.CARRY;
+const FAINT = model.FAINT;
 const CORNERS_W = grid.CORNERS_W;
 const CORNERS_H = grid.CORNERS_H;
 const SUN_LAMP_D = model.SUN_LAMP_D;
-pub const CASTERS = model.CASTERS;
-pub const sunlit = model.sunlit;
+const CASTERS = model.CASTERS;
+const sunlit = model.sunlit;
 const clouded = model.clouded;
 const reaching = model.reaching;
-pub const SunRay = model.SunRay;
+const SunRay = model.SunRay;
 const cloudIn = model.cloudIn;
 const offset = model.offset;
 pub const offMiddle = model.offMiddle;
-pub const Spot = model.Spot;
-pub const TorchIx = model.TorchIx;
+const Spot = model.Spot;
+const TorchIx = model.TorchIx;
 pub const LIGHTS = model.LIGHTS;
 const Torch = model.Torch;
 const upright = model.upright;
-pub const GLINT_POWER = model.GLINT_POWER;
-pub const smoothSpecular = model.smoothSpecular;
+const GLINT_POWER = model.GLINT_POWER;
+const smoothSpecular = model.smoothSpecular;
 const remembered = model.remembered;
-pub const carryFade = model.carryFade;
+const carryFade = model.carryFade;
 pub const carryR = model.carryR;
-pub const mask = model.mask;
-pub const flicker = model.flicker;
+const mask = model.mask;
+const flicker = model.flicker;
 const splat = model.splat;
 const rgbOf = model.rgbOf;
-pub const texelOf = model.texelOf;
+const texelOf = model.texelOf;
 pub const Shine = model.Shine;
 pub const Flame = model.Flame;
 const DAPPLE_WAVE = model.DAPPLE_WAVE;
 pub const Emission = model.Emission;
-pub const EFFECTS = model.EFFECTS;
-pub const EffectSet = model.EffectSet;
+const EFFECTS = model.EFFECTS;
+const EffectSet = model.EffectSet;
 pub const Options = model.Options;
 
 /// Each light hung steps its flicker seed on by this from the first's.
@@ -130,8 +130,15 @@ pub const Light = struct {
     }
 
     fn hang(self: *Light, lv: *const grid.Level, mount: model.Mount) void {
-        var t = Torch{ .mount = mount, .reach = undefined, .open = undefined, .seed = self.hung *% TORCH_SEED_STEP +% TORCH_SEED_BASE };
+        const t = &self.torch[self.torch_n];
+        t.* = Torch{ .mount = mount, .reach = undefined, .open = undefined, .seed = self.hung *% TORCH_SEED_STEP +% TORCH_SEED_BASE };
         self.hung +%= 1;
+        self.torch_n += 1;
+        self.pour(lv, t);
+    }
+
+    /// `t`'s pool over the ground as it stands.
+    fn pour(self: *const Light, lv: *const grid.Level, t: *Torch) void {
         var pool: [grid.CELLS]bool = @splat(false);
         lume.torchPool(lv, t.floor(), &pool);
         var box = t.box().cells();
@@ -140,8 +147,6 @@ pub const Light = struct {
             t.reach[k] = mask(grid.cellOr(bool, &pool, p, false));
             t.open[k] = self.visibility.openAt(p, t.reach[k]);
         }
-        self.torch[self.torch_n] = t;
-        self.torch_n += 1;
     }
 
     /// A glowing plant gone from `p`: its light and its shadow with it, and the next plant unlit for want of lights now lit.
@@ -152,11 +157,13 @@ pub const Light = struct {
         self.hangPlants(lv);
     }
 
-    /// Tiles changed under it, as fire burns them down: sight and shadows take the ground as it now is.
+    /// Tiles changed under it, as fire burns them down: sight, shadows and torch pools take the ground as it now is.
     pub fn retile(self: *Light, lv: *const grid.Level) void {
         self.scratch.tile = lv.tile;
         self.countCasters(&self.scratch);
         self.visibility.terrain(&self.scratch);
+        self.visibility.soften();
+        for (self.torch[0..self.torch_n]) |*t| self.pour(lv, t);
     }
 
     /// The glowing plants that give light and are not yet lit.

@@ -96,8 +96,8 @@ They have no independent unique name. A two-affix roll always pairs opposite sid
 affix may be either side. Warded prefixes identify their rolled element. Innate base effects
 remain separate from affixes. Recovery modifiers add to equipment/passive recovery; Puncturing
 adds to a matching weapon's innate penetration. Cruel applies only to physical weapon damage.
-Harvest also recovers life from status kills; the existing passive/totem kill recovery
-keeps its blow-only contract. Its healing is presented with the killing impact or tick.
+Worn-item kill recovery, including Totem and Harvest, also recovers life from status kills;
+passive kill recovery applies only to blows. Healing is presented with the killing impact or tick.
 
 Rare names combine two saved words independently of the modifiers, such as `Spine Crusher`,
 `Void Maw` or `Magus Fold`; `items.RareName` owns the word pools. The base name remains visible beneath the

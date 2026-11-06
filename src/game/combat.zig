@@ -5,6 +5,7 @@ const grid = @import("../map/grid.zig");
 const fov = @import("../map/fov.zig");
 const gas = @import("../map/gas.zig");
 const fire = @import("../map/fire.zig");
+const ice = @import("../map/ice.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const attrs = @import("../play/attrs.zig");
@@ -246,9 +247,9 @@ pub fn boilUnder(g: *game.Game, comptime act: skillbar.Act, at: P, wait: f32) vo
 
 /// Fire within `range` of `at`: its steam and the flames it kindles are drawn as the blow lands.
 pub fn fireLands(g: *game.Game, at: P, range: i32, kindle: fire.Kindle, wait: f32) void {
+    g.pic.holdFlames(&g.sim.lv, wait);
     if (rewards.boilRound(&g.sim, at, range) != null) g.cloud.hold(wait);
     if (!rewards.kindleRound(&g.sim, at, range, kindle)) return;
-    g.pic.holdFlames(wait);
     g.cloud.hold(wait);
 }
 
@@ -264,6 +265,16 @@ pub fn areaHit(g: *game.Game, comptime act: skillbar.Act, at: P, area: glacial.B
         if (direct != id) hit.physical = 0;
         arrowHit(g, id, attacks.heroScaled(&g.sim, act, hit), act, s);
     }
+    if (comptime act.element() == .cold) coldLands(g, &area, s.wait);
+}
+
+/// Cold over `area`: the flames it puts out and the burning it quenches are drawn as the blow lands.
+pub fn coldLands(g: *game.Game, area: *const glacial.Burst, wait: f32) void {
+    g.pic.holdFlames(&g.sim.lv, wait);
+    const doused = rewards.douseRound(&g.sim, area);
+    _ = rewards.freezeRound(&g.sim, area);
+    var each = doused.quenched.iterator(.{});
+    while (each.next()) |slot| g.pic.settleSlot(&g.sim, wait, .fromIndex(slot));
 }
 /// A barrel broken or a glowbulb burst at `p`, if one stands there.
 pub fn smash(g: *game.Game, p: P, comptime verb: []const u8, s: Stroke) void {
@@ -412,6 +423,7 @@ fn split(g: *game.Game, id: u16) ?actor.ActorId {
 
 pub fn fell(g: *game.Game, id: u16) void {
     const target = actor.ActorId.fromInt(id);
+    g.pic.beforeDeath(&g.sim, target);
     const death = rewards.defeat(&g.sim, target);
     g.pic.recordDeath(&g.sim, target, death);
 }
@@ -446,6 +458,7 @@ fn beginTurn(g: *game.Game, from: P) void {
     if (g.sim.clock.turn()) g.sim.days +|= 1;
     tactics.startTurn(&g.sim);
     if (fire.turn(&g.sim.lv, &g.sim.rng, g.sim.rainNow())) g.light.retile(&g.sim.lv);
+    _ = ice.turn(&g.sim.lv);
     skills.recover(g);
     for (&g.sim.cooldown.values) |*c| c.* -|= 1;
     game.castSight(g, from);
@@ -545,10 +558,8 @@ fn gasHeal(g: *game.Game, id: u16) void {
 fn scorch(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     if (!g.sim.lv.burning(a.at) or ranAlready(g, id, .scorched)) return;
-    const fresh = a.burn.turns == 0;
-    const caught = g.sim.igniteBy(a, fire.CATCH);
-    if (caught and fresh) g.sim.sayTakes(actor.Pool.slot(id), a, burning.TAKES);
-    const dmg = damage.resisted(fire.SCORCH, g.sim.combatStats(a).elements.get(.fire));
+    const caught = g.sim.igniteFresh(actor.Pool.slot(id), a, fire.CATCH);
+    const dmg = fire.scorch(g.sim.combatStats(a).elements);
     if (dmg > 0) {
         _ = harmTick(g, id, dmg, .scorched, .{ .hero = "The " ++ fire.NAME ++ " scorch {s} for {d}.", .foe = "The " ++ fire.NAME ++ " scorch the {s} for {d}." });
     } else if (caught) g.pic.recordWear(&g.sim, .fromInt(id));

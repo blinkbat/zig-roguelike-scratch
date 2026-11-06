@@ -60,8 +60,27 @@ fn testLight(lv: *const grid.Level) !*light.Light {
 }
 
 fn added(l: *const light.Light, lv: *const grid.Level, q: [2]f32) f32 {
-    var ids: [light.LIGHTS]light.TorchIx = undefined;
+    var ids: [light.LIGHTS]model.TorchIx = undefined;
     return lum(l.at(lv, l.near(grid.Box.inMap(0), &ids), q)) - lum(l.at(lv, &.{}, q));
+}
+
+test "retile refreshes open light fields even when sight and memory stay settled" {
+    var lv = litFloor();
+    const at = P{ .x = 20, .y = 20 };
+    lv.set(at, .reeds);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const i = grid.Level.idx(at);
+    try std.testing.expectEqual(@as(f32, 0), l.visibility.carry_open[i]);
+    lv.set(at, .dirt);
+    l.retile(&lv);
+    l.step(&lv, mathx.FRAME_DT);
+    const fresh = try testLight(&lv);
+    defer std.testing.allocator.destroy(fresh);
+    try std.testing.expectEqualSlices(f32, &fresh.visibility.carry_open, &l.visibility.carry_open);
+    try std.testing.expectEqualSlices(f32, &fresh.visibility.open_weight, &l.visibility.open_weight);
+    try std.testing.expectEqualSlices(f32, &fresh.visibility.open_sight, &l.visibility.open_sight);
+    std.debug.print("retile: 3 derived light fields match fresh terrain with unchanged visibility\n", .{});
 }
 
 test "effect lights shade terrain and bodies without revealing memory or crossing walls" {
@@ -143,8 +162,8 @@ test "cell effect culling preserves floor wall and water lighting" {
     defer std.testing.allocator.destroy(l);
     const radii = [_]f32{ 0.6, 1.6, 2.8, 4 };
     const heights = [_]f32{ 0, 0.3, 1.4 };
-    var all = light.EffectSet.initEmpty();
-    for (0..light.EFFECTS) |i| {
+    var all = model.EffectSet.initEmpty();
+    for (0..model.EFFECTS) |i| {
         l.emit(&lv, .{
             .at = .{ 16.2 + @as(f32, @floatFromInt(i % 8)) * 2.4, 14.9 + @as(f32, @floatFromInt(i / 8)) * 2.7, heights[i % heights.len] },
             .col = if (i % 2 == 0) look.FIRE else look.COLD,
@@ -163,7 +182,7 @@ test "cell effect culling preserves floor wall and water lighting" {
         for (0..sub * sub) |i| {
             const q = light.Light.texelCentre(@as(usize, @intCast(c.x)) * sub + i % sub, @as(usize, @intCast(c.y)) * sub + i / sub);
             const v = l.viewAt(q);
-            surfaces.insert(light.Spot.of(&lv, q).surface);
+            surfaces.insert(model.Spot.of(&lv, q).surface);
             try std.testing.expectEqual(l.shade(&lv, &.{}, all, q, null, v, null, 1), l.shade(&lv, &.{}, kept, q, null, v, null, 1));
             try std.testing.expectEqual(l.waterGlint(&.{}, all, q, null, null, 1), l.waterGlint(&.{}, kept, q, null, null, 1));
             samples += 1;
@@ -171,13 +190,13 @@ test "cell effect culling preserves floor wall and water lighting" {
         }
     }
     try std.testing.expectEqual(@as(usize, 3), surfaces.count());
-    try std.testing.expect(candidates < samples * light.EFFECTS / 4);
-    std.debug.print("effect culling: {d} floor/wall/glint samples unchanged; {d} of {d} light candidates retained\n", .{ samples, candidates, samples * light.EFFECTS });
+    try std.testing.expect(candidates < samples * model.EFFECTS / 4);
+    std.debug.print("effect culling: {d} floor/wall/glint samples unchanged; {d} of {d} light candidates retained\n", .{ samples, candidates, samples * model.EFFECTS });
 }
 
 test "smooth water glints follow light direction and respect walls and memory" {
-    try std.testing.expectApproxEqAbs(@as(f32, 1), light.smoothSpecular(.{ 0, -1, 1 }, light.GLINT_POWER), 1e-4);
-    try std.testing.expect(light.smoothSpecular(.{ 1, -1, 1 }, light.GLINT_POWER) < 0.03);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), model.smoothSpecular(.{ 0, -1, 1 }, model.GLINT_POWER), 1e-4);
+    try std.testing.expect(model.smoothSpecular(.{ 1, -1, 1 }, model.GLINT_POWER) < 0.03);
     var lv: grid.Level = undefined;
     testRoom(&lv, &.{});
     for (&lv.tile) |*tile| {
@@ -231,7 +250,7 @@ test "a glowing plant pools pale blue light round its own cell and draws a glow 
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     try std.testing.expectEqual(@as(usize, 1), l.torch_n);
-    var ids: [light.LIGHTS]light.TorchIx = undefined;
+    var ids: [light.LIGHTS]model.TorchIx = undefined;
     const near = l.near(grid.Box.inMap(0), &ids);
     const top = l.at(&lv, near, mathx.centre(at)) - l.at(&lv, &.{}, mathx.centre(at));
     std.debug.print("glowbulb light by cells along the floor:", .{});
@@ -378,10 +397,10 @@ test "a contact pool needs a light: memory's floor reaches nothing" {
     l.settle(&lv);
     const noon = l.onCaster(centre, false);
     std.debug.print("light reaching a body: dark {d:.3} (drawn {d:.3}), lantern {d:.3}, noon {d:.3}\n", .{ dark.reached(), dark.lit(), lantern.reached(), noon.reached() });
-    try std.testing.expect(dark.reached() <= light.FAINT);
-    try std.testing.expect(dark.lit() > light.FAINT);
-    try std.testing.expect(lantern.reached() > light.FAINT);
-    try std.testing.expect(noon.reached() > light.FAINT);
+    try std.testing.expect(dark.reached() <= model.FAINT);
+    try std.testing.expect(dark.lit() > model.FAINT);
+    try std.testing.expect(lantern.reached() > model.FAINT);
+    try std.testing.expect(noon.reached() > model.FAINT);
 }
 
 test "shadow receivers fade at sight and disappear in remembered or unseen ground" {
@@ -400,7 +419,7 @@ test "shadow receivers fade at sight and disappear in remembered or unseen groun
     var remembered_: usize = 0;
     var unseen: usize = 0;
     for (10 * light.SUB..40 * light.SUB) |x| {
-        const c = l.texels.getPtrConst(.map)[20 * light.SUB * light.MAP_W + x];
+        const c = l.texels.getPtrConst(.map)[20 * light.SUB * model.MAP_W + x];
         if (x < 18 * light.SUB) {
             try std.testing.expectEqual(@as(u8, 255), c.a);
             live += 1;
@@ -431,7 +450,7 @@ test "a pillar throws the torch's shadow across the floor behind it" {
 
 fn stepUntil(l: *light.Light, lv: *const grid.Level, q: [2]f32, comptime done: fn (f32) bool) usize {
     var frames: usize = 0;
-    var ids: [light.LIGHTS]light.TorchIx = undefined;
+    var ids: [light.LIGHTS]model.TorchIx = undefined;
     const none = ids[0..0];
     while (frames < 600 and !done(lum(l.at(lv, none, q)))) : (frames += 1) l.step(lv, mathx.FRAME_DT);
     return frames;
@@ -444,7 +463,7 @@ test "a cell coming into sight fades up fast, and fades down to memory slower on
     lightBox(&lv, LIT_BOX);
     const q = [2]f32{ 15.5, 15.5 };
     l.carrier = q;
-    const bright = lum(l.base() + light.CARRY);
+    const bright = lum(l.base() + model.CARRY);
     const dim = lum(model.MEMORY);
     const Up = struct {
         var want: f32 = 0;
@@ -488,12 +507,12 @@ test "the edge of sight ramps across texels instead of stepping at a cell" {
     const row: i32 = 30 * light.SUB;
     var biggest: f32 = 0;
     var ramp: usize = 0;
-    const from = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * light.MAP_W + 12 * light.SUB)]));
-    const to = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * light.MAP_W + 28 * light.SUB)]));
+    const from = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * model.MAP_W + 12 * light.SUB)]));
+    const to = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * model.MAP_W + 28 * light.SUB)]));
     var tx: i32 = 12 * light.SUB;
     while (tx < 28 * light.SUB) : (tx += 1) {
-        const a = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * light.MAP_W + tx)]));
-        const b = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * light.MAP_W + tx + 1)]));
+        const a = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * model.MAP_W + tx)]));
+        const b = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * model.MAP_W + tx + 1)]));
         biggest = @max(biggest, @abs(b - a));
         if (@abs(b - a) > 0.001) ramp += 1;
     }
@@ -513,17 +532,17 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     l.carrier = mathx.centre(f.start);
     for (0..4) |_| l.step(&lv, mathx.FRAME_DT);
     l.bake(&lv, .{ .x = 0, .y = 0 }, grid.SIZE);
-    var ids: [light.LIGHTS]light.TorchIx = undefined;
+    var ids: [light.LIGHTS]model.TorchIx = undefined;
     const torches = l.near(grid.Box.inMap(-1), &ids);
     var dark: usize = 0;
     var fading: usize = 0;
     var off: usize = 0;
-    for (0..light.TEXELS) |i| {
+    for (0..model.TEXELS) |i| {
         const q = light.Light.texelCentreOf(i);
         const m = l.memoryAt(mathx.cellOf(q));
         if (m == 0) dark += 1;
         if (m > 0 and m < 1) fading += 1;
-        const want = light.texelOf(l.at(&lv, torches, q), l.viewAt(q).lit);
+        const want = model.texelOf(l.at(&lv, torches, q), l.viewAt(q).lit);
         if (!std.meta.eql(want, l.texels.getPtrConst(.map)[i])) off += 1;
     }
     std.debug.print("whole floor baked: {d} texels never seen, {d} fading in, {d} off what `at` gives\n", .{ dark, fading, off });
@@ -547,7 +566,7 @@ test "baked water sun samples preserve ground glints and raised surfaces across 
         if (diverged) l.scratch.set(.{ .x = 21, .y = 20 }, .grass);
         for ([_]?f32{ 8, 17, day.DEAD_OF_NIGHT, null }) |hour| {
             l.sky = if (hour) |h| sky.at(h) else null;
-            const ray: ?light.SunRay = if (l.sky) |k| .of(k) else null;
+            const ray: ?model.SunRay = if (l.sky) |k| .of(k) else null;
             for ([_]bool{ false, true }) |shadows| {
                 l.options.shadows = shadows;
                 l.bake(&lv, .{ .x = 20, .y = 20 }, .{ .x = 26, .y = 23 });
@@ -560,8 +579,8 @@ test "baked water sun samples preserve ground glints and raised surfaces across 
                         const cloud = if (ray != null) model.cloudIn(.{ l.clouds[corner], l.clouds[corner + 1], l.clouds[corner + grid.CORNERS_W], l.clouds[corner + grid.CORNERS_W + 1] }, c, q) else 1;
                         const expected = l.waterGlint(&.{}, .initEmpty(), q, i, if (ray) |*r| r else null, cloud);
                         try std.testing.expectEqual(look.colourOf(expected, 1), l.texels.getPtrConst(.glints)[i]);
-                        try std.testing.expectEqual(light.texelOf(l.at(&lv, &.{}, q), l.viewAt(q).lit), l.texels.getPtrConst(.map)[i]);
-                        surfaces.insert(light.Spot.of(&lv, q).surface);
+                        try std.testing.expectEqual(model.texelOf(l.at(&lv, &.{}, q), l.viewAt(q).lit), l.texels.getPtrConst(.map)[i]);
+                        surfaces.insert(model.Spot.of(&lv, q).surface);
                         samples += 1;
                     }
                 }
@@ -588,23 +607,23 @@ test "clipped light baking clears unseen texels without touching adjacent rows o
         .{ .lo = .{ .x = grid.W - 1, .y = grid.H - 1 }, .hi = grid.SIZE },
     };
     for (cases) |box| {
-        for (std.enums.values(light.Layer)) |k| @memset(l.texels.getPtr(k), sentinel);
+        for (std.enums.values(model.Layer)) |k| @memset(l.texels.getPtr(k), sentinel);
         l.bake(&lv, box.lo, box.hi);
-        for (0..light.TEXELS) |i| {
+        for (0..model.TEXELS) |i| {
             const t = mathx.unslot(i, light.Light.TEXELS_W);
             const inside = t.x >= box.lo.x * light.SUB - 1 and t.x < box.hi.x * light.SUB + 1 and
                 t.y >= box.lo.y * light.SUB - 1 and t.y < box.hi.y * light.SUB + 1;
             if (!inside) {
-                for (std.enums.values(light.Layer)) |k| try std.testing.expectEqual(sentinel, l.texels.getPtrConst(k)[i]);
+                for (std.enums.values(model.Layer)) |k| try std.testing.expectEqual(sentinel, l.texels.getPtrConst(k)[i]);
                 continue;
             }
             touched += 1;
             const q = light.Light.texelCentreOf(i);
             const v = l.viewAt(q);
             if (l.memoryAt(mathx.cellOf(q)) == 0) dark += 1 else visible += 1;
-            try std.testing.expectEqual(light.texelOf(l.at(&lv, &.{}, q), v.lit), l.texels.getPtrConst(.map)[i]);
+            try std.testing.expectEqual(model.texelOf(l.at(&lv, &.{}, q), v.lit), l.texels.getPtrConst(.map)[i]);
             try std.testing.expectEqual(look.fade(rl.Color.white, 1 - v.memory), l.texels.getPtrConst(.fog)[i]);
-            try std.testing.expectEqual(light.UNSEEN.get(.glints), l.texels.getPtrConst(.glints)[i]);
+            try std.testing.expectEqual(model.UNSEEN.get(.glints), l.texels.getPtrConst(.glints)[i]);
         }
     }
     try std.testing.expect(dark > 0 and visible > 0);
@@ -627,7 +646,7 @@ test "fog tint follows the soft exploration edge without changing visibility" {
     var covered: usize = 0;
     for (20 * light.SUB..21 * light.SUB) |y| {
         for (18 * light.SUB..22 * light.SUB) |x| {
-            const pixel = l.texels.getPtrConst(.fog)[y * light.MAP_W + x];
+            const pixel = l.texels.getPtrConst(.fog)[y * model.MAP_W + x];
             try std.testing.expectEqual(rl.Color.white.r, pixel.r);
             try std.testing.expectEqual(rl.Color.white.g, pixel.g);
             try std.testing.expectEqual(rl.Color.white.b, pixel.b);
@@ -731,7 +750,7 @@ test "a doorway sight skips in a hall's side wall leaves no dark patch in the ha
         const d: f32 = @floatFromInt(x - 20);
         const v = lum(l.at(&lv, &.{}, .{ 20.5 + d, 20.5 }));
         std.debug.print(" {d}:{d:.3}", .{ d, v });
-        worst = @max(worst, @abs(v - lum(l.base() + light.CARRY * splat(light.carryFade(d, l.carry_r)))));
+        worst = @max(worst, @abs(v - lum(l.base() + model.CARRY * splat(model.carryFade(d, l.carry_r)))));
     }
     std.debug.print("; furthest off the carried light alone {d:.4}\n", .{worst});
     try std.testing.expect(worst < 1e-3);
@@ -742,11 +761,11 @@ test "a flame flickers within a tenth or so either way and never jumps" {
     var lo: f32 = 2;
     var hi: f32 = 0;
     var jump: f32 = 0;
-    var last = light.flicker(0, 7);
+    var last = model.flicker(0, 7);
     var i: usize = 1;
     const minute: usize = @intFromFloat(@round(60 / mathx.FRAME_DT));
     while (i < minute) : (i += 1) {
-        const v = light.flicker(@as(f32, @floatFromInt(i)) * mathx.FRAME_DT, 7);
+        const v = model.flicker(@as(f32, @floatFromInt(i)) * mathx.FRAME_DT, 7);
         lo = @min(lo, v);
         hi = @max(hi, v);
         jump = @max(jump, @abs(v - last));
@@ -1125,7 +1144,7 @@ test "a remembered torch seen again from behind its wall burns at memory, not li
     const got = l.flames(&lv, &buf);
     try std.testing.expectEqual(@as(usize, 1), got.len);
     std.debug.print("remembered torch from behind its wall: flame lit {d:.3}, memory {d:.3}\n", .{ got[0].lit, got[0].memory });
-    try std.testing.expect(got[0].lit <= light.FAINT);
+    try std.testing.expect(got[0].lit <= model.FAINT);
 }
 
 fn castAlpha(l: *const light.Light, at: [2]f32, carrier: bool) [2]f32 {
@@ -1186,7 +1205,7 @@ test "a body is lit as the ground under it is, fading into sight and on the edge
         }
     }
     std.debug.print("a body and its ground fading into sight: {d:.3} and {d:.3} the first frame, at most {d:.5} apart\n", .{ first[0], first[1], worst });
-    try std.testing.expect(worst < light.FAINT);
+    try std.testing.expect(worst < model.FAINT);
 }
 
 test "a body takes its torch's light from where the flame is drawn, and none from behind a pillar" {
@@ -1207,7 +1226,7 @@ test "a body takes its torch's light from where the flame is drawn, and none fro
     try std.testing.expect(!near_carrier.lamp[0].casts);
     try std.testing.expect(open.lamp[0].casts);
     try std.testing.expectEqual(@as(usize, 0), carrying.n);
-    try std.testing.expect(lum(carrying.ambient) > lum(model.MEMORY + light.CARRY) * 0.95);
+    try std.testing.expect(lum(carrying.ambient) > lum(model.MEMORY + model.CARRY) * 0.95);
 }
 
 const ART_H: f32 = @floatFromInt(look.SPRITE_PX);
@@ -1220,7 +1239,7 @@ fn shadowLength(lv: *const grid.Level, k: sky.Sky, c: P) f32 {
     while (d < 12) : (d += 0.01) {
         const x = m[0] - u[0] * d;
         const y = m[1] - u[1] * d;
-        if (!mathx.cellOf(.{ x, y }).eq(c) and light.sunlit(lv, light.SunRay.of(k), x, y, 0) > 0.5) return d;
+        if (!mathx.cellOf(.{ x, y }).eq(c) and model.sunlit(lv, model.SunRay.of(k), x, y, 0) > 0.5) return d;
     }
     return d;
 }
@@ -1236,7 +1255,7 @@ test "water banks shade both depths away from the sun without requiring standing
         l.settle(&lv);
         const foot = dual.bankFoot(&lv, .{ 20.75, 10.0 }).?;
         try std.testing.expect(foot > 10.2 and foot < 10.7);
-        var front = light.SunRay.of(sky.at(12));
+        var front = model.SunRay.of(sky.at(12));
         front.u = .{ 0, 1 };
         try std.testing.expectEqual(@as(f32, 1), l.sunAt(&lv, &front, 20.75, foot - 0.01, 0));
         try std.testing.expect(l.sunAt(&lv, &front, 20.75, foot + 0.01, 0) < 0.75);
@@ -1247,7 +1266,7 @@ test "water banks shade both depths away from the sun without requiring standing
         try std.testing.expect(l.sunAt(&lv, &front, 20.75, lip + 0.05, 0) < 0.5);
         try std.testing.expect(l.sunAt(&lv, &front, 20.75, foot + 0.05, 0) < 0.5);
         for ([_]f32{ 8, 17 }) |hour| {
-            const ray = light.SunRay.of(sky.at(hour));
+            const ray = model.SunRay.of(sky.at(hour));
             const edge: f32 = if (ray.u[0] > 0) 22 else 20;
             const sign: f32 = if (ray.u[0] > 0) -1 else 1;
             const x = edge + sign * 0.02;
@@ -1265,7 +1284,7 @@ test "water banks shade both depths away from the sun without requiring standing
     }
     for (20..22) |x| lv.set(.{ .x = @intCast(x), .y = 9 }, .shallows);
     l.settle(&lv);
-    var north = light.SunRay.of(sky.at(12));
+    var north = model.SunRay.of(sky.at(12));
     north.u = .{ 0, -1 };
     north.rise = 0.1;
     const lip = dual.bankLip(&lv, .{ 20.75, 10.0 }).?;
@@ -1286,14 +1305,14 @@ test "the sun throws a thing's shadow its height times the hour's reach, away fr
         const k = sky.at(hour);
         const rock_len = shadowLength(&lv, k, rock);
         const bush_len = shadowLength(&lv, k, bush);
-        const b = light.CASTERS.get(.grave).?;
+        const b = model.CASTERS.get(.grave).?;
         const tip = b.h * k.reach() + b.r.?;
         std.debug.print("at {d:.1}h, reach {d:.2}: a rock's shadow runs {d:.2} cells from its middle, a grave's {d:.2} (its top's tip {d:.2})\n", .{ hour, k.reach(), rock_len, bush_len, tip });
         try std.testing.expect(rock_len > k.reach() * model.WALL_H * (1 - model.SUN_SOFT) and rock_len < k.reach() * model.WALL_H + 0.75);
         try std.testing.expect(bush_len > tip - model.SUN_SOFT * b.h * k.reach() - model.SUN_EDGE and bush_len <= tip);
         const m = mathx.centre(rock);
         const u = k.across();
-        try std.testing.expectEqual(@as(f32, 1), light.sunlit(&lv, light.SunRay.of(k), m[0] + u[0] * 0.6, m[1] + u[1] * 0.6, 0));
+        try std.testing.expectEqual(@as(f32, 1), model.sunlit(&lv, model.SunRay.of(k), m[0] + u[0] * 0.6, m[1] + u[1] * 0.6, 0));
     }
 }
 
@@ -1309,11 +1328,11 @@ test "everything that blocks a step and does not stand shades the ground past it
             const k = sky.at(hour);
             const ux = k.across()[0];
             const uy = k.across()[1];
-            const edge = light.CASTERS.get(t).?.r orelse 0.5 / @max(@abs(ux), @abs(uy));
+            const edge = model.CASTERS.get(t).?.r orelse 0.5 / @max(@abs(ux), @abs(uy));
             const past = edge + 0.05;
-            const shade = light.sunlit(&lv, light.SunRay.of(k), m[0] - ux * past, m[1] - uy * past, 0);
+            const shade = model.sunlit(&lv, model.SunRay.of(k), m[0] - ux * past, m[1] - uy * past, 0);
             worst = @max(worst, shade);
-            if (light.CASTERS.get(t).?.r != null) try std.testing.expectEqual(@as(f32, 1), light.sunlit(&lv, light.SunRay.of(k), m[0], m[1], model.topOf(t, at, m)));
+            if (model.CASTERS.get(t).?.r != null) try std.testing.expectEqual(@as(f32, 1), model.sunlit(&lv, model.SunRay.of(k), m[0], m[1], model.topOf(t, at, m)));
         }
         std.debug.print("a {s}: the ground just past its edge takes at most {d:.2} of the sun\n", .{ @tagName(t), worst });
         try std.testing.expect(worst < 0.3);
@@ -1324,14 +1343,14 @@ test "the shadows switch clears and restores ordinary terrain sun shadows" {
     var checked: usize = 0;
     const at = P{ .x = 30, .y = 30 };
     const m = mathx.centre(at);
-    const ray = light.SunRay.of(sky.at(8));
+    const ray = model.SunRay.of(sky.at(8));
     for (std.enums.values(grid.Tile)) |t| {
         if (!t.uprightWhole() or look.castsPicture(t)) continue;
         var lv = litFloor();
         lv.set(at, t);
         const l = try testLight(&lv);
         defer std.testing.allocator.destroy(l);
-        const edge = light.CASTERS.get(t).?.r orelse 0.5 / @max(@abs(ray.u[0]), @abs(ray.u[1]));
+        const edge = model.CASTERS.get(t).?.r orelse 0.5 / @max(@abs(ray.u[0]), @abs(ray.u[1]));
         const x = m[0] - ray.u[0] * (edge + 0.05);
         const y = m[1] - ray.u[1] * (edge + 0.05);
         const shaded = l.sunAt(&lv, &ray, x, y, 0);
@@ -1401,8 +1420,8 @@ test "skipping the sun's march where nothing that casts is near changes nothing 
             for ([_]f32{ 0, 0.4 }) |z| {
                 const q = [2]f32{ c[0] + 0.3, c[1] - 0.2 };
                 checked += 1;
-                try std.testing.expectEqual(light.sunlit(&lv, light.SunRay.of(k), q[0], q[1], z), l.sunAt(&lv, &light.SunRay.of(k), q[0], q[1], z));
-                const b = light.Light.sunBox(light.SunRay.of(k), q[0], q[1], z);
+                try std.testing.expectEqual(model.sunlit(&lv, model.SunRay.of(k), q[0], q[1], z), l.sunAt(&lv, &model.SunRay.of(k), q[0], q[1], z));
+                const b = light.Light.sunBox(model.SunRay.of(k), q[0], q[1], z);
                 if (l.castersIn(b) == 0) skipped += 1;
             }
         }
@@ -1443,7 +1462,7 @@ test "under the sky, ground in the sun outshines ground in shade, and night is d
     lv.set(rock, .rock);
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
-    const none: []const light.TorchIx = &.{};
+    const none: []const model.TorchIx = &.{};
     l.sky = sky.at(morning);
     const k = l.sky.?;
     const u = k.across();
@@ -1477,7 +1496,7 @@ test "the moon throws a cold shadow as deep as the sun's, over the archer's own 
         depth[i] = cs[0].alpha;
         blue[i] = cs[0].shade[2] / cs[0].shade[0];
     }
-    const none: []const light.TorchIx = &.{};
+    const none: []const model.TorchIx = &.{};
     const k = l.sky.?;
     const u = k.across();
     const off = 0.5 + k.reach() * 0.5;

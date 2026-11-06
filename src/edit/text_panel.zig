@@ -738,7 +738,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     var y = f.y;
     var buf: [PAGE_LINE]u8 = undefined;
     widgets.drawFit(&g.face, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
-    y += DETAIL + widgets.GAP;
+    y += widgets.DETAIL_STEP;
     var tools = widgets.LayEnd{ .right = x + w, .y = y + ROW_INSET, .gap = TOOL_GAP };
     const close_r = tools.take(CLOSE_W);
     const reload_r = tools.take(RELOAD_W);
@@ -801,9 +801,9 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         const breadcrumb = std.fmt.bufPrintZ(&buf, "{s}  >  {s}", .{ e.category, e.role }) catch "";
         widgets.drawFit(&g.face, breadcrumb, DETAIL, right_w, false, right_x, y + LINE, look.UI_GOLD);
         const source = std.fmt.bufPrintZ(&buf, "{s}:{d}", .{ e.path, e.line }) catch "";
-        widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE + DETAIL + widgets.GAP, look.DIM);
-        widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * (DETAIL + widgets.GAP), look.DIM);
-        var yy = y + LINE + 3 * (DETAIL + widgets.GAP) + HINT_GAP;
+        widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE + widgets.DETAIL_STEP, look.DIM);
+        widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * widgets.DETAIL_STEP, look.DIM);
+        var yy = y + LINE + 3 * widgets.DETAIL_STEP + HINT_GAP;
         const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
         widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
         yy += DETAIL + LEAD;
@@ -812,7 +812,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         if (drawField(ed, g, &s.draft, s.passage_box, s.focus == .passage, e.editable)) s.focus = .passage;
         yy += field_h + LEAD;
         widgets.drawFit(&g.face, "Written by", DETAIL, right_w, false, right_x, yy, look.DIM);
-        yy += DETAIL + widgets.GAP;
+        yy += widgets.DETAIL_STEP;
         const tags = std.enums.values(catalog.Author);
         const tag_w = @divTrunc(right_w, @as(i32, @intCast(tags.len)));
         for (tags, 0..) |tag, at| {

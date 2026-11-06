@@ -76,9 +76,13 @@ pub const Glide = struct {
             Prior.copy(&was, self);
             was.ahead = ahead;
             gl.priors[0] = was;
-            if (self.t < 0) for (self.priors[0 .. PRIORS - 1], gl.priors[1..]) |older, *kept| {
-                kept.* = Prior.later(older, ahead);
-            };
+            if (self.t < 0) {
+                for (self.priors[0 .. PRIORS - 1], gl.priors[1..]) |older, *kept| kept.* = Prior.later(older, ahead);
+                if (self.priors[PRIORS - 1]) |gone| if (gl.priors[PRIORS - 1]) |*oldest| {
+                    oldest.from = gone.from;
+                    oldest.from_lift = gone.from_lift;
+                };
+            }
         }
         return gl;
     }

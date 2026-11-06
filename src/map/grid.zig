@@ -514,6 +514,8 @@ pub const Level = struct {
     smoke: [CELLS]u16 = @splat(0),
     /// How many more cells a burning cell's fire may leap on.
     heat: [CELLS]u8 = @splat(0),
+    /// Turns until frozen shallows thaw; 0 on ice that never does.
+    thaw: [CELLS]u8 = @splat(0),
 
     pub fn blank() Level {
         return .{
@@ -590,7 +592,7 @@ pub const Level = struct {
 
     /// Cells in from the nearest edge: 0 on the rim.
     pub fn edgeDist(p: P) i32 {
-        return @min(@min(p.x, W - 1 - p.x), @min(p.y, H - 1 - p.y));
+        return Box.inMap(0).edgeDist(p);
     }
 
     pub fn firstOpen(self: *const Level) ?P {
@@ -733,6 +735,10 @@ pub const Level = struct {
         self.folk[idx(p)] = @intCast(i + 1);
     }
 
+    pub fn clearFolk(self: *Level) void {
+        self.folk = @splat(NO_FOLK);
+    }
+
     /// A body or barrel; folk are no target, so not counted.
     pub fn taken(self: *const Level, p: P) bool {
         return self.who(p) != NO_ONE or self.hasBarrel(p);
@@ -795,6 +801,11 @@ pub const Level = struct {
 
     pub fn burning(self: *const Level, p: P) bool {
         return cellOr(u8, &self.flames, p, 0) > 0;
+    }
+
+    /// Shallows frozen to ice that will thaw back.
+    pub fn frozen(self: *const Level, p: P) bool {
+        return self.at(p) == .ice and cellOr(u8, &self.thaw, p, 0) > 0;
     }
 
     /// Terrain only.
@@ -961,6 +972,11 @@ pub const Box = struct {
 
     pub fn overlaps(b: Box, o: Box, pad: i32) bool {
         return b.lo.x - pad < o.hi.x and b.hi.x + pad > o.lo.x and b.lo.y - pad < o.hi.y and b.hi.y + pad > o.lo.y;
+    }
+
+    /// Cells in from its nearest edge: 0 on it, negative outside.
+    pub fn edgeDist(b: Box, p: P) i32 {
+        return @min(@min(p.x - b.lo.x, b.hi.x - 1 - p.x), @min(p.y - b.lo.y, b.hi.y - 1 - p.y));
     }
 
     pub fn onEdge(b: Box, p: P) bool {

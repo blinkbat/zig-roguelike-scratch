@@ -158,7 +158,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
     if (style.built()) {
         carve.box(lv, inside, pal.open);
     } else {
-        carve.blobIn(lv, noise, mid, @as(f32, @floatFromInt(size)) / 2 - 1, carve.CAVE_SCALE, CAVE_LO, CAVE_SPAN, pal.open, inside);
+        carve.blobIn(lv, noise, mid, @as(f32, @floatFromInt(size)) / 2 - 1, carve.CAVE_SCALE, CAVE_LO, CAVE_SPAN, pal.open, inside, null);
     }
     for (SIDES) |s| {
         if (mask & bitOf(s) == 0) continue;

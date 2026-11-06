@@ -38,6 +38,7 @@ const fx = @import("../gfx/fx.zig");
 const cinema = @import("../gfx/cinema.zig");
 const sky = @import("../gfx/sky.zig");
 const day = @import("../map/day.zig");
+const climate = @import("../map/climate.zig");
 const game = @import("../game.zig");
 const rewards = @import("rewards.zig");
 const skills = @import("skills.zig");
@@ -294,7 +295,7 @@ pub fn shoot(g: *game.Game) !void {
                 game.beginMapAt(g, w, w.start, SHOT_SEED);
                 g.sim.clock = day.Clock.at(hour);
                 game.settle(g);
-                g.light.sky = sky.under(hour, 1);
+                g.light.sky = sky.under(hour, climate.Light.bleak.overcast());
                 try capture(g, target, SHOTS_DIR ++ "/bleak-" ++ std.fmt.comptimePrint("{d:.1}", .{hour}) ++ ".png");
             }
             g.sim.clock = day.Clock.at(day.NOON);

@@ -196,16 +196,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
     try finished(self, row);
     if (self.node_n == 0) return error.NoNodes;
     if (!seen.contains(.start)) return error.NoStart;
-    for (self.nodes(), 0..) |*nd, n| {
-        for (nd.doors(), 0..) |d, k| {
-            const l = d.to orelse continue;
-            if (l.node >= self.node_n or l.door >= self.node[l.node].door_n) return error.BadLink;
-            const here = atlas.Link{ .node = n, .door = k };
-            if (l.eq(here)) return error.BadLink;
-            const back = self.door(l).to orelse return error.BadLink;
-            if (!back.eq(here)) return error.BadLink;
-        }
-    }
+    if (!self.linksValid()) return error.BadLink;
     if (self.start.node >= self.node_n) return error.BadLink;
     if (!self.script.valid(self.node_n)) return error.BadLine;
     for (self.script.folks()) |f| {
@@ -558,6 +549,9 @@ test "a map file with a one-way link, a door linked to itself, a stray word, a f
     const bad = [_][]const u8{
         head ++ "node procgen rooms\ndoor 5 5 1 0\nnode procgen rooms\ndoor 5 5\n",
         head ++ "node procgen rooms\ndoor 5 5 0 0\n",
+        head ++ "node procgen rooms\ndoor 5 5 1 0\n",
+        head ++ "node procgen rooms\ndoor 5 5 0 1\n",
+        head ++ "node procgen rooms\ndoor 5 5 1 0\ndoor 6 5 1 0\nnode procgen rooms\ndoor 5 5 0 0\n",
         head ++ "node procgen rooms 1 2\n",
         head ++ "node procgen rooms deep\n",
         head ++ "node procgen rooms\nat 0 0\nnode procgen rooms\nat -2147483648 0\nnode procgen rooms\n",

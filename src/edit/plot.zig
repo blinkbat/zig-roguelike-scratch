@@ -343,7 +343,7 @@ fn countHeading(g: *game.Game, x: i32, y: i32, w: i32, comptime title: []const u
     heading(g, x, y, w, std.fmt.bufPrint(&buf, title ++ " {d}/{d}", .{ n, most }) catch "");
 }
 
-/// `<` and `>` round `value`; -1 or 1 as one is pressed, 0 otherwise.
+/// `<` and `>` round `value`; -1 or 1 as one is pressed, `SHIFT_STEP` times that when `shift`; 0 otherwise.
 fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, live: bool, tip: ?[:0]const u8, shift: bool) i32 {
     const step = widgets.Step{ .tip = tip, .live = live };
     return widgets.stepper(ed.controls(), &g.face, r, value, widgets.PAGE_ARROWS, .{ step, step }, shift);
@@ -906,8 +906,8 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
         .flag, .timer => {
             const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, TOGGLE_W });
             tableStep(ed, g, lay.take(ws[0]), script.condTable(c.kind).?, &c.slot);
-            const words_ = if (c.kind == .flag) [2][]const u8{ "is off", "is on" } else [2][]const u8{ "is running", "has run out" };
-            if (button(ed, g, lay.take(ws[1]), std.fmt.bufPrintZ(&buf, "{s}", .{words_[@intFromBool(c.on)]}) catch "", false, true, "Which way it has to be")) {
+            const words_ = if (c.kind == .flag) [2][:0]const u8{ "is off", "is on" } else [2][:0]const u8{ "is running", "has run out" };
+            if (button(ed, g, lay.take(ws[1]), words_[@intFromBool(c.on)], false, true, "Which way it has to be")) {
                 c.on = !c.on;
                 ed.bank();
             }

@@ -141,7 +141,7 @@ comptime {
     for (SAMPLES[1..], SAMPLES[0 .. SAMPLES.len - 1]) |s, before| std.debug.assert(@intFromEnum(s.group()) >= @intFromEnum(before.group()));
 }
 
-const SPEEDS =[_]f32{ 1, 0.5, 0.25 };
+const SPEEDS = [_]f32{ 1, 0.5, 0.25 };
 const SPEED_NAMES = [SPEEDS.len][:0]const u8{ "Full speed", "Half", "Quarter" };
 
 const BURST_S: f32 = 1.4;
@@ -377,7 +377,7 @@ fn drawStage(g: *game.Game, v: *Viewer, stage: rl.Rectangle, cell: f32) void {
     const s = v.sample();
     widgets.scissor(stage);
     defer rl.endScissorMode();
-    const o = [2]f32{ stage.x - @as(f32, @floatFromInt(ORIGIN.x)) * cell, stage.y - @as(f32, @floatFromInt(ORIGIN.y)) * cell };
+    const o = [2]f32{ stage.x - px(ORIGIN.x, cell), stage.y - px(ORIGIN.y, cell) };
     var cells = grid.Cells.of(ORIGIN, ORIGIN.add(.{ .x = COLS, .y = ROWS }));
     while (cells.next()) |p| panel.swatch(g, s.ground(), widgets.cellRect(o, p, cell));
     rl.drawRectangleRec(stage, SHADE);

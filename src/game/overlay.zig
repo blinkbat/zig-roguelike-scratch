@@ -496,7 +496,7 @@ fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip 
     const pictured = g.pic.pictured[i];
     if (pictured.down()) return null;
     const row = actor.row(pictured.kind);
-    const tile = g.sim.lv.at(at);
+    const tile = g.pic.tileShown(&g.sim, at);
     var stream = std.io.fixedBufferStream(body_buf);
     const w = stream.writer();
     w.print("{d}/{d} HP\n" ++ hud.TIP_RULE ++ "\n{s}", .{ pictured.hp, pictured.max, menu.titleOf(tile) }) catch {};

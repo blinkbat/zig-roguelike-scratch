@@ -341,7 +341,7 @@ pub const Book = struct {
         }
         return c;
     }
-    pub fn actionBox(self: *const Book, b: input.Button, view: View) rl.Rectangle {
+    fn actionBox(self: *const Book, b: input.Button, view: View) rl.Rectangle {
         const i: i32 = @intCast(std.mem.indexOfScalar(input.Button, &ACTIONS, b).?);
         const at: P = switch (self.page) {
             .loot => .{ .x = layout.DETAIL_X, .y = layout.LOOT_FOOT_Y },
@@ -420,7 +420,7 @@ pub const Book = struct {
         header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else "ITEM BAG");
         if (self.page == .loot) {
             var holding: menu.Note(100) = .{};
-            holding.say("Inventory  {d} / {d}     Gold  {d}", .{ view.inventory.n, items.BAG_MAX, view.gold });
+            holding.say(comptime menu.named(Page.inventory) ++ "  {d} / {d}     Gold  {d}", .{ view.inventory.n, items.BAG_MAX, view.gold });
             face.draw(holding.text(), layout.LIST_X, layout.HOLDING_Y, font.SMALL, look.DIM);
             rl.drawLine(layout.DIVIDER_X, layout.LOOT_TOP, layout.DIVIDER_X, layout.LOOT_TOP + layout.CARD_H, look.EDGE);
         }

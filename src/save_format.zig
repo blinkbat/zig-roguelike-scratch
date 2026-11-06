@@ -176,7 +176,7 @@ pub fn parse(bytes: []const u8) !*Snapshot {
     return snapshot;
 }
 
-pub fn peek(bytes: []const u8) !data.Summary {
+fn peek(bytes: []const u8) !data.Summary {
     const snapshot = try parse(bytes);
     defer std.heap.page_allocator.destroy(snapshot);
     return snapshot.summary;
@@ -242,17 +242,12 @@ pub fn validate(snapshot: *Snapshot) !void {
     if (snapshot.map) |*map| {
         if (!atlas.holdsNodes(map.node_n, snapshot.node)) return error.Damaged;
         if (map.start.node >= map.node_n or !grid.Level.inside(map.start.at)) return error.Damaged;
+        if (!map.linksValid()) return error.Damaged;
         try validateDoors(&run.lv, &map.node[snapshot.node]);
-        for (map.nodes(), 0..) |*node, index| {
+        for (map.nodes()) |*node| {
             if (!node.label.valid()) return error.Damaged;
-            for (node.doors(), 0..) |door, door_index| {
+            for (node.doors()) |door| {
                 if (!grid.Level.inside(door.at)) return error.Damaged;
-                if (door.to) |target| {
-                    if (target.node >= map.node_n or target.door >= map.node[target.node].door_n) return error.Damaged;
-                    if (target.node == index and target.door == door_index) return error.Damaged;
-                    const reverse = map.node[target.node].door[target.door].to orelse return error.Damaged;
-                    if (reverse.node != index or reverse.door != door_index) return error.Damaged;
-                }
             }
             switch (node.plan) {
                 .procgen => |*plan| plan.* = plan.fit(),
@@ -281,6 +276,7 @@ pub fn validate(snapshot: *Snapshot) !void {
     }
     if (!snapshot.summary.name.valid() or !snapshot.summary.place.valid()) return error.Damaged;
     if (snapshot.summary.node != (if (snapshot.map != null) @as(?usize, snapshot.node) else null)) return error.Damaged;
+    if (snapshot.map) |*map| if (!std.mem.eql(u8, snapshot.summary.place.text(), map.node[snapshot.node].label.text())) return error.Damaged;
     if (!std.mem.eql(u8, snapshot.summary.name.text(), run.name.text())) return error.Damaged;
     if (snapshot.summary.hp != body.hp or snapshot.summary.max != body.max or snapshot.summary.gold != run.gold) return error.Damaged;
 }

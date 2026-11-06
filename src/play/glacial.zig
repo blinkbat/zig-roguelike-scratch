@@ -16,6 +16,11 @@ pub const CYCLE: u8 = 3;
 pub const VERB = "frosts";
 pub const TAKES = "is chilled";
 pub const ELEMENT: damage.Element = .cold;
+/// Every cold blow's chance to put out each burning cell it reaches.
+pub const DOUSE: u32 = 85;
+/// Every cold blow's chance to put out each burning body it reaches.
+pub const QUENCH: u32 = 50;
+pub const QUENCHED = "stops burning";
 pub const STATUS = std.fmt.comptimePrint("Lose 1 action in every {d}.", .{CYCLE});
 /// Its chance to chill, as every cold skill's description says it.
 pub const CHILL_NOTE = std.fmt.comptimePrint("{d}% chill chance", .{CHANCE});

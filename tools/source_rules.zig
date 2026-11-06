@@ -20,19 +20,23 @@ fn domain(path: []const u8) bool {
         gameRules(path) or std.mem.eql(u8, path, "edit/preview.zig");
 }
 
-const INDEPENDENT = [_][]const u8{
-    "edit/widgets.zig",       "edit/thumbnails.zig",   "edit/tool_catalog.zig",   "edit/name_field.zig",
-    "edit/history.zig",       "edit/text_catalog.zig", "ui/character_view.zig",   "ui/character_layout.zig",
-    "ui/character_stats.zig", "ui/item_card.zig",      "core/input_bindings.zig", "core/input_names.zig",
-    "gfx/light_model.zig",    "gfx/light_gpu.zig",     "gfx/sprite_assets.zig",   "gfx/sprite_materials.zig",
-    "gfx/impact_queue.zig",   "gfx/effect_state.zig",
-};
+const INTERACTION = "edit/interaction.zig";
 
 const SPLIT_FROM = [_]struct { owners: [2][]const u8, parent: []const u8 }{
     .{ .owners = .{ "gfx/sprite_assets.zig", "gfx/sprite_materials.zig" }, .parent = "gfx/sprites.zig" },
     .{ .owners = .{ "gfx/impact_queue.zig", "gfx/effect_state.zig" }, .parent = "gfx/fx.zig" },
     .{ .owners = .{ "core/input_bindings.zig", "core/input_names.zig" }, .parent = "core/input.zig" },
     .{ .owners = .{ "gfx/light_model.zig", "gfx/light_gpu.zig" }, .parent = "gfx/light.zig" },
+};
+
+const INDEPENDENT = [_][]const u8{
+    "edit/widgets.zig",       "edit/thumbnails.zig",   "edit/tool_catalog.zig", "edit/name_field.zig",
+    "edit/history.zig",       "edit/text_catalog.zig", "ui/character_view.zig", "ui/character_layout.zig",
+    "ui/character_stats.zig", "ui/item_card.zig",
+} ++ blk: {
+    var owners: [2 * SPLIT_FROM.len][]const u8 = undefined;
+    for (SPLIT_FROM, 0..) |split, i| owners[2 * i ..][0..2].* = split.owners;
+    break :blk owners;
 };
 
 fn allowed(owner: []const u8, target: []const u8) bool {
@@ -45,14 +49,14 @@ fn allowed(owner: []const u8, target: []const u8) bool {
             std.mem.startsWith(u8, target, "map/") or
             (gameRules(owner) and gameRules(target));
     }
-    const interaction = std.mem.eql(u8, owner, "edit/interaction.zig");
+    const interaction = std.mem.eql(u8, owner, INTERACTION);
     return (interaction or !std.mem.eql(u8, target, "edit/editor.zig")) and !std.mem.eql(u8, target, "game.zig") and
         !std.mem.startsWith(u8, target, "game/") and !std.mem.eql(u8, target, "app.zig") and
         (!std.mem.startsWith(u8, owner, "ui/") or !std.mem.eql(u8, target, "ui/book.zig"));
 }
 
 pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) !?Violation {
-    if (!domain(owner) and !listed(&INDEPENDENT, owner) and !std.mem.eql(u8, owner, "edit/interaction.zig")) return null;
+    if (!domain(owner) and !listed(&INDEPENDENT, owner) and !std.mem.eql(u8, owner, INTERACTION)) return null;
     var tree = try std.zig.Ast.parse(alloc, source, .zig);
     defer tree.deinit(alloc);
     if (tree.errors.len != 0) return error.InvalidSyntax;
@@ -84,7 +88,7 @@ test "source boundaries reject rendering and application imports in domain code"
     const alloc = std.testing.allocator;
     var rejected: usize = 0;
     var kept: usize = 0;
-    for ([_][]const u8{ "play/items.zig", "map/atlas.zig", "game/sim.zig", "game/attacks.zig", "game/rewards.zig", "edit/preview.zig" }) |owner| {
+    for (GAME_RULES ++ [_][]const u8{ "play/items.zig", "map/atlas.zig", "edit/preview.zig" }) |owner| {
         for ([_][:0]const u8{
             "const bad = @import(\"../ui/menu.zig\");",
             "const bad = @import(\"../gfx/look.zig\");",

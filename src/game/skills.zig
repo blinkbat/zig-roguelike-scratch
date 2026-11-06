@@ -473,12 +473,13 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
     combat.endTurn(run);
 }
 
-/// A missile that struck nothing bursts on no one, but still comes down: fire boils the water its blast would reach, lightning runs through it.
+/// A missile that struck nothing bursts on no one, but still comes down: fire boils the water its blast would reach, cold douses the flames, lightning runs through it.
 fn comeDown(run: *game.Game, act: skillbar.Act, flight: bow.Flight, stroke: game.presentation.Stroke) void {
     const at = flight.grounded(&run.sim.lv) orelse return;
     switch (act) {
         inline else => |action| {
             combat.boilUnder(run, action, at, stroke.wait);
+            if (comptime action.element() == .cold and action.bursts()) combat.coldLands(run, &skillbar.Act.elemental(action).burst(&run.sim.lv, stroke.from, at), stroke.wait);
             if (comptime action.element() == .lightning) combat.conduct(run, at, stroke);
         },
     }

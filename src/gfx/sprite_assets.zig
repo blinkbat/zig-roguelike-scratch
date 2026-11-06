@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
+const fire = @import("../map/fire.zig");
 const actor = @import("../play/actor.zig");
 const ground = @import("ground.zig");
 const raster = @import("raster.zig");
@@ -65,6 +66,8 @@ pub const Assets = struct {
             const p = grid.Level.of(i);
             need.decor(t, p);
             if (t.bursts()) need.beneath(t.ground().?, p);
+            if (t.burns()) need.beneath(fire.ASH, p);
+            if (lv.frozen(p)) need.beneath(.shallows, p);
             need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
             need.chest_item_bag = need.chest_item_bag or t.isChest();
             if (t.opened()) |open| need.add(.{ .tile = open });
@@ -78,7 +81,7 @@ pub const Assets = struct {
         return need;
     }
 
-    /// The ground `t` left at `p` once a mimic's chest is flung open or a glowbulb bursts.
+    /// The ground `t` left at `p` once a mimic's chest is flung open, a glowbulb bursts or fire burns it down.
     pub fn beneath(need: *Assets, t: grid.Tile, p: mathx.P) void {
         need.decor(t, p);
         if (look.standsOver(t)) if (cutOf(t, null)) |c| need.add(c);
@@ -436,6 +439,18 @@ test "map assets hold the fallback ground a prop stands on when only unbearing n
     const need = Assets.of(&lv);
     try std.testing.expect(if (GROUND_SHEETS.contains(shown)) need.grounds.contains(shown) else need.tiles.contains(shown.tile()));
     std.debug.print("prop seen over water only: drawn on {s}, loaded\n", .{@tagName(shown)});
+}
+
+test "map assets retain the water artwork beneath temporary ice" {
+    var lv = grid.openFloor();
+    const at = mathx.P{ .x = 20, .y = 20 };
+    lv.set(at, .shallows);
+    const thawed = Assets.of(&lv);
+    lv.set(at, .ice);
+    lv.thaw[grid.Level.idx(at)] = 2;
+    const frozen = Assets.of(&lv);
+    try std.testing.expectEqualDeep(frozen, frozen.merge(thawed));
+    std.debug.print("frozen map assets: all {d} thawed artwork requirements remain resident\n", .{thawed.count()});
 }
 
 test "map assets hold the grass decor a glowbulb leaves when it bursts" {

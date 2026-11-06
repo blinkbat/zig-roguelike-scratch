@@ -31,6 +31,8 @@ const SHIFT: i32 = 3;
 const FRAY_SCALE: f32 = 5;
 const THICKET_SCALE: f32 = 4;
 const CAMP_SCALE: f32 = 3;
+const CAMP_LO: f32 = 0.8;
+const CAMP_SPAN: f32 = 0.4;
 const PATH_WANDER: f32 = 0.4;
 const RIVER_WANDER: f32 = 0.2;
 const TRIES: usize = 60;
@@ -91,7 +93,7 @@ const Plan = struct {
     bar: grid.Box,
     stem: grid.Box,
     camp: P,
-    /// The river's westmost column, `grid.W` with none.
+    /// Where the river and its far bank begin, in from the east rim; `grid.W` with none.
     river_w: i32,
 
     fn of(rng: *mathx.Rng, p: Params) Plan {
@@ -112,13 +114,9 @@ const Plan = struct {
 
     /// Cells in from the T's edge; under 0 outside it.
     fn depth(t: Plan, q: P) f32 {
-        return @max(inFrom(t.bar, q), inFrom(t.stem, q));
+        return @floatFromInt(@max(t.bar.edgeDist(q), t.stem.edgeDist(q)));
     }
 };
-
-fn inFrom(b: grid.Box, q: P) f32 {
-    return @floatFromInt(@min(@min(q.x - b.lo.x, b.hi.x - 1 - q.x), @min(q.y - b.lo.y, b.hi.y - 1 - q.y)));
-}
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const pal = palette(p);
@@ -128,7 +126,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const fray: f32 = @floatFromInt(p.fray);
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
-        if (grid.Level.onRim(q)) continue;
+        if (grid.Level.onRim(q) or q.y >= plan.bar.hi.y) continue;
         if (plan.depth(q) + fray * swing(edge.at(q, FRAY_SCALE, 2)) >= 0) lv.tile[i] = pal.open;
     }
     if (p.river > 0) river(lv, rng, plan, p);
@@ -153,7 +151,7 @@ fn river(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params) void {
     var course: [grid.CELLS]P = undefined;
     var n: usize = 0;
     while (m.next(rng)) |c| {
-        course[n] = c;
+        course[n] = .{ .x = @min(c.x, x), .y = c.y };
         n += 1;
     }
     for (course[0..n]) |c| carve.disc(lv, c, carve.bankReach(2 * r), .shallows, dry);
@@ -165,25 +163,25 @@ fn dry(t: grid.Tile) bool {
 }
 
 fn camp(lv: *grid.Level, edge: carve.Noise, c: P, radius: u8) void {
-    const r: f32 = @floatFromInt(radius);
-    var cells = grid.Cells.around(c, radius + 1);
-    while (cells.next()) |q| {
-        if (!grid.Level.inside(q) or lv.at(q).solid() or lv.at(q).wet()) continue;
-        if (mathx.distEuclid(q, c) / r < 0.8 + 0.4 * edge.at(q, CAMP_SCALE, 2)) lv.set(q, TRAIL);
-    }
+    carve.blobIn(lv, edge, c, @floatFromInt(radius), CAMP_SCALE, CAMP_LO, CAMP_SPAN, TRAIL, grid.Box.around(c, radius + 1), campable);
+}
+
+fn campable(t: grid.Tile) bool {
+    return !t.solid() and !t.wet();
 }
 
 fn woods(lv: *grid.Level, rng: *mathx.Rng, seed: u64, plan: Plan, p: Params) void {
     if (p.forest == 0) return;
     const clumps = carve.Noise.init(seed, .tee_woods);
     const reach: f32 = @floatFromInt(p.forest);
-    var cells = grid.Box.sized(.{ .x = 1, .y = plan.bar.lo.y - p.fray }, p.forest, plan.bar.height() + p.fray).cells();
+    const wood = grid.Box.sized(.{ .x = 1, .y = plan.bar.lo.y - p.fray }, p.forest, plan.bar.height() + p.fray);
+    var cells = wood.cells();
     while (cells.next()) |q| {
         if (lv.at(q) != .grass) continue;
         const thin = 1 - @as(f32, @floatFromInt(q.x)) / reach;
         if (swing(clumps.at(q, THICKET_SCALE, 2)) * 0.5 + 0.5 < mathx.fraction(p.thicket) * thin) lv.set(q, .shrub);
     }
-    cells = grid.Box.sized(.{ .x = 1, .y = 1 }, p.forest, grid.H - 2).cells();
+    cells = wood.cells();
     while (cells.next()) |q| {
         if (lv.at(q) == .grass and carve.clearAround(lv, q) and rng.perMille(p.trees)) lv.set(q, .large_tree);
     }
@@ -217,7 +215,7 @@ fn wetSpan(lv: *const grid.Level, from: P) ?[2]i32 {
 }
 
 fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, kept: *grid.CellSet) void {
-    const r = @as(f32, @floatFromInt(width - 1)) / 2 + 0.5;
+    const r = carve.laneRadius(width);
     const clear: i32 = @intFromFloat(@ceil(r) + 1);
     var m = carve.Meander.init(a, b, wander);
     while (m.next(rng)) |c| {
@@ -235,17 +233,18 @@ const Spot = struct {
 
     /// Camp ground off the roads, open all round.
     fn free(s: Spot, q: P) bool {
-        if (!grid.Level.inside(q) or grid.Level.onRim(q)) return false;
+        if (grid.Level.onRim(q)) return false;
         const i = grid.Level.idx(q);
         return s.lv.tile[i] == TRAIL and !s.kept.isSet(i) and !s.lv.barrel[i];
     }
 
-    fn roomy(s: Spot, q: P, w: i32) bool {
-        var cells = grid.Box.sized(q.sub(.{ .x = 1, .y = 1 }), w + 2, 3).cells();
+    fn roomy(s: Spot, q: P, t: grid.Tile) bool {
+        const foot = t.footprint(q);
+        var cells = (grid.Box{ .lo = foot.lo.sub(.{ .x = 1, .y = 1 }), .hi = foot.hi.add(.{ .x = 1, .y = 1 }) }).cells();
         while (cells.next()) |n| {
             if (!grid.Level.inside(n) or !s.lv.walkable(n)) return false;
         }
-        var feet = grid.Box.sized(q, w, 1).cells();
+        var feet = foot.cells();
         while (feet.next()) |n| {
             if (!s.free(n)) return false;
         }
@@ -260,7 +259,7 @@ fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.Ce
     var n: usize = 0;
     const wide = grid.Tile.caravan.wide();
     for (0..p.carts) |_| {
-        const at = around(rng, c, r, wide, spot) orelse continue;
+        const at = around(rng, c, r, .caravan, spot) orelse continue;
         lv.set(at, .caravan);
         var k: i32 = 1;
         while (k < wide) : (k += 1) lv.set(at.add(.{ .x = k, .y = 0 }), .caravan_part);
@@ -268,7 +267,7 @@ fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.Ce
         n += 1;
     }
     for (0..p.chests) |_| {
-        const at = around(rng, c, r, 1, spot) orelse continue;
+        const at = around(rng, c, r, .chest, spot) orelse continue;
         lv.set(at, .chest);
     }
     for (0..p.barrels) |_| {
@@ -278,12 +277,12 @@ fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.Ce
     }
 }
 
-fn around(rng: *mathx.Rng, c: P, r: f32, w: i32, spot: Spot) ?P {
+fn around(rng: *mathx.Rng, c: P, r: f32, t: grid.Tile, spot: Spot) ?P {
     for (0..TRIES) |_| {
         const a = rng.unit() * std.math.tau;
         const d = rng.between(r * 0.35, r - 1);
         const q = P{ .x = c.x + @as(i32, @intFromFloat(@round(@cos(a) * d))), .y = c.y + @as(i32, @intFromFloat(@round(@sin(a) * d))) };
-        if (spot.roomy(q, w)) return q;
+        if (spot.roomy(q, t)) return q;
     }
     return null;
 }
@@ -321,10 +320,17 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
     var trees: usize = 0;
     var barrels: usize = 0;
     var bank: i32 = grid.W;
+    var narrow: i32 = grid.W;
+    var narrowed = p;
+    narrowed.bank = BANK_MIN;
+    narrowed.river = RIVER_MAX;
     for (0..RUNS) |i| {
+        rolled(&lv, 0x17f78a +% i *% grid.TEST_SEED_STRIDE, &door, narrowed);
+        narrow = @min(narrow, farBank(&lv));
         rolled(&lv, 0x7EE +% i *% grid.TEST_SEED_STRIDE, &door, p);
         bank = @min(bank, farBank(&lv));
-        for ([_]grid.Box{ grid.Box.sized(.{ .x = 1, .y = 1 }, 8, 20), grid.Box.sized(.{ .x = grid.W - 9, .y = 1 }, 8, 20) }) |b| {
+        const foot = grid.Box.sized(.{ .x = 1, .y = grid.H - 1 - FOOT }, grid.W - 2, FOOT);
+        for ([_]grid.Box{ grid.Box.sized(.{ .x = 1, .y = 1 }, 8, 20), grid.Box.sized(.{ .x = grid.W - 9, .y = 1 }, 8, 20), foot }) |b| {
             var cells = b.cells();
             while (cells.next()) |q| corner_open += @intFromBool(lv.walkable(q));
         }
@@ -333,9 +339,9 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
         trees += carve.count(&lv, .large_tree);
         for (lv.barrel) |b| barrels += @intFromBool(b);
     }
-    std.debug.print("{d} tees: {d} open cells in the upper corners, {d} of {d} carts, {d} bridged, {d} large trees and {d} barrels a map, a far bank {d} cells at the least of {d}\n", .{ RUNS, corner_open, carts, RUNS * p.carts, bridged, trees / RUNS, barrels / RUNS, bank, p.bank });
+    std.debug.print("{d} tees: {d} open cells in the upper corners and under the bar, {d} of {d} carts, {d} bridged, {d} large trees and {d} barrels a map, a far bank {d} cells at the least of {d}, {d} of {d} at the narrowest\n", .{ RUNS, corner_open, carts, RUNS * p.carts, bridged, trees / RUNS, barrels / RUNS, bank, p.bank, narrow, BANK_MIN });
     try std.testing.expectEqual(@as(usize, 0), corner_open);
-    try std.testing.expect(bank * 2 >= p.bank);
+    try std.testing.expect(bank * 2 >= p.bank and narrow >= BANK_MIN);
     try std.testing.expectEqual(RUNS, bridged);
     try std.testing.expect(carts * 10 >= RUNS * p.carts * 9);
     try std.testing.expect(trees > RUNS and barrels > RUNS);

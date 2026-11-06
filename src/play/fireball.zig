@@ -16,7 +16,7 @@ pub const BOLT = "fireball";
 pub const BOLT_RANGE: i32 = 6;
 pub const TAKES = burning.TAKES;
 pub const ELEMENT: damage.Element = .fire;
-pub const KINDLE = fire.Kindle{ .chance = 50, .heat = 2 };
+pub const KINDLE = fire.Kindle{ .chance = 50 };
 pub const DESCRIPTION = std.fmt.comptimePrint("A fire bolt bursts on impact, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), burning.BURN_NOTE });
 
 pub const BASE = damage.Base{ .lo = 3, .hi = 6 };

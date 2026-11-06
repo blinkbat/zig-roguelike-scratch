@@ -12,6 +12,15 @@ pub const Modifiers = struct {
     elements: damage.Resists = .initFill(0),
     statuses: std.EnumArray(resilience.Kind, i16) = .initFill(0),
 
+    pub fn with(a: Modifiers, b: Modifiers) Modifiers {
+        var out = a;
+        out.hit +|= b.hit;
+        out.dodge +|= b.dodge;
+        for (&out.elements.values, b.elements.values) |*x, y| x.* +|= y;
+        for (&out.statuses.values, b.statuses.values) |*x, y| x.* +|= y;
+        return out;
+    }
+
     pub fn write(self: Modifiers, w: anytype) void {
         var shown = false;
         if (self.hit != 0) {
@@ -88,6 +97,9 @@ const RAIN_FIRE: f32 = 30;
 const RAIN_BURN: f32 = 40;
 /// Rain's resistances move in steps of this, so a card reads whole fives.
 const RAIN_STEP: f32 = 5;
+/// Rain below these reads as a drizzle, then as rain; heavier is a downpour.
+const DRIZZLE_BELOW: f32 = 0.34;
+const RAIN_BELOW: f32 = 0.67;
 
 /// Out in rain of `rain`, 0 none to 1 a downpour.
 pub fn rained(rain: f32) Modifiers {
@@ -105,7 +117,7 @@ fn stepped(v: f32) i16 {
 /// Null when `rain` lends nothing.
 pub fn rainTitle(rain: f32) ?[]const u8 {
     if (std.meta.eql(rained(rain), Modifiers{})) return null;
-    return if (rain < 0.34) "Drizzle" else if (rain < 0.67) "Rain" else "Downpour";
+    return if (rain < DRIZZLE_BELOW) "Drizzle" else if (rain < RAIN_BELOW) "Rain" else "Downpour";
 }
 
 pub const Stats = struct {
@@ -116,8 +128,9 @@ pub const Stats = struct {
     elements: damage.Resists = .initFill(0),
     statuses: std.EnumArray(resilience.Kind, i16) = .initFill(0),
 
-    pub fn on(base: Stats, tile: grid.Tile) Stats {
-        return base.plus(of(tile));
+    /// On `tile` out in rain of `rain`, the two summed before the caps.
+    pub fn onRained(base: Stats, tile: grid.Tile, rain: f32) Stats {
+        return base.plus(of(tile).with(rained(rain)));
     }
 
     pub fn plus(base: Stats, m: Modifiers) Stats {
@@ -138,21 +151,21 @@ pub const Stats = struct {
 test "terrain resolves signed modifiers after base stats without mutating them" {
     var base = Stats{ .dodge = 74, .elements = .initFill(90), .statuses = .initFill(25) };
     const original = base;
-    const reeds = base.on(.reeds);
+    const reeds = base.onRained(.reeds, 0);
     try std.testing.expectEqual(@as(u32, 95), reeds.hit);
     try std.testing.expectEqual(@as(u32, 75), reeds.dodge);
-    const water = base.on(.shallows);
+    const water = base.onRained(.shallows, 0);
     try std.testing.expectEqual(@as(i16, 100), water.elements.get(.fire));
     try std.testing.expectEqual(@as(i16, 65), water.elements.get(.lightning));
     try std.testing.expectEqual(@as(i16, 50), water.statuses.get(.burn));
-    const grass = base.on(.grass);
+    const grass = base.onRained(.grass, 0);
     try std.testing.expectEqual(@as(i16, 75), grass.elements.get(.fire));
     try std.testing.expectEqual(@as(i16, 10), grass.statuses.get(.burn));
-    try std.testing.expectEqual(@as(i16, -15), (Stats{}).on(.grass).statuses.get(.burn));
+    try std.testing.expectEqual(@as(i16, -15), (Stats{}).onRained(.grass, 0).statuses.get(.burn));
     try std.testing.expectEqualDeep(original, base);
-    try std.testing.expectEqualDeep(base, base.on(.floor));
+    try std.testing.expectEqualDeep(base, base.onRained(.floor, 0));
     base.elements.set(.fire, -100);
-    try std.testing.expectEqual(@as(i16, -100), base.on(.grass).elements.get(.fire));
+    try std.testing.expectEqual(@as(i16, -100), base.onRained(.grass, 0).elements.get(.fire));
     std.debug.print("terrain: hit/dodge, {d} elements, {d} statuses, caps and neutral ground checked\n", .{ std.enums.values(damage.Element).len, std.enums.values(resilience.Kind).len });
 }
 
@@ -169,9 +182,11 @@ test "rain lends fire and burn resistance in fives, more the harder it falls, an
         fire_was = m.elements.get(.fire);
         burn_was = m.statuses.get(.burn);
     }
-    const drizzle = rained(0.19);
+    const drizzle = rained(@import("../map/climate.zig").DRIZZLE);
     std.debug.print("rain: a drizzle lends +{d}% fire / +{d}% burn resistance, a downpour +{d}% / +{d}%\n", .{ drizzle.elements.get(.fire), drizzle.statuses.get(.burn), fire_was, burn_was });
     try std.testing.expectEqualStrings("Downpour", rainTitle(1).?);
-    const soaked = (Stats{}).plus(rained(1)).on(.shallows);
+    const soaked = (Stats{}).onRained(.shallows, 1);
     try std.testing.expectEqual(@as(i16, 55), soaked.elements.get(.fire));
+    const capped = (Stats{ .elements = .initFill(90) }).onRained(.grass, 1);
+    try std.testing.expectEqual(@as(i16, 100), capped.elements.get(.fire));
 }

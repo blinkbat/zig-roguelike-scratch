@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const day = @import("../map/day.zig");
 const climate = @import("../map/climate.zig");
+const ASH = @import("../map/fire.zig").ASH;
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const items = @import("../play/items.zig");
@@ -115,7 +116,7 @@ pub const Befallen = struct { by: usize, after: fx.After };
 /// `was` stands at `at` for `left` seconds more.
 pub const Bursting = struct { at: P, was: grid.Tile, left: f32 };
 
-pub const Pictured = struct { masked: std.StaticBitSet(actor.MAX) = .initEmpty(), bursting: ?P = null, held: bool = false };
+pub const Pictured = struct { masked: std.StaticBitSet(actor.MAX) = .initEmpty(), bursting: ?P = null, held: bool = false, burnt_held: bool = false };
 
 /// Presentation debts land at the body's stagger, or after the hero when it has no stagger.
 pub const Owed = struct {
@@ -159,6 +160,22 @@ pub const Harm = struct { kill: bool, after: fx.After, recovery: ?fx.After = nul
 
 /// `in` is set once the turn it was taken in has its stagger.
 pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
+
+/// When each `Presentation` field is reset, every field in exactly one list; `save_data.zig` checks it.
+pub const Fields = struct {
+    /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
+    pub const turn = [_][]const u8{ "shot", "foe_shots", "knocked_from", "bursting", "lit_held", "lit_due", "flames_held", "flames_due", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
+    /// Defaulted as a run starts.
+    pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
+    /// Defaulted as the hero is spawned.
+    pub const facing = [_][]const u8{"facing"};
+    /// Snapped to the simulation as the game settles, then moved or eased on toward it.
+    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "hour_shown", "weather_shown" };
+    /// Taken as a hold begins, read only while it lasts.
+    pub const held = [_][]const u8{ "lit_before", "tiles_before" };
+    /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
+    pub const kept = [_][]const u8{ "seq", "fx", "occluder" };
+};
 
 /// What is drawn of the run, lagging the simulation until each blow lands; nothing in the simulation reads it.
 pub const Presentation = struct {
@@ -205,6 +222,9 @@ pub const Presentation = struct {
     flames_shown: [grid.CELLS]u8 = @splat(0),
     /// Seconds `flames_shown` stays as it is.
     flames_held: f32 = 0,
+    flames_due: bool = false,
+    /// The ground as `flames_held` began: what fire burns down meanwhile is drawn as it was till then.
+    tiles_before: [grid.CELLS]grid.Tile = @splat(.floor),
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -293,6 +313,18 @@ pub const Presentation = struct {
         self.facing[o] = if (self.turning[i]) |t| t.to else self.facing[i];
     }
 
+    pub fn beforeDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
+        if (!std.meta.eql(actor.row(sim.pool.items[target.slot().index].kind).blow, actor.Blow{ .burst = .fire })) return;
+        if (self.flames_held <= 0 and !self.flames_due) {
+            self.tiles_before = sim.lv.tile;
+            self.flames_due = true;
+        }
+        if (self.lit_held <= 0 and !self.lit_due) {
+            self.lit_before = sim.lv.lit;
+            self.lit_due = true;
+        }
+    }
+
     pub fn recordDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId, death: rewards.Death) void {
         const i = target.slot().index;
         self.dropped_gold[i] = death.gold;
@@ -300,10 +332,6 @@ pub const Presentation = struct {
         if (death.unmasked) self.masked.set(i);
         self.recordFright(sim, target.slot(), death.frightened);
         self.befall(sim, i, death.caught);
-        if (self.lit_held <= 0 and !self.lit_due and std.meta.eql(actor.row(sim.pool.items[i].kind).blow, actor.Blow{ .burst = .fire })) {
-            self.lit_before = sim.lv.lit;
-            self.lit_due = true;
-        }
     }
 
     pub fn recordFright(self: *Presentation, sim: *const Simulation, fallen: actor.ActorSlot, frightened: rewards.Frightened) void {
@@ -347,16 +375,16 @@ pub const Presentation = struct {
     }
 
     pub fn freshTurn(self: *Presentation) void {
-        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "bursting", "lit_held", "lit_due", "flames_held", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
+        mathx.toDefaults(self, &Fields.turn);
         self.fx.clear();
     }
 
     pub fn freshRun(self: *Presentation) void {
-        mathx.toDefaults(self, &.{ "mana_held", "flasks_shown" });
+        mathx.toDefaults(self, &Fields.run);
     }
 
     pub fn freshFacing(self: *Presentation) void {
-        mathx.toDefaults(self, &.{"facing"});
+        mathx.toDefaults(self, &Fields.facing);
     }
 
     fn glideHeld(self: *Presentation, target: actor.ActorSlot, gl: glide.Glide) f32 {
@@ -495,15 +523,21 @@ pub const Presentation = struct {
         return self.standing(sim, i) and !sim.pool.items[i].disguised and !self.under.isSet(i) and !self.masked.isSet(i);
     }
 
-    /// What is drawn at `p`: a mimic's chest until its death is, a glowbulb until the bump, arrow or blow that bursts it lands.
+    /// What is drawn at `p`: a mimic's chest until its death is, a glowbulb until the bump, arrow or blow that bursts it lands,
+    /// and what burnt down, froze or melted while `flames_held` as it was.
     pub fn tileShown(self: *const Presentation, sim: *const Simulation, p: P) grid.Tile {
         if (self.bursting) |b| if (b.at.eq(p)) return b.was;
         if (self.mimicAt(sim, p)) return .chest;
-        return sim.lv.at(p);
+        const t = sim.lv.at(p);
+        if (self.flames_held <= 0) return t;
+        const was = grid.cellOr(grid.Tile, &self.tiles_before, p, t);
+        if (t == ASH and was.burns()) return was;
+        if ((t == .ice and was == .shallows) or (t == .shallows and was == .ice)) return was;
+        return t;
     }
 
     pub fn pictureKey(self: *const Presentation) Pictured {
-        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.lit_held > 0 };
+        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.lit_held > 0, .burnt_held = self.flames_held > 0 };
     }
 
     /// The chest drawn at `p` is a mimic's: one still disguised, or one killed in it until its death is drawn.
@@ -528,7 +562,9 @@ pub const Presentation = struct {
     }
 
     /// The flames drawn stay as they are for `wait` seconds, till the fire that lit the newest lands.
-    pub fn holdFlames(self: *Presentation, wait: f32) void {
+    pub fn holdFlames(self: *Presentation, lv: *const grid.Level, wait: f32) void {
+        if (self.flames_held <= 0 and !self.flames_due) self.tiles_before = lv.tile;
+        self.flames_due = false;
         self.flames_held = @max(self.flames_held, wait);
     }
 
@@ -621,7 +657,7 @@ pub const Presentation = struct {
         self.stepOcclusion(sim, dt);
         self.stepSighted(sim, dt);
         self.hour_shown = day.wrapHour(self.hour_shown + day.toward(self.hour_shown, sim.clock.hour()) * mathx.easing(dt, HOUR_EASE));
-        self.weather_shown = climate.eased(self.weather_shown, weatherOf(sim), mathx.easing(dt, WEATHER_EASE));
+        self.weather_shown = climate.eased(self.weather_shown, sim.weatherHere(), mathx.easing(dt, WEATHER_EASE));
         self.xp_shown = mathx.ease(self.xp_shown, self.xp_aim, mathx.easing(dt, XP_EASE), 1);
         const resource_ease = mathx.easing(dt, RESOURCE_EASE);
         self.life_fill = mathx.ease(self.life_fill, self.lifeFill(sim), resource_ease, resource_ease);
@@ -978,7 +1014,7 @@ pub const Presentation = struct {
                 .gas => gas.hold(s.wait),
                 .fire => {
                     gas.hold(s.wait);
-                    self.holdFlames(s.wait);
+                    self.holdFlames(&sim.lv, s.wait);
                     if (self.litShown(sim, at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
                     self.holdLit(&sim.lv, s.wait);
                 },
@@ -1013,12 +1049,8 @@ const PACE_SLACK: f32 = 1e-4;
 pub const STEP_AT: f32 = 0.85;
 /// Per second, how fast the sky drawn catches the hour a turn moved on.
 const HOUR_EASE: f32 = 4;
+/// Per second, how fast the weather drawn catches the weather a turn moved on.
 const WEATHER_EASE: f32 = 1.5;
-
-/// What the sky over the hero is doing now; nothing under a roof.
-pub fn weatherOf(sim: *const Simulation) climate.Now {
-    return if (sim.outdoors) sim.weatherNow() else .initFill(0);
-}
 const OCCLUSION_EASE: f32 = 12;
 /// Per second, how fast the experience bar fills toward a drawn turn's experience.
 const XP_EASE: f32 = 8;

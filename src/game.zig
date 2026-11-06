@@ -457,7 +457,7 @@ pub fn settle(g: *Game) void {
     g.pic.settleResources(&g.sim);
     g.cam = camWant(g);
     g.pic.hour_shown = g.sim.clock.hour();
-    g.pic.weather_shown = presentation.weatherOf(&g.sim);
+    g.pic.weather_shown = g.sim.weatherHere();
     g.light.sky = skyNow(g);
     g.light.settle(&g.sim.lv);
     carryLight(g);
@@ -476,11 +476,12 @@ pub fn resumeRun(g: *Game) void {
     toDefaults(&g.sim, &(SimFields.resumed ++ SimFields.rebuilt));
     g.sim.unsaved = g.sim.growth.refundBasicRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
+    g.sim.clampMana();
     if (g.sim.map) |w| {
         w.stampFolk(g.sim.node, &g.sim.lv);
         var left = g.sim.visited.iterator(.{});
         while (left.next()) |n| w.stampFolk(n, &g.sim.visits[n].lv);
-    }
+    } else g.sim.lv.clearFolk();
     freshTurn(g);
     g.pic.settleXp(&g.sim);
     settle(g);
@@ -608,7 +609,7 @@ pub fn syncStats(g: *Game) void {
     h.max = g.sim.lifeMax();
     h.hp = @min(h.hp, h.max);
     h.resists = g.sim.heroAttrs().resists;
-    g.sim.mana = @min(g.sim.mana, g.sim.manaMax());
+    g.sim.clampMana();
     g.pic.settleHero(&g.sim, 0);
 }
 
@@ -798,7 +799,7 @@ pub fn overLog(g: *const Game) bool {
 fn skyNow(g: *const Game) ?sky.Sky {
     if (!g.sim.outdoors) return null;
     const flash = if (g.debug.visuals.weather) g.rain.flash() else 0;
-    return sky.under(g.pic.hour_shown, g.pic.weather_shown.get(.overcast)).flashed(flash);
+    return sky.under(g.pic.hour_shown, g.pic.weather_shown.get(.overcast)).struck(flash);
 }
 
 /// The weather as drawn; null under a roof.

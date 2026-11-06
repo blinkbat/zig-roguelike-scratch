@@ -73,7 +73,7 @@ fn column(g: *const game.Game) widgets.Column {
     return editor.Editor.inspector(g);
 }
 
-pub fn section(g: *game.Game, y: *i32, title: [:0]const u8) void {
+fn section(g: *game.Game, y: *i32, title: [:0]const u8) void {
     widgets.heading(&g.face, title, column(g).left(), y.* + widgets.GAP);
     y.* += SECTION_H;
 }

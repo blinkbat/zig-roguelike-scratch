@@ -12,6 +12,7 @@ const terrain = @import("../play/terrain.zig");
 const resilience = @import("../play/resilience.zig");
 const sunder = @import("../play/sunder.zig");
 const blind = @import("../play/blind.zig");
+const burning = @import("../play/burning.zig");
 const damage = @import("../play/damage.zig");
 const flask = @import("../play/flask.zig");
 const heroes = @import("../play/hero.zig");
@@ -237,12 +238,17 @@ pub const Simulation = struct {
             base.statuses.set(k, @as(i16, actor.innateResist(a.kind, k)) + buildup.meters.get(k).percent);
         }
         if (!a.foe()) base.statuses.getPtr(.stun).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.resolve));
-        return base.plus(terrain.rained(self.rainNow())).on(self.lv.at(at));
+        return base.onRained(self.lv.at(at), self.rainNow());
     }
 
     /// The rain falling on the open ground here, 0 under a roof.
     pub fn rainNow(self: *const Simulation) f32 {
-        return if (self.outdoors) self.weatherNow().get(.rain) else 0;
+        return self.weatherHere().get(.rain);
+    }
+
+    /// What the sky over the hero is doing now; nothing under a roof.
+    pub fn weatherHere(self: *const Simulation) climate.Now {
+        return if (self.outdoors) self.weatherNow() else .initFill(0);
     }
 
     pub fn takeStatus(self: *Simulation, a: *actor.Actor, kind: resilience.Kind) bool {
@@ -275,6 +281,14 @@ pub const Simulation = struct {
         return true;
     }
 
+    /// As `igniteBy`, saying so when `a` was not already burning.
+    pub fn igniteFresh(self: *Simulation, slot: usize, a: *actor.Actor, of: u32) bool {
+        const fresh = a.burn.turns == 0;
+        if (!self.igniteBy(a, of)) return false;
+        if (fresh) self.sayTakes(slot, a, burning.TAKES);
+        return true;
+    }
+
     pub fn lifeMax(self: *const Simulation) i32 {
         return self.heroAttrs().life();
     }
@@ -283,8 +297,12 @@ pub const Simulation = struct {
         return self.heroAttrs().mana();
     }
 
+    pub fn clampMana(self: *Simulation) void {
+        self.mana = @min(self.mana, self.manaMax());
+    }
+
     pub fn gainMana(self: *Simulation, n: i32) void {
-        self.mana = @min(self.manaMax(), self.mana + n);
+        self.mana = @min(self.manaMax(), self.mana +| n);
     }
 
     pub fn manaRegen(self: *const Simulation) i32 {

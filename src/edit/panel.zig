@@ -437,7 +437,7 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     y += widgets.ROW_STEP;
     var detail_buf: [widgets.LINE]u8 = undefined;
     const nd = ed.here();
-    widgets.textFace(&g.face).draw(nodeDetail(nd, &detail_buf), col.left(), y, DETAIL, if (nd.unlinked() > 0) WARN else look.DIM);
+    widgets.textFace(&g.face).draw(nodeDetail(nd, &detail_buf), col.left(), y, DETAIL, nodeInk(nd));
     y += DETAIL + widgets.BLOCK_GAP;
     var node = widgets.Across{ .col = col, .y = y, .n = 2 };
     if (smallButton(ed, g, node.next(), "Rename", ed.renaming, true, widgets.keyed("Name this node", Desk.RENAME_CAPTION)) and !ed.renamed) ed.startRename();
@@ -492,7 +492,7 @@ pub fn nodeRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, n: usize, mod
     const y: i32 = @intFromFloat(r.y);
     drawNodeTitle(ed, g, n, r, y + editor.TITLE_DY);
     const nd = &ed.map.node[n];
-    widgets.textFace(&g.face).draw(nodeDetail(nd, &detail_buf), widgets.textX(r), y + editor.TITLE_DY + editor.NODE_DETAIL_DY, DETAIL, if (nd.unlinked() > 0) WARN else look.DIM);
+    widgets.textFace(&g.face).draw(nodeDetail(nd, &detail_buf), widgets.textX(r), y + editor.TITLE_DY + editor.NODE_DETAIL_DY, DETAIL, nodeInk(nd));
     return h.hit;
 }
 
@@ -504,6 +504,10 @@ fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {
     const open = nd.unlinked();
     if (open == 0) return std.fmt.bufPrintZ(buf, "{s}, {d} doors", .{ kind, nd.door_n }) catch "";
     return std.fmt.bufPrintZ(buf, "{s}, {d} doors, {d} unlinked", .{ kind, nd.door_n, open }) catch "";
+}
+
+fn nodeInk(nd: *const atlas.Node) rl.Color {
+    return if (nd.unlinked() > 0) WARN else look.DIM;
 }
 
 fn drawThings(ed: *editor.Editor, g: *game.Game, col: Column, box: rl.Rectangle) void {

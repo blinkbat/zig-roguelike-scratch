@@ -824,7 +824,7 @@ pub fn drawFlight(s: *const game.presentation.Shot, o: [2]f32, cell: f32) void {
     if (s.net) fx.drawNet(at, s.t, o[0], o[1], cell) else fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], cell);
 }
 
-/// A cell of Fire Wall's flames, its top-left at `x`, `y`.
+/// A cell of ground flames, its top-left at `x`, `y`.
 pub fn drawFlames(effects: *const fx.Fx, x: f32, y: f32, cell: f32, seed: usize) void {
     rl.drawRectangleRec(.{ .x = x, .y = y, .width = cell, .height = cell }, look.fade(look.FIRE, FLAME_FILL_A));
     effects.drawBurning(x, y, cell, seed, 1);
@@ -896,9 +896,9 @@ pub fn effectLights(g: *game.Game) void {
         } else continue;
         g.light.emit(&g.sim.lv, source);
     }
-    for (&g.pic.flames_shown, 0..) |turns, i| {
+    for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);
-        if (turns == 0 or !g.sim.lv.isLit(p)) continue;
+        if (!g.pic.flamesShown(i) or !g.sim.lv.isLit(p)) continue;
         const mid = mathx.centre(p);
         g.light.emit(&g.sim.lv, .{ .at = .{ mid[0], mid[1], light.BODY_Z }, .col = look.FIRE, .radius = FLAME_LIGHT_R, .gain = FLAME_LIGHT_GAIN * g.pic.fx.statusFlicker(@floatFromInt(i)) });
     }

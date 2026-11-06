@@ -28,7 +28,7 @@ pub const OVERBRIGHT: f32 = 2.0;
 
 pub const REACH: i32 = lume.TORCH_REACH;
 const REACH2: f32 = @floatFromInt(REACH * REACH);
-pub const SPAN: i32 = grid.Cells.span(REACH);
+const SPAN: i32 = grid.Cells.span(REACH);
 /// Cells: the inverse square's reference distance.
 const FALLOFF_D0: f32 = 2.5;
 /// Wall height in cells; the brick face below `FACE_FROM` is foreshortened.
@@ -91,7 +91,7 @@ const KNEE: f32 = 1.5;
 
 pub const BODY_LIGHTS: usize = 4;
 /// A pale flash remains visible over red bodies.
-pub const FLASH_RGB = Rgb{ 0.88, 0.38, 0.30 };
+const FLASH_RGB = Rgb{ 0.88, 0.38, 0.30 };
 /// Texels toward the viewer, for the side-lighting of a body.
 pub const BODY_LIGHT_Z: f32 = 40.0;
 /// The body shader's wrap round the normal, least rise toward the viewer per texel out, rim strength, rim reach in texels and sheen.
@@ -235,7 +235,7 @@ fn hash2(_: void, x: i32, y: i32) f32 {
     return hash(x *% 73856093 ^ y *% 19349663, 0xC10D);
 }
 
-pub fn shaded(sun: f32) f32 {
+fn shaded(sun: f32) f32 {
     return 1 - SUN_SHADE * (1 - sun);
 }
 
@@ -349,7 +349,7 @@ const PLANT_LIGHTS: usize = grid.MAX_GLOWS;
 pub const LIGHTS: usize = grid.MAX_TORCHES + PLANT_LIGHTS;
 pub const TorchIx = std.math.IntFittingRange(0, LIGHTS - 1);
 
-pub const Kind = enum { wall, plant };
+const Kind = enum { wall, plant };
 
 /// A torch hangs on its wall's south face; a glowing plant is its own torch.
 pub const Mount = union(Kind) {
@@ -504,7 +504,7 @@ pub fn wrapped(cos: f32, wrap: f32) f32 {
 pub const texel = visibility.texel;
 pub const mask = visibility.mask;
 
-pub fn hash(n: i32, seed: u32) f32 {
+fn hash(n: i32, seed: u32) f32 {
     var x: u32 = @bitCast(n);
     x = (x ^ seed) *% 0x9E3779B1;
     x ^= x >> 15;
@@ -513,7 +513,7 @@ pub fn hash(n: i32, seed: u32) f32 {
     return @as(f32, @floatFromInt(x >> 8)) / @as(f32, 1 << 24);
 }
 
-pub fn noise(t: f32, seed: u32) f32 {
+fn noise(t: f32, seed: u32) f32 {
     const i = @floor(t);
     const f = t - i;
     const n: i32 = @intFromFloat(i);
@@ -526,11 +526,11 @@ pub fn flicker(t: f32, seed: u32) f32 {
     return 1 + FLICKER * n;
 }
 
-pub fn pulse(t: f32, seed: u32) f32 {
+fn pulse(t: f32, seed: u32) f32 {
     return 1 + PULSE * @sin((t * PULSE_HZ + hash(0, seed)) * mathx.TAU);
 }
 
-pub fn knee(c: Rgb) Rgb {
+fn knee(c: Rgb) Rgb {
     var out = c;
     for (0..3) |i| {
         if (c[i] > KNEE) out[i] = KNEE * @sqrt(c[i] / KNEE);
@@ -732,7 +732,7 @@ pub const Options = struct {
 };
 
 /// The body shader's flash, for what is drawn without it.
-pub fn flashed(c: rl.Color, k: f32) rl.Color {
+fn flashed(c: rl.Color, k: f32) rl.Color {
     const from = rgbOf(c);
     return recolour(c, mix(from, FLASH_RGB, k));
 }

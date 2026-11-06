@@ -2,6 +2,8 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
 const gas = @import("gas.zig");
+const ice = @import("ice.zig");
+const damage = @import("../play/damage.zig");
 
 const P = mathx.P;
 
@@ -21,9 +23,16 @@ pub const ASH: grid.Tile = .dirt;
 pub const SCORCH: i32 = 3;
 /// The chance standing in flames sets a body burning, before its fire and burn resistance.
 pub const CATCH: u32 = 50;
+/// The cells landing fire may leap on from what it catches, unless its source says otherwise.
+pub const LANDED_HEAT: u8 = 2;
 
 /// Fire landing: its chance to catch each cell that burns, and the cells it may leap on from there.
-pub const Kindle = struct { chance: u32, heat: u8 };
+pub const Kindle = struct { chance: u32, heat: u8 = LANDED_HEAT };
+
+/// What standing in flames deals a turn against `resists`.
+pub fn scorch(resists: damage.Resists) i32 {
+    return damage.resisted(SCORCH, resists.get(.fire));
+}
 
 /// `chance` under rain of `rain`, 0 none to 1 a downpour.
 pub fn damped(chance: u32, rain: f32) u32 {
@@ -55,7 +64,20 @@ pub fn kindle(lv: *grid.Level, cells: []const P, k: Kindle, rain: f32, rng: *mat
     return n;
 }
 
-/// A turn of the floor's fire: each burning tile smokes, each fire leaps to what burns beside it and boils the water beside it,
+/// Each burning cell of `cells` goes out by `chance`, leaving its tile unburnt; how many did.
+pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) usize {
+    var n: usize = 0;
+    for (cells) |p| {
+        if (!grid.Level.inside(p) or !lv.burning(p) or !rng.percent(chance)) continue;
+        const i = grid.Level.idx(p);
+        lv.flames[i] = 0;
+        lv.heat[i] = 0;
+        n += 1;
+    }
+    return n;
+}
+
+/// A turn of the floor's fire: each burning tile smokes, each fire leaps to what burns beside it, boils the water and melts the frozen shallows beside it,
 /// then every cell burns a turn down, and a tile that burns goes to `ASH` as its fire goes out; true when any did.
 pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32) bool {
     if (std.mem.allEqual(u8, &lv.flames, 0)) return false;
@@ -72,6 +94,8 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32) bool {
             if (!grid.Level.inside(q)) continue;
             if (lv.at(q).wet()) {
                 if (rng.percent(chance)) _ = gas.boil(lv, &.{q});
+            } else if (lv.frozen(q)) {
+                if (rng.percent(chance)) _ = ice.melt(lv, &.{q});
             } else if (heat > 0 and catches(lv, q) and rng.percent(chance)) lay(lv, q, BURNS, heat - 1);
         }
     }
@@ -147,12 +171,13 @@ test "a fire in a field of grass leaps only as far as its heat, goes out in a fe
 
 test "rain damps every chance to catch, a downpour most" {
     try std.testing.expectEqual(SPREAD, damped(SPREAD, 0));
-    try std.testing.expect(damped(SPREAD, 0.19) < SPREAD and damped(SPREAD, 1) < damped(SPREAD, 0.19));
+    const DRIZZLE = @import("climate.zig").DRIZZLE;
+    try std.testing.expect(damped(SPREAD, DRIZZLE) < SPREAD and damped(SPREAD, 1) < damped(SPREAD, DRIZZLE));
     var rng = mathx.Rng.init(0x2A1);
     const dry = try average(3, 0, &rng);
-    const drizzle = try average(3, 0.19, &rng);
+    const drizzle = try average(3, DRIZZLE, &rng);
     const downpour = try average(3, 1, &rng);
-    std.debug.print("a heat-3 grass fire burns {d:.1} cells dry, {d:.1} in a drizzle, {d:.1} in a downpour; spread {d}%/{d}%/{d}%\n", .{ dry.cells, drizzle.cells, downpour.cells, SPREAD, damped(SPREAD, 0.19), damped(SPREAD, 1) });
+    std.debug.print("a heat-3 grass fire burns {d:.1} cells dry, {d:.1} in a drizzle, {d:.1} in a downpour; spread {d}%/{d}%/{d}%\n", .{ dry.cells, drizzle.cells, downpour.cells, SPREAD, damped(SPREAD, DRIZZLE), damped(SPREAD, 1) });
     try std.testing.expect(downpour.cells < drizzle.cells and drizzle.cells < dry.cells);
 }
 
@@ -190,6 +215,25 @@ test "a burning tile smokes, laid flames on bare floor do not, and a fire of no 
     try std.testing.expectEqual(ASH, lv.at(AT));
     try std.testing.expectEqual(grid.Tile.floor, lv.at(bare));
     try std.testing.expect(!lv.burning(AT) and !lv.burning(bare));
+}
+
+test "dousing puts out only burning cells, by its chance, and leaves their tiles unburnt" {
+    var rng = mathx.Rng.init(0xD0);
+    var out: usize = 0;
+    for (0..TRIES) |_| {
+        var lv = field(.grass);
+        lay(&lv, AT, BURNS, 2);
+        out += douse(&lv, &.{ AT, AT.add(.{ .x = 1, .y = 0 }) }, 50, &rng);
+        try std.testing.expectEqual(grid.Tile.grass, lv.at(AT));
+        if (!lv.burning(AT)) try std.testing.expectEqual(@as(u8, 0), lv.heat[grid.Level.idx(AT)]);
+    }
+    std.debug.print("a 50% douse put out {d}/{d} fires and nothing unlit\n", .{ out, TRIES });
+    try std.testing.expect(out > TRIES / 3 and out < TRIES * 2 / 3);
+    var lv = field(.grass);
+    lay(&lv, AT, BURNS, 2);
+    try std.testing.expectEqual(@as(usize, 1), douse(&lv, &.{AT}, mathx.PERCENT, &rng));
+    try std.testing.expect(!lv.burning(AT));
+    try std.testing.expectEqual(@as(usize, 0), douse(&lv, &.{AT}, mathx.PERCENT, &rng));
 }
 
 test "kindling catches only what burns and is not alight, by its chance under the rain" {

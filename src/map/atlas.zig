@@ -441,7 +441,7 @@ pub const Atlas = struct {
 
     /// Node `n`'s folk onto its level, where they can still stand.
     pub fn stampFolk(self: *const Atlas, n: usize, lv: *grid.Level) void {
-        lv.folk = @splat(grid.NO_FOLK);
+        lv.clearFolk();
         for (self.script.folks(), 0..) |*f, i| {
             if (f.node == n and lv.walkable(f.at) and !lv.taken(f.at)) lv.putFolk(f.at, i);
         }
@@ -519,6 +519,22 @@ pub const Atlas = struct {
 
     pub fn door(self: *const Atlas, at: Link) Door {
         return self.node[at.node].door[at.door];
+    }
+
+    pub fn linksValid(self: *const Atlas) bool {
+        if (self.node_n > self.node.len) return false;
+        for (self.node[0..self.node_n]) |*nd| if (nd.door_n > nd.door.len) return false;
+        for (self.node[0..self.node_n], 0..) |*nd, n| {
+            for (nd.doors(), 0..) |d, k| {
+                const to = d.to orelse continue;
+                if (to.node >= self.node_n or to.door >= self.node[to.node].door_n) return false;
+                const here = Link{ .node = n, .door = k };
+                if (to.eq(here)) return false;
+                const back = self.door(to).to orelse return false;
+                if (!back.eq(here)) return false;
+            }
+        }
+        return true;
     }
 
     pub fn link(self: *Atlas, a: Link, b: Link) void {

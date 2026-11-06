@@ -42,8 +42,10 @@ reused only after worker completion, and failed encodes or writes rearm dirty st
 
 ## Legacy files
 
-The previous raw format remains readable when its recorded ABI/type/tree
-fingerprint matches this build. Its counts, primitive tags and semantic state are
+A raw file loads only when its ABI/type/tree fingerprint matches this exact build.
+The fingerprint names every enum member reachable from the raw layout, so adding a
+tile, biome or other enum value changes it and earlier raw files then report as
+another build's. Its counts, primitive tags and semantic state are
 checked in detached storage before applying it. Its next save uses the portable
 format; legacy ossuary records similarly become dirty after conversion.
 
@@ -54,9 +56,9 @@ Supporting one requires its original schema and an explicit migration. Keep
 claiming compatibility.
 
 The reader takes the map and level in their raw shape without the fields added
-to their ends since (`save_data.LegacyMap`, `LegacyLevel`: the script, folk, healing gas, steam and smoke),
+to their ends since (`save_data.LegacyMap`, `LegacyLevel`: the script and `LEVEL_ADDED`),
 then converts with those fields defaulted. Run state added after the raw format
-(`PORTABLE_FIELDS`, the trigger runtime) lives in portable saves alone.
+(`PORTABLE_FIELDS`: the trigger runtime and the days elapsed) lives in portable saves alone.
 
 ## Encoding and evolution
 

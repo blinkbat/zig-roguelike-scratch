@@ -40,6 +40,10 @@ const SPLASH_DROPS = 4;
 const SEED: u64 = 0x5A1_2A17;
 /// Seconds between strokes, on average, at full lightning.
 const STROKE_GAP_S: f32 = 7;
+/// A stroke's dimmest share of its brightest.
+const STROKE_LEAST: f32 = 0.5;
+/// Added to the lightning's strength before a stroke's brightness caps at 1.
+const STROKE_FLOOR: f32 = 0.4;
 /// A stroke's rise, then its fall; a second, fainter return follows `RETURN_S` after.
 const FLASH_RISE_S: f32 = 0.04;
 const FLASH_FALL_S: f32 = 0.35;
@@ -78,7 +82,7 @@ pub const Weather = struct {
         const lightning = n.get(.lightning);
         if (lightning > 0 and self.rng.unit() < dt * lightning / STROKE_GAP_S) {
             self.stroke_s = 0;
-            self.stroke = self.rng.between(0.5, 1) * @min(1, 0.4 + lightning);
+            self.stroke = self.rng.between(STROKE_LEAST, 1) * @min(1, STROKE_FLOOR + lightning);
         }
         const fall = fallOf(n.get(.rain)) orelse {
             self.n = 0;

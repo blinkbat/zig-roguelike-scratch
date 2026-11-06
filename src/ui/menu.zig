@@ -207,7 +207,7 @@ const Rows = struct {
     }
 };
 
-pub fn pointed(st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
+fn pointed(st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
     if (!st.pointing() or st.scroll != 0 or st.walk != null) return null;
     for (0..n) |i| {
         if (raster.holds(boxOf(ctx, i), st.pointer.?)) return i;
@@ -288,7 +288,7 @@ pub fn listWidth(screen: mathx.P) i32 {
     return @min(LIST_W, @max(1, screen.x - 2 * MARK_GAP));
 }
 
-pub fn rowBox(screen: mathx.P, win: Window, i: usize) rl.Rectangle {
+fn rowBox(screen: mathx.P, win: Window, i: usize) rl.Rectangle {
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(win.len)) * ROW_STEP, 2);
     const width = listWidth(screen);
     return raster.rect(@divTrunc(screen.x - width, 2), top + ROWS_DY + @as(i32, @intCast(i - win.from)) * ROW_STEP - ROW_INSET, width, ROW_STEP);
@@ -467,11 +467,6 @@ test "a long menu shows the rows that fit, the one it is on among them" {
     try std.testing.expect(w.len < 40 and w.from + w.len == 40);
     try std.testing.expectEqual(@as(usize, 0), window(900, 40, 0).from);
     try std.testing.expectEqual(@as(usize, 3), window(900, 3, 2).len);
-}
-
-test "a tag is titled word by word" {
-    try std.testing.expectEqualStrings("Chain Lightning", comptime wording.titled("chain_lightning"));
-    try std.testing.expectEqualStrings("Fireball", comptime wording.titled("fireball"));
 }
 
 test "the menu walks round its rows and picks the one it is on" {
