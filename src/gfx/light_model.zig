@@ -178,12 +178,16 @@ pub fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
 const BANK_FOOT_SHADE: f32 = 0.35;
 const BANK_FOOT_PX: f32 = 3;
 
-/// `banks` reads `lv`'s terrain: a `ground.LiveBanks` or a `*const ground.Banks` synced to it.
+/// `banks` reads `lv`'s terrain: a `ground.LiveBanks` or a `*const ground.Banks` synced to it. No rim shades ground north of it.
 pub fn bankSunlit(lv: *const grid.Level, banks: anytype, ray: SunRay, x: f32, y: f32, z: f32) f32 {
     if (z != 0 or sky.upright(ray.flat)) return 1;
-    const here = lv.at(mathx.cellOf(.{ x, y }));
+    const cell = mathx.cellOf(.{ x, y });
+    const here = lv.at(cell);
     const height = ground.bankHeight(here);
     if (height == 0) return 1;
+    if (banks.lip(.{ x, y })) |lip| {
+        if (y < lip) return 1;
+    }
     var lit: f32 = 1;
     if (banks.foot(.{ x, y })) |foot| {
         if (y >= foot) lit = 1 - BANK_FOOT_SHADE * (1 - mathx.smoothstep(0, BANK_FOOT_PX / look.SPRITE_PX, y - foot));
@@ -194,9 +198,13 @@ pub fn bankSunlit(lv: *const grid.Level, banks: anytype, ray: SunRay, x: f32, y:
         const q = [2]f32{ x + ray.u[0] * distance, y + ray.u[1] * distance };
         const p = mathx.cellOf(q);
         if (!grid.Level.inside(p)) break;
+        if (p.y > cell.y) continue;
         var bed = banks.bed(p) orelse continue;
         if (banks.lip(q)) |lip| {
-            if (q[1] < lip) bed = banks.bed(p.add(.{ .x = 0, .y = -1 })) orelse continue;
+            if (q[1] < lip) {
+                if (lip > y) continue;
+                bed = banks.bed(p.add(.{ .x = 0, .y = -1 })) orelse continue;
+            }
         }
         if (!ground.bankAbove(bed.tile(), here)) continue;
         const drop = height - ground.bankHeight(bed.tile());

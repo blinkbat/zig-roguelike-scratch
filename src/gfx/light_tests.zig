@@ -1560,3 +1560,64 @@ test "a streak is darkest at the feet and gone at the tip, and a sideways sun sh
     try std.testing.expectApproxEqAbs(shadow.STREAK_FOOT, peak_u, 0.011);
     try std.testing.expect(shadow.streakAlpha(1, mid) < 1e-3 and longest <= sky.REACH_MAX + 1e-3);
 }
+
+test "a baked bank's top edge and the water by its south shore are no darker than the land beside them, all day" {
+    const top: usize = 10 * light.SUB;
+    const shore: usize = 20 * light.SUB - 1;
+    const tolerance: i32 = 4;
+    for ([_]grid.Tile{ .shallows, .water }) |wet| {
+        var lv = litFloor();
+        var cells = grid.Cells.of(.{ .x = 20, .y = 10 }, .{ .x = 30, .y = 20 });
+        while (cells.next()) |p| lv.set(p, wet);
+        const l = try testLight(&lv);
+        defer std.testing.allocator.destroy(l);
+        var worst: i32 = 0;
+        var hour: f32 = 7;
+        while (hour <= 17) : (hour += 1) {
+            l.sky = sky.at(hour);
+            l.bake(&lv, .{ .x = 16, .y = 6 }, .{ .x = 34, .y = 24 });
+            const map = l.texels.getPtrConst(.map);
+            for (21 * light.SUB..29 * light.SUB) |tx| {
+                for ([_][2]usize{ .{ top, top - 1 }, .{ shore, shore - 1 } }) |pair| {
+                    const edge: i32 = map[pair[0] * model.MAP_W + tx].r;
+                    const beside: i32 = map[pair[1] * model.MAP_W + tx].r;
+                    worst = @max(worst, beside - edge);
+                }
+            }
+        }
+        std.debug.print("{s} banks baked 7-17h: an edge texel at most {d} darker than the one north of it\n", .{ @tagName(wet), worst });
+        try std.testing.expect(worst <= tolerance);
+    }
+}
+
+test "water banks cast no shadow north: the ground above a lip and the water under a south rim keep the sun" {
+    var lv = litFloor();
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const x: f32 = 25.3;
+    for ([_]grid.Tile{ .shallows, .water }) |wet| {
+        var cells = grid.Cells.of(.{ .x = 20, .y = 10 }, .{ .x = 30, .y = 20 });
+        while (cells.next()) |p| lv.set(p, wet);
+        l.settle(&lv);
+        const lip = dual.bankLip(&lv, .{ x, 10.2 }).?;
+        const foot = dual.bankFoot(&lv, .{ x, 10.2 }).?;
+        try std.testing.expect(lip > 10);
+        var darkest_land: f32 = 1;
+        var darkest_south: f32 = 1;
+        var darkest_face: f32 = 1;
+        for ([_][2]f32{ .{ 0, 1 }, .{ 0, -1 }, .{ 0.7, 0.7 }, .{ 0.7, -0.7 }, .{ -0.7, 0.7 } }) |u| {
+            var ray = model.SunRay.of(sky.at(12));
+            ray.u = u;
+            ray.rise = 0.3;
+            var y: f32 = 10;
+            while (y < lip) : (y += 0.02) darkest_land = @min(darkest_land, l.sunAt(&lv, &ray, x, y, 0));
+            y = 19;
+            while (y < 20) : (y += 0.02) darkest_south = @min(darkest_south, l.sunAt(&lv, &ray, x, y, 0));
+            if (u[1] < 0) darkest_face = @min(darkest_face, l.sunAt(&lv, &ray, x, (lip + foot) / 2, 0));
+        }
+        std.debug.print("{s} bank: ground above the lip at least {d:.2} of the sun, water by the south rim {d:.2}; the face away from the sun {d:.2}\n", .{ @tagName(wet), darkest_land, darkest_south, darkest_face });
+        try std.testing.expectEqual(@as(f32, 1), darkest_land);
+        try std.testing.expectEqual(@as(f32, 1), darkest_south);
+        try std.testing.expect(darkest_face < 0.5);
+    }
+}
