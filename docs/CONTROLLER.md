@@ -62,7 +62,8 @@ PS button do nothing; GLFW reads no touchpad.
 | Secondary skill set | hold the slot bound to it (LB) | hold Ctrl |
 | Character | Start / Menu / Options | Tab |
 | Game menu (from play) | Select / View / Share / Create | Esc |
-| Character tabs | LB / RB | Q / E |
+| Character tabs | LB / RB, or left / right then A on the tabs | Q / E, or arrows then Enter on the tabs |
+| Character page back to its tabs, then closed | B | Esc |
 | Equipment / Inventory / Stats / Passives / Skills directly | Character tabs | F1 / F2 / F3 / F4 / F5 |
 | Skills: bind selected skill | X | C |
 | Stats: advanced / main sheet | X | C |
@@ -152,7 +153,7 @@ The second pass checked play, targeting, Character, both trees, binding, Inspect
 |---|---|
 | Character buried in Pause; bind screen hidden behind a hold | Separate Start/Select entry points, binding in Skills |
 | Four confirmations to equip, multiple back layers | One direct command, one back to play; gear screen stays open |
-| Tab navigation steals content focus | Shoulder/Q/E page switching; list and node navigation stay in content |
+| Tab navigation steals content focus | Opens on the tabs, confirm enters a page and Back returns; inside a page the shoulders/Q/E still switch pages and list and node navigation stay in content |
 | Direction held through page changes moves the new cursor | Consume carried navigation on page changes |
 | Tiny fixed book | Window-scaled panels, larger body/detail type, matching hit regions and tree clipping |
 | Old icons survived the button remapping | `Prompt.of` derives from `Button.pad`; Xbox Menu/View and Sony Options/Share/Create checked |

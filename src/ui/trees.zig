@@ -20,7 +20,7 @@ const AREA = @import("character_layout.zig").AREA;
 
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
-pub const View = struct { cursor: usize = 0, zoom: f32 = ZOOM_MIN, pan: rl.Vector2 = .{ .x = 0, .y = 0 } };
+pub const View = struct { cursor: usize = 0, zoom: f32 = ZOOM_MIN, pan: rl.Vector2 = .{ .x = 0, .y = 0 }, focused: bool = true };
 const Loadout = struct { stats: attrs.Attrs, gear: items.Gear, steady: u8 = 0 };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
@@ -141,7 +141,7 @@ pub fn overviewBox() rl.Rectangle {
 
 pub fn draw(panel: Panel, face: *const font.Face, sprites: *const sprite.Sprites, class: hero.Class, growth: *const progress.State, view: View, device: input.Device, loadout: Loadout, surface: menu.Surface) void {
     switch (panel) {
-        .skills => drawSkills(face, sprites, class, growth, view.cursor, loadout),
+        .skills => drawSkills(face, sprites, class, growth, view, loadout),
         .passives => {
             drawPassives(face, class, growth, view, surface, device);
             treeHints(face, device);
@@ -301,7 +301,8 @@ fn skillAlpha(class: hero.Class, growth: *const progress.State, s: progress.Skil
     };
 }
 
-fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: hero.Class, growth: *const progress.State, cursor: usize, loadout: Loadout) void {
+fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: hero.Class, growth: *const progress.State, view: View, loadout: Loadout) void {
+    const cursor = view.cursor;
     frame(face, "CLASS SKILLS", growth.active_points);
     const skills = progress.skills(class);
     for (skills, 0..) |s, i| if (s.parent) |parent| {
@@ -315,7 +316,7 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         const ink = skillInk(class, growth, s);
         rl.drawRectangleRec(box, TILE);
         rl.drawRectangleLinesEx(box, 2, ink);
-        if (i == cursor) rl.drawRectangleLinesEx(raster.grown(box, SKILL_FOCUS_GROW), 2, FOCUS);
+        if (i == cursor and view.focused) rl.drawRectangleLinesEx(raster.grown(box, SKILL_FOCUS_GROW), 2, FOCUS);
         line_icons.drawSkill(sprites, s.act, mid.x - line_icons.SKILL_PX / 2, mid.y - line_icons.SKILL_PX / 2, skillAlpha(class, growth, s));
         const plaque = raster.rect(mid.x + PLAQUE_AT.x, mid.y + PLAQUE_AT.y, PLAQUE_W, PLAQUE_H);
         rl.drawRectangleRec(plaque, BACK);
@@ -626,7 +627,7 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
             for ([_]f32{ -SEAM_MARK.y, SEAM_MARK.y }) |dy| rl.drawLineEx(.{ .x = p.x - SEAM_MARK.x, .y = p.y + dy }, .{ .x = p.x + SEAM_MARK.x, .y = p.y + dy }, 1, if (state == .allocated) BACK else armInk(s.to()));
         }
     }
-    ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + NODE_FOCUS_GROW, FOCUS);
+    if (view.focused) ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + NODE_FOCUS_GROW, FOCUS);
     rl.endScissorMode();
     for ([_]bool{ false, true }) |increase| {
         const box = zoomBox(increase);

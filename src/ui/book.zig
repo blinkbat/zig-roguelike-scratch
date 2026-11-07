@@ -50,6 +50,7 @@ pub const Book = struct {
     message: menu.Note(80) = .{},
     /// Stats shows its advanced sheet, as D2's Advanced Stats.
     advanced: bool = false,
+    tabbing: bool = false,
 
     pub fn open(self: *Book) void {
         if (self.direct()) {
@@ -58,6 +59,7 @@ pub const Book = struct {
             self.cursor = cursor;
         }
         self.resetView();
+        self.tabbing = !self.direct();
     }
     pub fn direct(self: *const Book) bool {
         return self.page.direct();
@@ -70,6 +72,7 @@ pub const Book = struct {
         self.page = page;
         self.cursor = 0;
         self.top = 0;
+        self.tabbing = false;
         self.resetView();
     }
     fn resetView(self: *Book) void {
@@ -121,7 +124,7 @@ pub const Book = struct {
         };
     }
     fn treeView(self: *const Book) trees.View {
-        return .{ .cursor = self.cursor, .zoom = self.zoom, .pan = self.pan };
+        return .{ .cursor = self.cursor, .zoom = self.zoom, .pan = self.pan, .focused = !self.tabbing };
     }
     fn zoomBy(self: *Book, amount: f32) void {
         self.zoom = std.math.clamp(self.zoom + amount, trees.ZOOM_MIN, trees.ZOOM_MAX);
@@ -222,16 +225,24 @@ pub const Book = struct {
         }
         self.top = self.settledTop(view);
         if (local.click) if (local.pointer) |p| if (self.buttonAt(p, view)) |b| {
+            if (b == menu.BACK) return .close;
             if (self.page == .passives and b == input.TreeKeys.PAD_OVERVIEW) local.tree.reset = true else local.pressed.insert(b);
             local.click = false;
+            self.tabbing = false;
         };
-        if (menu.closed(st)) return .close;
-        if (self.page == .loot and self.count(view) > 0 and st.hit(menu.CHANGE)) return .take_all;
-        if (!self.direct() and (st.hit(menu.PAGE_PREV) or st.hit(menu.PAGE_NEXT))) {
-            self.choose(mathx.stepIn(Page, &PAGES, self.page, if (st.hit(menu.PAGE_PREV)) -1 else 1, 0));
-            self.enter(view);
+        if (local.click) self.tabbing = false;
+        if (self.tabbing) return self.stepTabs(st, view);
+        if (!self.direct() and menu.backed(st)) {
+            self.tabbing = true;
             return null;
         }
+        if (menu.closed(st)) return .close;
+        if (self.page == .loot and self.count(view) > 0 and st.hit(menu.CHANGE)) return .take_all;
+        if (!self.direct()) if (pageStep(st)) |d| {
+            self.choose(mathx.stepIn(Page, &PAGES, self.page, d, 0));
+            self.enter(view);
+            return null;
+        };
         if (self.page == .inventory and self.selected(view) != null) {
             if (st.hit(menu.REMOVE)) return .{ .drop = self.bagIndex(view).? };
             if (st.hit(menu.CHANGE)) self.destination_index = mathx.wrap(self.destination_index, 1, self.selected(view).?.kind.slots().len);
@@ -295,6 +306,18 @@ pub const Book = struct {
         }
         return null;
     }
+    fn stepTabs(self: *Book, st: *const input.State, view: View) ?Command {
+        if (menu.closed(st)) return .close;
+        const walked: ?i32 = if (st.walk) |w| (if (w.delta().x != 0) w.delta().x else null) else null;
+        if (walked orelse pageStep(st)) |d| {
+            self.choose(mathx.stepIn(Page, &PAGES, self.page, d, 0));
+            self.enter(view);
+            self.tabbing = true;
+            return null;
+        }
+        if (st.hit(menu.CONFIRM)) self.tabbing = false;
+        return null;
+    }
     /// The button whose box is under `p`, so a click there is that button's press.
     fn buttonAt(self: *const Book, p: P, view: View) ?input.Button {
         if (!self.direct()) {
@@ -309,6 +332,7 @@ pub const Book = struct {
     fn controls(self: *const Book, view: View) Controls {
         var c: Controls = .{};
         c.add(self.closeBox(view), menu.BACK, .{ .label = character_view.verbOf(.close) });
+        if (self.tabbing) return c;
         switch (self.page) {
             .passives => {
                 for ([_]bool{ false, true }) |increase| c.add(trees.zoomBox(increase), if (increase) menu.CHANGE else menu.REMOVE, .drawn);
@@ -469,7 +493,7 @@ pub const Book = struct {
             const x: i32 = @intFromFloat(r.x);
             const y: i32 = @intFromFloat(r.y);
             const row_mid = y + layout.ROW_HEIGHT / 2;
-            const chosen = i == self.cursor;
+            const chosen = i == self.cursor and !self.tabbing;
             rl.drawRectangleRec(r, look.BG);
             menu.outline(r, chosen, look.UI_FOCUS, look.EDGE);
             switch (self.page) {
@@ -575,6 +599,12 @@ const Controls = struct {
     }
 };
 
+fn pageStep(st: *const input.State) ?i32 {
+    if (st.hit(menu.PAGE_PREV)) return -1;
+    if (st.hit(menu.PAGE_NEXT)) return 1;
+    return null;
+}
+
 fn header(face: *const font.Face, text: [:0]const u8) void {
     face.engraved(text, layout.LIST_X, font.Face.topFor(layout.HEADER_MID, font.HEAD), font.HEAD, look.TEXT);
 }
@@ -677,6 +707,7 @@ test "character actions need one press and tabs are directly reachable" {
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.REMOVE) }, screen, view).? == .drop);
     _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, view);
     try std.testing.expectEqual(Page.stats, book.page);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
     book.choose(.inventory);
     const surface = book.surface(screen, view);
@@ -709,8 +740,37 @@ test "stats change between main and advanced by button and by click, and back st
     _ = book.step(&.{ .click = true, .pointer = p }, screen, view);
     try std.testing.expect(!book.advanced);
     book.advanced = true;
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
+    try std.testing.expect(book.tabbing);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
-    std.debug.print("stats: change and a click on its button toggle the advanced sheet; back closes from it\n", .{});
+    std.debug.print("stats: change and a click on its button toggle the advanced sheet; back leaves it for the tabs, then closes\n", .{});
+}
+
+test "the book opens on its tabs: left and right choose one, confirm enters it, back returns to the tabs" {
+    var inv = items.Inventory{};
+    try std.testing.expect(inv.add(.{ .kind = .cap }));
+    var growth = progress.State.of(.archer);
+    const view = testView(&inv, &growth);
+    var book = Book{};
+    const screen = display.WINDOW;
+    book.open();
+    try std.testing.expect(book.tabbing);
+    try std.testing.expect(book.step(&.{ .walk = .e }, screen, view) == null);
+    try std.testing.expectEqual(Page.inventory, book.page);
+    try std.testing.expect(book.tabbing);
+    try std.testing.expect(book.step(&.{ .walk = .s }, screen, view) == null);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.REMOVE) }, screen, view) == null);
+    try std.testing.expectEqual(@as(usize, 1), inv.n);
+    _ = book.step(&.{ .walk = .w }, screen, view);
+    _ = book.step(&.{ .walk = .e }, screen, view);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view) == null);
+    try std.testing.expect(!book.tabbing);
+    try std.testing.expectEqual(Page.inventory, book.page);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).? == .equip);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
+    try std.testing.expect(book.tabbing);
+    try std.testing.expectEqual(Page.inventory, book.page);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
 }
 
 test "loot exposes single pickup and take all through controller and mouse controls" {
@@ -877,6 +937,7 @@ test "mouse character browsing and passive dragging preserve points and scaled h
         try std.testing.expectEqual(rl.Vector2{ .x = 0, .y = 0 }, book.pan);
         try std.testing.expectEqual(@as(u16, 2), growth.active_points);
         try std.testing.expectEqual(@as(u16, 2), growth.passive_points);
+        try std.testing.expect(book.step(&.{ .right_click = true }, screen, view) == null);
         try std.testing.expect(book.step(&.{ .right_click = true }, screen, view).? == .close);
         checked += 1;
     }

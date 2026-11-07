@@ -164,7 +164,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `Game.character` holds only unsaved navigation state; item/point actions are commands resolved by the game.
   Item actions and point allocation execute on one press; item changes spend one turn and keep Character open.
   Shoulders / Q and E change tabs; F1–F5 directly toggle Equipment, Inventory, Stats, Passives and Skills.
-  Keyboard tab headers show their shortcut glyphs. Back closes Character directly. Skills owns binding. Point allocation is free.
+  Keyboard tab headers show their shortcut glyphs. Character opens on its tabs (`Book.tabbing`): left/right or the shoulders choose one and confirm enters it;
+  Back returns to the tabs, and Back there closes. F1–F5, the shoulders inside a page and clicks enter a page directly. Skills owns binding. Point allocation is free.
   Bumping or interacting with a closed chest opens it for one turn, revealing its loot without a modal.
   Stepping onto a loose bag or stocked open chest opens its loot modal and spends the movement turn; bags remain walkable.
   Interact opens a sole bag/open chest's loot modal directly, or lists nearby containers/doors first when there is a choice (a door always lists).
