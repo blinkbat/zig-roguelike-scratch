@@ -79,6 +79,12 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).liquid;
     }
 
+    /// The bridge over liquid `t`: `span` over water, stone over lava or a chasm, which a burnt bridge must not leave as water.
+    pub fn spannedBy(t: Tile, span: Tile) Tile {
+        std.debug.assert(t.liquid() and span.spans());
+        return if (t.wet()) span else .stone_bridge;
+    }
+
     /// Deep water or shallows.
     pub fn wet(t: Tile) bool {
         return TERRAIN.getPtrConst(t).wet;
@@ -272,6 +278,14 @@ pub fn propSpan(tile: *const [CELLS]Tile, i: usize) ?struct { head: usize, end: 
     var end = head + 1;
     while (end < head + @as(usize, @intCast(tile[head].wide())) and Level.of(end).x > 0 and tile[end].isPart()) end += 1;
     return .{ .head = head, .end = end };
+}
+
+pub fn layProp(tile: *[CELLS]Tile, p: P, t: Tile) void {
+    var k: i32 = 0;
+    while (k < t.wide()) : (k += 1) {
+        const q = p.add(.{ .x = k, .y = 0 });
+        if (Level.inside(q)) tile[Level.idx(q)] = if (k == 0) t else t.partOf().?;
+    }
 }
 
 /// The whole wider prop covering `i`, if one does, back to its ground.
@@ -654,9 +668,7 @@ pub const Level = struct {
     }
 
     pub fn putProp(self: *Level, p: P, t: Tile) void {
-        self.set(p, t);
-        var k: i32 = 1;
-        while (k < t.wide()) : (k += 1) self.set(p.add(.{ .x = k, .y = 0 }), t.partOf().?);
+        layProp(&self.tile, p, t);
     }
 
     pub fn who(self: *const Level, p: P) u16 {
@@ -772,8 +784,13 @@ pub const Level = struct {
         return self.who(p) != NO_ONE or self.hasBarrel(p);
     }
 
+    /// A body, barrel or folk stands there.
+    pub fn held(self: *const Level, p: P) bool {
+        return self.taken(p) or self.folkAt(p) != null;
+    }
+
     pub fn vacant(self: *const Level, p: P) bool {
-        return self.walkable(p) and !self.taken(p) and self.folkAt(p) == null;
+        return self.walkable(p) and !self.held(p);
     }
 
     pub fn lightless(self: *Level) void {

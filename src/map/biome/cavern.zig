@@ -13,6 +13,7 @@ pub const RADIUS_MAX: u8 = 14;
 const TRIES: usize = 400;
 /// Of two chambers' radii summed, how far one may reach into the other.
 const OVERLAP: f32 = 0.3;
+const Chamber = struct { c: P, r: i32 };
 
 pub const Params = struct {
     chambers: u8 = 18,
@@ -38,28 +39,25 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     carve.fill(lv, pal.solid);
     const noise = carve.Noise.init(seed, .cavern);
     const fray = mathx.fraction(p.fray);
-    var centre: [CHAMBERS_MAX]P = undefined;
-    var radius: [CHAMBERS_MAX]i32 = undefined;
-    var n: usize = 0;
+    var chambers = grid.Bounded(Chamber, CHAMBERS_MAX){};
     var tries: usize = 0;
-    while (n < p.chambers and tries < TRIES) : (tries += 1) {
+    while (chambers.n < p.chambers and tries < TRIES) : (tries += 1) {
         const r = rng.range(p.radius[0], p.radius[1]);
         const c = grid.Box.inMap(r + 1).roll(rng);
-        const crowded = for (centre[0..n], radius[0..n]) |o, ro| {
-            if (mathx.distEuclid(c, o) < @as(f32, @floatFromInt(r + ro)) * (1 - OVERLAP)) break true;
+        const crowded = for (chambers.slice()) |o| {
+            if (mathx.distEuclid(c, o.c) < @as(f32, @floatFromInt(r + o.r)) * (1 - OVERLAP)) break true;
         } else false;
         if (crowded) continue;
-        centre[n] = c;
-        radius[n] = r;
-        n += 1;
+        chambers.push(.{ .c = c, .r = r });
         carve.blob(lv, noise, c, @floatFromInt(r), carve.CAVE_SCALE, 1, -fray, pal.open);
     }
-    for (1..n) |i| {
+    const all = chambers.slice();
+    for (1..all.len) |i| {
         var best: usize = 0;
         for (1..i) |j| {
-            if (mathx.distEuclid(centre[i], centre[j]) < mathx.distEuclid(centre[i], centre[best])) best = j;
+            if (mathx.distEuclid(all[i].c, all[j].c) < mathx.distEuclid(all[i].c, all[best].c)) best = j;
         }
-        carve.trail(lv, rng, centre[i], centre[best], pal.path);
+        carve.trail(lv, rng, all[i].c, all[best].c, pal.path);
     }
 }
 

@@ -33,13 +33,13 @@ pub const Visited = @FieldType(Header, "visited");
 pub const Visit = @FieldType(Header, "visits");
 const HEAD_FIELDS = std.meta.fieldNames(Header);
 
-/// The level's fields added to its end since raw saves were written.
-const LEVEL_ADDED = .{ "folk", "healing", "steam", "smoke", "heat", "thaw" };
+/// The level's first field added since raw saves were written; every field from it on is newer.
+const LEVEL_ADDED_FROM = "folk";
 /// What raw saves wrote before fields were added to the end of the level and the map; the legacy reader takes them in this shape.
 pub const LegacyLevel = blk: {
-    var T = @FieldType(Visit, "lv");
-    for (LEVEL_ADDED) |name| T = Without(T, name);
-    break :blk T;
+    const Level = @FieldType(Visit, "lv");
+    const kept = std.meta.fieldIndex(Level, LEVEL_ADDED_FROM).?;
+    break :blk Struct(std.meta.fields(Level)[0..kept].*);
 };
 pub const LegacyMap = Without(Map, "script");
 pub const LegacyVisit = Replaced(Visit, "lv", LegacyLevel);
@@ -322,7 +322,7 @@ pub fn convert(dest: anytype, src: anytype) void {
 test "the legacy shapes keep every byte older raw saves wrote and convert both ways" {
     const grid = @import("map/grid.zig");
     try std.testing.expectEqual(std.meta.fields(Map).len - 1, std.meta.fields(LegacyMap).len);
-    try std.testing.expectEqual(std.meta.fields(grid.Level).len - LEVEL_ADDED.len, std.meta.fields(LegacyLevel).len);
+    try std.testing.expectEqual(std.meta.fieldIndex(grid.Level, LEVEL_ADDED_FROM).?, std.meta.fields(LegacyLevel).len);
     const raw = try std.testing.allocator.create(LegacyVisit);
     defer std.testing.allocator.destroy(raw);
     const now = try std.testing.allocator.create(Visit);

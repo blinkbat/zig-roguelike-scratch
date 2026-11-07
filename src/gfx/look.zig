@@ -133,6 +133,8 @@ pub const DIM = rgb(0x8c8672);
 pub const LIFE = rgb(0x9c2f2a);
 pub const FIRE = rgb(0xff8a32);
 pub const FIRE_CORE = rgb(0xffe6a0);
+/// Under burning ground's flames.
+pub const FLAME_FILL = rgb(0xff5a14);
 pub const LEVEL_GOLD = rgb(0xe6c57c);
 pub const LEVEL_CORE = rgb(0xffedbd);
 /// The light a level gain adds to its body, per channel.
@@ -256,6 +258,7 @@ pub const TILE_CODEPOINTS = blk: {
 
 pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
+pub const TORCH_HANDLE = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
 pub const FOLK = Look{ .ch = '@', .fg = rgb(0xd8a860) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
@@ -558,6 +561,12 @@ pub fn rgbaOf(c: rl.Color) [4]f32 {
 pub fn colourOf(c: sky.Rgb, a: f32) rl.Color {
     const k = @max(sky.splat(0), @min(sky.splat(1), c)) * sky.splat(255) + sky.splat(0.5);
     return .{ .r = @intFromFloat(k[0]), .g = @intFromFloat(k[1]), .b = @intFromFloat(k[2]), .a = @intFromFloat(std.math.clamp(a, 0, 1) * 255 + 0.5) };
+}
+
+/// `c` at `a`, its colour scaled by its alpha, for blending that ignores alpha.
+pub fn premultiplied(c: sky.Rgb, a: f32) rl.Color {
+    const k = std.math.clamp(a, 0, 1);
+    return colourOf(c * sky.splat(k), k);
 }
 
 /// The opacity of every ui panel's backing and the minimap's.

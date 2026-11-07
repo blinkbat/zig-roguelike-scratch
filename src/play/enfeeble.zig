@@ -15,7 +15,7 @@ pub const Enfeeble = resilience.Turns(TURNS);
 /// `dmg` as a blow struck by a body, enfeebled or not, deals it.
 pub fn weaken(enfeebled: bool, dmg: i32) i32 {
     if (!enfeebled or dmg <= 0) return dmg;
-    return mathx.percentCeil(dmg, mathx.PERCENT - LESS);
+    return mathx.lessCeil(dmg, LESS);
 }
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {

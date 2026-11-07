@@ -136,6 +136,11 @@ pub const Bespoke = struct {
         return grid.cellOr(bool, &self.barrel, p, false);
     }
 
+    pub fn fill(self: *Bespoke, box: grid.Box, t: grid.Tile) void {
+        var cells = box.cells();
+        while (cells.next()) |p| self.tile[grid.Level.idx(p)] = t;
+    }
+
     pub fn torches(self: *const Bespoke) []const P {
         return self.torch.slice();
     }
@@ -457,9 +462,7 @@ pub const Atlas = struct {
         std.debug.assert(room.holds(at));
         self.* = .{};
         const n = self.add(.{ .bespoke = .{} }).?;
-        const b = &self.node[n].plan.bespoke;
-        var cells = room.cells();
-        while (cells.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
+        self.node[n].plan.bespoke.fill(room, .floor);
         self.start = .{ .node = n, .at = at };
         return n;
     }

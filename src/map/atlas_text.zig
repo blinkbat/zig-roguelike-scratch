@@ -480,8 +480,7 @@ test "a map saves and loads back the same" {
     pg.foes.makeup[0].draw = .{ .count = 2 };
     pg.foes.makeup[0].exit = true;
     const b = &a.node[room].plan.bespoke;
-    var floor = grid.Box.sized(.{ .x = 3, .y = 3 }, 9, 6).cells();
-    while (floor.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
+    b.fill(grid.Box.sized(.{ .x = 3, .y = 3 }, 9, 6), .floor);
     b.barrel[grid.Level.idx(.{ .x = 4, .y = 4 })] = true;
     _ = b.torch.add(.{ .x = 6, .y = 2 });
     _ = b.addFoe(.{ .kind = .slime, .at = .{ .x = 9, .y = 6 } });
@@ -682,8 +681,7 @@ test "a map's folk and script save with it, and folk off open bespoke floor are 
     defer std.testing.allocator.destroy(a);
     const room = a.add(.{ .bespoke = .{} }).?;
     const b = &a.node[room].plan.bespoke;
-    var floor = grid.Box.sized(.{ .x = 3, .y = 3 }, 9, 6).cells();
-    while (floor.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
+    b.fill(grid.Box.sized(.{ .x = 3, .y = 3 }, 9, 6), .floor);
     _ = b.addFoe(.{ .kind = .rat, .at = .{ .x = 9, .y = 4 } });
     a.start = .{ .node = room, .at = .{ .x = 4, .y = 4 } };
     var buf = std.ArrayList(u8).init(std.testing.allocator);

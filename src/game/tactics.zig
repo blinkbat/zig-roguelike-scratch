@@ -71,27 +71,47 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
         return a.seenFoe(&g.sim.lv) and fuelOf(act, a) > 0;
     }
     if (act.spans()) return span(g, act, from, start, at) != null;
-    if (act == .raise_skeleton) return raisable(&g.sim, at);
+    if (act == .raise_skeleton) return raisable(g, at);
     return act != .overwatch or !from.eq(at);
 }
 
 /// Open ground a skeleton may stand on, with room in the pool for it.
-fn raisable(sim: *const game.simulation.Simulation, at: P) bool {
-    return sim.pool.n < actor.MAX and actor.dwells(.skeleton, &sim.lv, at) and sim.lv.doorAt(at) == null;
+fn raisable(g: *const game.Game, at: P) bool {
+    return (actor.roomFor(g.sim.pool.n, .skeleton) or goneAlly(g) != null) and fits(.skeleton, &g.sim.lv, at);
+}
+
+/// Where an ally of `kind` may rise or follow the hero to.
+pub fn fits(kind: actor.Kind, lv: *const grid.Level, p: P) bool {
+    return actor.dwells(kind, lv, p) and lv.doorAt(p) == null;
+}
+
+/// The first dead ally's slot no longer drawn.
+fn goneAlly(g: *const game.Game) ?usize {
+    var i: usize = 0;
+    while (g.sim.pool.deadAllyFrom(i)) |dead| : (i = dead + 1) {
+        if (g.pic.gone(&g.sim, dead)) return dead;
+    }
+    return null;
 }
 
 /// The living skeletons, oldest first.
-fn skeletons(sim: *game.simulation.Simulation) grid.Bounded(u16, actor.MAX) {
+fn skeletons(sim: *const game.simulation.Simulation) grid.Bounded(u16, actor.MAX) {
     var out = grid.Bounded(u16, actor.MAX){};
-    for (sim.pool.slice(), 0..) |a, i| {
-        if (a.alive and a.kind.ally()) out.push(actor.Pool.idOf(i));
+    for (sim.pool.constSlice(), 0..) |a, i| {
+        if (a.livingAlly()) out.push(actor.Pool.idOf(i));
     }
+    std.mem.sort(u16, out.items[0..out.n], &sim.pool, olderThan);
     return out;
+}
+
+fn olderThan(pool: *const actor.Pool, a: u16, b: u16) bool {
+    return pool.items[actor.Pool.slot(a)].tactics.risen < pool.items[actor.Pool.slot(b)].tactics.risen;
 }
 
 /// A skeleton on `at`, the oldest crumbling first when there are as many as `rank` allows; it acts from the next turn.
 fn raise(g: *game.Game, at: P, rank: u8) void {
     const risen = skeletons(&g.sim);
+    const newest = if (risen.n > 0) g.sim.pool.items[actor.Pool.slot(risen.items[risen.n - 1])].tactics.risen else 0;
     if (risen.n >= rules.RaiseSkeleton.most(rank)) {
         const oldest = risen.items[0];
         const slot = actor.Pool.slot(oldest);
@@ -104,8 +124,9 @@ fn raise(g: *game.Game, at: P, rank: u8) void {
     body.hp = body.max;
     body.awake = true;
     body.waits = true;
-    const id = g.sim.pool.spawn(&g.sim.lv, body);
-    g.pic.recordBirth(&g.sim, .fromInt(id));
+    body.tactics.risen = newest +| 1;
+    const id = g.sim.pool.spawnOver(&g.sim.lv, goneAlly(g), body);
+    g.pic.recordBirth(&g.sim, .fromInt(id), game.CAST_S);
     g.pic.shimmerBody(game.CAST_S, &g.sim.pool.items[actor.Pool.slot(id)]);
     g.sim.sayAt(at, "A skeleton claws its way up.", .{});
 }
@@ -278,6 +299,11 @@ pub fn bideTurn(g: *game.Game) void {
 
 pub fn displace(g: *game.Game, id: u16, to: P) void {
     g.sim.pool.move(&g.sim.lv, id, to);
+    shoved(g, id);
+}
+
+/// A body moved off its own turn, as a knock or a swap moves it.
+pub fn shoved(g: *game.Game, id: u16) void {
     g.sim.displaced.set(actor.Pool.slot(id));
     entered(g, id);
 }
@@ -828,9 +854,7 @@ test "bide cuts each blow while it holds, then deals twice what it took to every
 }
 
 fn skeletonCount(g: *game.Game) usize {
-    var n: usize = 0;
-    for (g.sim.pool.slice()) |a| n += @intFromBool(a.alive and a.kind.ally());
-    return n;
+    return skeletons(&g.sim).n;
 }
 
 test "a raised skeleton fights a foe beside it, takes foes' blows, is spared the hero's and crumbles past its rank's limit" {
@@ -873,6 +897,64 @@ test "a raised skeleton fights a foe beside it, takes foes' blows, is spared the
     try std.testing.expect(struck.hp < h.TEST_HP);
     try std.testing.expect(held.hp < held.max);
     std.debug.print("raise skeleton: {d} life at rank 1, oldest crumbles past 1, two at rank 2; the rat lost {d}, the skeleton it faced {d}\n", .{ rules.RaiseSkeleton.life(1), h.TEST_HP - struck.hp, held.max - held.hp });
+}
+
+test "a raised skeleton stands once its cast lands, and a recast takes a crumbled one's slot" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.mana = 99;
+    const cells = [_]P{ .{ .x = 22, .y = 20 }, .{ .x = 20, .y = 22 }, .{ .x = 18, .y = 20 } };
+    var bodies: [cells.len]usize = undefined;
+    for (cells, &bodies) |at, *n| {
+        g.sim.cooldown.set(.raise_skeleton, 0);
+        h.aimAt(g, .raise_skeleton, at);
+        const slot = actor.Pool.slot(g.sim.lv.who(at));
+        try std.testing.expect(!g.pic.standing(&g.sim, slot));
+        h.drawnOut(g);
+        try std.testing.expect(g.pic.standing(&g.sim, slot));
+        n.* = g.sim.pool.n;
+        var t: f32 = 0;
+        while (t < @import("../gfx/impact_queue.zig").DEATH_S) : (t += h.TEST_DT) game.update(g, h.TEST_DT);
+    }
+    std.debug.print("three rank-1 raises: {d}, {d}, {d} bodies\n", .{ bodies[0], bodies[1], bodies[2] });
+    try std.testing.expectEqual(bodies[0] + 1, bodies[1]);
+    try std.testing.expectEqual(bodies[1], bodies[2]);
+    try std.testing.expectEqual(@as(usize, 1), skeletonCount(g));
+}
+
+test "the oldest skeleton crumbles first though a younger rose in an older one's slot" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.mana = 99;
+    g.sim.growth.ranks.set(.raise_skeleton, 2);
+    const a = P{ .x = 22, .y = 20 };
+    const b = P{ .x = 20, .y = 22 };
+    const c = P{ .x = 18, .y = 20 };
+    const d = P{ .x = 20, .y = 18 };
+    for ([_]P{ a, b }) |at| {
+        g.sim.cooldown.set(.raise_skeleton, 0);
+        h.aimAt(g, .raise_skeleton, at);
+        h.drawnOut(g);
+    }
+    const elder = g.sim.lv.who(a);
+    const first = actor.Pool.slot(elder);
+    _ = g.sim.pool.damage(&g.sim.lv, elder, g.sim.pool.items[first].hp);
+    combat.fell(g, elder);
+    g.pic.settleSlot(&g.sim, h.TEST_DT, .fromIndex(first));
+    var t: f32 = 0;
+    while (t < 1) : (t += h.TEST_DT) game.update(g, h.TEST_DT);
+    for ([_]P{ c, d }) |at| {
+        g.sim.cooldown.set(.raise_skeleton, 0);
+        h.aimAt(g, .raise_skeleton, at);
+        h.drawnOut(g);
+    }
+    try std.testing.expectEqual(first, actor.Pool.slot(g.sim.lv.who(c)));
+    try std.testing.expect(g.sim.lv.who(b) == grid.NO_ONE);
+    try std.testing.expect(g.sim.lv.who(c) != grid.NO_ONE and g.sim.lv.who(d) != grid.NO_ONE);
 }
 
 test "the hero trades places with a skeleton it walks into" {

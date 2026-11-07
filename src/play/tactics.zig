@@ -50,6 +50,9 @@ pub const SteadyAim = struct {
     pub fn critical(rank: u8) i32 {
         return 5 + 5 * @as(i32, ranked(rank));
     }
+    pub fn readies(act: anytype) bool {
+        return act.isArrow() or act == .overwatch;
+    }
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("Next arrow: +{d}% damage, +{d}% critical chance.", .{ bonus(rank), critical(rank) }) catch {};
     }
@@ -141,7 +144,7 @@ pub const Guard = struct {
     }
     /// `dmg` as guarding at `rank` lets it through, rounded up.
     pub fn reduce(rank: u8, dmg: i32) i32 {
-        return mathx.percentCeil(dmg, mathx.PERCENT - reduction(rank));
+        return mathx.lessCeil(dmg, reduction(rank));
     }
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("{d}% less physical attack damage.", .{reduction(rank)}) catch {};
@@ -201,7 +204,7 @@ pub const Bide = struct {
     }
     /// `dmg` as biding at `rank` lets it through, rounded up.
     pub fn reduce(rank: u8, dmg: i32) i32 {
-        return mathx.percentCeil(dmg, mathx.PERCENT - reduction(rank));
+        return mathx.lessCeil(dmg, reduction(rank));
     }
     pub fn laid() u8 {
         return laidFor(TURNS);
@@ -243,6 +246,8 @@ pub const State = struct {
     /// Turns left of Bide, and the damage taken through it.
     bide: u8 = 0,
     bided: i32 = 0,
+    /// A raised skeleton's place in rising order, its slot being reused.
+    risen: u32 = 0,
 };
 
 /// The reach of a patch on a cell and its neighbours.

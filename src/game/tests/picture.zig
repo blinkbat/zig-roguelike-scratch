@@ -538,7 +538,7 @@ test "a body the arrow kills stands until the arrow reaches it and its flash is 
     const rat = harness.foeSlot(0);
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(harness.foeId(0)));
     try std.testing.expect(g.pic.drawnAt(&g.sim, rat) != null);
-    const t = harness.framesUntil(g, rat, harness.gone);
+    const t = harness.framesUntil(g, rat, harness.undrawn);
     const lands = harness.SHOT_LANDS;
     std.debug.print("a rat an arrow kills {d} cells out is drawn {d:.3} s on; the arrow lands at {d:.3} s\n", .{ bow.RANGE, t, lands });
     try std.testing.expectApproxEqAbs(lands + fx.FLASH_S, t, harness.TEST_TOL);
@@ -564,7 +564,7 @@ test "the bite that kills the archer leaves it standing and followed until it la
     try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     const hero = g.sim.heroSlot().?;
     try std.testing.expect(g.pic.drawnAt(&g.sim, hero) != null and g.pic.carrierAt(&g.sim) != null);
-    const t = harness.framesUntil(g, hero, harness.gone);
+    const t = harness.framesUntil(g, hero, harness.undrawn);
     std.debug.print("a killing bite a stagger in: the archer stands {d:.3} s, the turn is over at {d:.3} s\n", .{ t, t + g.pic.busy });
     try std.testing.expectApproxEqAbs(game.STAGGER_S + game.BUMP_LANDS + fx.FLASH_S, t, harness.TEST_TOL);
     try std.testing.expect(g.pic.carrierAt(&g.sim) == null and g.pic.busy <= 0);
@@ -1176,7 +1176,7 @@ test "a foe the gas kills as it steps out of sight is drawn stepping out, not go
     g.pic.catchUp(&g.sim);
     try std.testing.expect(g.pic.drawnAt(&g.sim, rat) != null);
     const alive_shown = g.pic.pictured[rat].hp;
-    const t = harness.framesUntil(g, rat, harness.gone);
+    const t = harness.framesUntil(g, rat, harness.undrawn);
     std.debug.print("a rat the gas kills stepping out of sight a stagger in: drawn until {d:.3} s on {d} hp, its hop {d:.3} to {d:.3} s\n", .{ t, alive_shown, game.STAGGER_S, game.STAGGER_S + game.GLIDE_S });
     try std.testing.expect(alive_shown > 0);
     try std.testing.expect(t > game.STAGGER_S and t < game.STAGGER_S + game.GLIDE_S);

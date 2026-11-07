@@ -252,9 +252,9 @@ test "new runs gate class skills; underfoot and adjacent loot commit exactly one
         g.sim.class = c;
         game.begin(g, 123);
         for (progress.skills(c)) |s| try std.testing.expectEqual(s.initial, g.sim.growth.unlocked(s.act));
-        for (skillbar.SETS) |set| for (skillbar.SLOTS) |button| {
-            if (g.bar.at(.{ .set = set, .button = button })) |act| try std.testing.expect(g.sim.growth.unlocked(act));
-        };
+        for (skillbar.EVERY_SLOT) |slot| {
+            if (g.bar.at(slot)) |act| try std.testing.expect(g.sim.growth.unlocked(act));
+        }
     }
     harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
     const at = g.sim.heroActor().?.at;

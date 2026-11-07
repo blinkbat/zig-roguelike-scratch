@@ -714,6 +714,11 @@ pub const Emission = struct {
     radius: f32,
     gain: f32,
 
+    /// A light at a body's height over `at`.
+    pub fn onBody(at: [2]f32, col: rl.Color, radius: f32, gain: f32) Emission {
+        return .{ .at = .{ at[0], at[1], BODY_Z }, .col = col, .radius = radius, .gain = gain };
+    }
+
     /// Where the source shows on the map, lifted by its height.
     pub fn drawn(e: Emission) [2]f32 {
         return .{ e.at[0], e.at[1] - e.at[2] };

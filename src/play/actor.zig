@@ -74,8 +74,7 @@ pub const Kind = enum {
 
     pub fn hero(k: Kind) bool {
         return switch (k) {
-            .archer, .wizard, .knight => true,
-            else => false,
+            inline else => |t| @hasField(heroes.Class, @tagName(t)),
         };
     }
 
@@ -385,6 +384,10 @@ pub const Actor = struct {
         return .{ .kind = k, .at = at, .hp = row(k).hp, .max = row(k).hp, .resists = row(k).resists, .submerged = row(k).lurks, .disguised = row(k).disguised };
     }
 
+    pub fn livingAlly(self: Actor) bool {
+        return self.alive and self.kind.ally();
+    }
+
     /// Not seen as a body even where lit.
     pub fn veiled(self: Actor) bool {
         return self.submerged or self.disguised;
@@ -529,13 +532,35 @@ pub const Pool = struct {
 
     pub fn spawn(self: *Pool, lv: *grid.Level, a: Actor) u16 {
         std.debug.assert(self.n < MAX);
-        const id = idOf(self.n);
-        self.items[self.n] = a;
+        self.n += 1;
+        return self.place(lv, self.n - 1, a);
+    }
+
+    /// `a` in slot `i`, a dead ally's that nothing still names, else a new slot.
+    pub fn spawnOver(self: *Pool, lv: *grid.Level, i: ?usize, a: Actor) u16 {
+        const over = i orelse return self.spawn(lv, a);
+        std.debug.assert(self.deadAlly(over));
+        return self.place(lv, over, a);
+    }
+
+    /// Allies leave nothing that names them, so a dead one's slot may take another body.
+    pub fn deadAlly(self: *const Pool, i: usize) bool {
+        return i < self.n and !self.items[i].alive and self.items[i].kind.ally();
+    }
+
+    /// The first dead ally's slot at or after `start`.
+    pub fn deadAllyFrom(self: *const Pool, start: usize) ?usize {
+        for (start..self.n) |i| if (self.deadAlly(i)) return i;
+        return null;
+    }
+
+    fn place(self: *Pool, lv: *grid.Level, i: usize, a: Actor) u16 {
+        const id = idOf(i);
+        self.items[i] = a;
         if (a.disguised) {
-            self.items[self.n].under = lv.at(a.at);
+            self.items[i].under = lv.at(a.at);
             lv.set(a.at, .chest);
         }
-        self.n += 1;
         lv.stand(a.at, id);
         return id;
     }
@@ -640,25 +665,28 @@ fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
 
 /// The water step that most closes on `toward`, by steps then by the straighter line; none that gains.
 pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
-    var near = grid.Nearest{ .from = toward, .best_d = mathx.dist(from, toward), .best_line = mathx.distEuclid(from, toward) };
-    var best: ?mathx.Dir = null;
-    for (mathx.ALL_DIRS) |d| {
-        const to = from.add(d.delta());
-        if (!dwells(k, lv, to) or shuns(lv, from, d)) continue;
-        near.offer(to);
-        if (near.best) |b| {
-            if (b.eq(to)) best = d;
+    const Fins = struct {
+        lv: *const grid.Level,
+        from: P,
+        k: Kind,
+
+        fn wet(s: @This(), d: mathx.Dir) bool {
+            return dwells(s.k, s.lv, s.from.add(d.delta()));
         }
-    }
-    return best;
+    };
+    return closest(lv, from, toward, Fins{ .lv = lv, .from = from, .k = k }, Fins.wet);
 }
 
 /// The free step that most closes on `toward`, by steps then by the straighter line; none that gains.
 pub fn approach(lv: *const grid.Level, from: P, id: u16, toward: P) ?mathx.Dir {
+    return closest(lv, from, toward, Step{ .lv = lv, .from = from, .id = id }, Step.free);
+}
+
+fn closest(lv: *const grid.Level, from: P, toward: P, ctx: anytype, comptime ok: fn (@TypeOf(ctx), mathx.Dir) bool) ?mathx.Dir {
     var near = grid.Nearest{ .from = toward, .best_d = mathx.dist(from, toward), .best_line = mathx.distEuclid(from, toward) };
     var best: ?mathx.Dir = null;
     for (mathx.ALL_DIRS) |d| {
-        if (!lv.stepOk(from, d, id) or shuns(lv, from, d)) continue;
+        if (!ok(ctx, d) or shuns(lv, from, d)) continue;
         const to = from.add(d.delta());
         near.offer(to);
         if (near.best) |b| {

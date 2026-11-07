@@ -109,10 +109,7 @@ fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
     var top: [ROOM_W_MAX]P = undefined;
     var n: usize = 0;
     var x = r.lo.x;
-    while (x < r.hi.x) : (x += 1) {
-        top[n] = lume.torchOver(r, x);
-        n += 1;
-    }
+    while (x < r.hi.x) : (x += 1) _ = mathx.push(P, &top, &n, lume.torchOver(r, x));
     if (rng.pickWhere(P, top[0..n], @as(*const grid.Level, lv), bearsTorch)) |p| lv.addTorch(p);
 }
 
@@ -123,8 +120,7 @@ fn stackBarrels(lv: *grid.Level, r: Room, rng: *mathx.Rng, most: u32) void {
     var cells = r.cells();
     while (cells.next()) |p| {
         if (!r.onEdge(p) or besideDoor(lv, r, p) or lv.doorAt(p) != null) continue;
-        spots[n] = p;
-        n += 1;
+        _ = mathx.push(P, &spots, &n, p);
     }
     var left = rng.below(most + 1);
     while (left > 0 and n > 0) : (left -= 1) lv.putBarrel(rng.takeFrom(P, &spots, &n));
@@ -142,9 +138,7 @@ fn addRoom(f: *Floor, r: Room) bool {
     for (f.rooms[0..f.room_n]) |have| {
         if (r.overlaps(have, ROOM_GAP)) return false;
     }
-    f.rooms[f.room_n] = r;
-    f.room_n += 1;
-    return true;
+    return mathx.push(Room, &f.rooms, &f.room_n, r);
 }
 
 fn tunnel(lv: *grid.Level, a: P, b: P, rng: *mathx.Rng) void {

@@ -44,12 +44,16 @@ const FOE_W: i32 = 220;
 const NUMBER_W: i32 = 150;
 const UNIT_W: i32 = 170;
 const SPLIT_MIN_W: i32 = 2 * widgets.STEP_W + 24;
+const LIST_PARTS: i32 = 5;
 const LIST_MIN_W: i32 = 240;
 const LIST_MAX_W: i32 = 330;
+const LINES_PARTS: i32 = 4;
 const LINES_MIN_W: i32 = 200;
 const LINES_MAX_W: i32 = 300;
+const KIND_PARTS: i32 = 3;
 const KIND_MIN_W: i32 = 150;
 const KIND_MAX_W: i32 = 200;
+const SILENT = "(says nothing)";
 const SAY_ROWS: i32 = 4;
 const WHEEL_NOTCH: i32 = 2;
 
@@ -300,7 +304,7 @@ const Frame = struct {
     bottom: i32,
 
     fn listW(f: Frame) i32 {
-        return widgets.share(f.w, 5, LIST_MIN_W, LIST_MAX_W);
+        return widgets.share(f.w, LIST_PARTS, LIST_MIN_W, LIST_MAX_W);
     }
 };
 
@@ -567,7 +571,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     const d = &m.dialog[di];
     var buf: [widgets.LINE]u8 = undefined;
     s.line = @min(s.line, d.line_n - 1);
-    const lines_w = widgets.share(w, 4, LINES_MIN_W, LINES_MAX_W);
+    const lines_w = widgets.share(w, LINES_PARTS, LINES_MIN_W, LINES_MAX_W);
     var y = top;
     const users = m.dialogUsers(di);
     const drop = if (users > 0) std.fmt.bufPrintZ(&buf, "Used {d} times", .{users}) catch "" else "Delete dialog";
@@ -584,7 +588,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     y += STEP;
     var line_buf: [script.NAME_MAX + script.SAY_MAX + 5]u8 = undefined;
     for (d.lines(), 0..) |*ln, i| {
-        const first = if (ln.say.n > 0) ln.say.text() else "(says nothing)";
+        const first = if (ln.say.n > 0) ln.say.text() else SILENT;
         const label = std.fmt.bufPrintZ(&line_buf, "{s}{s}: {s}", .{ if (i == 0) "> " else "", ln.name.text(), first }) catch "";
         if (button(ed, g, widgets.row(lx, y, lines_w - GAP), label, s.line == i, true, if (i == 0) "Where it opens" else null)) {
             s.line = @intCast(i);
@@ -631,7 +635,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, li: u8, x: i32, top: i32,
     y += STEP;
     caption(g, x, y, LABEL_W, std.fmt.bufPrint(&buf, "Says {d}/{d}", .{ ln.say.n, script.SAY_MAX }) catch "", look.TEXT);
     const say_h = text_panel.fieldHeight(SAY_ROWS);
-    words(ed, g, raster.rect(x + LABEL_W, y, w - LABEL_W, say_h), .{ .say = at }, "(says nothing)");
+    words(ed, g, raster.rect(x + LABEL_W, y, w - LABEL_W, say_h), .{ .say = at }, SILENT);
     y += say_h + GAP;
     y = actRows(ed, g, x, x, y, w, "When shown", .{ .line = .{ .d = di, .l = li, .a = 0 } });
     y += GAP;
@@ -762,7 +766,7 @@ fn fitSlot(m: *Script, t: script.Table, slot: *u8) void {
 }
 
 fn kindW(w: i32) i32 {
-    return widgets.share(w, 3, KIND_MIN_W, KIND_MAX_W);
+    return widgets.share(w, KIND_PARTS, KIND_MIN_W, KIND_MAX_W);
 }
 
 /// The kind heading an action's or a condition's row: a new kind starts afresh, fitted to the map by `rule`.

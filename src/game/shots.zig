@@ -1226,9 +1226,7 @@ fn shootPlayground(g: *game.Game, target: rl.RenderTexture2D) !void {
     defer std.heap.c_allocator.destroy(w);
     defer g.sim.map = null;
     defer g.sim.playground = false;
-    playground.author(w);
-    g.sim.playground = true;
-    g.sim.class = playground.CLASS;
+    game.enterPlayground(g, w);
     const Pose = struct { patch: grid.Tile, name: [:0]const u8, fading: ?[:0]const u8 = null };
     for ([_]Pose{
         .{ .patch = .glow_plant, .name = SHOTS_DIR ++ "/playground-glowbulbs.png" },

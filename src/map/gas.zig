@@ -96,9 +96,7 @@ fn spread(lv: *grid.Level, kind: grid.Gas, rng: *mathx.Rng) void {
         var n: usize = 1;
         for (mathx.ALL_DIRS) |d| {
             const q = p.add(d.delta());
-            if (!lv.flat(q)) continue;
-            to[n] = grid.Level.idx(q);
-            n += 1;
+            if (lv.flat(q)) _ = mathx.push(usize, &to, &n, grid.Level.idx(q));
         }
         const share: u32 = v / @as(u32, @intCast(n));
         for (to[0..n]) |t| next[t] += share;

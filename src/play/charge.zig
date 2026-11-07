@@ -61,7 +61,7 @@ test "a charge strikes a lit body one to four tiles off, the tile past its longe
     std.debug.print("charge: rush up to {d} tiles, strike up to {d}\n", .{ RANGE - 1, RANGE });
 }
 
-test "a charge runs a straight open line of one to three tiles to a lit body, and stops beside it" {
+test "a charge runs a straight open line to a lit body in range, and stops beside it" {
     var lv = grid.openFloor();
     lv.lit = @splat(true);
     const from = P{ .x = 20, .y = 20 };

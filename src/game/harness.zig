@@ -390,12 +390,12 @@ pub fn facesLeft(g: *game.Game, slot: usize) bool {
     return g.pic.facing[slot] == .left;
 }
 
-pub fn gone(g: *game.Game, slot: usize) bool {
+pub fn undrawn(g: *game.Game, slot: usize) bool {
     return g.pic.drawnAt(&g.sim, slot) == null;
 }
 
 pub fn drawn(g: *game.Game, slot: usize) bool {
-    return !gone(g, slot);
+    return !undrawn(g, slot);
 }
 
 /// An arrow shot from `SHOT_FROM` at `SHOT_AT`, its full reach off, lands `SHOT_LANDS` in.

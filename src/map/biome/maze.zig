@@ -138,8 +138,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
             pl.mask[k].? |= bitOf(s);
             pl.mask[o].? |= bitOf(s.opposite());
         }
-        placed[n] = k;
-        n += 1;
+        _ = mathx.push(usize, &placed, &n, k);
     }
     const noise = carve.Noise.init(seed, .maze);
     for (0..pl.rows) |r| {

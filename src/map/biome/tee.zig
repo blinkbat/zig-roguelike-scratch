@@ -272,20 +272,18 @@ const Spot = struct {
 fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.CellSet) void {
     const spot = Spot{ .lv = lv, .kept = kept };
     const r: f32 = @floatFromInt(p.camp);
-    var carts: [CARTS_MAX]P = undefined;
-    var n: usize = 0;
+    var carts = grid.Bounded(P, CARTS_MAX){};
     for (0..p.carts) |_| {
         const at = around(rng, c, r, .caravan, spot) orelse continue;
         lv.putProp(at, .caravan);
-        carts[n] = at;
-        n += 1;
+        carts.push(at);
     }
     for (0..p.chests) |_| {
         const at = around(rng, c, r, .chest, spot) orelse continue;
         lv.set(at, .chest);
     }
     for (0..p.barrels) |_| {
-        const near = if (n > 0) carts[rng.below(@intCast(n))] else c;
+        const near = if (carts.n > 0) rng.pick(P, carts.slice()) else c;
         const at = grid.Box.around(near, BARREL_REACH).rollWhere(rng, TRIES, spot, Spot.free) orelse continue;
         lv.putBarrel(at);
     }

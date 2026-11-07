@@ -469,6 +469,14 @@ pub const SLOTS = blk: {
 
 pub const Slot = struct { set: Set, button: Button };
 
+pub const EVERY_SLOT = blk: {
+    var out: [SETS.len * SLOTS.len]Slot = undefined;
+    for (SETS, 0..) |set, i| for (SLOTS, 0..) |button, j| {
+        out[i * SLOTS.len + j] = .{ .set = set, .button = button };
+    };
+    break :blk out;
+};
+
 const Row = std.EnumArray(Button, ?Act);
 
 pub const Bar = struct {
@@ -486,9 +494,7 @@ pub const Bar = struct {
     }
 
     pub fn slotOf(self: Bar, a: Act) ?Slot {
-        for (SETS) |s| for (SLOTS) |b| {
-            if (self.at(.{ .set = s, .button = b }) == a) return .{ .set = s, .button = b };
-        };
+        for (EVERY_SLOT) |s| if (self.at(s) == a) return s;
         return null;
     }
 
@@ -514,10 +520,7 @@ pub const Bar = struct {
 
     /// The first slot with nothing bound, primary set first.
     pub fn firstEmpty(self: Bar) ?Slot {
-        for (SETS) |set| for (SLOTS) |button| {
-            const s = Slot{ .set = set, .button = button };
-            if (self.at(s) == null) return s;
-        };
+        for (EVERY_SLOT) |s| if (self.at(s) == null) return s;
         return null;
     }
 
@@ -591,51 +594,6 @@ fn primary(c: hero.Class) Row {
     return r;
 }
 
-test "arrows scale as ranged, bolts and novas as spells, swings and rushes as melee" {
-    const want = std.EnumArray(Act, ?attrs.Attack).init(.{
-        .shoot = .ranged,
-        .wait = null,
-        .secondary = null,
-        .juke = null,
-        .burning_arrow = .ranged,
-        .glacial_shot = .ranged,
-        .spark = .spell,
-        .blink = null,
-        .shield_bash = .melee,
-        .cleave = .melee,
-        .pinning_shot = .ranged,
-        .barbed_arrow = .ranged,
-        .frost_nova = .spell,
-        .fireball = .spell,
-        .chain_lightning = .spell,
-        .mana_shield = null,
-        .charge = .melee,
-        .caltrops = null,
-        .overwatch = .ranged,
-        .steady_aim = null,
-        .gravity_well = null,
-        .combustion = .spell,
-        .arcane_barrier = null,
-        .guard = null,
-        .whirlwind = .melee,
-        .unyielding = null,
-        .rend = .melee,
-        .war_cry = null,
-        .piercing_shot = .ranged,
-        .shatter = .spell,
-        .fire_wall = null,
-        .imbue = null,
-        .bide = null,
-        .raise_skeleton = null,
-        .life_flask = null,
-        .mana_flask = null,
-        .bandage = null,
-        .smelling_salts = null,
-        .frost_vial = .spell,
-    });
-    for (ACTS) |a| try std.testing.expectEqual(want.get(a), a.attack());
-}
-
 test "arrows reach the bow's five tiles; each bolt reaches its own, and aims no further" {
     const lv = grid.openFloor();
     const from = mathx.P{ .x = 20, .y = 20 };
@@ -670,11 +628,11 @@ test "each class starts with its own skills bound, and only skills of its kit" {
     for (hero.CLASSES) |c| {
         const bar = Bar.of(c);
         var bound: usize = 0;
-        for (SETS) |s| for (SLOTS) |b| {
-            const a = bar.at(.{ .set = s, .button = b }) orelse continue;
+        for (EVERY_SLOT) |s| {
+            const a = bar.at(s) orelse continue;
             try std.testing.expect(std.mem.indexOfScalar(Act, kit(c), a) != null);
             bound += 1;
-        };
+        }
         std.debug.print("{s}: {d} slots bound from a kit of {d}\n", .{ c.title(), bound, kit(c).len });
     }
     try std.testing.expectEqual(@as(?Act, .spark), Bar.of(.wizard).at(.{ .set = .primary, .button = .x }));

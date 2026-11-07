@@ -42,7 +42,6 @@ const CHILL_BAR_H: i32 = game.authored(3);
 const CHILL_BAR_GAP: i32 = game.authored(2);
 const CHILL_PIP_GAP: i32 = game.authored(2);
 const FLAME_FILL_A: f32 = 0.24;
-const FLAME_FILL = look.rgb(0xff5a14);
 const BARRIER_FILL_A: f32 = 0.28;
 const BARRIER_INSET: i32 = game.authored(5);
 const BARRIER_BARS = .{ game.authored(16), game.authored(48) };
@@ -51,8 +50,6 @@ const CALTROPS = [_]P{ .{ .x = 12, .y = 20 }, .{ .x = 29, .y = 32 }, .{ .x = 42,
 const CALTROP_HALF: i32 = game.authored(4);
 const CALTROP_UP: i32 = game.authored(5);
 const CALTROP_DOWN: i32 = game.authored(3);
-const FLAME_LIGHT_R: f32 = 1.6;
-const FLAME_LIGHT_GAIN: f32 = 0.45;
 const MINI: i32 = 3;
 const MINI_W: i32 = grid.W * MINI;
 const MINI_H: i32 = grid.H * MINI;
@@ -319,29 +316,17 @@ fn drawGroundPass(g: *game.Game, c: Cam, ground: *const grid.Level, beds: *const
 
 /// The ground a fire just took, drawn whole round it into a target, then laid back over each such cell as it fades.
 fn drawBurntGround(g: *game.Game, c: Cam, old: *const grid.Level, water: ?sprite.WaterView) void {
-    var lo = P{ .x = grid.W, .y = grid.H };
-    var hi = P{ .x = 0, .y = 0 };
-    for (0..grid.CELLS) |i| if (g.pic.fadingBurnt(i) != null) {
-        const p = grid.Level.of(i);
-        lo = lo.min(p.sub(.{ .x = 1, .y = 1 }));
-        hi = hi.max(p.add(.{ .x = 2, .y = 2 }));
-    };
-    lo = lo.max(.{ .x = 0, .y = 0 });
-    hi = hi.min(.{ .x = grid.W, .y = grid.H });
     var beds: dual.Beds = undefined;
-    beds.fill(old, lo, hi, !g.light.reveal_map);
-    const target = &g.light.gpu.scratch;
+    beds.fill(old, g.pic.burnt_box.lo, g.pic.burnt_box.hi, !g.light.reveal_map);
+    const target = &g.sprites.burnt_ground;
     if (!raster.beginTarget(target, g.screen, g.framebuffer, rl.Color.blank)) return;
     g.sprites.drawGround(old, &beds, c.origin(), game.CELL_F, water);
     raster.endTarget(g.framebuffer);
     const t = target.*.?.texture;
-    const h: f32 = @floatFromInt(t.height);
     for (0..grid.CELLS) |i| if (g.pic.fadingBurnt(i) != null) {
         const p = grid.Level.of(i);
         if (!terrainSeen(g, p)) continue;
-        const x: f32 = @floatFromInt(c.sx(p));
-        const y: f32 = @floatFromInt(c.sy(p));
-        rl.drawTextureRec(t, .{ .x = x, .y = h - y - game.CELL_F, .width = game.CELL_F, .height = -game.CELL_F }, .{ .x = x, .y = y }, look.fade(rl.Color.white, g.pic.ember(i)));
+        raster.drawTargetPart(t, c.box(p), look.fade(look.LIT, g.pic.ember(i)));
     };
 }
 
@@ -356,7 +341,7 @@ fn drawBurntStanding(g: *game.Game, c: Cam, old: *const grid.Level, occluding: b
         const a = g.pic.ember(i);
         if (occluding) {
             raster.stretch(tex, tileRect(was, tex, c, p), look.fade(sceneryTint(g, p), a));
-            drawCellFlames(g, c, p);
+            if (g.pic.litShown(&g.sim, p)) drawCellFlames(g, c, p);
         } else raster.stretch(tex, spriteRect(tex, c.sx(p), c.sy(p)), look.fade(look.LIT, a));
     }
 }
@@ -888,7 +873,7 @@ pub const Kin = std.EnumSet(mathx.Dir);
 /// A cell of ground flames, its top-left at `x`, `y`, at `alpha` as they fade; the fill fades from the cell's middle to each side and corner that no fire shares.
 pub fn drawFlames(effects: *const fx.Fx, x: f32, y: f32, cell: f32, seed: usize, kin: Kin, alpha: f32) void {
     const h = cell / 2;
-    const core = look.fade(FLAME_FILL, FLAME_FILL_A * alpha);
+    const core = look.fade(look.FLAME_FILL, FLAME_FILL_A * alpha);
     const Quarter = struct { dx: f32, dy: f32, side_x: mathx.Dir, side_y: mathx.Dir, corner: mathx.Dir };
     for ([_]Quarter{
         .{ .dx = 0, .dy = 0, .side_x = .w, .side_y = .n, .corner = .nw },
@@ -1004,11 +989,10 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
         } else continue;
         g.light.emit(ground, source);
     }
-    for (&g.pic.flames_shown, 0..) |left, i| {
-        if (left == 0 or !ground.lit[i]) continue;
-        const p = grid.Level.of(i);
-        const mid = mathx.centre(p);
-        g.light.emit(ground, .{ .at = .{ mid[0], mid[1], light.BODY_Z }, .col = look.FIRE, .radius = FLAME_LIGHT_R, .gain = FLAME_LIGHT_GAIN * g.pic.fx.statusFlicker(@floatFromInt(i)) });
+    for (0..grid.CELLS) |i| {
+        if (!g.pic.flamesShown(i) or !ground.lit[i]) continue;
+        const mid = mathx.centre(grid.Level.of(i));
+        g.light.emit(ground, light.Emission.onBody(mid, look.FIRE, fx.FLAMES_GLOW.radius, fx.FLAMES_GLOW.gain * g.pic.fx.statusFlicker(@floatFromInt(i))));
     }
 }
 

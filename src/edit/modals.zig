@@ -4,6 +4,7 @@ const widgets = @import("widgets.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const input = @import("../core/input.zig");
+const mathx = @import("../core/mathx.zig");
 const atlas = @import("../map/atlas.zig");
 const listing = @import("../map/listing.zig");
 const lume = @import("../map/lume.zig");
@@ -255,7 +256,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             }
             if (r.light > 0) f.put("Carries a light {d} cells round", .{r.light});
             if (r.splits) |into| f.put("Splits into two {s}s under half its hp", .{actor.row(into).name});
-            if (r.flits) f.put("Flits: {d:.0}% of its moves go a random way", .{actor.FLIT * 100});
+            if (r.flits) f.put("Flits: {d:.0}% of its moves go a random way", .{actor.FLIT * mathx.PERCENT});
             if (r.flees) f.put("Runs {d} turns when it sees a foe die within {d} cells", .{ actor.FLEE_TURNS, actor.FRIGHT_REACH });
             if (k.foe() and !k.stocked()) f.put("Only split off another; never placed", .{});
         },

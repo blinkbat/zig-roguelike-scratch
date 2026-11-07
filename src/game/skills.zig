@@ -75,7 +75,7 @@ fn openSwing(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
         const p = hero.at.add(d.delta());
         if (!tactics.validAct(run, act, hero.at, p)) continue;
         const foe = if (run.sim.pool.get(run.sim.lv.who(p))) |a| a.foe() else false;
-        if (foe or mark == null) mark = p;
+        if (foe or (mark == null and !game.allyAt(run, p))) mark = p;
         if (foe) break;
     }
     aimAt(run, by, act, hero.at, mark);
@@ -131,6 +131,7 @@ pub fn blockedNow(run: *const game.Game, act: skillbar.Act) ?Blocked {
 
 /// A stance's first upkeep falls due on the turn it is raised.
 fn needs(run: *const game.Game, act: skillbar.Act) i32 {
+    if (run.sim.playground) return 0;
     const upkeep: i32 = if (act == .unyielding) rules.Unyielding.DRAIN else 0;
     return run.sim.growth.cost(act) + upkeep;
 }

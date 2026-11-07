@@ -68,11 +68,15 @@ pub fn heroRoll(sim: *Simulation, comptime attack: attrs.Attack, raw: i32) Roll 
 
 pub fn heroRollWith(rng: *mathx.Rng, sim: *const Simulation, comptime attack: attrs.Attack, raw: i32) Roll {
     const gear = sim.inventory.gear;
-    var d = damage.Damage{ .physical = raw };
-    d.elements.set(.fire, imbuedFire(rng, sim, attack));
-    var hit = scaled(rng, gear.forAttack(sim.heroAttrs(), attack), gear.scaling(attack), d);
+    return imbuedScaled(rng, sim, attack, gear.forAttack(sim.heroAttrs(), attack), gear.scaling(attack), .{ .physical = raw }).physical();
+}
+
+fn imbuedScaled(rng: *mathx.Rng, sim: *const Simulation, attack: attrs.Attack, by: attrs.Attrs, style: attrs.Style, d: damage.Damage) Rolled {
+    var fired = d;
+    fired.elements.getPtr(.fire).* += imbuedFire(rng, sim, attack);
+    var hit = scaled(rng, by, style, fired);
     hit.effect = onHit(sim, attack);
-    return hit.physical();
+    return hit;
 }
 
 /// Imbue's fire on a melee blow, rolled before the blow scales; none while the weapon is not imbued.
@@ -107,11 +111,8 @@ pub fn heroArrow(sim: *Simulation, comptime act: skillbar.Act, body: bool) Rolle
 /// A raw `act` roll scaled by the hero's attributes and its rank, with its crit.
 pub fn heroScaled(sim: *Simulation, comptime act: skillbar.Act, raw: damage.Damage) Rolled {
     const b = blowFor(sim, act);
-    var d = raw;
-    if (raw.physical > 0) d.elements.getPtr(.fire).* += imbuedFire(&sim.rng, sim, act.attack().?);
-    var hit = scaled(&sim.rng, b.by, b.style, d);
-    if (raw.physical > 0) hit.effect = onHit(sim, act.attack().?);
-    return hit;
+    if (raw.physical > 0) return imbuedScaled(&sim.rng, sim, act.attack().?, b.by, b.style, raw);
+    return scaled(&sim.rng, b.by, b.style, raw);
 }
 
 pub fn blowFor(sim: *const Simulation, comptime act: skillbar.Act) progress.Blow {

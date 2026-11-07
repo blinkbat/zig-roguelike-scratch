@@ -85,10 +85,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
                 const w = c.add(s);
                 if (lv.at(w) == pal.open) {
                     opens += 1;
-                } else if (!grid.Level.onRim(w) and !grid.Level.onRim(w.add(s))) {
-                    walls[n] = w;
-                    n += 1;
-                }
+                } else if (!grid.Level.onRim(w) and !grid.Level.onRim(w.add(s))) _ = mathx.push(P, &walls, &n, w);
             }
             if (opens == 1 and n > 0 and rng.percent(p.braid)) {
                 lv.set(rng.pick(P, walls[0..n]), pal.open);

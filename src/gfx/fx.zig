@@ -14,6 +14,7 @@ pub const Puff = state.Puff;
 pub const TICK_WISPS = state.TICK_WISPS;
 pub const BURST_WISPS = state.BURST_WISPS;
 pub const Sting = state.Sting;
+pub const FLAMES_GLOW = state.FLAMES_GLOW;
 const Settle = state.Settle;
 const Burst = state.Burst;
 pub const Zap = state.Zap;
@@ -316,7 +317,7 @@ const LevelUp = struct {
     pub fn emission(self: LevelUp, at: [2]f32) ?light.Emission {
         const gain = self.alpha() * LEVEL_GLOW.gain;
         if (gain <= 0) return null;
-        return .{ .at = .{ at[0], at[1], light.BODY_Z }, .col = look.LEVEL_GOLD, .radius = LEVEL_GLOW.radius, .gain = gain };
+        return light.Emission.onBody(at, look.LEVEL_GOLD, LEVEL_GLOW.radius, gain);
     }
 
     pub fn drawBeam(self: LevelUp, at: [2]f32, ox: f32, oy: f32, cell: f32) void {
@@ -824,7 +825,7 @@ pub const Fx = struct {
 
     pub fn drawTorch(self: *const Fx, x: f32, y: f32, cell: f32, seed: f32, lit: f32, memory: f32) void {
         const k = pxScale(cell);
-        pixel.rect(.{ .x = x, .y = y + 7 * k }, 3, 12, k, look.fade(look.SPLINTER, memory * 0.7));
+        pixel.rect(.{ .x = x, .y = y + 7 * k }, 3, 12, k, look.fade(look.TORCH_HANDLE, memory * 0.7));
         pixel.rect(.{ .x = x, .y = y + k }, 7, 3, k, look.fade(look.TORCH_DIM, memory));
         const t = self.seconds.at();
         for (0..TORCH_FLAMES) |i| {

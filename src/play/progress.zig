@@ -254,8 +254,8 @@ pub const State = struct {
 
     pub fn preparedBlow(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act, steady: u8) ?Blow {
         var out = self.blowOf(equipped, gear, act) orelse return null;
-        if (steady > 0 and (act.isArrow() or act == .overwatch)) {
-            const t = @import("tactics.zig");
+        const t = @import("tactics.zig");
+        if (steady > 0 and t.SteadyAim.readies(act)) {
             out.by.damage_bonus.getPtr(out.style).* += t.SteadyAim.bonus(steady);
             out.by.crit_bonus += t.SteadyAim.critical(steady);
         }
@@ -306,20 +306,18 @@ pub const State = struct {
 
     pub fn bar(self: *const State, c: hero.Class) skillbar.Bar {
         var out = skillbar.Bar.of(c);
-        for (skillbar.SETS) |set| for (skillbar.SLOTS) |button| {
-            const slot = skillbar.Slot{ .set = set, .button = button };
+        for (skillbar.EVERY_SLOT) |slot| {
             if (out.at(slot)) |a| if (!self.unlocked(a)) out.clear(slot);
-        };
+        }
         return out;
     }
 
     /// `bar`, its flask slots given to the learned skills it leaves unbound, then Wait's once those run out.
     pub fn flasklessBar(self: *const State, c: hero.Class) skillbar.Bar {
         var out = self.bar(c);
-        for (skillbar.SETS) |set| for (skillbar.SLOTS) |button| {
-            const slot = skillbar.Slot{ .set = set, .button = button };
+        for (skillbar.EVERY_SLOT) |slot| {
             if (out.at(slot)) |a| if (a.flaskOf() != null) out.clear(slot);
-        };
+        }
         for (skillbar.kit(c)) |a| {
             if (innate(a) or !self.unlocked(a) or out.slotOf(a) != null) continue;
             out.bind(out.firstEmpty() orelse out.slotOf(.wait) orelse break, a);

@@ -7,7 +7,6 @@ const areas = @import("../play/area.zig");
 const resilience = @import("../play/resilience.zig");
 const sunder = @import("../play/sunder.zig");
 const ward = @import("../play/ward.zig");
-const tactics = @import("../play/tactics.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("look.zig");
 const light = @import("light.zig");
@@ -52,6 +51,8 @@ pub const Blow = struct {
 const StatusGlow = struct { radius: f32, gain: f32 };
 const BURN_GLOW = StatusGlow{ .radius = 2, .gain = 0.55 };
 const WARD_GLOW = StatusGlow{ .radius = 1.5, .gain = 0.25 };
+/// A cell of burning ground's light.
+pub const FLAMES_GLOW = StatusGlow{ .radius = 1.6, .gain = 0.45 };
 /// What a body suffers for turns, in the order the hud names them.
 pub const Status = enum {
     bleeding,
@@ -100,6 +101,19 @@ pub const Status = enum {
         };
     }
 
+    /// The skill whose stance it shows.
+    fn stance(s: Status) ?skillbar.Act {
+        return switch (s) {
+            .guarding => .guard,
+            .unyielding => .unyielding,
+            .steady => .steady_aim,
+            .overwatch => .overwatch,
+            .imbued => .imbue,
+            .biding => .bide,
+            .bleeding, .burning, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .warded, .resistant => null,
+        };
+    }
+
     /// The first status a body has, in this order, that glows lights it.
     pub fn glow(s: Status) ?StatusGlow {
         return switch (s) {
@@ -111,20 +125,14 @@ pub const Status = enum {
 
     pub fn emission(s: Status, at: [2]f32, flicker: f32) ?light.Emission {
         const g = s.glow() orelse return null;
-        return .{ .at = .{ at[0], at[1], light.BODY_Z }, .col = s.ink(), .radius = g.radius, .gain = g.gain * flicker };
+        return light.Emission.onBody(at, s.ink(), g.radius, g.gain * flicker);
     }
 
     pub fn title(s: Status) [:0]const u8 {
         return switch (s) {
             .warded => skillbar.Act.mana_shield.name(),
             .resistant => "Status resistance",
-            .guarding => skillbar.Act.guard.name(),
-            .unyielding => skillbar.Act.unyielding.name(),
-            .steady => skillbar.Act.steady_aim.name(),
-            .overwatch => skillbar.Act.overwatch.name(),
-            .imbued => skillbar.Act.imbue.name(),
-            .biding => skillbar.Act.bide.name(),
-            inline else => |t| comptime menu.capital(@tagName(t)),
+            inline else => |t| if (comptime t.stance()) |a| a.name() else comptime menu.capital(@tagName(t)),
         };
     }
 
@@ -132,21 +140,16 @@ pub const Status = enum {
     pub fn about(s: Status) []const u8 {
         return switch (s) {
             .resistant => resilience.ABOUT,
-            .guarding => tactics.Guard.DESCRIPTION,
-            .unyielding => tactics.Unyielding.DESCRIPTION,
-            .steady => tactics.SteadyAim.DESCRIPTION,
-            .overwatch => tactics.Overwatch.DESCRIPTION,
-            .imbued => tactics.Imbue.DESCRIPTION,
-            .biding => tactics.Bide.DESCRIPTION,
             .frightened => actor.FRIGHT_STATUS,
-            inline else => |t| module(t).STATUS,
+            inline else => |t| comptime if (t.stance()) |a| skillbar.Act.skill(a).DESCRIPTION else module(t).STATUS,
         };
     }
 
     fn module(comptime s: Status) type {
+        if (comptime s.stance() != null) @compileError("about names " ++ @tagName(s) ++ "'s skill's text");
         return switch (s) {
             .warded => ward,
-            .frightened, .resistant, .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
+            .frightened, .resistant => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
             else => resilience.module(comptime s.ailment().?),
         };
     }
@@ -155,8 +158,7 @@ pub const Status = enum {
         return switch (s) {
             .warded => "ward",
             .resistant => "resilience",
-            .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => "tactics",
-            inline else => |t| @tagName(comptime t.ailment().?),
+            inline else => |t| if (comptime t.stance() != null) "tactics" else @tagName(comptime t.ailment().?),
         };
     }
 

@@ -149,7 +149,7 @@ pub fn Held(comptime T: type) type {
     };
 }
 
-pub const Pictured = struct { masked: std.StaticBitSet(actor.MAX) = .initEmpty(), bursting: ?P = null, held: bool = false, burnt_held: bool = false };
+pub const Pictured = struct { masked: std.StaticBitSet(actor.MAX) = .initEmpty(), bursting: ?P = null, held: bool = false, tiles_held: bool = false };
 
 /// Presentation debts land at the body's stagger, or after the hero when it has no stagger.
 pub const Owed = struct {
@@ -209,7 +209,7 @@ pub const Fields = struct {
     /// Snapped to the simulation as the game settles, then moved or eased on toward it.
     pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "hour_shown", "weather_shown" };
     /// Rebuilt from the simulation each time it is read.
-    pub const scratch = [_][]const u8{ "ground_shown", "burnt_ground" };
+    pub const scratch = [_][]const u8{ "ground_shown", "burnt_ground", "burnt_box" };
     /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
     pub const kept = [_][]const u8{ "seq", "fx", "occluder" };
 };
@@ -267,6 +267,8 @@ pub const Presentation = struct {
     ground_shown: grid.Level = undefined,
     /// The level as drawn with what is still fading from a fire laid back over what it left, rebuilt by `burntShown`.
     burnt_ground: grid.Level = undefined,
+    /// The cells round those `burnt_ground` lays back, set with it.
+    burnt_box: grid.Box = undefined,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -355,14 +357,18 @@ pub const Presentation = struct {
         self.facing[o] = if (self.turning[i]) |t| t.to else self.facing[i];
     }
 
-    /// A body come into being this turn, drawn standing where it rose.
-    pub fn recordBirth(self: *Presentation, sim: *const Simulation, born: actor.ActorId) void {
+    /// A body come into being this turn, drawn standing where it rose once `wait` has passed.
+    pub fn recordBirth(self: *Presentation, sim: *const Simulation, born: actor.ActorId, wait: f32) void {
         const i = born.slot().index;
         const body = sim.pool.items[i];
+        self.fx.impacts.forget(born.slot());
         self.pictured[i] = fx.Body.of(body, self.seq);
         self.glide[i] = glide.Glide.rest(&body);
         self.facing[i] = if (sim.heroAt()) |h| facingOf(h.x - body.at.x) orelse .right else .right;
         self.sighted[i] = 1;
+        var after = self.afterOf(sim, born.slot());
+        after.reveals = born.slot();
+        self.fx.settle(wait, .{ .slot = born.slot(), .after = after });
     }
 
     pub fn beforeDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
@@ -511,8 +517,13 @@ pub const Presentation = struct {
 
     /// Dead bodies remain until their killing blow, flash and glide finish.
     pub fn standing(self: *const Presentation, sim: *const Simulation, i: usize) bool {
-        if (self.split_from[i] != null) return false;
+        if (self.split_from[i] != null or self.fx.impacts.revealing(.fromIndex(i))) return false;
         return sim.pool.items[i].alive or self.fx.impacts.holds(.fromIndex(i)) or self.glide[i].done() < 1;
+    }
+
+    /// Dead, and no longer drawn standing or fading.
+    pub fn gone(self: *const Presentation, sim: *const Simulation, i: usize) bool {
+        return !self.standing(sim, i) and !self.fx.impacts.isDying(.fromIndex(i));
     }
 
     pub fn heroShown(self: *const Presentation, sim: *const Simulation) ?fx.Body {
@@ -609,7 +620,7 @@ pub const Presentation = struct {
     }
 
     pub fn pictureKey(self: *const Presentation) Pictured {
-        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.lit.on(), .burnt_held = self.tiles.on() };
+        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.lit.on(), .tiles_held = self.tiles.on() };
     }
 
     /// The chest drawn at `p` is a mimic's: one still disguised, or one killed in it until its death is drawn.
@@ -645,11 +656,19 @@ pub const Presentation = struct {
         return if (self.embers[i] > 0) self.burnt[i] else null;
     }
 
-    /// `ground` with each tile still fading from a fire laid back; null while none is.
+    /// `ground` with each tile still fading from a fire laid back, and `burnt_box` round them; null while none is.
     pub fn burntShown(self: *Presentation, ground: *const grid.Level) ?*const grid.Level {
-        for (0..grid.CELLS) |i| {
-            if (self.fadingBurnt(i) != null) break;
-        } else return null;
+        var lo = P{ .x = grid.W, .y = grid.H };
+        var hi = P{ .x = 0, .y = 0 };
+        var any = false;
+        for (0..grid.CELLS) |i| if (self.fadingBurnt(i) != null) {
+            const p = grid.Level.of(i);
+            lo = lo.min(p.sub(.{ .x = 1, .y = 1 }));
+            hi = hi.max(p.add(.{ .x = 2, .y = 2 }));
+            any = true;
+        };
+        if (!any) return null;
+        self.burnt_box = .{ .lo = lo.max(.{ .x = 0, .y = 0 }), .hi = hi.min(.{ .x = grid.W, .y = grid.H }) };
         self.burnt_ground = ground.*;
         for (&self.burnt_ground.tile, 0..) |*t, i| if (self.fadingBurnt(i)) |was| {
             t.* = was;

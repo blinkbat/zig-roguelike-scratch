@@ -236,6 +236,7 @@ fn discAll(lv: *grid.Level, c: P, r: f32, t: grid.Tile) void {
 }
 
 pub const LANE_MIN: u8 = 2;
+pub const SPAN: grid.Tile = .bridge;
 
 pub const Lane = union(enum) {
     /// Off the rim, over whatever is there.
@@ -243,7 +244,7 @@ pub const Lane = union(enum) {
     /// To the rim, bridging a liquid with this tile.
     road: grid.Tile,
 
-    pub const bridged: Lane = .{ .road = .bridge };
+    pub const bridged: Lane = .{ .road = SPAN };
 };
 
 pub fn lane(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, t: grid.Tile, comptime how: Lane) void {
@@ -669,13 +670,13 @@ pub fn trail(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, path: grid.Tile) void
 
 fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
     const t = lv.at(p);
-    if (t.solid()) lv.set(p, paved(t, path, .bridge));
+    if (t.solid()) lv.set(p, paved(t, path, SPAN));
 }
 
 /// `put` laid over `t`: a liquid bridged by `span`, a bridge already there kept.
 fn paved(t: grid.Tile, put: grid.Tile, span: grid.Tile) grid.Tile {
     if (t.spans()) return t;
-    return if (t.liquid()) span else put;
+    return if (t.liquid()) t.spannedBy(span) else put;
 }
 
 pub fn crossing(t: grid.Tile) bool {
@@ -695,7 +696,7 @@ pub fn bridge(lv: *grid.Level, b: grid.Box, open: ?grid.Tile) void {
 
     while (cells.next()) |q| {
         const was = lv.at(q);
-        lv.set(q, paved(was, if (open != null and was == .wall) open.? else was, .bridge));
+        lv.set(q, paved(was, if (open != null and was == .wall) open.? else was, SPAN));
     }
 }
 
@@ -740,10 +741,7 @@ pub const Flow = struct {
     pub fn of(rng: *mathx.Rng, a: P, b: P, wander: f32) Flow {
         var f = Flow{};
         var m = Meander.init(a, b, wander);
-        while (m.next(rng)) |c| {
-            f.cell[f.n] = c;
-            f.n += 1;
-        }
+        while (m.next(rng)) |c| _ = mathx.push(P, &f.cell, &f.n, c);
         return f;
     }
 
@@ -1048,6 +1046,22 @@ test "a small island is bridged, not filled as a pocket" {
     std.debug.print("a five-cell island in a pocket-filling base: {d} bridge cells after joining\n", .{count(&lv, .bridge)});
     try std.testing.expect(lv.walkable(grid.MIDDLE));
     try std.testing.expect(count(&lv, .bridge) > 0);
+}
+
+test "an island in lava or a chasm is joined by stone, which no fire burns into water" {
+    for ([_]grid.Tile{ .lava, .chasm }) |liquid| {
+        var lv = grid.Level.blank();
+        var rng = mathx.Rng.init(0x15E);
+        const pal = Palette.WILD.pocketed();
+        field(&lv, pal);
+        disc(&lv, grid.MIDDLE, 4, liquid, null);
+        disc(&lv, grid.MIDDLE, 1, .grass, null);
+        connect(&lv, &rng, pal, .{});
+        std.debug.print("a five-cell island in {s}: {d} stone, {d} wooden bridge cells\n", .{ @tagName(liquid), count(&lv, .stone_bridge), count(&lv, .bridge) });
+        try std.testing.expect(lv.walkable(grid.MIDDLE));
+        try std.testing.expect(count(&lv, .stone_bridge) > 0);
+        try std.testing.expectEqual(@as(usize, 0), count(&lv, .bridge));
+    }
 }
 
 test "a river runs edge to edge and parts the ground, and a join bridges it" {

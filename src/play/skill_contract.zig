@@ -104,6 +104,7 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
             if (r != .swing and !signature(m, "aimable", &.{ *const grid.Level, mathx.P, mathx.P, i32 }, bool)) return "a leap or rush requires aimable(*const Level, P, P, range: i32) bool";
             if (r != .swing and !@hasDecl(m, "RANGE")) return "targeting requires RANGE";
             if (r != .swing and !@hasDecl(m, "DESCRIBED")) return "a leap or rush requires DESCRIBED, its description with its reach left open";
+            if (r != .leap and d.delivery != .melee) return "a swing or rush requires melee delivery";
             if (r == .swing and has(d, "arc") and has(d, "knocked")) return "swing takes at most one of arc or knocked";
             if (r == .swing and !has(d, "arc") and !has(d, "knocked") and !has(d, "afflict")) return "a single-target swing requires afflict";
             if (r == .rush) {

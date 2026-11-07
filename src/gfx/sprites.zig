@@ -68,6 +68,8 @@ pub const Sprites = struct {
     scenery: ?sprite_materials.SceneryShader = null,
     mirror: ?rl.RenderTexture2D = null,
     mirror_memory: ?rl.RenderTexture2D = null,
+    /// The ground a fire just took, laid back cell by cell as it fades.
+    burnt_ground: ?rl.RenderTexture2D = null,
 
     pub fn loadCommon(self: *Sprites) void {
         self.skills = line_icons.skillIcons();

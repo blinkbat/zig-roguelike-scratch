@@ -30,15 +30,20 @@ pub const LANDED_HEAT: u8 = 2;
 /// Fire landing: its chance to catch each cell that burns, and the cells it may leap on from there.
 pub const Kindle = struct { chance: u32, heat: u8 = LANDED_HEAT };
 
-/// What `t` leaves as its fire goes out: a bridge drops into the water, shallow where a body stands, the rest burns to `ASH`.
+/// What `t` leaves as its fire goes out: a bridge drops into the water, shallow where something stands or lies, the rest burns to `ASH`.
 pub fn ashOf(t: grid.Tile, held: bool) grid.Tile {
-    if (t != .bridge) return ASH;
+    if (!t.spans()) return ASH;
     return if (held) .shallows else .water;
+}
+
+/// Every tile `t` may burn down to.
+pub fn ashes(t: grid.Tile) [2]grid.Tile {
+    return .{ ashOf(t, false), ashOf(t, true) };
 }
 
 /// `now` is the ash of `was`, burnt down.
 pub fn burntDown(was: grid.Tile, now: grid.Tile) bool {
-    return was.burns() and (now == ashOf(was, false) or now == ashOf(was, true));
+    return was.burns() and std.mem.indexOfScalar(grid.Tile, &ashes(was), now) != null;
 }
 
 /// What standing in flames deals a turn against `resists`.
@@ -97,7 +102,8 @@ pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) us
 
 /// A turn of the floor's fire: each burning tile smokes, each fire leaps to what burns beside it, boils the water and melts the frozen shallows beside it,
 /// then every cell burns a turn down, and a tile that burns goes to `ASH` as its fire goes out; true when any did.
-pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32) bool {
+/// `kept` marks cells whose ground holds what deep water would take.
+pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32, kept: *const grid.CellSet) bool {
     if (std.mem.allEqual(u8, &lv.flames, 0)) return false;
     const was = lv.flames;
     const chance = damped(SPREAD, rain);
@@ -129,8 +135,8 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32) bool {
         const t = lv.tile[i];
         if (!t.burns()) continue;
         const p = grid.Level.of(i);
-        lv.tile[i] = ashOf(t, lv.taken(p) or lv.folkAt(p) != null);
-        if (t == .bridge) _ = gas.boil(lv, &.{p});
+        lv.tile[i] = ashOf(t, lv.held(p) or kept.isSet(i));
+        if (t.spans()) _ = gas.boil(lv, &.{p});
         burnt = true;
     }
     return burnt;
@@ -143,6 +149,7 @@ fn field(t: grid.Tile) grid.Level {
 }
 
 const AT = grid.MIDDLE;
+const NONE_KEPT = grid.CellSet.initEmpty();
 const NEVER: usize = 100;
 const TRIES: usize = 200;
 
@@ -152,7 +159,7 @@ fn burnOut(lv: *grid.Level, rng: *mathx.Rng, rain: f32) !Burn {
     var turns: usize = 0;
     while (!std.mem.allEqual(u8, &lv.flames, 0)) : (turns += 1) {
         if (turns == NEVER) return error.NeverOut;
-        _ = turn(lv, rng, rain);
+        _ = turn(lv, rng, rain, &NONE_KEPT);
     }
     var out = Burn{ .cells = 0, .turns = turns, .reach = 0 };
     for (lv.tile, 0..) |t, i| {
@@ -215,7 +222,7 @@ test "fire takes grass, reeds, crops and bridges, never bare ground, walls or tr
         for (0..TRIES) |_| {
             if (lv.burning(AT.add(.{ .x = 1, .y = 0 }))) break;
             lv.flames[grid.Level.idx(AT)] = BURNS;
-            _ = turn(&lv, &rng, 0);
+            _ = turn(&lv, &rng, 0, &NONE_KEPT);
         }
         try std.testing.expectEqual(t.burns(), lv.burning(AT.add(.{ .x = 1, .y = 0 })));
         try std.testing.expectEqual(t.wet(), lv.scalding(AT.add(.{ .x = 1, .y = 0 })));
@@ -256,16 +263,20 @@ test "a fire of no heat burns a whole reed bed down, and no grass beyond it" {
     try std.testing.expectEqual(@as(usize, 0), grass);
 }
 
-test "a burnt bridge drops into the water and steams, shallow under a body standing on it" {
+test "a burnt bridge drops into the water and steams, shallow under a body standing on it or something lying there" {
     var rng = mathx.Rng.init(0xB21D);
     for ([_]bool{ false, true }) |held| {
-        var lv = field(.water);
-        lv.set(AT, .bridge);
-        if (held) lv.stand(AT, 1);
-        lay(&lv, AT, 1, 0);
-        try std.testing.expect(turn(&lv, &rng, 0));
-        try std.testing.expectEqual(ashOf(.bridge, held), lv.at(AT));
-        try std.testing.expect(lv.scalding(AT) and burntDown(.bridge, lv.at(AT)));
+        for ([_]bool{ false, true }) |lying| {
+            var lv = field(.water);
+            var kept = NONE_KEPT;
+            lv.set(AT, .bridge);
+            if (held) lv.stand(AT, 1);
+            kept.setValue(grid.Level.idx(AT), lying);
+            lay(&lv, AT, 1, 0);
+            try std.testing.expect(turn(&lv, &rng, 0, &kept));
+            try std.testing.expectEqual(ashOf(.bridge, held or lying), lv.at(AT));
+            try std.testing.expect(lv.scalding(AT) and burntDown(.bridge, lv.at(AT)));
+        }
     }
     try std.testing.expectEqual(grid.Tile.water, ashOf(.bridge, false));
     try std.testing.expectEqual(grid.Tile.shallows, ashOf(.bridge, true));
@@ -278,11 +289,11 @@ test "a burning tile smokes, laid flames on bare floor do not, and a fire of no 
     lv.set(bare, .floor);
     lay(&lv, AT, BURNS, 0);
     lay(&lv, bare, BURNS, 0);
-    _ = turn(&lv, &rng, 0);
+    _ = turn(&lv, &rng, 0, &NONE_KEPT);
     try std.testing.expectEqual(SMOKE, lv.volumeAt(.smoke, AT));
     try std.testing.expectEqual(@as(u16, 0), lv.volumeAt(.smoke, bare));
     try std.testing.expectEqual(@as(usize, 2), grid.CELLS - std.mem.count(u8, &lv.flames, &.{0}));
-    for (1..BURNS) |_| _ = turn(&lv, &rng, 0);
+    for (1..BURNS) |_| _ = turn(&lv, &rng, 0, &NONE_KEPT);
     try std.testing.expectEqual(ASH, lv.at(AT));
     try std.testing.expectEqual(grid.Tile.floor, lv.at(bare));
     try std.testing.expect(!lv.burning(AT) and !lv.burning(bare));

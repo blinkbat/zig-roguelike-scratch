@@ -309,9 +309,8 @@ fn validateDoors(level: *const grid.Level, node: ?*const atlas.Node) !void {
 }
 
 fn holdsHero(pool: *const actor.Pool, id: u16, kind: actor.Kind) bool {
-    if (id == 0 or id > pool.n) return false;
-    const body = &pool.items[actor.Pool.slot(id)];
-    return body.alive and body.kind == kind;
+    const body = pool.getConst(id) orelse return false;
+    return body.kind == kind;
 }
 
 /// Every death still to come, of a body standing or one yet to split off, drops on the ground with room for it.
@@ -337,9 +336,8 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *items.Gro
     }
     for (level.occupant, 0..) |id, index| {
         if (id == grid.NO_ONE) continue;
-        if (id > pool.n) return error.Damaged;
-        const body = &pool.items[actor.Pool.slot(id)];
-        if (!body.alive or !body.at.eq(grid.Level.of(index))) return error.Damaged;
+        const body = pool.getConst(id) orelse return error.Damaged;
+        if (!body.at.eq(grid.Level.of(index))) return error.Damaged;
     }
     for (level.torches()) |at| if (!grid.Level.inside(at)) return error.Damaged;
     for (level.caltrops) |patch| if (patch.turns != 0 and (patch.rank == 0 or patch.rank > progress.RANKS)) return error.Damaged;

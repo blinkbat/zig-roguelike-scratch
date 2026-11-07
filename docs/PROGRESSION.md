@@ -19,7 +19,7 @@
 | Passive tree | 81-node radial graph lifted from Soulslike; three origins, six branches and six bridges |
 | Active trees | Per class, prerequisites, three ranks; Shoot is a fixed basic attack and cannot be upgraded; only learned skills may be bound |
 | Initial skills | Archer: Shoot/Juke; Wizard: Spark/Blink; Knight: Charge/Cleave; all keep bump melee |
-| Charge | Reaches 1–3 tiles, an adjacent foe struck in place; can target a clear empty line for retreat |
+| Charge | Strikes a foe 1–4 tiles away along a clear line, an adjacent foe struck in place; can retreat 1–3 tiles to empty ground |
 | Respec | Deferred |
 
 Balance values live in `src/play/items.zig` (including loot rates and foe/barrel/chest gold), `src/play/progress.zig`, `src/play/passives.zig`, `src/play/attrs.zig` (life, mana, crit, dodge, armour cap), `src/play/hero.zig` (class bases, mana recovery), `src/play/flask.zig` and each skill module. These are small
@@ -147,8 +147,8 @@ preparation, control and defense:
 | Class | Paths |
 |---|---|
 | Archer | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot, Piercing Shot; Juke -> Caltrops |
-| Wizard | Spark -> Fireball -> Combustion, Fire Wall; Spark -> Chain Lightning; Blink -> Frost Nova -> Shatter, Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
-| Knight | Cleave -> Guard -> Unyielding; Cleave -> Rend -> War Cry; Charge -> Shield Bash -> Whirlwind |
+| Wizard | Spark -> Fireball -> Combustion, Fire Wall; Spark -> Chain Lightning; Blink -> Raise Skeleton; Blink -> Frost Nova -> Shatter, Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
+| Knight | Cleave -> Guard -> Bide, Unyielding; Cleave -> Rend -> War Cry; Cleave -> Imbue; Charge -> Shield Bash -> Whirlwind |
 
 Caltrops pins entering ground foes at every rank, adds bleed at rank 2, then strengthens
 both at rank 3. Flying foes ignore caltrops. Gravity Well pulls foes toward its center;

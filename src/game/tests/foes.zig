@@ -1021,7 +1021,7 @@ test "a bog leech swims unseen to the shore, surfaces beside the hero and is str
     const id = harness.spawnAt(g, .bog_leech, .{ .x = 25, .y = 20 }, true);
     game.settle(g);
     const slot = actor.Pool.slot(id);
-    try std.testing.expect(g.sim.pool.get(id).?.submerged and harness.gone(g, slot));
+    try std.testing.expect(g.sim.pool.get(id).?.submerged and harness.undrawn(g, slot));
     try std.testing.expectEqual(@as(?P, null), bow.pick(&g.sim.lv, &g.sim.pool, from, bow.RANGE));
     var turns: usize = 0;
     while (g.sim.pool.get(id).?.submerged and turns < 8) : (turns += 1) {
@@ -1032,7 +1032,7 @@ test "a bog leech swims unseen to the shore, surfaces beside the hero and is str
             g.pic.catchUp(&g.sim);
             g.st = .{};
             while (g.pic.glide[slot].left() > 0) {
-                try std.testing.expect(harness.gone(g, slot));
+                try std.testing.expect(harness.undrawn(g, slot));
                 game.update(g, harness.TEST_DT);
             }
         }
@@ -1054,7 +1054,7 @@ test "a mimic stands as a closed chest until opened, then bites, and dies leavin
     game.settle(g);
     const slot = actor.Pool.slot(id);
     try std.testing.expectEqual(grid.Tile.chest, g.sim.lv.at(at));
-    try std.testing.expect(harness.gone(g, slot));
+    try std.testing.expect(harness.undrawn(g, slot));
     for (0..3) |_| {
         combat.endTurn(g);
         harness.drawnOut(g);
@@ -1412,7 +1412,7 @@ test "a mimic killed in its chest stays the chest until the killing blow lands" 
         try std.testing.expectEqual(grid.Tile.chest, g.pic.tileShown(&g.sim, at));
         try std.testing.expect(g.pic.mimicAt(&g.sim, at));
         try harness.expectGroundShown(g);
-        try std.testing.expect(harness.gone(g, slot));
+        try std.testing.expect(harness.undrawn(g, slot));
         game.update(g, harness.TEST_DT);
     }
     try std.testing.expectEqual(g.sim.lv.at(at), g.pic.tileShown(&g.sim, at));
@@ -1544,13 +1544,13 @@ test "a sleeping leech the hero steps beside surfaces as the step lands, and div
     game.settle(g);
     const slot = actor.Pool.slot(id);
     const hero = g.sim.heroSlot().?;
-    try std.testing.expect(harness.gone(g, slot));
+    try std.testing.expect(harness.undrawn(g, slot));
     var shown: [2]f32 = undefined;
     inline for (.{ mathx.Dir.e, mathx.Dir.w }, .{ false, true }, &shown) |d, under, *t| {
         harness.nudge(g, d);
         try std.testing.expectEqual(under, g.sim.pool.get(id).?.submerged);
         const step = g.pic.glide[hero].left();
-        t.* = harness.framesUntil(g, slot, if (under) harness.gone else harness.drawn);
+        t.* = harness.framesUntil(g, slot, if (under) harness.undrawn else harness.drawn);
         try std.testing.expect(t.* + harness.TEST_DT >= step and t.* < 1);
         harness.drawnOut(g);
     }

@@ -958,6 +958,15 @@ pub const Ground = struct {
         return false;
     }
 
+    /// Every cell where items, consumables or gold lie.
+    pub fn lying(self: *const Ground) grid.CellSet {
+        var out = grid.CellSet.initEmpty();
+        for (self.drops[0..self.n]) |d| out.set(grid.Level.idx(d.at));
+        for (self.supplies[0..self.supply_n]) |s| out.set(grid.Level.idx(s.at));
+        for (self.coins[0..self.coin_n]) |c| out.set(grid.Level.idx(c.at));
+        return out;
+    }
+
     pub fn addSupply(self: *Ground, s: Supply) bool {
         return mathx.push(Supply, &self.supplies, &self.supply_n, s);
     }

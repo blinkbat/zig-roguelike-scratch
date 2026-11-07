@@ -122,27 +122,31 @@ pub fn beginReplace() void {
 
 /// A render texture over the whole frame, flipped the right way up.
 pub fn drawTarget(t: rl.Texture2D) void {
-    rl.drawTextureRec(t, rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);
+    drawTargetPart(t, whole(t), rl.Color.white);
+}
+
+/// `r` of a render texture over the whole frame, drawn where it was rendered, flipped the right way up.
+pub fn drawTargetPart(t: rl.Texture2D, r: rl.Rectangle, tint: rl.Color) void {
+    const h: f32 = @floatFromInt(t.height);
+    rl.drawTextureRec(t, .{ .x = r.x, .y = h - r.y - r.height, .width = r.width, .height = -r.height }, .{ .x = r.x, .y = r.y }, tint);
 }
 
 /// White, its alpha `alphaAt(r)` at `r` from the middle, 1 at the middle of each edge. Needs a live GL context.
 pub fn radial(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
-    const round = struct {
-        fn at(u: f32, v: f32) f32 {
-            return alphaAt(mathx.len(u * 2 - 1, v * 2 - 1));
-        }
-    };
-    return field(px, px, round.at);
+    return fieldOf(px, px, roundOf(alphaAt), false);
 }
 
 /// `radial` premultiplied: its colour falls off with its alpha, for blending that ignores alpha.
 pub fn radialPremultiplied(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
-    const round = struct {
+    return fieldOf(px, px, roundOf(alphaAt), true);
+}
+
+fn roundOf(comptime alphaAt: fn (f32) f32) fn (f32, f32) f32 {
+    return struct {
         fn at(u: f32, v: f32) f32 {
             return alphaAt(mathx.len(u * 2 - 1, v * 2 - 1));
         }
-    };
-    return fieldOf(px, px, round.at, true);
+    }.at;
 }
 
 /// White, its alpha `alphaAt(u, v)` at each texel's middle, `u` and `v` 0 to 1 across and down. Needs a live GL context.
@@ -159,7 +163,7 @@ fn fieldOf(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f32
             const u = (@as(f32, @floatFromInt(x)) + 0.5) / @as(f32, @floatFromInt(w));
             const v = (@as(f32, @floatFromInt(y)) + 0.5) / @as(f32, @floatFromInt(h));
             const a = alphaAt(u, v);
-            img[y * nw + x] = if (premultiplied) look.colourOf(@splat(a), a) else look.fade(rl.Color.white, a);
+            img[y * nw + x] = if (premultiplied) look.premultiplied(@splat(1), a) else look.fade(rl.Color.white, a);
         }
     }
     return clamped(rgba(&img, w, h), .bilinear);

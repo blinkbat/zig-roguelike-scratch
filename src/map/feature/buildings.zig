@@ -73,8 +73,7 @@ pub const Lots = struct {
     pub fn takeApart(self: *Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
         if (self.n == LOTS_MAX) return null;
         const b = self.site(lv, rng, w, h, gap, pal) orelse return null;
-        self.box[self.n] = b;
-        self.n += 1;
+        _ = mathx.push(Box, &self.box, &self.n, b);
         return b;
     }
 
@@ -141,10 +140,7 @@ fn dryDoorway(lv: *const grid.Level, rng: *mathx.Rng, b: Box) ?[2]P {
     var n: usize = 0;
     for (carve.SIDES) |side| {
         var k: i32 = 0;
-        while (k < spanOf(b, side) and n < all.len) : (k += 1) {
-            all[n] = doorwayOn(b, side, k);
-            n += 1;
-        }
+        while (k < spanOf(b, side) and n < all.len) : (k += 1) _ = mathx.push([2]P, &all, &n, doorwayOn(b, side, k));
     }
     return rng.pickWhere([2]P, all[0..n], lv, dry);
 }

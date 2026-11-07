@@ -332,14 +332,9 @@ pub const Line = struct {
     fn exits(self: *const Line, out: *[EXITS]?u8) []const ?u8 {
         var n: usize = 0;
         for (self.choices()) |*c| {
-            if (!c.possible()) continue;
-            out[n] = c.next;
-            n += 1;
+            if (c.possible()) _ = mathx.push(?u8, out, &n, c.next);
         }
-        if (self.thenUsed()) {
-            out[n] = self.then;
-            n += 1;
-        }
+        if (self.thenUsed()) _ = mathx.push(?u8, out, &n, self.then);
         return out[0..n];
     }
 };

@@ -166,10 +166,7 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
         var choices: [N]Branch = undefined;
         var n: usize = 0;
         for (g.branch[0..g.n]) |b| {
-            if (!attempted[b.root]) {
-                choices[n] = b;
-                n += 1;
-            }
+            if (!attempted[b.root]) _ = mathx.push(Branch, &choices, &n, b);
         }
         if (n == 0) break;
         const b = rng.pick(Branch, choices[0..n]);
@@ -258,10 +255,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
     var have: usize = 0;
     for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);
-        if (kind.has(lv, p)) {
-            placed[have] = p;
-            have += 1;
-        }
+        if (kind.has(lv, p)) _ = mathx.push(P, &placed, &have, p);
         if (!rewardAt(lv, p) or p.eq(origin)) continue;
         var near_door = false;
         for (doors) |door| {
@@ -274,8 +268,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
             if (!grid.Level.onRim(q) and lv.at(q).solid() and !Reward.chest.has(lv, q)) edges += 1;
         }
         if (edges < rule.walls) continue;
-        spots[count] = p;
-        count += 1;
+        _ = mathx.push(P, &spots, &count, p);
     }
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
@@ -291,8 +284,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
         if (near) continue;
         if (!keepsRoute(blocked, p, origin, open, joined, &dist, &queue)) continue;
         kind.put(lv, p);
-        placed[have] = p;
-        have += 1;
+        _ = mathx.push(P, &placed, &have, p);
         added += 1;
         open -= 1;
     }
@@ -313,9 +305,7 @@ fn ringJoined(lv: *const grid.Level, p: P) bool {
     var ring: [mathx.ALL_DIRS.len]P = undefined;
     var n: usize = 0;
     for (mathx.ALL_DIRS) |d| {
-        if (!lv.passOk(p, d)) continue;
-        ring[n] = p.add(d.delta());
-        n += 1;
+        if (lv.passOk(p, d)) _ = mathx.push(P, &ring, &n, p.add(d.delta()));
     }
     if (n == 0) return false;
     var seen: u8 = 1;

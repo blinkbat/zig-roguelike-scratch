@@ -230,7 +230,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   death retry and Debug > Gameplay > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
   The top bar's Playground does the same with `map/playground.zig`: one torchlit patch of every placeable tile, barrels and a
   shallow/deep bank, no foes. `Simulation.playground` (unsaved, set by the app on every launch) gives the wizard every tree skill
-  bound in place of flasks (`progress.State.versed/flasklessBar`), free casting (`skills.spend/recover`) and no death; Restart Map relays it.
+  bound in place of flasks (`progress.State.versed/flasklessBar`), free casting (`skills.needs/spend/recover`) and no death; Restart Map relays it.
 - Editor > Text uses `edit/text_catalog.zig` and `edit/text_panel.zig` to browse source wording, rewrite literals
   by feature, owner and field purpose, and assign separate author tags. Editor panels use 24px primary text
   and 20px details. Source and tag conflict checks protect external edits; wording applies after rebuilding.
@@ -355,11 +355,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   a fire arrow's impact cell, a pyre bloat's burst. Steam also loses a third of each cell a pass (`gas.CONDENSE`) and scalds for `gas.SCALD` fire damage, resisted.
   `gfx/cloud.zig` draws them in one premultiplied texture; gas harm and heals shed `fx.Puff` wisps of their gas's colour as they land.
 - `map/fire.zig` owns ground fire on `Level.flames` (turns left, Fire Wall's too) and `Level.heat` (cells it may still leap).
-  `Tile.burns` tiles (grass, litter, reeds, crops, wooden bridges; never walls, trees or the tee's `stone_bridge`, drawn with the bridge art) catch from fire landing by each source's `KINDLE`
+  `Tile.burns` tiles (grass, litter, reeds, crops, wooden bridges; never walls, trees or `stone_bridge`, drawn with the bridge art and laid over lava, chasms and the tee's river, `grid.Tile.spannedBy`) catch from fire landing by each source's `KINDLE`
   chance and heat (`rewards.kindleRound`, from `combat.fireLands` and a pyre's burst), damped by rain (`fire.damped`, harder rain more).
   Each turn, at `combat.beginTurn`, a burning tile smokes, every fire may catch its burnable neighbours at one less heat and boil
   wet ones into steam, and a burnt-out tile becomes dirt (`fire.ASH`; `Light.follow` retiles once it is drawn); a bridge drops into
-  water instead, shallows under a body or folk, with a puff of steam (`fire.ashOf`). `Tile.tinder` (reeds) catches from any fire beside it
+  water instead, shallows under a body, folk or anything lying there (`Ground.lying`), with a puff of steam (`fire.ashOf`). `Tile.tinder` (reeds) catches from any fire beside it
   without cooling it, so a reed bed burns out whole. The burning-ground fill fades toward sides no fire shares (`scene.drawFlames`). Flames gone out, and what they
   burnt away, fade over `presentation.EMBER_S` (`Presentation.embers`, `burntShown`; burnt ground is drawn into a screen target and laid back per cell). Standing in flames scorches
   (`Tick.scorched`) and may ignite through fire/burn resistance. `Presentation.flames_shown` holds new flames until their fire lands.
@@ -393,7 +393,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   presentation supports at most one action per foe per turn. Check chill before the stalled-action return.
   Use `Clock.delay`/`Clock.stun` for delays/stun, with no separate stun status or visible clock. A stunned hero
   loses its next turn on its own once the stunning turn is drawn (`stunnedTurn`, in play or Character).
-  A foe's sweep (`Row.sweep_every`) strikes every body and barrel round it; its victims and its drawn whirl (`fx.whirl`) land with its blow on the hero (`Owed.swept`).
+  A foe's sweep (`Row.sweep_every`) strikes every body and barrel round it; its victims and its drawn whirl (`fx.sweep`) land with its blow on the hero (`Owed.swept`).
 - A pib witnessing a nearby foe death wakes and flees (`FRIGHT_REACH`, `FLEE_TURNS`); subsequent deaths
   refresh it. Cornered beside the hero, it attacks. Fright speech waits for the death's presented impact
   and uses cosmetic RNG. This is the Frightened status (`Actor.fright`, resilience `.fright`); witness fright

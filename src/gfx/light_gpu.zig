@@ -270,8 +270,8 @@ pub const Gpu = struct {
             if (!f.live()) continue;
             const x = ox + f.at[0] * cell;
             const y = oy + f.at[1] * cell;
-            glowAt(g, x, y, cell * model.GLOW_HALO, cell * model.GLOW_HALO, premultiplied(f.tint(), model.GLOW_HALO_A * f.glow * f.lit));
-            if (f.kind == .wall) glowAt(g, x, y, cell * model.GLOW_CORE, cell * model.GLOW_CORE, premultiplied(f.tint(), model.GLOW_CORE_A * f.glow * f.lit));
+            glowAt(g, x, y, cell * model.GLOW_HALO, cell * model.GLOW_HALO, look.premultiplied(f.tint(), model.GLOW_HALO_A * f.glow * f.lit));
+            if (f.kind == .wall) glowAt(g, x, y, cell * model.GLOW_CORE, cell * model.GLOW_CORE, look.premultiplied(f.tint(), model.GLOW_CORE_A * f.glow * f.lit));
         }
         rl.endBlendMode();
         raster.endTarget(outer);
@@ -286,8 +286,6 @@ pub const Gpu = struct {
     halo: ?rl.Texture2D = null,
     /// The screen's halos, sized to the screen when drawn.
     halos: ?rl.RenderTexture2D = null,
-    /// A screen target for a pass laid back cell by cell at each cell's own opacity.
-    scratch: ?rl.RenderTexture2D = null,
     streak: ?rl.Texture2D = null,
     body: ?BodyShader = null,
     mirror_fade: ?MirrorShader = null,
@@ -418,11 +416,6 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
 fn glowAlpha(r: f32) f32 {
     const r2 = @min(1, r * r);
     return (1 - r2) * (1 - r2) * @exp(-3 * r2);
-}
-
-fn premultiplied(c: model.Rgb, a: f32) rl.Color {
-    const k = std.math.clamp(a, 0, 1);
-    return look.colourOf(c * model.splat(k), k);
 }
 
 pub fn glowAt(g: rl.Texture2D, x: f32, y: f32, rx: f32, ry: f32, c: rl.Color) void {

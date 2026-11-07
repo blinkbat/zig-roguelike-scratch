@@ -13,6 +13,7 @@ const input = @import("core/input.zig");
 const grid = @import("map/grid.zig");
 const gen = @import("map/gen.zig");
 const atlas = @import("map/atlas.zig");
+const playground = @import("map/playground.zig");
 const menu = @import("ui/menu.zig");
 const hud = @import("ui/hud.zig");
 const book = @import("ui/book.zig");
@@ -312,6 +313,12 @@ pub fn beginMap(g: *Game, w: *const atlas.Atlas) void {
     beginMapAt(g, w, w.start, freshSeed());
 }
 
+pub fn enterPlayground(g: *Game, w: *atlas.Atlas) void {
+    playground.author(w);
+    g.sim.playground = true;
+    g.sim.class = playground.CLASS;
+}
+
 pub fn beginMapAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64) void {
     startRun(g, w, seed);
     freshRun(g);
@@ -355,10 +362,11 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) void {
     carried.at = h.at;
     h.* = carried;
     for (followers) |f| {
-        if (g.sim.pool.n == actor.MAX) break;
+        const over = g.sim.pool.deadAllyFrom(0);
+        if (over == null and !actor.roomFor(g.sim.pool.n, f.kind)) break;
         var body = f;
-        body.at = followerCell(&g.sim.lv, h.at) orelse break;
-        _ = g.sim.pool.spawn(&g.sim.lv, body);
+        body.at = followerCell(&g.sim.lv, f.kind, h.at) orelse break;
+        _ = g.sim.pool.spawnOver(&g.sim.lv, over, body);
     }
     combat.arrive(g, h.at);
     g.sim.unsaved = true;
@@ -375,7 +383,7 @@ const FOLLOWER_REACH: i32 = 3;
 fn gatherFollowers(g: *Game) Followers {
     var out = Followers{};
     for (g.sim.pool.slice()) |*a| {
-        if (!a.alive or !a.kind.ally()) continue;
+        if (!a.livingAlly()) continue;
         out.push(a.*);
         g.sim.lv.clear(a.at);
         a.alive = false;
@@ -384,14 +392,19 @@ fn gatherFollowers(g: *Game) Followers {
     return out;
 }
 
-/// The open ground nearest `hero` in its sight where a follower may stand.
-fn followerCell(lv: *const grid.Level, hero: P) ?P {
+/// The open ground nearest `hero` in its sight where a follower may stand, else the nearest by foot anywhere.
+fn followerCell(lv: *const grid.Level, kind: actor.Kind, hero: P) ?P {
     var near = grid.Nearest{ .from = hero };
     var cells = grid.Cells.around(hero, FOLLOWER_REACH);
     while (cells.next()) |p| {
-        if (actor.dwells(.skeleton, lv, p) and lv.walkable(p) and lv.doorAt(p) == null and grid.sightLine(lv, hero, p)) near.offer(p);
+        if (tactics.fits(kind, lv, p) and grid.sightLine(lv, hero, p)) near.offer(p);
     }
-    return near.best;
+    if (near.best) |p| return p;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    var flood = grid.Flood.init(lv, hero, &dist, &queue);
+    while (flood.next()) |q| if (tactics.fits(kind, lv, q)) return q;
+    return null;
 }
 
 pub fn rollOf(run: u64, n: usize) u64 {
@@ -557,7 +570,7 @@ pub fn moveOf(g: *const Game, from: P, d: mathx.Dir, occupied: bool) Move {
     return if (character.lootReached(g, from, to)) .loot else .step;
 }
 
-fn allyAt(g: *const Game, p: P) bool {
+pub fn allyAt(g: *const Game, p: P) bool {
     const a = g.sim.pool.getConst(g.sim.lv.who(p)) orelse return false;
     return a.kind.ally();
 }
@@ -614,17 +627,18 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
             talking.speak(g, g.sim.lv.folkAt(to).?);
             return;
         },
-        .swap => if (h.pin.holding()) struggle(g) else {
-            const ally = g.sim.lv.who(to);
+        .loot, .step, .swap => if (h.pin.holding()) struggle(g) else {
             const from = h.at;
+            const ally = if (move == .swap) g.sim.lv.who(to) else grid.NO_ONE;
+            const loot = move == .loot or (move == .swap and character.lootReached(g, from, to));
             heroTo(g, to);
-            g.sim.pool.items[actor.Pool.slot(ally)].at = from;
-            g.sim.lv.stand(from, ally);
-        },
-        .loot, .step => if (h.pin.holding()) struggle(g) else {
-            heroTo(g, to);
+            if (ally != grid.NO_ONE) {
+                g.sim.pool.items[actor.Pool.slot(ally)].at = from;
+                g.sim.lv.stand(from, ally);
+                tactics.shoved(g, ally);
+            }
             if (h.limp(h.afflictions())) g.sim.log.say("{s} " ++ maim.LIMPS ++ ".", .{g.sim.name.text()});
-            if (move == .loot) character.openLoot(g, to);
+            if (loot) character.openLoot(g, to);
         },
         .blocked => return,
     }
@@ -993,7 +1007,7 @@ pub fn mapAssets(g: *Game) sprite_assets.Assets {
         const posing = a.alive and a.disguised;
         if (a.alive) need.body(a.kind);
         if (posing) need.beneath(a.under, a.at);
-        if (g.pic.standing(&g.sim, i) or g.pic.fx.impacts.isDying(.fromIndex(i))) need.body(g.pic.pictured[i].kind);
+        if (!g.pic.gone(&g.sim, i)) need.body(g.pic.pictured[i].kind);
         if (posing or g.pic.masked.isSet(i)) need.mimic_closed = true;
     }
     return need;

@@ -7,6 +7,7 @@ const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const skillbar = @import("../play/skillbar.zig");
 const sunder = @import("../play/sunder.zig");
+const tactics = @import("../play/tactics.zig");
 const areas = @import("../play/area.zig");
 const fx = @import("../gfx/fx.zig");
 const light = @import("../gfx/light.zig");
@@ -158,7 +159,7 @@ const MIDDLE = ORIGIN.add(.{ .x = @divTrunc(COLS, 2), .y = @divTrunc(ROWS, 2) })
 const SLOT = actor.ActorSlot.fromIndex(0);
 const JUKE_SPAN: i32 = 2;
 const ARC_SPAN: i32 = 3;
-const WALL_CELLS: i32 = 3;
+const WALL_CELLS: i32 = @intCast(tactics.FireWall.length(1));
 /// Each light's pool, drawn as a soft disc: how bright its middle is for each unit of gain.
 const POOL_A: f32 = 0.35;
 const SHADE = look.fade(look.BG, 0.35);

@@ -56,7 +56,7 @@ Supporting one requires its original schema and an explicit migration. Keep
 claiming compatibility.
 
 The reader takes the map and level in their raw shape without the fields added
-to their ends since (`save_data.LegacyMap`, `LegacyLevel`: the script and `LEVEL_ADDED`),
+to their ends since (`save_data.LegacyMap`, `LegacyLevel`: the script and the level's fields from `LEVEL_ADDED_FROM` on),
 then converts with those fields defaulted. Run state added after the raw format
 (`PORTABLE_FIELDS`: the trigger runtime and the days elapsed) lives in portable saves alone.
 

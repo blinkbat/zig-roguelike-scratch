@@ -67,7 +67,7 @@ fn offEdge(clear: i32, c: mathx.P) bool {
 
 fn fordOf(fill: grid.Tile, pal: carve.Palette) grid.Tile {
     if (fill == .water) return .shallows;
-    if (fill.liquid()) return .bridge;
+    if (fill.liquid()) return fill.spannedBy(carve.SPAN);
     return pal.path;
 }
 

@@ -109,6 +109,11 @@ pub fn percentCeil(v: i32, pc: i32) i32 {
     return std.math.lossyCast(i32, @divTrunc(@as(i64, v) * pc + PERCENT - 1, PERCENT));
 }
 
+/// A non-negative `v` cut by `pc` percent, rounded up.
+pub fn lessCeil(v: i32, pc: i32) i32 {
+    return percentCeil(v, PERCENT - pc);
+}
+
 /// A non-negative amount counted in hundredths, rounded up as often as its fraction.
 pub fn percentRound(hundredths: i64, rng: *Rng) i64 {
     const part: u32 = @intCast(@mod(hundredths, PERCENT));

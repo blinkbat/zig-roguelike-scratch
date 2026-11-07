@@ -266,9 +266,7 @@ const App = struct {
 
     fn sandbox(app: *App) void {
         app.leaveRun();
-        playground.author(app.map);
-        app.g.sim.playground = true;
-        app.g.sim.class = playground.CLASS;
+        game.enterPlayground(app.g, app.map);
         app.launch(app.map, app.map.start);
     }
 

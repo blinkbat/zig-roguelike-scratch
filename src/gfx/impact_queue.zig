@@ -177,6 +177,13 @@ pub const Queue = struct {
         self.mana_landed = 0;
     }
 
+    /// Drops what landed on a slot's former body before a new one takes it.
+    pub fn forget(self: *Queue, slot: actor.ActorSlot) void {
+        self.flash[slot.index] = 0;
+        self.dying[slot.index] = 0;
+        self.landed[slot.index] = null;
+    }
+
     pub fn count(self: *const Queue) usize {
         return self.due_n;
     }

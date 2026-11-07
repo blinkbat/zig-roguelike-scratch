@@ -65,10 +65,7 @@ pub fn author(map: *atlas.Atlas) void {
     const room = &map.node[node].plan.bespoke;
     for (1..ROWS) |r| {
         const y = ROOM.lo.y + @as(i32, @intCast(r)) * BAND - 1;
-        for (0..COLS) |c| {
-            const x = boxOf(c).lo.x;
-            for (0..SIZE.x) |dx| room.tile[grid.Level.idx(.{ .x = x + @as(i32, @intCast(dx)), .y = y })] = .wall;
-        }
+        for (0..COLS) |c| room.fill(grid.Box.sized(.{ .x = boxOf(c).lo.x, .y = y }, SIZE.x, 1), .wall);
     }
     for (PATCHES, 0..) |patch, i| lay(room, boxOf(i), patch);
     for (0..ROWS) |r| {
@@ -83,44 +80,33 @@ pub fn author(map: *atlas.Atlas) void {
 fn lay(room: *atlas.Bespoke, box: grid.Box, patch: Patch) void {
     switch (patch) {
         .barrels => {
-            fill(room, box, grid.BARREL_GROUND);
+            room.fill(box, grid.BARREL_GROUND);
             var cells = box.cells();
             while (cells.next()) |p| room.barrel[grid.Level.idx(p)] = checker(box, p);
         },
         .pond => {
-            fill(room, box, .shallows);
-            fill(room, .{ .lo = box.lo.add(.{ .x = 1, .y = 1 }), .hi = box.hi.sub(.{ .x = 1, .y = 1 }) }, .water);
+            room.fill(box, .shallows);
+            room.fill(box.inner(), .water);
         },
         .tile => |t| if (t.spans()) {
-            fill(room, box, .water);
-            fill(room, grid.Box.sized(.{ .x = box.lo.x, .y = box.lo.y + 1 }, box.width(), 1), t);
+            room.fill(box, .water);
+            room.fill(grid.Box.sized(.{ .x = box.lo.x, .y = box.lo.y + 1 }, box.width(), 1), t);
         } else if (!t.upright() or t.shaped()) {
-            fill(room, box, t);
+            room.fill(box, t);
         } else if (t.wide() > 1) {
-            fill(room, box, t.bare());
+            room.fill(box, t.bare());
             var x = box.lo.x;
-            while (x + t.wide() <= box.hi.x) : (x += t.wide() + 1) prop(room, .{ .x = x, .y = box.lo.y + 1 }, t);
+            while (x + t.wide() <= box.hi.x) : (x += t.wide() + 1) grid.layProp(&room.tile, .{ .x = x, .y = box.lo.y + 1 }, t);
         } else {
-            fill(room, box, t.bare());
+            room.fill(box, t.bare());
             var cells = box.cells();
-            while (cells.next()) |p| if (checker(box, p)) prop(room, p, t);
+            while (cells.next()) |p| if (checker(box, p)) grid.layProp(&room.tile, p, t);
         },
     }
 }
 
 fn checker(box: grid.Box, p: P) bool {
     return @mod(p.x - box.lo.x + p.y - box.lo.y, 2) == 0;
-}
-
-fn fill(room: *atlas.Bespoke, box: grid.Box, t: Tile) void {
-    var cells = box.cells();
-    while (cells.next()) |p| room.tile[grid.Level.idx(p)] = t;
-}
-
-fn prop(room: *atlas.Bespoke, p: P, t: Tile) void {
-    const i = grid.Level.idx(p);
-    room.tile[i] = t;
-    for (1..@intCast(t.wide())) |k| room.tile[i + k] = t.partOf().?;
 }
 
 test "the playground lays every placeable terrain, barrels and a bank, all reachable and torchlit" {
@@ -158,7 +144,7 @@ test "the playground lays every placeable terrain, barrels and a bank, all reach
     var unreached: usize = 0;
     for (0..PATCHES.len) |i| {
         const b = boxOf(i);
-        var cells = (grid.Box{ .lo = b.lo.sub(.{ .x = 1, .y = 1 }), .hi = b.hi.add(.{ .x = 1, .y = 1 }) }).cells();
+        var cells = b.grown(1).cells();
         var touched = false;
         while (cells.next()) |p| touched = touched or dist[grid.Level.idx(p)] >= 0;
         if (!touched) unreached += 1;

@@ -344,9 +344,7 @@ test "the playground's wizard casts freely and cannot die, and a restart lays it
     defer game.shut(std.testing.allocator, g);
     const map = try atlas.testAtlas();
     defer std.testing.allocator.destroy(map);
-    playground.author(map);
-    g.sim.playground = true;
-    g.sim.class = playground.CLASS;
+    game.enterPlayground(g, map);
     game.beginMap(g, map);
     for (progress.skills(playground.CLASS)) |s| try std.testing.expect(g.sim.growth.unlocked(s.act) and g.bar.slotOf(s.act) != null);
     const clock = g.sim.clock;

@@ -267,6 +267,28 @@ test "a skeleton follows the hero through a door, leaving none behind" {
     std.debug.print("a skeleton followed to node {d}, {d} tiles from the hero with its {d} life\n", .{ b, mathx.dist(s.at, hero), s.hp });
 }
 
+test "a skeleton following back and forth takes the slot it left, so no node's pool grows" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    const b = harness.twoRooms(w);
+    const a = w.start.node;
+    game.beginMap(g, w);
+    _ = harness.spawnAt(g, .skeleton, .{ .x = 4, .y = 5 }, true);
+    harness.nudge(g, .w);
+    harness.idle(g);
+    try std.testing.expectEqual(b, g.sim.node);
+    for (0..3) |_| {
+        g.sim.travel = .{ .node = if (g.sim.node == a) b else a, .door = 0 };
+        game.leave(g);
+    }
+    std.debug.print("three round trips with a skeleton: {d} bodies here, {d} in the node left\n", .{ g.sim.pool.n, g.sim.visits[b].pool.n });
+    try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
+    try std.testing.expectEqual(@as(usize, 2), g.sim.visits[b].pool.n);
+    try std.testing.expectEqual(a, g.sim.node);
+}
+
 test "a procgen node rolls another floor round the same doors each run, and two nodes differ in one run" {
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
@@ -361,7 +383,7 @@ test "a glowbulb shot in the dark keeps its pool drawn, and the foe it lit, unti
     try std.testing.expect(!g.sim.lv.isLit(g.sim.pool.get(rat).?.at));
     try std.testing.expect(harness.drawn(g, slot) and g.pic.shot != null);
     harness.drawnOut(g);
-    try std.testing.expect(harness.gone(g, slot));
+    try std.testing.expect(harness.undrawn(g, slot));
 }
 
 fn wispsOf(g: *const game.Game, ink: @TypeOf(look.GAS)) usize {

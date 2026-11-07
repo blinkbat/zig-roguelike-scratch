@@ -19,6 +19,7 @@ const Defaults = struct {
 pub fn counted(comptime T: type, comptime field: []const u8) ?[]const u8 {
     if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "COUNTED")) {
         inline for (T.COUNTED) |entry| {
+            if (comptime (!@hasField(T, entry[0]) or !@hasField(T, entry[1]))) @compileError(@typeName(T) ++ ".COUNTED names " ++ entry[0] ++ " and " ++ entry[1] ++ ", not both its fields");
             if (comptime std.mem.eql(u8, field, entry[0])) return entry[1];
         }
     }
