@@ -167,6 +167,7 @@ pub const Owed = struct {
     reaction: ?Reaction = null,
     knock: ?Knock = null,
     mended: ?Mended = null,
+    struck: ?Struck = null,
 
     pub fn any(o: *const Owed) bool {
         inline for (std.meta.fields(Owed)) |f| {
@@ -175,6 +176,9 @@ pub const Owed = struct {
         return false;
     }
 };
+
+/// A blow one body bumps at another, neither the hero: what it lands on, or a miss.
+pub const Struck = struct { at: P, impact: ?fx.Impact = null };
 
 pub const ReactionOutcome = union(enum) { miss, hit: fx.ActorImpact };
 pub const Reaction = struct { from: P, flight: ?bow.Flight, outcome: ReactionOutcome, recovery: ?fx.After = null };
@@ -197,15 +201,15 @@ pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
 /// When each `Presentation` field is reset, every field in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
-    pub const turn = [_][]const u8{ "shot", "foe_shots", "knocked_from", "bursting", "lit", "tiles", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
+    pub const turn = [_][]const u8{ "shot", "foe_shots", "knocked_from", "bursting", "lit", "tiles", "embers", "burnt", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
     /// Defaulted as a run starts.
     pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
     /// Defaulted as the hero is spawned.
     pub const facing = [_][]const u8{"facing"};
     /// Snapped to the simulation as the game settles, then moved or eased on toward it.
-    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "hour_shown", "weather_shown" };
+    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "hour_shown", "weather_shown" };
     /// Rebuilt from the simulation each time it is read.
-    pub const scratch = [_][]const u8{"ground_shown"};
+    pub const scratch = [_][]const u8{ "ground_shown", "burnt_ground" };
     /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
     pub const kept = [_][]const u8{ "seq", "fx", "occluder" };
 };
@@ -249,12 +253,20 @@ pub const Presentation = struct {
     lit: Held([grid.CELLS]bool) = .{ .before = @splat(false) },
     /// The ground's flames, barrier and caltrops as drawn: the simulation's, but kept as they were while `tiles` holds.
     flames_shown: [grid.CELLS]u8 = @splat(0),
+    /// The ground as last drawn, to tell what a fire just took.
+    tiles_drawn: [grid.CELLS]grid.Tile = @splat(.floor),
+    /// Seconds each cell's flames, and the tile they burnt away, have left to fade since they went out.
+    embers: [grid.CELLS]f32 = @splat(0),
+    /// What each fading cell burnt away, drawn over what it left as it fades.
+    burnt: [grid.CELLS]?grid.Tile = @splat(null),
     barrier_shown: [grid.CELLS]u8 = @splat(0),
     caltrops_shown: @FieldType(grid.Level, "caltrops") = @splat(.{}),
     /// The ground till the fire or cold not yet landed: what burns down, freezes or melts meanwhile is drawn as it was.
     tiles: Held([grid.CELLS]grid.Tile) = .{ .before = @splat(.floor) },
     /// The level with `tileShown` laid over it, rebuilt by `groundShown` while any tile is drawn as it was.
     ground_shown: grid.Level = undefined,
+    /// The level as drawn with what is still fading from a fire laid back over what it left, rebuilt by `burntShown`.
+    burnt_ground: grid.Level = undefined,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -341,6 +353,16 @@ pub const Presentation = struct {
         self.pictured[o] = fx.Body.of(body, self.seq);
         self.glide[o] = glide.Glide.rest(&body);
         self.facing[o] = if (self.turning[i]) |t| t.to else self.facing[i];
+    }
+
+    /// A body come into being this turn, drawn standing where it rose.
+    pub fn recordBirth(self: *Presentation, sim: *const Simulation, born: actor.ActorId) void {
+        const i = born.slot().index;
+        const body = sim.pool.items[i];
+        self.pictured[i] = fx.Body.of(body, self.seq);
+        self.glide[i] = glide.Glide.rest(&body);
+        self.facing[i] = if (sim.heroAt()) |h| facingOf(h.x - body.at.x) orelse .right else .right;
+        self.sighted[i] = 1;
     }
 
     pub fn beforeDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
@@ -613,7 +635,39 @@ pub const Presentation = struct {
         return self.flames_shown[i] > 0;
     }
 
+    /// How far through fading out the flames gone from `i` are, 1 just out to 0 gone.
+    pub fn ember(self: *const Presentation, i: usize) f32 {
+        return self.embers[i] / EMBER_S;
+    }
+
+    /// What fire burnt away at `i` while it still fades.
+    pub fn fadingBurnt(self: *const Presentation, i: usize) ?grid.Tile {
+        return if (self.embers[i] > 0) self.burnt[i] else null;
+    }
+
+    /// `ground` with each tile still fading from a fire laid back; null while none is.
+    pub fn burntShown(self: *Presentation, ground: *const grid.Level) ?*const grid.Level {
+        for (0..grid.CELLS) |i| {
+            if (self.fadingBurnt(i) != null) break;
+        } else return null;
+        self.burnt_ground = ground.*;
+        for (&self.burnt_ground.tile, 0..) |*t, i| if (self.fadingBurnt(i)) |was| {
+            t.* = was;
+        };
+        return &self.burnt_ground;
+    }
+
+    /// Flames gone out since the last drawn begin fading, with whatever they burnt away.
+    fn goneOut(self: *Presentation, lv: *const grid.Level) void {
+        for (self.flames_shown, lv.flames, self.tiles_drawn, lv.tile, 0..) |was, now, before, after, i| {
+            if (was == 0 or now > 0) continue;
+            self.embers[i] = EMBER_S;
+            self.burnt[i] = if (before != after and fire.burntDown(before, after)) before else null;
+        }
+    }
+
     pub fn showLaid(self: *Presentation, lv: *const grid.Level) void {
+        self.tiles_drawn = lv.tile;
         self.flames_shown = lv.flames;
         self.barrier_shown = lv.barrier;
         self.caltrops_shown = lv.caltrops;
@@ -760,7 +814,11 @@ pub const Presentation = struct {
         if (self.bursting) |*b| b.left -= dt;
         self.lit.tick(dt);
         self.tiles.tick(dt);
-        if (!self.tiles.on()) self.showLaid(&sim.lv);
+        for (&self.embers) |*e| e.* = @max(0, e.* - dt);
+        if (!self.tiles.on()) {
+            self.goneOut(&sim.lv);
+            self.showLaid(&sim.lv);
+        }
         for (self.glide[0..sim.pool.n]) |*gl| gl.t += dt;
         for (&self.dives) |*d| if (d.*) |*left| {
             left.* -= dt;
@@ -857,7 +915,7 @@ pub const Presentation = struct {
 
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, target: actor.ActorId, start: f32, turn: *TurnTiming) f32 {
         comptime for (std.enums.values(std.meta.FieldEnum(Owed))) |t| switch (t) {
-            .bit, .arrow, .gassed, .scalded, .scorched, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended => {},
+            .bit, .arrow, .gassed, .scalded, .scorched, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended, .struck => {},
         };
         const owed = self.owed[target.slot().index];
         self.owed[target.slot().index] = .{};
@@ -885,10 +943,10 @@ pub const Presentation = struct {
         const hidden = body.disguised or (body.submerged and self.under.isSet(slot) and attack == null);
         const shown = self.litShown(sim, at) and !hidden;
         const visible_origin = !hidden and self.litShown(sim, motion.to);
-        const visible_action = (shown or owed.arrow != null) and (attack != null or owed.mended != null);
+        const visible_action = (shown or owed.arrow != null) and (attack != null or owed.mended != null or owed.struck != null);
         const staggered = if (moved) shown or visible_origin else visible_action;
         var starts_at = if (staggered) turn.next_at else 0;
-        if (staggered and target.value != sim.hero and (moved or attack != null)) starts_at = @max(starts_at, turn.late + motion.left());
+        if (staggered and target.value != sim.hero and (moved or attack != null or owed.struck != null)) starts_at = @max(starts_at, turn.late + motion.left());
         if (staggered and moved and target.value != sim.hero) starts_at = @max(starts_at, turn.late + self.clearIn(sim, slot, body.at));
         if (staggered) turn.next_at = starts_at + game.STAGGER_S;
         if (self.turning[slot]) |*t| t.in = if (staggered) starts_at - turn.late else start;
@@ -896,10 +954,12 @@ pub const Presentation = struct {
         var finishes_in = if (staggered) starts_at - turn.late else if (moved) start else @max(start, motion.left());
         if (moved) {
             motion.* = motion.toward(destination, turn.late - starts_at);
+        } else if (owed.struck) |s| {
+            motion.* = motion.bumping(s.at, turn.late - starts_at);
         } else if (attack != null and owed.arrow == null) {
             motion.* = motion.bumping(hero_at, turn.late - starts_at);
         }
-        if ((moved or (attack != null and owed.arrow == null)) and staggered) {
+        if ((moved or owed.struck != null or (attack != null and owed.arrow == null)) and staggered) {
             finishes_in = motion.left();
             self.holdUntil(finishes_in);
         }
@@ -956,6 +1016,7 @@ pub const Presentation = struct {
             self.strike(sim, gas, .{ .actor = .{ .slot = timing.slot, .at = timing.body.at, .lethal = h.kill, .after = h.after } }, .{ .from = timing.hero_at, .wait = timing.impact_in });
             if (h.recovery) |after| self.recordRecovery(sim, timing.impact_in, after);
         }
+        if (owed.struck) |s| if (s.impact) |hit| self.strike(sim, gas, hit, .{ .from = timing.body.at, .wait = timing.impact_in });
     }
 
     fn scheduleReaction(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming, turn: *TurnTiming) f32 {
@@ -1105,6 +1166,8 @@ const HOUR_EASE: f32 = 4;
 /// Per second, how fast the weather drawn catches the weather a turn moved on.
 const WEATHER_EASE: f32 = 1.5;
 const OCCLUSION_EASE: f32 = 12;
+/// Seconds flames, and what they burnt away, take to fade once out.
+pub const EMBER_S: f32 = 0.45;
 /// Per second, how fast the experience bar fills toward a drawn turn's experience.
 const XP_EASE: f32 = 8;
 /// Per second, how fast the life and mana orbs fill toward what is shown.

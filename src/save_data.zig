@@ -124,6 +124,7 @@ const UNSAVED = .{
     .sim = .{
         "outdoors",
         "unkillable",
+        "playground",
         "unsaved",
         "travel",
         "chronicle",
@@ -232,6 +233,7 @@ comptime {
 }
 
 pub const Tail = blk: {
+    @setEvalBranchQuota(10_000);
     var fs: [TAIL_FIELDS.len]std.builtin.Type.StructField = undefined;
     for (TAIL_FIELDS, 0..) |f, i| {
         const T = @FieldType(Of(f[0]), f[1]);

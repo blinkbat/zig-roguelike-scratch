@@ -37,6 +37,11 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
             warCry(g, h.at, rank);
             g.pic.leadUntil(game.CAST_S);
         },
+        .imbue => h.tactics.imbue = rules.Imbue.laid(),
+        .bide => {
+            h.tactics.bide = rules.Bide.laid();
+            h.tactics.bided = 0;
+        },
         else => @compileError(@tagName(act) ++ " has no instant tactical use"),
     }
     g.sim.log.say("{s}: {s}{s}.", .{ g.sim.name.text(), act.name(), if (ending) " ended" else "" });
@@ -66,7 +71,43 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
         return a.seenFoe(&g.sim.lv) and fuelOf(act, a) > 0;
     }
     if (act.spans()) return span(g, act, from, start, at) != null;
+    if (act == .raise_skeleton) return raisable(&g.sim, at);
     return act != .overwatch or !from.eq(at);
+}
+
+/// Open ground a skeleton may stand on, with room in the pool for it.
+fn raisable(sim: *const game.simulation.Simulation, at: P) bool {
+    return sim.pool.n < actor.MAX and actor.dwells(.skeleton, &sim.lv, at) and sim.lv.doorAt(at) == null;
+}
+
+/// The living skeletons, oldest first.
+fn skeletons(sim: *game.simulation.Simulation) grid.Bounded(u16, actor.MAX) {
+    var out = grid.Bounded(u16, actor.MAX){};
+    for (sim.pool.slice(), 0..) |a, i| {
+        if (a.alive and a.kind.ally()) out.push(actor.Pool.idOf(i));
+    }
+    return out;
+}
+
+/// A skeleton on `at`, the oldest crumbling first when there are as many as `rank` allows; it acts from the next turn.
+fn raise(g: *game.Game, at: P, rank: u8) void {
+    const risen = skeletons(&g.sim);
+    if (risen.n >= rules.RaiseSkeleton.most(rank)) {
+        const oldest = risen.items[0];
+        const slot = actor.Pool.slot(oldest);
+        _ = g.sim.pool.damage(&g.sim.lv, oldest, g.sim.pool.items[slot].hp);
+        combat.fell(g, oldest);
+        g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(slot));
+    }
+    var body = actor.Actor.of(.skeleton, at);
+    body.max = rules.RaiseSkeleton.life(rank);
+    body.hp = body.max;
+    body.awake = true;
+    body.waits = true;
+    const id = g.sim.pool.spawn(&g.sim.lv, body);
+    g.pic.recordBirth(&g.sim, .fromInt(id));
+    g.pic.shimmerBody(game.CAST_S, &g.sim.pool.items[actor.Pool.slot(id)]);
+    g.sim.sayAt(at, "A skeleton claws its way up.", .{});
 }
 
 /// The line a wall-laying skill covers from `start` toward `end`, at its rank.
@@ -161,6 +202,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
                 if (a.foe() and g.sim.ignite(actor.Pool.slot(id), a)) g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(id)));
             }
         },
+        .raise_skeleton => raise(g, at, rank),
         else => @compileError(@tagName(act) ++ " has no ground tactical use"),
     }
     g.sim.log.say("{s} casts {s}.", .{ g.sim.name.text(), act.name() });
@@ -207,11 +249,31 @@ pub fn startTurn(sim: *Simulation) void {
             sim.log.say("{s}'s Unyielding ends: not enough mana.", .{sim.name.text()});
         }
     }
+    h.tactics.imbue -|= 1;
     for (&sim.lv.barrier) |*t| t.* -|= 1;
     for (&sim.lv.caltrops) |*c| {
         c.turns -|= 1;
         if (c.turns == 0) c.rank = 0;
     }
+}
+
+/// A turn of Bide spent; on its last, twice what it took lands on every foe beside the hero.
+pub fn bideTurn(g: *game.Game) void {
+    const h = g.sim.heroActor() orelse return;
+    if (h.tactics.bide == 0) return;
+    h.tactics.bide -= 1;
+    if (h.tactics.bide > 0) return;
+    const dmg = rules.Bide.released(h.tactics.bided);
+    h.tactics.bided = 0;
+    const s = game.presentation.Stroke{ .from = h.at, .wait = (g.pic.lead orelse 0) + game.CAST_S };
+    g.pic.leadUntil(s.wait);
+    g.pic.settleHero(&g.sim, s.wait);
+    if (dmg == 0) return g.sim.log.say("{s}'s Bide ends.", .{g.sim.name.text()});
+    g.sim.log.say("{s} releases Bide: {d} to each foe beside.", .{ g.sim.name.text(), dmg });
+    g.pic.fx.sweep(s.wait, mathx.centre(h.at));
+    const area = rules.Whirlwind.area(&g.sim.lv, h.at);
+    const ids = skills.foesIn(g, area);
+    for (ids.slice()) |id| combat.wound(g, id, .{ .dmg = dmg, .physical = dmg, .hit_checked = true }, rules.Bide.VERB, s);
 }
 
 pub fn displace(g: *game.Game, id: u16, to: P) void {
@@ -225,7 +287,7 @@ pub fn entered(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     const h = g.sim.heroActor() orelse return;
     const direction = h.tactics.overwatch orelse return;
-    if (a.veiled() or !watches(&g.sim.lv, h.at, direction, a.at)) return;
+    if (a.veiled() or !a.foe() or !watches(&g.sim.lv, h.at, direction, a.at)) return;
     const flight = bow.fly(&g.sim.lv, h.at, a.at);
     if (!flight.hits(id)) return;
     h.tactics.overwatch = null;
@@ -243,7 +305,7 @@ pub fn landed(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     const cell = grid.Level.idx(a.at);
     const trap = g.sim.lv.caltrops[cell];
-    if (trap.turns > 0 and actor.row(a.kind).movement.grounded()) {
+    if (trap.turns > 0 and a.foe() and actor.row(a.kind).movement.grounded()) {
         _ = g.sim.pinFor(a, rules.Caltrops.pins(trap.rank));
         if (rules.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) a.bleed.startWith(rules.Caltrops.bleed(trap.rank));
         g.pic.recordWear(&g.sim, .fromInt(id));
@@ -671,4 +733,177 @@ test "fire wall ignites foes it rises under and those that enter, is shunned, an
     g.sim.unkillable = false;
     try std.testing.expect(!g.sim.lv.burning(into));
     std.debug.print("fire wall: 3-cell line over a foe ignites it, a shunned step, an entry ignites, gone after {d} turns\n", .{rules.FireWall.duration(1)});
+}
+
+test "imbue adds fire and its rank's ignite chance to melee blows for its turns" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const from = P{ .x = 20, .y = 20 };
+    h.heroArena(g, .knight, from, &.{});
+    const plain = attacks.heroKick(&g.sim);
+    try std.testing.expectEqual(@as(i32, 0), plain.fire);
+    try std.testing.expectEqual(@as(u32, 0), plain.effect.burn);
+    h.useAct(g, .imbue);
+    try std.testing.expectEqual(rules.Imbue.TURNS, g.sim.heroActor().?.tactics.imbue);
+    h.drawnOut(g);
+    g.sim.growth.ranks.set(.imbue, progress.RANKS);
+    const kick = attacks.heroKick(&g.sim);
+    try std.testing.expect(kick.fire >= rules.Imbue.FIRE.lo);
+    try std.testing.expectEqual(rules.Imbue.ignites(progress.RANKS), kick.effect.burn);
+    try std.testing.expect(attacks.heroSkill(&g.sim, .cleave).fire >= rules.Imbue.FIRE.lo);
+    const id = h.spawnAt(g, .rat, from.add(.{ .x = 1, .y = 0 }), false);
+    var hits: usize = 0;
+    var burnt: usize = 0;
+    for (0..h.TRIES) |_| {
+        const a = g.sim.pool.get(id).?;
+        h.toughen(a);
+        a.burn = .{};
+        a.resilience = .{};
+        combat.wound(g, id, attacks.heroKick(&g.sim), "kicks", .{ .from = from, .wait = 0 });
+        hits += @intFromBool(a.hp < h.TEST_HP);
+        burnt += @intFromBool(a.burn.turns > 0);
+    }
+    try std.testing.expect(h.aboutRateOf(burnt, hits, mathx.fraction(rules.Imbue.ignites(progress.RANKS))));
+    for (0..rules.Imbue.TURNS) |_| {
+        h.drawnOut(g);
+        h.useAct(g, .wait);
+    }
+    try std.testing.expectEqual(@as(u8, 0), g.sim.heroActor().?.tactics.imbue);
+    try std.testing.expectEqual(@as(i32, 0), attacks.heroKick(&g.sim).fire);
+    std.debug.print("imbue: {d}-{d} fire per melee blow; {d}/{d} landed kicks ignite at rank {d}; gone after {d} turns\n", .{ rules.Imbue.FIRE.lo, rules.Imbue.FIRE.hi, burnt, hits, progress.RANKS, rules.Imbue.TURNS });
+}
+
+test "bide cuts each blow while it holds, then deals twice what it took to every foe beside" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const from = P{ .x = 20, .y = 20 };
+    h.heroArena(g, .knight, from, &.{});
+    g.sim.unkillable = true;
+    defer g.sim.unkillable = false;
+    const rank: u8 = 2;
+    g.sim.growth.ranks.set(.bide, rank);
+    const near = h.openMimic(g, from.add(.{ .x = 1, .y = 0 }));
+    const far = h.spawnAt(g, .rat, from.add(.{ .x = 3, .y = 0 }), false);
+    h.toughen(g.sim.pool.get(near).?);
+    h.toughen(g.sim.pool.get(far).?);
+    g.sim.pool.get(far).?.pin.extend(20);
+    game.settle(g);
+    const hero = g.sim.heroActor().?;
+    const foe = g.sim.pool.get(near).?;
+    const s = actor.row(.mimic).blow.strike;
+    var seed: u64 = 0;
+    while (true) : (seed += 1) {
+        g.sim.rng = mathx.Rng.init(seed);
+        if (attacks.foeBlow(&g.sim, foe, hero, s, false)) |b| if (b.dealt >= 3) break;
+    }
+    g.sim.rng = mathx.Rng.init(seed);
+    const plain = attacks.foeBlow(&g.sim, foe, hero, s, false).?;
+    hero.tactics.bide = 1;
+    g.sim.rng = mathx.Rng.init(seed);
+    const braced = attacks.foeBlow(&g.sim, foe, hero, s, false).?;
+    try std.testing.expectEqual(rules.Bide.reduce(rank, plain.dealt), braced.dealt);
+    try std.testing.expect(braced.dealt < plain.dealt);
+    try std.testing.expectEqual(braced.dealt, hero.tactics.bided);
+    hero.tactics = .{};
+    h.useAct(g, .bide);
+    try std.testing.expectEqual(rules.Bide.TURNS, hero.tactics.bide);
+    for (0..rules.Bide.TURNS - 1) |_| {
+        h.drawnOut(g);
+        h.useAct(g, .wait);
+    }
+    h.drawnOut(g);
+    try std.testing.expectEqual(@as(u8, 1), hero.tactics.bide);
+    hero.tactics.bided +|= 5;
+    const stored = hero.tactics.bided;
+    const before = foe.hp;
+    const armour = g.sim.combatStats(foe).armour;
+    h.useAct(g, .wait);
+    try std.testing.expectEqual(@as(u8, 0), hero.tactics.bide);
+    try std.testing.expect(foe.hp < before);
+    try std.testing.expect(before - foe.hp <= rules.Bide.released(stored));
+    try std.testing.expectEqual(h.TEST_HP, g.sim.pool.get(far).?.hp);
+    std.debug.print("bide: rank {d} lets {d} of {d} through; released {d} of {d} stored past armour {d}, sparing a foe 3 tiles off\n", .{ rank, braced.dealt, plain.dealt, before - foe.hp, rules.Bide.released(stored), armour });
+}
+
+fn skeletonCount(g: *game.Game) usize {
+    var n: usize = 0;
+    for (g.sim.pool.slice()) |a| n += @intFromBool(a.alive and a.kind.ally());
+    return n;
+}
+
+test "a raised skeleton fights a foe beside it, takes foes' blows, is spared the hero's and crumbles past its rank's limit" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const from = P{ .x = 20, .y = 20 };
+    h.heroArena(g, .wizard, from, &.{});
+    g.sim.unkillable = true;
+    defer g.sim.unkillable = false;
+    g.sim.mana = 99;
+    const first = P{ .x = 22, .y = 20 };
+    h.aimAt(g, .raise_skeleton, first);
+    const id = g.sim.lv.who(first);
+    const bones = g.sim.pool.get(id).?;
+    try std.testing.expectEqual(actor.Kind.skeleton, bones.kind);
+    try std.testing.expectEqual(rules.RaiseSkeleton.life(1), bones.max);
+    combat.wound(g, id, .{ .dmg = 50, .physical = 50, .hit_checked = true }, "strikes", .{ .from = from, .wait = 0 });
+    try std.testing.expectEqual(bones.max, bones.hp);
+    h.drawnOut(g);
+    g.sim.cooldown.set(.raise_skeleton, 0);
+    h.aimAt(g, .raise_skeleton, .{ .x = 20, .y = 22 });
+    try std.testing.expect(g.sim.pool.get(id) == null);
+    try std.testing.expectEqual(@as(usize, 1), skeletonCount(g));
+    h.drawnOut(g);
+    g.sim.growth.ranks.set(.raise_skeleton, 2);
+    g.sim.cooldown.set(.raise_skeleton, 0);
+    h.aimAt(g, .raise_skeleton, .{ .x = 18, .y = 20 });
+    try std.testing.expectEqual(@as(usize, 2), skeletonCount(g));
+    const guard = g.sim.lv.who(.{ .x = 20, .y = 22 });
+    const rat = h.spawnAt(g, .rat, .{ .x = 21, .y = 23 }, true);
+    h.toughen(g.sim.pool.get(rat).?);
+    game.settle(g);
+    for (0..8) |_| {
+        h.drawnOut(g);
+        h.useAct(g, .wait);
+    }
+    const struck = g.sim.pool.get(rat).?;
+    const held = g.sim.pool.items[actor.Pool.slot(guard)];
+    try std.testing.expect(struck.hp < h.TEST_HP);
+    try std.testing.expect(held.hp < held.max);
+    std.debug.print("raise skeleton: {d} life at rank 1, oldest crumbles past 1, two at rank 2; the rat lost {d}, the skeleton it faced {d}\n", .{ rules.RaiseSkeleton.life(1), h.TEST_HP - struck.hp, held.max - held.hp });
+}
+
+test "the hero trades places with a skeleton it walks into" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const from = P{ .x = 20, .y = 20 };
+    const east = P{ .x = 21, .y = 20 };
+    h.heroArena(g, .wizard, from, &.{});
+    const id = h.spawnAt(g, .skeleton, east, true);
+    game.settle(g);
+    try std.testing.expectEqual(game.Move.swap, game.heroMove(g, .e));
+    game.heroStep(g, .e, 0);
+    try std.testing.expectEqual(east, g.sim.heroActor().?.at);
+    try std.testing.expectEqual(from, g.sim.pool.get(id).?.at);
+    try std.testing.expectEqual(id, g.sim.lv.who(from));
+    try std.testing.expectEqual(g.sim.hero, g.sim.lv.who(east));
+}
+
+test "a charge strikes the foe a tile past its longest rush" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const from = P{ .x = 20, .y = 20 };
+    h.heroArena(g, .knight, from, &.{});
+    const at = from.add(.{ .x = skillbar.Act.charge.reach(), .y = 0 });
+    const id = h.spawnAt(g, .rat, at, false);
+    h.toughen(g.sim.pool.get(id).?);
+    game.settle(g);
+    h.aimAt(g, .charge, at);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try std.testing.expectEqual(at.sub(.{ .x = 1, .y = 0 }), g.sim.heroActor().?.at);
+    try std.testing.expect(g.sim.cooldown.get(.charge) > 0);
 }

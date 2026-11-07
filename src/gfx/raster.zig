@@ -135,8 +135,22 @@ pub fn radial(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
     return field(px, px, round.at);
 }
 
+/// `radial` premultiplied: its colour falls off with its alpha, for blending that ignores alpha.
+pub fn radialPremultiplied(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
+    const round = struct {
+        fn at(u: f32, v: f32) f32 {
+            return alphaAt(mathx.len(u * 2 - 1, v * 2 - 1));
+        }
+    };
+    return fieldOf(px, px, round.at, true);
+}
+
 /// White, its alpha `alphaAt(u, v)` at each texel's middle, `u` and `v` 0 to 1 across and down. Needs a live GL context.
 pub fn field(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f32) ?rl.Texture2D {
+    return fieldOf(w, h, alphaAt, false);
+}
+
+fn fieldOf(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f32, comptime premultiplied: bool) ?rl.Texture2D {
     const nw: usize = @intCast(w);
     const nh: usize = @intCast(h);
     var img: [nw * nh]rl.Color = undefined;
@@ -144,7 +158,8 @@ pub fn field(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f
         for (0..nw) |x| {
             const u = (@as(f32, @floatFromInt(x)) + 0.5) / @as(f32, @floatFromInt(w));
             const v = (@as(f32, @floatFromInt(y)) + 0.5) / @as(f32, @floatFromInt(h));
-            img[y * nw + x] = look.fade(rl.Color.white, alphaAt(u, v));
+            const a = alphaAt(u, v);
+            img[y * nw + x] = if (premultiplied) look.colourOf(@splat(a), a) else look.fade(rl.Color.white, a);
         }
     }
     return clamped(rgba(&img, w, h), .bilinear);

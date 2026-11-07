@@ -86,8 +86,14 @@ const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
     .{ .hz = 5.0, .weight = 0.3 },
     .{ .hz = 11.0, .weight = 0.1 },
 };
-/// Brogue's `adjustedLightValue`: bend channels above this knee toward sqrt.
-const KNEE: f32 = 1.5;
+/// Channels above the knee roll off toward the ceiling, the brightest any light makes the art, however many sources stack.
+const KNEE: f32 = 1.1;
+pub const CEILING: f32 = 1.4;
+const ROLL: f32 = CEILING - KNEE;
+
+comptime {
+    std.debug.assert(KNEE < CEILING and CEILING <= OVERBRIGHT);
+}
 
 pub const BODY_LIGHTS: usize = 4;
 /// A pale flash remains visible over red bodies.
@@ -541,15 +547,26 @@ fn pulse(t: f32, seed: u32) f32 {
 fn knee(c: Rgb) Rgb {
     var out = c;
     for (0..3) |i| {
-        if (c[i] > KNEE) out[i] = KNEE * @sqrt(c[i] / KNEE);
+        if (c[i] > KNEE) out[i] = KNEE + ROLL * (1 - @exp(-(c[i] - KNEE) / ROLL));
     }
     return out;
 }
 
+test "light rolls off past the knee and never reaches the ceiling, however much stacks" {
+    try std.testing.expectEqual(@as(f32, 0.8), knee(splat(0.8))[0]);
+    var was: f32 = KNEE;
+    for ([_]f32{ 1.2, 1.5, 2, 4, 16 }) |c| {
+        const k = knee(splat(c))[0];
+        try std.testing.expect(k > was and k <= CEILING);
+        was = k;
+    }
+    std.debug.print("tone: 16x stacked light shows at {d:.3}x the art, ceiling {d}x\n", .{ was, CEILING });
+}
+
 /// `knee` and `flashed` for a fragment shader.
-pub const TONE_FS = shaders.glslConsts(.{ .KNEE = KNEE, .FLASH = FLASH_RGB }) ++
+pub const TONE_FS = shaders.glslConsts(.{ .KNEE = KNEE, .ROLL = ROLL, .FLASH = FLASH_RGB }) ++
     \\vec3 knee(vec3 c) {
-    \\    return mix(c, KNEE * sqrt(c / KNEE), step(KNEE, c));
+    \\    return mix(c, KNEE + ROLL * (1.0 - exp(-(c - KNEE) / ROLL)), step(KNEE, c));
     \\}
     \\vec3 flashed(vec3 c, float k) {
     \\    return mix(c, FLASH, k);

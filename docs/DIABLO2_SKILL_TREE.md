@@ -155,7 +155,7 @@ second allocation policy. [trees.zig](../src/ui/trees.zig) draws the panels, whi
 
 | Concept | Diablo II reference | Current prototype treatment |
 |---|---|---|
-| Scope | Three discipline trees per class | One active tree per class, with 10 Archer, 11 Wizard, or 8 Knight skills |
+| Scope | Three discipline trees per class | One active tree per class, with 10 Archer, 12 Wizard, or 10 Knight skills |
 | Investment | Repeated points in a skill | `progress.RANKS` is 3; display its actual value |
 | Progression budget | Skill points earned through progression | Each level grants one active and one passive point; the pools stay distinct |
 | Unlock path | Prerequisites and character-level tiers | At most one parent per active node; parent must be learned; no character-level gate |
@@ -175,8 +175,8 @@ Its node and details say Basic rather than offering rank upgrades.
 | Class | Starting nodes | Connections |
 |---|---|---|
 | Archer | Shoot, Juke | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot, Piercing Shot; Juke -> Caltrops |
-| Wizard | Spark, Blink | Spark -> Fireball -> Combustion, Fire Wall; Spark -> Chain Lightning; Blink -> Frost Nova -> Shatter, Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
-| Knight | Charge, Cleave | Charge -> Shield Bash -> Whirlwind; Cleave -> Guard -> Unyielding; Cleave -> Rend -> War Cry |
+| Wizard | Spark, Blink | Spark -> Fireball -> Combustion, Fire Wall; Spark -> Chain Lightning; Blink -> Raise Skeleton; Blink -> Frost Nova -> Shatter, Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
+| Knight | Charge, Cleave | Charge -> Shield Bash -> Whirlwind; Cleave -> Guard -> Bide, Unyielding; Cleave -> Rend -> War Cry; Cleave -> Imbue |
 
 The active trees use up to five columns and three logical rows, each class centred on its own
 column count, placing preparation and

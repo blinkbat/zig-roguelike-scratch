@@ -439,6 +439,33 @@ test "grass burning out while a fireball flies stays drawn as grass under its he
     try std.testing.expect(held > 0);
 }
 
+test "reeds burnt down and their flames fade out over the ash instead of vanishing" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 22, .y = 20 };
+    harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.lv.set(at, .reeds);
+    fire.lay(&g.sim.lv, at, 1, 0);
+    game.settle(g);
+    const i = grid.Level.idx(at);
+    try std.testing.expect(g.pic.flamesShown(i));
+    harness.useAct(g, .wait);
+    try std.testing.expectEqual(fire.ASH, g.sim.lv.at(at));
+    var waited: f32 = 0;
+    while (g.pic.fadingBurnt(i) == null) : (waited += 0.01) {
+        try std.testing.expect(waited < 3);
+        g.pic.advance(&g.sim, 0.01);
+    }
+    try std.testing.expect(!g.pic.flamesShown(i) and g.pic.ember(i) > 0.9);
+    try std.testing.expectEqual(grid.Tile.reeds, g.pic.burntShown(&g.sim.lv).?.at(at));
+    g.pic.advance(&g.sim, game.presentation.EMBER_S / 2);
+    const half = g.pic.ember(i);
+    try std.testing.expect(half > 0.3 and half < 0.7);
+    g.pic.advance(&g.sim, game.presentation.EMBER_S);
+    try std.testing.expect(g.pic.fadingBurnt(i) == null and g.pic.burntShown(&g.sim.lv) == null and g.pic.ember(i) == 0);
+    std.debug.print("burnt reeds: out after {d:.2} s, half faded at {d:.2}, gone after {d} s\n", .{ waited, half, game.presentation.EMBER_S });
+}
+
 test "a burning arrow sets grass alight far less often than a fireball" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

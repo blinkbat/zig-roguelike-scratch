@@ -1121,7 +1121,7 @@ test "bounding boots stretch every movement skill's reach and nothing else" {
     try std.testing.expect(skillbar.Act.juke.moves() and skillbar.Act.blink.moves() and skillbar.Act.charge.moves());
     var desc: [256]u8 = undefined;
     try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .juke, &desc), "within 3 tiles") != null);
-    try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .charge, &desc), "Rush 1-4 tiles") != null);
+    try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .charge, &desc), "foe 1-5 tiles away") != null);
     harness.aimAt(g, .juke, far);
     try std.testing.expectEqual(far, g.sim.heroActor().?.at);
     std.debug.print("bounding: juke lands {d} cells off, beyond its {d}\n", .{ far.x - from.x, juke.RANGE });

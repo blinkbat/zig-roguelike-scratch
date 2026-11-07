@@ -45,7 +45,7 @@ pub fn matterOf(kind: ?actor.Kind) Matter {
         .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .bog_leech => .blood,
         .slime, .slime_half, .slime_quarter => .ooze,
         .bloat, .frost_wisp, .pyre_bloat => .ichor,
-        .mimic => .wood,
+        .mimic, .skeleton => .wood,
     };
 }
 
@@ -623,7 +623,7 @@ pub const Fx = struct {
             .maimed => &drawMaimed,
             .frightened => &drawFrightened,
             .warded => &drawWarded,
-            .resistant, .guarding, .unyielding, .steady, .overwatch => null,
+            .resistant, .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => null,
         };
     }
 

@@ -59,6 +59,7 @@ pub const Tile = enum(u8) {
     /// Stands on its cell and the `.caravan_part` right of it, its picture rising into the row above.
     caravan,
     caravan_part,
+    stone_bridge,
 
     pub fn solid(t: Tile) bool {
         return TERRAIN.getPtrConst(t).solid;
@@ -114,6 +115,16 @@ pub const Tile = enum(u8) {
     /// Catches fire, and burns down to `fire.ASH`.
     pub fn burns(t: Tile) bool {
         return TERRAIN.getPtrConst(t).burns;
+    }
+
+    /// Catches from any fire beside it, without cooling that fire.
+    pub fn tinder(t: Tile) bool {
+        return TERRAIN.getPtrConst(t).tinder;
+    }
+
+    /// A bridge: walked over a liquid.
+    pub fn spans(t: Tile) bool {
+        return TERRAIN.getPtrConst(t).spans;
     }
 
     pub fn isChest(t: Tile) bool {
@@ -202,6 +213,7 @@ pub const Tile = enum(u8) {
             .glow_plant => 'p',
             .caravan => 'H',
             .caravan_part => 'h',
+            .stone_bridge => 'B',
         };
     }
 
@@ -296,6 +308,8 @@ const Terrain = struct {
     glows: bool = false,
     bursts: bool = false,
     burns: bool = false,
+    tinder: bool = false,
+    spans: bool = false,
     wide: u8 = 1,
     part: bool = false,
     piece: ?Tile = null,
@@ -324,8 +338,8 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .snow = OPEN,
     .water = .{ .solid = true, .blind = false, .liquid = true, .wet = true },
     .shallows = .{ .solid = false, .blind = false, .wet = true },
-    .bridge = .{ .solid = false, .blind = false, .burns = true },
-    .reeds = .{ .solid = false, .blind = true, .ground = .grass, .burns = true },
+    .bridge = .{ .solid = false, .blind = false, .burns = true, .spans = true },
+    .reeds = .{ .solid = false, .blind = true, .ground = .grass, .burns = true, .tinder = true },
     .rubble = BARE,
     .fence = MOAT,
     .lava = LIQUID,
@@ -345,6 +359,7 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .glow_plant = .{ .solid = true, .blind = false, .ground = .grass, .glows = true, .bursts = true },
     .caravan = CART,
     .caravan_part = CART_PART,
+    .stone_bridge = .{ .solid = false, .blind = false, .spans = true },
 });
 
 /// The most cells any prop stands on.

@@ -258,21 +258,36 @@ pub const Gpu = struct {
         return true;
     }
 
-    pub fn drawGlows(self: *const Gpu, flames_: []const model.Flame, ox: f32, oy: f32, cell: f32) void {
-        const g = self.glow orelse return;
-        rl.beginBlendMode(.additive);
-        defer rl.endBlendMode();
+    /// Halos meet by channelwise maximum in a screen target, then add to the scene once, never brighter than the brightest.
+    pub fn drawGlows(self: *Gpu, flames_: []const model.Flame, ox: f32, oy: f32, cell: f32, screen: mathx.P, outer: u32) void {
+        const g = self.halo orelse return;
+        for (flames_) |f| {
+            if (f.live()) break;
+        } else return;
+        if (!raster.beginTarget(&self.halos, screen, outer, rl.Color.blank)) return;
+        raster.beginBlend(rl.gl.rl_one, rl.gl.rl_one, rl.gl.rl_max);
         for (flames_) |f| {
             if (!f.live()) continue;
             const x = ox + f.at[0] * cell;
             const y = oy + f.at[1] * cell;
-            glowAt(g, x, y, cell * model.GLOW_HALO, cell * model.GLOW_HALO, look.colourOf(f.tint(), model.GLOW_HALO_A * f.glow * f.lit));
-            if (f.kind == .wall) glowAt(g, x, y, cell * model.GLOW_CORE, cell * model.GLOW_CORE, look.colourOf(f.tint(), model.GLOW_CORE_A * f.glow * f.lit));
+            glowAt(g, x, y, cell * model.GLOW_HALO, cell * model.GLOW_HALO, premultiplied(f.tint(), model.GLOW_HALO_A * f.glow * f.lit));
+            if (f.kind == .wall) glowAt(g, x, y, cell * model.GLOW_CORE, cell * model.GLOW_CORE, premultiplied(f.tint(), model.GLOW_CORE_A * f.glow * f.lit));
         }
+        rl.endBlendMode();
+        raster.endTarget(outer);
+        raster.beginBlend(rl.gl.rl_one, rl.gl.rl_one, rl.gl.rl_func_add);
+        raster.drawTarget(self.halos.?.texture);
+        rl.endBlendMode();
     }
 
     layers: std.EnumArray(model.Layer, ?rl.Texture2D) = .initFill(null),
     glow: ?rl.Texture2D = null,
+    /// `glow` premultiplied, for halos meeting by maximum.
+    halo: ?rl.Texture2D = null,
+    /// The screen's halos, sized to the screen when drawn.
+    halos: ?rl.RenderTexture2D = null,
+    /// A screen target for a pass laid back cell by cell at each cell's own opacity.
+    scratch: ?rl.RenderTexture2D = null,
     streak: ?rl.Texture2D = null,
     body: ?BodyShader = null,
     mirror_fade: ?MirrorShader = null,
@@ -289,6 +304,7 @@ pub const Gpu = struct {
         var g = Gpu{};
         for (std.enums.values(model.Layer)) |k| g.layers.set(k, raster.canvas(model.MAP_W, model.MAP_H, model.UNSEEN.get(k), .bilinear));
         g.glow = raster.radial(GLOW_PX, glowAlpha);
+        g.halo = raster.radialPremultiplied(GLOW_PX, glowAlpha);
         g.streak = raster.field(STREAK_PX[0], STREAK_PX[1], shadow.streakAlpha);
         g.body = shaders.program(BodyShader, BODY_FS);
         g.mirror_fade = shaders.program(MirrorShader, MIRROR_FS);
@@ -402,6 +418,11 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
 fn glowAlpha(r: f32) f32 {
     const r2 = @min(1, r * r);
     return (1 - r2) * (1 - r2) * @exp(-3 * r2);
+}
+
+fn premultiplied(c: model.Rgb, a: f32) rl.Color {
+    const k = std.math.clamp(a, 0, 1);
+    return look.colourOf(c * model.splat(k), k);
 }
 
 pub fn glowAt(g: rl.Texture2D, x: f32, y: f32, rx: f32, ry: f32, c: rl.Color) void {

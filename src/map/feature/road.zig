@@ -42,7 +42,7 @@ pub const Params = struct {
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, _: carve.Palette, p: Params) void {
     for (0..p.count) |_| {
         const ends = p.course.ends(rng);
-        carve.lane(lv, rng, ends[0], ends[1], p.width, mathx.fraction(p.wander), p.paving.tile(), .road);
+        carve.lane(lv, rng, ends[0], ends[1], p.width, mathx.fraction(p.wander), p.paving.tile(), .bridged);
     }
 }
 

@@ -7,6 +7,7 @@ const editor = @import("edit/editor.zig");
 const atlas = @import("map/atlas.zig");
 const listing = @import("map/listing.zig");
 const spar = @import("map/spar.zig");
+const playground = @import("map/playground.zig");
 const actor = @import("play/actor.zig");
 const menu = @import("ui/menu.zig");
 const naming = @import("ui/naming.zig");
@@ -221,6 +222,7 @@ const App = struct {
         const g = app.g;
         const slot = save.free(&app.list) orelse return app.toTitle();
         const path = app.chosen orelse atlas.START;
+        g.sim.playground = false;
         g.sim.class = app.class;
         if (app.map.load(app.alloc, path)) {
             if (!app.map.standable(app.map.start, &g.sim.lv)) {
@@ -240,6 +242,7 @@ const App = struct {
     }
 
     fn loadRun(app: *App, slot: usize) void {
+        app.g.sim.playground = false;
         save.load(app.alloc, slot, app.g, app.map) catch |e| return app.say("Slot {d} did not load ({s})", .{ save.number(slot), @errorName(e) });
         app.inSlot(slot, null);
     }
@@ -261,11 +264,24 @@ const App = struct {
         app.testOn(app.map, app.map.start);
     }
 
+    fn sandbox(app: *App) void {
+        app.leaveRun();
+        playground.author(app.map);
+        app.g.sim.playground = true;
+        app.g.sim.class = playground.CLASS;
+        app.launch(app.map, app.map.start);
+    }
+
     fn testOn(app: *App, map: *const atlas.Atlas, from: atlas.Start) void {
+        app.g.sim.playground = false;
         app.g.sim.class = hero.DEFAULT;
+        app.launch(map, from);
+    }
+
+    fn launch(app: *App, map: *const atlas.Atlas, from: atlas.Start) void {
         game.beginMapAt(app.g, map, from, game.freshSeed());
         app.g.st.device = .keys;
-        app.play(.editor, hero.DEFAULT.unnamed());
+        app.play(.editor, app.g.sim.class.unnamed());
     }
 
     fn play(app: *App, back: game.Back, fresh: ?hero.Name) void {
@@ -366,6 +382,7 @@ const App = struct {
                     .none => {},
                     .play => |from| app.playTest(from),
                     .fight => |kind| app.fight(kind),
+                    .playground => app.sandbox(),
                     .leave => app.toTitle(),
                     .quit => return false,
                 }
@@ -794,6 +811,27 @@ test "an editor arena uses a separate map and never opens a save slot" {
     try std.testing.expectEqual(actor.Kind.slime, g.sim.pool.items[1].kind);
     try std.testing.expect(g.sim.lv.isLit(spar.FOE));
     std.debug.print("arena launch: selected slime visible, no save slot, edited tiles and undo position unchanged\n", .{});
+}
+
+test "the playground opens as a wizard on its own map with no save slot, and a play-test after it is plain" {
+    const alloc = std.testing.allocator;
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    const w = try alloc.create(atlas.Atlas);
+    defer alloc.destroy(w);
+    const ed = try editor.Editor.create(alloc);
+    defer ed.destroy();
+    var app = App{ .alloc = alloc, .g = g, .map = w, .ed = ed, .edit_path = atlas.MAIN, .scene = .edit };
+    app.sandbox();
+    try std.testing.expect(app.scene == .play and g.back == .editor and !g.permadeath and app.autosave == null);
+    try std.testing.expect(g.sim.playground and g.sim.map == w);
+    try std.testing.expectEqual(actor.Kind.wizard, g.sim.heroActor().?.kind);
+    try std.testing.expectEqual(playground.HERO, g.sim.heroActor().?.at);
+    app.scene = .edit;
+    app.playTest(ed.map.start);
+    try std.testing.expect(!g.sim.playground and g.sim.map == ed.map);
+    try std.testing.expectEqual(hero.DEFAULT.kind(), g.sim.heroActor().?.kind);
+    std.debug.print("playground launch: wizard at its start, no save slot; the next play-test is the default archer\n", .{});
 }
 
 /// `edit` opens the editor on that map first; null opens the title.

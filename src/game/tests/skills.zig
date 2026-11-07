@@ -1899,7 +1899,7 @@ test "every targeted skill rechecks readiness and bounds at confirmation without
                 const foe_at = P{ .x = if (reticle == .rush) 23 else 21, .y = 20 };
                 harness.heroArena(g, class, from, &.{foe_at});
                 skills.aiming(g, .x, act);
-                g.mode.aim.mark = if (reticle == .leap) .{ .x = 22, .y = 20 } else foe_at;
+                g.mode.aim.mark = if (reticle == .leap or act == .raise_skeleton) .{ .x = 22, .y = 20 } else foe_at;
                 if (act == .combustion) g.sim.pool.get(harness.foeId(0)).?.burn.turns = burning.TURNS;
                 if (act == .shatter) g.sim.pool.get(harness.foeId(0)).?.chill.apply();
                 if (act.spans()) {

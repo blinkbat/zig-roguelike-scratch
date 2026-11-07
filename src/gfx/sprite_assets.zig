@@ -67,7 +67,8 @@ pub const Assets = struct {
             const p = grid.Level.of(i);
             need.decor(t, p);
             if (t.bursts()) need.beneath(t.ground().?, p);
-            if (t.burns()) need.beneath(fire.ASH, p);
+            if (t.burns()) need.beneath(fire.ashOf(t, false), p);
+            if (t.burns()) need.beneath(fire.ashOf(t, true), p);
             if (lv.frozen(p)) need.beneath(ice.WATER, p);
             need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
             need.chest_item_bag = need.chest_item_bag or t.isChest();
@@ -227,6 +228,7 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .pib_shaman = @embedFile("pib-shaman.png"),
     .bog_leech = null,
     .mimic = @embedFile("mimic-open.png"),
+    .skeleton = null,
 });
 
 const PICTURED = blk: {

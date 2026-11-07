@@ -97,6 +97,8 @@ pub fn palette(_: Params) carve.Palette {
 }
 
 const TRAIL = palette(.{}).path;
+/// The camp's river crossing, which no fire takes down.
+pub const SPAN: grid.Tile = .stone_bridge;
 
 const Plan = struct {
     bar: grid.Box,
@@ -210,7 +212,7 @@ fn roads(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params, kept: *grid.Ce
     const near = P{ .x = span[0] - LANDING, .y = c.y };
     const far = P{ .x = span[1] + LANDING, .y = c.y };
     road(lv, rng, c, near, p.path, PATH_WANDER, lowest, kept);
-    carve.lane(lv, rng, near, far, p.bridge, 0, TRAIL, .road);
+    carve.lane(lv, rng, near, far, p.bridge, 0, TRAIL, .{ .road = SPAN });
     road(lv, rng, far, .{ .x = grid.W - 1, .y = c.y }, p.path, 0, lowest, kept);
 }
 
@@ -310,7 +312,7 @@ fn farBank(lv: *const grid.Level) i32 {
     var lo: ?P = null;
     var hi: ?P = null;
     for (lv.tile, 0..) |t, k| {
-        if (t != .bridge) continue;
+        if (t != SPAN) continue;
         const q = grid.Level.of(k);
         if (lo == null) lo = q;
         hi = q;
@@ -318,7 +320,7 @@ fn farBank(lv: *const grid.Level) i32 {
     const y = @divTrunc(lo.?.y + hi.?.y, 2);
     var x = grid.W - 2;
     var n: i32 = 0;
-    while (x > 0 and !lv.at(.{ .x = x, .y = y }).wet() and lv.at(.{ .x = x, .y = y }) != .bridge) : (x -= 1) n += 1;
+    while (x > 0 and !lv.at(.{ .x = x, .y = y }).wet() and !lv.at(.{ .x = x, .y = y }).spans()) : (x -= 1) n += 1;
     return n;
 }
 
@@ -329,6 +331,7 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
     var corner_open: usize = 0;
     var carts: usize = 0;
     var bridged: usize = 0;
+    var flammable: usize = 0;
     var trees: usize = 0;
     var barrels: usize = 0;
     var bank: i32 = grid.W;
@@ -356,16 +359,18 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
             while (cells.next()) |q| corner_open += @intFromBool(lv.walkable(q));
         }
         carts += carve.count(&lv, .caravan);
-        bridged += @intFromBool(carve.count(&lv, .bridge) > 0);
+        bridged += @intFromBool(carve.count(&lv, SPAN) > 0);
+        flammable += carve.count(&lv, .bridge);
         trees += carve.count(&lv, .large_tree);
         for (lv.barrel) |b| barrels += @intFromBool(b);
     }
-    std.debug.print("{d} tees: {d} open cells in the upper corners and under the bar, {d} of {d} carts, {d} bridged, {d} large trees and {d} barrels a map, a far bank {d} cells at the least of {d}, {d} of {d} at the narrowest\n", .{ RUNS, corner_open, carts, RUNS * p.carts, bridged, trees / RUNS, barrels / RUNS, bank, p.bank, narrow, BANK_MIN });
+    std.debug.print("{d} tees: {d} open cells in the upper corners and under the bar, {d} of {d} carts, {d} bridged in stone, {d} wooden bridge cells, {d} large trees and {d} barrels a map, a far bank {d} cells at the least of {d}, {d} of {d} at the narrowest\n", .{ RUNS, corner_open, carts, RUNS * p.carts, bridged, flammable, trees / RUNS, barrels / RUNS, bank, p.bank, narrow, BANK_MIN });
     std.debug.print("{d} low tees with the widest paths: {d} open cells under the bar\n", .{ RUNS, low_foot_open });
     try std.testing.expectEqual(@as(usize, 0), corner_open);
     try std.testing.expectEqual(@as(usize, 0), low_foot_open);
     try std.testing.expect(bank * 2 >= p.bank and narrow >= BANK_MIN);
     try std.testing.expectEqual(RUNS, bridged);
+    try std.testing.expectEqual(@as(usize, 0), flammable);
     try std.testing.expect(carts * 10 >= RUNS * p.carts * 9);
     try std.testing.expect(trees > RUNS and barrels > RUNS);
 }
@@ -386,7 +391,7 @@ test "a tee's carts stand whole and its roads reach the west, north and east edg
             grid.Box.sized(.{ .x = grid.W - 2, .y = 1 }, 1, grid.H - 2),
         };
         const from = for (0..grid.CELLS) |k| {
-            if (lv.tile[k] == .bridge) break grid.Level.of(k);
+            if (lv.tile[k] == SPAN) break grid.Level.of(k);
         } else return error.NoBridge;
         _ = grid.distances(&lv, from, &dist, &queue);
         for (ends, &reached) |b, *got| {

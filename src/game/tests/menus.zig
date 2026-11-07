@@ -5,6 +5,7 @@ const input = @import("../../core/input.zig");
 const grid = @import("../../map/grid.zig");
 const atlas = @import("../../map/atlas.zig");
 const spar = @import("../../map/spar.zig");
+const playground = @import("../../map/playground.zig");
 const menu = @import("../../ui/menu.zig");
 const hud = @import("../../ui/hud.zig");
 const book = @import("../../ui/book.zig");
@@ -336,6 +337,41 @@ test "an arena restart restores its selected opponent and hero" {
     try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     try std.testing.expectEqual(spar.HERO, g.sim.heroActor().?.at);
     std.debug.print("arena retry: caustic bloat and hero restored at their starting positions with full resources\n", .{});
+}
+
+test "the playground's wizard casts freely and cannot die, and a restart lays its terrain afresh" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const map = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(map);
+    playground.author(map);
+    g.sim.playground = true;
+    g.sim.class = playground.CLASS;
+    game.beginMap(g, map);
+    for (progress.skills(playground.CLASS)) |s| try std.testing.expect(g.sim.growth.unlocked(s.act) and g.bar.slotOf(s.act) != null);
+    const clock = g.sim.clock;
+    for (0..3) |_| {
+        harness.aimAt(g, .fireball, playground.HERO.add(.{ .x = 0, .y = 4 }));
+        harness.drawnOut(g);
+        try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
+        try std.testing.expectEqual(@as(u8, 0), g.sim.cooldown.get(.fireball));
+    }
+    try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
+    _ = game.hurt(g, .{ .value = g.sim.hero }, 1000);
+    try std.testing.expect(g.sim.heroActor().?.alive);
+    const lv = try std.testing.allocator.create(grid.Level);
+    defer std.testing.allocator.destroy(lv);
+    map.node[0].stamp(lv, 0);
+    const at = grid.Level.idx(playground.boxOf(0).centre());
+    g.sim.lv.tile[at] = .dirt;
+    g.sim.lv.flames[at] = 3;
+    game.restart(g);
+    try std.testing.expectEqualSlices(grid.Tile, &lv.tile, &g.sim.lv.tile);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.lv.flames[at]);
+    try std.testing.expectEqual(playground.HERO, g.sim.heroActor().?.at);
+    try std.testing.expectEqual(actor.Kind.wizard, g.sim.heroActor().?.kind);
+    for (progress.skills(playground.CLASS)) |s| try std.testing.expect(g.sim.growth.unlocked(s.act));
+    std.debug.print("playground: 3 fireballs at full mana and no cooldown, a 1000-point blow survived, restart relays every tile\n", .{});
 }
 
 test "Debug graphics toggles are independent and spend no simulation" {

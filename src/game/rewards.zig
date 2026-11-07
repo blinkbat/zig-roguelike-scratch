@@ -102,6 +102,10 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     const unmasked = sim.pool.items[slot].disguised;
     sim.pool.items[slot].unmask(&sim.lv);
     const fallen = sim.pool.items[slot];
+    if (fallen.kind.ally()) {
+        sim.sayAt(fallen.at, "The {s} crumbles.", .{actor.row(fallen.kind).name});
+        return .{ .gold = 0, .frightened = .initEmpty() };
+    }
     sim.kills +|= 1;
     sim.plot.died(fallen.kind);
     gainExperience(sim, fallen.kind);

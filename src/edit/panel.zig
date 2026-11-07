@@ -141,6 +141,7 @@ pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
     const here = editor.CELL_ACTIONS.get(.play);
     if (plays.button(here.label, ed.cell_action == .play, true, here.tip)) interaction.armCellAction(ed, .play);
     if (plays.button("Play", false, true, "Play from the map start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) ed.playStart();
+    if (plays.button("Playground", false, true, "Every terrain, and a wizard casting freely; Debug > Restart Map resets it")) ed.action = .playground;
 
     const tabs_y = widgets.GAP + widgets.ROW_STEP;
     var tabs = Bar.from(ed, g, widgets.PAD, tabs_y);

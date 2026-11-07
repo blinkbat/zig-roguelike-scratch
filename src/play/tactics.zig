@@ -173,11 +173,76 @@ pub const Unyielding = struct {
     }
 };
 
+pub const Imbue = struct {
+    pub const COST: i32 = 4;
+    pub const TURNS: u8 = 6;
+    pub const FIRE = damage.Base{ .lo = 2, .hi = 4 };
+    pub const DESCRIPTION = std.fmt.comptimePrint("Charge your weapon with fire for {d} turns. Melee blows deal added fire damage and may ignite.", .{TURNS});
+    pub fn ignites(rank: u8) u32 {
+        return 15 + 15 * @as(u32, ranked(rank));
+    }
+    /// What the hero's tactics are laid with.
+    pub fn laid() u8 {
+        return laidFor(TURNS);
+    }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("{d}-{d} fire damage; {d}% ignite chance.", .{ FIRE.lo, FIRE.hi, ignites(rank) }) catch {};
+    }
+};
+pub const Bide = struct {
+    pub const COST: i32 = 5;
+    pub const COOLDOWN: u8 = 8;
+    pub const TURNS: u8 = 3;
+    pub const RELEASE: i32 = 2;
+    pub const VERB = "unleashes Bide on";
+    pub const DESCRIPTION = std.fmt.comptimePrint("Brace for {d} turns, taking less damage from blows. Then unleash {d}x the damage taken at every adjacent foe.", .{ TURNS, RELEASE });
+    pub fn reduction(rank: u8) i32 {
+        return 15 + 10 * @as(i32, ranked(rank));
+    }
+    /// `dmg` as biding at `rank` lets it through, rounded up.
+    pub fn reduce(rank: u8, dmg: i32) i32 {
+        return mathx.percentCeil(dmg, mathx.PERCENT - reduction(rank));
+    }
+    pub fn laid() u8 {
+        return laidFor(TURNS);
+    }
+    pub fn released(taken: i32) i32 {
+        return taken *| RELEASE;
+    }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("{d}% less damage from blows.", .{reduction(rank)}) catch {};
+    }
+};
+pub const RaiseSkeleton = struct {
+    pub const COST: i32 = 6;
+    pub const COOLDOWN: u8 = 4;
+    pub const RANGE: i32 = 3;
+    pub const DESCRIPTION = "Raise a skeleton on visible open ground. It fights the foes you see and follows you through doors. Past your limit, the oldest crumbles.";
+    /// Cells from the hero a skeleton keeps to when there is nothing to fight.
+    pub const FOLLOW: i32 = 2;
+    /// Cells from the hero a foe may stand and still be fought.
+    pub const LEASH: i32 = 6;
+    pub fn most(rank: u8) usize {
+        return ranked(rank);
+    }
+    pub fn life(rank: u8) i32 {
+        return 12 + 8 * @as(i32, ranked(rank) - 1);
+    }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("Up to {d} skeleton{s}; {d} life each.", .{ most(rank), mathx.plural(most(rank)), life(rank) }) catch {};
+    }
+};
+
 pub const State = struct {
     steady: u8 = 0,
     guard: u8 = 0,
     unyielding: bool = false,
     overwatch: ?mathx.Dir = null,
+    /// Turns left of Imbue's fire.
+    imbue: u8 = 0,
+    /// Turns left of Bide, and the damage taken through it.
+    bide: u8 = 0,
+    bided: i32 = 0,
 };
 
 /// The reach of a patch on a cell and its neighbours.

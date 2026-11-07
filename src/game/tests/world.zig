@@ -238,6 +238,35 @@ test "a door takes the archer to the door it leads to, and a node left is found 
     std.debug.print("through a door and back: node {d}, the slime still at {d},{d}\n", .{ g.sim.node, slime.x, slime.y });
 }
 
+test "a skeleton follows the hero through a door, leaving none behind" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    const b = harness.twoRooms(w);
+    const a = w.start.node;
+    game.beginMap(g, w);
+    const id = harness.spawnAt(g, .skeleton, .{ .x = 4, .y = 5 }, true);
+    g.sim.pool.get(id).?.hp -= 3;
+    const hp = g.sim.pool.get(id).?.hp;
+    harness.nudge(g, .w);
+    try std.testing.expect(g.sim.travel != null);
+    harness.idle(g);
+    try std.testing.expectEqual(b, g.sim.node);
+    const hero = g.sim.heroActor().?.at;
+    var followed: ?actor.Actor = null;
+    for (g.sim.pool.slice(), 0..) |s, i| {
+        if (!s.alive or !s.kind.ally()) continue;
+        followed = s;
+        try std.testing.expectEqual(actor.Pool.idOf(i), g.sim.lv.who(s.at));
+    }
+    const s = followed orelse return error.LeftBehind;
+    try std.testing.expectEqual(hp, s.hp);
+    try std.testing.expect(mathx.dist(s.at, hero) <= 3);
+    for (g.sim.visits[a].pool.constSlice()) |left| try std.testing.expect(!(left.alive and left.kind.ally()));
+    std.debug.print("a skeleton followed to node {d}, {d} tiles from the hero with its {d} life\n", .{ b, mathx.dist(s.at, hero), s.hp });
+}
+
 test "a procgen node rolls another floor round the same doors each run, and two nodes differ in one run" {
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);

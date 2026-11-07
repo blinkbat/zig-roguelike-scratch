@@ -386,7 +386,10 @@ fn drawStage(g: *game.Game, v: *Viewer, stage: rl.Rectangle, cell: f32) void {
         for (0..WALL_CELLS) |k| {
             const p = MIDDLE.add(.{ .x = @as(i32, @intCast(k)) - @divTrunc(WALL_CELLS, 2), .y = 0 });
             const r = widgets.cellRect(o, p, cell);
-            game.scene.drawFlames(&v.effects, r.x, r.y, cell, grid.Level.idx(p));
+            var kin = game.scene.Kin.initEmpty();
+            if (k > 0) kin.insert(.w);
+            if (k + 1 < WALL_CELLS) kin.insert(.e);
+            game.scene.drawFlames(&v.effects, r.x, r.y, cell, grid.Level.idx(p), kin, 1);
         }
     }
     drawPools(v, s, o, cell);

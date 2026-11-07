@@ -232,6 +232,7 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .glow_plant = .{ .sym = "&", .ch = '&', .fg = rgb(0x9fd2ff), .bg = null, .mini = rgb(0x7fb2e0), .mini_dim = rgb(0x2e4256) },
     .caravan = .{ .sym = "H", .ch = 'H', .fg = CARAVAN_INK.fg, .bg = null, .mini = CARAVAN_INK.mini, .mini_dim = CARAVAN_INK.mini_dim },
     .caravan_part = .{ .sym = "h", .ch = 'h', .fg = CARAVAN_INK.fg, .bg = null, .mini = CARAVAN_INK.mini, .mini_dim = CARAVAN_INK.mini_dim },
+    .stone_bridge = .{ .sym = "=", .ch = '=', .fg = STONE_INK, .bg = rgb(0x1c1a18), .mini = rgb(0x6e665a), .mini_dim = rgb(0x34302a) },
 });
 
 const CARAVAN_INK = .{ .fg = rgb(0xd8c8a4), .mini = rgb(0x9a7a52), .mini_dim = rgb(0x46382a) };
@@ -295,6 +296,7 @@ pub fn body(k: actor.Kind) Look {
         .pib_shaman => .{ .ch = 'Y', .fg = rgb(0xc77dff) },
         .bog_leech => .{ .ch = 'L', .fg = rgb(0x8cff3f) },
         .mimic => .{ .ch = 'M', .fg = rgb(0xff9f1c) },
+        .skeleton => .{ .ch = 'Z', .fg = rgb(0xe8e2cf) },
     };
 }
 
@@ -353,7 +355,7 @@ pub const Gait = enum { hop, slide };
 
 pub fn gait(k: actor.Kind) Gait {
     return switch (k) {
-        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .mimic => .hop,
+        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .mimic, .skeleton => .hop,
         .slime, .slime_half, .slime_quarter, .bloat, .frost_wisp, .pyre_bloat, .bog_leech => .slide,
     };
 }

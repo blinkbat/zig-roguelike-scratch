@@ -88,7 +88,7 @@ pub const Fields = struct {
     /// Written before each read.
     pub const scratch = [_][]const u8{ "order", "flow", "queue" };
     /// Kept across runs.
-    pub const kept = [_][]const u8{"unkillable"};
+    pub const kept = [_][]const u8{ "unkillable", "playground" };
 };
 
 /// The run as it is, whatever has been drawn of it.
@@ -102,6 +102,8 @@ pub const Simulation = struct {
     outdoors: bool = false,
     /// Kept across runs, never saved.
     unkillable: bool = false,
+    /// The editor's playground: never saved; the app sets it for every run. Every class skill learned, casting free, never killed.
+    playground: bool = false,
     unsaved: bool = false,
     lv: grid.Level,
     pool: actor.Pool = .{},
@@ -152,7 +154,7 @@ pub const Simulation = struct {
         const absorbed = if (target.value == self.hero) a.ward.takes(self.mana, amount) else 0;
         self.mana -= absorbed;
         const left = amount - absorbed;
-        const taken = if (target.value == self.hero and self.unkillable) std.math.clamp(a.hp - UNKILLABLE_HP, 0, left) else left;
+        const taken = if (target.value == self.hero and (self.unkillable or self.playground)) std.math.clamp(a.hp - UNKILLABLE_HP, 0, left) else left;
         return .{ .target = target, .dmg = taken, .lethal = self.pool.damage(&self.lv, target.value, taken), .mana = absorbed };
     }
 
@@ -245,7 +247,7 @@ pub const Simulation = struct {
 
     pub fn combatStatsOn(self: *const Simulation, a: *const actor.Actor, tile: grid.Tile, buildup: resilience.State, sundered: sunder.Sunder) terrain.Stats {
         var base = terrain.Stats{ .elements = a.resists, .armour = actor.row(a.kind).armour };
-        if (!a.foe()) {
+        if (a.kind.hero()) {
             const by = self.heroAttrs();
             base.dodge = by.dodge();
             base.armour = by.armour;
@@ -254,7 +256,7 @@ pub const Simulation = struct {
         for (std.enums.values(resilience.Kind)) |k| {
             base.statuses.set(k, @as(i16, actor.innateResist(a.kind, k)) + buildup.meters.get(k).percent);
         }
-        if (!a.foe()) base.statuses.getPtr(.stun).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.resolve));
+        if (a.kind.hero()) base.statuses.getPtr(.stun).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.resolve));
         return base.onRained(tile, self.rainNow());
     }
 

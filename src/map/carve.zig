@@ -228,27 +228,33 @@ pub fn scatterIn(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put
 }
 
 pub fn disc(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime over: ?fn (grid.Tile) bool) void {
-    discOf(lv, c, r, t, false, false, over);
+    discOf(lv, c, r, t, false, null, over);
 }
 
 fn discAll(lv: *grid.Level, c: P, r: f32, t: grid.Tile) void {
-    discOf(lv, c, r, t, true, false, null);
+    discOf(lv, c, r, t, true, null, null);
 }
 
 pub const LANE_MIN: u8 = 2;
 
-pub const Lane = enum {
+pub const Lane = union(enum) {
     /// Off the rim, over whatever is there.
     cut,
-    /// To the rim, bridging a liquid.
-    road,
+    /// To the rim, bridging a liquid with this tile.
+    road: grid.Tile,
+
+    pub const bridged: Lane = .{ .road = .bridge };
 };
 
 pub fn lane(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, t: grid.Tile, comptime how: Lane) void {
     std.debug.assert(width >= LANE_MIN);
     const r = laneRadius(width);
+    const span: ?grid.Tile = switch (how) {
+        .cut => null,
+        .road => |s| s,
+    };
     var m = Meander.init(a, b, wander);
-    while (m.next(rng)) |c| discOf(lv, c, r, t, how == .road, how == .road, null);
+    while (m.next(rng)) |c| discOf(lv, c, r, t, how == .road, span, null);
 }
 
 /// The `disc` radius a lane `width` cells wide lays at each step.
@@ -270,7 +276,7 @@ pub fn discReach(r: f32) i32 {
     return @intFromFloat(@floor(@sqrt(r * r + DISC_SLACK)));
 }
 
-fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, comptime pave: bool, comptime over: ?fn (grid.Tile) bool) void {
+fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, comptime pave: ?grid.Tile, comptime over: ?fn (grid.Tile) bool) void {
     const k: i32 = @intFromFloat(@ceil(r));
     var cells = grid.Cells.around(c, k);
     while (cells.next()) |q| {
@@ -279,7 +285,7 @@ fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, 
         if (over) |ok| {
             if (!ok(lv.at(q))) continue;
         }
-        lv.set(q, if (pave) paved(lv.at(q), t) else t);
+        lv.set(q, if (pave) |span| paved(lv.at(q), t, span) else t);
     }
 }
 
@@ -663,15 +669,17 @@ pub fn trail(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, path: grid.Tile) void
 
 fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
     const t = lv.at(p);
-    if (t.solid()) lv.set(p, paved(t, path));
+    if (t.solid()) lv.set(p, paved(t, path, .bridge));
 }
 
-fn paved(t: grid.Tile, put: grid.Tile) grid.Tile {
-    return if (crossing(t)) .bridge else put;
+/// `put` laid over `t`: a liquid bridged by `span`, a bridge already there kept.
+fn paved(t: grid.Tile, put: grid.Tile, span: grid.Tile) grid.Tile {
+    if (t.spans()) return t;
+    return if (t.liquid()) span else put;
 }
 
 pub fn crossing(t: grid.Tile) bool {
-    return t.liquid() or t == .bridge;
+    return t.liquid() or t.spans();
 }
 
 /// A way through a wall at `at`, `half` cells either side of its middle, from `outside` cells out to `inside` cells in along `in`.
@@ -687,7 +695,7 @@ pub fn bridge(lv: *grid.Level, b: grid.Box, open: ?grid.Tile) void {
 
     while (cells.next()) |q| {
         const was = lv.at(q);
-        lv.set(q, paved(was, if (open != null and was == .wall) open.? else was));
+        lv.set(q, paved(was, if (open != null and was == .wall) open.? else was, .bridge));
     }
 }
 

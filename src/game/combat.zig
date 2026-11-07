@@ -19,6 +19,7 @@ const confusion = @import("../play/confusion.zig");
 const shock = @import("../play/shock.zig");
 const resilience = @import("../play/resilience.zig");
 const skillbar = @import("../play/skillbar.zig");
+const rules = @import("../play/tactics.zig");
 const fx = @import("../gfx/fx.zig");
 const look = @import("../gfx/look.zig");
 const game = @import("../game.zig");
@@ -105,7 +106,7 @@ fn strike(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) ?S
         return null;
     }
     const a = g.sim.pool.get(id).?;
-    if (!attacks.heroLands(&g.sim, a, .chosen)) return null;
+    if (!a.foe() or !attacks.heroLands(&g.sim, a, .chosen)) return null;
     const blow = chosenBlow(g, a, attacks.heroSkill(&g.sim, act), act, true, 0);
     wound(g, id, blow.roll, M.VERB, s);
     if (g.sim.pool.get(id) == null) return null;
@@ -160,6 +161,7 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     const M = skillbar.Act.skill(act);
     const el = comptime act.element();
     const a = g.sim.pool.get(id) orelse return;
+    if (!a.foe()) return;
     const at = a.at;
     const grounded = actor.row(a.kind).movement.grounded();
     const wet: ?Wet = if (el == .lightning and grounded) if (wading(&g.sim, at)) |bodies| .{ .bodies = bodies, .struck = actor.Pool.slot(id), .born = g.sim.pool.n } else null else null;
@@ -355,7 +357,9 @@ fn unmaskMimic(g: *game.Game, a: *actor.Actor, wait: f32) void {
 
 fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime verb: []const u8, s: Stroke, origin: chronicle.AttackOrigin, flight: ?bow.Flight) void {
     var roll = raw;
-    if (g.sim.pool.get(target.value)) |a| roll.hit_checked = roll.hit_checked or a.disguised;
+    const struck = g.sim.pool.get(target.value) orelse return;
+    if (!struck.foe()) return;
+    roll.hit_checked = roll.hit_checked or struck.disguised;
     reveal(g, target, s);
     const outcome = attacks.resolve(&g.sim, target, roll, origin) orelse return;
     const hit = switch (outcome) {
@@ -457,6 +461,7 @@ fn beginTurn(g: *game.Game, from: P) void {
     g.sim.unsaved = true;
     if (g.sim.clock.turn()) g.sim.days +|= 1;
     tactics.startTurn(&g.sim);
+    tactics.bideTurn(g);
     _ = fire.turn(&g.sim.lv, &g.sim.rng, g.sim.rainNow());
     _ = ice.turn(&g.sim.lv);
     skills.recover(g);
@@ -475,7 +480,7 @@ fn heroAfterAction(g: *game.Game) void {
 fn spreadGasAndAdvanceClocks(sim: *game.simulation.Simulation) void {
     gas.turn(&sim.lv, &sim.rng);
     for (sim.pool.slice()) |*a| {
-        if (a.alive and a.foe() and !(a.waits and actor.row(a.kind).disguised)) a.clock.pass(actor.row(a.kind).pace);
+        if (a.alive and !a.kind.hero() and !(a.waits and actor.row(a.kind).disguised)) a.clock.pass(actor.row(a.kind).pace);
     }
 }
 
@@ -676,6 +681,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
     const h = g.sim.heroActor() orelse return;
     const row = actor.row(r.kind);
     const af = worn.afflicted;
+    if (row.allied) return allyTurn(g, id, held, af);
     const sight = blind.sight(af.contains(.blind), row.sight);
     if (!r.awake) {
         if (!fov.sees(&g.sim.lv, r.at, h.at, @max(1, sight - g.sim.inventory.gear.sum(.stillness)))) return;
@@ -709,12 +715,78 @@ fn foeTurn(g: *game.Game, id: u16) void {
         if (!held and gap > ranged.retreat) closeIn(g, id, ranged.retreat, af);
         return;
     }
+    if (row.blow == .strike and besideWay(g, r.at, h.at) == null) if (besideOf(g, r.at, .ally)) |ally| return bodyStrike(g, id, ally, af);
     const flitted = if (!held and row.flits and g.sim.rng.chance(actor.FLIT)) actor.flit(&g.sim.lv, r.at, id, g.sim.hero, &g.sim.rng) else null;
     const d = flitted orelse foeWay(g, r.at, id, h.at) orelse return;
     const to = r.at.add(d.delta());
     if (held and !to.eq(h.at)) return;
     if (!to.eq(h.at)) return foeStep(g, id, r.at, d, af);
     reach(g, id, row, d.delta().x, null, af);
+}
+
+/// Strikes a foe beside it; otherwise closes on the nearest foe the hero sees near it, or keeps near the hero.
+fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted) void {
+    const r = g.sim.pool.get(id).?;
+    const hero = g.sim.heroAt().?;
+    if (besideOf(g, r.at, .foe)) |foe| return bodyStrike(g, id, foe, af);
+    if (held) return;
+    if (quarry(g, r.at, hero)) |at| {
+        if (actor.approach(&g.sim.lv, r.at, id, at)) |d| return foeStep(g, id, r.at, d, af);
+    }
+    if (mathx.dist(r.at, hero) <= rules.RaiseSkeleton.FOLLOW) return;
+    const d = actor.chase(&g.sim.lv, r.at, id, flowTo(g, hero)) orelse return;
+    foeStep(g, id, r.at, d, af);
+}
+
+const Side = enum { foe, ally };
+
+/// The most hurt body of `side` a blow from `at` reaches; none disguised or underwater.
+fn besideOf(g: *game.Game, at: P, side: Side) ?u16 {
+    var best: ?u16 = null;
+    for (mathx.ALL_DIRS) |d| {
+        if (!g.sim.lv.passOk(at, d)) continue;
+        const id = g.sim.lv.who(at.add(d.delta()));
+        const a = g.sim.pool.getConst(id) orelse continue;
+        const fits = switch (side) {
+            .foe => a.foe(),
+            .ally => a.kind.ally(),
+        };
+        if (!fits or a.veiled()) continue;
+        if (best) |b| if (g.sim.pool.items[actor.Pool.slot(b)].hp <= a.hp) continue;
+        best = id;
+    }
+    return best;
+}
+
+/// The nearest foe the hero sees within the leash of `hero`, as `from` sees it.
+fn quarry(g: *game.Game, from: P, hero: P) ?P {
+    var near = grid.Nearest{ .from = from };
+    for (g.sim.pool.constSlice()) |a| {
+        if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, hero) > rules.RaiseSkeleton.LEASH) continue;
+        if (!fov.sees(&g.sim.lv, from, a.at, actor.row(.skeleton).sight)) continue;
+        near.offer(a.at);
+    }
+    return near.best;
+}
+
+/// One body's blow on another neither of which is the hero: an ally's on a foe, or a foe's on an ally.
+fn bodyStrike(g: *game.Game, id: u16, target: u16, af: actor.Afflicted) void {
+    const r = g.sim.pool.get(id).?;
+    const a = g.sim.pool.get(target).?;
+    const by = actor.row(r.kind);
+    const s = by.blow.strike;
+    const at = a.at;
+    const name = actor.row(a.kind).name;
+    g.pic.turnLater(.fromInt(id), at.x - r.at.x);
+    const blow = attacks.foeBlow(&g.sim, r, a, s, af.contains(.enfeeble)) orelse {
+        g.sim.sayOf(a, "The {s} misses the {s}.", .{ by.name, name });
+        g.pic.owe(.fromInt(id), .struck, .{ .at = at });
+        return;
+    };
+    const h = game.hurt(g, .fromInt(target), blow.dealt);
+    g.sim.sayOf(a, "The {s} {s} the {s} for {d}.{s}", .{ by.name, s.verb, name, h.dmg, deathNote(h) });
+    const after = landBlow(g, target, h);
+    g.pic.owe(.fromInt(id), .struck, .{ .at = at, .impact = .{ .actor = .{ .slot = actor.ActorId.fromInt(target).slot(), .at = at, .lethal = h.lethal, .after = after } } });
 }
 
 /// Bites from the water beside the hero; otherwise swims closer, never ashore.

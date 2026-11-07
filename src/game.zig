@@ -315,11 +315,11 @@ pub fn beginMap(g: *Game, w: *const atlas.Atlas) void {
 pub fn beginMapAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64) void {
     startRun(g, w, seed);
     freshRun(g);
-    enter(g, from.node, from.at);
+    enter(g, from.node, from.at, &.{});
 }
 
-/// The hero occupies the first pool slot on every node, preserving its id.
-fn enter(g: *Game, n: usize, at: P) void {
+/// The hero occupies the first pool slot on every node, preserving its id; its `followers` stand round it.
+fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) void {
     const w = g.sim.map.?;
     var carried = actor.Actor.of(g.sim.class.kind(), at);
     if (g.sim.heroActor()) |h| {
@@ -354,11 +354,44 @@ fn enter(g: *Game, n: usize, at: P) void {
     const h = g.sim.heroActor().?;
     carried.at = h.at;
     h.* = carried;
+    for (followers) |f| {
+        if (g.sim.pool.n == actor.MAX) break;
+        var body = f;
+        body.at = followerCell(&g.sim.lv, h.at) orelse break;
+        _ = g.sim.pool.spawn(&g.sim.lv, body);
+    }
     combat.arrive(g, h.at);
     g.sim.unsaved = true;
     freshTurn(g);
     settle(g);
     talking.arrived(g);
+}
+
+const Followers = grid.Bounded(actor.Actor, actor.MAX);
+/// Cells from the hero a follower may come through a door to.
+const FOLLOWER_REACH: i32 = 3;
+
+/// Every living ally, taken off the node being left to follow the hero to the next.
+fn gatherFollowers(g: *Game) Followers {
+    var out = Followers{};
+    for (g.sim.pool.slice()) |*a| {
+        if (!a.alive or !a.kind.ally()) continue;
+        out.push(a.*);
+        g.sim.lv.clear(a.at);
+        a.alive = false;
+        a.hp = 0;
+    }
+    return out;
+}
+
+/// The open ground nearest `hero` in its sight where a follower may stand.
+fn followerCell(lv: *const grid.Level, hero: P) ?P {
+    var near = grid.Nearest{ .from = hero };
+    var cells = grid.Cells.around(hero, FOLLOWER_REACH);
+    while (cells.next()) |p| {
+        if (actor.dwells(.skeleton, lv, p) and lv.walkable(p) and lv.doorAt(p) == null and grid.sightLine(lv, hero, p)) near.offer(p);
+    }
+    return near.best;
 }
 
 pub fn rollOf(run: u64, n: usize) u64 {
@@ -367,12 +400,13 @@ pub fn rollOf(run: u64, n: usize) u64 {
 
 fn goThrough(g: *Game, l: atlas.Link) void {
     g.pic.turnNow();
+    const followers = gatherFollowers(g);
     g.sim.visits[g.sim.node] = visitOf(g);
     g.sim.visited.set(g.sim.node);
     const carried = TravelCarry.of(g);
     var title: [atlas.TITLE_MAX]u8 = undefined;
     g.sim.log.say("Entered {s}.", .{g.sim.map.?.node[l.node].title(l.node, &title)});
-    enter(g, l.node, g.sim.map.?.door(l).at);
+    enter(g, l.node, g.sim.map.?.door(l).at, followers.slice());
     carried.restore(g);
 }
 
@@ -425,8 +459,13 @@ fn freshRun(g: *Game) void {
     toDefaults(&g.sim, &(SimFields.run ++ SimFields.rebuilt));
     toDefaults(g, &Fields.run);
     g.pic.freshRun();
-    g.sim.growth = progress.State.of(g.sim.class);
-    g.bar = g.sim.growth.bar(g.sim.class);
+    if (g.sim.playground) {
+        g.sim.growth = progress.State.versed(g.sim.class);
+        g.bar = g.sim.growth.flasklessBar(g.sim.class);
+    } else {
+        g.sim.growth = progress.State.of(g.sim.class);
+        g.bar = g.sim.growth.bar(g.sim.class);
+    }
     g.sim.loot_rng = mathx.Rng.init(g.sim.seed ^ LOOT_SALT);
     g.pic.settleXp(&g.sim);
     if (g.sim.heroActor()) |h| {
@@ -499,7 +538,7 @@ pub fn castSight(g: *Game, from: P) void {
     g.mini.stale = true;
 }
 
-pub const Move = enum { kick, open, burst, loot, step, talk, blocked };
+pub const Move = enum { kick, open, burst, loot, step, talk, swap, blocked };
 
 pub fn heroMove(g: *Game, d: mathx.Dir) Move {
     const h = g.sim.heroActor() orelse return .blocked;
@@ -514,13 +553,18 @@ pub fn moveOf(g: *const Game, from: P, d: mathx.Dir, occupied: bool) Move {
     if (there.bursts()) return .burst;
     if (!g.sim.lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
     if (g.sim.lv.folkAt(to) != null) return .talk;
-    if (occupied) return .kick;
+    if (occupied) return if (allyAt(g, to)) .swap else .kick;
     return if (character.lootReached(g, from, to)) .loot else .step;
+}
+
+fn allyAt(g: *const Game, p: P) bool {
+    const a = g.sim.pool.getConst(g.sim.lv.who(p)) orelse return false;
+    return a.kind.ally();
 }
 
 fn spends(m: Move) bool {
     return switch (m) {
-        .kick, .burst, .loot, .step => true,
+        .kick, .burst, .loot, .step, .swap => true,
         .open, .talk, .blocked => false,
     };
 }
@@ -569,6 +613,13 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
         .talk => {
             talking.speak(g, g.sim.lv.folkAt(to).?);
             return;
+        },
+        .swap => if (h.pin.holding()) struggle(g) else {
+            const ally = g.sim.lv.who(to);
+            const from = h.at;
+            heroTo(g, to);
+            g.sim.pool.items[actor.Pool.slot(ally)].at = from;
+            g.sim.lv.stand(from, ally);
         },
         .loot, .step => if (h.pin.holding()) struggle(g) else {
             heroTo(g, to);

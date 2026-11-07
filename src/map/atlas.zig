@@ -794,7 +794,7 @@ test "the strand holds only rats, crossbowmen, pibs, two shamans, two bloats and
     try std.testing.expect(farthest <= pack.EXIT_REACH);
 }
 
-test "the strand's door leads to a tee: the whole caravan camp walks from where the hero comes in, carts and a bridge on every roll" {
+test "the strand's door leads to a tee: the whole caravan camp walks from where the hero comes in, carts and a stone bridge on every roll" {
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);
     try a.load(std.testing.allocator, START);
@@ -812,9 +812,9 @@ test "the strand's door leads to a tee: the whole caravan camp walks from where 
         nd.stamp(&lv, 0xCA2A +% i *% grid.TEST_SEED_STRIDE);
         try grid.expectAllReached(&lv, door, &dist, &queue);
         carts += carve.count(&lv, .caravan);
-        bridges += @intFromBool(carve.count(&lv, .bridge) > 0);
+        bridges += @intFromBool(carve.count(&lv, .stone_bridge) > 0);
     }
-    std.debug.print("the caravan over {d} rolls: every open cell walks from its door at {d},{d}; {d} carts, {d} bridged\n", .{ RUNS, door.x, door.y, carts, bridges });
+    std.debug.print("the caravan over {d} rolls: every open cell walks from its door at {d},{d}; {d} carts, {d} bridged in stone\n", .{ RUNS, door.x, door.y, carts, bridges });
     try std.testing.expect(carts >= RUNS * 2);
     try std.testing.expectEqual(@as(usize, RUNS), bridges);
 }

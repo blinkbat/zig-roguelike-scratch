@@ -26,6 +26,8 @@ pub const Roll = struct {
     hit_checked: bool = false,
     /// Opportunist's bonus as the target stood before this blow's own ailment.
     opportunity: ?i32 = null,
+    /// Imbue's fire, past armour, still to meet the target's fire resistance; not in `dmg` yet.
+    fire: i32 = 0,
 
     pub fn against(self: Roll, armour: i32, rng: *mathx.Rng) Roll {
         var out = self;
@@ -40,7 +42,7 @@ pub const Rolled = struct {
     effect: items.WeaponEffect = .{},
 
     pub fn physical(h: Rolled) Roll {
-        return .{ .dmg = h.blow.physical, .physical = h.blow.physical, .crit = h.crit, .effect = h.effect };
+        return .{ .dmg = h.blow.physical, .physical = h.blow.physical, .crit = h.crit, .effect = h.effect, .fire = h.blow.elements.get(.fire) };
     }
 
     /// Its whole blow past `resists`, armour still to take its physical part.
@@ -66,9 +68,28 @@ pub fn heroRoll(sim: *Simulation, comptime attack: attrs.Attack, raw: i32) Roll 
 
 pub fn heroRollWith(rng: *mathx.Rng, sim: *const Simulation, comptime attack: attrs.Attack, raw: i32) Roll {
     const gear = sim.inventory.gear;
-    var hit = scaled(rng, gear.forAttack(sim.heroAttrs(), attack), gear.scaling(attack), .{ .physical = raw });
-    hit.effect = gear.onHit(attack);
+    var d = damage.Damage{ .physical = raw };
+    d.elements.set(.fire, imbuedFire(rng, sim, attack));
+    var hit = scaled(rng, gear.forAttack(sim.heroAttrs(), attack), gear.scaling(attack), d);
+    hit.effect = onHit(sim, attack);
     return hit.physical();
+}
+
+/// Imbue's fire on a melee blow, rolled before the blow scales; none while the weapon is not imbued.
+fn imbuedFire(rng: *mathx.Rng, sim: *const Simulation, attack: attrs.Attack) i32 {
+    return if (alight(sim, attack)) rules.Imbue.FIRE.roll(rng) else 0;
+}
+
+fn alight(sim: *const Simulation, attack: attrs.Attack) bool {
+    const h = sim.heroBody() orelse return false;
+    return attack == .melee and h.tactics.imbue > 0;
+}
+
+/// What the hero's `attack` brings on a hit: its gear's, and Imbue's chance to ignite.
+fn onHit(sim: *const Simulation, attack: attrs.Attack) items.WeaponEffect {
+    var out = sim.inventory.gear.onHit(attack);
+    if (alight(sim, attack)) out.burn += rules.Imbue.ignites(sim.growth.ranks.get(.imbue));
+    return out;
 }
 
 pub fn heroKick(sim: *Simulation) Roll {
@@ -86,8 +107,10 @@ pub fn heroArrow(sim: *Simulation, comptime act: skillbar.Act, body: bool) Rolle
 /// A raw `act` roll scaled by the hero's attributes and its rank, with its crit.
 pub fn heroScaled(sim: *Simulation, comptime act: skillbar.Act, raw: damage.Damage) Rolled {
     const b = blowFor(sim, act);
-    var hit = scaled(&sim.rng, b.by, b.style, raw);
-    if (raw.physical > 0) hit.effect = sim.inventory.gear.onHit(act.attack().?);
+    var d = raw;
+    if (raw.physical > 0) d.elements.getPtr(.fire).* += imbuedFire(&sim.rng, sim, act.attack().?);
+    var hit = scaled(&sim.rng, b.by, b.style, d);
+    if (raw.physical > 0) hit.effect = onHit(sim, act.attack().?);
     return hit;
 }
 
@@ -172,7 +195,10 @@ pub fn foeBlow(sim: *Simulation, attacker: *const actor.Actor, target: *actor.Ac
     const rolled = bite(&sim.rng, sim.combatStats(attacker), defended, s) orelse return null;
     var dmg = if (s.element) |e| damage.resisted(rolled, defended.elements.get(e)) else attrs.armoured(defended.armour, rolled, &sim.rng);
     if (s.element == null and target.tactics.guard > 0) dmg = rules.Guard.reduce(target.tactics.guard, dmg);
-    return .{ .rolled = rolled, .dealt = landed(weak, target, dmg) };
+    if (target.tactics.bide > 0) dmg = rules.Bide.reduce(sim.growth.ranks.get(.bide), dmg);
+    const dealt_ = landed(weak, target, dmg);
+    if (target.tactics.bide > 0) target.tactics.bided +|= dealt_;
+    return .{ .rolled = rolled, .dealt = dealt_ };
 }
 
 pub const Hit = struct {
@@ -201,6 +227,8 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
     var r = raw.against(sim.combatStats(a).armour, &sim.rng);
+    r.dmg += damage.resisted(r.fire, sim.combatStats(a).elements.get(.fire));
+    r.fire = 0;
     r.dmg = blowOn(heroWeak(sim), r.opportunity orelse opportune(sim, a), &a.shock, r.dmg, r.applied);
     const kind = a.kind;
     const at = a.at;

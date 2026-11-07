@@ -84,6 +84,9 @@ pub const Act = enum {
     piercing_shot,
     shatter,
     fire_wall,
+    imbue,
+    bide,
+    raise_skeleton,
     life_flask,
     mana_flask,
     bandage,
@@ -384,6 +387,9 @@ const SKILLS = std.EnumArray(Act, Skill).init(.{
     .piercing_shot = .{ .module = piercing, .reticle = .bow, .delivery = .ranged },
     .shatter = .{ .module = tactics.Shatter, .reticle = .ground, .delivery = .spell },
     .fire_wall = .{ .module = tactics.FireWall, .reticle = .ground },
+    .imbue = .{ .module = tactics.Imbue },
+    .bide = .{ .module = tactics.Bide },
+    .raise_skeleton = .{ .module = tactics.RaiseSkeleton, .reticle = .ground },
     .life_flask = .{ .module = flask.Life },
     .mana_flask = .{ .module = flask.Mana },
     .bandage = .{ .module = consumable.Bandage },
@@ -414,8 +420,8 @@ fn kitOf(comptime basic: Act, comptime own: []const Act) [3 + own.len + CARRIED.
 }
 
 const ARCHER_KIT = kitOf(.shoot, &.{ .juke, .steady_aim, .burning_arrow, .glacial_shot, .barbed_arrow, .caltrops, .pinning_shot, .overwatch, .piercing_shot });
-const WIZARD_KIT = kitOf(.spark, &.{ .blink, .fireball, .frost_nova, .mana_shield, .chain_lightning, .combustion, .gravity_well, .arcane_barrier, .shatter, .fire_wall });
-const KNIGHT_KIT = kitOf(.cleave, &.{ .charge, .guard, .shield_bash, .whirlwind, .unyielding, .rend, .war_cry });
+const WIZARD_KIT = kitOf(.spark, &.{ .blink, .fireball, .frost_nova, .mana_shield, .chain_lightning, .combustion, .gravity_well, .arcane_barrier, .shatter, .fire_wall, .raise_skeleton });
+const KNIGHT_KIT = kitOf(.cleave, &.{ .charge, .guard, .shield_bash, .whirlwind, .unyielding, .rend, .war_cry, .imbue, .bide });
 
 /// The skills a class may bind, in the bind picker's order.
 pub fn kit(c: hero.Class) []const Act {
@@ -618,6 +624,9 @@ test "arrows scale as ranged, bolts and novas as spells, swings and rushes as me
         .piercing_shot = .ranged,
         .shatter = .spell,
         .fire_wall = null,
+        .imbue = null,
+        .bide = null,
+        .raise_skeleton = null,
         .life_flask = null,
         .mana_flask = null,
         .bandage = null,

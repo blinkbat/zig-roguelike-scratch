@@ -85,6 +85,7 @@ pub const LAYERS: []const Ground = BY_RANK[NONE + 1 ..];
 pub fn of(t: grid.Tile) ?Ground {
     return switch (t) {
         .floor => .cobble,
+        .stone_bridge => .bridge,
         inline else => |n| if (@hasField(Ground, @tagName(n))) @field(Ground, @tagName(n)) else null,
     };
 }

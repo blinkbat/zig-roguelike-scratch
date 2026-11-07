@@ -77,7 +77,7 @@ comptime {
     std.debug.assert(PATH_FIELD_MAX >= listing.PATH_MAX);
 }
 
-pub const Action = union(enum) { none, play: atlas.Start, fight: actor.Kind, leave, quit };
+pub const Action = union(enum) { none, play: atlas.Start, fight: actor.Kind, playground, leave, quit };
 
 pub const View = enum {
     map,

@@ -104,6 +104,7 @@ test {
     _ = @import("edit/plot.zig");
     _ = @import("map/listing.zig");
     _ = @import("map/spar.zig");
+    _ = @import("map/playground.zig");
     _ = @import("play/actor.zig");
     _ = @import("play/resilience.zig");
     _ = @import("play/shock.zig");

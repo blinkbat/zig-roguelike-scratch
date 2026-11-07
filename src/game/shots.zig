@@ -11,9 +11,11 @@ const grid = @import("../map/grid.zig");
 const gen = @import("../map/gen.zig");
 const carve = @import("../map/carve.zig");
 const gas = @import("../map/gas.zig");
+const fire = @import("../map/fire.zig");
 const atlas = @import("../map/atlas.zig");
 const listing = @import("../map/listing.zig");
 const spar = @import("../map/spar.zig");
+const playground = @import("../map/playground.zig");
 const procgen = @import("../map/procgen.zig");
 const app = @import("../app.zig");
 const editor = @import("../edit/editor.zig");
@@ -173,6 +175,7 @@ pub fn shoot(g: *game.Game) !void {
 
     try shootEffects(g, target);
     try shootCrossbowman(g, target);
+    try shootPlayground(g, target);
 
     poseFright(g);
     if (speechLeft(g) <= fx.SPEECH_FADE_S) return error.FrightUnspoken;
@@ -1216,6 +1219,45 @@ fn checkCinema(g: *game.Game, target: rl.RenderTexture2D) !void {
     std.debug.print("cinema targets: 720p, 1080p and restored dimensions checked\n", .{});
 }
 
+/// Indoors under torchlight: the glowbulb patch, the start between torches, and the reed and grass patches burning, then
+/// fading to the ash they leave.
+fn shootPlayground(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const w = try std.heap.c_allocator.create(atlas.Atlas);
+    defer std.heap.c_allocator.destroy(w);
+    defer g.sim.map = null;
+    defer g.sim.playground = false;
+    playground.author(w);
+    g.sim.playground = true;
+    g.sim.class = playground.CLASS;
+    const Pose = struct { patch: grid.Tile, name: [:0]const u8, fading: ?[:0]const u8 = null };
+    for ([_]Pose{
+        .{ .patch = .glow_plant, .name = SHOTS_DIR ++ "/playground-glowbulbs.png" },
+        .{ .patch = .floor, .name = SHOTS_DIR ++ "/playground-torches.png" },
+        .{ .patch = .reeds, .name = SHOTS_DIR ++ "/playground-reeds-burning.png", .fading = SHOTS_DIR ++ "/playground-reeds-fading.png" },
+        .{ .patch = .grass, .name = SHOTS_DIR ++ "/playground-grass-burning.png", .fading = SHOTS_DIR ++ "/playground-grass-fading.png" },
+    }) |pose| {
+        const box = if (pose.patch == .floor) null else playground.boxOf(playground.indexOf(.{ .tile = pose.patch }));
+        const at = if (box) |b| b.lo.add(.{ .x = -1, .y = 1 }) else playground.HERO;
+        game.beginMapAt(g, w, .{ .node = 0, .at = at }, SHOT_SEED);
+        if (pose.fading != null) {
+            var cells = box.?.cells();
+            while (cells.next()) |p| fire.lay(&g.sim.lv, p, 1, 0);
+            game.settle(g);
+        }
+        try capture(g, target, pose.name);
+        const fading = pose.fading orelse continue;
+        const mid = grid.Level.idx(box.?.lo.add(.{ .x = 0, .y = 1 }));
+        game.harness.useAct(g, .wait);
+        var waited: f32 = 0;
+        while (g.pic.fadingBurnt(mid) == null) : (waited += 0.01) {
+            if (waited > 3) return error.BurntUnfaded;
+            g.pic.advance(&g.sim, 0.01);
+        }
+        g.pic.advance(&g.sim, game.presentation.EMBER_S * 0.4);
+        try capture(g, target, fading);
+    }
+}
+
 fn shootCharacter(g: *game.Game) !void {
     const w = try std.heap.c_allocator.create(atlas.Atlas);
     defer std.heap.c_allocator.destroy(w);
@@ -1664,6 +1706,7 @@ const WADERS = [_]Wader{
     .{ .kind = .pib_shaman, .at = .{ .x = 23, .y = 25 } },
     .{ .kind = .mimic, .at = .{ .x = 26, .y = 25 } },
     .{ .kind = .bog_leech, .at = .{ .x = 19, .y = 21 } },
+    .{ .kind = .skeleton, .at = .{ .x = 28, .y = 20 } },
 };
 
 comptime {

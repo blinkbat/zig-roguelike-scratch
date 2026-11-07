@@ -458,6 +458,17 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
             rl.drawLine(x - 9, y, x + 9, y, colour);
             rl.drawLine(x, y - 9, x, y + 9, colour);
         },
+        .imbued => {
+            rl.drawLine(x - 7, y + 8, x + 5, y - 4, colour);
+            rl.drawLine(x - 6, y + 2, x - 1, y + 7, colour);
+            rl.drawLine(x + 3, y - 2, x + 3, y - 8, colour);
+            rl.drawLine(x + 3, y - 8, x + 7, y - 3, colour);
+        },
+        .biding => {
+            rl.drawCircleLines(x, y, 8, colour);
+            rl.drawLine(x - 4, y - 4, x + 4, y + 4, colour);
+            rl.drawLine(x - 4, y + 4, x + 4, y - 4, colour);
+        },
     }
 }
 

@@ -160,8 +160,10 @@ fn acted(run: *game.Game, used: skillbar.Act) void {
 
 fn spend(run: *game.Game, act: skillbar.Act) void {
     acted(run, act);
-    run.sim.mana -= run.sim.growth.cost(act);
-    run.sim.cooldown.set(act, run.sim.growth.cooldown(act, run.sim.inventory.gear.quicker()));
+    if (!run.sim.playground) {
+        run.sim.mana -= run.sim.growth.cost(act);
+        run.sim.cooldown.set(act, run.sim.growth.cooldown(act, run.sim.inventory.gear.quicker()));
+    }
     if (act.supplyOf()) |k| run.sim.inventory.stacks.getPtr(k).* -= 1;
 }
 
@@ -224,6 +226,7 @@ pub fn recover(run: *game.Game) void {
     run.sim.mana_recovery += run.sim.manaRegen();
     run.sim.gainMana(@divTrunc(run.sim.mana_recovery, heroes.MANA_REGEN_TURNS));
     run.sim.mana_recovery = @mod(run.sim.mana_recovery, heroes.MANA_REGEN_TURNS);
+    if (run.sim.playground) run.sim.gainMana(run.sim.manaMax());
     for (std.enums.values(flask.Kind)) |k| recoverFlask(run, k, run.pic.lead orelse 0);
 }
 
@@ -342,7 +345,10 @@ fn openRush(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     var cells = grid.Cells.around(hero.at, run.sim.reachOf(act));
     while (cells.next()) |p| {
         if (tactics.validAct(run, act, hero.at, p)) {
-            if (run.sim.lv.who(p) != grid.NO_ONE) near.offer(p) else empty.offer(p);
+            const who = run.sim.lv.who(p);
+            if (who == grid.NO_ONE) {
+                empty.offer(p);
+            } else if (run.sim.pool.getConst(who)) |a| if (a.foe()) near.offer(p);
         }
     }
     aimAt(run, by, act, hero.at, near.best orelse empty.best);

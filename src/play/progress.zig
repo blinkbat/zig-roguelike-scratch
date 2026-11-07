@@ -57,6 +57,7 @@ pub fn skills(c: hero.Class) []const Skill {
             .{ .act = .blink, .initial = true, .at = .{ .x = 3, .y = 0 } },
             .{ .act = .fireball, .parent = .spark, .at = .{ .x = 0, .y = 1 } },
             .{ .act = .chain_lightning, .parent = .spark, .at = .{ .x = 1, .y = 1 } },
+            .{ .act = .raise_skeleton, .parent = .blink, .at = .{ .x = 2, .y = 1 } },
             .{ .act = .frost_nova, .parent = .blink, .at = .{ .x = 3, .y = 1 } },
             .{ .act = .mana_shield, .parent = .blink, .at = .{ .x = 4, .y = 1 } },
             .{ .act = .combustion, .parent = .fireball, .at = .{ .x = 0, .y = 2 } },
@@ -66,14 +67,16 @@ pub fn skills(c: hero.Class) []const Skill {
             .{ .act = .arcane_barrier, .parent = .mana_shield, .at = .{ .x = 4, .y = 2 } },
         },
         .knight => &.{
-            .{ .act = .charge, .initial = true, .at = .{ .x = 2, .y = 0 } },
-            .{ .act = .cleave, .initial = true, .at = .{ .x = 1, .y = 0 } },
-            .{ .act = .guard, .parent = .cleave, .at = .{ .x = 0, .y = 1 } },
-            .{ .act = .rend, .parent = .cleave, .at = .{ .x = 1, .y = 1 } },
-            .{ .act = .shield_bash, .parent = .charge, .at = .{ .x = 2, .y = 1 } },
-            .{ .act = .unyielding, .parent = .guard, .at = .{ .x = 0, .y = 2 } },
-            .{ .act = .war_cry, .parent = .rend, .at = .{ .x = 1, .y = 2 } },
-            .{ .act = .whirlwind, .parent = .shield_bash, .at = .{ .x = 2, .y = 2 } },
+            .{ .act = .charge, .initial = true, .at = .{ .x = 4, .y = 0 } },
+            .{ .act = .cleave, .initial = true, .at = .{ .x = 2, .y = 0 } },
+            .{ .act = .guard, .parent = .cleave, .at = .{ .x = 1, .y = 1 } },
+            .{ .act = .rend, .parent = .cleave, .at = .{ .x = 2, .y = 1 } },
+            .{ .act = .imbue, .parent = .cleave, .at = .{ .x = 3, .y = 1 } },
+            .{ .act = .shield_bash, .parent = .charge, .at = .{ .x = 4, .y = 1 } },
+            .{ .act = .bide, .parent = .guard, .at = .{ .x = 0, .y = 2 } },
+            .{ .act = .unyielding, .parent = .guard, .at = .{ .x = 1, .y = 2 } },
+            .{ .act = .war_cry, .parent = .rend, .at = .{ .x = 2, .y = 2 } },
+            .{ .act = .whirlwind, .parent = .shield_bash, .at = .{ .x = 4, .y = 2 } },
         },
     };
 }
@@ -119,6 +122,13 @@ pub const State = struct {
         for (skills(c)) |s| if (s.initial) {
             out.ranks.set(s.act, 1);
         };
+        return out;
+    }
+
+    /// Every class skill at its first rank.
+    pub fn versed(c: hero.Class) State {
+        var out = of(c);
+        for (skills(c)) |s| out.ranks.set(s.act, 1);
         return out;
     }
 
@@ -302,7 +312,29 @@ pub const State = struct {
         };
         return out;
     }
+
+    /// `bar`, its flask slots given to the learned skills it leaves unbound, then Wait's once those run out.
+    pub fn flasklessBar(self: *const State, c: hero.Class) skillbar.Bar {
+        var out = self.bar(c);
+        for (skillbar.SETS) |set| for (skillbar.SLOTS) |button| {
+            const slot = skillbar.Slot{ .set = set, .button = button };
+            if (out.at(slot)) |a| if (a.flaskOf() != null) out.clear(slot);
+        };
+        for (skillbar.kit(c)) |a| {
+            if (innate(a) or !self.unlocked(a) or out.slotOf(a) != null) continue;
+            out.bind(out.firstEmpty() orelse out.slotOf(.wait) orelse break, a);
+        }
+        return out;
+    }
 };
+
+test "a versed wizard binds every skill of its tree in place of its flasks" {
+    const state = State.versed(.wizard);
+    const bar = state.flasklessBar(.wizard);
+    for (skills(.wizard)) |s| try std.testing.expect(bar.slotOf(s.act) != null);
+    try std.testing.expect(bar.slotOf(.life_flask) == null and bar.slotOf(.mana_flask) == null);
+    std.debug.print("versed wizard: {d} tree skills bound, no flasks; wait {s}\n", .{ skills(.wizard).len, if (bar.slotOf(.wait) == null) "given up" else "kept" });
+}
 
 test "experience awards both point pools; passive paths cross class regions; active skills obey class and rank limits" {
     for (hero.CLASSES) |c| {

@@ -1,7 +1,7 @@
 # AGENTS.md — Cistern
 
 Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, caustic bloats, pyre bloats, frost wisps, pibs, beefy pibs, pib shamans,
-bandit crossbowmen, trappers and shieldbearers, bog leeches and mimics; breakable barrels, treasure chests, equipment, XP and class progression.
+bandit crossbowmen, trappers and shieldbearers, bog leeches and mimics; the wizard's raised skeletons; breakable barrels, treasure chests, equipment, XP and class progression.
 Art starts as glyphs, replaced by the owner's PNGs; a body without art draws its letter cell-high and bright over a drop shadow (`look.body`).
 Source paths below are relative to `src/`; scripts, docs and assets are relative to the repository root.
 
@@ -228,6 +228,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Objects > select a foe > Fight launches `map/spar.zig`'s arena using the app's separate map, with the
   normal editor-test archer and no save slot. Returning preserves the editor map, modal and undo history;
   death retry and Debug > Gameplay > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
+  The top bar's Playground does the same with `map/playground.zig`: one torchlit patch of every placeable tile, barrels and a
+  shallow/deep bank, no foes. `Simulation.playground` (unsaved, set by the app on every launch) gives the wizard every tree skill
+  bound in place of flasks (`progress.State.versed/flasklessBar`), free casting (`skills.spend/recover`) and no death; Restart Map relays it.
 - Editor > Text uses `edit/text_catalog.zig` and `edit/text_panel.zig` to browse source wording, rewrite literals
   by feature, owner and field purpose, and assign separate author tags. Editor panels use 24px primary text
   and 20px details. Source and tag conflict checks protect external edits; wording applies after rebuilding.
@@ -337,6 +340,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   (`Presentation.knocked_from`/`Owed.knock` draw it as the blow lands). Frost wisps' touch chills the hero; every third chilled
   action costs its next turn. Pyre bloats' burst (`rewards.pyre`) burns the bodies beside it. Pib shamans (`Row.mends`) heal
   the most hurt pib in reach or wake sleepers, keeping `Row.keeps` cells off the hero.
+- Raised skeletons are allies (`Row.allied`, `Kind.ally`): neither hero nor foe, so `Kind.hero` (not `!foe()`) picks out the hero.
+  They take turns among the foes (`combat.allyTurn`): strike a foe beside them, close on the nearest foe the hero sees within
+  `RaiseSkeleton.LEASH` of it, else keep within `FOLLOW`. A melee foe not beside the hero strikes an ally beside it (`combat.bodyStrike`,
+  drawn through `Owed.struck`). Hero blows, areas, overwatch and caltrops never touch allies; walking into one swaps places (`Move.swap`).
+  An ally's death gives nothing (`rewards.defeat`). Allies follow the hero through doors (`game.gatherFollowers`), none left behind.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
   each followed by gas, steam, healing gas, burn and bleed. Caustic and pyre bloats burst however killed; foes do not enter gas, steam or flames from outside them (`actor.shuns`).
   `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`), healing (`Level.healing`),
@@ -347,10 +355,13 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   a fire arrow's impact cell, a pyre bloat's burst. Steam also loses a third of each cell a pass (`gas.CONDENSE`) and scalds for `gas.SCALD` fire damage, resisted.
   `gfx/cloud.zig` draws them in one premultiplied texture; gas harm and heals shed `fx.Puff` wisps of their gas's colour as they land.
 - `map/fire.zig` owns ground fire on `Level.flames` (turns left, Fire Wall's too) and `Level.heat` (cells it may still leap).
-  `Tile.burns` tiles (grass, litter, reeds, crops, bridges; never walls or trees) catch from fire landing by each source's `KINDLE`
+  `Tile.burns` tiles (grass, litter, reeds, crops, wooden bridges; never walls, trees or the tee's `stone_bridge`, drawn with the bridge art) catch from fire landing by each source's `KINDLE`
   chance and heat (`rewards.kindleRound`, from `combat.fireLands` and a pyre's burst), damped by rain (`fire.damped`, harder rain more).
   Each turn, at `combat.beginTurn`, a burning tile smokes, every fire may catch its burnable neighbours at one less heat and boil
-  wet ones into steam, and a burnt-out tile becomes dirt (`fire.ASH`; `Light.follow` retiles once it is drawn). Standing in flames scorches
+  wet ones into steam, and a burnt-out tile becomes dirt (`fire.ASH`; `Light.follow` retiles once it is drawn); a bridge drops into
+  water instead, shallows under a body or folk, with a puff of steam (`fire.ashOf`). `Tile.tinder` (reeds) catches from any fire beside it
+  without cooling it, so a reed bed burns out whole. The burning-ground fill fades toward sides no fire shares (`scene.drawFlames`). Flames gone out, and what they
+  burnt away, fade over `presentation.EMBER_S` (`Presentation.embers`, `burntShown`; burnt ground is drawn into a screen target and laid back per cell). Standing in flames scorches
   (`Tick.scorched`) and may ignite through fire/burn resistance. `Presentation.flames_shown` holds new flames until their fire lands.
   Cold landing over an area (`combat.coldLands`: glacial/frost vial bursts, frost nova, Shatter) puts out each burning cell by `fire.DOUSE`
   and each burning body in it by `fire.QUENCH` (`fire.douse`, `rewards.douseRound`), drawn as the blow lands.
@@ -446,7 +457,10 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Body normals shade per pixel; motes/ground gas draw before lighting, flames/glow afterward.
   Gas also veils prop/body artwork at half its ground opacity (45% maximum), respecting sprite alpha
   and presented positions; brick and rock walls stay clear. This overlay does not change gas spread.
-- Shadows/contact pools combine by channelwise `GL_MIN`, never stacking darker than the darkest source.
+- Shadows/contact pools combine by channelwise `GL_MIN`, never stacking darker than the darkest source. Prop lights (torches,
+  glowing plants) light terrain by channelwise max, never stacking brighter than the brightest (`Light.shadeWithSun`); their halos
+  meet by `GL_MAX` in a screen target added once (`Gpu.drawGlows`). Every light rolls off past `KNEE` toward `light_model.CEILING`,
+  the most any stack of light brightens the art, on terrain, scenery and bodies alike (`knee`, `TONE_FS`).
   `Light.onCaster` ignores fog: unseen scenery and offscreen casters still cast when lit; a body casts at its `Presentation.sighted` fade, none while unseen. Receiver visibility in the
   light-map alpha fades shadows, keeping unseen/remembered ground unchanged. Keep the `CAST_MARGIN` culling
   margin (from `shadow.CAST_REACH`) and presented actor position/birth/death. Bind the receiver light-map sampler after blend-mode

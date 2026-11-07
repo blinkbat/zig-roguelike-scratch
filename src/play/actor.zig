@@ -66,9 +66,21 @@ pub const Kind = enum {
     pib_shaman,
     bog_leech,
     mimic,
+    skeleton,
 
     pub fn foe(k: Kind) bool {
         return row(k).foe_type != null;
+    }
+
+    pub fn hero(k: Kind) bool {
+        return switch (k) {
+            .archer, .wizard, .knight => true,
+            else => false,
+        };
+    }
+
+    pub fn ally(k: Kind) bool {
+        return row(k).allied;
     }
 
     pub fn stocked(k: Kind) bool {
@@ -231,6 +243,8 @@ pub const Row = struct {
     keeps: i32 = 0,
     net: ?Net = null,
     mends: ?Mend = null,
+    /// Raised by the hero, fighting at its side.
+    allied: bool = false,
 };
 
 const SIGHT: i32 = 7;
@@ -282,6 +296,7 @@ pub fn row(k: Kind) Row {
         .pib_shaman => .{ .name = "pib shaman", .foe_type = .beast, .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "pokes", .slain = "poked to death" } }, .keeps = 3, .mends = MEND },
         .bog_leech => .{ .name = "bog leech", .movement = .swimming, .foe_type = .beast, .hp = 12, .sight = 5, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bites", .slain = "drained dry", .bleeds = 50 } }, .lurks = true, .fright_resist = mathx.PERCENT },
         .mimic => .{ .name = "mimic", .foe_type = .aberration, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 4, .hi = 8 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 20, .fright_resist = mathx.PERCENT },
+        .skeleton => .{ .name = "skeleton", .foe_type = null, .allied = true, .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "slashes" } }, .armour = 10, .fright_resist = mathx.PERCENT },
     };
 }
 
@@ -630,6 +645,21 @@ pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
     for (mathx.ALL_DIRS) |d| {
         const to = from.add(d.delta());
         if (!dwells(k, lv, to) or shuns(lv, from, d)) continue;
+        near.offer(to);
+        if (near.best) |b| {
+            if (b.eq(to)) best = d;
+        }
+    }
+    return best;
+}
+
+/// The free step that most closes on `toward`, by steps then by the straighter line; none that gains.
+pub fn approach(lv: *const grid.Level, from: P, id: u16, toward: P) ?mathx.Dir {
+    var near = grid.Nearest{ .from = toward, .best_d = mathx.dist(from, toward), .best_line = mathx.distEuclid(from, toward) };
+    var best: ?mathx.Dir = null;
+    for (mathx.ALL_DIRS) |d| {
+        if (!lv.stepOk(from, d, id) or shuns(lv, from, d)) continue;
+        const to = from.add(d.delta());
         near.offer(to);
         if (near.best) |b| {
             if (b.eq(to)) best = d;

@@ -412,10 +412,12 @@ pub const Light = struct {
         if (sight > model.FAINT) {
             const s = model.Spot.of(lv, q);
             view += self.carried(s);
+            var props: model.Rgb = @splat(0);
             for (torches) |i| {
                 const t = &self.torch[i];
-                view += t.colour * model.splat(t.shine(s));
+                props = @max(props, t.colour * model.splat(t.shine(s)));
             }
+            view += props;
             if (ray) |r| {
                 const facing = model.sunFacing(r.k, s);
                 if (facing > 0 or r.night > 0) {
@@ -724,8 +726,8 @@ pub const Light = struct {
     pub const drawCanopy = shadow.drawCanopy;
     pub const drawForestShadows = shadow.drawForestShadows;
 
-    pub fn drawGlows(self: *const Light, sources: []const Flame, ox: f32, oy: f32, cell: f32) void {
-        self.gpu.drawGlows(sources, ox, oy, cell);
+    pub fn drawGlows(self: *Light, sources: []const Flame, ox: f32, oy: f32, cell: f32, screen: model.P, outer: u32) void {
+        self.gpu.drawGlows(sources, ox, oy, cell, screen, outer);
     }
 };
 
