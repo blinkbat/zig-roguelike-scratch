@@ -363,7 +363,7 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) void {
     h.* = carried;
     for (followers) |f| {
         const over = g.sim.pool.deadAllyFrom(0);
-        if (over == null and !actor.roomFor(g.sim.pool.n, f.kind)) break;
+        if (over == null and !g.sim.pool.hasRoomFor(f.kind)) break;
         var body = f;
         body.at = followerCell(&g.sim.lv, f.kind, h.at) orelse break;
         _ = g.sim.pool.spawnOver(&g.sim.lv, over, body);
@@ -566,13 +566,8 @@ pub fn moveOf(g: *const Game, from: P, d: mathx.Dir, occupied: bool) Move {
     if (there.bursts()) return .burst;
     if (!g.sim.lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
     if (g.sim.lv.folkAt(to) != null) return .talk;
-    if (occupied) return if (allyAt(g, to)) .swap else .kick;
+    if (occupied) return if (g.sim.allyAt(to)) .swap else .kick;
     return if (character.lootReached(g, from, to)) .loot else .step;
-}
-
-pub fn allyAt(g: *const Game, p: P) bool {
-    const a = g.sim.pool.getConst(g.sim.lv.who(p)) orelse return false;
-    return a.kind.ally();
 }
 
 fn spends(m: Move) bool {

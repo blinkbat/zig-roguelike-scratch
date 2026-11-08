@@ -118,7 +118,7 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).bursts;
     }
 
-    /// Catches fire, and burns down to `fire.ASH`.
+    /// Catches fire, and burns down to its `fire.ashOf`.
     pub fn burns(t: Tile) bool {
         return TERRAIN.getPtrConst(t).burns;
     }

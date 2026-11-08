@@ -399,8 +399,7 @@ pub const Dialog = struct {
         const at = self.lineOf(next) orelse return;
         if (reached.isSet(at)) return;
         reached.set(at);
-        todo[n.*] = at;
-        n.* += 1;
+        _ = mathx.push(u8, todo, n, at);
     }
 
     pub fn addLine(self: *Dialog) ?u8 {

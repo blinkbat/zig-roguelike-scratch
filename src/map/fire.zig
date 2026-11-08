@@ -18,7 +18,7 @@ pub const SPREAD: u32 = 20;
 pub const SMOKE: u16 = 14;
 /// At the heaviest rain, the share of every chance to catch that it puts out.
 pub const RAIN_DAMP: f32 = 0.8;
-/// What a tile that burns leaves behind.
+/// What a tile that burns leaves behind, a bridge aside (`ashOf`).
 pub const ASH: grid.Tile = .dirt;
 /// What standing in flames deals a turn, before fire resistance.
 pub const SCORCH: i32 = 3;
@@ -101,7 +101,7 @@ pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) us
 }
 
 /// A turn of the floor's fire: each burning tile smokes, each fire leaps to what burns beside it, boils the water and melts the frozen shallows beside it,
-/// then every cell burns a turn down, and a tile that burns goes to `ASH` as its fire goes out; true when any did.
+/// then every cell burns a turn down, and a tile that burns goes to its `ashOf` as its fire goes out; true when any did.
 /// `kept` marks cells whose ground holds what deep water would take.
 pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32, kept: *const grid.CellSet) bool {
     if (std.mem.allEqual(u8, &lv.flames, 0)) return false;

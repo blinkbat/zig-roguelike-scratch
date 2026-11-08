@@ -67,8 +67,7 @@ pub const Assets = struct {
             const p = grid.Level.of(i);
             need.decor(t, p);
             if (t.bursts()) need.beneath(t.ground().?, p);
-            if (t.burns()) need.beneath(fire.ashOf(t, false), p);
-            if (t.burns()) need.beneath(fire.ashOf(t, true), p);
+            if (t.burns()) for (fire.ashes(t)) |ash| need.beneath(ash, p);
             if (lv.frozen(p)) need.beneath(ice.WATER, p);
             need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
             need.chest_item_bag = need.chest_item_bag or t.isChest();

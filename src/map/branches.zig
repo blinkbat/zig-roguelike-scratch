@@ -100,8 +100,7 @@ const Graph = struct {
                 if (g.rank[to] == NONE) {
                     g.parent[to] = v;
                     g.enter(@intCast(to), &count);
-                    stack[top] = @intCast(to);
-                    top += 1;
+                    _ = mathx.push(u16, &stack, &top, @intCast(to));
                 } else if (to != g.parent[v]) g.low[v] = @min(g.low[v], g.rank[to]);
             }
         }
@@ -124,10 +123,7 @@ const Graph = struct {
                     break;
                 }
             }
-            if (leaf) {
-                g.branch[g.n] = .{ .root = v, .neck = g.parent[v] };
-                g.n += 1;
-            }
+            if (leaf) _ = mathx.push(Branch, &g.branch, &g.n, .{ .root = v, .neck = g.parent[v] });
         }
     }
 

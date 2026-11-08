@@ -1,4 +1,5 @@
 const std = @import("std");
+const mathx = @import("../core/mathx.zig");
 const actor = @import("actor.zig");
 const wording = @import("../core/wording.zig");
 const cleave = @import("cleave.zig");
@@ -97,10 +98,8 @@ pub const Name = struct {
     pub fn push(self: *Name, c: u8) bool {
         const word = std.ascii.isAlphanumeric(c) or c == '-' or c == '\'';
         const gap = c == ' ' and self.n > 0 and self.buf[self.n - 1] != ' ';
-        if (self.n == MAX or !(word or gap)) return false;
-        self.buf[self.n] = c;
-        self.n += 1;
-        return true;
+        if (!(word or gap)) return false;
+        return mathx.push(u8, &self.buf, &self.n, c);
     }
 
     /// Whether `push` would have spelt it, as a name read from a file must be.

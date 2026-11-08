@@ -591,31 +591,31 @@ test "every targeted slot uses standard confirmation in both skill sets" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     var checked: usize = 0;
-    for (skillbar.SETS) |set| {
-        for (skillbar.SLOTS) |by| {
-            harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
-            harness.toughen(g.sim.pool.get(harness.foeId(0)).?);
-            g.bar = skillbar.Bar.of(.archer);
-            const modifier: input.Button = if (by == .lb) .rt else .lb;
-            g.bar.bind(.{ .set = .primary, .button = modifier }, .secondary);
-            g.bar.bind(.{ .set = set, .button = by }, .shoot);
-            const clock = g.sim.clock;
-            if (set == .secondary) harness.pressHolding(g, by, &.{modifier}) else harness.press(g, by);
+    for (skillbar.EVERY_SLOT) |slot| {
+        const set = slot.set;
+        const by = slot.button;
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
+        harness.toughen(g.sim.pool.get(harness.foeId(0)).?);
+        g.bar = skillbar.Bar.of(.archer);
+        const modifier: input.Button = if (by == .lb) .rt else .lb;
+        g.bar.bind(.{ .set = .primary, .button = modifier }, .secondary);
+        g.bar.bind(.{ .set = set, .button = by }, .shoot);
+        const clock = g.sim.clock;
+        if (set == .secondary) harness.pressHolding(g, by, &.{modifier}) else harness.press(g, by);
+        try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+        try std.testing.expectEqual(clock, g.sim.clock);
+        try std.testing.expectEqual(set, g.mode.aim.set);
+        if (by != CONFIRM and by != BACK) {
+            harness.press(g, by);
             try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
             try std.testing.expectEqual(clock, g.sim.clock);
-            try std.testing.expectEqual(set, g.mode.aim.set);
-            if (by != CONFIRM and by != BACK) {
-                harness.press(g, by);
-                try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
-                try std.testing.expectEqual(clock, g.sim.clock);
-                try std.testing.expect(!g.sim.pool.get(harness.foeId(0)).?.hurt());
-            }
-            harness.press(g, CONFIRM);
-            try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
-            try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.hurt());
-            try std.testing.expectEqual(clock.minute + day.TURN_MINUTES, g.sim.clock.minute);
-            checked += 1;
+            try std.testing.expect(!g.sim.pool.get(harness.foeId(0)).?.hurt());
         }
+        harness.press(g, CONFIRM);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+        try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.hurt());
+        try std.testing.expectEqual(clock.minute + day.TURN_MINUTES, g.sim.clock.minute);
+        checked += 1;
     }
     std.debug.print("{d} targeted bindings: opening spends nothing, standard confirm fires once, secondary selection survives modifier release\n", .{checked});
 }

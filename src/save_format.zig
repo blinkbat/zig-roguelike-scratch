@@ -220,8 +220,8 @@ pub fn apply(snapshot: *Snapshot, g: *game.Game, map: *data.Map) void {
 pub fn validate(snapshot: *Snapshot) !void {
     const run = &snapshot.run;
     if (!run.rng.valid() or !run.loot_rng.valid()) return error.Damaged;
-    if (!run.name.valid() or !holdsHero(&run.pool, run.hero, run.class.kind())) return error.Damaged;
-    const body = &run.pool.items[actor.Pool.slot(run.hero)];
+    if (!run.name.valid()) return error.Damaged;
+    const body = heroIn(&run.pool, run.hero, run.class.kind()) orelse return error.Damaged;
     if (run.bar.modifier) |m| if (std.mem.indexOfScalar(@TypeOf(m), &skillbar.SLOTS, m) == null) {
         run.bar.modifier = null;
     };
@@ -272,7 +272,7 @@ pub fn validate(snapshot: *Snapshot) !void {
         }
         for (&snapshot.visits, 0..) |*visit, node| {
             if (visit.*) |*loaded| {
-                if (node >= map.node_n or !holdsHero(&loaded.pool, run.hero, run.class.kind())) return error.Damaged;
+                if (node >= map.node_n or heroIn(&loaded.pool, run.hero, run.class.kind()) == null) return error.Damaged;
                 try validateLevel(&loaded.lv, &loaded.pool, &loaded.ground);
                 try validateDoors(&loaded.lv, &map.node[node]);
             }
@@ -308,9 +308,9 @@ fn validateDoors(level: *const grid.Level, node: ?*const atlas.Node) !void {
     }
 }
 
-fn holdsHero(pool: *const actor.Pool, id: u16, kind: actor.Kind) bool {
-    const body = pool.getConst(id) orelse return false;
-    return body.kind == kind;
+fn heroIn(pool: *const actor.Pool, id: u16, kind: actor.Kind) ?*const actor.Actor {
+    const body = pool.getConst(id) orelse return null;
+    return if (body.kind == kind) body else null;
 }
 
 /// Every death still to come, of a body standing or one yet to split off, drops on the ground with room for it.

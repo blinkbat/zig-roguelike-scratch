@@ -10,6 +10,7 @@ const keyGlyph = names.keyGlyph;
 const glyphCaptions = names.glyphCaptions;
 const keyNames = names.keyNames;
 const upper = @import("text.zig").upper;
+const contains = @import("text.zig").contains;
 const mouseName = names.mouseName;
 const ARROWS = names.ARROWS;
 const WHEEL = names.WHEEL;
@@ -25,6 +26,7 @@ pub const ZOOM_IN_KEYS = [_]rl.KeyboardKey{ .equal, .kp_add };
 pub const ZOOM_OUT_KEYS = [_]rl.KeyboardKey{ .minus, .kp_subtract };
 pub const OVERVIEW_KEY: rl.KeyboardKey = .home;
 pub const RUB_KEY: rl.KeyboardKey = .backspace;
+pub const RUB_CAPTION = keyGlyph(RUB_KEY);
 
 fn letters(comptime walks: []const Walk) [:0]const u8 {
     var out: []const u8 = "";
@@ -333,9 +335,7 @@ pub const Desk = struct {
             named = named ++ &k;
             const caption = upper(f) ++ "_CAPTION";
             const with_ctrl = @hasDecl(Desk, caption) and std.mem.startsWith(u8, @field(Desk, caption), CTRL);
-            const listed_ctrl = for (BARE) |b| {
-                if (std.mem.eql(u8, b, f)) break false;
-            } else true;
+            const listed_ctrl = !contains(&BARE, f);
             if (with_ctrl != listed_ctrl) @compileError(f ++ "'s caption and list disagree on Ctrl");
             if (listed_ctrl) ctrl = ctrl ++ &k else bare = bare ++ &k;
         }
@@ -344,9 +344,7 @@ pub const Desk = struct {
             if (std.mem.indexOfScalar(rl.KeyboardKey, named, @field(Desk, d.name)) == null) @compileError(d.name ++ " is in no list update reads");
         }
         for (SHIFT_TWINS) |t| {
-            for (SHIFTED) |s| {
-                if (std.mem.eql(u8, s, t[0])) break;
-            } else @compileError(t[0] ++ " turns into " ++ t[1] ++ " with Shift but is not SHIFTED");
+            if (!contains(&SHIFTED, t[0])) @compileError(t[0] ++ " turns into " ++ t[1] ++ " with Shift but is not SHIFTED");
         }
         distinct(bare);
         distinct(ctrl ++ &[_]rl.KeyboardKey{TEXT_ALL});

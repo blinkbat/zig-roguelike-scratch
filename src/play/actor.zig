@@ -388,6 +388,10 @@ pub const Actor = struct {
         return self.alive and self.kind.ally();
     }
 
+    pub fn livingFoe(self: Actor) bool {
+        return self.alive and self.foe();
+    }
+
     /// Not seen as a body even where lit.
     pub fn veiled(self: Actor) bool {
         return self.submerged or self.disguised;
@@ -399,7 +403,7 @@ pub const Actor = struct {
 
     /// A living foe the hero sees.
     pub fn seenFoe(self: Actor, lv: *const grid.Level) bool {
-        return self.alive and self.foe() and self.seenIn(lv);
+        return self.livingFoe() and self.seenIn(lv);
     }
 
     /// Up to `n` hp back, never past its most: what it got.
@@ -544,7 +548,7 @@ pub const Pool = struct {
     }
 
     /// Allies leave nothing that names them, so a dead one's slot may take another body.
-    pub fn deadAlly(self: *const Pool, i: usize) bool {
+    fn deadAlly(self: *const Pool, i: usize) bool {
         return i < self.n and !self.items[i].alive and self.items[i].kind.ally();
     }
 
@@ -590,6 +594,19 @@ pub const Pool = struct {
 
     pub fn constSlice(self: *const Pool) []const Actor {
         return self.items[0..self.n];
+    }
+
+    /// Slots taken, and those every living body's halves are yet owed.
+    pub fn eventual(self: *const Pool) usize {
+        var n = self.n;
+        for (self.constSlice()) |a| if (a.alive) {
+            n += most(a.kind) - 1;
+        };
+        return n;
+    }
+
+    pub fn hasRoomFor(self: *const Pool, k: Kind) bool {
+        return roomFor(self.eventual(), k);
     }
 
     pub fn tally(self: *Pool, k: Kind) Tally {

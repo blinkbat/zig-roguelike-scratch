@@ -77,8 +77,7 @@ pub const Scene = struct {
     }
 
     fn show(self: *Scene, f: atlas.Foe) void {
-        self.shown[self.shown_n] = f;
-        self.shown_n += 1;
+        std.debug.assert(mathx.push(atlas.Foe, &self.shown, &self.shown_n, f));
     }
 
     pub fn shownFoes(self: *const Scene) []const atlas.Foe {

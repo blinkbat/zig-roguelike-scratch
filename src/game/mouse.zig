@@ -149,7 +149,7 @@ fn attack(g: *game.Game, at: P) bool {
     const set = skills.activeSet(g);
     for (skillbar.SLOTS) |b| {
         const act = g.bar.at(.{ .set = set, .button = b }) orelse continue;
-        if (act.reticle() == null or act.attack() == null or act.supplyOf() != null or !tactics.validAct(g, act, h.at, at)) continue;
+        if (act.reticle() == null or act.attack() == null or act == .overwatch or act.supplyOf() != null or !tactics.validAct(g, act, h.at, at)) continue;
         if (skills.blockedNow(g, act) != null) continue;
         skills.useSkill(g, .{ .act = act, .by = b, .set = set });
         if (g.mode == .aim) {
@@ -234,7 +234,7 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
             const end = q.eq(to);
             if (!g.sim.lv.walkable(q) and !(end and g.sim.lv.at(q).opened() != null)) continue;
             if ((g.sim.lv.barrelSeen(q) or g.sim.lv.folkAt(q) != null) and !end) continue;
-            if (g.sim.lv.isLit(q) and ((g.sim.lv.taken(q) and !end and !game.allyAt(g, q)) or g.sim.lv.harmful(q))) continue;
+            if (g.sim.lv.isLit(q) and ((g.sim.lv.taken(q) and !end and !g.sim.allyAt(q)) or g.sim.lv.harmful(q))) continue;
             if (!end and g.sim.leadsTo(q) != null) continue;
             const way = if (head == 0) d else first[head];
             if (end) return way;

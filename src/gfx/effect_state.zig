@@ -48,7 +48,14 @@ pub const Blow = struct {
     fire: bool = false,
 };
 
-const StatusGlow = struct { radius: f32, gain: f32 };
+const StatusGlow = struct {
+    radius: f32,
+    gain: f32,
+
+    pub fn lit(g: StatusGlow, at: [2]f32, col: rl.Color, flicker: f32) light.Emission {
+        return light.Emission.onBody(at, col, g.radius, g.gain * flicker);
+    }
+};
 const BURN_GLOW = StatusGlow{ .radius = 2, .gain = 0.55 };
 const WARD_GLOW = StatusGlow{ .radius = 1.5, .gain = 0.25 };
 /// A cell of burning ground's light.
@@ -79,8 +86,8 @@ pub const Status = enum {
         return switch (s) {
             .warded => look.WARD,
             .imbued => look.ailmentInk(.burn),
-            .resistant, .guarding, .unyielding, .steady, .overwatch, .biding => look.UI_GOLD,
-            inline else => |t| look.ailmentInk(comptime t.ailment().?),
+            .resistant => look.UI_GOLD,
+            inline else => |t| if (comptime t.stance() != null) look.UI_GOLD else look.ailmentInk(comptime t.ailment().?),
         };
     }
 
@@ -125,7 +132,7 @@ pub const Status = enum {
 
     pub fn emission(s: Status, at: [2]f32, flicker: f32) ?light.Emission {
         const g = s.glow() orelse return null;
-        return light.Emission.onBody(at, s.ink(), g.radius, g.gain * flicker);
+        return g.lit(at, s.ink(), flicker);
     }
 
     pub fn title(s: Status) [:0]const u8 {

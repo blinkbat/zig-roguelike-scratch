@@ -3,6 +3,8 @@ const game = @import("game.zig");
 const atlas = @import("map/atlas.zig");
 const hero = @import("play/hero.zig");
 const menu = @import("ui/menu.zig");
+const contains = @import("core/text.zig").contains;
+const count = @import("core/text.zig").count;
 
 /// Where in the game a saved field lives, `game` or its field of that name; the file names it by its field name alone.
 pub const Part = enum { game, sim, pic };
@@ -146,15 +148,11 @@ comptime {
         const unsaved = @field(UNSAVED, @tagName(p));
         for (std.meta.fields(T)) |f| {
             var n: usize = 0;
-            if (p == HEAD_PART) for (HEAD_FIELDS) |name| {
-                if (std.mem.eql(u8, f.name, name)) n += 1;
-            };
+            if (p == HEAD_PART) n += count(HEAD_FIELDS, f.name);
             for (TAIL_FIELDS ++ PORTABLE_FIELDS) |t| {
                 if (t[0] == p and std.mem.eql(u8, f.name, t[1])) n += 1;
             }
-            for (unsaved) |name| {
-                if (std.mem.eql(u8, f.name, name)) n += 1;
-            }
+            n += count(&unsaved, f.name);
             if (p == .game) for (std.enums.values(Part)) |q| {
                 if (q != .game and std.mem.eql(u8, f.name, @tagName(q))) n += 1;
             };
@@ -173,9 +171,7 @@ fn eachOnce(comptime T: type, comptime lists: anytype, comptime label: []const u
     @setEvalBranchQuota(100_000);
     for (std.meta.fields(T)) |f| {
         var n: usize = 0;
-        for (lists) |list| for (list) |name| {
-            if (std.mem.eql(u8, f.name, name)) n += 1;
-        };
+        for (lists) |list| n += count(&list, f.name);
         if (n != 1) @compileError(label ++ ": say once when " ++ f.name ++ " is reset");
     }
     for (lists) |list| for (list) |name| {
@@ -189,14 +185,10 @@ comptime {
     eachOnce(Of(.sim), .{ F.hero, F.start, F.derived, F.rebuilt, F.run, F.resumed, F.turn, F.marks, F.set, F.scratch, F.kept }, "sim.Fields");
     const restored = F.derived ++ F.rebuilt ++ F.resumed ++ F.turn ++ F.marks ++ F.scratch ++ F.kept;
     for (UNSAVED.sim) |name| {
-        for (restored) |r| {
-            if (std.mem.eql(u8, name, r)) break;
-        } else @compileError("save_data.UNSAVED: game.resumeRun does not rebuild " ++ name);
+        if (!contains(&restored, name)) @compileError("save_data.UNSAVED: game.resumeRun does not rebuild " ++ name);
     }
     for (restored) |r| {
-        for (UNSAVED.sim) |name| {
-            if (std.mem.eql(u8, name, r)) break;
-        } else @compileError("save_data.UNSAVED: " ++ r ++ " is rebuilt on resume but saved");
+        if (!contains(&UNSAVED.sim, r)) @compileError("save_data.UNSAVED: " ++ r ++ " is rebuilt on resume but saved");
     }
 }
 
@@ -206,15 +198,11 @@ comptime {
     const lists = .{ F.loot, F.run, F.resumed, F.turn, F.graphics, F.set, F.scratch };
     for (UNSAVED.game) |name| {
         var n: usize = 0;
-        for (lists) |list| for (list) |l| {
-            if (std.mem.eql(u8, name, l)) n += 1;
-        };
+        for (lists) |list| n += count(&list, name);
         if (n != 1) @compileError("game.Fields: say once when " ++ name ++ " is reset");
     }
     for (lists) |list| for (list) |l| {
-        for (UNSAVED.game) |name| {
-            if (std.mem.eql(u8, name, l)) break;
-        } else @compileError("game.Fields: " ++ l ++ " is not in save_data.UNSAVED.game");
+        if (!contains(&UNSAVED.game, l)) @compileError("game.Fields: " ++ l ++ " is not in save_data.UNSAVED.game");
     };
 }
 
@@ -238,9 +226,7 @@ pub const Tail = blk: {
     for (TAIL_FIELDS, 0..) |f, i| {
         const T = @FieldType(Of(f[0]), f[1]);
         const default = fallback: {
-            for (REQUIRED_FIELDS) |required| {
-                if (std.mem.eql(u8, f[1], required)) break :fallback null;
-            }
+            if (contains(&REQUIRED_FIELDS, f[1])) break :fallback null;
             for (std.meta.fields(Of(f[0]))) |source| {
                 if (std.mem.eql(u8, source.name, f[1])) break :fallback source.default_value_ptr;
             }

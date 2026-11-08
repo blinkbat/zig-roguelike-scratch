@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("core/mathx.zig");
 const items = @import("play/items.zig");
 const store = @import("core/store.zig");
+const contains = @import("core/text.zig").contains;
 const game = @import("game.zig");
 const atlas = @import("map/atlas.zig");
 const grid = @import("map/grid.zig");
@@ -98,9 +99,7 @@ comptime {
         const fields = std.meta.fields(pair[0]);
         if (fields.len != pair[1].len) @compileError("save.TREE hashes a different field list than " ++ @typeName(pair[0]));
         for (fields) |f| {
-            for (pair[1]) |name| {
-                if (std.mem.eql(u8, f.name, name)) break;
-            } else @compileError("save.TREE does not hash " ++ @typeName(pair[0]) ++ "." ++ f.name);
+            if (!contains(&pair[1], f.name)) @compileError("save.TREE does not hash " ++ @typeName(pair[0]) ++ "." ++ f.name);
         }
     }
 }
@@ -108,6 +107,7 @@ const Print = @TypeOf(FINGERPRINT);
 const HEAD = store.head(MAGIC);
 const MAP_FLAG_AT = HEAD + @sizeOf(Summary) + @sizeOf(Seed);
 const MAP_AT = MAP_FLAG_AT + @sizeOf(bool);
+const VISITS_AT = MAP_AT + @sizeOf(RawMap) + @sizeOf(Node) + @sizeOf(Visited);
 const Raw = struct { map: RawMap, visit: RawVisit, lv: RawLevel };
 
 const Error = format.OpenError;
@@ -749,7 +749,7 @@ test "legacy saves convert on load and reject invalid native tags before changin
     try std.testing.expect(std.mem.startsWith(u8, fresh.items, format.MAGIC));
     _ = try peek(fresh.items);
 
-    const tail_at = MAP_AT + @sizeOf(RawMap) + @sizeOf(Node) + @sizeOf(Visited) + source.sim.visited.count() * @sizeOf(RawVisit);
+    const tail_at = VISITS_AT + source.sim.visited.count() * @sizeOf(RawVisit);
     const actor_at = tail_at + @sizeOf(RawLevel) + @offsetOf(actor.Pool, "items");
     const offsets = [_]usize{ actor_at + @offsetOf(actor.Actor, "kind"), actor_at + @offsetOf(actor.Actor, "alive") };
     const map_hash = store.sum(std.mem.asBytes(into));
@@ -892,7 +892,7 @@ test "checksummed save structure failures preserve both the live run and destina
     defer before.deinit();
     try writeLegacy(back, &before);
     const map_at = MAP_AT;
-    const visits_at = map_at + @sizeOf(RawMap) + @sizeOf(Node) + @sizeOf(Visited);
+    const visits_at = VISITS_AT;
     const cuts = [_]usize{
         HEAD,
         HEAD + @sizeOf(Summary) - 1,

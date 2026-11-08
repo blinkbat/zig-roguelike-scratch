@@ -65,7 +65,7 @@ const Bar = struct {
     }
 };
 
-pub const FileItem = enum {
+const FileItem = enum {
     new,
     open,
     save,

@@ -205,7 +205,7 @@ pub const Simulation = struct {
     pub fn world(self: *const Simulation) trigger.World {
         var w = trigger.World{ .node = self.node, .hero = self.heroAt() orelse .{ .x = 0, .y = 0 } };
         for (self.pool.constSlice()) |a| {
-            if (a.alive and a.foe()) w.alive.getPtr(a.kind.family()).* += 1;
+            if (a.livingFoe()) w.alive.getPtr(a.kind.family()).* += 1;
         }
         return w;
     }
@@ -218,6 +218,11 @@ pub const Simulation = struct {
     pub fn hiddenAt(self: *const Simulation, p: P) bool {
         const a = self.pool.getConst(self.lv.who(p)) orelse return false;
         return a.veiled();
+    }
+
+    pub fn allyAt(self: *const Simulation, p: P) bool {
+        const a = self.pool.getConst(self.lv.who(p)) orelse return false;
+        return a.kind.ally();
     }
 
     pub fn heroRow(self: *const Simulation) actor.Row {

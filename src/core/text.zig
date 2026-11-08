@@ -7,6 +7,18 @@ pub fn upper(comptime s: []const u8) [:0]const u8 {
     return &out;
 }
 
+pub fn contains(list: []const []const u8, name: []const u8) bool {
+    return count(list, name) > 0;
+}
+
+pub fn count(list: []const []const u8, name: []const u8) usize {
+    var n: usize = 0;
+    for (list) |item| {
+        if (std.mem.eql(u8, item, name)) n += 1;
+    }
+    return n;
+}
+
 pub fn Note(comptime N: usize) type {
     return struct {
         const Self = @This();

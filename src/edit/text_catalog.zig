@@ -1,6 +1,7 @@
 const std = @import("std");
 const store = @import("../core/store.zig");
 const wording = @import("../core/wording.zig");
+const contains = @import("../core/text.zig").contains;
 const input = @import("../core/input.zig");
 const atlas = @import("../map/atlas.zig");
 const atlas_text = @import("../map/atlas_text.zig");
@@ -385,7 +386,7 @@ fn included(path: []const u8) bool {
     }
     if (std.mem.endsWith(u8, path, "tests.zig")) return false;
     for ([_][]const u8{ "game/", "play/", "ui/", "edit/", "map/" }) |prefix| if (std.mem.startsWith(u8, path, prefix)) return true;
-    return oneOf(path, &INPUT_SOURCES) or oneOf(path, &LONE_SOURCES);
+    return contains(&INPUT_SOURCES, path) or contains(&LONE_SOURCES, path);
 }
 
 const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
@@ -428,7 +429,7 @@ comptime {
 }
 
 fn inputSource(path: []const u8) bool {
-    return std.mem.startsWith(u8, path, SRC) and oneOf(path[SRC.len..], &INPUT_SOURCES);
+    return std.mem.startsWith(u8, path, SRC) and contains(&INPUT_SOURCES, path[SRC.len..]);
 }
 
 fn isMap(path: []const u8) bool {
@@ -452,11 +453,6 @@ fn sortedFiles(a: std.mem.Allocator, dir: std.fs.Dir, comptime keep: fn ([]const
         }
     }.less);
     return paths.items;
-}
-
-fn oneOf(value: []const u8, choices: []const []const u8) bool {
-    for (choices) |choice| if (std.mem.eql(u8, value, choice)) return true;
-    return false;
 }
 
 const SkillSource = struct { scope: []const u8, name: []const u8 };
@@ -539,8 +535,8 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (std.mem.startsWith(u8, rel, "ui/")) return "Interface";
         if (std.mem.eql(u8, rel, "play/items.zig")) return "Items";
         if (std.mem.eql(u8, rel, "play/skillbar.zig")) return "Skills";
-        if (oneOf(rel, &EFFECT_SOURCES)) return "Effects";
-        if (oneOf(rel, &LOOK_SOURCES)) return "Look";
+        if (contains(&EFFECT_SOURCES, rel)) return "Effects";
+        if (contains(&LOOK_SOURCES, rel)) return "Look";
     }
     const base = std.fs.path.basename(path);
     return humanize(a, if (std.mem.endsWith(u8, base, ZIG)) base[0 .. base.len - ZIG.len] else base);
@@ -553,7 +549,7 @@ fn textRole(name: []const u8) ?[]const u8 {
     if (std.ascii.eqlIgnoreCase(name, "label") or std.ascii.eqlIgnoreCase(name, "caption")) return "Label";
     if (std.ascii.eqlIgnoreCase(name, "tip")) return "Tooltip";
     if (std.ascii.eqlIgnoreCase(name, "status")) return "Status";
-    if (oneOf(name, &ACTION_WORDS)) return "Action wording";
+    if (contains(&ACTION_WORDS, name)) return "Action wording";
     if (std.mem.eql(u8, name, FRIGHT_WORDS)) return "Fright speech";
     return null;
 }
@@ -736,12 +732,12 @@ fn slice(bytes: []const u8, token: Token) []const u8 {
 }
 
 fn forbiddenBuiltin(name: []const u8) bool {
-    return oneOf(name, &.{ "@import", "@embedFile", "@field", "@hasField", "@hasDecl", "@compileError", "@compileLog", "@panic", "@export", "@extern" });
+    return contains(&.{ "@import", "@embedFile", "@field", "@hasField", "@hasDecl", "@compileError", "@compileLog", "@panic", "@export", "@extern" }, name);
 }
 
 fn technicalCall(bytes: []const u8, ts: []const Token, i: usize) bool {
     const name = slice(bytes, ts[i]);
-    if (oneOf(name, &.{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "loadShaderFromMemory", "capture", "snap", "shootPage", "has", "declares" })) return true;
+    if (contains(&.{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "loadShaderFromMemory", "capture", "snap", "shootPage", "has", "declares" }, name)) return true;
     if (std.mem.eql(u8, name, "print") and i >= 2 and std.mem.eql(u8, slice(bytes, ts[i - 2]), "debug")) return true;
     return false;
 }
@@ -756,8 +752,8 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     }
     if (letters == 0) return false;
     const decl = declaration(bytes, ts, i) orelse "";
-    if (oneOf(decl, &TECHNICAL_DECLS) or std.mem.endsWith(u8, decl, "_FIELDS")) return false;
-    if (oneOf(decl, &ACTION_WORDS) or oneOf(decl, &SPOKEN_DECLS)) return true;
+    if (contains(&TECHNICAL_DECLS, decl) or std.mem.endsWith(u8, decl, "_FIELDS")) return false;
+    if (contains(&ACTION_WORDS, decl) or contains(&SPOKEN_DECLS, decl)) return true;
     for ([_][]const u8{ ZIG, ".png", ".ttf", atlas.EXT, ".json", "#version", "void main", "uniform ", "layout(", MAP_WORD, "shots/", "assets/", atlas.PREFIX, store.DIR ++ "/" }) |part| {
         if (std.mem.indexOf(u8, text, part) != null) return false;
     }
@@ -766,7 +762,7 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     for (ts[from..i]) |token| {
         if (token.tag != .identifier) continue;
         const name = slice(bytes, token);
-        if (oneOf(name, &.{ "name", "label", "title", "description", "desc", "tip", "note", "caption", "say", "push", "draw", "drawMid", "drawFit", "button", "buttonOn", "put", "text", "line", "bufPrint", "bufPrintZ", "comptimePrint", "verb", "slain" })) context = true;
+        if (contains(&.{ "name", "label", "title", "description", "desc", "tip", "note", "caption", "say", "push", "draw", "drawMid", "drawFit", "button", "buttonOn", "put", "text", "line", "bufPrint", "bufPrintZ", "comptimePrint", "verb", "slain" }, name)) context = true;
     }
     if (context) return true;
     if (std.mem.indexOfScalar(u8, text, ' ') != null and letters >= 3) return true;

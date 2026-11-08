@@ -663,12 +663,12 @@ pub const Presentation = struct {
         var any = false;
         for (0..grid.CELLS) |i| if (self.fadingBurnt(i) != null) {
             const p = grid.Level.of(i);
-            lo = lo.min(p.sub(.{ .x = 1, .y = 1 }));
-            hi = hi.max(p.add(.{ .x = 2, .y = 2 }));
+            lo = lo.min(p);
+            hi = hi.max(p);
             any = true;
         };
         if (!any) return null;
-        self.burnt_box = .{ .lo = lo.max(.{ .x = 0, .y = 0 }), .hi = hi.min(.{ .x = grid.W, .y = grid.H }) };
+        self.burnt_box = grid.Box.between(lo, hi).grown(1);
         self.burnt_ground = ground.*;
         for (&self.burnt_ground.tile, 0..) |*t, i| if (self.fadingBurnt(i)) |was| {
             t.* = was;
@@ -925,7 +925,7 @@ pub const Presentation = struct {
             part[i] = self.stagger(sim, gas, actor.ActorSlot.fromIndex(i).id(), start, &turn);
         }
         self.befallen = @splat(null);
-        if (warded) |c| self.fx.settle(std.mem.max(f32, part[0..sim.pool.n]), .{ .slot = .fromIndex(hero), .after = c });
+        if (warded) |c| self.recordRecovery(sim, std.mem.max(f32, part[0..sim.pool.n]), c);
         for (sim.pool.constSlice(), 0..) |*a, i| {
             if (!self.glide[i].to.eq(a.at)) self.glide[i] = self.glide[i].toward(a.at, late);
             if (a.submerged != self.under.isSet(i) and self.dives[i] == null) self.dives[i] = part[i];
@@ -1010,7 +1010,7 @@ pub const Presentation = struct {
         if (owed.bit) |b| switch (b) {
             .hurt, .kill => |after| self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(sim.heroSlot().?), .at = timing.hero_at, .lethal = b == .kill, .after = after } }, .{ .from = timing.body.at, .wait = timing.impact_in }),
             .burst => |after| self.strike(sim, gas, .{ .actor = .{ .slot = timing.slot, .at = timing.body.at, .lethal = true, .after = after } }, .{ .from = timing.hero_at, .wait = timing.impact_in }),
-            .snare => |held| if (held) |after| self.fx.settle(timing.impact_in, .{ .slot = .fromIndex(sim.heroSlot().?), .after = after }),
+            .snare => |held| if (held) |after| self.recordRecovery(sim, timing.impact_in, after),
             .miss => {},
         };
         if (owed.mended) |m| {

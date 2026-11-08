@@ -221,11 +221,6 @@ fn stand(stood: *grid.CellSet, under: P) void {
     if (grid.Level.inside(under)) stood.set(grid.Level.idx(under));
 }
 
-fn bar(x: i32, y: i32, w: i32, h: i32, v: i32, max: i32, back: rl.Color, fill: rl.Color) void {
-    rl.drawRectangle(x, y, w, h, back);
-    rl.drawRectangle(x, y, mathx.filled(v, max, w), h, fill);
-}
-
 const Shown = struct {
     pic: fx.Body,
     slot: usize,
@@ -323,25 +318,27 @@ fn drawBurntGround(g: *game.Game, c: Cam, old: *const grid.Level, water: ?sprite
     g.sprites.drawGround(old, &beds, c.origin(), game.CELL_F, water);
     raster.endTarget(g.framebuffer);
     const t = target.*.?.texture;
-    for (0..grid.CELLS) |i| if (g.pic.fadingBurnt(i) != null) {
-        const p = grid.Level.of(i);
-        if (!terrainSeen(g, p)) continue;
+    var cells = g.pic.burnt_box.cells();
+    while (cells.next()) |p| {
+        const i = grid.Level.idx(p);
+        if (g.pic.fadingBurnt(i) == null or !terrainSeen(g, p)) continue;
         raster.drawTargetPart(t, c.box(p), look.fade(look.LIT, g.pic.ember(i)));
-    };
+    }
 }
 
 /// What a fire just took that stood over its ground, fading: under the light map, or `occluding` among the bodies.
 fn drawBurntStanding(g: *game.Game, c: Cam, old: *const grid.Level, occluding: bool) void {
-    for (0..grid.CELLS) |i| {
+    var cells = g.pic.burnt_box.cells();
+    while (cells.next()) |p| {
+        const i = grid.Level.idx(p);
         const was = g.pic.fadingBurnt(i) orelse continue;
         if (!look.standsOver(was) or look.occludes(was) != occluding) continue;
-        const p = grid.Level.of(i);
         if (!terrainSeen(g, p)) continue;
         const tex = g.sprites.tileAt(old, p) orelse continue;
         const a = g.pic.ember(i);
         if (occluding) {
             raster.stretch(tex, tileRect(was, tex, c, p), look.fade(sceneryTint(g, p), a));
-            if (g.pic.litShown(&g.sim, p)) drawCellFlames(g, c, p);
+            if (flamesSeen(g, p)) drawCellFlames(g, c, p);
         } else raster.stretch(tex, spriteRect(tex, c.sx(p), c.sy(p)), look.fade(look.LIT, a));
     }
 }
@@ -452,12 +449,7 @@ fn propShadow(g: *game.Game, c: Cam, p: P, tex: ?rl.Texture2D) void {
 }
 
 pub fn viewBox(g: *const game.Game, c: Cam) grid.Box {
-    const lo = c.cellAt(.{ .x = 0, .y = 0 });
-    const hi = c.cellAt(g.screen);
-    return .{
-        .lo = .{ .x = @max(0, lo.x), .y = @max(0, lo.y) },
-        .hi = .{ .x = @min(grid.W, hi.x + 1), .y = @min(grid.H, hi.y + 1) },
-    };
+    return grid.Box.between(c.cellAt(.{ .x = 0, .y = 0 }), c.cellAt(g.screen)).grown(0);
 }
 
 fn mirrorAt(foot: f32) void {
@@ -745,7 +737,7 @@ pub fn drawMap(g: *game.Game) void {
             drawStandingBody(g, &bodies[next_body]);
         }
         drawOccluder(g, c, ground, p, kind, &run);
-        if (flameAlpha(g, grid.Level.idx(p)) > 0 and g.pic.litShown(&g.sim, p)) {
+        if (flamesSeen(g, p)) {
             run.end();
             drawCellFlames(g, c, p);
         }
@@ -778,9 +770,9 @@ pub fn drawMap(g: *game.Game) void {
         const chill = b.pic.status.get(.chilled);
         if (chill > 0) pips(x_bar, y_bar - CHILL_BAR_GAP - CHILL_BAR_H, BODY_BAR_W, chill, glacial.TURNS, look.fade(look.ailmentInk(.chill), b.sighted), back);
         if (!b.pic.hurt()) continue;
-        bar(x_bar, y_bar, BODY_BAR_W, BODY_BAR_H, b.pic.hp, b.pic.max, back, look.fade(look.LIFE, b.sighted));
+        raster.meter(x_bar, y_bar, BODY_BAR_W, BODY_BAR_H, b.pic.hp, b.pic.max, back, look.fade(look.LIFE, b.sighted));
         const resistance = b.pic.resilience.peak().percent;
-        if (resistance > 0) bar(x_bar, y_bar + BODY_BAR_H + RESIST_BAR_GAP, BODY_BAR_W, RESIST_BAR_H, resistance, mathx.PERCENT, back, look.fade(look.UI_GOLD, b.sighted));
+        if (resistance > 0) raster.meter(x_bar, y_bar + BODY_BAR_H + RESIST_BAR_GAP, BODY_BAR_W, RESIST_BAR_H, resistance, mathx.PERCENT, back, look.fade(look.UI_GOLD, b.sighted));
     }
 
     if (aim_from != null) outline(c, g.mode.aim.mark, if (aim_legal) look.RETICLE else look.RETICLE_BLOCKED);
@@ -902,6 +894,10 @@ fn flameAlpha(g: *const game.Game, i: usize) f32 {
     return if (g.pic.flamesShown(i)) 1 else g.pic.ember(i);
 }
 
+fn flamesSeen(g: *const game.Game, p: P) bool {
+    return flameAlpha(g, grid.Level.idx(p)) > 0 and g.pic.litShown(&g.sim, p);
+}
+
 fn inkIf(c: rl.Color, on: bool) rl.Color {
     return if (on) c else look.fade(c, 0);
 }
@@ -989,10 +985,10 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
         } else continue;
         g.light.emit(ground, source);
     }
-    for (0..grid.CELLS) |i| {
-        if (!g.pic.flamesShown(i) or !ground.lit[i]) continue;
+    for (&g.pic.flames_shown, 0..) |left, i| {
+        if (left == 0 or !ground.lit[i]) continue;
         const mid = mathx.centre(grid.Level.of(i));
-        g.light.emit(ground, light.Emission.onBody(mid, look.FIRE, fx.FLAMES_GLOW.radius, fx.FLAMES_GLOW.gain * g.pic.fx.statusFlicker(@floatFromInt(i))));
+        g.light.emit(ground, fx.FLAMES_GLOW.lit(mid, look.FIRE, g.pic.fx.statusFlicker(@floatFromInt(i))));
     }
 }
 

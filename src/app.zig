@@ -222,8 +222,7 @@ const App = struct {
         const g = app.g;
         const slot = save.free(&app.list) orelse return app.toTitle();
         const path = app.chosen orelse atlas.START;
-        g.sim.playground = false;
-        g.sim.class = app.class;
+        app.plain(app.class);
         if (app.map.load(app.alloc, path)) {
             if (!app.map.standable(app.map.start, &g.sim.lv)) {
                 app.toTitle();
@@ -242,7 +241,7 @@ const App = struct {
     }
 
     fn loadRun(app: *App, slot: usize) void {
-        app.g.sim.playground = false;
+        app.plain(null);
         save.load(app.alloc, slot, app.g, app.map) catch |e| return app.say("Slot {d} did not load ({s})", .{ save.number(slot), @errorName(e) });
         app.inSlot(slot, null);
     }
@@ -271,9 +270,13 @@ const App = struct {
     }
 
     fn testOn(app: *App, map: *const atlas.Atlas, from: atlas.Start) void {
-        app.g.sim.playground = false;
-        app.g.sim.class = hero.DEFAULT;
+        app.plain(hero.DEFAULT);
         app.launch(map, from);
+    }
+
+    fn plain(app: *App, class: ?hero.Class) void {
+        app.g.sim.playground = false;
+        if (class) |c| app.g.sim.class = c;
     }
 
     fn launch(app: *App, map: *const atlas.Atlas, from: atlas.Start) void {

@@ -77,7 +77,7 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
 
 /// Open ground a skeleton may stand on, with room in the pool for it.
 fn raisable(g: *const game.Game, at: P) bool {
-    return (actor.roomFor(g.sim.pool.n, .skeleton) or goneAlly(g) != null) and fits(.skeleton, &g.sim.lv, at);
+    return fits(.skeleton, &g.sim.lv, at) and (g.sim.pool.hasRoomFor(.skeleton) or goneAlly(g) != null);
 }
 
 /// Where an ally of `kind` may rise or follow the hero to.
@@ -141,16 +141,16 @@ pub fn span(g: *const game.Game, act: skillbar.Act, from: P, start: P, end: P) ?
     };
 }
 
-/// A swing or rush whose only body is one nothing shows: neither a target nor an empty landing.
+/// A swing or rush whose only body is one nothing shows or an ally: neither a target nor an empty landing.
 pub fn strikesHidden(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
     switch (act.reticle() orelse return false) {
-        .rush => return g.sim.hiddenAt(at),
+        .rush => return g.sim.hiddenAt(at) or g.sim.allyAt(at),
         .swing => switch (act) {
             inline else => |a| {
-                if (comptime !a.sweeps()) return g.sim.hiddenAt(at);
+                if (comptime !a.sweeps()) return g.sim.hiddenAt(at) or g.sim.allyAt(at);
                 const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, at);
                 for (arc.slice()) |p| {
-                    if (g.sim.lv.taken(p) and !g.sim.hiddenAt(p)) return false;
+                    if (g.sim.lv.taken(p) and !g.sim.hiddenAt(p) and !g.sim.allyAt(p)) return false;
                 }
                 return true;
             },
@@ -292,7 +292,7 @@ pub fn bideTurn(g: *game.Game) void {
     if (dmg == 0) return g.sim.log.say("{s}'s Bide ends.", .{g.sim.name.text()});
     g.sim.log.say("{s} releases Bide: {d} to each foe beside.", .{ g.sim.name.text(), dmg });
     g.pic.fx.sweep(s.wait, mathx.centre(h.at));
-    const area = rules.Whirlwind.area(&g.sim.lv, h.at);
+    const area = rules.Bide.area(&g.sim.lv, h.at);
     const ids = skills.foesIn(g, area);
     for (ids.slice()) |id| combat.wound(g, id, .{ .dmg = dmg, .physical = dmg, .hit_checked = true }, rules.Bide.VERB, s);
 }
@@ -972,6 +972,35 @@ test "the hero trades places with a skeleton it walks into" {
     try std.testing.expectEqual(from, g.sim.pool.get(id).?.at);
     try std.testing.expectEqual(id, g.sim.lv.who(from));
     try std.testing.expectEqual(g.sim.hero, g.sim.lv.who(east));
+}
+
+test "swings and rushes never mark an ally, a sweep needs more than allies, and raising leaves room for owed halves" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const from = P{ .x = 20, .y = 20 };
+    const east = P{ .x = 21, .y = 20 };
+    const far = P{ .x = 23, .y = 20 };
+    h.heroArena(g, .knight, from, &.{});
+    _ = h.spawnAt(g, .skeleton, east, true);
+    _ = h.spawnAt(g, .skeleton, far, true);
+    game.settle(g);
+    for ([_]skillbar.Act{ .shield_bash, .rend, .cleave }) |act| try std.testing.expect(!validAct(g, act, from, east));
+    try std.testing.expect(!validAct(g, .charge, from, far));
+    for ([_]skillbar.Act{ .shield_bash, .rend, .cleave, .charge }) |act| {
+        skills.aiming(g, null, act);
+        try std.testing.expect(!skills.aimable(g, from, if (act == .charge) far else east));
+        skills.closeAim(g);
+    }
+    _ = h.spawnAt(g, .rat, .{ .x = 21, .y = 21 }, false);
+    game.settle(g);
+    try std.testing.expect(validAct(g, .cleave, from, east));
+    skills.aiming(g, null, .cleave);
+    try std.testing.expect(skills.aimable(g, from, east));
+    skills.closeAim(g);
+    const before = g.sim.pool.eventual();
+    _ = h.spawnAt(g, .slime, .{ .x = 25, .y = 25 }, false);
+    try std.testing.expectEqual(before + actor.most(.slime), g.sim.pool.eventual());
 }
 
 test "a charge strikes the foe a tile past its longest rush" {

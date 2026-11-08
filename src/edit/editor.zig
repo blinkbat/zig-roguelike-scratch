@@ -401,6 +401,11 @@ pub const Editor = struct {
         ed.drag = null;
     }
 
+    fn leaveHeld(ed: *Editor) void {
+        ed.keepDrag();
+        ed.drop();
+    }
+
     pub fn holding(ed: *const Editor) bool {
         return ed.cell_action != null or ed.popup != null or ed.span != null or ed.stroke != .none or ed.drag != null or ed.linking != null;
     }
@@ -476,7 +481,7 @@ pub const Editor = struct {
         ed.leaveSelect();
     }
 
-    pub fn leaveSelect(ed: *Editor) void {
+    fn leaveSelect(ed: *Editor) void {
         if (ed.shape != .select) return;
         ed.release();
         ed.shape = .brush;
@@ -621,8 +626,7 @@ pub const Editor = struct {
     }
 
     pub fn ask(ed: *Editor, m: Modal) void {
-        ed.keepDrag();
-        ed.drop();
+        ed.leaveHeld();
         ed.modal = m;
         ed.fresh = true;
     }
@@ -682,7 +686,6 @@ pub const Editor = struct {
 
     pub fn startRename(ed: *Editor) void {
         ed.keepDrag();
-        ed.drop();
         ed.gesture();
         ed.typeName();
     }
@@ -837,7 +840,11 @@ pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
     rl.endDrawing();
     ed.fresh = false;
     ed.renamed = false;
-    if (ed.action == .play) launch(ed);
+    switch (ed.action) {
+        .play => launch(ed),
+        .fight, .playground => ed.leaveHeld(),
+        .none, .leave, .quit => {},
+    }
     return ed.action;
 }
 
@@ -849,8 +856,7 @@ pub fn launch(ed: *Editor) void {
         ed.action = .none;
         return;
     }
-    ed.keepDrag();
-    ed.drop();
+    ed.leaveHeld();
 }
 
 pub fn reroll(ed: *Editor) void {
@@ -923,41 +929,34 @@ fn popupLen(ed: *const Editor, w: Which) usize {
     };
 }
 
-pub fn popupRowH(w: Which) i32 {
+const PopupShape = struct { row_h: i32, inset: i32, w: f32 };
+
+fn popupShape(w: Which) PopupShape {
     return switch (w) {
-        .algo, .feature, .file => widgets.ROW_H,
-        .node => NODE_H,
+        .algo, .feature => .{ .row_h = widgets.ROW_H, .inset = 0, .w = POPUP_W },
+        .file => .{ .row_h = widgets.ROW_H, .inset = 0, .w = FILE_MENU_W },
+        .node => .{ .row_h = NODE_H, .inset = NODE_GAP, .w = POPUP_W },
     };
 }
 
 /// Row `k` of `which`'s list in `box`.
 pub fn popupRow(box: rl.Rectangle, which: Which, k: usize) rl.Rectangle {
-    const h = popupRowH(which);
-    const inset: i32 = switch (which) {
-        .node => NODE_GAP,
-        .algo, .feature, .file => 0,
-    };
-    return raster.rect(@intFromFloat(box.x), @as(i32, @intFromFloat(box.y)) + @as(i32, @intCast(k)) * h, @intFromFloat(box.width), h - inset);
-}
-
-fn popupW(w: Which) f32 {
-    return switch (w) {
-        .algo, .feature, .node => POPUP_W,
-        .file => FILE_MENU_W,
-    };
+    const shape = popupShape(which);
+    return raster.rect(@intFromFloat(box.x), @as(i32, @intFromFloat(box.y)) + @as(i32, @intCast(k)) * shape.row_h, @intFromFloat(box.width), shape.row_h - shape.inset);
 }
 
 /// Of its rows, how many fit the screen at once; the wheel scrolls the rest.
 pub fn popupShown(ed: *const Editor, w: Which, screen_h: i32) usize {
-    const fit: usize = @intCast(@max(1, @divTrunc(screen_h - 2 * widgets.PAD, popupRowH(w))));
+    const fit: usize = @intCast(@max(1, @divTrunc(screen_h - 2 * widgets.PAD, popupShape(w).row_h)));
     return @min(popupLen(ed, w), fit);
 }
 
 pub fn popupRect(ed: *const Editor, p: Popup, screen_h: i32) rl.Rectangle {
-    const h: f32 = @floatFromInt(@as(i32, @intCast(popupShown(ed, p.which, screen_h))) * popupRowH(p.which));
+    const shape = popupShape(p.which);
+    const h: f32 = @floatFromInt(@as(i32, @intCast(popupShown(ed, p.which, screen_h))) * shape.row_h);
     const below = p.slot.y + p.slot.height;
     const sh: f32 = @floatFromInt(screen_h);
-    return .{ .x = p.slot.x, .y = if (below + h > sh) @max(0, sh - h) else below, .width = @max(p.slot.width, popupW(p.which)), .height = h };
+    return .{ .x = p.slot.x, .y = if (below + h > sh) @max(0, sh - h) else below, .width = @max(p.slot.width, shape.w), .height = h };
 }
 
 /// Drops `which`'s list below `slot`, its chosen row in view.

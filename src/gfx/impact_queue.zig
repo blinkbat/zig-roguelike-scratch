@@ -81,6 +81,8 @@ pub const Queue = struct {
     due_n: usize = 0,
     /// Of `due`, the blows on a barrel.
     barrels_due: usize = 0,
+    /// Of `due`, those that reveal a body.
+    reveals_due: usize = 0,
     /// Indexed by pool slot: the body as the latest-dealt of the blows landed on it left it.
     landed: [actor.MAX]?state.Body = @splat(null),
     mana_landed: i32 = 0,
@@ -106,11 +108,20 @@ pub const Queue = struct {
 
     /// Seconds until the blow that reveals the slot lands; 0 when none is due.
     pub fn revealsIn(self: *const Queue, slot: actor.ActorSlot) f32 {
+        if (self.reveals_due == 0) return 0;
         return self.lastDue(slot, revealed);
     }
 
     fn revealed(e: *const Event) ?actor.ActorSlot {
-        return (e.after() orelse return null).reveals;
+        return switch (e.*) {
+            .blow => |*b| switch (b.impact) {
+                .actor => |*a| if (a.after) |*after| after.reveals else null,
+                .barrel => null,
+            },
+            .sting => |*s| if (s.after) |*after| after.reveals else null,
+            .settle => |*s| s.after.reveals,
+            .burst, .zap, .puff, .shimmer, .whirl => null,
+        };
     }
 
     fn lastDue(self: *const Queue, slot: actor.ActorSlot, comptime target: fn (*const Event) ?actor.ActorSlot) f32 {
@@ -173,6 +184,7 @@ pub const Queue = struct {
         self.dying = @splat(0);
         self.due_n = 0;
         self.barrels_due = 0;
+        self.reveals_due = 0;
         self.landed = @splat(null);
         self.mana_landed = 0;
     }
@@ -206,6 +218,7 @@ pub const Queue = struct {
         self.due[self.due_n] = .{ .t = wait, .what = what };
         self.due_n += 1;
         if (what.onBarrel()) self.barrels_due += 1;
+        if (revealed(&what) != null) self.reveals_due += 1;
         return null;
     }
 
@@ -235,6 +248,7 @@ const ReadyIterator = struct {
             queue.due_n -= 1;
             queue.due[self.index] = queue.due[queue.due_n];
             if (pending.what.onBarrel()) queue.barrels_due -= 1;
+            if (Queue.revealed(&pending.what) != null) queue.reveals_due -= 1;
             return .{ .event = pending.what, .late = -pending.t };
         }
         return null;

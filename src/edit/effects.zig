@@ -422,10 +422,7 @@ fn drawPools(v: *const Viewer, s: Sample, o: [2]f32, cell: f32) void {
     const shot: ?*const game.presentation.Shot = if (v.shot) |*sh| sh else null;
     var n = game.scene.effectSources(&v.effects, if (s == .level_up) mid else null, shot, buf[0..game.scene.EFFECT_SOURCES]).len;
     switch (s) {
-        .mark => |st| if (st.emission(mid, v.effects.statusFlicker(0))) |e| {
-            buf[n] = e;
-            n += 1;
-        },
+        .mark => |st| if (st.emission(mid, v.effects.statusFlicker(0))) |e| std.debug.assert(mathx.push(light.Emission, &buf, &n, e)),
         .hit, .embers, .drip, .shimmer, .whirl, .arc, .missile, .net, .wisps, .glowbulb, .splash, .dust, .juke, .torch, .fire_wall, .level_up => {},
     }
     rl.beginBlendMode(.additive);
@@ -448,7 +445,7 @@ pub fn pose(ed: *editor.Editor, want: Sample, seconds: f32) !void {
     ed.modal = .effects;
 }
 
-const POSE_STEP: f32 = 1.0 / 60.0;
+const POSE_STEP = mathx.FRAME_DT;
 /// Ten seconds of frames: longer than any showing twice over.
 const POSE_MOST: usize = 600;
 

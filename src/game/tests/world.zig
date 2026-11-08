@@ -263,7 +263,7 @@ test "a skeleton follows the hero through a door, leaving none behind" {
     const s = followed orelse return error.LeftBehind;
     try std.testing.expectEqual(hp, s.hp);
     try std.testing.expect(mathx.dist(s.at, hero) <= 3);
-    for (g.sim.visits[a].pool.constSlice()) |left| try std.testing.expect(!(left.alive and left.kind.ally()));
+    for (g.sim.visits[a].pool.constSlice()) |left| try std.testing.expect(!left.livingAlly());
     std.debug.print("a skeleton followed to node {d}, {d} tiles from the hero with its {d} life\n", .{ b, mathx.dist(s.at, hero), s.hp });
 }
 

@@ -179,7 +179,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
                 const off = if (across) q.y - mid.y else q.x - mid.x;
                 const along = if (across) q.x - mid.x else q.y - mid.y;
                 if (off < CANAL_FROM or off > CANAL_TO) continue;
-                lv.set(q, if (@abs(along) <= BRIDGE_REACH) .bridge else .water);
+                lv.set(q, if (@abs(along) <= BRIDGE_REACH) carve.SPAN else .water);
             }
         },
         .lava => if (rng.chance(LAVA_CHANCE)) pool(lv, grid.Box.around(mid, LAVA_JITTER).roll(rng)),

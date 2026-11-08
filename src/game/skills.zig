@@ -74,8 +74,8 @@ fn openSwing(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     for (mathx.ALL_DIRS) |d| {
         const p = hero.at.add(d.delta());
         if (!tactics.validAct(run, act, hero.at, p)) continue;
-        const foe = if (run.sim.pool.get(run.sim.lv.who(p))) |a| a.foe() else false;
-        if (foe or (mark == null and !game.allyAt(run, p))) mark = p;
+        const foe = if (run.sim.pool.get(run.sim.lv.who(p))) |a| a.seenFoe(&run.sim.lv) else false;
+        if (foe or (mark == null and !run.sim.allyAt(p))) mark = p;
         if (foe) break;
     }
     aimAt(run, by, act, hero.at, mark);
@@ -333,7 +333,7 @@ const Struck = grid.Bounded(u16, actor.MAX);
 pub fn foesIn(run: *game.Game, area: areas.Burst) Struck {
     var out = Struck{};
     for (run.sim.pool.slice(), 0..) |a, i| {
-        if (a.alive and a.foe() and area.has(a.at)) out.push(actor.Pool.idOf(i));
+        if (a.livingFoe() and area.has(a.at)) out.push(actor.Pool.idOf(i));
     }
     return out;
 }
@@ -478,7 +478,7 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
         run.sim.chronicle.note(.{ .missed = .{} });
         comeDown(run, act, flight, stroke);
     }
-    if (act.isArrow()) if (run.sim.heroActor()) |hero| {
+    if (rules.SteadyAim.readies(act)) if (run.sim.heroActor()) |hero| {
         hero.tactics.steady = 0;
     };
     combat.endTurn(run);

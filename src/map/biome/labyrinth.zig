@@ -72,8 +72,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         seen[k] = true;
         lv.set(cellAt(at).add(s), pal.open);
         lv.set(cellAt(next), pal.open);
-        stack[top] = @intCast(k);
-        top += 1;
+        _ = mathx.push(u16, &stack, &top, @intCast(k));
     }
     for (0..CELLS_Y) |cy| {
         for (0..CELLS_X) |cx| {

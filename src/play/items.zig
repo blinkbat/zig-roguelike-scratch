@@ -961,9 +961,9 @@ pub const Ground = struct {
     /// Every cell where items, consumables or gold lie.
     pub fn lying(self: *const Ground) grid.CellSet {
         var out = grid.CellSet.initEmpty();
-        for (self.drops[0..self.n]) |d| out.set(grid.Level.idx(d.at));
-        for (self.supplies[0..self.supply_n]) |s| out.set(grid.Level.idx(s.at));
-        for (self.coins[0..self.coin_n]) |c| out.set(grid.Level.idx(c.at));
+        inline for (COUNTED) |c| {
+            for (@field(self, c[0])[0..@field(self, c[1])]) |x| out.set(grid.Level.idx(x.at));
+        }
         return out;
     }
 

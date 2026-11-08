@@ -212,6 +212,7 @@ pub const Bide = struct {
     pub fn released(taken: i32) i32 {
         return taken *| RELEASE;
     }
+    pub const area = Whirlwind.area;
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("{d}% less damage from blows.", .{reduction(rank)}) catch {};
     }
@@ -229,7 +230,7 @@ pub const RaiseSkeleton = struct {
         return ranked(rank);
     }
     pub fn life(rank: u8) i32 {
-        return 12 + 8 * @as(i32, ranked(rank) - 1);
+        return actor.row(.skeleton).hp + 8 * @as(i32, ranked(rank) - 1);
     }
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("Up to {d} skeleton{s}; {d} life each.", .{ most(rank), mathx.plural(most(rank)), life(rank) }) catch {};

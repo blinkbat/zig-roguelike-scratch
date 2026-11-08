@@ -396,7 +396,9 @@ fn recoverLife(g: *game.Game, n: i32) ?fx.After {
 }
 
 /// A kill no chosen blow made: gear's life on kill only, and nothing for an ally's.
-fn killRecovery(g: *game.Game, killed: actor.Kind) ?fx.After {
+fn slain(g: *game.Game, id: u16) ?fx.After {
+    const killed = g.sim.pool.items[actor.Pool.slot(id)].kind;
+    fell(g, id);
     if (killed.ally()) return null;
     return recoverLife(g, g.sim.inventory.gear.killRecovery());
 }
@@ -624,10 +626,7 @@ fn harmTick(g: *game.Game, id: u16, dmg: i32, comptime owed: game.simulation.Tic
     } else if (h.lethal) g.sim.sayOf(a, "The {s} dies.", .{name});
     var debt = game.presentation.Harm{ .kill = h.lethal, .after = afterBlow(g, id, h) };
     if (h.lethal) {
-        if (hero) heroDies(g) else {
-            fell(g, id);
-            debt.recovery = killRecovery(g, kind);
-        }
+        if (hero) heroDies(g) else debt.recovery = slain(g, id);
     }
     g.pic.owe(.fromInt(id), owed, debt);
     return h;
@@ -656,8 +655,7 @@ fn orderFoes(g: *game.Game, from: P) void {
     for (g.sim.pool.slice(), 0..) |a, i| {
         const id = actor.Pool.idOf(i);
         if (id == g.sim.hero or !a.alive or a.waits) continue;
-        g.sim.order[g.sim.order_n] = id;
-        g.sim.order_n += 1;
+        _ = mathx.push(u16, &g.sim.order, &g.sim.order_n, id);
     }
     const Near = struct {
         pool: *const actor.Pool,
@@ -686,8 +684,8 @@ fn foeTurn(g: *game.Game, id: u16) void {
     const h = g.sim.heroActor() orelse return;
     const row = actor.row(r.kind);
     const af = worn.afflicted;
-    if (row.allied) return allyTurn(g, id, held, af);
     const sight = blind.sight(af.contains(.blind), row.sight);
+    if (row.allied) return allyTurn(g, id, held, af, sight);
     if (!r.awake) {
         if (!fov.sees(&g.sim.lv, r.at, h.at, @max(1, sight - g.sim.inventory.gear.sum(.stillness)))) return;
         r.awake = true;
@@ -730,12 +728,12 @@ fn foeTurn(g: *game.Game, id: u16) void {
 }
 
 /// Strikes a foe beside it; otherwise closes on the nearest foe the hero sees near it, or keeps near the hero.
-fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted) void {
+fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted, sight: i32) void {
     const r = g.sim.pool.get(id).?;
     const hero = g.sim.heroAt().?;
     if (besideOf(g, r.at, .foe)) |foe| return bodyStrike(g, id, foe, af);
     if (held) return;
-    if (quarry(g, r.at, hero, blind.sight(af.contains(.blind), actor.row(r.kind).sight))) |at| {
+    if (quarry(g, r.at, hero, sight)) |at| {
         if (actor.approach(&g.sim.lv, r.at, id, at)) |d| return foeStep(g, id, r.at, d, af);
     }
     if (mathx.dist(r.at, hero) <= rules.RaiseSkeleton.FOLLOW) return;
@@ -1024,8 +1022,8 @@ fn returnThorns(g: *game.Game, id: u16, from: P) void {
     const after = afterBlow(g, id, h);
     g.sim.chronicle.note(.{ .dealt = .{ .to = kind, .killed = h.lethal, .origin = .{ .reaction = .fromInt(id) } } });
     g.sim.sayAs(.damage, at, "{s}'s thorns hurt the {s} for {d}.{s}", .{ g.sim.name.text(), actor.row(kind).name, h.dmg, deathNote(h) });
-    if (h.lethal) fell(g, id);
-    g.pic.owe(.fromInt(id), .thorns, .{ .kill = h.lethal, .after = after, .recovery = if (h.lethal) killRecovery(g, kind) else null });
+    const recovery = if (h.lethal) slain(g, id) else null;
+    g.pic.owe(.fromInt(id), .thorns, .{ .kill = h.lethal, .after = after, .recovery = recovery });
 }
 
 fn sweepReady(g: *game.Game, id: u16, row: actor.Row) bool {
@@ -1044,8 +1042,7 @@ fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike, weak: boo
     for (cells.slice(), struck[0..cells.n]) |p, w| {
         if (w == g.sim.hero) continue;
         const hit: fx.Impact = if (w != grid.NO_ONE) .{ .actor = bodyBlow(g, id, w, s, actor.SWEEP_VERB, weak, true) orelse continue } else smashedBy(g, p, row) orelse continue;
-        swept.hit[swept.n] = hit;
-        swept.n += 1;
+        _ = mathx.push(fx.Impact, &swept.hit, &swept.n, hit);
     }
     g.pic.owe(.fromInt(id), .swept, swept);
 }

@@ -1,4 +1,5 @@
 const std = @import("std");
+const contains = @import("text.zig").contains;
 
 const ASSET = "player-labels.txt";
 pub const FILE = "assets/data/" ++ ASSET;
@@ -37,11 +38,6 @@ fn registration(name: []const u8) ?Registration {
 
 fn savedName(name: []const u8) []const u8 {
     return if (registration(name)) |row| row.saved_name orelse row.name else name;
-}
-
-fn contains(values: []const []const u8, value: []const u8) bool {
-    for (values) |v| if (std.mem.eql(u8, v, value)) return true;
-    return false;
 }
 
 pub fn allowed(name: []const u8, field: []const u8) bool {

@@ -211,8 +211,7 @@ pub const Runtime = struct {
         var n: usize = 0;
         for (ln.choices(), 0..) |*c, i| {
             if (c.gate) |*g| if (!self.holds(s, g, w)) continue;
-            out[n] = @intCast(i);
-            n += 1;
+            _ = mathx.push(u8, out, &n, @intCast(i));
         }
         return out[0..n];
     }

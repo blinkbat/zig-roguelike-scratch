@@ -124,7 +124,7 @@ pub const Book = struct {
         };
     }
     fn treeView(self: *const Book) trees.View {
-        return .{ .cursor = self.cursor, .zoom = self.zoom, .pan = self.pan, .focused = !self.tabbing };
+        return .{ .cursor = self.cursor, .zoom = self.zoom, .pan = self.pan, .focused = self.focused() };
     }
     fn zoomBy(self: *Book, amount: f32) void {
         self.zoom = std.math.clamp(self.zoom + amount, trees.ZOOM_MIN, trees.ZOOM_MAX);
@@ -135,7 +135,7 @@ pub const Book = struct {
         self.pan = trees.clampPan(self.treeView());
     }
     pub fn treeActive(self: *const Book) bool {
-        return self.page == .passives;
+        return self.page == .passives and !self.tabbing;
     }
     fn inWindow(self: *const Book, i: usize) bool {
         return !self.listed() or (i >= self.top and i < self.top + self.visibleRows());
@@ -143,6 +143,16 @@ pub const Book = struct {
     pub fn enter(self: *Book, view: View) void {
         if (self.count(view) == 0) return;
         if (self.page == .passives) self.browse(progress.start(view.class));
+    }
+    fn turnTo(self: *Book, page: Page, view: View) void {
+        self.choose(page);
+        self.enter(view);
+    }
+    fn turnBy(self: *Book, d: i32, view: View) void {
+        self.turnTo(mathx.stepIn(Page, &PAGES, self.page, d, 0), view);
+    }
+    fn focused(self: *const Book) bool {
+        return !self.tabbing;
     }
     /// The bag item under the cursor; carried consumables list above the bag.
     fn bagIndex(self: *const Book, view: View) ?usize {
@@ -239,8 +249,7 @@ pub const Book = struct {
         if (menu.closed(st)) return .close;
         if (self.page == .loot and self.count(view) > 0 and st.hit(menu.CHANGE)) return .take_all;
         if (!self.direct()) if (pageStep(st)) |d| {
-            self.choose(mathx.stepIn(Page, &PAGES, self.page, d, 0));
-            self.enter(view);
+            self.turnBy(d, view);
             return null;
         };
         if (self.page == .inventory and self.selected(view) != null) {
@@ -276,8 +285,7 @@ pub const Book = struct {
         if (self.listed() and self.count(view) > 0) self.cursor = st.scrolled(self.cursor, self.count(view));
         if (st.click and !self.mouse_panning) if (st.pointer) |p| {
             if (!self.direct()) for (PAGES, 0..) |page, i| if (raster.holds(layout.tabBox(i), p)) {
-                self.choose(page);
-                self.enter(view);
+                self.turnTo(page, view);
                 return null;
             };
             for (0..self.count(view)) |i| {
@@ -310,8 +318,7 @@ pub const Book = struct {
         if (menu.closed(st)) return .close;
         const walked: ?i32 = if (st.walk) |w| (if (w.delta().x != 0) w.delta().x else null) else null;
         if (walked orelse pageStep(st)) |d| {
-            self.choose(mathx.stepIn(Page, &PAGES, self.page, d, 0));
-            self.enter(view);
+            self.turnBy(d, view);
             self.tabbing = true;
             return null;
         }
@@ -325,14 +332,17 @@ pub const Book = struct {
             if (raster.holds(layout.shoulderBox(true), p)) return menu.PAGE_NEXT;
         }
         const shown = self.controls(view);
-        for (shown.all[0..shown.n]) |c| if (raster.holds(c.box, p)) return c.button;
+        for (shown.all[0..shown.n]) |c| if ((self.labelled(c) or c.shown != .label) and raster.holds(c.box, p)) return c.button;
         return null;
     }
-    /// Every button the page shows, the close button first.
+    /// Whether the book draws `c`'s label and prompt; on the tabs only the close button's.
+    fn labelled(self: *const Book, c: Control) bool {
+        return !self.tabbing or c.button == menu.BACK;
+    }
+    /// Every button the page has, the close button first.
     fn controls(self: *const Book, view: View) Controls {
         var c: Controls = .{};
         c.add(self.closeBox(view), menu.BACK, .{ .label = character_view.verbOf(.close) });
-        if (self.tabbing) return c;
         switch (self.page) {
             .passives => {
                 for ([_]bool{ false, true }) |increase| c.add(trees.zoomBox(increase), if (increase) menu.CHANGE else menu.REMOVE, .drawn);
@@ -427,6 +437,7 @@ pub const Book = struct {
         }
         const shown = self.controls(view);
         for (shown.all[0..shown.n]) |c| {
+            if (!self.labelled(c)) continue;
             const prompt = prompt_icon.Prompt.menuOn(view.device, c.button);
             switch (c.shown) {
                 .label => |label| menu.action(face, c.box, prompt, label),
@@ -493,7 +504,7 @@ pub const Book = struct {
             const x: i32 = @intFromFloat(r.x);
             const y: i32 = @intFromFloat(r.y);
             const row_mid = y + layout.ROW_HEIGHT / 2;
-            const chosen = i == self.cursor and !self.tabbing;
+            const chosen = i == self.cursor and self.focused();
             rl.drawRectangleRec(r, look.BG);
             menu.outline(r, chosen, look.UI_FOCUS, look.EDGE);
             switch (self.page) {
@@ -771,6 +782,32 @@ test "the book opens on its tabs: left and right choose one, confirm enters it, 
     try std.testing.expect(book.tabbing);
     try std.testing.expectEqual(Page.inventory, book.page);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
+}
+
+test "the passives tab reads menu input until entered, and a click on its drawn zoom enters and zooms" {
+    var inv = items.Inventory{};
+    var growth = progress.State.of(.archer);
+    const view = testView(&inv, &growth);
+    const screen = display.WINDOW;
+    var book = Book{};
+    book.open();
+    book.choose(.passives);
+    book.tabbing = true;
+    try std.testing.expect(!book.treeActive());
+    _ = book.step(&.{ .walk = .e }, screen, view);
+    try std.testing.expectEqual(Page.skills, book.page);
+    _ = book.step(&.{ .walk = .w }, screen, view);
+    try std.testing.expect(book.tabbing and book.page == .passives);
+    const zoom = book.zoom;
+    const box = trees.zoomBox(true);
+    const p = book.surface(screen, view).screenOf(.{ .x = box.x + box.width / 2, .y = box.y + box.height / 2 });
+    _ = book.step(&.{ .click = true, .pointer = p }, screen, view);
+    try std.testing.expect(!book.tabbing and book.treeActive() and book.zoom > zoom);
+    book.choose(.stats);
+    book.tabbing = true;
+    const hidden = book.actionBox(menu.CHANGE, view);
+    _ = book.step(&.{ .click = true, .pointer = book.surface(screen, view).screenOf(.{ .x = hidden.x + 20, .y = hidden.y + 20 }) }, screen, view);
+    try std.testing.expect(!book.tabbing and !book.advanced);
 }
 
 test "loot exposes single pickup and take all through controller and mouse controls" {

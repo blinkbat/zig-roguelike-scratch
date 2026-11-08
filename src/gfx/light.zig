@@ -14,7 +14,7 @@ const model = @import("light_model.zig");
 const dual = @import("ground.zig");
 
 pub const SUB = model.SUB;
-pub const BODY_Z = model.BODY_Z;
+const BODY_Z = model.BODY_Z;
 pub const offMiddle = model.offMiddle;
 pub const LIGHTS = model.LIGHTS;
 pub const carryR = model.carryR;

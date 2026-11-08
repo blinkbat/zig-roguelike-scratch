@@ -342,7 +342,7 @@ pub const Scrolled = struct {
     }
 };
 
-pub fn unclip(clip: *?rl.Rectangle) void {
+fn unclip(clip: *?rl.Rectangle) void {
     rl.endScissorMode();
     clip.* = null;
 }

@@ -94,7 +94,7 @@ test "effect lights shade terrain and bodies without revealing memory or crossin
     const hidden = l.at(&lv, &.{}, far);
     const sight = lv.lit;
     const seen = lv.seen;
-    l.emit(&lv, .{ .at = .{ 20.5, 20.5, 0.4 }, .col = look.FIRE, .radius = 4, .gain = 1 });
+    l.emit(&lv, model.Emission.onBody(.{ 20.5, 20.5 }, look.FIRE, 4, 1));
     try std.testing.expect(lum(l.at(&lv, &.{}, near)) > lum(before) + 0.1);
     try std.testing.expectEqual(hidden, l.at(&lv, &.{}, far));
     try std.testing.expect(l.onBody(near, false).n > 0);
@@ -104,11 +104,11 @@ test "effect lights shade terrain and bodies without revealing memory or crossin
     lv.lit[grid.Level.idx(.{ .x = 21, .y = 20 })] = false;
     l.settle(&lv);
     const memory = l.at(&lv, &.{}, near);
-    l.emit(&lv, .{ .at = .{ 20.5, 20.5, 0.4 }, .col = look.COLD, .radius = 4, .gain = 1 });
+    l.emit(&lv, model.Emission.onBody(.{ 20.5, 20.5 }, look.COLD, 4, 1));
     try std.testing.expectEqual(memory, l.at(&lv, &.{}, near));
     l.effect_n = 0;
     lv.lit[grid.Level.idx(.{ .x = 20, .y = 20 })] = false;
-    l.emit(&lv, .{ .at = .{ 20.5, 20.5, 0.4 }, .col = look.FIRE, .radius = 4, .gain = 1 });
+    l.emit(&lv, model.Emission.onBody(.{ 20.5, 20.5 }, look.FIRE, 4, 1));
     try std.testing.expectEqual(@as(usize, 0), l.effect_n);
     std.debug.print("effect lighting: floor and body lit; wall, memory and hidden source blocked; visibility unchanged\n", .{});
 }
@@ -128,7 +128,7 @@ test "effect reach bounds preserve lighting at fractional positions and map edge
     for (positions) |at| {
         for (radii) |radius| {
             l.effect_n = 0;
-            l.emit(&lv, .{ .at = .{ at[0], at[1], 0.4 }, .col = look.FIRE, .radius = radius, .gain = 1 });
+            l.emit(&lv, model.Emission.onBody(at, look.FIRE, radius, 1));
             try std.testing.expectEqual(@as(usize, 1), l.effect_n);
             const bounded = &l.effects[0];
             var reference = bounded.*;

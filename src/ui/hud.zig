@@ -215,9 +215,7 @@ pub fn statuses(layout: Layout, sprites: *const sprite.Sprites, face: *const fon
         sprite.backingIn(sprites, box);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         if (s == .resistant) {
-            const bar_y = y + STATUS_PX - RESIST_RISE;
-            rl.drawRectangle(x + RESIST_INSET, bar_y, RESIST_W, RESIST_H, look.EDGE);
-            rl.drawRectangle(x + RESIST_INSET, bar_y, mathx.filled(resistance, mathx.PERCENT, RESIST_W), RESIST_H, look.UI_GOLD);
+            raster.meter(x + RESIST_INSET, y + STATUS_PX - RESIST_RISE, RESIST_W, RESIST_H, resistance, mathx.PERCENT, look.EDGE, look.UI_GOLD);
         }
         counter(face, box, turns);
     }

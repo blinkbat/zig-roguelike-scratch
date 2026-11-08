@@ -745,13 +745,17 @@ pub const Flow = struct {
         return f;
     }
 
+    pub fn course(f: *const Flow) []const P {
+        return f.cell[0..f.n];
+    }
+
     /// A cell either side of its fill, over whatever is not liquid.
     pub fn bank(f: *const Flow, lv: *grid.Level, width: f32, t: grid.Tile) void {
-        for (f.cell[0..f.n]) |c| disc(lv, c, bankReach(width), t, notLiquid);
+        for (f.course()) |c| disc(lv, c, bankReach(width), t, notLiquid);
     }
 
     pub fn fill(f: *const Flow, lv: *grid.Level, width: f32, t: grid.Tile) void {
-        for (f.cell[0..f.n]) |c| discAll(lv, c, width / 2, t);
+        for (f.course()) |c| discAll(lv, c, width / 2, t);
     }
 };
 

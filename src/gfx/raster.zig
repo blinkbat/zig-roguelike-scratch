@@ -48,6 +48,12 @@ pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
     blit(t, whole(t), dest, tint);
 }
 
+/// `back` across `w`, then `fill` over `v` of `max` of it.
+pub fn meter(x: i32, y: i32, w: i32, h: i32, v: i32, max: i32, back: rl.Color, fill: rl.Color) void {
+    rl.drawRectangle(x, y, w, h, back);
+    rl.drawRectangle(x, y, mathx.filled(v, max, w), h, fill);
+}
+
 /// `r` grown `by` pixels on every side.
 pub fn grown(r: rl.Rectangle, by: f32) rl.Rectangle {
     return .{ .x = r.x - by, .y = r.y - by, .width = r.width + 2 * by, .height = r.height + 2 * by };

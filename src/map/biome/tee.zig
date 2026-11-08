@@ -98,7 +98,7 @@ pub fn palette(_: Params) carve.Palette {
 
 const TRAIL = palette(.{}).path;
 /// The camp's river crossing, which no fire takes down.
-pub const SPAN: grid.Tile = .stone_bridge;
+const CROSSING: grid.Tile = .stone_bridge;
 
 const Plan = struct {
     bar: grid.Box,
@@ -212,7 +212,7 @@ fn roads(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params, kept: *grid.Ce
     const near = P{ .x = span[0] - LANDING, .y = c.y };
     const far = P{ .x = span[1] + LANDING, .y = c.y };
     road(lv, rng, c, near, p.path, PATH_WANDER, lowest, kept);
-    carve.lane(lv, rng, near, far, p.bridge, 0, TRAIL, .{ .road = SPAN });
+    carve.lane(lv, rng, near, far, p.bridge, 0, TRAIL, .{ .road = CROSSING });
     road(lv, rng, far, .{ .x = grid.W - 1, .y = c.y }, p.path, 0, lowest, kept);
 }
 
@@ -310,7 +310,7 @@ fn farBank(lv: *const grid.Level) i32 {
     var lo: ?P = null;
     var hi: ?P = null;
     for (lv.tile, 0..) |t, k| {
-        if (t != SPAN) continue;
+        if (t != CROSSING) continue;
         const q = grid.Level.of(k);
         if (lo == null) lo = q;
         hi = q;
@@ -357,7 +357,7 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
             while (cells.next()) |q| corner_open += @intFromBool(lv.walkable(q));
         }
         carts += carve.count(&lv, .caravan);
-        bridged += @intFromBool(carve.count(&lv, SPAN) > 0);
+        bridged += @intFromBool(carve.count(&lv, CROSSING) > 0);
         flammable += carve.count(&lv, .bridge);
         trees += carve.count(&lv, .large_tree);
         for (lv.barrel) |b| barrels += @intFromBool(b);
@@ -389,7 +389,7 @@ test "a tee's carts stand whole and its roads reach the west, north and east edg
             grid.Box.sized(.{ .x = grid.W - 2, .y = 1 }, 1, grid.H - 2),
         };
         const from = for (0..grid.CELLS) |k| {
-            if (lv.tile[k] == SPAN) break grid.Level.of(k);
+            if (lv.tile[k] == CROSSING) break grid.Level.of(k);
         } else return error.NoBridge;
         _ = grid.distances(&lv, from, &dist, &queue);
         for (ends, &reached) |b, *got| {

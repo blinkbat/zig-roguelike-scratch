@@ -159,7 +159,6 @@ pub const GLYPH_CLOSE = names.GLYPH_CLOSE;
 pub const WHEEL = names.WHEEL;
 pub const ARROWS = names.ARROWS;
 pub const ARROW_KEYS = names.ARROW_KEYS;
-const keyGlyph = names.keyGlyph;
 
 const SECOND_KEYS = bindings.SECOND_KEYS;
 pub const SECOND_CAPTION = bindings.SECOND_CAPTION;
@@ -834,7 +833,7 @@ fn fullscreenHit() bool {
 }
 
 const RUB_KEY = bindings.RUB_KEY;
-pub const RUB_CAPTION = keyGlyph(RUB_KEY);
+pub const RUB_CAPTION = bindings.RUB_CAPTION;
 
 fn rubbed() bool {
     return repeated(RUB_KEY);
