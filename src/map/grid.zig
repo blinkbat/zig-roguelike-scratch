@@ -161,6 +161,11 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).piece;
     }
 
+    /// The prop it stands for: a part's head, any other tile itself.
+    pub fn whole(t: Tile) Tile {
+        return WHOLES.get(t);
+    }
+
     /// A wider prop or a part of one.
     pub fn pieced(t: Tile) bool {
         return t.wide() > 1 or t.isPart();
@@ -375,6 +380,16 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .caravan_part = CART_PART,
     .stone_bridge = .{ .solid = false, .blind = false, .spans = true },
 });
+
+const WHOLES = blk: {
+    @setEvalBranchQuota(10_000);
+    var out = std.EnumArray(Tile, Tile).initUndefined();
+    for (std.enums.values(Tile)) |t| out.set(t, t);
+    for (std.enums.values(Tile)) |head| {
+        if (head.partOf()) |part| out.set(part, head);
+    }
+    break :blk out;
+};
 
 /// The most cells any prop stands on.
 pub const WIDEST: i32 = blk: {
@@ -698,6 +713,10 @@ pub const Level = struct {
         return true;
     }
 
+    pub fn barrelCount(self: *const Level) usize {
+        return std.mem.count(bool, &self.barrel, &.{true});
+    }
+
     pub fn wallBarrels(self: *Level) void {
         for (self.barrel, 0..) |on, i| {
             if (on) self.tile[i] = .wall;
@@ -885,6 +904,21 @@ pub fn nearest(from: P, set: anytype) ?P {
         }
     }
     return null;
+}
+
+/// The cell round `foot` that `ok` takes: in front of it before its sides, its sides before behind it, reading order within each.
+pub fn besideFoot(foot: Box, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) ?P {
+    var best: ?P = null;
+    var rank: i32 = std.math.maxInt(i32);
+    var ring = foot.grown(1).cells();
+    while (ring.next()) |q| {
+        if (foot.holds(q) or !ok(ctx, q)) continue;
+        const r: i32 = if (q.y > foot.lo.y) 0 else if (q.y == foot.lo.y) 1 else 2;
+        if (r >= rank) continue;
+        best = q;
+        rank = r;
+    }
+    return best;
 }
 
 /// The nearest cell offered within `reach`, by steps and then by the straighter line.

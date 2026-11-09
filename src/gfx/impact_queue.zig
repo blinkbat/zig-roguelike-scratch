@@ -113,15 +113,18 @@ pub const Queue = struct {
     }
 
     fn revealed(e: *const Event) ?actor.ActorSlot {
-        return switch (e.*) {
-            .blow => |*b| switch (b.impact) {
-                .actor => |*a| if (a.after) |*after| after.reveals else null,
-                .barrel => null,
-            },
-            .sting => |*s| if (s.after) |*after| after.reveals else null,
-            .settle => |*s| s.after.reveals,
-            .burst, .zap, .puff, .shimmer, .whirl => null,
-        };
+        return (e.after() orelse return null).reveals;
+    }
+
+    /// `barrels_due` and `reveals_due` as `what` is queued (`up`) or taken off.
+    fn tally(self: *Queue, what: *const Event, comptime up: bool) void {
+        stepCount(&self.barrels_due, what.onBarrel(), up);
+        stepCount(&self.reveals_due, revealed(what) != null, up);
+    }
+
+    fn stepCount(n: *usize, on: bool, comptime up: bool) void {
+        if (!on) return;
+        if (up) n.* += 1 else n.* -= 1;
     }
 
     fn lastDue(self: *const Queue, slot: actor.ActorSlot, comptime target: fn (*const Event) ?actor.ActorSlot) f32 {
@@ -180,13 +183,7 @@ pub const Queue = struct {
     }
 
     pub fn clear(self: *Queue) void {
-        self.flash = @splat(0);
-        self.dying = @splat(0);
-        self.due_n = 0;
-        self.barrels_due = 0;
-        self.reveals_due = 0;
-        self.landed = @splat(null);
-        self.mana_landed = 0;
+        self.* = .{};
     }
 
     /// Drops what landed on a slot's former body before a new one takes it.
@@ -217,8 +214,7 @@ pub const Queue = struct {
         if (wait <= 0 or self.due_n == DUE) return .{ .event = what, .late = @max(0, -wait) };
         self.due[self.due_n] = .{ .t = wait, .what = what };
         self.due_n += 1;
-        if (what.onBarrel()) self.barrels_due += 1;
-        if (revealed(&what) != null) self.reveals_due += 1;
+        self.tally(&what, true);
         return null;
     }
 
@@ -247,8 +243,7 @@ const ReadyIterator = struct {
             }
             queue.due_n -= 1;
             queue.due[self.index] = queue.due[queue.due_n];
-            if (pending.what.onBarrel()) queue.barrels_due -= 1;
-            if (Queue.revealed(&pending.what) != null) queue.reveals_due -= 1;
+            queue.tally(&pending.what, false);
             return .{ .event = pending.what, .late = -pending.t };
         }
         return null;

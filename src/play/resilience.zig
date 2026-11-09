@@ -65,6 +65,15 @@ pub fn wearTurn(turns: *u8) bool {
     return true;
 }
 
+/// `afflict` for a status kept in the body field its kind names: starting it.
+pub fn Starts(comptime k: Kind) type {
+    return struct {
+        pub fn afflict(a: anytype, _: *mathx.Rng) void {
+            @field(a, @tagName(k)).start();
+        }
+    };
+}
+
 /// A body's resistance to a status as shown, and the turns before its built-up part expires.
 pub const Standing = struct {
     percent: i16 = 0,

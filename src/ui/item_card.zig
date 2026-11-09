@@ -127,9 +127,7 @@ fn modifierText(item: items.Item, mod: items.Mod, text: *CardText) [:0]const u8 
 }
 
 fn wrappedRows(face: *const font.Face, text: []const u8, width: i32) usize {
-    var buf: font.Wrapped = undefined;
-    var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
-    return font.wrap(face, text, font.SMALL, width, &buf, &lines);
+    return font.lineCount(face, text, font.SMALL, width);
 }
 
 const Mods = [items.MODS.len]items.Mod;

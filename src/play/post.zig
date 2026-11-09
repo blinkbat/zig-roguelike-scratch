@@ -30,7 +30,7 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, post: Post) void {
         for (0..grid.CELLS) |i| {
             if (lv.tile[i] != POST) continue;
             if (left == 0 or !pool.hasRoomFor(GUARD)) return;
-            const at = beside(lv, POST.footprint(grid.Level.of(i))) orelse continue;
+            const at = grid.besideFoot(POST.footprint(grid.Level.of(i)), @as(*const grid.Level, lv), stands) orelse continue;
             _ = pool.spawn(lv, actor.Actor.of(GUARD, at));
             left -= 1;
         }
@@ -38,21 +38,7 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, post: Post) void {
     }
 }
 
-/// Free dry ground round `foot`: in front of it before its sides, its sides before behind it.
-fn beside(lv: *const grid.Level, foot: grid.Box) ?P {
-    var best: ?P = null;
-    var rank: i32 = std.math.maxInt(i32);
-    var ring = foot.grown(1).cells();
-    while (ring.next()) |q| {
-        if (foot.holds(q) or !stands(lv, q)) continue;
-        const r: i32 = if (q.y > foot.lo.y) 0 else if (q.y == foot.lo.y) 1 else 2;
-        if (r >= rank) continue;
-        best = q;
-        rank = r;
-    }
-    return best;
-}
-
+/// Free dry ground a guard may stand on.
 fn stands(lv: *const grid.Level, q: P) bool {
     return !grid.Level.onRim(q) and actor.dwells(GUARD, lv, q) and lv.doorAt(q) == null and !lv.at(q).wet();
 }

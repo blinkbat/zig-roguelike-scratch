@@ -135,13 +135,7 @@ const Same = struct {
 pub fn pickUp(ed: *Editor, p: P, second: bool) void {
     if (!grid.Level.inside(p)) return;
     ed.stroke = .none;
-    const nd = ed.here();
-    const i = grid.Level.idx(p);
-    const picked: ?editor.Tool = if (npcAt(ed, p) != null) .npc else switch (nd.plan) {
-        .bespoke => |*b| if (b.foeAt(p)) |f| .{ .foe = b.foe[f].kind } else if (b.barrel[i]) .barrel else if (b.torch.has(p)) .torch else if (nd.doorAt(p) != null) .door else null,
-        .procgen => if (nd.doorAt(p) != null) .door else null,
-    };
-    if (picked) |t| {
+    if (pickedAt(ed, p)) |t| {
         ed.takeTool(t);
         return ed.say("Picked up the {s} tool", .{t.name()});
     }
@@ -461,17 +455,35 @@ pub fn legal(ed: *Editor, p: P) bool {
         .barrel => ed.map.barrelGoes(ed.node, &nd.plan.bespoke, p),
         .torch => nd.torchGoes(&nd.plan.bespoke, p),
         .foe => |k| ed.map.foeGoes(ed.node, &nd.plan.bespoke, p, k),
-        .npc => npcAt(ed, p) != null or (ed.map.script.npc_n < script.MAX_NPCS and (nd.unrolled() or ed.map.npcFits(ed.node, p))),
+        .npc => npcAt(ed, p) != null or (ed.map.script.npc_n < script.MAX_NPCS and spotAt(ed, p) != null),
         .door => nd.takesDoor(p),
         .link => nd.doorAt(p) != null,
     };
 }
 
 pub fn removable(ed: *Editor, p: P) bool {
+    return ed.tool.fits(ed.here()) and holds(ed, ed.tool, p);
+}
+
+/// The tool for what stands at `p`, the first of `PICKS` that holds something there.
+fn pickedAt(ed: *Editor, p: P) ?editor.Tool {
+    for (PICKS) |t| {
+        if (!t.fits(ed.here()) or !holds(ed, t, p)) continue;
+        return switch (t) {
+            .foe => .{ .foe = ed.plan().bespoke.foe[ed.plan().bespoke.foeAt(p).?].kind },
+            else => t,
+        };
+    }
+    return null;
+}
+
+const PICKS = [_]editor.Tool{ .npc, .{ .foe = actor.FOES[0] }, .barrel, .torch, .door };
+
+/// Whether tool `t` has something at `p` to take away; a fitting tool is the caller's to check.
+fn holds(ed: *Editor, t: editor.Tool, p: P) bool {
     const nd = ed.here();
-    if (!ed.tool.fits(nd)) return false;
     const i = grid.Level.idx(p);
-    return switch (ed.tool) {
+    return switch (t) {
         .paint => true,
         .barrel => nd.plan.bespoke.barrel[i],
         .torch => nd.plan.bespoke.torch.has(p),

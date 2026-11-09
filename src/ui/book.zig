@@ -704,18 +704,11 @@ fn dependent(view: View, at: usize, slot: items.Slot) ?items.Item {
 
 /// Kinds carried, which head the Inventory list.
 fn stocked(view: View) usize {
-    var n: usize = 0;
-    for (view.inventory.stacks.values) |carried| n += @intFromBool(carried > 0);
-    return n;
+    return view.inventory.carriedCount();
 }
 
 fn stockAt(view: View, row: usize) ?consumable.Kind {
-    var left = row;
-    for (consumable.KINDS) |k| if (view.inventory.stacks.get(k) > 0) {
-        if (left == 0) return k;
-        left -= 1;
-    };
-    return null;
+    return view.inventory.carriedAt(row);
 }
 
 fn inkOf(it: ?items.Item) rl.Color {

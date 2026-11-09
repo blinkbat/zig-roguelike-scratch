@@ -485,25 +485,18 @@ fn beginTurn(g: *game.Game, from: P) void {
 fn raiders(g: *game.Game) void {
     const w = g.sim.map orelse return;
     const nd = &w.node[g.sim.node];
-    const r = switch (nd.plan) {
-        .procgen => |*pg| pg.raid,
-        .bespoke => return,
-    };
-    if (r.raid_door >= nd.door_n) return;
+    const door = nd.raidDoor() orelse return;
+    const r = nd.plan.procgen.raid;
     const now = g.sim.clock.since(g.sim.days);
-    const door = nd.door[r.raid_door].at;
     for (0..atlas.raid.arriving(r, game.rollOf(g.sim.seed, g.sim.node), now -| day.TURN_MINUTES, now)) |_| {
         const over = tactics.spentSlot(g);
         if (over == null and !g.sim.pool.hasRoomFor(atlas.raid.RAIDER)) return;
         const at = atlas.landing(&g.sim.lv, door, &.{}) orelse return;
         var body = actor.Actor.of(atlas.raid.RAIDER, at);
-        body.awake = true;
-        body.waits = true;
         body.raider = true;
-        const id = g.sim.pool.spawnOver(&g.sim.lv, over, body);
-        g.pic.recordBirth(&g.sim, .fromInt(id), 0);
-        tactics.landed(g, id);
+        const id = tactics.rise(g, body, over, 0);
         g.sim.sayAt(at, "A {s} raider comes in from the dark.", .{actor.row(atlas.raid.RAIDER).name});
+        tactics.landed(g, id);
     }
 }
 
@@ -642,14 +635,7 @@ fn harmTick(g: *game.Game, id: u16, dmg: i32, comptime owed: game.simulation.Tic
     const name = actor.row(kind).name;
     if (hero) {
         g.sim.log.push(.danger, said.hero, .{ g.sim.name.text(), h.dmg });
-        const by: chronicle.Source = switch (owed) {
-            .gassed => .gas,
-            .scalded => .steam,
-            .burned, .scorched => .burn,
-            .bled => .bleed,
-            .healed, .worn => unreachable,
-        };
-        g.sim.chronicle.note(.{ .hurt = .{ .by = by, .dmg = h.dmg, .before = before, .torn = said.torn } });
+        g.sim.chronicle.note(.{ .hurt = .{ .by = comptime owed.source().?, .dmg = h.dmg, .before = before, .torn = said.torn } });
     } else if (comptime said.foe) |line| {
         g.sim.sayOf(a, line ++ "{s}", .{ name, h.dmg, deathNote(h) });
     } else if (h.lethal) g.sim.sayOf(a, "The {s} dies.", .{name});
@@ -740,10 +726,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
     if (row.ranged) |ranged| {
         const gap = mathx.dist(r.at, h.at);
         if (!held and backOff(g, id, ranged.retreat, af)) return;
-        if (bow.aimable(&g.sim.lv, r.at, h.at, ranged.range)) {
-            const flight = bow.fly(&g.sim.lv, r.at, h.at);
-            if (flight.hits(g.sim.hero)) return reach(g, id, row, h.at.x - r.at.x, flight, af);
-        }
+        if (bow.clearShot(&g.sim.lv, r.at, h.at, ranged.range, g.sim.hero)) |flight| return reach(g, id, row, h.at.x - r.at.x, flight, af);
         if (!held and gap > ranged.retreat) closeIn(g, id, ranged.retreat, af);
         return;
     }
@@ -806,13 +789,17 @@ fn quarry(g: *game.Game, from: P, hero: P, sight: i32) ?P {
 fn guardTurn(g: *game.Game, id: u16, af: actor.Afflicted, sight: i32) void {
     const r = g.sim.pool.get(id).?;
     var near = grid.Nearest{ .from = r.at, .reach = @min(sight, actor.row(r.kind).ranged.?.range) };
+    var shot: ?bow.Flight = null;
     for (g.sim.pool.constSlice(), 0..) |a, i| {
-        if (!a.livingFoe() or a.veiled() or !bow.aimable(&g.sim.lv, r.at, a.at, near.reach)) continue;
-        if (!fov.sees(&g.sim.lv, r.at, a.at, near.reach) or !bow.fly(&g.sim.lv, r.at, a.at).hits(actor.Pool.idOf(i))) continue;
+        if (!a.livingFoe() or a.veiled() or !fov.sees(&g.sim.lv, r.at, a.at, near.reach)) continue;
+        const flight = bow.clearShot(&g.sim.lv, r.at, a.at, near.reach, actor.Pool.idOf(i)) orelse continue;
         near.offer(a.at);
+        if (near.best) |b| if (b.eq(a.at)) {
+            shot = flight;
+        };
     }
     const at = near.best orelse return;
-    bodyStrike(g, id, g.sim.lv.who(at), af, bow.fly(&g.sim.lv, r.at, at));
+    bodyStrike(g, id, g.sim.lv.who(at), af, shot);
 }
 
 /// One body's blow on another neither of which is the hero: an ally's on a foe, or a foe's on an ally; shot along `flight` when it has one.
@@ -899,9 +886,8 @@ fn kinInReach(lv: *const grid.Level, m: actor.Mend, a: *const actor.Actor, from:
 fn throwNet(g: *game.Game, id: u16, n: actor.Net) bool {
     const r = g.sim.pool.get(id).?;
     const h = g.sim.heroActor().?;
-    if (r.ready_in > 0 or h.pin.holding() or !bow.aimable(&g.sim.lv, r.at, h.at, n.range)) return false;
-    const flight = bow.fly(&g.sim.lv, r.at, h.at);
-    if (!flight.hits(g.sim.hero)) return false;
+    if (r.ready_in > 0 or h.pin.holding()) return false;
+    const flight = bow.clearShot(&g.sim.lv, r.at, h.at, n.range, g.sim.hero) orelse return false;
     r.ready_in = n.every;
     g.pic.turnLater(.fromInt(id), h.at.x - r.at.x);
     const name = actor.row(r.kind).name;

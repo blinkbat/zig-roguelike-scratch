@@ -58,6 +58,7 @@ const SPUR_LONGEST: i32 = 16;
 /// Forest a trail needs ahead of it to start.
 const SPUR_INTO: i32 = 4;
 const SPUR_WANDER: f32 = 1;
+const SPUR_BOX = grid.Box.inMap(2);
 const GLADE_R: f32 = 2;
 const GLADE_PERCENT: u8 = 35;
 /// Of the pond's radius, the hollow cut from its disc to leave a crescent, and how far that hollow sits off its middle.
@@ -65,11 +66,18 @@ const HOLLOW: f32 = 0.7;
 const HOLLOW_OFF: f32 = 0.6;
 /// Cells in from the crescent's edge where the water is deep.
 const DEEP: f32 = 0.6;
+/// Cells past the disc's edge kept dry, so no other water joins the pond.
+const WATER_APART: f32 = 2;
 const POND_TRIES: usize = 400;
+const SITE_TRIES: usize = 400;
 const CHEST_APART: i32 = 3;
 /// Cells from the caravan camp's edge to a pond's or a goblin camp's, at least.
 const CLEAR_OF_CARTS: i32 = 12;
 const CAMP_ART = setpiece.rows(.camp);
+
+comptime {
+    std.debug.assert(CLEAR_OF_CARTS > @import("../../play/pack.zig").CAMP_GAP);
+}
 
 pub const Params = struct {
     /// Rows the crossbar is tall.
@@ -130,10 +138,15 @@ pub const Params = struct {
 };
 
 pub fn palette(_: Params) carve.Palette {
-    return carve.Palette.TRAILED.pocketed();
+    return PAL;
 }
 
-const TRAIL = palette(.{}).path;
+const PAL = carve.Palette.TRAILED.pocketed();
+const TRAIL = PAL.path;
+const SOLID = PAL.solid;
+const OPEN = PAL.open;
+/// Where a pond or goblin camp may lie, or a trail lead: off the rim and above the foot.
+const ABOVE_FOOT = grid.Box{ .lo = .{ .x = 1, .y = 1 }, .hi = .{ .x = grid.W - 1, .y = BAR_FLOOR - 1 } };
 /// The camp's river crossing, which no fire takes down.
 const CROSSING: grid.Tile = .stone_bridge;
 
@@ -167,15 +180,14 @@ const Plan = struct {
 };
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
-    const pal = palette(p);
-    carve.fill(lv, pal.solid);
+    carve.fill(lv, SOLID);
     const plan = Plan.of(rng, p);
     const edge = carve.Noise.init(seed, .tee);
     const fray: f32 = @floatFromInt(p.fray);
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
         if (grid.Level.onRim(q) or q.y >= plan.bar.hi.y) continue;
-        if (plan.depth(q) + fray * swing(edge.at(q, FRAY_SCALE, 2)) >= 0) lv.tile[i] = pal.open;
+        if (plan.depth(q) + fray * swing(edge.at(q, FRAY_SCALE, 2)) >= 0) lv.tile[i] = OPEN;
     }
     if (p.river > 0) river(lv, rng, plan, p);
     camp(lv, edge, plan.camp, p.camp);
@@ -196,13 +208,12 @@ fn swing(v: f32) f32 {
 const NOISE_GAIN: f32 = 5;
 
 fn river(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params) void {
-    const r = @as(f32, @floatFromInt(p.river)) / 2;
     const x = plan.river_w + @divTrunc(@as(i32, p.river), 2) - SHIFT;
     var f = carve.Flow.of(rng, .{ .x = x + rng.range(-SHIFT, 0), .y = 0 }, .{ .x = x + rng.range(-SHIFT, 0), .y = grid.H - 1 }, RIVER_WANDER);
-    const course = f.cell[0..f.n];
-    for (course) |*c| c.x = @min(c.x, x);
-    for (course) |c| carve.disc(lv, c, carve.bankReach(@floatFromInt(p.river)), .shallows, dry);
-    for (course) |c| carve.disc(lv, c, r, .water, null);
+    for (f.cell[0..f.n]) |*c| c.x = @min(c.x, x);
+    const width: f32 = @floatFromInt(p.river);
+    f.bank(lv, width, .shallows, dry);
+    f.fill(lv, width, .water, false);
 }
 
 fn dry(t: grid.Tile) bool {
@@ -220,17 +231,16 @@ fn campable(t: grid.Tile) bool {
 
 fn woods(lv: *grid.Level, rng: *mathx.Rng, seed: u64, plan: Plan, p: Params) void {
     if (p.forest == 0) return;
-    const pal = palette(p);
     const clumps = carve.Noise.init(seed, .tee_woods);
     const reach: f32 = @floatFromInt(p.forest);
     const wood = grid.Box.sized(.{ .x = 1, .y = plan.bar.lo.y - p.fray }, p.forest, plan.bar.height() + p.fray);
     var cells = wood.cells();
     while (cells.next()) |q| {
-        if (lv.at(q) != pal.open) continue;
+        if (lv.at(q) != OPEN) continue;
         const thin = 1 - @as(f32, @floatFromInt(q.x)) / reach;
-        if (rise(clumps.at(q, THICKET_SCALE, 2)) < mathx.fraction(p.thicket) * thin) lv.set(q, pal.solid);
+        if (rise(clumps.at(q, THICKET_SCALE, 2)) < mathx.fraction(p.thicket) * thin) lv.set(q, SOLID);
     }
-    carve.scatterIn(lv, rng, p.trees, .{ .tile = pal.open }, .large_tree, true, wood);
+    carve.scatterIn(lv, rng, p.trees, .{ .tile = OPEN }, .large_tree, true, wood);
 }
 
 fn rise(v: f32) f32 {
@@ -273,9 +283,9 @@ fn lowestFor(width: u8) i32 {
 fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lowest: i32, kept: *grid.CellSet) void {
     const r = carve.laneRadius(width);
     const clear: i32 = @intFromFloat(@ceil(r) + KEEP_CLEAR);
-    var m = carve.Meander.init(a, b, wander);
-    while (m.next(rng)) |step| {
-        const c = P{ .x = step.x, .y = @min(step.y, lowest) };
+    const above = grid.Box{ .lo = .{ .x = std.math.minInt(i32), .y = std.math.minInt(i32) }, .hi = .{ .x = std.math.maxInt(i32), .y = lowest + 1 } };
+    var m = carve.Meander.init(a, b, wander).within(above);
+    while (m.next(rng)) |c| {
         carve.disc(lv, c, r, TRAIL, null);
         var cells = grid.Cells.around(c, clear);
         while (cells.next()) |q| {
@@ -331,16 +341,13 @@ fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.Ce
 
 fn around(rng: *mathx.Rng, c: P, r: f32, t: grid.Tile, spot: Spot) ?P {
     for (0..TRIES) |_| {
-        const a = rng.unit() * std.math.tau;
+        const a = rng.angle();
         const d = rng.between(r * PROP_NEAR, r - PROP_EDGE);
-        const q = P{ .x = c.x + @as(i32, @intFromFloat(@round(@cos(a) * d))), .y = c.y + @as(i32, @intFromFloat(@round(@sin(a) * d))) };
+        const q = c.add(mathx.roundCell(@cos(a) * d, @sin(a) * d));
         if (spot.roomy(q, t)) return q;
     }
     return null;
 }
-
-const SOLID = palette(.{}).solid;
-const OPEN = palette(.{}).open;
 
 fn forest(t: grid.Tile) bool {
     return t == SOLID;
@@ -384,7 +391,7 @@ const Crescent = struct {
     }
 
     fn hollow(s: Crescent) P {
-        return .{ .x = @intFromFloat(@round(s.hollow_x)), .y = @intFromFloat(@round(s.hollow_y)) };
+        return mathx.roundCell(s.hollow_x, s.hollow_y);
     }
 };
 
@@ -393,34 +400,65 @@ fn layable(t: grid.Tile) bool {
     return t == OPEN or t == SOLID or t == .large_tree;
 }
 
-/// Where the pond may lie: over grass or forest, off the roads, the bridge and anything wet or standing, and away from the carts.
-const PondSite = struct {
+/// Ground a pond or a goblin camp may be laid over, at least `clear` from the caravan camp's middle.
+const Site = struct {
     lv: *const grid.Level,
     kept: *const grid.CellSet,
     caravan: P,
     clear: i32,
+
+    fn nearCarts(s: Site, c: P) bool {
+        return mathx.dist(c, s.caravan) < s.clear;
+    }
+
+    /// Above the foot, off the roads, the bridge and anything standing, over grass, forest or a lone tree.
+    fn layableAt(s: Site, q: P) bool {
+        if (!ABOVE_FOOT.holds(q)) return false;
+        const i = grid.Level.idx(q);
+        return !s.kept.isSet(i) and !s.lv.barrel[i] and layable(s.lv.tile[i]);
+    }
+
+    /// A goblin camp's art with its corner at `lo`, and a cell round it.
+    fn campFits(s: Site, lo: P) bool {
+        const b = grid.Box.sizedP(lo, setpiece.size(CAMP_ART));
+        if (s.nearCarts(b.centre())) return false;
+        var cells = b.grown(1).cells();
+        while (cells.next()) |q| {
+            if (!s.layableAt(q)) return false;
+        }
+        return true;
+    }
+};
+
+/// Where the pond may lie: on `Site` ground, apart from other water so it stays a pond of its own,
+/// and with some of its shore on the T's grass so nothing need be cut to it.
+const PondSite = struct {
+    site: Site,
     r: f32,
     angle: f32,
 
     fn fits(s: PondSite, c: P) bool {
-        if (mathx.dist(c, s.caravan) < s.clear) return false;
+        if (s.site.nearCarts(c)) return false;
         const pond_at = Crescent.of(c, s.r, s.angle);
-        var cells = pond_at.box().cells();
+        var shore = false;
+        var cells = pond_at.box().grown(1).cells();
         while (cells.next()) |q| {
+            const into = pond_at.inDisc(q);
+            if (into < -WATER_APART) continue;
+            if (s.site.lv.at(q).wet()) return false;
             if (!pond_at.reaches(q)) continue;
-            if (!grid.Box.inMap(1).holds(q) or q.y >= BAR_FLOOR - 1) return false;
-            const i = grid.Level.idx(q);
-            if (s.kept.isSet(i) or s.lv.barrel[i] or !layable(s.lv.tile[i])) return false;
+            if (!s.site.layableAt(q)) return false;
+            shore = shore or (into < 0 and s.site.lv.at(q) == OPEN);
         }
-        return true;
+        return shore;
     }
 };
 
 /// A crescent of water in a clearing of its own, deep in from its edge, with chests out in it.
 fn pond(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *grid.CellSet) void {
     const r: f32 = @floatFromInt(p.pond);
-    const angle = rng.unit() * std.math.tau;
-    const site = PondSite{ .lv = lv, .kept = kept, .caravan = caravan, .clear = @as(i32, p.camp) + p.pond + CLEAR_OF_CARTS, .r = r, .angle = angle };
+    const angle = rng.angle();
+    const site = PondSite{ .site = .{ .lv = lv, .kept = kept, .caravan = caravan, .clear = @as(i32, p.camp) + p.pond + CLEAR_OF_CARTS }, .r = r, .angle = angle };
     const c = grid.Box.inMap(p.pond + 1).rollWhere(rng, POND_TRIES, site, PondSite.fits) orelse return;
     const s = Crescent.of(c, r, angle);
     var cells = s.box().cells();
@@ -471,32 +509,13 @@ fn wade(lv: *grid.Level, at: P, shore: P) void {
     }
 }
 
-const CampSite = struct {
-    lv: *const grid.Level,
-    kept: *const grid.CellSet,
-    caravan: P,
-    clear: i32,
-
-    fn fits(s: CampSite, lo: P) bool {
-        const b = grid.Box.sizedP(lo, setpiece.size(CAMP_ART));
-        if (mathx.dist(b.centre(), s.caravan) < s.clear) return false;
-        var cells = b.grown(1).cells();
-        while (cells.next()) |q| {
-            if (!grid.Box.inMap(1).holds(q) or q.y >= BAR_FLOOR - 1) return false;
-            const i = grid.Level.idx(q);
-            if (s.kept.isSet(i) or s.lv.barrel[i] or !layable(s.lv.tile[i])) return false;
-        }
-        return true;
-    }
-};
-
 fn goblinCamps(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *grid.CellSet) void {
     const size = setpiece.size(CAMP_ART);
     const half = @divTrunc(@max(size.x, size.y), 2);
-    const site = CampSite{ .lv = lv, .kept = kept, .caravan = caravan, .clear = @as(i32, p.camp) + CLEAR_OF_CARTS + half };
+    const site = Site{ .lv = lv, .kept = kept, .caravan = caravan, .clear = @as(i32, p.camp) + CLEAR_OF_CARTS + half };
     for (0..p.camps) |_| {
-        const at = grid.Box.inMap(2).rollForWhere(rng, size.x, size.y, POND_TRIES, site, CampSite.fits) orelse continue;
-        setpiece.place(lv, at, CAMP_ART, palette(p));
+        const at = grid.Box.inMap(2).rollForWhere(rng, size.x, size.y, SITE_TRIES, site, Site.campFits) orelse continue;
+        setpiece.place(lv, at, CAMP_ART, PAL);
         var cells = grid.Box.sizedP(at, size).grown(1).cells();
         while (cells.next()) |q| kept.set(grid.Level.idx(q));
     }
@@ -505,7 +524,7 @@ fn goblinCamps(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *g
 /// Forest along `d` from `q`, far enough for a trail to wind into.
 fn leadsInto(lv: *const grid.Level, q: P, d: mathx.Dir) bool {
     const ahead = q.add(d.delta().scaled(SPUR_INTO));
-    return grid.Box.inMap(1).holds(ahead) and ahead.y < BAR_FLOOR - 1 and forest(lv.at(q.add(d.delta()))) and forest(lv.at(ahead));
+    return ABOVE_FOOT.holds(ahead) and forest(lv.at(q.add(d.delta()))) and forest(lv.at(ahead));
 }
 
 fn spurStart(lv: *const grid.Level, q: P) bool {
@@ -516,22 +535,20 @@ fn spurStart(lv: *const grid.Level, q: P) bool {
 
 /// A winding trail from the T's edge into the forest, ending narrow or in a small glade.
 fn spur(lv: *grid.Level, rng: *mathx.Rng) void {
-    const start = grid.Box.inMap(2).rollWhere(rng, POND_TRIES, @as(*const grid.Level, lv), spurStart) orelse return;
+    const start = SPUR_BOX.rollWhere(rng, SITE_TRIES, @as(*const grid.Level, lv), spurStart) orelse return;
     var ways = grid.Bounded(mathx.Dir, carve.SIDES.len){};
     for (carve.SIDES) |d| if (leadsInto(lv, start, d)) ways.push(d);
     const d = rng.pick(mathx.Dir, ways.slice()).delta();
     const length = rng.range(SPUR_SHORTEST, SPUR_LONGEST);
     const aside = rng.range(-@divTrunc(length, 2), @divTrunc(length, 2));
     const r = carve.laneRadius(SPUR_WIDTH);
-    const lowest = BAR_FLOOR - 2 - carve.discReach(r);
-    const to = P{
-        .x = std.math.clamp(start.x + d.x * length - d.y * aside, 2, grid.W - 3),
-        .y = std.math.clamp(start.y + d.y * length + d.x * aside, 2, lowest),
-    };
-    var m = carve.Meander.init(start, to, SPUR_WANDER);
+    var bounds = SPUR_BOX;
+    bounds.hi.y = lowestFor(SPUR_WIDTH);
+    const to = bounds.clamp(.{ .x = start.x + d.x * length - d.y * aside, .y = start.y + d.y * length + d.x * aside });
+    var m = carve.Meander.init(start, to, SPUR_WANDER).within(bounds);
     var end = start;
     while (m.next(rng)) |step| {
-        end = .{ .x = std.math.clamp(step.x, 2, grid.W - 3), .y = std.math.clamp(step.y, 2, lowest) };
+        end = step;
         carve.disc(lv, end, r, TRAIL, forest);
     }
     if (rng.percent(GLADE_PERCENT)) carve.disc(lv, end, GLADE_R, OPEN, forest);
@@ -542,6 +559,10 @@ fn rolled(lv: *grid.Level, seed: u64, doors: []const P, p: Params) void {
 }
 
 const RUNS: usize = 100;
+
+fn bridgeAt(lv: *const grid.Level) !P {
+    return grid.Level.of(std.mem.indexOfScalar(grid.Tile, &lv.tile, CROSSING) orelse return error.NoBridge);
+}
 
 /// Dry cells east of the bridge on its middle row, up to the rim.
 fn farBank(lv: *const grid.Level) i32 {
@@ -598,7 +619,7 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
         bridged += @intFromBool(carve.count(&lv, CROSSING) > 0);
         flammable += carve.count(&lv, .bridge);
         trees += carve.count(&lv, .large_tree);
-        for (lv.barrel) |b| barrels += @intFromBool(b);
+        barrels += lv.barrelCount();
     }
     std.debug.print("{d} tees: {d} open cells in the upper corners and under the bar, {d} of {d} carts, {d} bridged in stone, {d} wooden bridge cells, {d} large trees and {d} barrels a map, a far bank {d} cells at the least of {d}, {d} of {d} at the narrowest\n", .{ RUNS, corner_open, carts, RUNS * p.carts, bridged, flammable, trees / RUNS, barrels / RUNS, bank, p.bank, narrow, BANK_MIN });
     std.debug.print("{d} low tees with the widest paths: {d} open cells under the bar\n", .{ RUNS, low_foot_open });
@@ -626,10 +647,7 @@ test "a tee's carts stand whole and its roads reach the west, north and east edg
             grid.Box.sized(.{ .x = 1, .y = 1 }, grid.W - 2, 1),
             grid.Box.sized(.{ .x = grid.W - 2, .y = 1 }, 1, grid.H - 2),
         };
-        const from = for (0..grid.CELLS) |k| {
-            if (lv.tile[k] == CROSSING) break grid.Level.of(k);
-        } else return error.NoBridge;
-        _ = grid.distances(&lv, from, &dist, &queue);
+        _ = grid.distances(&lv, try bridgeAt(&lv), &dist, &queue);
         for (ends, &reached) |b, *got| {
             var cells = b.cells();
             while (cells.next()) |q| {
@@ -655,10 +673,7 @@ test "a tee's crescent pond, its chests and its goblin camps' fires are all walk
     var fires = [2]usize{ 0, 0 };
     for (0..RUNS) |i| {
         rolled(&lv, 0x7F0 +% i *% grid.TEST_SEED_STRIDE, &door, p);
-        const from = for (0..grid.CELLS) |k| {
-            if (lv.tile[k] == CROSSING) break grid.Level.of(k);
-        } else return error.NoBridge;
-        _ = grid.distances(&lv, from, &dist, &queue);
+        _ = grid.distances(&lv, try bridgeAt(&lv), &dist, &queue);
         ponds += @intFromBool(carve.count(&lv, .water) > 0 and carve.count(&lv, .shallows) > 0);
         for (lv.tile, 0..) |t, k| {
             const which: *[2]usize = switch (t) {

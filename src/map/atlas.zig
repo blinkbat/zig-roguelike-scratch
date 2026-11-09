@@ -279,8 +279,16 @@ pub const Node = struct {
     /// Raiders whose raid door this node does not have, so they never come.
     pub fn raidAstray(self: *const Node) bool {
         return switch (self.plan) {
-            .procgen => |*pg| pg.raid.raiders > 0 and pg.raid.raid_door >= self.door_n,
+            .procgen => |*pg| pg.raid.raiders > 0 and self.raidDoor() == null,
             .bespoke => false,
+        };
+    }
+
+    /// The cell its raiders come in by: null on a bespoke node or one without its raid door.
+    pub fn raidDoor(self: *const Node) ?P {
+        return switch (self.plan) {
+            .procgen => |*pg| if (pg.raid.raid_door < self.door_n) self.door[pg.raid.raid_door].at else null,
+            .bespoke => null,
         };
     }
 
@@ -617,22 +625,21 @@ fn standsFree(lv: *const grid.Level, p: P, avoid: *const grid.CellSet) bool {
     return !grid.Level.onRim(p) and lv.vacant(p) and lv.doorAt(p) == null and !lv.at(p).wet() and !avoid.isSet(grid.Level.idx(p));
 }
 
-/// Beside the first `t` in reading order with room round it: in front of it before its sides, its sides before behind it.
+const Standing = struct {
+    lv: *const grid.Level,
+    avoid: *const grid.CellSet,
+
+    fn ok(s: Standing, p: P) bool {
+        return standsFree(s.lv, p, s.avoid);
+    }
+};
+
+/// Beside the first `t` in reading order with room round it, as `grid.besideFoot` ranks it.
 fn beside(lv: *const grid.Level, t: grid.Tile, avoid: *const grid.CellSet) ?P {
+    const standing = Standing{ .lv = lv, .avoid = avoid };
     for (lv.tile, 0..) |here, i| {
         if (here != t) continue;
-        const foot = t.footprint(grid.Level.of(i));
-        var best: ?P = null;
-        var rank: i32 = std.math.maxInt(i32);
-        var ring = foot.grown(1).cells();
-        while (ring.next()) |q| {
-            if (foot.holds(q) or !grid.Level.inside(q) or !standsFree(lv, q, avoid)) continue;
-            const r: i32 = if (q.y > foot.lo.y) 0 else if (q.y == foot.lo.y) 1 else 2;
-            if (r >= rank) continue;
-            best = q;
-            rank = r;
-        }
-        if (best) |b| return b;
+        if (grid.besideFoot(t.footprint(grid.Level.of(i)), standing, Standing.ok)) |b| return b;
     }
     return null;
 }
@@ -958,7 +965,7 @@ test "the caravan posts three guards beside its carts, apart from the merchant, 
         for (pool.constSlice()) |g| {
             if (g.foe()) {
                 var near = grid.Cells.around(g.at, pack.CAMP_GAP - 1);
-                while (near.next()) |q| try std.testing.expect(!grid.Level.inside(q) or (lv.at(q) != .caravan and lv.at(q) != .caravan_part));
+                while (near.next()) |q| try std.testing.expect(!grid.Level.inside(q) or lv.at(q).whole() != .caravan);
                 foes += 1;
             }
             if (g.kind != post.GUARD) continue;
@@ -966,7 +973,7 @@ test "the caravan posts three guards beside its carts, apart from the merchant, 
             try std.testing.expect(lv.npcAt(g.at) == null);
             var cart = false;
             var round = grid.Cells.around(g.at, 1);
-            while (round.next()) |q| cart = cart or (grid.Level.inside(q) and (lv.at(q) == .caravan or lv.at(q) == .caravan_part));
+            while (round.next()) |q| cart = cart or (grid.Level.inside(q) and lv.at(q).whole() == .caravan);
             try std.testing.expect(cart);
         }
         fewest = @min(fewest, guards);
@@ -1005,7 +1012,7 @@ test "the caravan's merchant stands beside a cart, and the stolen baby pib far u
         try std.testing.expectEqual(@as(?usize, merchant), lv.npcAt(at));
         var cart = false;
         var round = grid.Cells.around(at, 1);
-        while (round.next()) |q| cart = cart or (grid.Level.inside(q) and (lv.at(q) == .caravan or lv.at(q) == .caravan_part));
+        while (round.next()) |q| cart = cart or (grid.Level.inside(q) and lv.at(q).whole() == .caravan);
         try std.testing.expect(cart);
         a.node[north.node].stamp(&lv, seed);
         a.stampNpcs(north.node, &lv, &stood, EVERY_NPC);

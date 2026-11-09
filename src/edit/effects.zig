@@ -296,13 +296,13 @@ pub fn keys(ed: *editor.Editor) void {
         v.reveal = true;
     }
     if (d.enter) v.reset();
-    if (d.wheel != 0) widgets.scrollBy(&v.list.top, v.list.most, d.notch() * widgets.WHEEL_PX);
+    if (d.wheel != 0) v.list.wheel(d.mouse, d.notch());
 }
 
 const LIST_W: i32 = 320;
 const HEADER_STEP: i32 = widgets.HEADING_H + widgets.GAP;
 const SPEED_W: i32 = 150;
-const TITLE = "Effects";
+pub const TITLE = "Effects";
 
 pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const v = ed.effects orelse return;
@@ -318,7 +318,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     widgets.textFace(&g.face).draw(v.sample().name(), x, f.y, widgets.TITLE, look.TEXT);
     const stage = raster.rect(x, f.y + widgets.TITLE + widgets.GAP, @intFromFloat(px(COLS, cell)), @intFromFloat(px(ROWS, cell)));
     drawStage(g, v, stage, cell);
-    rl.drawRectangleLinesEx(raster.grown(stage, 1), 1, look.EDGE);
+    widgets.outline(stage);
     var controls = widgets.Lay{ .x = x, .y = @as(i32, @intFromFloat(stage.y + stage.height)) + widgets.GAP };
     for (SPEEDS, 0..) |s, i| {
         if (editor.modalButton(ed, g, controls.take(SPEED_W), s.label, v.speed == i, true, "How fast the stage plays")) v.speed = i;
@@ -342,19 +342,16 @@ fn drawList(ed: *editor.Editor, g: *game.Game, v: *Viewer, box: rl.Rectangle) vo
         v.reveal = false;
         scroll.reveal(rowTop(v.at), widgets.ROW_H);
     }
-    var y = scroll.begin(&ed.clip);
+    const top = scroll.begin(&ed.clip);
     const x: i32 = @intFromFloat(box.x);
     const w: i32 = @intFromFloat(box.width);
     var last: ?Group = null;
     for (SAMPLES, 0..) |s, i| {
-        if (opens(&last, s)) {
-            widgets.heading(&g.face, GROUP_NAMES.get(s.group()), x, y + widgets.GAP);
-            y += HEADER_STEP;
-        }
+        const y = top + rowTop(i);
+        if (opens(&last, s)) widgets.heading(&g.face, GROUP_NAMES.get(s.group()), x, y - HEADER_STEP + widgets.GAP);
         if (widgets.flatButton(ed.controls(), &g.face, widgets.row(x, y, w - widgets.SCROLL_W - widgets.GAP), s.name(), look.TEXT, i == v.at, true, true, null)) v.pick(i);
-        y += widgets.ROW_H;
     }
-    scroll.close(&ed.clip, y, 0);
+    scroll.close(&ed.clip, top + rowTop(SAMPLES.len - 1) + widgets.ROW_H, 0);
 }
 
 /// Whether `s` heads a group of its own, after `last`'s.
@@ -436,9 +433,7 @@ fn drawPools(v: *const Viewer, s: Sample, o: [2]f32, cell: f32) void {
 /// DEV ONLY: the sample named `want`, played `seconds` in.
 pub fn pose(ed: *editor.Editor, want: Sample, seconds: f32) !void {
     const v = try viewer(ed);
-    v.at = for (SAMPLES, 0..) |s, i| {
-        if (std.meta.eql(s, want)) break i;
-    } else unreachable;
+    v.at = mathx.indexOfEql(Sample, &SAMPLES, want).?;
     v.speed = 0;
     var t: f32 = 0;
     while (t < seconds) : (t += POSE_STEP) v.step(POSE_STEP);

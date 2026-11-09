@@ -448,6 +448,12 @@ pub const Dialog = struct {
     }
 };
 
+/// A stage past `gone` moves down onto the one it became, held to `keep`.
+fn shiftStage(n: *i32, gone: i32, keep: Span) void {
+    if (n.* > gone) n.* -= 1;
+    n.* = keep.clamp(n.*);
+}
+
 fn swapped(at: *?u8, a: u8, b: u8) void {
     const v = at.* orelse return;
     if (v == a) at.* = b else if (v == b) at.* = a;
@@ -480,10 +486,8 @@ pub fn besideable(t: grid.Tile) bool {
 
 /// The prop an NPC placed beside `t` stands `by`: a wide prop's head for any of its pieces, null where none may.
 pub fn besideOf(t: grid.Tile) ?grid.Tile {
-    if (t.isPart()) for (std.enums.values(grid.Tile)) |head| {
-        if (head.partOf() == t) return if (besideable(head)) head else null;
-    };
-    return if (besideable(t)) t else null;
+    const head = t.whole();
+    return if (besideable(head)) head else null;
 }
 
 /// Where each NPC placed on its node's roll stands, once it has.
@@ -817,18 +821,13 @@ pub const Script = struct {
         const qs = &self.quest[q];
         cut(Note, &qs.stage, &qs.stage_n, k);
         const gone: i32 = @as(i32, k) + 1;
-        const last: i32 = qs.stage_n;
         var conds = self.condIterMut();
         while (conds.next()) |c| {
-            if (c.kind != .stage or c.slot != q) continue;
-            if (c.n > gone) c.n -= 1;
-            c.n = @min(c.n, last);
+            if (c.kind == .stage and c.slot == q) shiftStage(&c.n, gone, qs.reach(STAGE_SPAN.lo));
         }
         var acts = self.actIterMut();
         while (acts.next()) |a| {
-            if (a.kind != .quest or a.slot != q) continue;
-            if (a.n > gone) a.n -= 1;
-            a.n = @max(1, @min(a.n, last));
+            if (a.kind == .quest and a.slot == q) shiftStage(&a.n, gone, qs.reach(ActKind.span(.quest).lo));
         }
     }
 
@@ -917,7 +916,7 @@ pub const Script = struct {
         if (!c.kind.span().holds(c.n)) return false;
         return switch (c.kind) {
             .always, .never, .flag, .counter, .timer, .elapsed, .talked, .near, .quest => true,
-            .stage => self.quest[c.slot].reach(0).holds(c.n),
+            .stage => self.quest[c.slot].reach(STAGE_SPAN.lo).holds(c.n),
             .region => c.node < node_n and grid.Level.inside(c.from) and grid.Level.inside(c.to),
             .deaths, .alive => c.foe.stocked(),
         };
@@ -925,7 +924,7 @@ pub const Script = struct {
 
     fn actFits(self: *const Script, a: *const Act) bool {
         if (!self.slotFits(actRef(a.kind), a.slot) or !a.note.valid()) return false;
-        if (a.kind == .quest and a.questop == .stage and !self.quest[a.slot].reach(1).holds(a.n)) return false;
+        if (a.kind == .quest and a.questop == .stage and !self.quest[a.slot].reach(ActKind.span(.quest).lo).holds(a.n)) return false;
         return a.kind.span().holds(a.n);
     }
 };

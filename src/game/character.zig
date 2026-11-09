@@ -500,10 +500,9 @@ test "the Quests tab scrolls to its last screenful without a turn and reopens at
     const alloc = std.testing.allocator;
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
-    const w = try alloc.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer alloc.destroy(w);
-    w.* = .{};
-    @import("harness.zig").arena(g, grid.MIDDLE, &.{});
+    game.harness.arena(g, grid.MIDDLE, &.{});
     g.sim.map = w;
     for (0..script.MAX_QUESTS) |_| {
         const q = w.script.addQuest().?;

@@ -34,9 +34,7 @@ pub const Maim = struct {
     }
 };
 
-pub fn afflict(a: anytype, _: *mathx.Rng) void {
-    a.maim.start();
-}
+pub const afflict = resilience.Starts(AILMENT).afflict;
 
 test "a maimed body loses a turn to every second step, and walks freely once it wears off" {
     var m = Maim{};

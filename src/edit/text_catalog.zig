@@ -297,7 +297,7 @@ pub const Catalog = struct {
         try self.files.append(a, .{ .path = path, .bytes = bytes });
         const ts = try tokenize(a, bytes);
         for (ts) |token| if (token.tag == .invalid) return error.InvalidSource;
-        if (self.skills == null) self.skills = try skillSources(a, @embedFile("../play/skillbar.zig"));
+        if (self.skills == null) self.skills = try skillSources(a, @embedFile("../" ++ SKILLBAR_SOURCE));
         var contexts = try ContextScan.init(a, path, bytes, ts, self.skills.?);
         const pairs = contexts.pairs;
         var excluded = try a.alloc(bool, ts.len);
@@ -392,8 +392,11 @@ fn included(path: []const u8) bool {
 const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
 const EFFECT_SOURCES = [_][]const u8{ "gfx/fx.zig", "gfx/effect_state.zig", "gfx/impact_queue.zig" };
 const LOOK_SOURCES = [_][]const u8{ "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig" };
-const LONE_SOURCES = [_][]const u8{ "app.zig", "game.zig", "save.zig", "save_data.zig", "gfx/look.zig" } ++ EFFECT_SOURCES ++ LOOK_SOURCES;
+const LONE_SOURCES = [_][]const u8{ "app.zig", "game.zig", "save.zig", SAVE_SOURCE, "gfx/look.zig" } ++ EFFECT_SOURCES ++ LOOK_SOURCES;
 const EXCLUDED_SOURCES = [_][]const u8{ "game/shots.zig", "game/harness.zig", "map/atlas_text.zig", "map/script_text.zig", "edit/text_catalog.zig", "edit/text_panel.zig" };
+const SKILLBAR_SOURCE = "play/skillbar.zig";
+const ITEMS_SOURCE = "play/items.zig";
+const SAVE_SOURCE = "save_data.zig";
 const KEYBOARD_SOURCE = "ui/naming.zig";
 const KEYBOARD_DECL = "LETTERS";
 /// Declarations `spoken` judges by name: never prose, then always prose.
@@ -417,7 +420,7 @@ const DECL_SOURCES = [_][2][]const u8{
 
 comptime {
     @setEvalBranchQuota(100_000);
-    for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES) |p| _ = @embedFile("../" ++ p);
+    for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES ++ [_][]const u8{ SKILLBAR_SOURCE, ITEMS_SOURCE }) |p| _ = @embedFile("../" ++ p);
     for (DECL_SOURCES) |d| {
         if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "const " ++ d[1] ++ " ") == null) @compileError(d[0] ++ " no longer declares " ++ d[1]);
     }
@@ -529,12 +532,12 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (inputSource(path)) return "Input";
     if (std.mem.startsWith(u8, path, SRC)) {
         const rel = path[SRC.len..];
-        if (std.mem.eql(u8, rel, "save_data.zig")) return "Save";
+        if (std.mem.eql(u8, rel, SAVE_SOURCE)) return "Save";
         if (std.mem.startsWith(u8, rel, "edit/")) return "Editor";
         if (std.mem.startsWith(u8, rel, "map/")) return "Maps";
         if (std.mem.startsWith(u8, rel, "ui/")) return "Interface";
-        if (std.mem.eql(u8, rel, "play/items.zig")) return "Items";
-        if (std.mem.eql(u8, rel, "play/skillbar.zig")) return "Skills";
+        if (std.mem.eql(u8, rel, ITEMS_SOURCE)) return "Items";
+        if (std.mem.eql(u8, rel, SKILLBAR_SOURCE)) return "Skills";
         if (contains(&EFFECT_SOURCES, rel)) return "Effects";
         if (contains(&LOOK_SOURCES, rel)) return "Look";
     }

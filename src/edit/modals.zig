@@ -128,9 +128,11 @@ const VIEW_PIC: f32 = 48;
 const VIEW_PIC_TOP: f32 = 4;
 const VIEW_BIG: i32 = 160;
 
+pub const OBJECTS_TITLE = "Objects";
+
 fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const grid_w = @as(i32, VIEW_COLS) * VIEW_CELL;
-    const title = "Objects";
+    const title = OBJECTS_TITLE;
     var cells = panel.Tiles{ .x = 0, .y = 0, .cols = VIEW_COLS, .pitch = VIEW_CELL, .size = VIEW_CELL - widgets.GAP };
     const cells_h = cells.height(editor.SEEN.len);
     const f = widgets.modalFrame(&g.face, g.screen, VIEW_W, widgets.MODAL_HEAD + widgets.PAD + cells_h + widgets.ROW_STEP, title, false);
@@ -300,9 +302,13 @@ pub fn fieldRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) void {
     rl.drawRectangleRec(r, ROW_ON);
     if (ed.field.selected) rl.drawRectangleLinesEx(r, 2, look.UI_FOCUS);
     const typed = std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "";
-    widgets.drawFit(&g.face, typed, widgets.TEXT, widgets.insetW(r), true, widgets.textX(r), @as(i32, @intFromFloat(r.y)) + widgets.TEXT_DY, look.UI_FOCUS);
+    widgets.drawFit(&g.face, typed, widgets.TEXT, widgets.insetW(r), true, widgets.textX(r), widgets.midY(r, widgets.TEXT), look.UI_FOCUS);
 }
 
 pub fn backButton(ed: *editor.Editor, g: *game.Game, f: widgets.Frame, y: i32, comptime label: []const u8) void {
-    if (editor.modalButton(ed, g, f.button(y, 0), widgets.keyed(label, Desk.BACK_CAPTION), false, true, null)) ed.modal = .none;
+    if (backPressed(ed, g, f, y, label, null)) ed.modal = .none;
+}
+
+pub fn backPressed(ed: *editor.Editor, g: *game.Game, f: widgets.Frame, y: i32, comptime label: []const u8, tip: ?[:0]const u8) bool {
+    return editor.modalButton(ed, g, f.button(y, 0), widgets.keyed(label, Desk.BACK_CAPTION), false, true, tip);
 }

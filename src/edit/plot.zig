@@ -13,6 +13,8 @@ const game = @import("../game.zig");
 const editor = @import("editor.zig");
 const widgets = @import("widgets.zig");
 const text_panel = @import("text_panel.zig");
+const modals = @import("modals.zig");
+const interaction = @import("interaction.zig");
 const Desk = input.Desk;
 const Script = script.Script;
 
@@ -24,6 +26,7 @@ const TEXT = widgets.TEXT;
 const DETAIL = widgets.DETAIL;
 const LABEL_W: i32 = 130;
 const SUB_W: i32 = 100;
+const SUB_X: i32 = LABEL_W - SUB_W;
 const DROP_W: i32 = widgets.ROW_H;
 const BTN_W: i32 = 200;
 const TALK_W: i32 = 320;
@@ -45,7 +48,8 @@ const REGION_W: i32 = 400;
 const FOE_W: i32 = 220;
 const NUMBER_W: i32 = 150;
 const UNIT_W: i32 = 170;
-const SPLIT_MIN_W: i32 = 2 * widgets.STEP_W + 24;
+const SPLIT_VALUE_W: i32 = 24;
+const SPLIT_MIN_W: i32 = widgets.stepperW(SPLIT_VALUE_W);
 const LIST_PARTS: i32 = 5;
 const LIST_MIN_W: i32 = 240;
 const LIST_MAX_W: i32 = 330;
@@ -121,6 +125,25 @@ pub const State = struct {
     detail: widgets.Scrolled = .{},
     /// The script's lists as the page last drew them; a picked index means nothing once they changed elsewhere.
     seen: Seen = .{},
+
+    /// Each pick dropped once the list it indexes has shrunk past it.
+    fn fit(s: *State, m: *const Script) void {
+        switch (s.pick) {
+            .npc => |i| if (i >= m.npc_n) {
+                s.pick = .none;
+            },
+            .dialog => |i| if (i >= m.dialog_n) {
+                s.pick = .none;
+            },
+            .none => {},
+        }
+        if (s.trigger) |t| if (t >= m.trigger_n) {
+            s.trigger = null;
+        };
+        if (s.quest) |q| if (q >= m.quest_n) {
+            s.quest = null;
+        };
+    }
 };
 
 pub const Seen = struct {
@@ -175,7 +198,7 @@ pub fn keys(ed: *editor.Editor) void {
         };
         return typed(ed, t);
     }
-    if (d.back or d.erase_hit) close(ed);
+    if (interaction.backed(d)) close(ed);
 }
 
 fn close(ed: *editor.Editor) void {
@@ -299,7 +322,7 @@ fn actOf(m: *Script, at: ActAt) ?*script.Act {
     return if (a < list.n.*) &list.items[a] else null;
 }
 
-/// One frame of either page; a click no field took leaves the words.
+/// One frame of a page; a click no field took leaves the words.
 pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.plot;
     s.claimed = false;
@@ -307,6 +330,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     if (s.focus) |f| if (target(&ed.map.script, f) == null) {
         s.focus = null;
     };
+    s.fit(&ed.map.script);
     switch (ed.modal.plot) {
         .script => drawScript(ed, g),
         .dialogs => drawDialogs(ed, g),
@@ -348,17 +372,61 @@ fn rightOf(ed: *editor.Editor, f: Frame, list: widgets.Scroll, y: i32) widgets.C
     return .{ .x = x, .w = f.x + f.w - x };
 }
 
-fn frameOf(ed: *editor.Editor, g: *game.Game, title: [:0]const u8) Frame {
-    const page = widgets.pageFrame(&g.face, g.screen, title);
+fn frameOf(ed: *editor.Editor, g: *game.Game, p: Page) Frame {
+    const page = widgets.pageFrame(&g.face, g.screen, p.label());
     const f = page.frame;
-    if (button(ed, g, f.button(page.bottom - ROW, 0), widgets.keyed("Close", Desk.BACK_CAPTION), false, true, "Every change is in the map already; it saves with it")) close(ed);
+    if (modals.backPressed(ed, g, f, page.bottom - ROW, "Close", "Every change is in the map already; it saves with it")) close(ed);
     const col = page.column();
     return .{ .x = col.left(), .y = f.y, .w = col.inner(), .bottom = page.bottom - ROW - GAP };
 }
 
+/// A list's heading with its count, and a "+ New" at its end; whether that was pressed.
+fn listHead(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, comptime title: []const u8, n: usize, most: usize, tip: [:0]const u8) bool {
+    countHeading(g, f.x, y, f.listW(), title, n, most);
+    return rightButton(ed, g, f.x + f.listW() - GAP, y, NEW_W, "+ New", n < most, tip);
+}
+
+/// A row of the list; picking it scrolls the detail back to its top.
+fn listRow(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, label: []const u8, on: bool, tip: [:0]const u8) bool {
+    const hit = button(ed, g, widgets.row(f.x, y, f.listW() - GAP), label, on, true, tip);
+    if (hit) ed.plot.detail.top = 0;
+    return hit;
+}
+
+/// The picked item's detail, scrolled within the column right of the list.
+fn detailPane(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32, bottom: i32, comptime body: fn (*editor.Editor, *game.Game, u8, i32, i32, i32) i32, i: u8) void {
+    const area = ed.plot.detail.at(raster.rect(x, top, w, bottom - top));
+    const end = body(ed, g, i, x, area.begin(&ed.clip), w - PAD);
+    area.close(&ed.clip, end, 0);
+}
+
+/// A delete button's words: what still names it, or that it can go.
+fn dropLabel(buf: []u8, users: usize, comptime noun: []const u8) [:0]const u8 {
+    if (users > 0) return std.fmt.bufPrintZ(buf, "Used {d} times", .{users}) catch "";
+    return "Delete " ++ noun;
+}
+
+fn beforeDrop(w: i32) i32 {
+    return w - LABEL_W - DROP_W - GAP;
+}
+
+/// A condition that may be absent: its row and a drop, or a button that adds one.
+fn optCond(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *?script.Cond, drop_tip: [:0]const u8, add_tip: [:0]const u8) void {
+    if (c.*) |*cond| {
+        condRow(ed, g, x + LABEL_W, y, beforeDrop(w), cond);
+        if (dropButton(ed, g, x + w, y, true, drop_tip)) {
+            c.* = null;
+            ed.bank();
+        }
+    } else if (button(ed, g, widgets.row(x + LABEL_W, y, BTN_W), "+ Condition", false, true, add_tip)) {
+        c.* = .{ .kind = .always };
+        ed.bank();
+    }
+}
+
 const button = editor.modalButton;
 
-fn rightButton(ed: *editor.Editor, g: *game.Game, right: i32, y: i32, w: i32, label: [:0]const u8, live: bool, tip: ?[:0]const u8) bool {
+fn rightButton(ed: *editor.Editor, g: *game.Game, right: i32, y: i32, w: i32, label: []const u8, live: bool, tip: ?[:0]const u8) bool {
     return button(ed, g, widgets.row(right - w, y, w), label, false, live, tip);
 }
 
@@ -374,11 +442,11 @@ fn nameRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: []c
 }
 
 fn caption(g: *game.Game, x: i32, y: i32, w: i32, s: []const u8, col: rl.Color) void {
-    widgets.drawFit(&g.face, s, DETAIL, w, false, x, y + widgets.DETAIL_DY, col);
+    widgets.rowText(&g.face, s, DETAIL, x, y, w, col);
 }
 
 fn heading(g: *game.Game, x: i32, y: i32, w: i32, s: []const u8) void {
-    widgets.drawFit(&g.face, s, TEXT, w, false, x, y + widgets.TEXT_DY, look.UI_GOLD);
+    widgets.rowText(&g.face, s, TEXT, x, y, w, look.UI_GOLD);
 }
 
 fn countHeading(g: *game.Game, x: i32, y: i32, w: i32, comptime title: []const u8, n: usize, most: usize) void {
@@ -392,9 +460,7 @@ fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8
     return widgets.stepper(ed.controls(), &g.face, r, value, widgets.PAGE_ARROWS, .{ step, step }, shift);
 }
 
-fn cycle(comptime T: type, v: T, by: i32) T {
-    return mathx.stepIn(T, std.enums.values(T), v, by, 0);
-}
+const cycle = mathx.cycle;
 
 fn numberStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, v: *i32, span: script.Span, unit: []const u8, tip: [:0]const u8) void {
     var buf: [32]u8 = undefined;
@@ -461,16 +527,7 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
 fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.plot;
     const m = &ed.map.script;
-    switch (s.pick) {
-        .npc => |i| if (i >= m.npc_n) {
-            s.pick = .none;
-        },
-        .dialog => |i| if (i >= m.dialog_n) {
-            s.pick = .none;
-        },
-        .none => {},
-    }
-    const f = frameOf(ed, g, "Dialog");
+    const f = frameOf(ed, g, .dialogs);
     const lw = f.listW();
     var buf: [widgets.LINE]u8 = undefined;
     const list = listArea(ed, f);
@@ -482,28 +539,24 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
         y += STEP;
     }
     for (m.npcs(), 0..) |*npc, i| {
-        const line = std.fmt.bufPrintZ(&buf, "{s}  (node {d})", .{ npc.called(), npc.node }) catch "";
-        if (button(ed, g, widgets.row(f.x, y, lw - GAP), line, s.pick == .npc and s.pick.npc == i, true, "What this NPC is called and which dialog it opens")) {
-            s.pick = .{ .npc = @intCast(i) };
-            s.detail.top = 0;
-        }
+        const line = std.fmt.bufPrint(&buf, "{s}  (node {d})", .{ npc.called(), npc.node }) catch "";
+        if (listRow(ed, g, f, y, line, s.pick == .npc and s.pick.npc == i, "What this NPC is called and which dialog it opens")) s.pick = .{ .npc = @intCast(i) };
         y += STEP;
     }
     y += GAP;
-    countHeading(g, f.x, y, lw, "Dialogs", m.dialog_n, script.MAX_DIALOGS);
-    if (rightButton(ed, g, f.x + lw - GAP, y, NEW_W, "+ New", m.dialog_n < script.MAX_DIALOGS, "A new dialog of one empty line")) {
+    if (listHead(ed, g, f, y, "Dialogs", m.dialog_n, script.MAX_DIALOGS, "A new dialog of one empty line")) {
         if (m.addDialog("")) |d| {
             ed.bank();
             s.pick = .{ .dialog = d };
             s.line = 0;
+            s.detail.top = 0;
         }
     }
     y += STEP;
     for (m.dialogs(), 0..) |*dl, i| {
-        if (button(ed, g, widgets.row(f.x, y, lw - GAP), std.fmt.bufPrintZ(&buf, "{s}", .{dl.name.text()}) catch "", s.pick == .dialog and s.pick.dialog == i, true, "Its lines, what they say and where each choice goes")) {
+        if (listRow(ed, g, f, y, dl.name.text(), s.pick == .dialog and s.pick.dialog == i, "Its lines, what they say and where each choice goes")) {
             s.pick = .{ .dialog = @intCast(i) };
             s.line = 0;
-            s.detail.top = 0;
         }
         y += STEP;
     }
@@ -564,16 +617,7 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     }
     y += STEP;
     caption(g, x, y, LABEL_W, "Stands while", look.TEXT);
-    if (npc.shows) |*c| {
-        condRow(ed, g, x + LABEL_W, y, w - LABEL_W - DROP_W - GAP, c);
-        if (dropButton(ed, g, x + w, y, true, "Always stands")) {
-            npc.shows = null;
-            ed.bank();
-        }
-    } else if (button(ed, g, widgets.row(x + LABEL_W, y, BTN_W), "+ Condition", false, true, "Gone, and talked to by no one, while it does not hold")) {
-        npc.shows = .{ .kind = .always };
-        ed.bank();
-    }
+    optCond(ed, g, x, y, w, &npc.shows, "Always stands", "Gone, and talked to by no one, while it does not hold");
     y += STEP;
     caption(g, x, y, LABEL_W, "Looks like", look.TEXT);
     const kinds = std.enums.values(actor.Kind);
@@ -683,8 +727,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     const lines_w = widgets.share(w, LINES_PARTS, LINES_MIN_W, LINES_MAX_W);
     var y = top;
     const users = m.dialogUsers(di);
-    const drop = if (users > 0) std.fmt.bufPrintZ(&buf, "Used {d} times", .{users}) catch "" else "Delete dialog";
-    if (nameRow(ed, g, x, y, w, "Dialog", .{ .dialog = di }, drop, users == 0, "Delete it; a dialog an NPC or trigger still names cannot go")) {
+    if (nameRow(ed, g, x, y, w, "Dialog", .{ .dialog = di }, dropLabel(&buf, users, "dialog"), users == 0, "Delete it; a dialog an NPC or trigger still names cannot go")) {
         if (m.dropDialog(di)) {
             ed.bank();
             s.pick = .none;
@@ -723,15 +766,14 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
         ed.bank();
     }
     const dx = widgets.besides(x, lines_w, top + STEP + GAP, bottom);
-    const dw = x + w - dx;
-    const area = s.detail.at(raster.rect(dx, top + STEP + GAP, dw, bottom - top - STEP - GAP));
-    const end = drawLine(ed, g, di, s.line, dx, area.begin(&ed.clip), dw - PAD);
-    area.close(&ed.clip, end, 0);
+    detailPane(ed, g, dx, top + STEP + GAP, x + w - dx, bottom, drawLine, di);
 }
 
-fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, li: u8, x: i32, top: i32, w: i32) i32 {
+/// The picked line of dialog `di`.
+fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32) i32 {
     const m = &ed.map.script;
     const d = &m.dialog[di];
+    const li = ed.plot.line;
     const ln = &d.line[li];
     const at = LineAt{ .d = di, .l = li };
     var buf: [widgets.LINE]u8 = undefined;
@@ -758,29 +800,20 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, li: u8, x: i32, top: i32,
         const ch = &ln.choice[c];
         const cat = ChoiceAt{ .d = di, .l = li, .c = c };
         caption(g, x, y, LABEL_W, std.fmt.bufPrint(&buf, "{d}. Answer", .{c + 1}) catch "", look.TEXT);
-        words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W - DROP_W - GAP), .{ .ask = cat }, "(what the hero says)");
+        words(ed, g, widgets.row(x + LABEL_W, y, beforeDrop(w)), .{ .ask = cat }, "(what the hero says)");
         if (dropButton(ed, g, x + w, y, true, "Take this choice away")) {
             script.cut(script.Choice, &ln.choice, &ln.choice_n, c);
             ed.bank();
             break;
         }
         y += STEP;
-        caption(g, x + LABEL_W - SUB_W, y, SUB_W, "goes to", look.DIM);
+        caption(g, x + SUB_X, y, SUB_W, "goes to", look.DIM);
         targetStep(ed, g, widgets.row(x + LABEL_W, y, TARGET_W), d, &ch.next);
         y += STEP;
-        caption(g, x + LABEL_W - SUB_W, y, SUB_W, "shown if", look.DIM);
-        if (ch.gate) |*gate| {
-            condRow(ed, g, x + LABEL_W, y, w - LABEL_W - DROP_W - GAP, gate);
-            if (dropButton(ed, g, x + w, y, true, "Always shown")) {
-                ch.gate = null;
-                ed.bank();
-            }
-        } else if (button(ed, g, widgets.row(x + LABEL_W, y, BTN_W), "+ Condition", false, true, "Hidden, not greyed, while it does not hold")) {
-            ch.gate = .{ .kind = .always };
-            ed.bank();
-        }
+        caption(g, x + SUB_X, y, SUB_W, "shown if", look.DIM);
+        optCond(ed, g, x, y, w, &ch.gate, "Always shown", "Hidden, not greyed, while it does not hold");
         y += STEP;
-        y = actRows(ed, g, x, x + LABEL_W - SUB_W, y, w, "does", .{ .choice = .{ .d = di, .l = li, .c = c, .a = 0 } });
+        y = actRows(ed, g, x, x + SUB_X, y, w, "does", .{ .choice = .{ .d = di, .l = li, .c = c, .a = 0 } });
         y += GAP;
     }
     const used = ln.thenUsed();
@@ -820,7 +853,7 @@ fn actRows(ed: *editor.Editor, g: *game.Game, x: i32, title_x: i32, top: i32, w:
     while (i < count) : (i += 1) {
         const at = withAct(first, i);
         const a = actOf(m, at) orelse break;
-        actRow(ed, g, x + LABEL_W, y, w - LABEL_W - DROP_W - GAP, a, at, spoken);
+        actRow(ed, g, x + LABEL_W, y, beforeDrop(w), a, at, spoken);
         if (dropButton(ed, g, x + w, y, true, "Take this action away")) {
             script.cut(script.Act, list.items, list.n, i);
             ed.bank();
@@ -1117,16 +1150,12 @@ fn cmpStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, cmp: *script.Cmp)
 fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.plot;
     const m = &ed.map.script;
-    if (s.trigger) |t| if (t >= m.trigger_n) {
-        s.trigger = null;
-    };
-    const f = frameOf(ed, g, "Script");
+    const f = frameOf(ed, g, .script);
     const lw = f.listW();
     var buf: [widgets.LINE]u8 = undefined;
     const list = listArea(ed, f);
     var y = list.begin(&ed.clip);
-    countHeading(g, f.x, y, lw, "Triggers", m.trigger_n, script.MAX_TRIGGERS);
-    if (rightButton(ed, g, f.x + lw - GAP, y, NEW_W, "+ New", m.trigger_n < script.MAX_TRIGGERS, "A trigger that always holds and does nothing yet")) {
+    if (listHead(ed, g, f, y, "Triggers", m.trigger_n, script.MAX_TRIGGERS, "A trigger that always holds and does nothing yet")) {
         if (m.addTrigger()) |t| {
             ed.bank();
             s.trigger = t;
@@ -1135,11 +1164,8 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     }
     y += STEP;
     for (m.triggers(), 0..) |*t, i| {
-        const label = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ t.name.text(), if (t.parked) "  (parked)" else "" }) catch "";
-        if (button(ed, g, widgets.row(f.x, y, lw - GAP), label, if (s.trigger) |at| at == i else false, true, "When it fires and what it does")) {
-            s.trigger = @intCast(i);
-            s.detail.top = 0;
-        }
+        const label = std.fmt.bufPrint(&buf, "{s}{s}", .{ t.name.text(), if (t.parked) "  (parked)" else "" }) catch "";
+        if (listRow(ed, g, f, y, label, if (s.trigger) |at| at == i else false, "When it fires and what it does")) s.trigger = @intCast(i);
         y += STEP;
     }
     inline for (comptime std.enums.values(script.Table)) |t| {
@@ -1163,9 +1189,7 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     }
     const right = rightOf(ed, f, list, y);
     const ti = s.trigger orelse return caption(g, right.x, f.y, right.w, "Pick a trigger: when every condition holds after a turn, its actions run in order", look.DIM);
-    const area = s.detail.at(raster.rect(right.x, f.y, right.w, f.bottom - f.y));
-    const end = drawTrigger(ed, g, ti, right.x, area.begin(&ed.clip), right.w - PAD);
-    area.close(&ed.clip, end, 0);
+    detailPane(ed, g, right.x, f.y, right.w, f.bottom, drawTrigger, ti);
 }
 
 fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i32) i32 {
@@ -1205,7 +1229,7 @@ fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i
     }
     var c: u8 = 0;
     while (c < t.cond_n) : (c += 1) {
-        condRow(ed, g, x + LABEL_W, y, w - LABEL_W - DROP_W - GAP, &t.cond[c]);
+        condRow(ed, g, x + LABEL_W, y, beforeDrop(w), &t.cond[c]);
         if (dropButton(ed, g, x + w, y, true, "Take this condition away")) {
             script.cut(script.Cond, &t.cond, &t.cond_n, c);
             ed.bank();
@@ -1223,16 +1247,10 @@ fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i
 fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.plot;
     const m = &ed.map.script;
-    if (s.quest) |q| if (q >= m.quest_n) {
-        s.quest = null;
-    };
-    const f = frameOf(ed, g, "Quests");
-    const lw = f.listW();
-    var buf: [widgets.LINE]u8 = undefined;
+    const f = frameOf(ed, g, .quests);
     const list = listArea(ed, f);
     var y = list.begin(&ed.clip);
-    countHeading(g, f.x, y, lw, "Quests", m.quest_n, script.MAX_QUESTS);
-    if (rightButton(ed, g, f.x + lw - GAP, y, NEW_W, "+ New", m.quest_n < script.MAX_QUESTS, "A quest of one blank stage")) {
+    if (listHead(ed, g, f, y, "Quests", m.quest_n, script.MAX_QUESTS, "A quest of one blank stage")) {
         if (m.addQuest()) |q| {
             ed.bank();
             s.quest = q;
@@ -1241,17 +1259,12 @@ fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
     }
     y += STEP;
     for (m.quests(), 0..) |*q, i| {
-        if (button(ed, g, widgets.row(f.x, y, lw - GAP), std.fmt.bufPrintZ(&buf, "{s}", .{q.titled()}) catch "", if (s.quest) |at| at == i else false, true, "Its title and what each stage asks")) {
-            s.quest = @intCast(i);
-            s.detail.top = 0;
-        }
+        if (listRow(ed, g, f, y, q.titled(), if (s.quest) |at| at == i else false, "Its title and what each stage asks")) s.quest = @intCast(i);
         y += STEP;
     }
     const right = rightOf(ed, f, list, y);
     const qi = s.quest orelse return caption(g, right.x, f.y, right.w, "Pick a quest: the journal lists it once an action brings it to a stage", look.DIM);
-    const area = s.detail.at(raster.rect(right.x, f.y, right.w, f.bottom - f.y));
-    const end = drawQuest(ed, g, qi, right.x, area.begin(&ed.clip), right.w - PAD);
-    area.close(&ed.clip, end, 0);
+    detailPane(ed, g, right.x, f.y, right.w, f.bottom, drawQuest, qi);
 }
 
 fn drawQuest(ed: *editor.Editor, g: *game.Game, qi: u8, x: i32, top: i32, w: i32) i32 {
@@ -1260,8 +1273,7 @@ fn drawQuest(ed: *editor.Editor, g: *game.Game, qi: u8, x: i32, top: i32, w: i32
     var buf: [widgets.LINE]u8 = undefined;
     var y = top;
     const users = m.questUsers(qi);
-    const drop = if (users > 0) std.fmt.bufPrintZ(&buf, "Used {d} times", .{users}) catch "" else "Delete quest";
-    if (nameRow(ed, g, x, y, w, "Quest", .{ .quest = qi }, drop, users == 0, "Delete it; a quest conditions or actions still name cannot go")) {
+    if (nameRow(ed, g, x, y, w, "Quest", .{ .quest = qi }, dropLabel(&buf, users, "quest"), users == 0, "Delete it; a quest conditions or actions still name cannot go")) {
         if (m.dropQuest(qi)) {
             ed.bank();
             ed.plot.quest = null;
@@ -1280,7 +1292,7 @@ fn drawQuest(ed: *editor.Editor, g: *game.Game, qi: u8, x: i32, top: i32, w: i32
     var k: u8 = 0;
     while (k < q.stage_n) : (k += 1) {
         caption(g, x, y, LABEL_W, std.fmt.bufPrint(&buf, "{d}. Asks", .{k + 1}) catch "", look.TEXT);
-        words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W - DROP_W - GAP), .{ .stage = .{ .q = qi, .k = k } }, "(what the journal asks)");
+        words(ed, g, widgets.row(x + LABEL_W, y, beforeDrop(w)), .{ .stage = .{ .q = qi, .k = k } }, "(what the journal asks)");
         if (dropButton(ed, g, x + w, y, q.stage_n > 1, "Take this stage away; whatever named a later stage names the one it became")) {
             m.dropStage(qi, k);
             ed.bank();

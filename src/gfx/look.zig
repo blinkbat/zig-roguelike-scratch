@@ -258,7 +258,8 @@ pub const TILE_CODEPOINTS = blk: {
 
 pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
-pub const TORCH_HANDLE = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
+const WOOD = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
+pub const TORCH_HANDLE = WOOD;
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
 pub const NPC = Look{ .ch = '@', .fg = rgb(0xd8a860) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
@@ -329,7 +330,7 @@ pub fn gasInk(g: grid.Gas) rl.Color {
 
 pub const BLOOD = rl.Color{ .r = 112, .g = 22, .b = 16, .a = GORE_A };
 pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = GORE_A };
-pub const SPLINTER = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
+pub const SPLINTER = WOOD;
 /// Brogue's purple blood: the caustic bloat's, darker.
 pub const ICHOR = rl.Color{ .r = CAUSTIC_BLOAT.r / 2, .g = CAUSTIC_BLOAT.g / 2, .b = CAUSTIC_BLOAT.b / 2, .a = GORE_A };
 const GORE_A: u8 = 220;

@@ -353,21 +353,22 @@ pub const Presentation = struct {
     pub fn recordSplit(self: *Presentation, sim: *const Simulation, parent: actor.ActorId, child: actor.ActorId) void {
         const i = parent.slot().index;
         const o = child.slot().index;
-        const body = sim.pool.items[o];
         self.split_from[o] = i;
-        self.pictured[o] = fx.Body.of(body, self.seq);
-        self.glide[o] = glide.Glide.rest(&body);
-        self.facing[o] = if (self.turning[i]) |t| t.to else self.facing[i];
+        self.stand(o, &sim.pool.items[o], if (self.turning[i]) |t| t.to else self.facing[i]);
+    }
+
+    fn stand(self: *Presentation, i: usize, body: *const actor.Actor, facing: actor.Facing) void {
+        self.pictured[i] = fx.Body.of(body.*, self.seq);
+        self.glide[i] = glide.Glide.rest(body);
+        self.facing[i] = facing;
     }
 
     /// A body come into being this turn, drawn standing where it rose once `wait` has passed.
     pub fn recordBirth(self: *Presentation, sim: *const Simulation, born: actor.ActorId, wait: f32) void {
         const i = born.slot().index;
-        const body = sim.pool.items[i];
+        const body = &sim.pool.items[i];
         self.fx.impacts.forget(born.slot());
-        self.pictured[i] = fx.Body.of(body, self.seq);
-        self.glide[i] = glide.Glide.rest(&body);
-        self.facing[i] = if (sim.heroAt()) |h| facingOf(h.x - body.at.x) orelse .right else .right;
+        self.stand(i, body, if (sim.heroAt()) |h| facingOf(h.x - body.at.x) orelse .right else .right);
         self.sighted[i] = 1;
         var after = self.afterOf(sim, born.slot());
         after.reveals = born.slot();
@@ -772,9 +773,13 @@ pub const Presentation = struct {
     pub fn showProgress(self: *Presentation, sim: *const Simulation) void {
         self.growth_shown = sim.growth;
         self.gold_shown = sim.gold;
+        self.showPlot(sim);
+        self.xp_aim = sim.xpLevels();
+    }
+
+    pub fn showPlot(self: *Presentation, sim: *const Simulation) void {
         self.npc_shown = sim.lv.npc;
         self.quests_shown = sim.plot.quests;
-        self.xp_aim = sim.xpLevels();
     }
 
     pub fn npcShown(self: *const Presentation, p: P) ?usize {
@@ -826,7 +831,7 @@ pub const Presentation = struct {
         for (self.npc_shown, 0..) |f, i| {
             if (f == grid.NO_NPC) continue;
             const p = grid.Level.of(i);
-            if (self.litShown(sim, p)) self.cover(tiles, .{ .x = @as(f32, @floatFromInt(p.x)) * game.CELL_F, .y = @as(f32, @floatFromInt(p.y)) * game.CELL_F }, &covered);
+            if (self.litShown(sim, p)) self.cover(tiles, glide.cellPx(p), &covered);
         }
         const k = mathx.easing(dt, OCCLUSION_EASE);
         for (tiles, &self.occlusion, 0..) |t, *hidden, i| {
@@ -1007,10 +1012,10 @@ pub const Presentation = struct {
             const release = @max(start, starts_at - turn.late);
             const s = Shot{ .from = body.at, .flight = owed.arrow.?, .t = -release, .net = attack != null and attack.? == .snare };
             self.foe_shots[slot] = s;
-            impact_in = release + s.lands();
-            finishes_in = release + s.ends();
+            const loosed = self.loose(s);
+            impact_in = loosed.lands;
+            finishes_in = loosed.ends;
             turn.next_at = @max(turn.next_at, finishes_in + turn.late);
-            self.holdUntil(finishes_in);
         }
         return .{
             .slot = target.slot(),
@@ -1066,8 +1071,7 @@ pub const Presentation = struct {
             if (r.flight) |f| {
                 const shot_ = Shot{ .from = r.from, .flight = f, .act = .overwatch, .t = -release };
                 self.shot = shot_;
-                impact = release + shot_.lands();
-                self.holdUntil(release + shot_.ends());
+                impact = self.loose(shot_).lands;
             }
             switch (r.outcome) {
                 .miss => {},
@@ -1080,6 +1084,13 @@ pub const Presentation = struct {
             countered = impact;
         }
         return countered;
+    }
+
+    /// `s` released `-s.t` seconds on: held until it ends; when it lands and ends.
+    fn loose(self: *Presentation, s: Shot) struct { lands: f32, ends: f32 } {
+        const release = -s.t;
+        self.holdUntil(release + s.ends());
+        return .{ .lands = release + s.lands(), .ends = release + s.ends() };
     }
 
     fn scheduleKnock(self: *Presentation, sim: *const Simulation, owed: Owed, countered: f32, timing: *BodyTiming, turn: *TurnTiming) void {

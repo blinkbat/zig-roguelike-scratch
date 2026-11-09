@@ -121,7 +121,7 @@ pub const FILE_ITEMS = std.enums.values(FileItem);
 
 pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
     rl.drawRectangle(0, 0, g.screen.x, widgets.TOP_H, PANEL_BG);
-    rl.drawRectangle(0, widgets.TOP_H - 1, g.screen.x, 1, look.EDGE);
+    widgets.hrule(0, widgets.TOP_H - 1, g.screen.x);
     const file = fileSlot(g);
     var verbs = Bar.from(ed, g, widgets.rightX(file) + widgets.GAP, widgets.GAP);
     if (smallButton(ed, g, file, FILE_LABEL, isPopup(ed, .file), true, "New, open and save maps; back to the title")) {
@@ -131,8 +131,8 @@ pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
     if (verbs.button("Undo", false, ed.history.at > 0, widgets.keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
     if (verbs.button("Redo", false, ed.history.at < ed.history.len, widgets.keyed("Redo", Desk.REDO_CAPTION))) ed.redo();
     verbs.group();
-    if (verbs.button("Objects", ed.modal == .objects, true, widgets.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
-    if (verbs.button("Effects", ed.modal == .effects, true, "Every particle effect and drawn missile, playing")) effects.open(ed);
+    if (verbs.button(modals.OBJECTS_TITLE, ed.modal == .objects, true, widgets.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
+    if (verbs.button(effects.TITLE, ed.modal == .effects, true, "Every particle effect and drawn missile, playing")) effects.open(ed);
     if (verbs.button("Text", ed.modal == .text, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
     for (std.enums.values(editor.plot.Page)) |page| {
         if (verbs.button(page.label(), isPlot(ed, page), true, page.tip())) editor.plot.open(ed, page);
@@ -199,8 +199,7 @@ pub fn fileRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle) void {
     for (FILE_ITEMS, 0..) |f, k| {
         const r = editor.popupRow(box, .file, k);
         const hit = widgets.buttonSized(ed.controls(), &g.face, r, f.label(), DETAIL, false, true, true, null);
-        const key_w = widgets.textFace(&g.face).width(f.key(), DETAIL);
-        widgets.textFace(&g.face).draw(f.key(), widgets.rightX(r) - widgets.GAP - key_w, @as(i32, @intFromFloat(r.y)) + widgets.DETAIL_DY, DETAIL, look.DIM);
+        _ = widgets.drawRight(&g.face, f.key(), DETAIL, widgets.rightX(r), widgets.midY(r, DETAIL), look.DIM);
         if (hit) {
             ed.popup = null;
             f.act(ed);
@@ -215,7 +214,7 @@ fn heading(g: *game.Game, col: Column, y: *i32, s: [:0]const u8) void {
 
 fn backPanel(col: Column, band: editor.Band, edge_x: i32) void {
     rl.drawRectangle(col.x, band.top, col.w, band.bottom - band.top, PANEL_BG);
-    rl.drawRectangle(edge_x, band.top, 1, band.bottom - band.top, look.EDGE);
+    widgets.vrule(edge_x, band.top, band.bottom);
 }
 
 pub fn drawSide(ed: *editor.Editor, g: *game.Game) void {
@@ -320,7 +319,7 @@ fn drawFoeTypes(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
 }
 
 const BRUSH_W: i32 = 64;
-const BRUSH_SPAN: i32 = 2 * widgets.STEP_W + BRUSH_W;
+const BRUSH_SPAN: i32 = widgets.stepperW(BRUSH_W);
 const SWATCH: i32 = 40;
 const SWATCH_GAP: i32 = 4;
 const SHAPE_COLS: usize = 3;
@@ -379,7 +378,7 @@ fn paletteCols(col: Column) usize {
 }
 
 pub fn rowLabel(g: *game.Game, col: Column, y: i32, s: [:0]const u8, size: i32) void {
-    widgets.drawFit(&g.face, s, size, editor.LABEL_W - widgets.GAP, false, col.left(), widgets.midIn(y, widgets.ROW_H, size), look.TEXT);
+    widgets.rowText(&g.face, s, size, col.left(), y, editor.LABEL_W - widgets.GAP, look.TEXT);
 }
 
 pub const Tiles = struct {
@@ -474,7 +473,7 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     }
     tabs.done();
     y += widgets.ROW_H;
-    rl.drawRectangle(col.left(), y, col.inner(), 1, look.EDGE);
+    widgets.hrule(col.left(), y, col.inner());
     y += widgets.GAP;
     const box = col.box(y, band.bottom);
     switch (ed.inspect) {
@@ -487,13 +486,11 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
 fn nodeDropdown(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) bool {
     var buf: [widgets.LINE]u8 = undefined;
     const h = widgets.hot(ed.controls(), r, true, false, "Open another node");
-    rl.drawRectangleRec(r, widgets.LIVE_FILL);
-    rl.drawRectangleLinesEx(r, 1, if (isPopup(ed, .node)) ON else widgets.LIVE_EDGE);
+    widgets.buttonBackEdged(r, true, if (isPopup(ed, .node)) ON else widgets.LIVE_EDGE);
     widgets.plate(r, false, h.hot);
-    const caret_w = widgets.textFace(&g.face).width(DROP_CARET, widgets.TEXT);
-    const y = @as(i32, @intFromFloat(r.y)) + widgets.TEXT_DY;
+    const y = widgets.midY(r, widgets.TEXT);
+    const caret_w = widgets.drawRight(&g.face, DROP_CARET, widgets.TEXT, widgets.rightX(r), y, look.DIM);
     widgets.drawFit(&g.face, ed.nodeTitle(ed.node, &buf), widgets.TEXT, widgets.insetW(r) - caret_w - widgets.GAP, false, widgets.textX(r), y, look.TEXT);
-    widgets.textFace(&g.face).draw(DROP_CARET, widgets.rightX(r) - widgets.GAP - caret_w, y, widgets.TEXT, look.DIM);
     return h.hit;
 }
 
@@ -530,33 +527,15 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, col: Column, box: rl.Rectangle)
     var y = beginPane(ed, .inspector, box);
     const is = ed.scene.issues;
     heading(g, col, &y, "Problems");
-    var wrong = false;
-    if (is.start_walled) {
-        wrong = true;
-        thingRow(ed, g, col, &y, "The start is on solid ground", .{}, WARN, ed.map.start.at);
-    }
-    if (is.unlinked > 0) {
-        wrong = true;
-        thingRow(ed, g, col, &y, "{d} door(s) lead nowhere", .{is.unlinked}, WARN, null);
-    }
-    if (is.cut_off > 0) {
-        wrong = true;
-        thingRow(ed, g, col, &y, "{d} open cells no walk reaches (shaded)", .{is.cut_off}, WARN, is.reach_from);
-    }
-    if (is.foes_cut_off > 0) {
-        wrong = true;
-        thingRow(ed, g, col, &y, "{d} foe(s) no walk reaches", .{is.foes_cut_off}, WARN, null);
-    }
-    if (ed.here().raidAstray()) {
-        wrong = true;
-        thingRow(ed, g, col, &y, "Night raiders' door is not on this node", .{}, WARN, null);
-    }
+    var wrong = Problems{ .ed = ed, .g = g, .col = col, .y = &y };
+    if (is.start_walled) wrong.row("The start is on solid ground", .{}, ed.map.start.at);
+    if (is.unlinked > 0) wrong.row("{d} door(s) lead nowhere", .{is.unlinked}, null);
+    if (is.cut_off > 0) wrong.row("{d} open cells no walk reaches (shaded)", .{is.cut_off}, is.reach_from);
+    if (is.foes_cut_off > 0) wrong.row("{d} foe(s) no walk reaches", .{is.foes_cut_off}, null);
+    if (ed.here().raidAstray()) wrong.row("Night raiders' door is not on this node", .{}, null);
     const endless = ed.map.script.endless();
-    if (endless > 0) {
-        wrong = true;
-        thingRow(ed, g, col, &y, "{d} dialog(s) never end, so never open", .{endless}, WARN, null);
-    }
-    if (!wrong) thingRow(ed, g, col, &y, "Nothing wrong", .{}, look.DIM, null);
+    if (endless > 0) wrong.row("{d} dialog(s) never end, so never open", .{endless}, null);
+    if (!wrong.any) thingRow(ed, g, col, &y, "Nothing wrong", .{}, look.DIM, null);
     y += widgets.BLOCK_GAP;
     heading(g, col, &y, if (ed.here().unrolled()) "On this roll" else "On this node");
     if (ed.scene.start_at) |s| thingRow(ed, g, col, &y, "Start  {d},{d}", .{ s.x, s.y }, look.TEXT, s);
@@ -588,6 +567,19 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, col: Column, box: rl.Rectangle)
     }
     closePane(ed, .inspector, y);
 }
+
+const Problems = struct {
+    ed: *editor.Editor,
+    g: *game.Game,
+    col: Column,
+    y: *i32,
+    any: bool = false,
+
+    fn row(p: *Problems, comptime fmt: []const u8, args: anytype, at: ?P) void {
+        p.any = true;
+        thingRow(p.ed, p.g, p.col, p.y, fmt, args, WARN, at);
+    }
+};
 
 pub fn clipped(ed: *const editor.Editor, y: i32) bool {
     return clippedH(ed, y, widgets.ROW_H);
@@ -666,15 +658,13 @@ pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     var path_buf: [widgets.LINE]u8 = undefined;
     const top = editor.Editor.bandOf(g.screen).bottom;
     rl.drawRectangle(0, top, g.screen.x, editor.STATUS_H, PANEL_BG);
-    rl.drawRectangle(0, top, g.screen.x, 1, look.EDGE);
+    widgets.hrule(0, top, g.screen.x);
     const x = widgets.PAD;
     const w = g.screen.x - 2 * widgets.PAD;
     const face = widgets.textFace(&g.face);
     var y = top + widgets.GAP;
-    const state = toolState(ed, &state_buf);
-    const state_w = face.width(state, widgets.TEXT);
+    const state_w = widgets.drawRight(&g.face, toolState(ed, &state_buf), widgets.TEXT, x + w + widgets.GAP, y, look.DIM);
     widgets.drawFit(&g.face, hover(ed, c, &buf), widgets.TEXT, w - state_w - widgets.BLOCK_GAP, false, x, y, look.TEXT);
-    face.draw(state, x + w - state_w, y, widgets.TEXT, look.DIM);
     y += widgets.LINE_STEP;
     const file = std.fmt.bufPrintZ(&path_buf, "{s}{s}", .{ ed.path(), if (ed.history.dirty) " *" else "" }) catch "";
     const file_w = @min(face.width(file, widgets.TEXT), @divTrunc(w, 3));

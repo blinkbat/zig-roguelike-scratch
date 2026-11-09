@@ -872,6 +872,23 @@ pub const Inventory = struct {
         return true;
     }
 
+    /// Kinds carried, in `consumable.KINDS` order.
+    pub fn carriedCount(self: *const Inventory) usize {
+        var n: usize = 0;
+        for (consumable.KINDS) |k| n += @intFromBool(self.stacks.get(k) > 0);
+        return n;
+    }
+
+    /// The `row`th kind carried, in `consumable.KINDS` order.
+    pub fn carriedAt(self: *const Inventory, row: usize) ?consumable.Kind {
+        var left = row;
+        for (consumable.KINDS) |k| if (self.stacks.get(k) > 0) {
+            if (left == 0) return k;
+            left -= 1;
+        };
+        return null;
+    }
+
     pub fn remove(self: *Inventory, at: usize) Item {
         std.debug.assert(at < self.n);
         const it = self.bag[at];

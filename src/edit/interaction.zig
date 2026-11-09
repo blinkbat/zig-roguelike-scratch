@@ -176,8 +176,13 @@ pub fn modalKeys(ed: *Editor) void {
     }
 }
 
+/// A page or modal is backed out of by Back or the second button.
+pub fn backed(d: *const Desk) bool {
+    return d.back or d.erase_hit;
+}
+
 fn dismissed(ed: *Editor) bool {
-    if (!ed.desk.erase_hit and !ed.desk.back) return false;
+    if (!backed(&ed.desk)) return false;
     ed.modal = .none;
     return true;
 }

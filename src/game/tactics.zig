@@ -122,13 +122,22 @@ fn raise(g: *game.Game, at: P, rank: u8) void {
     var body = actor.Actor.of(.skeleton, at);
     body.max = rules.RaiseSkeleton.life(rank);
     body.hp = body.max;
-    body.awake = true;
-    body.waits = true;
     body.tactics.risen = newest +| 1;
-    const id = g.sim.pool.spawnOver(&g.sim.lv, spentSlot(g), body);
-    g.pic.recordBirth(&g.sim, .fromInt(id), game.CAST_S);
+    const id = rise(g, body, spentSlot(g), game.CAST_S);
     g.pic.shimmerBody(game.CAST_S, &g.sim.pool.items[actor.Pool.slot(id)]);
     g.sim.sayAt(at, "A skeleton claws its way up.", .{});
+    landed(g, id);
+}
+
+/// `body` come into being in slot `over` or a new one, awake and acting from the next turn, drawn once `wait` has passed.
+pub fn rise(g: *game.Game, body: actor.Actor, over: ?usize, wait: f32) u16 {
+    var b = body;
+    b.awake = true;
+    b.waits = true;
+    const id = g.sim.pool.spawnOver(&g.sim.lv, over, b);
+    if (g.target == id) g.target = null;
+    g.pic.recordBirth(&g.sim, .fromInt(id), wait);
+    return id;
 }
 
 /// The line a wall-laying skill covers from `start` toward `end`, at its rank.
@@ -313,9 +322,8 @@ pub fn entered(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     const h = g.sim.heroActor() orelse return;
     const direction = h.tactics.overwatch orelse return;
-    if (a.veiled() or !a.foe() or !watches(&g.sim.lv, h.at, direction, a.at)) return;
-    const flight = bow.fly(&g.sim.lv, h.at, a.at);
-    if (!flight.hits(id)) return;
+    if (a.veiled() or !a.foe() or !rules.covered(h.at, direction, a.at)) return;
+    const flight = bow.clearShot(&g.sim.lv, h.at, a.at, rules.Overwatch.RANGE, id) orelse return;
     h.tactics.overwatch = null;
     combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), rules.Overwatch.VERB, .{ .from = h.at, .wait = 0 }, id, flight);
     h.tactics.steady = 0;
@@ -649,8 +657,6 @@ test "tactical overwatch reaction finishes before the next foe can expose its re
     std.debug.print("tactical reaction ordering: rat and crossbowman at equal range preserve arrow/heal then later attack order\n", .{});
 }
 
-const WAR_CRY_MANA: i32 = 99;
-
 test "war cry frightens foes as their fright resistance allows and the picture shows it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -662,7 +668,7 @@ test "war cry frightens foes as their fright resistance allows and the picture s
     for (0..h.TRIES) |seed| {
         h.heroArena(g, .knight, from, &.{});
         g.sim.growth.ranks.set(.war_cry, 1);
-        g.sim.mana = WAR_CRY_MANA;
+        g.sim.mana = h.TEST_MANA;
         const rat = h.spawnAt(g, .rat, .{ .x = 22, .y = 20 }, false);
         const beefy = h.spawnAt(g, .beefy_pib, .{ .x = 20, .y = 22 }, false);
         const slime = h.spawnAt(g, .slime, .{ .x = 18, .y = 20 }, false);
@@ -685,7 +691,7 @@ test "war cry frightens foes as their fright resistance allows and the picture s
     for (0..h.TRIES) |_| {
         if (g.sim.pool.get(rat).?.fright > 0) break;
         g.sim.cooldown.set(.war_cry, 0);
-        g.sim.mana = WAR_CRY_MANA;
+        g.sim.mana = h.TEST_MANA;
         game.harness.useAct(g, .war_cry);
         h.drawnOut(g);
     }
@@ -865,7 +871,7 @@ test "a raised skeleton fights a foe beside it, takes foes' blows, is spared the
     h.heroArena(g, .wizard, from, &.{});
     g.sim.unkillable = true;
     defer g.sim.unkillable = false;
-    g.sim.mana = 99;
+    g.sim.mana = h.TEST_MANA;
     const first = P{ .x = 22, .y = 20 };
     h.aimAt(g, .raise_skeleton, first);
     const id = g.sim.lv.who(first);
@@ -904,7 +910,7 @@ test "raising skeletons past the limit never crumbles a caravan guard" {
     defer game.shut(std.testing.allocator, g);
     const h = game.harness;
     h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
-    g.sim.mana = 99;
+    g.sim.mana = h.TEST_MANA;
     const guard = h.spawnAt(g, .caravan_guard, .{ .x = 24, .y = 20 }, true);
     for ([_]P{ .{ .x = 22, .y = 20 }, .{ .x = 20, .y = 22 } }) |at| {
         g.sim.cooldown.set(.raise_skeleton, 0);
@@ -921,7 +927,7 @@ test "a raised skeleton stands once its cast lands, and a recast takes a crumble
     defer game.shut(std.testing.allocator, g);
     const h = game.harness;
     h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
-    g.sim.mana = 99;
+    g.sim.mana = h.TEST_MANA;
     const cells = [_]P{ .{ .x = 22, .y = 20 }, .{ .x = 20, .y = 22 }, .{ .x = 18, .y = 20 } };
     var bodies: [cells.len]usize = undefined;
     for (cells, &bodies) |at, *n| {
@@ -932,8 +938,7 @@ test "a raised skeleton stands once its cast lands, and a recast takes a crumble
         h.drawnOut(g);
         try std.testing.expect(g.pic.standing(&g.sim, slot));
         n.* = g.sim.pool.n;
-        var t: f32 = 0;
-        while (t < @import("../gfx/impact_queue.zig").DEATH_S) : (t += h.TEST_DT) game.update(g, h.TEST_DT);
+        h.idleFor(g, @import("../gfx/impact_queue.zig").DEATH_S);
     }
     std.debug.print("three rank-1 raises: {d}, {d}, {d} bodies\n", .{ bodies[0], bodies[1], bodies[2] });
     try std.testing.expectEqual(bodies[0] + 1, bodies[1]);
@@ -946,7 +951,7 @@ test "the oldest skeleton crumbles first though a younger rose in an older one's
     defer game.shut(std.testing.allocator, g);
     const h = game.harness;
     h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
-    g.sim.mana = 99;
+    g.sim.mana = h.TEST_MANA;
     g.sim.growth.ranks.set(.raise_skeleton, 2);
     const a = P{ .x = 22, .y = 20 };
     const b = P{ .x = 20, .y = 22 };
@@ -962,8 +967,7 @@ test "the oldest skeleton crumbles first though a younger rose in an older one's
     _ = g.sim.pool.damage(&g.sim.lv, elder, g.sim.pool.items[first].hp);
     combat.fell(g, elder);
     g.pic.settleSlot(&g.sim, h.TEST_DT, .fromIndex(first));
-    var t: f32 = 0;
-    while (t < 1) : (t += h.TEST_DT) game.update(g, h.TEST_DT);
+    h.idleFor(g, 1);
     for ([_]P{ c, d }) |at| {
         g.sim.cooldown.set(.raise_skeleton, 0);
         h.aimAt(g, .raise_skeleton, at);

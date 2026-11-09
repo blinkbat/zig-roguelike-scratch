@@ -52,6 +52,17 @@ pub const Tick = enum {
             .scorched, .burned, .bled, .worn => null,
         };
     }
+
+    /// What the chronicle says hurt the hero; none for a tick that harms nothing.
+    pub fn source(t: Tick) ?chronicle.Source {
+        return switch (t) {
+            .gassed => .gas,
+            .scalded => .steam,
+            .burned, .scorched => .burn,
+            .bled => .bleed,
+            .healed, .worn => null,
+        };
+    }
 };
 /// The ticks a body's turn has run, which a half split off it mid-turn has had too.
 pub const Ran = std.EnumSet(Tick);

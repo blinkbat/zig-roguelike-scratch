@@ -6,8 +6,8 @@ const actor = @import("actor.zig");
 pub const RAIDER: actor.Kind = .goblin;
 pub const RAIDERS_MAX: u8 = 8;
 pub const XP_DIVISOR: u32 = 3;
-const DUSK: u64 = @intFromFloat(day.SUNSET * 60);
-const NIGHT: u64 = @intFromFloat(day.NIGHT_SPAN * 60);
+const DUSK: u64 = @intFromFloat(day.SUNSET * day.PER_HOUR);
+const NIGHT: u64 = @intFromFloat(day.NIGHT_SPAN * day.PER_HOUR);
 const SALT: u64 = 0x4A1D;
 
 comptime {
@@ -23,6 +23,11 @@ pub const Raid = struct {
         return .{ .raiders = @min(r.raiders, RAIDERS_MAX), .raid_door = @min(r.raid_door, grid.MAX_DOORS - 1) };
     }
 };
+
+/// What a raider's death gives of the `xp` its kind would.
+pub fn xpOf(xp: u32) u32 {
+    return std.math.divCeil(u32, xp, XP_DIVISOR) catch unreachable;
+}
 
 /// How many raiders come in after the minute `from` up to and including `to`, both counted since the first day began.
 pub fn arriving(r: Raid, roll: u64, from: u64, to: u64) usize {
@@ -56,7 +61,7 @@ test "each night's raiders all come between dusk and dawn, at times of their own
         const came = arriving(r, 0x5EED, t, @min(end, t + day.TURN_MINUTES));
         by_turn += came;
         turns_with += @intFromBool(came > 0);
-        const hour = @as(f32, @floatFromInt((t + day.TURN_MINUTES) % day.MINUTES)) / 60;
+        const hour = (day.Clock{ .minute = @intCast((t + day.TURN_MINUTES) % day.MINUTES) }).hour();
         if (hour > day.SUNRISE and hour <= day.SUNSET) by_day += came;
     }
     const whole = arriving(r, 0x5EED, 0, end);

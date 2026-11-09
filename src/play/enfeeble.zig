@@ -18,9 +18,7 @@ pub fn weaken(enfeebled: bool, dmg: i32) i32 {
     return mathx.lessCeil(dmg, LESS);
 }
 
-pub fn afflict(a: anytype, _: *mathx.Rng) void {
-    a.enfeeble.start();
-}
+pub const afflict = resilience.Starts(AILMENT).afflict;
 
 test "an enfeebled blow deals 30% less, rounded up so it never falls to nothing, for three turns" {
     const cases = [_][2]i32{ .{ 1, 1 }, .{ 2, 2 }, .{ 3, 3 }, .{ 4, 3 }, .{ 10, 7 }, .{ 15, 11 } };

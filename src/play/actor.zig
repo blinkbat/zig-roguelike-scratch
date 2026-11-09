@@ -270,6 +270,7 @@ pub const FRIGHT_STATUS = "Runs from the hero, attacking only when cornered.";
 pub const FLEES = "The {s} flees in terror!";
 
 const SLAM = Blow{ .strike = .{ .hit = .{ .lo = 2, .hi = 5 }, .verb = "slams", .slain = "crushed" } };
+const BOLT = Blow{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } };
 const NET = Net{ .range = 5, .pins = 2, .every = 4 };
 const MEND = Mend{ .reach = 5, .amount = 8, .every = 3, .kin = &.{ .pib, .beefy_pib } };
 const ICY = damage.Resists.init(.{ .cold = damage.RESIST_MAX, .fire = -50, .chaos = 0, .lightning = 0 });
@@ -293,7 +294,7 @@ pub fn row(k: Kind) Row {
         .bloat => .{ .name = "caustic bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .blow = .{ .burst = .gas }, .flits = true, .fright_resist = mathx.PERCENT },
         .pib => .{ .name = "pib", .foe_type = .beast, .hp = 10, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .slain = "stabbed to death", .bleeds = 30 } }, .flees = true },
         .beefy_pib => .{ .name = "beefy pib", .foe_type = .beast, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .slain = "beaten to death", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .fright_resist = 50, .armour = 20 },
-        .bandit_crossbowman => .{ .name = "bandit crossbowman", .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15, .fright_resist = 25 },
+        .bandit_crossbowman => .{ .name = "bandit crossbowman", .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = BOLT, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15, .fright_resist = 25 },
         .bandit_netter => .{ .name = "bandit trapper", .foe_type = .humanoid, .hp = 10, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "clubs", .slain = "clubbed down" } }, .keeps = 2, .net = NET, .armour = 10, .fright_resist = 25 },
         .bandit_shieldbearer => .{ .name = "bandit shieldbearer", .foe_type = .humanoid, .hp = 24, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bashes", .slain = "battered down", .knocks = true } }, .armour = 40, .stun_resist = 75, .fright_resist = 50 },
         .frost_wisp => .{ .name = "frost wisp", .movement = .flying, .foe_type = .aberration, .hp = 8, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "touches", .slain = "frozen solid", .element = .cold, .chills = mathx.PERCENT } }, .flits = true, .resists = ICY, .fright_resist = mathx.PERCENT },
@@ -303,7 +304,7 @@ pub fn row(k: Kind) Row {
         .mimic => .{ .name = "mimic", .foe_type = .aberration, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 4, .hi = 8 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 20, .fright_resist = mathx.PERCENT },
         .goblin => .{ .name = "goblin", .foe_type = .humanoid, .hp = 14, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "hacks", .slain = "hacked down" } }, .armour = 10, .fright_resist = 25 },
         .skeleton => .{ .name = "skeleton", .foe_type = null, .allied = true, .falls = "crumbles", .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "slashes" } }, .armour = 10, .fright_resist = mathx.PERCENT },
-        .caravan_guard => .{ .name = "caravan guard", .foe_type = null, .allied = true, .posted = true, .hp = 16, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } }, .ranged = .{ .range = bow.RANGE, .retreat = 0 }, .armour = 15, .fright_resist = mathx.PERCENT },
+        .caravan_guard => .{ .name = "caravan guard", .foe_type = null, .allied = true, .posted = true, .hp = 16, .sight = bow.RANGE, .blow = BOLT, .ranged = .{ .range = bow.RANGE, .retreat = 0 }, .armour = 15, .fright_resist = mathx.PERCENT },
     };
 }
 

@@ -105,6 +105,13 @@ pub fn fly(lv: *const grid.Level, from: P, to: P) Flight {
     return trace(lv, null, from, to, false);
 }
 
+/// The flight from `from` to `to` within `reach`, when the first thing it strikes is the body `id`.
+pub fn clearShot(lv: *const grid.Level, from: P, to: P, reach: i32, id: u16) ?Flight {
+    if (!aimable(lv, from, to, reach)) return null;
+    const flight = fly(lv, from, to);
+    return if (flight.hits(id)) flight else null;
+}
+
 pub fn preview(lv: *const grid.Level, from: P, to: P) Flight {
     return trace(lv, null, from, to, true);
 }

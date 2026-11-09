@@ -67,7 +67,7 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         }
     }
     if (ed.px() >= GRID_PX) drawGrid(ed, c, v);
-    rl.drawRectangleLinesEx(raster.grown(boxRect(ed, c, grid.Box.inMap(0)), 1), 1, look.EDGE);
+    widgets.outline(boxRect(ed, c, grid.Box.inMap(0)));
     var cells = grid.Cells.of(v.lo, v.hi);
     while (cells.next()) |p| {
         if (ed.scene.lv.hasBarrel(p)) panel.toolFigure(g, .barrel, ed.cellRect(c, p));

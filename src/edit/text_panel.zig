@@ -9,6 +9,7 @@ const font = @import("../gfx/font.zig");
 const raster = @import("../gfx/raster.zig");
 const game = @import("../game.zig");
 const editor = @import("editor.zig");
+const interaction = @import("interaction.zig");
 const catalog = @import("text_catalog.zig");
 
 const PAD = widgets.PAD;
@@ -144,6 +145,12 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
             f.layout_valid = false;
         }
 
+        /// Where line `line` ends, short of its break.
+        fn lineEnd(f: *const Self, line: usize) usize {
+            const end = @min(f.n, f.starts[line + 1]);
+            return if (end > f.starts[line] and f.buf[end - 1] == '\n') end - 1 else end;
+        }
+
         fn picked(f: *const Self) struct { lo: usize, hi: usize } {
             return .{ .lo = @min(f.cursor, f.anchor), .hi = @max(f.cursor, f.anchor) };
         }
@@ -225,8 +232,7 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
                 while (line + 1 < f.lines and f.starts[line + 1] <= f.cursor) : (line += 1) {}
                 const column = f.cursor - f.starts[line];
                 const next = mathx.nudge(line, d.nav, f.lines);
-                var end = @min(f.n, f.starts[next + 1]);
-                if (end > f.starts[next] and f.buf[end - 1] == '\n') end -= 1;
+                var end = f.lineEnd(next);
                 if (next + 1 < f.lines and end == f.starts[next + 1] and end > f.starts[next]) end -= 1;
                 f.cursor = @min(end, f.starts[next] + column);
                 if (!d.shift) f.anchor = f.cursor;
@@ -534,7 +540,7 @@ fn save(ed: *editor.Editor) void {
 pub fn keys(ed: *editor.Editor) void {
     const s = &ed.words;
     const d = &ed.desk;
-    if (d.back or d.erase_hit) {
+    if (interaction.backed(d)) {
         requestClose(ed, false);
         return;
     }
@@ -640,8 +646,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
     defer widgets.reclip(ed.clip);
     for (first..@min(lines, first + rows)) |line| {
         const start = breaks[line];
-        var end = breaks[line + 1];
-        if (end > start and f.buf[end - 1] == '\n') end -= 1;
+        const end = f.lineEnd(line);
         const yy = y + @as(i32, @intCast(line - first)) * LINE_H;
         const held = f.picked();
         const lo = std.math.clamp(held.lo, start, end);
@@ -681,9 +686,8 @@ fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8,
     widgets.plate(r, on, h.hot);
     var buf: [32]u8 = undefined;
     const number = std.fmt.bufPrintZ(&buf, "{d}", .{count}) catch "";
-    const number_w = g.face.width(number, DETAIL);
+    const number_w = widgets.drawRight(&g.face, number, DETAIL, x + w - widgets.GAP, y + LEAD, look.DIM);
     widgets.drawFit(&g.face, label, DETAIL, w - number_w - 3 * widgets.GAP - COUNT_PAD, false, x + widgets.GAP, y + LEAD, if (on) look.UI_GOLD else look.TEXT);
-    g.face.draw(number, x + w - number_w - 2 * widgets.GAP, y + LEAD, DETAIL, look.DIM);
     return h.hit;
 }
 

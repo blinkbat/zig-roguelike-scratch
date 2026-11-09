@@ -9,6 +9,15 @@ const resilience = @import("resilience.zig");
 const actor = @import("actor.zig");
 const P = mathx.P;
 
+fn Reduces(comptime reduction: fn (u8) i32) type {
+    return struct {
+        /// `dmg` as `reduction` at `rank` lets it through, rounded up.
+        pub fn reduce(rank: u8, dmg: i32) i32 {
+            return mathx.lessCeil(dmg, reduction(rank));
+        }
+    };
+}
+
 pub const Caltrops = struct {
     pub const COST: i32 = 4;
     pub const COOLDOWN: u8 = 5;
@@ -142,10 +151,7 @@ pub const Guard = struct {
     pub fn reduction(rank: u8) i32 {
         return 40 + 10 * @as(i32, ranked(rank));
     }
-    /// `dmg` as guarding at `rank` lets it through, rounded up.
-    pub fn reduce(rank: u8, dmg: i32) i32 {
-        return mathx.lessCeil(dmg, reduction(rank));
-    }
+    pub const reduce = Reduces(reduction).reduce;
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("{d}% less physical attack damage.", .{reduction(rank)}) catch {};
     }
@@ -202,10 +208,7 @@ pub const Bide = struct {
     pub fn reduction(rank: u8) i32 {
         return 15 + 10 * @as(i32, ranked(rank));
     }
-    /// `dmg` as biding at `rank` lets it through, rounded up.
-    pub fn reduce(rank: u8, dmg: i32) i32 {
-        return mathx.lessCeil(dmg, reduction(rank));
-    }
+    pub const reduce = Reduces(reduction).reduce;
     pub fn laid() u8 {
         return laidFor(TURNS);
     }

@@ -91,6 +91,11 @@ pub fn cellOf(q: [2]f32) P {
     return .{ .x = @intFromFloat(@floor(q[0])), .y = @intFromFloat(@floor(q[1])) };
 }
 
+/// The cell at `x, y`, each rounded half away from zero.
+pub fn roundCell(x: f32, y: f32) P {
+    return .{ .x = @intFromFloat(@round(x)), .y = @intFromFloat(@round(y)) };
+}
+
 pub const PERCENT = 100;
 pub const MILLE = 1000;
 pub const BASIS_POINTS = PERCENT * PERCENT;
@@ -474,6 +479,11 @@ pub const Rng = struct {
         return lerpF(lo, hi, self.unit());
     }
 
+    /// A heading in radians, [0, `TAU`).
+    pub fn angle(self: *Rng) f32 {
+        return self.unit() * TAU;
+    }
+
     /// An index under `n`, each as likely as its `weight`; null when all weigh nothing.
     pub fn weighted(self: *Rng, n: usize, ctx: anytype, comptime weight: fn (@TypeOf(ctx), usize) u32) ?usize {
         var total: u32 = 0;
@@ -581,4 +591,16 @@ pub fn unitOf(h: u64) f32 {
 pub fn cellHash(seed: u64, p: P) u64 {
     const coordinates = [2]i32{ p.x, p.y };
     return std.hash.Wyhash.hash(seed, std.mem.asBytes(&coordinates));
+}
+
+/// The member of enum `T` `by` places on from `v`, wrapping round.
+pub fn cycle(comptime T: type, v: T, by: i32) T {
+    return stepIn(T, std.enums.values(T), v, by, 0);
+}
+
+pub fn indexOfEql(comptime T: type, list: []const T, want: T) ?usize {
+    for (list, 0..) |x, i| {
+        if (std.meta.eql(x, want)) return i;
+    }
+    return null;
 }

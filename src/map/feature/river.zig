@@ -37,8 +37,8 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
     const bank = p.bank.tile();
     var native = grid.CellSet.initEmpty();
     for (lv.tile, 0..) |t, i| native.setValue(i, t == bank);
-    if (bank) |bk| for (flows[0..p.count]) |*f| f.bank(lv, w, bk);
-    for (flows[0..p.count]) |*f| f.fill(lv, w, p.fill);
+    if (bank) |bk| for (flows[0..p.count]) |*f| f.bank(lv, w, bk, carve.notLiquid);
+    for (flows[0..p.count]) |*f| f.fill(lv, w, p.fill, true);
     const across = fordOf(p.fill, pal);
     const ford_r: i32 = @intFromFloat(@floor(carve.bankReach(w)));
     const bank_r: i32 = @intFromFloat(@ceil(carve.bankReach(w)));
@@ -159,7 +159,7 @@ test "crossing cliffs with banks keep each other's rock" {
         var again = mathx.Rng.init(0xC4055 + s);
         for (0..p.count) |_| {
             const ends = p.course.ends(&again);
-            carve.Flow.of(&again, ends[0], ends[1], 1).fill(&cliffs, @floatFromInt(p.width), .rock);
+            carve.Flow.of(&again, ends[0], ends[1], 1).fill(&cliffs, @floatFromInt(p.width), .rock, true);
         }
         var here: usize = 0;
         for (cliffs.tile, lv.tile) |want, got| {

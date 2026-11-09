@@ -28,8 +28,7 @@ pub fn arrived(g: *game.Game) void {
     const s = scriptOf(g) orelse return;
     g.sim.plot.evaluate(s, g.sim.world(), &g.sim.log);
     restand(g);
-    g.pic.npc_shown = g.sim.lv.npc;
-    g.pic.quests_shown = g.sim.plot.quests;
+    g.pic.showPlot(&g.sim);
 }
 
 /// The NPCs the plot lets stand, and the node's ground drops a new spot keeps off.
@@ -193,26 +192,28 @@ fn testWorld(text: []const u8) !*atlas.Atlas {
 }
 
 const press = harness.press;
+const SEED = 9;
+
+const WENNA =
+    \\flag met
+    \\dialog wenna
+    \\line root
+    \\say Nobody comes down the well.
+    \\ask Who are you? -> name
+    \\ask Goodbye. -> end
+    \\line name
+    \\act flag met on
+    \\say Wenna. I keep the cistern.
+    \\then root
+    \\npc 0 6 5 wenna Old Wenna
+;
 
 test "bumping an NPC opens its conversation without a turn; it closes only through an ending" {
-    const w = try testWorld(
-        \\flag met
-        \\dialog wenna
-        \\line root
-        \\say Nobody comes down the well.
-        \\ask Who are you? -> name
-        \\ask Goodbye. -> end
-        \\line name
-        \\act flag met on
-        \\say Wenna. I keep the cistern.
-        \\then root
-        \\npc 0 6 5 wenna Old Wenna
-        \\npc 0 5 6 -
-    );
+    const w = try testWorld(WENNA ++ "\nnpc 0 5 6 -");
     defer std.testing.allocator.destroy(w);
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, 9);
+    game.beginMapAt(g, w, w.start, SEED);
     try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(.{ .x = 6, .y = 5 }));
     try std.testing.expect(!g.sim.lv.vacant(.{ .x = 6, .y = 5 }));
     const turns = g.sim.plot.turns;
@@ -240,23 +241,11 @@ test "bumping an NPC opens its conversation without a turn; it closes only throu
 }
 
 test "a choice clicked while confirm is pressed is one pick" {
-    const w = try testWorld(
-        \\flag met
-        \\dialog wenna
-        \\line root
-        \\say Nobody comes down the well.
-        \\ask Who are you? -> name
-        \\ask Goodbye. -> end
-        \\line name
-        \\act flag met on
-        \\say Wenna. I keep the cistern.
-        \\then root
-        \\npc 0 6 5 wenna Old Wenna
-    );
+    const w = try testWorld(WENNA);
     defer std.testing.allocator.destroy(w);
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, 9);
+    game.beginMapAt(g, w, w.start, SEED);
     game.heroStep(g, .e, 0);
     try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
     var shown: Shown = .{ .view = undefined };
@@ -281,7 +270,7 @@ test "a direction held as the conversation moves to another line does not walk t
     defer std.testing.allocator.destroy(w);
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, 9);
+    game.beginMapAt(g, w, w.start, SEED);
     game.heroStep(g, .e, 0);
     try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
     g.st = .{ .device = .keys, .walk = .s, .pressed = .initOne(menu.CONFIRM) };
@@ -311,7 +300,7 @@ test "a dialog no way through ends never opens, while one whose way out is gated
     try std.testing.expectEqual(@as(usize, 1), w.script.endless());
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, 9);
+    game.beginMapAt(g, w, w.start, SEED);
     game.heroStep(g, .e, 0);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     game.heroStep(g, .s, 0);
@@ -336,7 +325,7 @@ test "a dialog with a reachable line no way out of never opens, though its first
     try std.testing.expectEqual(@as(usize, 1), w.script.endless());
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, 9);
+    game.beginMapAt(g, w, w.start, SEED);
     game.heroStep(g, .e, 0);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqualStrings("Trapper has nothing to say.", g.sim.log.line(0).?);
@@ -361,7 +350,7 @@ test "a way out that never shows ends nothing: its NPC has nothing to say and a 
     try std.testing.expect(!w.script.dialog[0].ends());
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, 9);
+    game.beginMapAt(g, w, w.start, SEED);
     try std.testing.expectEqual(@as(?usize, null), beside(g));
     game.heroStep(g, .e, 0);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
@@ -411,7 +400,7 @@ test "NPCs stand by a prop and far off; a quest given, carried and finished take
     w.node[0].plan.bespoke.tile[grid.Level.idx(chest)] = .chest;
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, 9);
+    game.beginMapAt(g, w, w.start, SEED);
     try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(.{ .x = 9, .y = 7 }));
     const far = g.sim.plot.spots[1] orelse return error.NoPlace;
     try std.testing.expectEqual(@as(?usize, 1), g.sim.lv.npcAt(far));
@@ -435,8 +424,7 @@ test "NPCs stand by a prop and far off; a quest given, carried and finished take
     try std.testing.expectEqual(@as(?usize, 2), g.sim.lv.npcAt(home));
     try std.testing.expectEqual(@as(i32, 1), mathx.dist(home, chest));
     game.update(g, 0);
-    var buf: [script.MAX_QUESTS]@import("../ui/quests.zig").Entry = undefined;
-    const log = game.character.questEntries(g, &buf);
+    const log = game.character.questEntries(g, &g.journal);
     try std.testing.expect(log.len == 1 and log[0].done);
     g.st = .{ .device = .keys, .character_page = .quests };
     game.update(g, 0);
@@ -515,7 +503,7 @@ test "a trigger's conversation waits for the turn to be drawn, then takes the sc
     defer std.testing.allocator.destroy(w);
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, 9);
+    game.beginMapAt(g, w, w.start, SEED);
     try std.testing.expectEqual(@as(?u8, null), g.sim.plot.asked);
     game.heroStep(g, .e, 0);
     try std.testing.expectEqual(@as(?u8, 0), g.sim.plot.asked);

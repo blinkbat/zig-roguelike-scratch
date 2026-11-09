@@ -18,9 +18,7 @@ pub fn strays(confused: bool, rng: *mathx.Rng) bool {
     return confused and rng.percent(CHANCE);
 }
 
-pub fn afflict(a: anytype, _: *mathx.Rng) void {
-    a.confusion.start();
-}
+pub const afflict = resilience.Starts(AILMENT).afflict;
 
 test "confusion sends about half of moves astray for three turns and draws nothing once it ends" {
     var rng = mathx.Rng.init(0xC0F);

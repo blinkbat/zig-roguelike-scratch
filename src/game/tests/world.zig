@@ -169,7 +169,6 @@ test "a node's sky shows its light and its weather out of doors, and neither und
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    w.* = .{};
     const wet: climate.Climate = .{ .light = .bleak, .weather = .drizzle };
     const strand = w.add(.{ .procgen = .{ .floor = .{ .wilds = .{} }, .sky = wet } }).?;
     const cave = w.add(.{ .procgen = .{ .floor = .{ .caves = .{} }, .sky = wet } }).?;
@@ -196,7 +195,6 @@ test "a door takes the archer to the door it leads to, and a node left is found 
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    w.* = .{};
     const room = w.add(.{ .bespoke = .{} }).?;
     const cave = w.add(.{ .procgen = .{} }).?;
     const b = &w.node[room].plan.bespoke;
@@ -257,15 +255,39 @@ test "a skeleton follows the hero through a door, leaving none behind" {
     const hero = g.sim.heroActor().?.at;
     var followed: ?actor.Actor = null;
     for (g.sim.pool.slice(), 0..) |s, i| {
-        if (!s.alive or !s.kind.ally()) continue;
+        if (!s.livingAlly()) continue;
         followed = s;
         try std.testing.expectEqual(actor.Pool.idOf(i), g.sim.lv.who(s.at));
     }
     const s = followed orelse return error.LeftBehind;
     try std.testing.expectEqual(hp, s.hp);
-    try std.testing.expect(mathx.dist(s.at, hero) <= 3);
+    try std.testing.expect(mathx.dist(s.at, hero) <= game.FOLLOWER_REACH);
     for (g.sim.visits[a].pool.constSlice()) |left| try std.testing.expect(!left.livingAlly());
     std.debug.print("a skeleton followed to node {d}, {d} tiles from the hero with its {d} life\n", .{ b, mathx.dist(s.at, hero), s.hp });
+}
+
+test "a skeleton follows through a door that leads to another door on the same node, and is not doubled" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    _ = harness.twoRooms(w);
+    const a = w.start.node;
+    w.node[a].door_n = 0;
+    const west = w.addDoor(a, .{ .x = 2, .y = 5 }).?;
+    const east = w.addDoor(a, .{ .x = 11, .y = 5 }).?;
+    w.link(.{ .node = a, .door = west }, .{ .node = a, .door = east });
+    game.beginMap(g, w);
+    _ = harness.spawnAt(g, .skeleton, .{ .x = 4, .y = 5 }, true);
+    var allies: usize = 0;
+    for (0..3) |_| {
+        harness.nudge(g, if (g.sim.heroActor().?.at.x < 6) .w else .e);
+        harness.idle(g);
+        allies = 0;
+        for (g.sim.pool.constSlice()) |s| allies += @intFromBool(s.livingAlly());
+        try std.testing.expectEqual(@as(usize, 1), allies);
+    }
+    std.debug.print("three trips between doors on one node: {d} skeleton\n", .{allies});
 }
 
 test "a node's night raiders come in by its raid door, each at its own turn, from dusk to dawn" {
@@ -273,7 +295,6 @@ test "a node's night raiders come in by its raid door, each at its own turn, fro
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    w.* = .{};
     const n = w.add(.{ .procgen = .{ .floor = .{ .open = .{} }, .foes = .{ .packs = 0 }, .raid = .{ .raiders = 3 } } }).?;
     const door = P{ .x = 40, .y = 0 };
     _ = w.addDoor(n, door).?;
@@ -317,7 +338,7 @@ test "a node's night raiders come in by its raid door, each at its own turn, fro
     std.debug.print("one night with 3 raiders: {d} came over {d} turns, at most {d} cells from the door, {d} by day; a slain raider gave {d} xp, spoils {}\n", .{ came, turns_with, farthest, by_day, xp, spoiled });
     try std.testing.expectEqual(@as(usize, 3), came);
     try std.testing.expect(turns_with >= 2 and farthest <= 2 and by_day == 0 and !spoiled);
-    try std.testing.expectEqual(std.math.divCeil(u64, progress.xpOf(atlas.raid.RAIDER), atlas.raid.XP_DIVISOR) catch unreachable, xp);
+    try std.testing.expectEqual(@as(u64, atlas.raid.xpOf(progress.xpOf(atlas.raid.RAIDER))), xp);
 }
 
 test "a caravan guard stays behind when the hero goes through a door" {
@@ -367,7 +388,6 @@ test "a skeleton following back and forth takes the slot it left, so no node's p
 test "a procgen node rolls another floor round the same doors each run, and two nodes differ in one run" {
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    w.* = .{};
     const n = w.add(.{ .procgen = .{} }).?;
     const door = P{ .x = 30, .y = 30 };
     _ = w.addDoor(n, door);
@@ -487,15 +507,7 @@ test "healing gas mends every hurt body in it a fifteenth of its life a turn, it
     try std.testing.expectEqual(40 + gas.heal(harness.TEST_HP), hero.hp);
     try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(mended).?.hp);
     try std.testing.expectEqual(harness.TEST_HP - 1 - gas.harm(harness.TEST_HP), g.sim.pool.get(stung).?.hp);
-    g.st = .{};
-    var t: f32 = 0;
-    while (t < 1) : (t += harness.TEST_DT) {
-        const caught = for (slots) |s| {
-            if (!harness.caughtUp(g, s)) break false;
-        } else true;
-        if (caught) break;
-        game.update(g, harness.TEST_DT);
-    }
+    const t = harness.untilCaughtUp(g, &slots);
     const healing = wispsOf(g, look.HEALING_GAS);
     const caustic = wispsOf(g, look.GAS);
     std.debug.print("a turn in gas: all three drawn {d:.3} s in, the archer mended by {d}, {d} healing wisps and {d} caustic\n", .{ t, gas.heal(harness.TEST_HP), healing, caustic });
@@ -519,15 +531,9 @@ test "steam scalds each body in it for a little fire damage a turn, less in wate
     for (ids, &lost) |id, *l| l.* = harness.TEST_HP - g.sim.pool.get(id).?.hp;
     try std.testing.expectEqual([_]i32{ gas.SCALD, gas.SCALD, 1, 0 }, lost);
     try std.testing.expect(harness.logged(g, gas.STEAM_NAME));
-    g.st = .{};
-    var t: f32 = 0;
-    while (t < 1) : (t += harness.TEST_DT) {
-        const caught = for (ids[0..3]) |id| {
-            if (!harness.caughtUp(g, actor.Pool.slot(id))) break false;
-        } else true;
-        if (caught) break;
-        game.update(g, harness.TEST_DT);
-    }
+    var slots: [3]usize = undefined;
+    for (ids[0..slots.len], &slots) |id, *s| s.* = actor.Pool.slot(id);
+    const t = harness.untilCaughtUp(g, &slots);
     const wisps = wispsOf(g, look.STEAM);
     std.debug.print("a turn in steam: the archer and a rat scalded for {d}, a rat in shallows for {d}, a pyre bloat for {d}; {d} steam wisps\n", .{ lost[0], lost[2], lost[3], wisps });
     try std.testing.expect(t < 1);

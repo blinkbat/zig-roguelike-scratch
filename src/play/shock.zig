@@ -28,9 +28,7 @@ pub fn spend(s: *Shock, dmg: i32) i32 {
     return mathx.percentCeil(dmg, mathx.PERCENT + MORE);
 }
 
-pub fn afflict(a: anytype, _: *mathx.Rng) void {
-    a.shock.start();
-}
+pub const afflict = resilience.Starts(AILMENT).afflict;
 
 /// The deep water and shallows joined to `at` within `CONDUCT` cells of it; none where `at` is dry.
 pub fn conducted(lv: *const grid.Level, at: mathx.P) areas.Burst {

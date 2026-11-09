@@ -17,9 +17,7 @@ pub fn sight(blinded: bool, normal: i32) i32 {
     return if (blinded) @min(normal, SIGHT) else normal;
 }
 
-pub fn afflict(a: anytype, _: *mathx.Rng) void {
-    a.blind.start();
-}
+pub const afflict = resilience.Starts(AILMENT).afflict;
 
 test "blindness narrows sight to the next cell for three turns, and a second never shortens the first" {
     var b = Blind{};

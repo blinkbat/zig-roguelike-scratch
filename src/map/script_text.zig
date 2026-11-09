@@ -412,7 +412,7 @@ pub const Reader = struct {
                 a.questop = try value(script.Questop, f);
                 a.n = switch (a.questop) {
                     .stage => try int(i32, f),
-                    .done => 1,
+                    .done => script.ActKind.span(.quest).lo,
                 };
             },
         }

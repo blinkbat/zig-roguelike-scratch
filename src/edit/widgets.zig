@@ -7,7 +7,7 @@ const raster = @import("../gfx/raster.zig");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const listing = @import("../map/listing.zig");
-const SHIFT_STEP = @import("tool_catalog.zig").SHIFT_STEP;
+pub const SHIFT_STEP: i32 = 5;
 const P = mathx.P;
 
 /// The brush panel down the left.
@@ -76,20 +76,20 @@ pub fn hot(controls: Controls, r: rl.Rectangle, live: bool, modal: bool, tip: ?[
     return .{ .hot = live and hovered, .hit = live and hovered and controls.pressed };
 }
 
-pub fn button(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
+pub fn button(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
     return buttonOn(controls, face, r, label, on, live, false, tip);
 }
 
-pub fn modalButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
+pub fn modalButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
     return buttonOn(controls, face, r, label, on, live, true, tip);
 }
 
-fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
+fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     return buttonSized(controls, face, r, label, TEXT, on, live, modal, tip);
 }
 
 /// Its label `size` pixels high.
-pub fn buttonSized(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, size: i32, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
+pub fn buttonSized(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, size: i32, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     const h = hot(controls, r, live, modal, tip);
     buttonBack(r, live);
     plate(r, on, h.hot);
@@ -98,8 +98,12 @@ pub fn buttonSized(controls: Controls, face: *const font.Face, r: rl.Rectangle, 
 }
 
 pub fn buttonBack(r: rl.Rectangle, live: bool) void {
+    buttonBackEdged(r, live, if (live) LIVE_EDGE else DEAD_EDGE);
+}
+
+pub fn buttonBackEdged(r: rl.Rectangle, live: bool, edge: rl.Color) void {
     rl.drawRectangleRec(r, if (live) LIVE_FILL else DEAD_FILL);
-    rl.drawRectangleLinesEx(r, 1, if (live) LIVE_EDGE else DEAD_EDGE);
+    rl.drawRectangleLinesEx(r, 1, edge);
 }
 
 /// A row of `r`, with no frame of its own, its label `ink`.
@@ -117,6 +121,11 @@ pub fn midIn(top: i32, h: i32, size: i32) i32 {
 
 pub fn midY(r: rl.Rectangle, size: i32) i32 {
     return midIn(@intFromFloat(r.y), @intFromFloat(r.height), size);
+}
+
+/// `s` fitted to `w`, centred down a row standing at `y`.
+pub fn rowText(face: *const font.Face, s: []const u8, size: i32, x: i32, y: i32, w: i32, col: rl.Color) void {
+    drawFit(face, s, size, w, false, x, midIn(y, ROW_H, size), col);
 }
 
 pub fn rightX(r: rl.Rectangle) i32 {
@@ -150,6 +159,11 @@ pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, valu
     const shown = textFace(face).fit(&fit_buf, value, arrows.size, @intFromFloat(stepValue(r).width), false);
     textFace(face).drawMid(shown, x + @divTrunc(w, 2), midIn(y, ROW_H, arrows.size), arrows.size, look.TEXT);
     return if (shift) by * SHIFT_STEP else by;
+}
+
+/// A stepper whose value shows `value_w` wide between its arrows.
+pub fn stepperW(value_w: i32) i32 {
+    return 2 * STEP_W + value_w;
 }
 
 pub fn stepValue(r: rl.Rectangle) rl.Rectangle {
@@ -401,9 +415,29 @@ pub const LayEnd = struct {
     }
 };
 
+pub fn hrule(x: i32, y: i32, w: i32) void {
+    rl.drawRectangle(x, y, w, 1, look.EDGE);
+}
+
+pub fn vrule(x: i32, top: i32, bottom: i32) void {
+    rl.drawRectangle(x, top, 1, bottom - top, look.EDGE);
+}
+
+/// A one-pixel frame just outside `r`.
+pub fn outline(r: rl.Rectangle) void {
+    rl.drawRectangleLinesEx(raster.grown(r, 1), 1, look.EDGE);
+}
+
+/// `s` drawn ending `GAP` short of `right`; its width.
+pub fn drawRight(face: *const font.Face, s: [:0]const u8, size: i32, right: i32, y: i32, col: rl.Color) i32 {
+    const w = textFace(face).width(s, size);
+    textFace(face).draw(s, right - GAP - w, y, size, col);
+    return w;
+}
+
 /// The rule between two columns, in the gutter left of `x`.
 pub fn divider(x: i32, top: i32, bottom: i32) void {
-    rl.drawRectangle(x - @divTrunc(PAD, 2), top, 1, bottom - top, look.EDGE);
+    vrule(x - @divTrunc(PAD, 2), top, bottom);
 }
 
 /// The column after one `w` wide from `x`, with the rule between them.

@@ -617,9 +617,10 @@ test "a quest begins at a stage, moves on, finishes for good, and its conditions
     t.turns(1, .{});
     try std.testing.expect(t.flag("late") and t.flag("finished"));
     try std.testing.expectEqual(Progress{ .state = .done, .stage = 2 }, t.rt.quests[q]);
-    try std.testing.expectEqualStrings("New quest: The Stolen Pib.", t.l.line(2).?);
-    try std.testing.expectEqualStrings("Quest updated: The Stolen Pib.", t.l.line(1).?);
-    try std.testing.expectEqualStrings("Quest complete: The Stolen Pib.", t.l.line(0).?);
+    const title = "The Stolen Pib";
+    try std.testing.expectEqualStrings(std.fmt.comptimePrint(QUEST_BEGUN, .{title}), t.l.line(2).?);
+    try std.testing.expectEqualStrings(std.fmt.comptimePrint(QUEST_MOVED, .{title}), t.l.line(1).?);
+    try std.testing.expectEqualStrings(std.fmt.comptimePrint(QUEST_DONE, .{title}), t.l.line(0).?);
     try std.testing.expectEqual(@as(?[]const u8, null), t.l.line(3));
 }
 

@@ -427,7 +427,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   one prunes it), `by` a prop (the first in reading order with free dry ground round it, in front first) or `far` (the
   free ground the longest walk from the doors), the last two found on any node's roll by `atlas.spotFor` the first time
   the NPC stands in a run and kept in `Runtime.spots` (saved). `shows` is a condition it stands only while; `looks`
-  draws it as a body. `talking.stampNpc` marks them on `Level.npc` on entry and resume, and `restand` again after each
+  draws it as a body. `talking.stampNpcs` marks them on `Level.npc` on entry and resume, and `restand` again after each
   spent turn, arrival and conversation pick. They block steps and landings (`vacant`, `stepOk`) but are no target
   (`taken`): attacks, arrows and areas pass them by. Portable saves read an NPC's pre-`Spot` `at` (`save_values.SavedNpc`).
 - Quests (`Script.quest`: a token name, a title, up to `MAX_STAGES` objectives) move only by the `quest` action:

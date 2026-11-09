@@ -231,10 +231,6 @@ pub fn disc(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime over: ?fn (gri
     discOf(lv, c, r, t, false, null, over);
 }
 
-fn discAll(lv: *grid.Level, c: P, r: f32, t: grid.Tile) void {
-    discOf(lv, c, r, t, true, null, null);
-}
-
 pub const LANE_MIN: u8 = 2;
 pub const SPAN: grid.Tile = .bridge;
 
@@ -580,8 +576,7 @@ test "unbar takes the barrels plugging the doorway, not the ones in the room beh
     lv.barrel[grid.Level.idx(.{ .x = 12, .y = 7 })] = true;
     lv.barrel[grid.Level.idx(.{ .x = 13, .y = 7 })] = true;
     unbar(&lv);
-    var left: usize = 0;
-    for (lv.barrel) |b| left += @intFromBool(b);
+    var left = lv.barrelCount();
     std.debug.print("a room barred at its doorway with 2 barrels inside: {d} of 3 kept\n", .{left});
     try std.testing.expect(!lv.barrel[grid.Level.idx(doorway)]);
     try std.testing.expectEqual(@as(usize, 2), left);
@@ -591,8 +586,7 @@ test "unbar takes the barrels plugging the doorway, not the ones in the room beh
     lv.set(.{ .x = 14, .y = 13 }, .wall);
     lv.set(.{ .x = 16, .y = 13 }, .wall);
     unbar(&lv);
-    left = 0;
-    for (lv.barrel) |b| left += @intFromBool(b);
+    left = lv.barrelCount();
     std.debug.print("a room barred two deep with 2 barrels inside: {d} of 4 kept\n", .{left});
     try std.testing.expect(!lv.barrel[grid.Level.idx(doorway)] and !lv.barrel[grid.Level.idx(porch)]);
     try std.testing.expectEqual(@as(usize, 2), left);
@@ -717,7 +711,7 @@ pub const Meander = struct {
 
     pub fn next(self: *Meander, rng: *mathx.Rng) ?P {
         if (self.done) return null;
-        const c = P{ .x = @intFromFloat(@round(self.x)), .y = @intFromFloat(@round(self.y)) };
+        const c = mathx.roundCell(self.x, self.y);
         const dx = self.tx - self.x;
         const dy = self.ty - self.y;
         self.steps += 1;
@@ -731,6 +725,20 @@ pub const Meander = struct {
         self.y += @sin(h);
         return c;
     }
+
+    pub fn within(self: Meander, bounds: grid.Box) Within {
+        return .{ .m = self, .bounds = bounds };
+    }
+
+    /// Each step held to `bounds`.
+    pub const Within = struct {
+        m: Meander,
+        bounds: grid.Box,
+
+        pub fn next(self: *Within, rng: *mathx.Rng) ?P {
+            return self.bounds.clamp(self.m.next(rng) orelse return null);
+        }
+    };
 };
 
 /// A river's middle from edge to edge, the rim too.
@@ -749,13 +757,13 @@ pub const Flow = struct {
         return f.cell[0..f.n];
     }
 
-    /// A cell either side of its fill, over whatever is not liquid.
-    pub fn bank(f: *const Flow, lv: *grid.Level, width: f32, t: grid.Tile) void {
-        for (f.course()) |c| disc(lv, c, bankReach(width), t, notLiquid);
+    /// A cell either side of its fill, over what `over` takes, off the rim.
+    pub fn bank(f: *const Flow, lv: *grid.Level, width: f32, t: grid.Tile, comptime over: fn (grid.Tile) bool) void {
+        for (f.course()) |c| disc(lv, c, bankReach(width), t, over);
     }
 
-    pub fn fill(f: *const Flow, lv: *grid.Level, width: f32, t: grid.Tile) void {
-        for (f.course()) |c| discAll(lv, c, width / 2, t);
+    pub fn fill(f: *const Flow, lv: *grid.Level, width: f32, t: grid.Tile, comptime with_rim: bool) void {
+        for (f.course()) |c| discOf(lv, c, width / 2, t, with_rim, null, null);
     }
 };
 
@@ -763,7 +771,7 @@ pub fn bankReach(width: f32) f32 {
     return width / 2 + 1;
 }
 
-fn notLiquid(t: grid.Tile) bool {
+pub fn notLiquid(t: grid.Tile) bool {
     return !t.liquid();
 }
 
@@ -1073,8 +1081,8 @@ test "a river runs edge to edge and parts the ground, and a join bridges it" {
     var rng = mathx.Rng.init(0x21E);
     field(&lv, Palette.WILD);
     const f = Flow.of(&rng, .{ .x = 0, .y = 32 }, .{ .x = grid.W - 1, .y = 30 }, 1);
-    f.bank(&lv, 3, .shallows);
-    f.fill(&lv, 3, .water);
+    f.bank(&lv, 3, .shallows, notLiquid);
+    f.fill(&lv, 3, .water, true);
     var st: Stretches = .{};
     const parted = st.label(&lv);
     connect(&lv, &rng, Palette.TRAILED, .{});

@@ -386,7 +386,7 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
 
 const Followers = grid.Bounded(actor.Actor, actor.MAX);
 /// Cells from the hero a follower may come through a door to.
-const FOLLOWER_REACH: i32 = 3;
+pub const FOLLOWER_REACH: i32 = 3;
 
 fn follows(a: *const actor.Actor) bool {
     return a.livingAlly() and !actor.row(a.kind).posted;
@@ -402,12 +402,10 @@ fn gatherFollowers(g: *const Game) Followers {
 /// The first `n` followers `gatherFollowers` took from visit `v` went with the hero; the rest stay.
 fn followersLeft(v: *simulation.Visit, n: usize) void {
     var left = n;
-    for (v.pool.slice()) |*a| {
+    for (v.pool.slice(), 0..) |*a, i| {
         if (left == 0) return;
         if (!follows(a)) continue;
-        v.lv.clear(a.at);
-        a.alive = false;
-        a.hp = 0;
+        _ = v.pool.damage(&v.lv, actor.Pool.idOf(i), a.hp);
         left -= 1;
     }
 }
@@ -440,7 +438,10 @@ fn goThrough(g: *Game, l: atlas.Link) void {
     const carried = TravelCarry.of(g);
     var title: [atlas.TITLE_MAX]u8 = undefined;
     g.sim.log.say("Entered {s}.", .{g.sim.map.?.node[l.node].title(l.node, &title)});
-    followersLeft(&g.sim.visits[from], enter(g, l.node, g.sim.map.?.door(l).at, followers.slice()));
+    const same = l.node == from;
+    if (same) followersLeft(&g.sim.visits[from], followers.n);
+    const placed = enter(g, l.node, g.sim.map.?.door(l).at, followers.slice());
+    if (!same) followersLeft(&g.sim.visits[from], placed);
     carried.restore(g);
 }
 

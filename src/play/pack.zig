@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const gen = @import("../map/gen.zig");
+const tee = @import("../map/biome/tee.zig");
 const actor = @import("actor.zig");
 
 const P = mathx.P;
@@ -91,6 +92,18 @@ pub const Lair = enum {
 
 /// Wet cells joined together, at most, that are a pond rather than a river or a sea.
 pub const POND_MOST: usize = 200;
+
+comptime {
+    const r: i32 = tee.POND_MAX;
+    var disc: usize = 0;
+    var y: i32 = -r;
+    while (y <= r) : (y += 1) {
+        var x: i32 = -r;
+        while (x <= r) : (x += 1) disc += @intFromBool(x * x + y * y <= r * r);
+    }
+    std.debug.assert(POND_MOST >= disc);
+}
+
 pub const POND_REACH: i32 = 2;
 pub const HEARTH_REACH: i32 = 3;
 /// A nook's walk this many steps back reaches no more than `NOOK_CELLS`.
@@ -282,8 +295,9 @@ const Homeless = struct {
     by_door: Kinds = .initEmpty(),
     lairs: std.EnumArray(Lair, Kinds) = .initFill(.initEmpty()),
 
+    /// A lead found no room anywhere by roll may still find its lair, which is searched whole.
     fn refuses(h: Homeless, m: *const Makeup) bool {
-        return h.anywhere.contains(m.lead()) or h.of(m).contains(m.lead());
+        return h.of(m).contains(m.lead()) or (m.lair == .anywhere and h.anywhere.contains(m.lead()));
     }
 
     fn add(h: *Homeless, m: *const Makeup) void {
@@ -315,18 +329,46 @@ const Lairs = struct {
     }
 };
 
-/// Open cells at the end of a narrow dead-end path: few open round them, and a short walk back reaching little.
+/// Open cells at the end of a narrow dead-end path: few open round them, all one way, and a short walk back reaching little.
 fn nooks(lv: *const grid.Level) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
         if (grid.Level.edgeDist(q) < NOOK_RIM or !lv.walkable(q) or lv.tile[i].wet()) continue;
+        var open: [NOOK_SIDES]P = undefined;
         var sides: usize = 0;
-        var round = grid.Cells.around(q, 1);
-        while (round.next()) |n| sides += @intFromBool(!n.eq(q) and lv.walkable(n));
-        if (sides <= NOOK_SIDES and walkReaches(lv, q, NOOK_STEPS, NOOK_CELLS)) out.set(i);
+        for (grid.STEPS) |step| {
+            const n = q.add(step);
+            if (!lv.walkable(n)) continue;
+            if (sides == NOOK_SIDES) break;
+            open[sides] = n;
+            sides += 1;
+        } else if (sides > 0 and oneWay(open[0..sides]) and walkReaches(lv, q, NOOK_STEPS, NOOK_CELLS)) out.set(i);
     }
     return out;
+}
+
+const Sides = std.bit_set.IntegerBitSet(NOOK_SIDES);
+
+/// The cells join each other without passing through the middle they surround: nothing walks through it.
+fn oneWay(cells: []const P) bool {
+    std.debug.assert(cells.len > 0 and cells.len <= NOOK_SIDES);
+    var joined = Sides.initEmpty();
+    joined.set(0);
+    var grew = true;
+    while (grew) {
+        grew = false;
+        for (cells, 0..) |c, k| {
+            if (joined.isSet(k)) continue;
+            for (cells, 0..) |o, j| {
+                if (!joined.isSet(j) or !mathx.adjacent(c, o)) continue;
+                joined.set(k);
+                grew = true;
+                break;
+            }
+        }
+    }
+    return joined.count() == cells.len;
 }
 
 /// No more than `most` cells lie within `steps` steps' walk of `from`.
@@ -335,12 +377,8 @@ fn walkReaches(lv: *const grid.Level, from: P, comptime steps: i32, most: usize)
     var seen = [_]bool{false} ** (w * w);
     var queue: [w * w]P = undefined;
     var depth: [w * w]i32 = undefined;
-    const Window = struct {
-        fn slot(o: P, q: P) ?usize {
-            return mathx.slot(q.x - o.x + steps, q.y - o.y + steps, w, w);
-        }
-    };
-    seen[Window.slot(from, from).?] = true;
+    const window = grid.Box.around(from, steps);
+    seen[window.slot(from).?] = true;
     queue[0] = from;
     depth[0] = 0;
     var n: usize = 1;
@@ -349,7 +387,7 @@ fn walkReaches(lv: *const grid.Level, from: P, comptime steps: i32, most: usize)
         if (depth[at] == steps) continue;
         var round = grid.Cells.around(queue[at], 1);
         while (round.next()) |q| {
-            const k = Window.slot(from, q) orelse continue;
+            const k = window.slot(q) orelse continue;
             if (seen[k] or !lv.walkable(q)) continue;
             seen[k] = true;
             if (n == most) return false;
@@ -361,31 +399,26 @@ fn walkReaches(lv: *const grid.Level, from: P, comptime steps: i32, most: usize)
     return true;
 }
 
-/// Wet cells in bodies of no more than `POND_MOST` joined cells.
+/// Wet cells in bodies of no more than `POND_MOST` joined cells that keep off the rim, as a river or sea does not.
 fn ponds(lv: *const grid.Level) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     var seen = grid.CellSet.initEmpty();
-    var queue: [grid.CELLS]u16 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
     for (0..grid.CELLS) |i| {
         if (seen.isSet(i) or !lv.tile[i].wet()) continue;
-        seen.set(i);
-        queue[0] = @intCast(i);
-        var n: usize = 1;
-        var at: usize = 0;
-        while (at < n) : (at += 1) {
-            var round = grid.Cells.around(grid.Level.of(queue[at]), 1);
-            while (round.next()) |q| {
-                if (!grid.Level.inside(q)) continue;
-                const k = grid.Level.idx(q);
-                if (seen.isSet(k) or !lv.tile[k].wet()) continue;
-                seen.set(k);
-                queue[n] = @intCast(k);
-                n += 1;
-            }
-        }
-        if (n <= POND_MOST) for (queue[0..n]) |k| out.set(k);
+        var body = Water{ .ctx = lv, .steps = &grid.STEPS, .seen = &seen, .queue = &queue };
+        body.seed(grid.Level.of(i));
+        var rimmed = false;
+        while (body.next()) |p| rimmed = rimmed or grid.Level.edgeDist(p) <= 1;
+        if (body.tail <= POND_MOST and !rimmed) for (queue[0..body.tail]) |k| out.set(k);
     }
     return out;
+}
+
+const Water = grid.Spread(*const grid.Level, wetAt);
+
+fn wetAt(lv: *const grid.Level, p: P) bool {
+    return lv.at(p).wet();
 }
 
 /// Lava cells with no lava beside them: camp fires, not lava fields.
@@ -393,9 +426,10 @@ fn fires(lv: *const grid.Level) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     for (0..grid.CELLS) |i| {
         if (lv.tile[i] != .lava) continue;
-        var round = grid.Cells.around(grid.Level.of(i), 1);
-        const lone = while (round.next()) |q| {
-            if (!q.eq(grid.Level.of(i)) and grid.Level.inside(q) and lv.at(q) == .lava) break false;
+        const p = grid.Level.of(i);
+        const lone = for (grid.STEPS) |d| {
+            const q = p.add(d);
+            if (grid.Level.inside(q) and lv.at(q) == .lava) break false;
         } else true;
         if (lone) out.set(i);
     }
@@ -479,15 +513,15 @@ fn spawnCounted(lv: *grid.Level, pool: *actor.Pool, k: actor.Kind, at: P, bodies
 
 /// The cells closer than `CAMP_GAP` to a caravan cart.
 fn campOf(lv: *const grid.Level) grid.CellSet {
-    var near = grid.CellSet.initEmpty();
-    for (0..grid.CELLS) |i| {
-        if (lv.tile[i] != .caravan and lv.tile[i] != .caravan_part) continue;
-        var cells = grid.Cells.around(grid.Level.of(i), CAMP_GAP - 1);
-        while (cells.next()) |q| {
-            if (grid.Level.inside(q)) near.set(grid.Level.idx(q));
-        }
+    return widened(carts(lv), CAMP_GAP - 1);
+}
+
+fn carts(lv: *const grid.Level) grid.CellSet {
+    var out = grid.CellSet.initEmpty();
+    for (&lv.tile, 0..) |t, i| {
+        if (t == .caravan or t == .caravan_part) out.set(i);
     }
-    return near;
+    return out;
 }
 
 /// Where one pack's bodies may stand; `others` bounds the previously placed packs.
@@ -508,6 +542,10 @@ const Ground = struct {
         return true;
     }
 
+    fn leadable(g: Ground, p: P, k: actor.Kind) bool {
+        return grid.Box.inMap(1).holds(p) and g.clear(p, k);
+    }
+
     /// `by`: the door the lead must stand within `EXIT_REACH` of.
     fn leadSpot(g: Ground, rng: *mathx.Rng, by: ?P, k: actor.Kind) ?P {
         const Lead = struct {
@@ -515,7 +553,7 @@ const Ground = struct {
             k: actor.Kind,
 
             fn at(l: @This(), p: P) bool {
-                return grid.Box.inMap(1).holds(p) and l.ground.clear(p, l.k);
+                return l.ground.leadable(p, l.k);
             }
         };
         const box = if (by) |d| grid.Box.around(d, EXIT_REACH) else grid.Box.inMap(1);
@@ -529,7 +567,7 @@ const Ground = struct {
         var it = lair.iterator(.{});
         while (it.next()) |i| {
             const p = grid.Level.of(i);
-            if (!grid.Box.inMap(1).holds(p) or !g.clear(p, k)) continue;
+            if (!g.leadable(p, k)) continue;
             seen += 1;
             if (rng.below(seen) == 0) chosen = p;
         }

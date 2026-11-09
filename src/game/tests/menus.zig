@@ -449,7 +449,6 @@ test "Debug restart begins the map anew and clears visited nodes" {
     defer game.shut(std.testing.allocator, g);
     const map = try atlas.testAtlas();
     defer std.testing.allocator.destroy(map);
-    map.* = .{};
     _ = map.add(.{ .procgen = .{} });
     _ = map.add(.{ .procgen = .{} });
     game.beginMapAt(g, map, .{ .node = 1, .at = grid.MIDDLE }, 12);

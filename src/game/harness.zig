@@ -382,6 +382,25 @@ pub fn framesUntil(g: *game.Game, slot: usize, comptime done: fn (*game.Game, us
     return t;
 }
 
+/// Seconds of idle frames until every one of `slots` is pictured as it is, a second at most.
+pub fn untilCaughtUp(g: *game.Game, slots: []const usize) f32 {
+    g.st = .{};
+    var t: f32 = 0;
+    while (t < 1 and !allCaughtUp(g, slots)) : (t += TEST_DT) game.update(g, TEST_DT);
+    return t;
+}
+
+fn allCaughtUp(g: *game.Game, slots: []const usize) bool {
+    for (slots) |s| if (!caughtUp(g, s)) return false;
+    return true;
+}
+
+/// `secs` of idle frames.
+pub fn idleFor(g: *game.Game, secs: f32) void {
+    var t: f32 = 0;
+    while (t < secs) : (t += TEST_DT) game.update(g, TEST_DT);
+}
+
 pub fn flashing(g: *game.Game, slot: usize) bool {
     return g.pic.fx.impacts.flashOf(.fromIndex(slot)) > 0;
 }
@@ -404,6 +423,7 @@ pub const SHOT_AT = P{ .x = SHOT_FROM.x + bow.RANGE, .y = SHOT_FROM.y };
 pub const SHOT_LANDS = game.presentation.flown(bow.RANGE - 1);
 
 pub const TEST_HP: i32 = 100;
+pub const TEST_MANA: i32 = 99;
 
 pub fn toughen(a: *actor.Actor) void {
     setLife(a, TEST_HP, TEST_HP);

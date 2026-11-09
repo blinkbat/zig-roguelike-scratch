@@ -881,11 +881,11 @@ pub fn addNode(ed: *Editor, plan: atlas.Plan) void {
     ed.typeName();
 }
 
-pub fn button(ed: *Editor, g: *const game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
+pub fn button(ed: *Editor, g: *const game.Game, r: rl.Rectangle, label: []const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
     return widgets.button(ed.controls(), &g.face, r, label, on, live, tip);
 }
 
-pub fn modalButton(ed: *Editor, g: *const game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
+pub fn modalButton(ed: *Editor, g: *const game.Game, r: rl.Rectangle, label: []const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
     return widgets.modalButton(ed.controls(), &g.face, r, label, on, live, tip);
 }
 
@@ -1094,19 +1094,30 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     }
     ed.modal = .help;
     try snapAs(ed, g, target, "{s}/edit-help.png", .{dir});
-    ed.modal = .{ .plot = .dialogs };
-    ed.plot.pick = .{ .npc = 0 };
-    try snapAs(ed, g, target, "{s}/edit-npc.png", .{dir});
-    ed.plot.pick = .{ .dialog = 0 };
-    ed.plot.line = 0;
-    try snapAs(ed, g, target, "{s}/edit-dialog.png", .{dir});
-    ed.plot.focus = .{ .say = .{ .d = 0, .l = 0 } };
-    ed.plot.field.set(ed.map.script.dialog[0].line[0].say.text());
-    try snapAs(ed, g, target, "{s}/edit-dialog-typing.png", .{dir});
-    ed.plot.focus = null;
-    ed.modal = .{ .plot = .script };
-    ed.plot.trigger = 0;
-    try snapAs(ed, g, target, "{s}/edit-script.png", .{dir});
+    for (std.enums.values(plot.Page)) |page| {
+        ed.modal = .{ .plot = page };
+        switch (page) {
+            .dialogs => {
+                ed.plot.pick = .{ .npc = 0 };
+                try snapAs(ed, g, target, "{s}/edit-npc.png", .{dir});
+                ed.plot.pick = .{ .dialog = 0 };
+                ed.plot.line = 0;
+                try snapAs(ed, g, target, "{s}/edit-dialog.png", .{dir});
+                ed.plot.focus = .{ .say = .{ .d = 0, .l = 0 } };
+                ed.plot.field.set(ed.map.script.dialog[0].line[0].say.text());
+                try snapAs(ed, g, target, "{s}/edit-dialog-typing.png", .{dir});
+                ed.plot.focus = null;
+            },
+            .script => {
+                ed.plot.trigger = 0;
+                try snapAs(ed, g, target, "{s}/edit-script.png", .{dir});
+            },
+            .quests => {
+                ed.plot.quest = 0;
+                try snapAs(ed, g, target, "{s}/edit-quests.png", .{dir});
+            },
+        }
+    }
     ed.naming = .save_as;
     ed.field.put("The Warrens");
     ed.listing.scan();
@@ -1130,6 +1141,8 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
 pub const SHOT_SCRIPT =
     \\flag met_wenna
     \\counter coins
+    \\quest wenna_coins Coins for Wenna
+    \\stage Bring Old Wenna five coins.
     \\dialog wenna
     \\line root
     \\who Old Wenna
@@ -1170,10 +1183,7 @@ const EFFECT_POSES = [_]struct { name: []const u8, sample: effects_view.Sample, 
 };
 
 fn seenIndex(want: Seen) usize {
-    for (SEEN, 0..) |s, i| {
-        if (std.meta.eql(s, want)) return i;
-    }
-    unreachable;
+    return mathx.indexOfEql(Seen, &SEEN, want).?;
 }
 
 fn render(ed: *Editor, g: *game.Game, target: rl.RenderTexture2D) void {

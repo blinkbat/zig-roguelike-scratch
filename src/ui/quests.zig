@@ -39,14 +39,16 @@ pub const Journal = struct {
 };
 
 fn asking(face: anytype, e: Entry, w: i32, wrapped: *font.Wrapped, lines: *[font.WRAP_LINES_MAX][:0]const u8) usize {
-    if (e.done or e.asks.len == 0) return 0;
+    if (!underWay(e)) return 0;
     return font.wrap(face, e.asks, font.BODY, w, wrapped, lines);
 }
 
+fn underWay(e: Entry) bool {
+    return !e.done and e.asks.len > 0;
+}
+
 fn entryHeight(face: anytype, e: Entry, w: i32) i32 {
-    var wrapped: font.Wrapped = undefined;
-    var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
-    const n: i32 = @intCast(asking(face, e, w, &wrapped, &lines));
+    const n: i32 = if (underWay(e)) @intCast(font.lineCount(face, e.asks, font.BODY, w)) else 0;
     return font.BODY_LINE * (1 + n) + ENTRY_GAP;
 }
 
@@ -58,14 +60,12 @@ pub fn draw(face: *const font.Face, entries: []const Entry, top: usize, box: rl.
     const first: i32 = @intFromFloat(box.y);
     var y = first;
     if (entries.len == 0) return face.text(NONE, x, y, font.BODY, look.DIM);
-    var buf: [LINE_MAX]u8 = undefined;
     var fit: [LINE_MAX]u8 = undefined;
     var wrapped: font.Wrapped = undefined;
     var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
     for (entries[@min(top, entries.len - 1)..]) |e| {
         if (y > first and y + entryHeight(face, e, w) - ENTRY_GAP > bottom) break;
-        const title = std.fmt.bufPrintZ(&buf, "{s}", .{e.title}) catch "";
-        face.text(face.fit(&fit, title, font.BODY, w, false), x, y, font.BODY, if (e.done) look.DIM else look.UI_GOLD);
+        face.text(face.fit(&fit, e.title, font.BODY, w, false), x, y, font.BODY, if (e.done) look.DIM else look.UI_GOLD);
         y += font.BODY_LINE;
         for (lines[0..asking(face, e, w, &wrapped, &lines)]) |line| {
             face.text(line, x, y, font.BODY, look.TEXT);

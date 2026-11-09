@@ -5,9 +5,10 @@ const atlas = @import("../map/atlas.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const menu = @import("../ui/menu.zig");
+const widgets = @import("widgets.zig");
 const Desk = input.Desk;
 
-pub const SHIFT_STEP: i32 = 5;
+pub const SHIFT_STEP = widgets.SHIFT_STEP;
 pub const TORCH_RULE = "hangs on a wall with floor below it";
 pub const BARREL_RULE = "stands on " ++ @tagName(grid.BARREL_GROUND) ++ " and breaks for gold";
 pub const FOE_RULE = "stands on open floor; a swimmer in water, a mimic on bare ground";
@@ -256,7 +257,14 @@ pub const HELP = [_]HelpSection{
         "Palette: " ++ PALETTE_RULE,
         Desk.COPY_CAPTION ++ " copy" ++ SEP ++ Desk.CUT_CAPTION ++ " cut" ++ SEP ++ Desk.PASTE_CAPTION ++ " paste",
         Desk.PAINT_CAPTION ++ " place paste" ++ SEP ++ Desk.DELETE_CAPTION ++ " clear selection",
-        std.fmt.comptimePrint("{s} on a number's - or + steps it by {d}", .{ Desk.SHIFT_CAPTION, SHIFT_STEP }),
+        std.fmt.comptimePrint("{s} on a number's {s} or {s}, {s} or {s} steps it by {d}", .{
+            Desk.SHIFT_CAPTION,
+            widgets.KNOB_ARROWS.glyphs[0],
+            widgets.KNOB_ARROWS.glyphs[1],
+            widgets.PAGE_ARROWS.glyphs[0],
+            widgets.PAGE_ARROWS.glyphs[1],
+            SHIFT_STEP,
+        }),
     } },
     .{ .head = "VIEW", .column = 1, .lines = &.{
         Desk.PAN_CAPTION ++ " pan",

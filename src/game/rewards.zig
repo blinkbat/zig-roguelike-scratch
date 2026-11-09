@@ -111,7 +111,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     sim.plot.died(fallen.kind);
     const spoils = !fallen.raider;
     const xp = progress.xpOf(fallen.kind);
-    gainExperience(sim, if (spoils) xp else std.math.divCeil(u32, xp, raid.XP_DIVISOR) catch unreachable);
+    gainExperience(sim, if (spoils) xp else raid.xpOf(xp));
     const reward: items.Loot = if (spoils) lootOf(sim, fallen) else .{};
     if (reward.gold > 0) dropGold(sim, fallen.at, reward.gold);
     if (reward.item) |item| dropItem(sim, .{ .item = item, .at = fallen.at, .source = target.value });
@@ -135,11 +135,19 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
         .strike => {},
     }
     const family = fallen.kind.family();
-    if (spoils and sim.pool.tally(family).left == 0) {
+    if (spoils and !nativeLeft(sim, family)) {
         sim.log.say("The last {s} is dead.", .{actor.row(family).name});
         sim.chronicle.mark(.{ .cleared = family });
     }
     return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .caught = caught, .unmasked = unmasked, .mana = sim.mana - mana_before };
+}
+
+/// A living `family` foe that is no raider: raiders keep coming, so a node is cleared of its own.
+fn nativeLeft(sim: *const Simulation, family: actor.Kind) bool {
+    for (sim.pool.constSlice()) |*a| {
+        if (a.alive and !a.raider and a.kind.family() == family) return true;
+    }
+    return false;
 }
 
 /// A mimic leaves a chest's loot with a rare item; nothing is left where no one could walk to fetch it.

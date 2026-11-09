@@ -235,7 +235,7 @@ const Where = enum {
     }
 
     fn next(w: Where) Where {
-        return mathx.stepIn(Where, std.enums.values(Where), w, 1, 0);
+        return mathx.cycle(Where, w, 1);
     }
 
     fn label(w: Where) [:0]const u8 {
@@ -248,13 +248,19 @@ const Where = enum {
         };
     }
 
+    fn phrase(w: Where) [:0]const u8 {
+        return switch (w) {
+            .anywhere => "anywhere",
+            .exit => "by a door",
+            .nook => "at a winding path's end",
+            .pond => "in or by a pond",
+            .hearth => "by a campfire",
+        };
+    }
+
     fn tip(w: Where) [:0]const u8 {
         return switch (w) {
-            .anywhere => "The lead stands anywhere; " ++ Desk.PAINT_CAPTION ++ " for by a door",
-            .exit => "The lead stands by a door; " ++ Desk.PAINT_CAPTION ++ " for a winding path's end",
-            .nook => "The lead stands at a winding path's end; " ++ Desk.PAINT_CAPTION ++ " for by a pond",
-            .pond => "The lead stands in or by a pond; " ++ Desk.PAINT_CAPTION ++ " for by a campfire",
-            .hearth => "The lead stands by a campfire; " ++ Desk.PAINT_CAPTION ++ " for anywhere",
+            inline else => |x| comptime "The lead stands " ++ x.phrase() ++ "; " ++ Desk.PAINT_CAPTION ++ " for " ++ x.next().phrase(),
         };
     }
 };
@@ -288,7 +294,7 @@ const MAKEUP_TOOLS = std.enums.values(MakeupTool);
 const DRAW_W: i32 = 36;
 const MEMBER_W: i32 = 24;
 const MEMBER_GAP: i32 = 2;
-const DRAW_SPAN: i32 = 2 * widgets.STEP_W + DRAW_W;
+const DRAW_SPAN: i32 = widgets.stepperW(DRAW_W);
 const MEMBERS_X: i32 = DRAW_SPAN + widgets.BLOCK_GAP;
 const MAKEUP_TOOLS_X: i32 = widgets.INSPECT_INNER_W - @as(i32, MAKEUP_TOOLS.len) * widgets.STEP_PITCH + widgets.GAP;
 
@@ -602,7 +608,7 @@ const RAID_ROWS = [_]Knob{
 
 pub const ADD_PROCGEN_TIP = "A node the " ++ @tagName((atlas.Procgen{}).floor) ++ " generator rolls round its doors, anew each run";
 const ADD_MAKEUP_TIP = "Another pack it may roll, a lone " ++ actor.row(pack.FIRST).name ++ " to begin";
-const SHIFT_TIP = std.fmt.comptimePrint(" ({s} steps {d})", .{ Desk.SHIFT_CAPTION, @import("tool_catalog.zig").SHIFT_STEP });
+const SHIFT_TIP = std.fmt.comptimePrint(" ({s} steps {d})", .{ Desk.SHIFT_CAPTION, widgets.SHIFT_STEP });
 
 comptime {
     @setEvalBranchQuota(1_000_000);

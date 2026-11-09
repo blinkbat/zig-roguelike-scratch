@@ -12,10 +12,7 @@ pub const Thumbnails = struct {
     scratch: grid.Level = undefined,
 
     pub fn deinit(self: *Thumbnails) void {
-        for (&self.textures) |*t| {
-            if (t.*) |texture| rl.unloadTexture(texture);
-            t.* = null;
-        }
+        for (&self.textures) |*t| raster.release(t);
         self.invalidateAll();
     }
 

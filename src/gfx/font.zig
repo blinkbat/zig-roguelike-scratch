@@ -8,7 +8,6 @@ const DATA_TTF = "SourceSans3-Regular.ttf";
 const ATLAS_PX: i32 = 96;
 /// Drawn from its own point-filtered atlas, not the mipmapped one.
 const NATIVE_SIZES = [_]i32{ LABEL, SMALL, BODY, HEAD };
-const SHADOW_A: u16 = look.DROP_SHADOW_A;
 /// Text size per pixel the shadow sits down and right.
 const SHADOW_STEP: i32 = 14;
 pub const BODY: i32 = 20;
@@ -261,7 +260,7 @@ fn shadowDrop(size: i32) i32 {
 }
 
 fn shadowOf(col: rl.Color) rl.Color {
-    return .{ .r = 0, .g = 0, .b = 0, .a = @intCast(SHADOW_A * col.a / 255) };
+    return look.fade(look.GLYPH_SHADOW, look.alphaOf(col));
 }
 
 /// Extra pixels an engraved line's shadow drops past `text`'s.
@@ -450,6 +449,13 @@ pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, l
         }
     }
     return if (len > 0) @min(n + 1, WRAP_LINES_MAX) else n;
+}
+
+/// How many lines `wrap` makes of `body`.
+pub fn lineCount(face: anytype, body: []const u8, size: i32, w: i32) usize {
+    var buf: Wrapped = undefined;
+    var lines: [WRAP_LINES_MAX][:0]const u8 = undefined;
+    return wrap(face, body, size, w, &buf, &lines);
 }
 
 test "wrapping retains long words and bounds their lines by pixels and storage" {
