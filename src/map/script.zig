@@ -9,11 +9,14 @@ pub const WHO_MAX: usize = 24;
 pub const SAY_MAX: usize = 240;
 pub const ASK_MAX: usize = 60;
 pub const NOTE_MAX: usize = 80;
+pub const TITLE_MAX: usize = 32;
 
+pub const MAX_QUESTS: usize = 12;
+pub const MAX_STAGES: usize = 8;
 pub const MAX_FLAGS: usize = 32;
 pub const MAX_COUNTERS: usize = 32;
 pub const MAX_TIMERS: usize = 16;
-pub const MAX_FOLK: usize = 32;
+pub const MAX_NPCS: usize = 32;
 pub const MAX_DIALOGS: usize = 12;
 pub const MAX_LINES: usize = 10;
 pub const MAX_CHOICES: usize = 4;
@@ -24,13 +27,14 @@ pub const MAX_CONDS: usize = 8;
 pub const MAX_ACTS: usize = 8;
 pub const NUMBER_MAX: i32 = 9999;
 pub const NEAR_MAX: i32 = 20;
+pub const NEAR_DEFAULT: i32 = 2;
 pub const PRIORITY_MAX: i8 = 99;
 pub const END = "end";
 pub const NONE = "-";
 
 comptime {
-    std.debug.assert(MAX_FOLK < std.math.maxInt(u8));
-    std.debug.assert(@max(MAX_FLAGS, MAX_COUNTERS, MAX_TIMERS, MAX_DIALOGS, MAX_LINES, MAX_TRIGGERS) <= std.math.maxInt(u8));
+    std.debug.assert(MAX_NPCS < std.math.maxInt(u8));
+    std.debug.assert(@max(MAX_FLAGS, MAX_COUNTERS, MAX_TIMERS, MAX_DIALOGS, MAX_LINES, MAX_TRIGGERS, MAX_QUESTS, MAX_STAGES) <= std.math.maxInt(u8));
 }
 
 /// Printable ascii without its ends' spaces, `N` at most.
@@ -78,6 +82,7 @@ pub const Who = Words(WHO_MAX);
 pub const Say = Words(SAY_MAX);
 pub const Ask = Words(ASK_MAX);
 pub const Note = Words(NOTE_MAX);
+pub const Title = Words(TITLE_MAX);
 
 pub fn plain(s: []const u8) bool {
     for (s) |c| {
@@ -181,16 +186,25 @@ pub const CondKind = enum {
     talked,
     deaths,
     alive,
+    quest,
+    stage,
 
     /// What its `n` may hold.
     pub fn span(k: CondKind) Span {
         return switch (k) {
-            .always, .never, .flag, .counter, .timer, .region, .talked => SIGNED_SPAN,
+            .always, .never, .flag, .counter, .timer, .region, .talked, .quest => SIGNED_SPAN,
             .elapsed, .deaths, .alive => COUNT_SPAN,
             .near => .{ .lo = 0, .hi = NEAR_MAX },
+            .stage => STAGE_SPAN,
         };
     }
 };
+
+/// Where a quest stands in a run: not yet given, under way at some stage, or finished.
+pub const QuestState = enum { unstarted, active, done };
+
+/// A quest's stage, counted from 1; 0 before it begins.
+pub const STAGE_SPAN = Span{ .lo = 0, .hi = MAX_STAGES };
 
 /// Each kind reads only its own fields; `slot` indexes the table its kind names.
 pub const Cond = struct {
@@ -198,6 +212,7 @@ pub const Cond = struct {
     slot: u8 = 0,
     /// A flag set, or a timer run out.
     on: bool = true,
+    state: QuestState = .active,
     cmp: Cmp = .ge,
     n: i32 = 0,
     foe: actor.Kind = actor.FOES[0],
@@ -218,11 +233,12 @@ pub const ActKind = enum {
     timer,
     wait,
     preserve,
+    quest,
 
     /// What a conversation's own lines may do; the rest steer a trigger's list.
     pub fn spoken(k: ActKind) bool {
         return switch (k) {
-            .text, .flag, .counter, .timer => true,
+            .text, .flag, .counter, .timer, .quest => true,
             .dialog, .wait, .preserve => false,
         };
     }
@@ -232,19 +248,23 @@ pub const ActKind = enum {
         return switch (k) {
             .dialog, .text, .flag, .counter, .preserve => SIGNED_SPAN,
             .timer, .wait => COUNT_SPAN,
+            .quest => .{ .lo = 1, .hi = MAX_STAGES },
         };
     }
 };
 
 pub const Setop = enum { off, on, flip };
 pub const Countop = enum { set, add, sub };
+/// Brings a quest to stage `n`, beginning it if it had not begun, or finishes it.
+pub const Questop = enum { stage, done };
 
 pub const Act = struct {
     kind: ActKind = .preserve,
     slot: u8 = 0,
     setop: Setop = .on,
     countop: Countop = .set,
-    /// A counter's amount, or a timer's or wait's turns.
+    questop: Questop = .stage,
+    /// A counter's amount, a timer's or wait's turns, or a quest's stage.
     n: i32 = 0,
     note: Note = .{},
 };
@@ -444,19 +464,84 @@ pub fn renumbered(at: anytype, gone: usize) ?@TypeOf(at) {
     return if (at > gone) at - 1 else at;
 }
 
+/// Where an NPC stands: a painted cell, or a place found afresh on each roll of its node.
+pub const Spot = union(enum) {
+    at: P,
+    /// Beside the first of these props with free ground round it.
+    by: grid.Tile,
+    /// The open ground the longest walk from the node's doors.
+    far,
+};
+
+/// A prop an NPC may stand `by`: upright, neither a shaped wall nor an opened chest; a wide prop by its head.
+pub fn besideable(t: grid.Tile) bool {
+    return t.upright() and !t.shaped() and !t.isPart() and !t.isOpened();
+}
+
+/// The prop an NPC placed beside `t` stands `by`: a wide prop's head for any of its pieces, null where none may.
+pub fn besideOf(t: grid.Tile) ?grid.Tile {
+    if (t.isPart()) for (std.enums.values(grid.Tile)) |head| {
+        if (head.partOf() == t) return if (besideable(head)) head else null;
+    };
+    return if (besideable(t)) t else null;
+}
+
+/// Where each NPC placed on its node's roll stands, once it has.
+pub const Stood = [MAX_NPCS]?P;
+
 /// A body that talks: not a foe, it neither fights nor moves.
-pub const Folk = struct {
+pub const Npc = struct {
     node: u8 = 0,
-    at: P = .{ .x = 0, .y = 0 },
+    spot: Spot = .far,
     /// Blank: `STRANGER`.
     name: Who = .{},
     dialog: ?u8 = null,
+    /// Stands only while this holds.
+    shows: ?Cond = null,
+    /// Drawn as this body's picture; null, as a person.
+    looks: ?actor.Kind = null,
 
-    pub fn called(self: *const Folk) []const u8 {
+    pub fn called(self: *const Npc) []const u8 {
         return if (self.name.n > 0) self.name.text() else STRANGER;
+    }
+
+    pub fn cell(self: *const Npc) ?P {
+        return switch (self.spot) {
+            .at => |p| p,
+            .by, .far => null,
+        };
     }
 };
 pub const STRANGER = "Stranger";
+
+/// A quest the journal lists: its title, and what each stage asks.
+pub const Quest = struct {
+    pub const COUNTED = .{.{ "stage", "stage_n" }};
+    name: Name = .{},
+    title: Title = .{},
+    stage: [MAX_STAGES]Note = @splat(.{}),
+    stage_n: u8 = 0,
+
+    pub fn stages(self: *const Quest) []const Note {
+        return self.stage[0..self.stage_n];
+    }
+
+    /// The stages a `stage` condition (from 0) or a `quest` action (from 1) may name.
+    pub fn reach(self: *const Quest, lo: i32) Span {
+        return .{ .lo = lo, .hi = @max(lo, self.stage_n) };
+    }
+
+    /// What stage `n` asks; empty past its last stage.
+    pub fn asks(self: *const Quest, n: i32) []const u8 {
+        if (n < 1 or n > self.stage_n) return "";
+        return self.stage[@intCast(n - 1)].text();
+    }
+
+    /// Blank: its name.
+    pub fn titled(self: *const Quest) []const u8 {
+        return if (self.title.n > 0) self.title.text() else self.name.text();
+    }
+};
 
 pub const Table = enum { flag, counter, timer };
 
@@ -465,22 +550,26 @@ pub const Script = struct {
         .{ "flag", "flag_n" },
         .{ "counter", "counter_n" },
         .{ "timer", "timer_n" },
-        .{ "folk", "folk_n" },
+        .{ "npc", "npc_n" },
         .{ "dialog", "dialog_n" },
         .{ "trigger", "trigger_n" },
+        .{ "quest", "quest_n" },
     };
+    pub const WAS = .{ .{ "npc", "folk" }, .{ "npc_n", "folk_n" } };
     flag: [MAX_FLAGS]Name = @splat(.{}),
     flag_n: u8 = 0,
     counter: [MAX_COUNTERS]Name = @splat(.{}),
     counter_n: u8 = 0,
     timer: [MAX_TIMERS]Name = @splat(.{}),
     timer_n: u8 = 0,
-    folk: [MAX_FOLK]Folk = @splat(.{}),
-    folk_n: u8 = 0,
+    npc: [MAX_NPCS]Npc = @splat(.{}),
+    npc_n: u8 = 0,
     dialog: [MAX_DIALOGS]Dialog = @splat(.{}),
     dialog_n: u8 = 0,
     trigger: [MAX_TRIGGERS]Trigger = @splat(.{}),
     trigger_n: u8 = 0,
+    quest: [MAX_QUESTS]Quest = @splat(.{}),
+    quest_n: u8 = 0,
 
     pub fn names(self: *const Script, t: Table) []const Name {
         return switch (t) {
@@ -562,40 +651,62 @@ pub const Script = struct {
         return true;
     }
 
-    pub fn folks(self: *const Script) []const Folk {
-        return self.folk[0..self.folk_n];
+    pub fn npcs(self: *const Script) []const Npc {
+        return self.npc[0..self.npc_n];
     }
 
-    pub fn folkAt(self: *const Script, node: usize, p: P) ?u8 {
-        for (self.folks(), 0..) |*f, i| {
-            if (f.node == node and f.at.eq(p)) return @intCast(i);
+    /// The NPC painted at `p` on node `node`; one placed afresh on each roll is never there.
+    pub fn npcAt(self: *const Script, node: usize, p: P) ?u8 {
+        for (self.npcs(), 0..) |*f, i| {
+            const at = f.cell() orelse continue;
+            if (f.node == node and at.eq(p)) return @intCast(i);
         }
         return null;
     }
 
-    pub fn addFolk(self: *Script, f: Folk) ?u8 {
-        if (self.folkAt(f.node, f.at) != null or !mathx.push(Folk, &self.folk, &self.folk_n, f)) return null;
-        return self.folk_n - 1;
+    /// Where NPC `i` stands: its painted cell, else where `stood` keeps it on this roll.
+    pub fn standsAt(self: *const Script, i: usize, stood: *const Stood) ?P {
+        return self.npc[i].cell() orelse stood[i];
+    }
+
+    /// Drops every NPC `which.drops(npc)` picks, last first so each index still names its NPC; whether any went.
+    pub fn dropNpcsWhere(self: *Script, which: anytype) bool {
+        var dropped = false;
+        var i: usize = self.npc_n;
+        while (i > 0) {
+            i -= 1;
+            if (!which.drops(i, &self.npc[i])) continue;
+            self.dropNpc(@intCast(i));
+            dropped = true;
+        }
+        return dropped;
+    }
+
+    pub fn addNpc(self: *Script, f: Npc) ?u8 {
+        if (f.cell()) |at| if (self.npcAt(f.node, at) != null) return null;
+        if (!mathx.push(Npc, &self.npc, &self.npc_n, f)) return null;
+        return self.npc_n - 1;
     }
 
     /// Every condition it was named in can no longer hold.
-    pub fn dropFolk(self: *Script, i: u8) void {
-        cut(Folk, &self.folk, &self.folk_n, i);
+    pub fn dropNpc(self: *Script, i: u8) void {
+        cut(Npc, &self.npc, &self.npc_n, i);
         var conds = self.condIterMut();
         while (conds.next()) |c| {
-            if (!refersTo(condRef(c.kind), .folk)) continue;
+            if (!refersTo(condRef(c.kind), .npc)) continue;
             if (renumbered(c.slot, i)) |s| c.slot = s else c.* = .{ .kind = .never };
         }
     }
 
-    /// Node `n` went: its folk with it, and every region drawn on it can no longer hold.
+    /// Node `n` went: its NPCs with it, and every region drawn on it can no longer hold.
     pub fn dropNode(self: *Script, n: usize) void {
-        var i: usize = self.folk_n;
-        while (i > 0) {
-            i -= 1;
-            if (self.folk[i].node == n) self.dropFolk(@intCast(i));
-        }
-        for (self.folk[0..self.folk_n]) |*f| f.node = renumbered(f.node, n) orelse f.node;
+        _ = self.dropNpcsWhere(struct {
+            node: usize,
+            pub fn drops(on: @This(), _: usize, npc: *const Npc) bool {
+                return npc.node == on.node;
+            }
+        }{ .node = n });
+        for (self.npc[0..self.npc_n]) |*f| f.node = renumbered(f.node, n) orelse f.node;
         var conds = self.condIterMut();
         while (conds.next()) |c| {
             if (c.kind != .region) continue;
@@ -635,7 +746,7 @@ pub const Script = struct {
 
     pub fn dialogUsers(self: *const Script, d: u8) usize {
         var n: usize = 0;
-        for (self.folks()) |f| {
+        for (self.npcs()) |f| {
             if (f.dialog == d) n += 1;
         }
         return n + self.refUsers(.dialog, d);
@@ -645,7 +756,7 @@ pub const Script = struct {
     pub fn dropDialog(self: *Script, d: u8) bool {
         if (self.dialogUsers(d) > 0) return false;
         cut(Dialog, &self.dialog, &self.dialog_n, d);
-        for (self.folk[0..self.folk_n]) |*f| lowered(&f.dialog, d);
+        for (self.npc[0..self.npc_n]) |*f| lowered(&f.dialog, d);
         self.lowerRefs(.dialog, d);
         return true;
     }
@@ -669,6 +780,56 @@ pub const Script = struct {
 
     pub fn dropTrigger(self: *Script, i: u8) void {
         cut(Trigger, &self.trigger, &self.trigger_n, i);
+    }
+
+    pub fn quests(self: *const Script) []const Quest {
+        return self.quest[0..self.quest_n];
+    }
+
+    pub fn findQuest(self: *const Script, name: []const u8) ?u8 {
+        return indexOfName(self.quests(), name);
+    }
+
+    /// A new quest of one blank stage.
+    pub fn addQuest(self: *Script) ?u8 {
+        var nb: [NAME_MAX]u8 = undefined;
+        var q = Quest{ .name = Name.of(freshName(&nb, "quest", self, Script.findQuest)) };
+        q.stage_n = 1;
+        if (!mathx.push(Quest, &self.quest, &self.quest_n, q)) return null;
+        return self.quest_n - 1;
+    }
+
+    pub fn questUsers(self: *const Script, q: u8) usize {
+        return self.refUsers(.quest, q);
+    }
+
+    /// Refused while anything names it.
+    pub fn dropQuest(self: *Script, q: u8) bool {
+        if (self.questUsers(q) > 0) return false;
+        cut(Quest, &self.quest, &self.quest_n, q);
+        self.lowerRefs(.quest, q);
+        return true;
+    }
+
+    /// Stage `k` (from 0) of quest `q` goes; whatever named a later stage names the one it became,
+    /// and nothing names a stage past the last.
+    pub fn dropStage(self: *Script, q: u8, k: u8) void {
+        const qs = &self.quest[q];
+        cut(Note, &qs.stage, &qs.stage_n, k);
+        const gone: i32 = @as(i32, k) + 1;
+        const last: i32 = qs.stage_n;
+        var conds = self.condIterMut();
+        while (conds.next()) |c| {
+            if (c.kind != .stage or c.slot != q) continue;
+            if (c.n > gone) c.n -= 1;
+            c.n = @min(c.n, last);
+        }
+        var acts = self.actIterMut();
+        while (acts.next()) |a| {
+            if (a.kind != .quest or a.slot != q) continue;
+            if (a.n > gone) a.n -= 1;
+            a.n = @max(1, @min(a.n, last));
+        }
     }
 
     pub fn condIter(self: *const Script) CondIter(*const Script, *const Cond) {
@@ -697,11 +858,20 @@ pub const Script = struct {
             }
             if (!distinct(all)) return false;
         }
-        for (self.folks(), 0..) |*f, i| {
-            if (f.node >= node_n or !grid.Level.inside(f.at) or !f.name.valid()) return false;
+        for (self.npcs(), 0..) |*f, i| {
+            if (f.node >= node_n or !f.name.valid()) return false;
             if (f.dialog) |d| if (d >= self.dialog_n) return false;
-            for (self.folks()[0..i]) |*other| if (other.node == f.node and other.at.eq(f.at)) return false;
+            if (f.shows) |*c| if (!self.condFits(c, node_n)) return false;
+            if (f.spot == .by and !besideable(f.spot.by)) return false;
+            const at = f.cell() orelse continue;
+            if (!grid.Level.inside(at)) return false;
+            if ((self.npcAt(f.node, at) orelse return false) != i) return false;
         }
+        for (self.quests()) |*q| {
+            if (!q.name.valid() or !token(q.name.text()) or !q.title.valid() or !bounded(q)) return false;
+            for (q.stages()) |*st| if (!st.valid()) return false;
+        }
+        if (!distinct(self.quests())) return false;
         for (self.dialogs()) |*d| {
             if (!d.name.valid() or !token(d.name.text()) or d.line_n == 0 or !bounded(d)) return false;
             for (d.lines()) |*l| {
@@ -728,20 +898,26 @@ pub const Script = struct {
         return distinct(self.triggers());
     }
 
-    fn slotFits(self: *const Script, r: ?Ref, slot: u8) bool {
-        const ref = r orelse return true;
-        return slot < switch (ref) {
+    /// How many entries the list `r` names holds.
+    pub fn refLen(self: *const Script, r: Ref) usize {
+        return switch (r) {
             .table => |t| self.names(t).len,
-            .folk => self.folk_n,
+            .npc => self.npc_n,
             .dialog => self.dialog_n,
+            .quest => self.quest_n,
         };
+    }
+
+    fn slotFits(self: *const Script, r: ?Ref, slot: u8) bool {
+        return slot < self.refLen(r orelse return true);
     }
 
     fn condFits(self: *const Script, c: *const Cond, node_n: usize) bool {
         if (!self.slotFits(condRef(c.kind), c.slot)) return false;
         if (!c.kind.span().holds(c.n)) return false;
         return switch (c.kind) {
-            .always, .never, .flag, .counter, .timer, .elapsed, .talked, .near => true,
+            .always, .never, .flag, .counter, .timer, .elapsed, .talked, .near, .quest => true,
+            .stage => self.quest[c.slot].reach(0).holds(c.n),
             .region => c.node < node_n and grid.Level.inside(c.from) and grid.Level.inside(c.to),
             .deaths, .alive => c.foe.stocked(),
         };
@@ -749,6 +925,7 @@ pub const Script = struct {
 
     fn actFits(self: *const Script, a: *const Act) bool {
         if (!self.slotFits(actRef(a.kind), a.slot) or !a.note.valid()) return false;
+        if (a.kind == .quest and a.questop == .stage and !self.quest[a.slot].reach(1).holds(a.n)) return false;
         return a.kind.span().holds(a.n);
     }
 };
@@ -763,13 +940,14 @@ const InTable = struct {
 };
 
 /// What a condition's or action's `slot` indexes.
-pub const Ref = union(enum) { table: Table, folk, dialog };
+pub const Ref = union(enum) { table: Table, npc, dialog, quest };
 
 pub fn condRef(k: CondKind) ?Ref {
     return switch (k) {
         inline .flag, .counter, .timer => |t| .{ .table = @field(Table, @tagName(t)) },
-        .near => .folk,
+        .near => .npc,
         .talked => .dialog,
+        .quest, .stage => .quest,
         .always, .never, .elapsed, .region, .deaths, .alive => null,
     };
 }
@@ -778,6 +956,7 @@ pub fn actRef(k: ActKind) ?Ref {
     return switch (k) {
         inline .flag, .counter, .timer => |t| .{ .table = @field(Table, @tagName(t)) },
         .dialog => .dialog,
+        .quest => .quest,
         .text, .wait, .preserve => null,
     };
 }
@@ -788,18 +967,18 @@ fn refersTo(have: ?Ref, r: Ref) bool {
 }
 
 comptime {
-    for (std.enums.values(ActKind)) |k| std.debug.assert(!refersTo(actRef(k), .folk));
+    for (std.enums.values(ActKind)) |k| std.debug.assert(!refersTo(actRef(k), .npc));
 }
 
 pub fn condTable(k: CondKind) ?Table {
     const r = condRef(k) orelse return null;
     return switch (r) {
         .table => |t| t,
-        .folk, .dialog => null,
+        .npc, .dialog, .quest => null,
     };
 }
 
-/// Every condition in a script: the triggers', then each dialog's choice gates.
+/// Every condition in a script: the triggers', each dialog's choice gates, then what each NPC stands while.
 pub fn CondIter(comptime S: type, comptime C: type) type {
     return struct {
         s: S,
@@ -808,8 +987,16 @@ pub fn CondIter(comptime S: type, comptime C: type) type {
         dialog: usize = 0,
         line: usize = 0,
         choice: usize = 0,
+        npc: usize = 0,
 
         pub fn next(self: *@This()) ?C {
+            return self.spoken() orelse while (self.npc < self.s.npc_n) {
+                self.npc += 1;
+                if (self.s.npc[self.npc - 1].shows) |*c| break c;
+            } else null;
+        }
+
+        fn spoken(self: *@This()) ?C {
             while (self.trigger < self.s.trigger_n) {
                 const t = &self.s.trigger[self.trigger];
                 if (self.cond < t.cond_n) {
@@ -904,23 +1091,23 @@ fn bounded(x: anytype) bool {
     return true;
 }
 
-test "dropping a folk, a node or a line leaves no reference past the end" {
+test "dropping an NPC, a node or a line leaves no reference past the end" {
     var s = Script{};
-    _ = s.addFolk(.{ .node = 0, .at = .{ .x = 3, .y = 3 } }).?;
-    _ = s.addFolk(.{ .node = 1, .at = .{ .x = 4, .y = 4 } }).?;
-    _ = s.addFolk(.{ .node = 2, .at = .{ .x = 5, .y = 5 } }).?;
+    _ = s.addNpc(.{ .node = 0, .spot = .{ .at = .{ .x = 3, .y = 3 } } }).?;
+    _ = s.addNpc(.{ .node = 1, .spot = .{ .at = .{ .x = 4, .y = 4 } } }).?;
+    _ = s.addNpc(.{ .node = 2, .spot = .{ .at = .{ .x = 5, .y = 5 } } }).?;
     const t = s.addTrigger().?;
     s.trigger[t].cond[0] = .{ .kind = .near, .slot = 2, .n = 3 };
     s.trigger[t].cond[1] = .{ .kind = .region, .node = 1, .from = .{ .x = 0, .y = 0 }, .to = .{ .x = 9, .y = 9 } };
     s.trigger[t].cond[2] = .{ .kind = .region, .node = 2 };
     s.trigger[t].cond_n = 3;
     s.dropNode(1);
-    try std.testing.expectEqual(@as(u8, 2), s.folk_n);
-    try std.testing.expectEqual(@as(u8, 1), s.folk[1].node);
+    try std.testing.expectEqual(@as(u8, 2), s.npc_n);
+    try std.testing.expectEqual(@as(u8, 1), s.npc[1].node);
     try std.testing.expectEqual(@as(u8, 1), s.trigger[t].cond[0].slot);
     try std.testing.expectEqual(CondKind.never, s.trigger[t].cond[1].kind);
     try std.testing.expectEqual(@as(u8, 1), s.trigger[t].cond[2].node);
-    s.dropFolk(1);
+    s.dropNpc(1);
     try std.testing.expectEqual(CondKind.never, s.trigger[t].cond[0].kind);
 
     const d = s.addDialog("hello").?;
@@ -935,7 +1122,47 @@ test "dropping a folk, a node or a line leaves no reference past the end" {
     s.dialog[d].swapLines(0, 1);
     try std.testing.expectEqual(@as(?u8, 0), s.dialog[d].line[1].then);
     try std.testing.expect(s.valid(2));
-    std.debug.print("script references: node, folk and line removal renumber or retire every reference\n", .{});
+    std.debug.print("script references: node, NPC and line removal renumber or retire every reference\n", .{});
+}
+
+test "a quest cannot go while named, and dropping a stage moves later references down onto the one it became" {
+    var s = Script{};
+    const q = s.addQuest().?;
+    _ = s.addQuest().?;
+    s.quest[q].stage_n = 3;
+    const t = s.addTrigger().?;
+    s.trigger[t].cond[0] = .{ .kind = .stage, .slot = q, .cmp = .ge, .n = 3 };
+    s.trigger[t].act[0] = .{ .kind = .quest, .slot = q, .n = 2 };
+    s.trigger[t].act[1] = .{ .kind = .quest, .slot = q, .n = 1 };
+    s.trigger[t].act_n = 2;
+    try std.testing.expectEqual(@as(usize, 3), s.questUsers(q));
+    try std.testing.expect(!s.dropQuest(q));
+    s.dropStage(q, 1);
+    try std.testing.expectEqual(@as(u8, 2), s.quest[q].stage_n);
+    try std.testing.expectEqual(@as(i32, 2), s.trigger[t].cond[0].n);
+    try std.testing.expectEqual(@as(i32, 2), s.trigger[t].act[0].n);
+    try std.testing.expectEqual(@as(i32, 1), s.trigger[t].act[1].n);
+    const f = s.coin(.flag).?;
+    _ = s.addNpc(.{ .shows = .{ .kind = .flag, .slot = f } }).?;
+    try std.testing.expectEqual(@as(usize, 1), s.tableUsers(.flag, f));
+    try std.testing.expect(s.dropQuest(1));
+    s.dropTrigger(t);
+    try std.testing.expect(s.dropQuest(q));
+    try std.testing.expect(s.valid(1));
+}
+
+test "dropping a quest's last stage leaves nothing naming a stage past it" {
+    var s = Script{};
+    const q = s.addQuest().?;
+    s.quest[q].stage_n = 2;
+    const t = s.addTrigger().?;
+    s.trigger[t].cond[0] = .{ .kind = .stage, .slot = q, .cmp = .ge, .n = 2 };
+    s.trigger[t].act[0] = .{ .kind = .quest, .slot = q, .n = 2 };
+    s.trigger[t].act_n = 1;
+    s.dropStage(q, 1);
+    try std.testing.expectEqual(@as(u8, 1), s.quest[q].stage_n);
+    try std.testing.expectEqual(@as(i32, 1), s.trigger[t].cond[0].n);
+    try std.testing.expectEqual(@as(i32, 1), s.trigger[t].act[0].n);
 }
 
 test "a named table entry or dialog cannot be dropped while anything names it" {

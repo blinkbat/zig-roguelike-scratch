@@ -177,7 +177,7 @@ pub const Owed = struct {
     }
 };
 
-/// A blow one body bumps at another, neither the hero: what it lands on, or a miss.
+/// A blow one body lands on another, neither the hero, bumped or shot along an owed arrow: what it lands on, or a miss.
 pub const Struck = struct { at: P, impact: ?fx.Impact = null };
 
 pub const ReactionOutcome = union(enum) { miss, hit: fx.ActorImpact };
@@ -207,7 +207,7 @@ pub const Fields = struct {
     /// Defaulted as the hero is spawned.
     pub const facing = [_][]const u8{"facing"};
     /// Snapped to the simulation as the game settles, then moved or eased on toward it.
-    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "hour_shown", "weather_shown" };
+    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown" };
     /// Rebuilt from the simulation each time it is read.
     pub const scratch = [_][]const u8{ "ground_shown", "burnt_ground", "burnt_box" };
     /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
@@ -289,6 +289,9 @@ pub const Presentation = struct {
     /// `growth` and `gold` as of the last drawn turn, for the character book.
     growth_shown: progress.State = .{},
     gold_shown: i32 = 0,
+    /// Who stands where and how far each quest has come, as of the last drawn turn.
+    npc_shown: @FieldType(grid.Level, "npc") = @splat(grid.NO_NPC),
+    quests_shown: @FieldType(@FieldType(Simulation, "plot"), "quests") = @splat(.{}),
     hour_shown: f32 = day.Clock.hour(.{}),
     weather_shown: climate.Now = .initFill(0),
 
@@ -697,6 +700,11 @@ pub const Presentation = struct {
         return self.lit.on() and grid.cellOr(bool, &self.lit.before, p, false);
     }
 
+    fn flightSeen(self: *const Presentation, sim: *const Simulation, flight: *const bow.Flight) bool {
+        for (flight.path[0..flight.len]) |p| if (self.litShown(sim, p)) return true;
+        return false;
+    }
+
     pub fn barrelPresent(self: *const Presentation, sim: *const Simulation, p: P) bool {
         return sim.lv.hasBarrel(p) or self.fx.impacts.breaking(p);
     }
@@ -764,7 +772,15 @@ pub const Presentation = struct {
     pub fn showProgress(self: *Presentation, sim: *const Simulation) void {
         self.growth_shown = sim.growth;
         self.gold_shown = sim.gold;
+        self.npc_shown = sim.lv.npc;
+        self.quests_shown = sim.plot.quests;
         self.xp_aim = sim.xpLevels();
+    }
+
+    pub fn npcShown(self: *const Presentation, p: P) ?usize {
+        if (!grid.Level.inside(p)) return null;
+        const f = self.npc_shown[grid.Level.idx(p)];
+        return if (f == grid.NO_NPC) null else f - 1;
     }
 
     pub fn settleXp(self: *Presentation, sim: *const Simulation) void {
@@ -805,16 +821,20 @@ pub const Presentation = struct {
 
     fn stepOcclusion(self: *Presentation, sim: *const Simulation, tiles: *const [grid.CELLS]grid.Tile, dt: f32) void {
         var covered = grid.CellSet.initEmpty();
-        if (sim.heroSlot()) |h| self.cover(sim, tiles, h, &covered);
-        for (0..sim.pool.n) |i| if (!sim.isHero(i)) self.cover(sim, tiles, i, &covered);
+        if (sim.heroSlot()) |h| if (self.occluding(sim, h)) |at| self.cover(tiles, at, &covered);
+        for (0..sim.pool.n) |i| if (!sim.isHero(i)) if (self.occluding(sim, i)) |at| self.cover(tiles, at, &covered);
+        for (self.npc_shown, 0..) |f, i| {
+            if (f == grid.NO_NPC) continue;
+            const p = grid.Level.of(i);
+            if (self.litShown(sim, p)) self.cover(tiles, .{ .x = @as(f32, @floatFromInt(p.x)) * game.CELL_F, .y = @as(f32, @floatFromInt(p.y)) * game.CELL_F }, &covered);
+        }
         const k = mathx.easing(dt, OCCLUSION_EASE);
         for (tiles, &self.occlusion, 0..) |t, *hidden, i| {
             hidden.* = if (look.occludes(t)) mathx.ease(hidden.*, if (covered.isSet(i)) 1 else 0, k, k) else 0;
         }
     }
 
-    fn cover(self: *Presentation, sim: *const Simulation, tiles: *const [grid.CELLS]grid.Tile, slot: usize, covered: *grid.CellSet) void {
-        const at = self.occluding(sim, slot) orelse return;
+    fn cover(self: *Presentation, tiles: *const [grid.CELLS]grid.Tile, at: rl.Vector2, covered: *grid.CellSet) void {
         const under = game.cellUnder(at);
         var near = grid.Cells.of(under.sub(COVER_LO), under.add(COVER_HI));
         while (near.next()) |p| {
@@ -962,7 +982,8 @@ pub const Presentation = struct {
         const hidden = body.disguised or (body.submerged and self.under.isSet(slot) and attack == null);
         const shown = self.litShown(sim, at) and !hidden;
         const visible_origin = !hidden and self.litShown(sim, motion.to);
-        const visible_action = (shown or owed.arrow != null) and (attack != null or owed.mended != null or owed.struck != null);
+        const arrow_seen = if (owed.arrow) |*f| owed.struck == null or shown or self.flightSeen(sim, f) else false;
+        const visible_action = (shown or arrow_seen) and (attack != null or owed.mended != null or owed.struck != null);
         const staggered = if (moved) shown or visible_origin else visible_action;
         var starts_at = if (staggered) turn.next_at else 0;
         if (staggered and target.value != sim.hero and (moved or attack != null or owed.struck != null)) starts_at = @max(starts_at, turn.late + motion.left());
@@ -971,21 +992,20 @@ pub const Presentation = struct {
         if (self.turning[slot]) |*t| t.in = if (staggered) starts_at - turn.late else start;
         const hero_at = if (owed.knock) |k| k.from else turn.hero_cell;
         var finishes_in = if (staggered) starts_at - turn.late else if (moved) start else @max(start, motion.left());
+        const bumps = owed.arrow == null and (owed.struck != null or attack != null);
         if (moved) {
             motion.* = motion.toward(destination, turn.late - starts_at);
-        } else if (owed.struck) |s| {
-            motion.* = motion.bumping(s.at, turn.late - starts_at);
-        } else if (attack != null and owed.arrow == null) {
-            motion.* = motion.bumping(hero_at, turn.late - starts_at);
+        } else if (bumps) {
+            motion.* = motion.bumping(if (owed.struck) |s| s.at else hero_at, turn.late - starts_at);
         }
-        if ((moved or owed.struck != null or (attack != null and owed.arrow == null)) and staggered) {
+        if ((moved or bumps) and staggered) {
             finishes_in = motion.left();
             self.holdUntil(finishes_in);
         }
         var impact_in = (if (staggered) starts_at - turn.late else start) + game.BUMP_LANDS;
-        if (owed.arrow) |flight| {
+        if (arrow_seen) {
             const release = @max(start, starts_at - turn.late);
-            const s = Shot{ .from = body.at, .flight = flight, .t = -release, .net = attack != null and attack.? == .snare };
+            const s = Shot{ .from = body.at, .flight = owed.arrow.?, .t = -release, .net = attack != null and attack.? == .snare };
             self.foe_shots[slot] = s;
             impact_in = release + s.lands();
             finishes_in = release + s.ends();

@@ -30,7 +30,7 @@ pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
 pub fn knocked(lv: *const grid.Level, at: P, d: mathx.Dir, id: u16) ?P {
     const to = at.add(d.delta());
     if (!grid.Level.inside(to) or lv.hasBarrier(to) or (lv.at(to).solid() and !lv.at(to).wet())) return null;
-    if (lv.hasBarrel(to) or lv.folkAt(to) != null) return null;
+    if (lv.hasBarrel(to) or lv.npcAt(to) != null) return null;
     const who = lv.who(to);
     return if (who == grid.NO_ONE or who == id) to else null;
 }

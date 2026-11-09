@@ -100,6 +100,7 @@ test {
     _ = @import("map/script_text.zig");
     _ = @import("play/trigger.zig");
     _ = @import("ui/talk.zig");
+    _ = @import("ui/quests.zig");
     _ = @import("game/talking.zig");
     _ = @import("edit/plot.zig");
     _ = @import("map/listing.zig");
@@ -142,6 +143,8 @@ test {
     _ = @import("play/flask.zig");
     _ = @import("play/consumable.zig");
     _ = @import("play/pack.zig");
+    _ = @import("play/post.zig");
+    _ = @import("play/raid.zig");
     _ = @import("play/skillbar.zig");
     _ = @import("play/skill_contract.zig");
     _ = @import("play/tactics.zig");

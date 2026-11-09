@@ -1,1 +1,2 @@
 map.grid.Tile.glow_plant	Glowbulb
+edit.tool_catalog.Family.npc	NPCs

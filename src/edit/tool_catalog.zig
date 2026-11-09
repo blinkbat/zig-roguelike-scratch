@@ -11,7 +11,7 @@ pub const SHIFT_STEP: i32 = 5;
 pub const TORCH_RULE = "hangs on a wall with floor below it";
 pub const BARREL_RULE = "stands on " ++ @tagName(grid.BARREL_GROUND) ++ " and breaks for gold";
 pub const FOE_RULE = "stands on open floor; a swimmer in water, a mimic on bare ground";
-pub const FOLK_RULE = "talks; stands on open floor no foe or barrel holds";
+pub const NPC_RULE = "talks; stands on open floor no foe, barrel or door holds";
 pub const Spanned = enum { line, rect, box, select };
 
 const START = look.body(actor.HERO);
@@ -28,7 +28,7 @@ pub const Family = enum {
     terrain,
     props,
     foes,
-    folk,
+    npc,
     doors,
 
     pub fn tip(f: Family) [:0]const u8 {
@@ -36,7 +36,7 @@ pub const Family = enum {
             .terrain => "Paint tiles in a shape, from two inks",
             .props => "Barrels and torches",
             .foes => "Foes, filed by type",
-            .folk => "Folk who talk, and their dialog",
+            .npc => "NPCs who talk, and their dialog",
             .doors => "Doors, the links between them, and where the map starts",
         };
     }
@@ -57,7 +57,7 @@ pub const Tool = union(enum) {
     barrel,
     torch,
     foe: actor.Kind,
-    folk,
+    npc,
     door,
     link,
     start,
@@ -67,7 +67,7 @@ pub const Tool = union(enum) {
             .paint => .terrain,
             .barrel, .torch => .props,
             .foe => .foes,
-            .folk => .folk,
+            .npc => .npc,
             .door, .link, .start => .doors,
         };
     }
@@ -82,15 +82,15 @@ pub const Tool = union(enum) {
 
     fn generated(tool: Tool) bool {
         return switch (tool) {
-            .door, .link, .start => false,
-            .paint, .barrel, .torch, .foe, .folk => true,
+            .door, .link, .start, .npc => false,
+            .paint, .barrel, .torch, .foe => true,
         };
     }
 
     pub fn strokes(tool: Tool) bool {
         return switch (tool) {
             .paint, .barrel => true,
-            .torch, .foe, .folk, .door, .link, .start => false,
+            .torch, .foe, .npc, .door, .link, .start => false,
         };
     }
 
@@ -104,7 +104,7 @@ pub const Tool = union(enum) {
             .barrel => look.BARREL,
             .torch => look.TORCH,
             .foe => |k| look.body(k),
-            .folk => look.FOLK,
+            .npc => look.NPC,
             .door => look.DOOR,
             .link => .{ .ch = '=', .fg = look.DOOR.fg },
             .start => START,
@@ -114,6 +114,7 @@ pub const Tool = union(enum) {
     pub fn name(tool: Tool) [:0]const u8 {
         return switch (tool) {
             .foe => |k| kindName(k),
+            .npc => "NPC",
             inline else => |_, tag| comptime menu.named(tag),
         };
     }
@@ -135,7 +136,7 @@ pub const Tool = union(enum) {
             .barrel => BARREL_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes it away",
             .torch => TORCH_RULE,
             .foe => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
-            .folk => FOLK_RULE ++ "; " ++ Desk.PAINT_CAPTION ++ " on one gives it words, " ++ Desk.ERASE_CAPTION ++ " takes it away",
+            .npc => NPC_RULE ++ "; on a rolled node, beside the first prop of the kind clicked or far from the doors; " ++ Desk.PAINT_CAPTION ++ " on one gives it words, " ++ Desk.ERASE_CAPTION ++ " takes it away",
             .door => "any cell of any node; a procgen node's floor is rolled round its doors each run",
             .link => Desk.PAINT_CAPTION ++ " a door, then the door it leads to on any node; " ++ Desk.ERASE_CAPTION ++ " unlinks",
             .start => "where the map begins, and " ++ Desk.PLAY_CAPTION ++ " plays from",

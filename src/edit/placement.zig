@@ -13,7 +13,7 @@ const P = mathx.P;
 const tool_catalog = @import("tool_catalog.zig");
 const TORCH_RULE = tool_catalog.TORCH_RULE;
 const FOE_RULE = tool_catalog.FOE_RULE;
-const FOLK_RULE = tool_catalog.FOLK_RULE;
+const NPC_RULE = tool_catalog.NPC_RULE;
 const NO_ROOM = "The node has no room for another {s}";
 pub const LINKING = "Linking node {d} door {d}: ";
 pub const LINK_CANCELLED = "Link cancelled";
@@ -112,15 +112,15 @@ pub fn fill(ed: *Editor, p: P, second: bool) void {
     var seen = grid.CellSet.initEmpty();
     var queue: [grid.CELLS]u32 = undefined;
     var filled: usize = 0;
-    const folk_before = ed.map.script.folk_n;
+    const npc_before = ed.map.script.npc_n;
     var spread = grid.Spread(Same, Same.has){ .ctx = .{ .tile = &b.tile, .was = from }, .steps = &mathx.CARDINALS, .seen = &seen, .queue = &queue };
     spread.seed(p);
     while (spread.next()) |here| {
         if (ed.doorAt(here) == null) filled += 1;
         paintTile(ed, here, to);
     }
-    const folk_went = ed.map.script.folk_n < folk_before;
-    ed.say("Filled {d} cells of {s} with {s}{s}", .{ filled, @tagName(from), @tagName(to), if (folk_went) "; folk standing there went" else "" });
+    const npc_went = ed.map.script.npc_n < npc_before;
+    ed.say("Filled {d} cells of {s} with {s}{s}", .{ filled, @tagName(from), @tagName(to), if (npc_went) "; NPCs standing there went" else "" });
 }
 
 const Same = struct {
@@ -137,7 +137,7 @@ pub fn pickUp(ed: *Editor, p: P, second: bool) void {
     ed.stroke = .none;
     const nd = ed.here();
     const i = grid.Level.idx(p);
-    const picked: ?editor.Tool = if (ed.map.script.folkAt(ed.node, p) != null) .folk else switch (nd.plan) {
+    const picked: ?editor.Tool = if (npcAt(ed, p) != null) .npc else switch (nd.plan) {
         .bespoke => |*b| if (b.foeAt(p)) |f| .{ .foe = b.foe[f].kind } else if (b.barrel[i]) .barrel else if (b.torch.has(p)) .torch else if (nd.doorAt(p) != null) .door else null,
         .procgen => if (nd.doorAt(p) != null) .door else null,
     };
@@ -228,9 +228,23 @@ fn takeFoe(ed: *Editor, b: *atlas.Bespoke, p: P) void {
     ed.changed();
 }
 
-fn takeFolk(ed: *Editor, p: P) void {
-    ed.map.script.dropFolk(ed.map.script.folkAt(ed.node, p) orelse return);
+fn takeNpc(ed: *Editor, p: P) void {
+    ed.map.script.dropNpc(npcAt(ed, p) orelse return);
     ed.changed();
+}
+
+/// The NPC standing at `p` on the node shown: painted there, or found there on this roll.
+pub fn npcAt(ed: *Editor, p: P) ?u8 {
+    if (ed.map.script.npcAt(ed.node, p)) |npc| return npc;
+    ed.preview();
+    return if (ed.scene.lv.npcAt(p)) |npc| @intCast(npc) else null;
+}
+
+/// A new NPC's spot at `p`: that cell on a painted node; on a rolled one, beside the prop there, else far from the doors.
+fn spotAt(ed: *Editor, p: P) ?script.Spot {
+    if (!ed.here().unrolled()) return if (ed.map.npcFits(ed.node, p)) .{ .at = p } else null;
+    ed.preview();
+    return if (script.besideOf(ed.scene.lv.at(p))) |prop| .{ .by = prop } else .far;
 }
 
 pub fn place(ed: *Editor, p: P) void {
@@ -256,12 +270,12 @@ pub fn place(ed: *Editor, p: P) void {
             if (there) |f| b.foe[f].kind = k else _ = b.addFoe(.{ .kind = k, .at = p });
             ed.changed();
         },
-        .folk => {
-            if (ed.map.script.folkAt(ed.node, p)) |f| return editor.plot.openFolk(ed, f);
-            if (!ed.map.folkFits(ed.node, p)) return ed.say("Folk " ++ FOLK_RULE, .{});
-            const f = ed.map.script.addFolk(.{ .node = @intCast(ed.node), .at = p }) orelse return ed.say("The map holds {d} folk", .{script.MAX_FOLK});
+        .npc => {
+            if (npcAt(ed, p)) |f| return editor.plot.openNpc(ed, f);
+            const spot = spotAt(ed, p) orelse return ed.say("An NPC " ++ NPC_RULE, .{});
+            const f = ed.map.script.addNpc(.{ .node = @intCast(ed.node), .spot = spot }) orelse return ed.say("The map holds {d} NPCs", .{script.MAX_NPCS});
             ed.changed();
-            editor.plot.openFolk(ed, f);
+            editor.plot.openNpc(ed, f);
         },
         .door => {
             const k = ed.map.addDoor(ed.node, p) orelse return ed.say("That cell is a door, or the node holds {d}", .{grid.MAX_DOORS});
@@ -294,7 +308,7 @@ pub fn remove(ed: *Editor, p: P) void {
         .barrel => takeBarrel(ed, &ed.plan().bespoke, p),
         .torch => takeTorch(ed, &ed.plan().bespoke, p),
         .foe => takeFoe(ed, &ed.plan().bespoke, p),
-        .folk => takeFolk(ed, p),
+        .npc => takeNpc(ed, p),
         .door => {
             ed.map.removeDoor(.{ .node = ed.node, .door = ed.doorAt(p).? });
             if (ed.painted()) |b| ed.here().pruneAt(b, p);
@@ -334,12 +348,23 @@ pub fn clearSelection(ed: *Editor) void {
     const b = ed.painted() orelse return ed.say(editor.GENERATED, .{});
     ed.drop();
     ed.gesture();
+    const Standing = struct {
+        in: std.StaticBitSet(script.MAX_NPCS) = .initEmpty(),
+        pub fn drops(self: @This(), i: usize, _: *const script.Npc) bool {
+            return self.in.isSet(i);
+        }
+    };
+    var standing = Standing{};
     var cells = s.cells();
+    while (cells.next()) |p| {
+        if (npcAt(ed, p)) |npc| standing.in.set(npc);
+    }
+    if (ed.map.script.dropNpcsWhere(standing)) ed.changed();
+    cells = s.cells();
     while (cells.next()) |p| {
         takeBarrel(ed, b, p);
         takeTorch(ed, b, p);
         takeFoe(ed, b, p);
-        takeFolk(ed, p);
         paintTile(ed, p, ed.ink.get(.second));
     }
     ed.say("Cleared to {s}", .{@tagName(ed.ink.get(.second))});
@@ -436,7 +461,7 @@ pub fn legal(ed: *Editor, p: P) bool {
         .barrel => ed.map.barrelGoes(ed.node, &nd.plan.bespoke, p),
         .torch => nd.torchGoes(&nd.plan.bespoke, p),
         .foe => |k| ed.map.foeGoes(ed.node, &nd.plan.bespoke, p, k),
-        .folk => ed.map.folkGoes(ed.node, p) or ed.map.script.folkAt(ed.node, p) != null,
+        .npc => npcAt(ed, p) != null or (ed.map.script.npc_n < script.MAX_NPCS and (nd.unrolled() or ed.map.npcFits(ed.node, p))),
         .door => nd.takesDoor(p),
         .link => nd.doorAt(p) != null,
     };
@@ -451,7 +476,7 @@ pub fn removable(ed: *Editor, p: P) bool {
         .barrel => nd.plan.bespoke.barrel[i],
         .torch => nd.plan.bespoke.torch.has(p),
         .foe => nd.plan.bespoke.foeAt(p) != null,
-        .folk => ed.map.script.folkAt(ed.node, p) != null,
+        .npc => npcAt(ed, p) != null,
         .door => nd.doorAt(p) != null,
         .link => if (nd.doorAt(p)) |k| nd.door[k].to != null else false,
         .start => false,

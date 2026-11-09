@@ -66,7 +66,9 @@ pub const Kind = enum {
     pib_shaman,
     bog_leech,
     mimic,
+    goblin,
     skeleton,
+    caravan_guard,
 
     pub fn foe(k: Kind) bool {
         return row(k).foe_type != null;
@@ -242,8 +244,12 @@ pub const Row = struct {
     keeps: i32 = 0,
     net: ?Net = null,
     mends: ?Mend = null,
-    /// Raised by the hero, fighting at its side.
+    /// Fights at the hero's side.
     allied: bool = false,
+    /// An ally that holds its ground, shooting the foes it sees, and stays behind at doors.
+    posted: bool = false,
+    /// Said of an ally as it dies, after its name.
+    falls: [:0]const u8 = "falls",
 };
 
 const SIGHT: i32 = 7;
@@ -295,7 +301,9 @@ pub fn row(k: Kind) Row {
         .pib_shaman => .{ .name = "pib shaman", .foe_type = .beast, .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "pokes", .slain = "poked to death" } }, .keeps = 3, .mends = MEND },
         .bog_leech => .{ .name = "bog leech", .movement = .swimming, .foe_type = .beast, .hp = 12, .sight = 5, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bites", .slain = "drained dry", .bleeds = 50 } }, .lurks = true, .fright_resist = mathx.PERCENT },
         .mimic => .{ .name = "mimic", .foe_type = .aberration, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 4, .hi = 8 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 20, .fright_resist = mathx.PERCENT },
-        .skeleton => .{ .name = "skeleton", .foe_type = null, .allied = true, .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "slashes" } }, .armour = 10, .fright_resist = mathx.PERCENT },
+        .goblin => .{ .name = "goblin", .foe_type = .humanoid, .hp = 14, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "hacks", .slain = "hacked down" } }, .armour = 10, .fright_resist = 25 },
+        .skeleton => .{ .name = "skeleton", .foe_type = null, .allied = true, .falls = "crumbles", .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "slashes" } }, .armour = 10, .fright_resist = mathx.PERCENT },
+        .caravan_guard => .{ .name = "caravan guard", .foe_type = null, .allied = true, .posted = true, .hp = 16, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } }, .ranged = .{ .range = bow.RANGE, .retreat = 0 }, .armour = 15, .fright_resist = mathx.PERCENT },
     };
 }
 
@@ -307,9 +315,9 @@ pub fn groundFits(k: Kind, t: grid.Tile) bool {
     return !t.solid();
 }
 
-/// Where a `k` may be set down: its ground with no body, barrel, folk or barrier on it, and a mimic's off any door.
+/// Where a `k` may be set down: its ground with no body, barrel, NPC or barrier on it, and a mimic's off any door.
 pub fn dwells(k: Kind, lv: *const grid.Level, p: P) bool {
-    if (!grid.Level.inside(p) or !groundFits(k, lv.at(p)) or lv.taken(p) or lv.folkAt(p) != null or lv.hasBarrier(p)) return false;
+    if (!grid.Level.inside(p) or !groundFits(k, lv.at(p)) or lv.taken(p) or lv.npcAt(p) != null or lv.hasBarrier(p)) return false;
     return !row(k).disguised or lv.doorAt(p) == null;
 }
 
@@ -377,6 +385,8 @@ pub const Actor = struct {
     submerged: bool = false,
     /// Standing as a closed chest.
     disguised: bool = false,
+    /// Came in a night raid: its death gives no experience, loot, flask charges or mana.
+    raider: bool = false,
     /// The ground its chest stands on.
     under: grid.Tile = .floor,
 
@@ -540,21 +550,23 @@ pub const Pool = struct {
         return self.place(lv, self.n - 1, a);
     }
 
-    /// `a` in slot `i`, a dead ally's that nothing still names, else a new slot.
+    /// `a` in slot `i`, a spent one nothing still names, else a new slot.
     pub fn spawnOver(self: *Pool, lv: *grid.Level, i: ?usize, a: Actor) u16 {
         const over = i orelse return self.spawn(lv, a);
-        std.debug.assert(self.deadAlly(over));
+        std.debug.assert(self.spent(over));
         return self.place(lv, over, a);
     }
 
-    /// Allies leave nothing that names them, so a dead one's slot may take another body.
-    fn deadAlly(self: *const Pool, i: usize) bool {
-        return i < self.n and !self.items[i].alive and self.items[i].kind.ally();
+    /// Allies and raiders leave nothing that names them, so a dead one's slot may take another body.
+    fn spent(self: *const Pool, i: usize) bool {
+        if (i >= self.n) return false;
+        const a = &self.items[i];
+        return !a.alive and (a.kind.ally() or a.raider);
     }
 
-    /// The first dead ally's slot at or after `start`.
-    pub fn deadAllyFrom(self: *const Pool, start: usize) ?usize {
-        for (start..self.n) |i| if (self.deadAlly(i)) return i;
+    /// The first spent slot at or after `start`.
+    pub fn spentFrom(self: *const Pool, start: usize) ?usize {
+        for (start..self.n) |i| if (self.spent(i)) return i;
         return null;
     }
 
@@ -819,7 +831,7 @@ test "a slime with no free cell beside it waits to split until a blow finds one"
 }
 
 test "every foe a floor is stocked with is its own family, and a slime ends as four quarters at most" {
-    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .frost_wisp, .pyre_bloat, .pib_shaman, .bog_leech, .mimic }, &FOES);
+    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .frost_wisp, .pyre_bloat, .pib_shaman, .bog_leech, .mimic, .goblin }, &FOES);
     try std.testing.expectEqual(Kind.slime, Kind.slime_quarter.family());
     try std.testing.expectEqual(Kind.rat, Kind.rat.family());
     try std.testing.expectEqual(@as(usize, 4), most(.slime));

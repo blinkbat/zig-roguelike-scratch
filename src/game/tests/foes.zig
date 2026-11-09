@@ -431,6 +431,35 @@ test "crossbowman arrows present separate hits on arrival and stay busy through 
     std.debug.print("2 crossbowman arrows: hits at {d:.3}/{d:.3}s, pictured HP {d}/{d}/{d}\n", .{ first_hit, last_hit, hp, between, g.pic.pictured[hero].hp });
 }
 
+test "a caravan guard holds its post and shoots a foe in reach, its arrow landing on arrival" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const post = P{ .x = 30, .y = 20 };
+    var hurt = [2]i32{ 0, 0 };
+    var lands: f32 = 0;
+    for ([_]P{ post.add(.{ .x = -2, .y = 0 }), .{ .x = 10, .y = 50 } }, 0..) |hero, seen| {
+        harness.arena(g, hero, &.{});
+        const guard = harness.spawnAt(g, .caravan_guard, post, true);
+        const rat = harness.spawnAt(g, .rat, post.add(.{ .x = bow.RANGE, .y = 0 }), false);
+        harness.toughen(g.sim.pool.get(rat).?);
+        game.settle(g);
+        const slot = actor.Pool.slot(guard);
+        for (0..6) |_| {
+            harness.use(g, .wait);
+            if (seen == 0) {
+                const s = g.pic.foe_shots[slot] orelse return error.GuardDidNotShoot;
+                try std.testing.expect(s.flight.hits(rat) and g.pic.glide[slot].bump == null);
+                lands = -s.t + s.lands();
+            } else try std.testing.expect(g.pic.foe_shots[slot] == null);
+            harness.drawnOut(g);
+        }
+        hurt[seen] = harness.TEST_HP - g.sim.pool.get(rat).?.hp;
+        try std.testing.expectEqual(post, g.sim.pool.get(guard).?.at);
+    }
+    std.debug.print("caravan guard: 6 seen shots over {d} cells, each landing {d:.3}s in, the rat lost {d}; 6 shots out of sight drew no arrow, the rat lost {d}\n", .{ bow.RANGE, lands, hurt[0], hurt[1] });
+    try std.testing.expect(hurt[0] > 0 and hurt[1] > 0 and lands > 0);
+}
+
 test "crossbowman arrows can be dodged and mana shield harm waits for the arrow" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

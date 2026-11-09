@@ -127,7 +127,7 @@ pub const Seen = union(enum) {
     barrel,
     torch,
     door,
-    folk,
+    npc,
 };
 
 pub const SEEN = blk: {
@@ -340,7 +340,7 @@ pub const Editor = struct {
     }
 
     pub fn changed(ed: *Editor) void {
-        if (ed.map.pruneFolk(ed.node)) ed.say("Folk that no longer had open floor to stand on went", .{});
+        if (ed.map.pruneNpcs(ed.node)) ed.say("NPCs that no longer had open floor to stand on went", .{});
         ed.bank();
         ed.stale();
         ed.thumbnails.invalidate(ed.node);
@@ -1095,8 +1095,8 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     ed.modal = .help;
     try snapAs(ed, g, target, "{s}/edit-help.png", .{dir});
     ed.modal = .{ .plot = .dialogs };
-    ed.plot.pick = .{ .folk = 0 };
-    try snapAs(ed, g, target, "{s}/edit-folk.png", .{dir});
+    ed.plot.pick = .{ .npc = 0 };
+    try snapAs(ed, g, target, "{s}/edit-npc.png", .{dir});
     ed.plot.pick = .{ .dialog = 0 };
     ed.plot.line = 0;
     try snapAs(ed, g, target, "{s}/edit-dialog.png", .{dir});
@@ -1146,8 +1146,8 @@ pub const SHOT_SCRIPT =
     \\line coins
     \\say Bring me five coins and I will tell you where the old gate key fell.
     \\then root
-    \\folk 0 11 8 wenna Old Wenna
-    \\folk 0 21 9 -
+    \\npc 0 11 8 wenna Old Wenna
+    \\npc 0 21 9 -
     \\trigger greet 5 once live
     \\when near 0 3
     \\when flag met_wenna off

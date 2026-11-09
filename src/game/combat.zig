@@ -6,6 +6,8 @@ const fov = @import("../map/fov.zig");
 const gas = @import("../map/gas.zig");
 const fire = @import("../map/fire.zig");
 const ice = @import("../map/ice.zig");
+const atlas = @import("../map/atlas.zig");
+const day = @import("../map/day.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const attrs = @import("../play/attrs.zig");
@@ -475,7 +477,34 @@ fn beginTurn(g: *game.Game, from: P) void {
     for (&g.sim.cooldown.values) |*c| c.* -|= 1;
     game.castSight(g, from);
     g.sim.flowed = false;
+    raiders(g);
     orderFoes(g, from);
+}
+
+/// The raiders due this turn come in by the node's raid door, acting from the next turn.
+fn raiders(g: *game.Game) void {
+    const w = g.sim.map orelse return;
+    const nd = &w.node[g.sim.node];
+    const r = switch (nd.plan) {
+        .procgen => |*pg| pg.raid,
+        .bespoke => return,
+    };
+    if (r.raid_door >= nd.door_n) return;
+    const now = g.sim.clock.since(g.sim.days);
+    const door = nd.door[r.raid_door].at;
+    for (0..atlas.raid.arriving(r, game.rollOf(g.sim.seed, g.sim.node), now -| day.TURN_MINUTES, now)) |_| {
+        const over = tactics.spentSlot(g);
+        if (over == null and !g.sim.pool.hasRoomFor(atlas.raid.RAIDER)) return;
+        const at = atlas.landing(&g.sim.lv, door, &.{}) orelse return;
+        var body = actor.Actor.of(atlas.raid.RAIDER, at);
+        body.awake = true;
+        body.waits = true;
+        body.raider = true;
+        const id = g.sim.pool.spawnOver(&g.sim.lv, over, body);
+        g.pic.recordBirth(&g.sim, .fromInt(id), 0);
+        tactics.landed(g, id);
+        g.sim.sayAt(at, "A {s} raider comes in from the dark.", .{actor.row(atlas.raid.RAIDER).name});
+    }
 }
 
 fn heroAfterAction(g: *game.Game) void {
@@ -718,7 +747,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
         if (!held and gap > ranged.retreat) closeIn(g, id, ranged.retreat, af);
         return;
     }
-    if (row.blow == .strike and besideWay(g, r.at, h.at) == null) if (besideOf(g, r.at, .ally)) |ally| return bodyStrike(g, id, ally, af);
+    if (row.blow == .strike and besideWay(g, r.at, h.at) == null) if (besideOf(g, r.at, .ally)) |ally| return bodyStrike(g, id, ally, af, null);
     const flitted = if (!held and row.flits and g.sim.rng.chance(actor.FLIT)) actor.flit(&g.sim.lv, r.at, id, g.sim.hero, &g.sim.rng) else null;
     const d = flitted orelse foeWay(g, r.at, id, h.at) orelse return;
     const to = r.at.add(d.delta());
@@ -730,8 +759,9 @@ fn foeTurn(g: *game.Game, id: u16) void {
 /// Strikes a foe beside it; otherwise closes on the nearest foe the hero sees near it, or keeps near the hero.
 fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted, sight: i32) void {
     const r = g.sim.pool.get(id).?;
+    if (actor.row(r.kind).posted) return guardTurn(g, id, af, sight);
     const hero = g.sim.heroAt().?;
-    if (besideOf(g, r.at, .foe)) |foe| return bodyStrike(g, id, foe, af);
+    if (besideOf(g, r.at, .foe)) |foe| return bodyStrike(g, id, foe, af, null);
     if (held) return;
     if (quarry(g, r.at, hero, sight)) |at| {
         if (actor.approach(&g.sim.lv, r.at, id, at)) |d| return foeStep(g, id, r.at, d, af);
@@ -772,14 +802,28 @@ fn quarry(g: *game.Game, from: P, hero: P, sight: i32) ?P {
     return near.best;
 }
 
-/// One body's blow on another neither of which is the hero: an ally's on a foe, or a foe's on an ally.
-fn bodyStrike(g: *game.Game, id: u16, target: u16, af: actor.Afflicted) void {
+/// Holds its ground, shooting the nearest foe it sees within reach along a flight that strikes that foe first.
+fn guardTurn(g: *game.Game, id: u16, af: actor.Afflicted, sight: i32) void {
+    const r = g.sim.pool.get(id).?;
+    var near = grid.Nearest{ .from = r.at, .reach = @min(sight, actor.row(r.kind).ranged.?.range) };
+    for (g.sim.pool.constSlice(), 0..) |a, i| {
+        if (!a.livingFoe() or a.veiled() or !bow.aimable(&g.sim.lv, r.at, a.at, near.reach)) continue;
+        if (!fov.sees(&g.sim.lv, r.at, a.at, near.reach) or !bow.fly(&g.sim.lv, r.at, a.at).hits(actor.Pool.idOf(i))) continue;
+        near.offer(a.at);
+    }
+    const at = near.best orelse return;
+    bodyStrike(g, id, g.sim.lv.who(at), af, bow.fly(&g.sim.lv, r.at, at));
+}
+
+/// One body's blow on another neither of which is the hero: an ally's on a foe, or a foe's on an ally; shot along `flight` when it has one.
+fn bodyStrike(g: *game.Game, id: u16, target: u16, af: actor.Afflicted, flight: ?bow.Flight) void {
     const r = g.sim.pool.get(id).?;
     const s = actor.row(r.kind).blow.strike;
     const at = g.sim.pool.get(target).?.at;
     g.pic.turnLater(.fromInt(id), at.x - r.at.x);
     const impact: ?fx.Impact = if (bodyBlow(g, id, target, s, s.verb, af.contains(.enfeeble), false)) |hit| .{ .actor = hit } else null;
     g.pic.owe(.fromInt(id), .struck, .{ .at = at, .impact = impact });
+    g.pic.owe(.fromInt(id), .arrow, flight);
 }
 
 /// Only a sweep rolls `s.stuns`.

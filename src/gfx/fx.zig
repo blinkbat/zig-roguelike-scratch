@@ -43,7 +43,7 @@ const sky = @import("sky.zig");
 pub fn matterOf(kind: ?actor.Kind) Matter {
     const k = kind orelse return .wood;
     return switch (k) {
-        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .bog_leech => .blood,
+        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .bog_leech, .goblin, .caravan_guard => .blood,
         .slime, .slime_half, .slime_quarter => .ooze,
         .bloat, .frost_wisp, .pyre_bloat => .ichor,
         .mimic, .skeleton => .wood,

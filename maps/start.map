@@ -102,6 +102,104 @@ name The Strand
 at 0 0
 door 95 32 1 0
 node procgen tee
+spurs 6
+pond 7
+pond_chests 2
+camps 2
+packs 11
+guards 3
+raiders 2
+raid_door 1
+makeup 4 rat rat
+makeup 2 rat
+makeup 3 bandit_crossbowman rat rat
+makeup 1 bandit_shieldbearer bandit_crossbowman bandit_netter
+makeup 1 bandit_netter rat
+makeup count 2 pyre_bloat
+makeup count 2 hearth goblin goblin
+makeup count 1 nook mimic
+makeup count 1 pond slime slime
+makeup count 1 pond bog_leech bog_leech
 name Caravan
 at 240 0
 door 0 46 0 0
+door 33 0 2 0
+node procgen open
+ground dirt
+edge shrub
+litter 6
+decor 12 60 6
+packs 4
+few 1
+reach 2
+gap 6
+apart 2
+light clear
+weather clear
+makeup 3 goblin goblin
+makeup 2 goblin goblin goblin
+makeup count 1 goblin goblin goblin goblin
+feature border
+tile shrub
+width 19
+rough 8
+feature border
+tile rock
+width 15
+rough 8
+feature setpiece
+piece camp
+count 4
+apart 2
+name Goblin Camp
+at 240 -200
+door 48 63 1 1
+flag carrying_pib
+flag pib_home
+quest stolen_pib The Stolen Pib
+stage Find the baby pib the goblins carried off into the north.
+stage Bring the baby pib back to the merchant at the caravan.
+dialog merchant
+line root
+say Well met, traveller.
+ask Show me your wares. -> grief
+need flag pib_home off
+ask You look troubled. What happened? -> trouble
+need quest stolen_pib unstarted
+ask I have your baby pib. -> thanks
+need flag carrying_pib on
+ask Farewell. -> end
+line grief
+say Forgive me. My baby pib is gone, and grief has left no room in me for trade. I will open my wares to no one until it is home.
+ask What happened to it? -> trouble
+need quest stolen_pib unstarted
+ask Farewell. -> end
+line trouble
+say Every night the goblin camp up the north road sends raiders down on us, a few at a time until dawn. My guards hold the carts, but last night one slipped past them and carried off my baby pib. Will you bring it back to me?
+ask I will find it. -> accepted
+gets quest stolen_pib stage 1
+ask That is not my problem. -> end
+line accepted
+say Bless you. Their camp lies up the north road, past the carts.
+line thanks
+say My little one! You have my thanks, traveller. Stay near my guards after dark; the raiders still come down every night.
+act flag carrying_pib off
+act flag pib_home on
+act quest stolen_pib done
+dialog baby_pib
+line root
+say A baby pib, tied to a stake. It squeaks at you.
+ask Untie it and carry it home. -> end
+gets flag carrying_pib on
+gets quest stolen_pib stage 2
+ask Leave it. -> end
+dialog home_pib
+line root
+say The baby pib nuzzles the merchant's boots.
+npc 1 by caravan merchant Merchant
+npc 2 far baby_pib Baby pib
+shows stage stolen_pib < 2
+looks pib
+npc 1 by caravan home_pib Baby pib
+shows quest stolen_pib done
+looks pib

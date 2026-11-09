@@ -324,7 +324,7 @@ Controller movement should follow visible geometry via the existing directional
 navigation helper, including locked nodes. A player must be able to inspect future
 skills before acquiring their parents. Pointer and keyboard navigation should converge
 on the same selected node and details. Focus must survive a successful allocation so
-the player can immediately inspect its result. Shoulders change tabs directly and Back closes the book. The centered panel grows at half the window-fitting rate, capped at 1.25x, with 18px detail and 20px body text before scaling. Scaled text uses the mipmapped font atlas; native-size panels retain the crisp native atlases.
+the player can immediately inspect its result. Shoulders change tabs directly. Back returns from Skills to the tabs, then closes the book from the tabs. The centered panel grows at half the window-fitting rate, capped at 1.25x, with 18px detail and 20px body text before scaling. Scaled text uses the mipmapped font atlas; native-size panels retain the crisp native atlases.
 
 The separate Bind skill action carries the selected learned skill straight into the slot picker. Binding is available regardless of unspent points, and returns to Skills. The utility-skill picker remains available. This keeps learning and binding explicit while removing the hidden hold entry. Larger text and UI scaling also follow Blizzard's stated readability work.
 [D2R accessibility article](https://news.blizzard.com/en-us/article/23700733/how-were-making-diablo-ii-resurrectedtm-more-accessible-to-everyone).
@@ -332,7 +332,7 @@ The separate Bind skill action carries the selected learned skill straight into 
 Clicking a skill selects its inspection details; pointer movement preserves the
 selection while approaching an action. Click the visible Learn/Upgrade
 action to spend one point, or Bind skill to assign it. Tabs and shoulder glyphs are
-clickable, and right-click closes the book without spending a turn.
+clickable, and right-click follows Back through the tabs before closing, without spending a turn.
 
 ## Acceptance and future work
 

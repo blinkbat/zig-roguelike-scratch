@@ -1,7 +1,7 @@
 # AGENTS.md — Cistern
 
 Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, caustic bloats, pyre bloats, frost wisps, pibs, beefy pibs, pib shamans,
-bandit crossbowmen, trappers and shieldbearers, bog leeches and mimics; the wizard's raised skeletons; breakable barrels, treasure chests, equipment, XP and class progression.
+bandit crossbowmen, trappers and shieldbearers, bog leeches, mimics and goblins; NPCs who talk; the wizard's raised skeletons; caravan guards; breakable barrels, treasure chests, equipment, XP and class progression.
 Art starts as glyphs, replaced by the owner's PNGs; a body without art draws its letter cell-high and bright over a drop shadow (`look.body`).
 Source paths below are relative to `src/`; scripts, docs and assets are relative to the repository root.
 
@@ -140,7 +140,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   hidden, unborn and departed bodies are excluded.
   Long cards scroll with page controls or the mouse wheel. Any back-out or the same button closes it; it spends no turn.
   In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `overlay.hovered`).
-- Start / Menu / Options opens Character directly; Select / View opens the game menu. Keyboard Tab / Esc mirror them. Character opens equipment, the inventory list, stats, passives and class skills in `ui/book.zig`.
+- Start / Menu / Options opens Character directly; Select / View opens the game menu. Keyboard Tab / Esc mirror them. Character opens equipment, the inventory list, stats, passives, class skills and quests in `ui/book.zig`.
   Player-facing hand slots are Main hand (viewer-left) and Offhand (viewer-right).
   Life and mana flasks are items worn in their own Equipment slots, as PoE2's: a new run wears both, they never roll as loot,
   and only a worn flask drinks or refills; its charges stay in `Simulation.flasks` while it is off. Two-handers identify the occupied offhand. Menu accents share `look.UI_GOLD/UI_FOCUS`:
@@ -163,9 +163,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   bridges work both ways. The same feeders must govern eligibility and drawn links.
   `Game.character` holds only unsaved navigation state; item/point actions are commands resolved by the game.
   Item actions and point allocation execute on one press; item changes spend one turn and keep Character open.
-  Shoulders / Q and E change tabs; F1–F5 directly toggle Equipment, Inventory, Stats, Passives and Skills.
+  Shoulders / Q and E change tabs; F1–F5 and F7 directly toggle Equipment, Inventory, Stats, Passives, Skills and Quests (F6 is the editor's play-test return).
   Keyboard tab headers show their shortcut glyphs. Character opens on its tabs (`Book.tabbing`): left/right or the shoulders choose one and confirm enters it;
-  Back returns to the tabs, and Back there closes. F1–F5, the shoulders inside a page and clicks enter a page directly. Skills owns binding. Point allocation is free.
+  Back returns to the tabs, and Back there closes. Those keys, the shoulders inside a page and clicks enter a page directly. Skills owns binding. Point allocation is free.
   Bumping or interacting with a closed chest opens it for one turn, revealing its loot without a modal.
   Stepping onto a loose bag or stocked open chest opens its loot modal and spends the movement turn; bags remain walkable.
   Interact opens a sole bag/open chest's loot modal directly, or lists nearby containers/doors first when there is a choice (a door always lists).
@@ -323,7 +323,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - `Row.splits` splits a surviving slime below half HP, down to quarters. Each half gets half the remaining
   HP (minimum 1), with inherited statuses/clock; the new half acts next turn. If no adjacent cell is free,
   retry on a later blow. Pack quotas/makeups (`play/pack.zig`) and bespoke placement must reserve capacity
-  for all eventual halves via `actor.roomFor`. `Kind.family` keeps their counts together.
+  for all eventual halves via `actor.roomFor`. `Kind.family` keeps their counts together. A makeup's lead stands by a door
+  (`exit`) or in a `pack.Lair`: a narrow dead-end path's tip (`nook`), in or by a small pond, or by a lone camp fire (`hearth`).
 - `Row.movement` and `Row.foe_type` describe every kind and appear in the object viewer; heroes have no
   foe type. Caustic and pyre bloats fly; ground-only water footsteps must not be added to flying bodies.
   Caustic bloat uses the stable `actor.Kind.bloat` save/map identity; displayed names come from `actor.row`.
@@ -345,7 +346,15 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   They take turns among the foes (`combat.allyTurn`): strike a foe beside them, close on the nearest foe the hero sees within
   `RaiseSkeleton.LEASH` of it, else keep within `FOLLOW`. A melee foe not beside the hero strikes an ally beside it (`combat.bodyStrike`,
   drawn through `Owed.struck`). Hero blows, areas, overwatch and caltrops never touch allies; walking into one swaps places (`Move.swap`).
-  An ally's death gives nothing (`rewards.defeat`). Allies follow the hero through doors (`game.gatherFollowers`), none left behind.
+  An ally's death gives nothing (`rewards.defeat`). Allies follow the hero through doors (`game.gatherFollowers`), none left behind, except posted ones.
+- Caravan guards (`Row.posted`, drawn with `bandit-crossbowman.png`) are allies that hold their cell and shoot the nearest foe they see in
+  reach whose flight strikes it first (`combat.guardTurn`); the arrow is `Owed.arrow` beside `Owed.struck` and lands on arrival. A procgen
+  node's `guards` knob (`post.Post`, Generator > Allies) posts them beside its carts before packs are placed (`Node.placePacks`).
+  Packs never stand within `pack.CAMP_GAP` of a caravan cart.
+- Night raids (`raid.Raid`, Generator > Night raids: `raiders`, `raid_door`): each night a procgen node's raiders come in by that door,
+  each at its own minute between dusk and dawn, rolled from the run seed, node and night (`raid.arriving`). Only the node the hero is on
+  is raided; `combat.raiders` spawns those due in the turn's minutes at `combat.beginTurn`, awake, acting from the next turn. Nothing is saved
+  but `Actor.raider`: a raider's death gives only `raid.XP_DIVISOR`th of its experience, rounded up, and no loot, flask charges or mana, so raids cannot be farmed.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
   each followed by gas, steam, healing gas, burn and bleed. Caustic and pyre bloats burst however killed; foes do not enter gas, steam or flames from outside them (`actor.shuns`).
   `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`), healing (`Level.healing`),
@@ -360,7 +369,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   chance and heat (`rewards.kindleRound`, from `combat.fireLands` and a pyre's burst), damped by rain (`fire.damped`, harder rain more).
   Each turn, at `combat.beginTurn`, a burning tile smokes, every fire may catch its burnable neighbours at one less heat and boil
   wet ones into steam, and a burnt-out tile becomes dirt (`fire.ASH`; `Light.follow` retiles once it is drawn); a bridge drops into
-  water instead, shallows under a body, folk or anything lying there (`Ground.lying`), with a puff of steam (`fire.ashOf`). `Tile.tinder` (reeds) catches from any fire beside it
+  water instead, shallows under a body, an NPC or anything lying there (`Ground.lying`), with a puff of steam (`fire.ashOf`). `Tile.tinder` (reeds) catches from any fire beside it
   without cooling it, so a reed bed burns out whole. The burning-ground fill fades toward sides no fire shares (`scene.drawFlames`). Flames gone out, and what they
   burnt away, fade over `presentation.EMBER_S` (`Presentation.embers`, `burntShown`; burnt ground is drawn into a screen target and laid back per cell). Standing in flames scorches
   (`Tick.scorched`) and may ignite through fire/burn resistance. `Presentation.flames_shown` holds new flames until their fire lands.
@@ -407,26 +416,40 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   shown only where lit at their presented center, fading in at the ground's rate (`Presentation.sighted`) with their shadow,
   reflection, marks and bars; births, surfacings and unmaskings appear at once. Rendering never decides visibility.
 
-## Folk, triggers and dialog
+## NPCs, triggers and dialog
 
-- `map/script.zig` is the map's script (`Atlas.script`): named flags, counters and timers, folk (node, cell,
+- `map/script.zig` is the map's script (`Atlas.script`): named flags, counters and timers, NPCs (node, cell,
   name, dialog), dialogs of lines and choices, and StarCraft-style triggers. References are indices the script's
-  own removals renumber or retire (`dropNode`, `dropFolk`, `dropDialog`, `dropLine`); a name or dialog still in
+  own removals renumber or retire (`dropNode`, `dropNpc`, `dropDialog`, `dropLine`); a name or dialog still in
   use cannot go. `Script.valid` guards map parsing and portable loads. `map/script_text.zig` writes it after the
   nodes: names are tokens, prose is the rest of its line, references resolve once the whole file is read.
-- Folk stand on open bespoke floor no foe, barrel or door holds (`Atlas.folkFits`); painting under one prunes it.
-  `Atlas.stampFolk` marks them on `Level.folk` on entry and resume. They block steps and landings (`vacant`,
-  `stepOk`) but are no target (`taken`): attacks, arrows and areas pass them by.
+- An NPC's `Spot` is a painted cell (open bespoke floor no foe, barrel or door holds, `Atlas.npcFits`; painting under
+  one prunes it), `by` a prop (the first in reading order with free dry ground round it, in front first) or `far` (the
+  free ground the longest walk from the doors), the last two found on any node's roll by `atlas.spotFor` the first time
+  the NPC stands in a run and kept in `Runtime.spots` (saved). `shows` is a condition it stands only while; `looks`
+  draws it as a body. `talking.stampNpc` marks them on `Level.npc` on entry and resume, and `restand` again after each
+  spent turn, arrival and conversation pick. They block steps and landings (`vacant`, `stepOk`) but are no target
+  (`taken`): attacks, arrows and areas pass them by. Portable saves read an NPC's pre-`Spot` `at` (`save_values.SavedNpc`).
+- Quests (`Script.quest`: a token name, a title, up to `MAX_STAGES` objectives) move only by the `quest` action:
+  `stage n` begins or moves one, `done` finishes it for good, each logged. Conditions `quest <name> unstarted|active|done`
+  and `stage <name> <cmp> n` read `Runtime.quests` (stage 0 before it begins, the last reached once done). Character's Quests tab
+  (`ui/quests.zig`, `character.questEntries`) lists those under way at their stage's objective, then the finished; walking and the wheel scroll it.
+- `maps/start.map`: the Caravan's merchant (`by caravan`) gives The Stolen Pib; the baby pib stands `far` in the Goblin
+  Camp up the north road until carried, then beside the merchant once the quest is done. Three caravan guards stand by the carts;
+  two goblin raiders come down the north road each night. The merchant refuses trade until the pib is home (`pib_home`).
+  The Caravan's tee winds `spurs` into the forest (a mimic at one's tip), lays a crescent `pond` with leeches in it, slimes
+  by it and chests waded out to, and two small goblin `camps`; its other foes are rats, bandits and pyre bloats.
 - `play/trigger.zig`'s `Runtime` (`Simulation.plot`) is looked at after each spent turn, on arrival and when a
   conversation closes, never on idle frames; a kept trigger runs at most once a turn. Every condition must hold;
   none never fires. Timers, `wait` and `elapsed` count spent turns; `deaths`/`alive` count a whole foe family.
 - A `dialog` action holds its own list until that conversation is heard out; one at a time, opened once the turn
-  is drawn (`talking.due`). Bumping a folk or Interact beside one opens its dialog without a turn, ahead of
+  is drawn (`talking.due`). Bumping an NPC or Interact beside one opens its dialog without a turn, ahead of
   containers. No back-out: a conversation ends only through an ending, so `talked` means heard; a dialog with a
   reachable line no way out of (`Dialog.ends`) never opens, and the editor lists it under Problems. A gate hides a
   choice; line actions land on arrival, choice actions on the pick. The HUD hides behind `ui/talk.zig`'s panel.
-- Editor: the Folk tool places and removes folk and opens Dialog on one; Dialog edits folk, dialogs, lines and
-  choices, Script the triggers and name tables. Words are typed into the map, one undo step per click; a
+- Editor: the NPC tool places and removes NPCs and opens Dialog on one (on a rolled node, beside the first prop of the kind clicked or
+  `far`); Dialog edits NPCs (spot, condition, looks), dialogs, lines and choices, Script the triggers and name tables,
+  Quests the quests and their stages. Words are typed into the map, one undo step per click; a
   condition or action kind that would name nothing is skipped or coins a name.
 
 ## Rendering contracts

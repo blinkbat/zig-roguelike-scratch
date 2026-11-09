@@ -17,6 +17,7 @@ const playground = @import("map/playground.zig");
 const menu = @import("ui/menu.zig");
 const hud = @import("ui/hud.zig");
 const book = @import("ui/book.zig");
+const quest_log = @import("ui/quests.zig");
 const heroes = @import("play/hero.zig");
 const actor = @import("play/actor.zig");
 const turn_clock = @import("play/clock.zig");
@@ -179,6 +180,8 @@ pub const Game = struct {
     loot_gold: ?P = null,
     /// What Character's Nearby page lists, filled afresh each step and draw; too big for the stack each frame.
     nearby: NearbyBuf = undefined,
+    /// What Character's Quests page lists, filled afresh each step and draw.
+    journal: [atlas.script.MAX_QUESTS]quest_log.Entry = undefined,
     back: Back = .title,
     exit: ?Exit = null,
     /// Saved runs return to their caller on death instead of restarting.
@@ -281,7 +284,7 @@ pub const Fields = struct {
     /// Given their values by hand.
     pub const set = [_][]const u8{ "died_in", "pause_menu", "pause_page", "debug", "back", "permadeath", "hall", "perf", "st", "mouse", "binds", "cam", "screen", "framebuffer", "rain", "sprites", "graphics_ready", "art", "face" };
     /// Written before each read.
-    pub const scratch = [_][]const u8{"nearby"};
+    pub const scratch = [_][]const u8{ "nearby", "journal" };
 };
 const SimFields = simulation.Fields;
 
@@ -322,11 +325,12 @@ pub fn enterPlayground(g: *Game, w: *atlas.Atlas) void {
 pub fn beginMapAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64) void {
     startRun(g, w, seed);
     freshRun(g);
-    enter(g, from.node, from.at, &.{});
+    _ = enter(g, from.node, from.at, &.{});
 }
 
-/// The hero occupies the first pool slot on every node, preserving its id; its `followers` stand round it.
-fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) void {
+/// The hero occupies the first pool slot on every node, preserving its id; its `followers` stand round it,
+/// as many as there is room for, in order; returns how many.
+fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
     const w = g.sim.map.?;
     var carried = actor.Actor.of(g.sim.class.kind(), at);
     if (g.sim.heroActor()) |h| {
@@ -340,8 +344,11 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) void {
         revisit(g, &g.sim.visits[n]);
         const hero = g.sim.heroSlot().?;
         g.sim.lv.clear(g.sim.pool.items[hero].at);
-    } else w.node[n].stamp(&g.sim.lv, rollOf(g.sim.seed, n));
-    w.stampFolk(n, &g.sim.lv);
+    } else {
+        w.node[n].stamp(&g.sim.lv, rollOf(g.sim.seed, n));
+        g.sim.ground = .{};
+    }
+    talking.stampEntering(g, n, at, back);
     const placing: []const atlas.Foe = if (back) &.{} else w.node[n].placed();
     const to = atlas.landing(&g.sim.lv, at, placing) orelse at;
     if (back) {
@@ -349,7 +356,6 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) void {
         g.sim.pool.items[hero].at = to;
         g.sim.lv.stand(to, g.sim.hero);
     } else {
-        g.sim.ground = .{};
         spawnHero(g, to);
         switch (w.node[n].plan) {
             .procgen => w.node[n].placePacks(&g.sim.lv, &g.sim.pool, &g.sim.rng, to),
@@ -361,35 +367,49 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) void {
     const h = g.sim.heroActor().?;
     carried.at = h.at;
     h.* = carried;
+    var placed: usize = 0;
     for (followers) |f| {
-        const over = g.sim.pool.deadAllyFrom(0);
+        const over = g.sim.pool.spentFrom(0);
         if (over == null and !g.sim.pool.hasRoomFor(f.kind)) break;
         var body = f;
         body.at = followerCell(&g.sim.lv, f.kind, h.at) orelse break;
         _ = g.sim.pool.spawnOver(&g.sim.lv, over, body);
+        placed += 1;
     }
     combat.arrive(g, h.at);
     g.sim.unsaved = true;
     freshTurn(g);
     settle(g);
     talking.arrived(g);
+    return placed;
 }
 
 const Followers = grid.Bounded(actor.Actor, actor.MAX);
 /// Cells from the hero a follower may come through a door to.
 const FOLLOWER_REACH: i32 = 3;
 
-/// Every living ally, taken off the node being left to follow the hero to the next.
-fn gatherFollowers(g: *Game) Followers {
+fn follows(a: *const actor.Actor) bool {
+    return a.livingAlly() and !actor.row(a.kind).posted;
+}
+
+/// Every living ally not posted, in slot order, to follow the hero to the next node.
+fn gatherFollowers(g: *const Game) Followers {
     var out = Followers{};
-    for (g.sim.pool.slice()) |*a| {
-        if (!a.livingAlly()) continue;
-        out.push(a.*);
-        g.sim.lv.clear(a.at);
+    for (g.sim.pool.constSlice()) |*a| if (follows(a)) out.push(a.*);
+    return out;
+}
+
+/// The first `n` followers `gatherFollowers` took from visit `v` went with the hero; the rest stay.
+fn followersLeft(v: *simulation.Visit, n: usize) void {
+    var left = n;
+    for (v.pool.slice()) |*a| {
+        if (left == 0) return;
+        if (!follows(a)) continue;
+        v.lv.clear(a.at);
         a.alive = false;
         a.hp = 0;
+        left -= 1;
     }
-    return out;
 }
 
 /// The open ground nearest `hero` in its sight where a follower may stand, else the nearest by foot anywhere.
@@ -414,12 +434,13 @@ pub fn rollOf(run: u64, n: usize) u64 {
 fn goThrough(g: *Game, l: atlas.Link) void {
     g.pic.turnNow();
     const followers = gatherFollowers(g);
-    g.sim.visits[g.sim.node] = visitOf(g);
-    g.sim.visited.set(g.sim.node);
+    const from = g.sim.node;
+    g.sim.visits[from] = visitOf(g);
+    g.sim.visited.set(from);
     const carried = TravelCarry.of(g);
     var title: [atlas.TITLE_MAX]u8 = undefined;
     g.sim.log.say("Entered {s}.", .{g.sim.map.?.node[l.node].title(l.node, &title)});
-    enter(g, l.node, g.sim.map.?.door(l).at, followers.slice());
+    followersLeft(&g.sim.visits[from], enter(g, l.node, g.sim.map.?.door(l).at, followers.slice()));
     carried.restore(g);
 }
 
@@ -529,11 +550,9 @@ pub fn resumeRun(g: *Game) void {
     g.sim.unsaved = g.sim.growth.refundBasicRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
     g.sim.clampMana();
-    if (g.sim.map) |w| {
-        w.stampFolk(g.sim.node, &g.sim.lv);
-        var left = g.sim.visited.iterator(.{});
-        while (left.next()) |n| w.stampFolk(n, &g.sim.visits[n].lv);
-    } else g.sim.lv.clearFolk();
+    talking.restand(g);
+    var left = g.sim.visited.iterator(.{});
+    while (left.next()) |n| if (n != g.sim.node) talking.stampNpcs(g, n, &g.sim.visits[n].lv);
     freshTurn(g);
     g.pic.settleXp(&g.sim);
     settle(g);
@@ -565,7 +584,7 @@ pub fn moveOf(g: *const Game, from: P, d: mathx.Dir, occupied: bool) Move {
     if (there.opened() != null) return .open;
     if (there.bursts()) return .burst;
     if (!g.sim.lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
-    if (g.sim.lv.folkAt(to) != null) return .talk;
+    if (g.sim.lv.npcAt(to) != null) return .talk;
     if (occupied) return if (g.sim.allyAt(to)) .swap else .kick;
     return if (character.lootReached(g, from, to)) .loot else .step;
 }
@@ -619,7 +638,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
             return;
         },
         .talk => {
-            talking.speak(g, g.sim.lv.folkAt(to).?);
+            talking.speak(g, g.sim.lv.npcAt(to).?);
             return;
         },
         .loot, .step, .swap => if (h.pin.holding()) struggle(g) else {
@@ -998,6 +1017,9 @@ pub fn prepare(g: *Game) void {
 pub fn mapAssets(g: *Game) sprite_assets.Assets {
     var need = sprite_assets.Assets.of(&g.sim.lv);
     need.barrel = need.barrel or g.pic.fx.impacts.hasBarrels();
+    if (g.sim.map) |w| for (w.script.npcs()) |f| {
+        if (f.node == g.sim.node) if (f.looks) |k| need.body(k);
+    };
     for (g.sim.pool.slice(), 0..) |a, i| {
         const posing = a.alive and a.disguised;
         if (a.alive) need.body(a.kind);

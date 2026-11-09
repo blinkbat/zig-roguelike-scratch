@@ -74,8 +74,9 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     }
     for (ed.scene.lv.torches()) |t| panel.toolFigure(g, .torch, ed.cellRect(c, t));
     for (ed.scene.shownFoes()) |f| panel.toolFigure(g, .{ .foe = f.kind }, ed.cellRect(c, f.at));
-    for (ed.map.script.folks()) |f| {
-        if (f.node == ed.node) panel.toolFigure(g, .folk, ed.cellRect(c, f.at));
+    for (ed.map.script.npcs(), 0..) |f, i| {
+        if (f.node != ed.node) continue;
+        if (ed.scene.npcSpot(ed.map, i)) |at| panel.npcFigure(g, &f, ed.cellRect(c, at));
     }
     drawDoors(ed, g, c);
     if (ed.scene.start_at) |s| panel.toolFigure(g, .start, ed.cellRect(c, s));

@@ -77,7 +77,7 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
 
 /// Open ground a skeleton may stand on, with room in the pool for it.
 fn raisable(g: *const game.Game, at: P) bool {
-    return fits(.skeleton, &g.sim.lv, at) and (g.sim.pool.hasRoomFor(.skeleton) or goneAlly(g) != null);
+    return fits(.skeleton, &g.sim.lv, at) and (g.sim.pool.hasRoomFor(.skeleton) or spentSlot(g) != null);
 }
 
 /// Where an ally of `kind` may rise or follow the hero to.
@@ -85,10 +85,10 @@ pub fn fits(kind: actor.Kind, lv: *const grid.Level, p: P) bool {
     return actor.dwells(kind, lv, p) and lv.doorAt(p) == null;
 }
 
-/// The first dead ally's slot no longer drawn.
-fn goneAlly(g: *const game.Game) ?usize {
+/// The first spent slot (`actor.Pool.spentFrom`) no longer drawn.
+pub fn spentSlot(g: *const game.Game) ?usize {
     var i: usize = 0;
-    while (g.sim.pool.deadAllyFrom(i)) |dead| : (i = dead + 1) {
+    while (g.sim.pool.spentFrom(i)) |dead| : (i = dead + 1) {
         if (g.pic.gone(&g.sim, dead)) return dead;
     }
     return null;
@@ -98,7 +98,7 @@ fn goneAlly(g: *const game.Game) ?usize {
 fn skeletons(sim: *const game.simulation.Simulation) grid.Bounded(u16, actor.MAX) {
     var out = grid.Bounded(u16, actor.MAX){};
     for (sim.pool.constSlice(), 0..) |a, i| {
-        if (a.livingAlly()) out.push(actor.Pool.idOf(i));
+        if (a.livingAlly() and a.kind == .skeleton) out.push(actor.Pool.idOf(i));
     }
     std.mem.sort(u16, out.items[0..out.n], &sim.pool, olderThan);
     return out;
@@ -125,7 +125,7 @@ fn raise(g: *game.Game, at: P, rank: u8) void {
     body.awake = true;
     body.waits = true;
     body.tactics.risen = newest +| 1;
-    const id = g.sim.pool.spawnOver(&g.sim.lv, goneAlly(g), body);
+    const id = g.sim.pool.spawnOver(&g.sim.lv, spentSlot(g), body);
     g.pic.recordBirth(&g.sim, .fromInt(id), game.CAST_S);
     g.pic.shimmerBody(game.CAST_S, &g.sim.pool.items[actor.Pool.slot(id)]);
     g.sim.sayAt(at, "A skeleton claws its way up.", .{});
@@ -897,6 +897,23 @@ test "a raised skeleton fights a foe beside it, takes foes' blows, is spared the
     try std.testing.expect(struck.hp < h.TEST_HP);
     try std.testing.expect(held.hp < held.max);
     std.debug.print("raise skeleton: {d} life at rank 1, oldest crumbles past 1, two at rank 2; the rat lost {d}, the skeleton it faced {d}\n", .{ rules.RaiseSkeleton.life(1), h.TEST_HP - struck.hp, held.max - held.hp });
+}
+
+test "raising skeletons past the limit never crumbles a caravan guard" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.mana = 99;
+    const guard = h.spawnAt(g, .caravan_guard, .{ .x = 24, .y = 20 }, true);
+    for ([_]P{ .{ .x = 22, .y = 20 }, .{ .x = 20, .y = 22 } }) |at| {
+        g.sim.cooldown.set(.raise_skeleton, 0);
+        h.aimAt(g, .raise_skeleton, at);
+        h.drawnOut(g);
+    }
+    std.debug.print("two raises at rank 1 beside a caravan guard: {d} skeleton, the guard alive {}\n", .{ skeletonCount(g), g.sim.pool.get(guard) != null });
+    try std.testing.expectEqual(@as(usize, 1), skeletonCount(g));
+    try std.testing.expect(g.sim.pool.get(guard) != null);
 }
 
 test "a raised skeleton stands once its cast lands, and a recast takes a crumbled one's slot" {

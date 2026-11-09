@@ -1215,7 +1215,7 @@ test "wet knockback follows swimming and walking landings and preserves obstacle
     const from = P{ .x = 20, .y = 20 };
     const at = from.add(.{ .x = 1, .y = 0 });
     const back = at.add(.{ .x = 1, .y = 0 });
-    const Case = enum { water, shallows, floor, pinned, barrier, body, folk, barrel, wall };
+    const Case = enum { water, shallows, floor, pinned, barrier, body, npc, barrel, wall };
     var checked: usize = 0;
     for ([_]actor.Kind{ .bog_leech, .rat, .bloat }) |kind| {
         for (std.enums.values(Case)) |case| {
@@ -1234,7 +1234,7 @@ test "wet knockback follows swimming and walking landings and preserves obstacle
                 .pinned => foe.pin.turns = pinning.TURNS_HI,
                 .barrier => g.sim.lv.barrier[grid.Level.idx(back)] = 2,
                 .body => _ = harness.spawnAt(g, .bog_leech, back, true),
-                .folk => g.sim.lv.putFolk(back, 0),
+                .npc => g.sim.lv.putNpc(back, 0),
                 .barrel => g.sim.lv.putBarrel(back),
                 else => {},
             }
@@ -1251,7 +1251,7 @@ test "wet knockback follows swimming and walking landings and preserves obstacle
             checked += 1;
         }
     }
-    std.debug.print("wet knockback: {d} swimmer, walker and flyer landings cover water, shallows, dry floor, pin, barrier, body, folk, barrel and wall\n", .{checked});
+    std.debug.print("wet knockback: {d} swimmer, walker and flyer landings cover water, shallows, dry floor, pin, barrier, body, NPC, barrel and wall\n", .{checked});
     for ([_]bool{ false, true }) |pinned| {
         harness.heroArena(g, .knight, from, &.{});
         g.sim.lv.set(at, .water);

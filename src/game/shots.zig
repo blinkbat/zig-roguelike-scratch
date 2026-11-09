@@ -341,10 +341,12 @@ pub fn shootEditor(g: *game.Game) !void {
 
 pub fn shootUi(g: *game.Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR);
+    try shootQuests(g);
     try shootTalk(g);
     try shootTactics(g);
     try book.verifyCards(&g.face);
     try book.verifyStats(&g.face);
+    try book.verifyTabs(&g.face);
     try shootCharacter(g);
     try shootRares(g);
     try shootLoot(g);
@@ -353,6 +355,29 @@ pub fn shootUi(g: *game.Game) !void {
     try shootLevelUp(g);
     try shootMouse(g);
     try app.shootHeroes(g);
+}
+
+fn shootQuests(g: *game.Game) !void {
+    const quests = @import("../ui/quests.zig");
+    const script = @import("../map/script.zig");
+    const entries = [_]quests.Entry{.{ .title = "The Stolen Pib", .asks = "Search the goblin camp beyond the north road and return the missing pib to the caravan merchant.", .done = false }} ** (script.MAX_QUESTS - 1) ++ [_]quests.Entry{.{ .title = "The Last Quest", .asks = "", .done = true }};
+    const inventory = items.Inventory{};
+    const growth = progress.State.of(heroes.DEFAULT);
+    const view = book.View{ .class = heroes.DEFAULT, .name = "Archer", .inventory = &inventory, .growth = &growth, .base = growth.attributes(heroes.DEFAULT), .quests = quests.Journal.of(&g.face, &entries, book.QUESTS_BOX) };
+    var b = book.Book{};
+    b.choose(.quests);
+    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
+        const target = try rl.loadRenderTexture(size.x, size.y);
+        defer rl.unloadRenderTexture(target);
+        inline for (.{ "first", "last" }) |at| {
+            b.top = if (comptime std.mem.eql(u8, at, "first")) 0 else view.quests.last_top;
+            rl.beginTextureMode(target);
+            rl.clearBackground(look.BG);
+            b.draw(&g.face, &g.sprites, size, view);
+            rl.endTextureMode();
+            try exportTarget(target, SHOTS_DIR ++ std.fmt.comptimePrint("/quests-{d}-{s}.png", .{ size.y, at }));
+        }
+    }
 }
 
 fn shootInspect(g: *game.Game) !void {
@@ -1705,6 +1730,8 @@ const WADERS = [_]Wader{
     .{ .kind = .mimic, .at = .{ .x = 26, .y = 25 } },
     .{ .kind = .bog_leech, .at = .{ .x = 19, .y = 21 } },
     .{ .kind = .skeleton, .at = .{ .x = 28, .y = 20 } },
+    .{ .kind = .goblin, .at = .{ .x = 20, .y = 25 } },
+    .{ .kind = .caravan_guard, .at = .{ .x = 28, .y = 25 } },
 };
 
 comptime {

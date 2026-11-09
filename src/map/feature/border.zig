@@ -6,7 +6,7 @@ const carve = @import("../carve.zig");
 // Path of Exile's outer buffer, Diablo II's border blocks.
 
 const ROUGH_SCALE: f32 = 6;
-pub const WIDTH_MAX: u8 = 12;
+pub const WIDTH_MAX: u8 = 24;
 pub const ROUGH_MAX: u8 = 12;
 
 pub const Params = struct {

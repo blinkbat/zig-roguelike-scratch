@@ -160,6 +160,7 @@ pub const CharacterPage = enum {
     stats,
     passives,
     skills,
+    quests,
 
     pub fn key(self: CharacterPage) rl.KeyboardKey {
         return switch (self) {
@@ -168,6 +169,7 @@ pub const CharacterPage = enum {
             .stats => .f3,
             .passives => .f4,
             .skills => .f5,
+            .quests => .f7,
         };
     }
 
@@ -202,7 +204,7 @@ pub const TreeKeys = struct {
 };
 
 pub const Desk = struct {
-    pub const TOOL_KEYS = DIGIT_KEYS ++ [_]rl.KeyboardKey{ .grave, .semicolon, .apostrophe, .comma, .period, .slash, .backslash, .h, .j, .k };
+    pub const TOOL_KEYS = DIGIT_KEYS ++ [_]rl.KeyboardKey{ .grave, .semicolon, .apostrophe, .comma, .period, .slash, .backslash, .h, .j, .k, .u };
     pub const TOOL_CAPTIONS = glyphCaptions(&TOOL_KEYS);
     /// The editor's shapes, named and ordered as its `Shape` is.
     pub const SHAPE_KEYS_BY = .{ .brush = rl.KeyboardKey.b, .line = rl.KeyboardKey.l, .rect = rl.KeyboardKey.r, .box = rl.KeyboardKey.o, .fill = rl.KeyboardKey.f, .select = rl.KeyboardKey.m };

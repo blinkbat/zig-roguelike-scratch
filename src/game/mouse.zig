@@ -233,7 +233,7 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
             if (visited.isSet(i)) continue;
             const end = q.eq(to);
             if (!g.sim.lv.walkable(q) and !(end and g.sim.lv.at(q).opened() != null)) continue;
-            if ((g.sim.lv.barrelSeen(q) or g.sim.lv.folkAt(q) != null) and !end) continue;
+            if ((g.sim.lv.barrelSeen(q) or g.sim.lv.npcAt(q) != null) and !end) continue;
             if (g.sim.lv.isLit(q) and ((g.sim.lv.taken(q) and !end and !g.sim.allyAt(q)) or g.sim.lv.harmful(q))) continue;
             if (!end and g.sim.leadsTo(q) != null) continue;
             const way = if (head == 0) d else first[head];

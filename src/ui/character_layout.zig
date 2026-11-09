@@ -49,10 +49,11 @@ pub const DIVIDER_FOOT = HEIGHT - 30;
 pub const NAMED_CELL_H = 96;
 /// Up from a held two-hander's name to "Both hands".
 pub const PAIR_DY = 22;
-const TAB_Y = 76;
-const TAB_W = 184;
-const TAB_H = 34;
-const TAB_GAP = 9;
+const TAB_Y = 78;
+const TAB_W = 148;
+const TAB_H = 30;
+const TAB_GAP = 8;
+pub const TAB_TEXT = font.SMALL;
 pub const OFF_TAB_A: f32 = 0.7;
 const TABS_X: i32 = @divExact(WIDTH - @as(i32, PAGES.len) * TAB_W - (@as(i32, PAGES.len) - 1) * TAB_GAP, 2);
 /// Room each side of the tabs for the shoulder buttons' icons.
@@ -60,6 +61,8 @@ const SHOULDER_W = 40;
 comptime {
     std.debug.assert(LIST_X + SHOULDER_W < TABS_X);
 }
+
+pub const TAB_PAD = 8;
 
 pub fn tabBox(i: usize) rl.Rectangle {
     return raster.rect(TABS_X + @as(i32, @intCast(i)) * (TAB_W + TAB_GAP), TAB_Y, TAB_W, TAB_H);

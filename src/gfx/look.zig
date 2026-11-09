@@ -260,7 +260,7 @@ pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
 pub const TORCH_HANDLE = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
-pub const FOLK = Look{ .ch = '@', .fg = rgb(0xd8a860) };
+pub const NPC = Look{ .ch = '@', .fg = rgb(0xd8a860) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
 /// What a picture of the whole map marks a cell with over its tile, a door before a barrel.
 pub const Mark = enum {
@@ -299,7 +299,9 @@ pub fn body(k: actor.Kind) Look {
         .pib_shaman => .{ .ch = 'Y', .fg = rgb(0xc77dff) },
         .bog_leech => .{ .ch = 'L', .fg = rgb(0x8cff3f) },
         .mimic => .{ .ch = 'M', .fg = rgb(0xff9f1c) },
+        .goblin => .{ .ch = 'g', .fg = rgb(0x9bc53d) },
         .skeleton => .{ .ch = 'Z', .fg = rgb(0xe8e2cf) },
+        .caravan_guard => .{ .ch = 'G', .fg = rgb(0x7cc86e) },
     };
 }
 
@@ -358,7 +360,7 @@ pub const Gait = enum { hop, slide };
 
 pub fn gait(k: actor.Kind) Gait {
     return switch (k) {
-        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .mimic, .skeleton => .hop,
+        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .mimic, .goblin, .skeleton, .caravan_guard => .hop,
         .slime, .slime_half, .slime_quarter, .bloat, .frost_wisp, .pyre_bloat, .bog_leech => .slide,
     };
 }

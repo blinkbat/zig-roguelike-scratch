@@ -55,6 +55,10 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
     y += widgets.BLOCK_GAP;
     knobs(ed, g, &y, "Foes", fo, &FOE_ROWS, true);
     y += widgets.BLOCK_GAP;
+    knobs(ed, g, &y, "Allies", &pg.post, &POST_ROWS, true);
+    y += widgets.BLOCK_GAP;
+    knobs(ed, g, &y, "Night raids", &pg.raid, &RAID_ROWS, true);
+    y += widgets.BLOCK_GAP;
     section(g, &y, "Makeups");
     var drop: ?usize = null;
     for (fo.makeup[0..fo.makeup_n], 0..) |*m, i| {
@@ -190,14 +194,15 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
     for (MAKEUP_TOOLS) |t| {
         const r = tools.take(widgets.STEP_W);
         const live = switch (t) {
-            .exit => true,
+            .where => true,
             .grow => m.canGrow(),
             .shrink => m.canShrink(),
             .drop => droppable,
         };
-        if (!editor.button(ed, g, r, t.label(), t == .exit and m.exit, live, t.tip())) continue;
+        const where = Where.of(m);
+        if (!editor.button(ed, g, r, t.label(where), t == .where and where != .anywhere, live, t.tip(where))) continue;
         switch (t) {
-            .exit => m.exit = !m.exit,
+            .where => where.next().set(m),
             .grow => _ = m.grow(),
             .shrink => _ = m.shrink(),
             .drop => dropped = true,
@@ -206,24 +211,72 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
     return dropped;
 }
 
-const MakeupTool = enum {
+/// Where a makeup's lead stands: by a door, or in one of `pack.Lair`.
+const Where = enum {
+    anywhere,
     exit,
+    nook,
+    pond,
+    hearth,
+
+    fn of(m: *const pack.Makeup) Where {
+        if (m.exit) return .exit;
+        return switch (m.lair) {
+            inline else => |l| @field(Where, @tagName(l)),
+        };
+    }
+
+    fn set(w: Where, m: *pack.Makeup) void {
+        m.exit = w == .exit;
+        m.lair = switch (w) {
+            .exit => .anywhere,
+            inline else => |l| @field(pack.Lair, @tagName(l)),
+        };
+    }
+
+    fn next(w: Where) Where {
+        return mathx.stepIn(Where, std.enums.values(Where), w, 1, 0);
+    }
+
+    fn label(w: Where) [:0]const u8 {
+        return switch (w) {
+            .anywhere => "A",
+            .exit => "E",
+            .nook => "N",
+            .pond => "P",
+            .hearth => "F",
+        };
+    }
+
+    fn tip(w: Where) [:0]const u8 {
+        return switch (w) {
+            .anywhere => "The lead stands anywhere; " ++ Desk.PAINT_CAPTION ++ " for by a door",
+            .exit => "The lead stands by a door; " ++ Desk.PAINT_CAPTION ++ " for a winding path's end",
+            .nook => "The lead stands at a winding path's end; " ++ Desk.PAINT_CAPTION ++ " for by a pond",
+            .pond => "The lead stands in or by a pond; " ++ Desk.PAINT_CAPTION ++ " for by a campfire",
+            .hearth => "The lead stands by a campfire; " ++ Desk.PAINT_CAPTION ++ " for anywhere",
+        };
+    }
+};
+
+const MakeupTool = enum {
+    where,
     grow,
     shrink,
     drop,
 
-    fn label(t: MakeupTool) [:0]const u8 {
+    fn label(t: MakeupTool, w: Where) [:0]const u8 {
         return switch (t) {
-            .exit => "E",
+            .where => w.label(),
             .grow => "+",
             .shrink => "-",
             .drop => widgets.DROP,
         };
     }
 
-    fn tip(t: MakeupTool) [:0]const u8 {
+    fn tip(t: MakeupTool, w: Where) [:0]const u8 {
         return switch (t) {
-            .exit => "The lead stands by a door",
+            .where => w.tip(),
             .grow => "One more in the pack",
             .shrink => "One fewer in the pack",
             .drop => "Delete this makeup; the last one stays",
@@ -406,6 +459,10 @@ const TEE_ROWS = [_]Knob{
     .{ .field = "bank", .tips = &.{"Cells of land past the river"} },
     .{ .field = "bridge", .tips = &.{"Cells the bridge over the river is wide"} },
     .{ .field = "path", .tips = &.{"Cells the dirt paths are wide"} },
+    .{ .field = "spurs", .tips = &.{"Winding trails off the T into the forest, each ending narrow or in a small glade"} },
+    .{ .field = "pond", .tips = &.{"The crescent pond's radius; 0 for none"} },
+    .{ .field = "pond_chests", .label = "Pond chests", .tips = &.{"Chests standing out in the pond, each waded out to"} },
+    .{ .field = "camps", .label = "Goblin camps", .tips = &.{"Small goblin camps, off the roads and away from the carts"} },
 } ++ GRASS_ROWS;
 
 pub fn rowsOf(comptime a: atlas.Algo) []const Knob {
@@ -534,6 +591,15 @@ pub const FOE_ROWS = [_]Knob{
     .{ .field = "apart", .tips = &.{"Cells from one pack to every other, at least; 0 lets them crowd"} },
 };
 
+const POST_ROWS = [_]Knob{
+    .{ .field = "guards", .tips = &.{"Caravan guards posted beside its carts, at most"} },
+};
+
+const RAID_ROWS = [_]Knob{
+    .{ .field = "raiders", .label = "Raiders", .tips = &.{"Goblins that come in each night, each at its own time between dusk and dawn, while the hero is here"} },
+    .{ .field = "raid_door", .label = "From door", .tips = &.{"The door they come in by, counted from 0"} },
+};
+
 pub const ADD_PROCGEN_TIP = "A node the " ++ @tagName((atlas.Procgen{}).floor) ++ " generator rolls round its doors, anew each run";
 const ADD_MAKEUP_TIP = "Another pack it may roll, a lone " ++ actor.row(pack.FIRST).name ++ " to begin";
 const SHIFT_TIP = std.fmt.comptimePrint(" ({s} steps {d})", .{ Desk.SHIFT_CAPTION, @import("tool_catalog.zig").SHIFT_STEP });
@@ -544,6 +610,8 @@ comptime {
     for (std.enums.values(atlas.Kind)) |k| covers(@FieldType(atlas.Feature, @tagName(k)), featureRowsOf(k), atlas_text.featureKnobs(k));
     covers(@FieldType(atlas.Procgen, "foes"), &FOE_ROWS, atlas_text.FOE_KNOBS);
     covers(@FieldType(atlas.Procgen, "sky"), &SKY_ROWS, atlas_text.SKY_KNOBS);
+    covers(@FieldType(atlas.Procgen, "post"), &POST_ROWS, atlas_text.POST_KNOBS);
+    covers(@FieldType(atlas.Procgen, "raid"), &RAID_ROWS, atlas_text.RAID_KNOBS);
 }
 
 fn structRow(comptime field: [:0]const u8, comptime T: type, comptime tips: anytype) Knob {

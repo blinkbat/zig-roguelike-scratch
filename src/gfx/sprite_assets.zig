@@ -227,7 +227,9 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .pib_shaman = @embedFile("pib-shaman.png"),
     .bog_leech = null,
     .mimic = @embedFile("mimic-open.png"),
+    .goblin = null,
     .skeleton = null,
+    .caravan_guard = @embedFile("bandit-crossbowman.png"),
 });
 
 const PICTURED = blk: {

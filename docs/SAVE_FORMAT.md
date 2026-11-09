@@ -11,7 +11,9 @@ fields; `save_format.zig` parses, validates and applies detached snapshots;
 Preserve recoverable state and convert on parse. Missing fields with declared
 defaults use those defaults; unknown record fields are skipped. Required identity
 and world state must still be present. Renaming a persistent field or enum requires
-an explicit alias or migration: its spelling is now part of the file contract.
+an explicit alias or migration: its spelling is now part of the file contract. A renamed
+field lists `(new, old)` in its struct's `WAS` (`wire.formerly`); an enum rename needs a
+`save_values.zig` conversion.
 Changing record order, enum ordinals, native alignment or integer widths within
 the stored value's range needs no migration.
 

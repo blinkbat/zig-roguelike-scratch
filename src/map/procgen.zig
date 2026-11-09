@@ -298,7 +298,7 @@ test "a torch a border buries frees its slot for the houses raised after it" {
     var lv: grid.Level = undefined;
     const floor = Floor{ .rooms = .{ .torches = mathx.PERCENT } };
     const features = [_]Feature{
-        .{ .border = .{ .width = border.WIDTH_MAX } },
+        .{ .border = .{ .width = border.WIDTH_MAX / 2 } },
         .{ .buildings = .{ .count = buildings.COUNT_MAX, .size = .{ 5, 6 }, .torches = mathx.PERCENT } },
     };
     var least: usize = grid.MAX_TORCHES;

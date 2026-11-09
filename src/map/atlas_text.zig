@@ -43,6 +43,7 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
                         inline else => |n, tag| try w.print(says(.makeup) ++ (if (tag == .count) COUNTED ++ " " else "") ++ "{d}", .{n}),
                     }
                     if (m.exit) try w.writeAll(" " ++ EXIT);
+                    if (m.lair != .anywhere) try w.print(" {s}", .{@tagName(m.lair)});
                     for (m.kinds()) |k| try w.print(" {s}", .{@tagName(k)});
                     try w.writeByte('\n');
                 }
@@ -96,7 +97,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
     while (lines.next()) |line| {
         var f = line;
         const word = f.next() orelse continue;
-        if (std.meta.stringToEnum(script_text.Word, word)) |sw| {
+        if (script_text.wordOf(word)) |sw| {
             try told.take(&self.script, sw, &f);
             if (f.next() != null) return error.BadLine;
             continue;
@@ -166,6 +167,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                 const n = try int(u8, &f);
                 m.* = .{ .draw = if (counted) .{ .count = n } else .{ .weight = n }, .n = 0 };
                 m.exit = takeWord(&f, EXIT);
+                m.lair = takeLair(&f);
                 while (f.next()) |name| {
                     const k = std.meta.stringToEnum(actor.Kind, name) orelse return error.BadLine;
                     if (!m.grow()) return error.BadLine;
@@ -199,8 +201,8 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
     if (!self.linksValid()) return error.BadLink;
     if (self.start.node >= self.node_n) return error.BadLink;
     if (!self.script.valid(self.node_n)) return error.BadLine;
-    for (self.script.folks()) |f| {
-        if (!self.folkFits(f.node, f.at)) return error.BadLine;
+    for (self.script.npcs()) |f| {
+        if (f.cell()) |at| if (!self.npcFits(f.node, at)) return error.BadLine;
     }
 }
 
@@ -240,13 +242,15 @@ fn lastBespoke(self: *atlas.Atlas) Error!*atlas.Bespoke {
     return (try lastNode(self)).plan.bespokeOf() orelse error.BadLine;
 }
 
-/// A procgen node's base lines: each named for, and holding, a field of its floor; the foes' and sky's are `GROUPS`.
+/// A procgen node's base lines: each named for, and holding, a field of its floor; the foes', sky's, post's and raid's are `GROUPS`.
 pub fn floorKnobs(comptime a: Algo) []const []const u8 {
     return armKnobs(Floor, a);
 }
 const FLOOR_KNOBS_MAX = mostKnobs(Floor);
 pub const FOE_KNOBS = knobsOf(pack.Spec, MAKEUP_FIELDS);
 pub const SKY_KNOBS = knobsOf(climate.Climate, &.{});
+pub const POST_KNOBS = knobsOf(atlas.post.Post, &.{});
+pub const RAID_KNOBS = knobsOf(atlas.raid.Raid, &.{});
 /// Every other line's first word, which no knob may take.
 const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe };
 const ONCE_FILE = std.EnumSet(Word).initOne(.start);
@@ -261,6 +265,8 @@ const FeatureKnobSet = std.StaticBitSet(FEATURE_KNOBS_MAX);
 const GROUPS = [_]struct { field: []const u8, knobs: []const []const u8 }{
     .{ .field = "foes", .knobs = FOE_KNOBS },
     .{ .field = "sky", .knobs = SKY_KNOBS },
+    .{ .field = "post", .knobs = POST_KNOBS },
+    .{ .field = "raid", .knobs = RAID_KNOBS },
 };
 const GROUP_KNOBS = blk: {
     var all: []const []const u8 = &.{};
@@ -280,6 +286,15 @@ fn takeWord(f: *Tokens, word: []const u8) bool {
     if (!std.mem.eql(u8, next, word)) return false;
     _ = f.next();
     return true;
+}
+
+/// A makeup's lair, named after its count; anywhere is the unnamed default.
+fn takeLair(f: *Tokens) pack.Lair {
+    const next = f.peek() orelse return .anywhere;
+    const lair = std.meta.stringToEnum(pack.Lair, next) orelse return .anywhere;
+    if (lair == .anywhere) return .anywhere;
+    _ = f.next();
+    return lair;
 }
 
 fn says(comptime w: Word) []const u8 {
@@ -676,7 +691,7 @@ test "map text round-trips every floor and feature with default and changed knob
     std.debug.print("map serialization: {d} floor/feature/default-or-changed cases preserve plans, climate, pack makeup and canonical text\n", .{checked});
 }
 
-test "a map's folk and script save with it, and folk off open bespoke floor are refused" {
+test "a map's NPCs and script save with it, and NPCs off open bespoke floor are refused" {
     const a = try atlas.testAtlas();
     defer std.testing.allocator.destroy(a);
     const room = a.add(.{ .bespoke = .{} }).?;
@@ -696,13 +711,13 @@ test "a map's folk and script save with it, and folk off open bespoke floor are 
     defer again.deinit();
     try back.write(again.writer());
     try std.testing.expectEqualStrings(buf.items, again.items);
-    try std.testing.expectEqual(@as(u8, 2), back.script.folk_n);
-    for ([_][]const u8{ "folk 0 1 1 -\n", "folk 0 9 4 -\n", "folk 0 3 3 -\nfolk 0 3 3 -\n" }) |extra| {
+    try std.testing.expectEqual(@as(u8, 4), back.script.npc_n);
+    for ([_][]const u8{ "npc 0 1 1 -\n", "npc 0 9 4 -\n", "npc 0 3 3 -\nnpc 0 3 3 -\n", "npc 1 far -\n" }) |extra| {
         buf.shrinkRetainingCapacity(bare);
         try buf.appendSlice(extra);
         try std.testing.expectError(error.BadLine, back.parse(buf.items));
     }
-    std.debug.print("map script: {d} script bytes round-trip with the map; folk on a wall, a foe or each other refused\n", .{script_text.SAMPLE.len});
+    std.debug.print("map script: {d} script bytes round-trip with the map; NPCs on a wall, a foe or each other refused\n", .{script_text.SAMPLE.len});
 }
 
 test "map text accepts exact node feature and door limits and refuses the next entry" {

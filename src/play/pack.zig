@@ -25,6 +25,7 @@ pub const KINDS = [_][]const actor.Kind{
     &.{.pyre_bloat},
     &.{.bog_leech},
     &.{.mimic},
+    &.{ .goblin, .goblin },
 };
 pub const REACH: i32 = 2;
 /// Past the hero's sight, so by default none starts in view.
@@ -36,6 +37,8 @@ pub const BIGGEST: usize = blk: {
 };
 
 pub const PACKS_MAX: usize = 32;
+/// Cells from a caravan cart to every foe placed, at least.
+pub const CAMP_GAP: i32 = 10;
 pub const FEW_MAX: usize = PACKS_MAX;
 pub const MAKEUP_MIN: usize = 1;
 pub const MAKEUP_MAX: usize = 5;
@@ -75,12 +78,37 @@ pub const Draw = union(enum) {
     }
 };
 
+/// Where a makeup's lead stands, when not by a door.
+pub const Lair = enum {
+    anywhere,
+    /// At the end of a narrow dead-end path.
+    nook,
+    /// In or within `POND_REACH` of a small body of water.
+    pond,
+    /// Within `HEARTH_REACH` of a lone fire, as a camp's.
+    hearth,
+};
+
+/// Wet cells joined together, at most, that are a pond rather than a river or a sea.
+pub const POND_MOST: usize = 200;
+pub const POND_REACH: i32 = 2;
+pub const HEARTH_REACH: i32 = 3;
+/// A nook's walk this many steps back reaches no more than `NOOK_CELLS`.
+const NOOK_STEPS: i32 = 6;
+const NOOK_CELLS: usize = 32;
+/// Open cells round a nook, at most.
+const NOOK_SIDES: usize = 3;
+/// Cells in from the map's edge a nook keeps, so a road's end at the rim is none.
+const NOOK_RIM: i32 = 3;
+
 pub const Makeup = struct {
     kind: [MAKEUP_MAX]actor.Kind = @splat(FIRST),
     n: usize = MAKEUP_MIN,
     draw: Draw = .{ .weight = WEIGHT_MIN },
     /// The lead stands within `EXIT_REACH` of a door.
     exit: bool = false,
+    /// Where the lead stands otherwise.
+    lair: Lair = .anywhere,
 
     pub fn of(ks: []const actor.Kind) Makeup {
         var m = Makeup{ .n = ks.len };
@@ -191,6 +219,7 @@ pub const Spec = struct {
         t.makeup_n = std.math.clamp(s.makeup_n, MAKEUPS_MIN, MAKEUPS_MAX);
         for (t.makeup[0..t.makeup_n]) |*m| {
             m.n = std.math.clamp(m.n, MAKEUP_MIN, MAKEUP_MAX);
+            if (m.exit) m.lair = .anywhere;
             switch (m.draw) {
                 .weight => |*w| w.* = std.math.clamp(w.*, WEIGHT_MIN, WEIGHT_MAX),
                 .count => |*c| c.* = std.math.clamp(c.*, COUNT_MIN, COUNT_MAX),
@@ -247,25 +276,150 @@ pub const Spec = struct {
 
 const Kinds = std.EnumSet(actor.Kind);
 
-/// The leads no ground could be found for anywhere, and those found none by any door.
+/// The leads no ground could be found for anywhere, those found none by any door, and none in each lair.
 const Homeless = struct {
     anywhere: Kinds = .initEmpty(),
     by_door: Kinds = .initEmpty(),
+    lairs: std.EnumArray(Lair, Kinds) = .initFill(.initEmpty()),
 
     fn refuses(h: Homeless, m: *const Makeup) bool {
-        return h.anywhere.contains(m.lead()) or (m.exit and h.by_door.contains(m.lead()));
+        return h.anywhere.contains(m.lead()) or h.of(m).contains(m.lead());
     }
 
     fn add(h: *Homeless, m: *const Makeup) void {
-        if (m.exit) h.by_door.insert(m.lead()) else h.anywhere.insert(m.lead());
+        h.ofMut(m).insert(m.lead());
+    }
+
+    fn of(h: *const Homeless, m: *const Makeup) *const Kinds {
+        return @constCast(h).ofMut(m);
+    }
+
+    fn ofMut(h: *Homeless, m: *const Makeup) *Kinds {
+        if (m.exit) return &h.by_door;
+        return if (m.lair == .anywhere) &h.anywhere else h.lairs.getPtr(m.lair);
     }
 };
+
+/// The cells each lair a spec's makeups name holds; only those named are found.
+const Lairs = struct {
+    cells: std.EnumArray(Lair, grid.CellSet) = .initFill(.initEmpty()),
+
+    fn of(lv: *const grid.Level, spec: *const Spec) Lairs {
+        var named = std.EnumSet(Lair).initEmpty();
+        for (spec.makeups()) |*m| if (!m.exit) named.insert(m.lair);
+        var out = Lairs{};
+        if (named.contains(.nook)) out.cells.set(.nook, nooks(lv));
+        if (named.contains(.pond)) out.cells.set(.pond, widened(ponds(lv), POND_REACH));
+        if (named.contains(.hearth)) out.cells.set(.hearth, widened(fires(lv), HEARTH_REACH));
+        return out;
+    }
+};
+
+/// Open cells at the end of a narrow dead-end path: few open round them, and a short walk back reaching little.
+fn nooks(lv: *const grid.Level) grid.CellSet {
+    var out = grid.CellSet.initEmpty();
+    for (0..grid.CELLS) |i| {
+        const q = grid.Level.of(i);
+        if (grid.Level.edgeDist(q) < NOOK_RIM or !lv.walkable(q) or lv.tile[i].wet()) continue;
+        var sides: usize = 0;
+        var round = grid.Cells.around(q, 1);
+        while (round.next()) |n| sides += @intFromBool(!n.eq(q) and lv.walkable(n));
+        if (sides <= NOOK_SIDES and walkReaches(lv, q, NOOK_STEPS, NOOK_CELLS)) out.set(i);
+    }
+    return out;
+}
+
+/// No more than `most` cells lie within `steps` steps' walk of `from`.
+fn walkReaches(lv: *const grid.Level, from: P, comptime steps: i32, most: usize) bool {
+    const w = 2 * steps + 1;
+    var seen = [_]bool{false} ** (w * w);
+    var queue: [w * w]P = undefined;
+    var depth: [w * w]i32 = undefined;
+    const Window = struct {
+        fn slot(o: P, q: P) ?usize {
+            return mathx.slot(q.x - o.x + steps, q.y - o.y + steps, w, w);
+        }
+    };
+    seen[Window.slot(from, from).?] = true;
+    queue[0] = from;
+    depth[0] = 0;
+    var n: usize = 1;
+    var at: usize = 0;
+    while (at < n) : (at += 1) {
+        if (depth[at] == steps) continue;
+        var round = grid.Cells.around(queue[at], 1);
+        while (round.next()) |q| {
+            const k = Window.slot(from, q) orelse continue;
+            if (seen[k] or !lv.walkable(q)) continue;
+            seen[k] = true;
+            if (n == most) return false;
+            queue[n] = q;
+            depth[n] = depth[at] + 1;
+            n += 1;
+        }
+    }
+    return true;
+}
+
+/// Wet cells in bodies of no more than `POND_MOST` joined cells.
+fn ponds(lv: *const grid.Level) grid.CellSet {
+    var out = grid.CellSet.initEmpty();
+    var seen = grid.CellSet.initEmpty();
+    var queue: [grid.CELLS]u16 = undefined;
+    for (0..grid.CELLS) |i| {
+        if (seen.isSet(i) or !lv.tile[i].wet()) continue;
+        seen.set(i);
+        queue[0] = @intCast(i);
+        var n: usize = 1;
+        var at: usize = 0;
+        while (at < n) : (at += 1) {
+            var round = grid.Cells.around(grid.Level.of(queue[at]), 1);
+            while (round.next()) |q| {
+                if (!grid.Level.inside(q)) continue;
+                const k = grid.Level.idx(q);
+                if (seen.isSet(k) or !lv.tile[k].wet()) continue;
+                seen.set(k);
+                queue[n] = @intCast(k);
+                n += 1;
+            }
+        }
+        if (n <= POND_MOST) for (queue[0..n]) |k| out.set(k);
+    }
+    return out;
+}
+
+/// Lava cells with no lava beside them: camp fires, not lava fields.
+fn fires(lv: *const grid.Level) grid.CellSet {
+    var out = grid.CellSet.initEmpty();
+    for (0..grid.CELLS) |i| {
+        if (lv.tile[i] != .lava) continue;
+        var round = grid.Cells.around(grid.Level.of(i), 1);
+        const lone = while (round.next()) |q| {
+            if (!q.eq(grid.Level.of(i)) and grid.Level.inside(q) and lv.at(q) == .lava) break false;
+        } else true;
+        if (lone) out.set(i);
+    }
+    return out;
+}
+
+/// Every cell within `r` of one of `cells`.
+fn widened(cells: grid.CellSet, r: i32) grid.CellSet {
+    var out = grid.CellSet.initEmpty();
+    var it = cells.iterator(.{});
+    while (it.next()) |i| {
+        var round = grid.Cells.around(grid.Level.of(i), r);
+        while (round.next()) |q| if (grid.Level.inside(q)) out.set(grid.Level.idx(q));
+    }
+    return out;
+}
 
 /// No more than the pool holds once every slime placed has split down to quarters.
 /// A makeup whose lead finds no ground of its own, as a leech on a dry floor, gives way to the rest.
 pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, given: *const Spec) void {
     const fitted = given.fit();
     const spec = &fitted;
+    const camp = campOf(lv);
+    const lairs = Lairs.of(lv, spec);
     var bodies = pool.n;
     var homeless = Homeless{};
     var packs: usize = 0;
@@ -275,7 +429,7 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exit
             .weight => continue,
         };
         for (0..count) |_| {
-            if (packs == spec.packs or !m.fits(bodies, null) or !placeOne(lv, pool, rng, start, exits, spec, m, &bodies)) break;
+            if (packs == spec.packs or !m.fits(bodies, null) or !placeOne(lv, pool, rng, start, exits, spec, &camp, &lairs, m, &bodies)) break;
             packs += 1;
         }
     }
@@ -283,7 +437,7 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exit
         while (packs < spec.packs and pool.tally(k).total < spec.few) {
             const m = spec.pick(rng, k, bodies, homeless) orelse break;
             const before = pool.tally(k).total;
-            if (!placeOne(lv, pool, rng, start, exits, spec, m, &bodies)) {
+            if (!placeOne(lv, pool, rng, start, exits, spec, &camp, &lairs, m, &bodies)) {
                 homeless.add(m);
                 continue;
             }
@@ -293,14 +447,14 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exit
     }
     while (packs < spec.packs) {
         const m = spec.pick(rng, null, bodies, homeless) orelse return;
-        if (placeOne(lv, pool, rng, start, exits, spec, m, &bodies)) packs += 1 else homeless.add(m);
+        if (placeOne(lv, pool, rng, start, exits, spec, &camp, &lairs, m, &bodies)) packs += 1 else homeless.add(m);
     }
 }
 
-/// An exit makeup's lead tries a door at random, then each other door in turn.
-fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, spec: *const Spec, m: *const Makeup, bodies: *usize) bool {
-    const ground = Ground{ .lv = lv, .pool = pool, .start = start, .spec = spec, .others = pool.n };
-    const lead = if (!m.exit) ground.leadSpot(rng, null, m.lead()) orelse return false else lead: {
+/// An exit makeup's lead tries a door at random, then each other door in turn; a lair's, any cell of it.
+fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, spec: *const Spec, camp: *const grid.CellSet, lairs: *const Lairs, m: *const Makeup, bodies: *usize) bool {
+    const ground = Ground{ .lv = lv, .pool = pool, .start = start, .spec = spec, .camp = camp, .others = pool.n };
+    const lead = if (!m.exit) (if (m.lair == .anywhere) ground.leadSpot(rng, null, m.lead()) else ground.leadIn(rng, lairs.cells.getPtrConst(m.lair), m.lead())) orelse return false else lead: {
         if (exits.len == 0) return false;
         const first = rng.below(@intCast(exits.len));
         for (0..exits.len) |k| {
@@ -323,16 +477,30 @@ fn spawnCounted(lv: *grid.Level, pool: *actor.Pool, k: actor.Kind, at: P, bodies
     bodies.* += actor.most(k);
 }
 
+/// The cells closer than `CAMP_GAP` to a caravan cart.
+fn campOf(lv: *const grid.Level) grid.CellSet {
+    var near = grid.CellSet.initEmpty();
+    for (0..grid.CELLS) |i| {
+        if (lv.tile[i] != .caravan and lv.tile[i] != .caravan_part) continue;
+        var cells = grid.Cells.around(grid.Level.of(i), CAMP_GAP - 1);
+        while (cells.next()) |q| {
+            if (grid.Level.inside(q)) near.set(grid.Level.idx(q));
+        }
+    }
+    return near;
+}
+
 /// Where one pack's bodies may stand; `others` bounds the previously placed packs.
 const Ground = struct {
     lv: *const grid.Level,
     pool: *const actor.Pool,
     start: P,
     spec: *const Spec,
+    camp: *const grid.CellSet,
     others: usize,
 
     fn clear(g: Ground, p: P, k: actor.Kind) bool {
-        if (!actor.dwells(k, g.lv, p) or mathx.dist(p, g.start) < g.spec.gap) return false;
+        if (!actor.dwells(k, g.lv, p) or mathx.dist(p, g.start) < g.spec.gap or g.camp.isSet(grid.Level.idx(p))) return false;
         if (g.spec.apart == 0) return true;
         for (g.pool.items[0..g.others]) |*a| {
             if (a.foe() and mathx.dist(a.at, p) < g.spec.apart) return false;
@@ -352,6 +520,20 @@ const Ground = struct {
         };
         const box = if (by) |d| grid.Box.around(d, EXIT_REACH) else grid.Box.inMap(1);
         return box.rollWhere(rng, SPOT_TRIES, Lead{ .ground = g, .k = k }, Lead.at);
+    }
+
+    /// Any clear cell of `lair`, each as likely.
+    fn leadIn(g: Ground, rng: *mathx.Rng, lair: *const grid.CellSet, k: actor.Kind) ?P {
+        var chosen: ?P = null;
+        var seen: u32 = 0;
+        var it = lair.iterator(.{});
+        while (it.next()) |i| {
+            const p = grid.Level.of(i);
+            if (!grid.Box.inMap(1).holds(p) or !g.clear(p, k)) continue;
+            seen += 1;
+            if (rng.below(seen) == 0) chosen = p;
+        }
+        return chosen;
     }
 
     fn spotNear(g: Ground, rng: *mathx.Rng, lead: P, k: actor.Kind) ?P {
@@ -589,6 +771,55 @@ test "an exit pack that no door can hold leaves its lead's other makeups be, and
     }
     try std.testing.expectEqual(@as(usize, 50), by_far);
     std.debug.print("exit packs: 50 doorless nodes still laid {d} rats in pairs; a counted exit pack, the arrival door too near, stood by the far door {d} of 50\n", .{ doorless, by_far });
+}
+
+test "lairs: a mimic at a winding trail's end, leeches in the pond and slimes by it, goblins by their camps' fires" {
+    const procgen = @import("../map/procgen.zig");
+    const lairs = [_]struct { lair: Lair, kinds: []const actor.Kind, count: u8 }{
+        .{ .lair = .nook, .kinds = &.{.mimic}, .count = 1 },
+        .{ .lair = .pond, .kinds = &.{ .bog_leech, .bog_leech }, .count = 1 },
+        .{ .lair = .pond, .kinds = &.{ .slime, .slime }, .count = 1 },
+        .{ .lair = .hearth, .kinds = &.{ .goblin, .goblin }, .count = 2 },
+    };
+    var spec = Spec{ .packs = 5, .few = 0, .makeup_n = lairs.len };
+    for (lairs, 0..) |l, i| {
+        spec.makeup[i] = Makeup.of(l.kinds);
+        spec.makeup[i].lair = l.lair;
+        spec.makeup[i].draw = .{ .count = l.count };
+    }
+    const door = P{ .x = 0, .y = 46 };
+    const RUNS = 50;
+    var placed = std.EnumArray(actor.Kind, usize).initFill(0);
+    var astray: usize = 0;
+    var nooks_seen: usize = 0;
+    for (0..RUNS) |i| {
+        var lv: grid.Level = undefined;
+        procgen.roll(&lv, 0x1A12 +% i *% grid.TEST_SEED_STRIDE, &.{door}, .{ .tee = .{ .spurs = 6, .pond = 6, .pond_chests = 2, .camps = 2 } }, &.{});
+        const found = Lairs.of(&lv, &spec);
+        nooks_seen += found.cells.getPtrConst(.nook).count();
+        var pool = actor.Pool{};
+        var rng = mathx.Rng.init(0x1A12 +% i);
+        place(&lv, &pool, &rng, door, &.{}, &spec);
+        for (pool.slice()) |a| {
+            placed.getPtr(a.kind).* += 1;
+            const lair: Lair, const slack: i32 = switch (a.kind) {
+                .mimic => .{ .nook, 0 },
+                .bog_leech => .{ .pond, spec.reach },
+                .slime => .{ .pond, spec.reach },
+                .goblin => .{ .hearth, spec.reach },
+                else => unreachable,
+            };
+            var round = grid.Cells.around(a.at, slack);
+            const home = while (round.next()) |q| {
+                if (grid.Level.inside(q) and found.cells.getPtrConst(lair).isSet(grid.Level.idx(q))) break true;
+            } else false;
+            astray += @intFromBool(!home);
+        }
+    }
+    std.debug.print("{d} caravan tees: {d} nooks a map; {d} mimics, {d} leeches, {d} slimes, {d} goblins placed, {d} astray of their lairs\n", .{ RUNS, nooks_seen / RUNS, placed.get(.mimic), placed.get(.bog_leech), placed.get(.slime), placed.get(.goblin), astray });
+    try std.testing.expectEqual(@as(usize, 0), astray);
+    try std.testing.expect(placed.get(.mimic) * 10 >= RUNS * 9);
+    try std.testing.expect(placed.get(.bog_leech) >= RUNS and placed.get(.slime) >= RUNS and placed.get(.goblin) >= 2 * RUNS);
 }
 
 test "a makeup grows, shrinks to its lead and turns round the foe kinds; the last makeup stays" {

@@ -170,7 +170,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
 pub fn seenFoe(s: editor.Seen) ?actor.Kind {
     return switch (s) {
         .body => |kind| if (kind.foe()) kind else null,
-        .tile, .barrel, .torch, .door, .folk => null,
+        .tile, .barrel, .torch, .door, .npc => null,
     };
 }
 
@@ -183,7 +183,7 @@ fn seenTool(s: editor.Seen) ?editor.Tool {
     return switch (s) {
         .tile => null,
         .body => |k| .{ .foe = k },
-        inline .barrel, .torch, .door, .folk => |_, tag| @unionInit(editor.Tool, @tagName(tag), {}),
+        inline .barrel, .torch, .door, .npc => |_, tag| @unionInit(editor.Tool, @tagName(tag), {}),
     };
 }
 
@@ -266,8 +266,9 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
         },
         .torch => f.put(menu.capital(tool_catalog.TORCH_RULE) ++ "; lights {d} cells round", .{lume.TORCH_REACH}),
         .door => f.put("Leads both ways to one door on any node", .{}),
-        .folk => {
-            f.put(menu.capital(tool_catalog.FOLK_RULE) ++ ", on a painted node", .{});
+        .npc => {
+            f.put(menu.capital(tool_catalog.NPC_RULE) ++ ", on a painted node", .{});
+            f.put("On a rolled node: beside a prop, or far from the doors, found afresh each roll", .{});
             f.put("Never fights or moves", .{});
             f.put("Bump it or interact beside it to open its dialog; no turn passes", .{});
             f.put("Blocks a step; arrows and blasts pass it by", .{});

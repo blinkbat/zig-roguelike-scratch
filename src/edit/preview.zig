@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
+const script = atlas.script;
 const actor = @import("../play/actor.zig");
 const P = mathx.P;
 const INITIAL_ROLL: u64 = 0x5EE;
@@ -25,6 +26,8 @@ pub const Scene = struct {
     shown_n: usize = 0,
     issues: Issues = .{},
     start_at: ?P = null,
+    /// Where each NPC on the node stands on this roll.
+    npc_at: script.Stood = @splat(null),
     reach_dist: [grid.CELLS]i32 = undefined,
     reach_queue: [grid.CELLS]u32 = undefined,
 
@@ -52,13 +55,15 @@ pub const Scene = struct {
         self.node = node;
         const nd = &map.node[node];
         self.rolled_foes = .{};
+        self.npc_at = @splat(null);
         switch (nd.plan) {
-            .bespoke => {
-                nd.sketch(&self.lv);
-                map.stampFolk(node, &self.lv);
-            },
+            .bespoke => nd.sketch(&self.lv),
+            .procgen => nd.stamp(&self.lv, self.roll),
+        }
+        map.stampNpcs(node, &self.lv, &self.npc_at, atlas.EVERY_NPC);
+        switch (nd.plan) {
+            .bespoke => {},
             .procgen => {
-                nd.stamp(&self.lv, self.roll);
                 var rng = mathx.Rng.init(self.roll);
                 const at = atlas.landing(&self.lv, arrival(map, node), nd.placed()) orelse arrival(map, node);
                 _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
@@ -69,11 +74,16 @@ pub const Scene = struct {
         self.shown_n = 0;
         for (nd.placed()) |f| self.show(f);
         for (self.rolled_foes.slice()) |a| {
-            if (a.foe()) self.show(.{ .kind = a.kind, .at = a.at });
+            if (!a.kind.hero()) self.show(.{ .kind = a.kind, .at = a.at });
         }
         self.start_at = self.startOn(map, node);
         self.issues = self.issuesOf(map, node);
         self.stale = false;
+    }
+
+    /// Where NPC `i` of the previewed node stands; null when it found no place on this roll.
+    pub fn npcSpot(self: *const Scene, map: *const atlas.Atlas, i: usize) ?P {
+        return map.script.standsAt(i, &self.npc_at);
     }
 
     fn show(self: *Scene, f: atlas.Foe) void {

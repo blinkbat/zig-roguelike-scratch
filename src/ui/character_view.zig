@@ -10,6 +10,7 @@ const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const consumable = @import("../play/consumable.zig");
 const wording = @import("../core/wording.zig");
+const quest_log = @import("quests.zig");
 const P = mathx.P;
 
 pub const Page = enum {
@@ -18,6 +19,7 @@ pub const Page = enum {
     stats,
     passives,
     skills,
+    quests,
     nearby,
     loot,
 
@@ -110,6 +112,7 @@ pub const View = struct {
     steady: u8 = 0,
     /// Null with no hero standing: the sheet's own, without terrain or sunder.
     defence: ?Defence = null,
+    quests: quest_log.Journal = .{},
 
     pub fn stats(v: View) attr.Attrs {
         var out = v.inventory.gear.stats(v.base);

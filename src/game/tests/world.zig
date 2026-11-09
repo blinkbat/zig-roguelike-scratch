@@ -8,6 +8,7 @@ const actor = @import("../../play/actor.zig");
 const bow = @import("../../play/bow.zig");
 const glacial = @import("../../play/glacial.zig");
 const juke = @import("../../play/juke.zig");
+const progress = @import("../../play/progress.zig");
 const sky = @import("../../gfx/sky.zig");
 const fx = @import("../../gfx/fx.zig");
 const look = @import("../../gfx/look.zig");
@@ -265,6 +266,80 @@ test "a skeleton follows the hero through a door, leaving none behind" {
     try std.testing.expect(mathx.dist(s.at, hero) <= 3);
     for (g.sim.visits[a].pool.constSlice()) |left| try std.testing.expect(!left.livingAlly());
     std.debug.print("a skeleton followed to node {d}, {d} tiles from the hero with its {d} life\n", .{ b, mathx.dist(s.at, hero), s.hp });
+}
+
+test "a node's night raiders come in by its raid door, each at its own turn, from dusk to dawn" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    w.* = .{};
+    const n = w.add(.{ .procgen = .{ .floor = .{ .open = .{} }, .foes = .{ .packs = 0 }, .raid = .{ .raiders = 3 } } }).?;
+    const door = P{ .x = 40, .y = 0 };
+    _ = w.addDoor(n, door).?;
+    w.start = .{ .node = n, .at = .{ .x = 40, .y = 30 } };
+    game.beginMapAt(g, w, w.start, 7);
+    g.sim.unkillable = true;
+    defer g.sim.unkillable = false;
+    g.sim.clock = day.Clock.at(day.SUNSET - 1);
+    const first = g.sim.pool.n;
+    var seen = first;
+    var came: usize = 0;
+    var turns_with: usize = 0;
+    var farthest: i32 = 0;
+    var by_day: usize = 0;
+    for (0..140) |_| {
+        harness.useAct(g, .wait);
+        const hour = g.sim.clock.hour();
+        const night = hour >= day.SUNSET or hour < day.SUNRISE;
+        const before = came;
+        for (g.sim.pool.constSlice()[seen..]) |a| {
+            if (a.kind != atlas.raid.RAIDER) continue;
+            came += 1;
+            farthest = @max(farthest, mathx.dist(a.at, door));
+            if (!night) by_day += 1;
+        }
+        turns_with += @intFromBool(came > before);
+        seen = g.sim.pool.n;
+        harness.drawnOut(g);
+    }
+    const id = actor.Pool.idOf(first);
+    const growth = g.sim.growth;
+    const ground = g.sim.ground;
+    const mana = g.sim.mana;
+    if (g.sim.pool.get(id)) |r| {
+        try std.testing.expect(r.raider);
+        _ = g.sim.pool.damage(&g.sim.lv, id, r.hp);
+        game.combat.fell(g, id);
+    }
+    const spoiled = !std.meta.eql(ground, g.sim.ground) or mana != g.sim.mana;
+    const xp = g.sim.growth.xp - growth.xp;
+    std.debug.print("one night with 3 raiders: {d} came over {d} turns, at most {d} cells from the door, {d} by day; a slain raider gave {d} xp, spoils {}\n", .{ came, turns_with, farthest, by_day, xp, spoiled });
+    try std.testing.expectEqual(@as(usize, 3), came);
+    try std.testing.expect(turns_with >= 2 and farthest <= 2 and by_day == 0 and !spoiled);
+    try std.testing.expectEqual(std.math.divCeil(u64, progress.xpOf(atlas.raid.RAIDER), atlas.raid.XP_DIVISOR) catch unreachable, xp);
+}
+
+test "a caravan guard stays behind when the hero goes through a door" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    const b = harness.twoRooms(w);
+    const a = w.start.node;
+    game.beginMap(g, w);
+    const post = P{ .x = 4, .y = 5 };
+    _ = harness.spawnAt(g, .caravan_guard, post, true);
+    harness.nudge(g, .w);
+    harness.idle(g);
+    try std.testing.expectEqual(b, g.sim.node);
+    for (g.sim.pool.constSlice()) |s| try std.testing.expect(!s.livingAlly());
+    var stayed: usize = 0;
+    for (g.sim.visits[a].pool.constSlice()) |left| {
+        if (left.livingAlly() and left.at.eq(post)) stayed += 1;
+    }
+    std.debug.print("through a door: {d} caravan guard left on its post in node {d}\n", .{ stayed, a });
+    try std.testing.expectEqual(@as(usize, 1), stayed);
 }
 
 test "a skeleton following back and forth takes the slot it left, so no node's pool grows" {

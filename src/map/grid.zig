@@ -22,7 +22,7 @@ pub const MAX_TORCHES: usize = 32;
 pub const MAX_GLOWS: usize = 64;
 pub const MAX_DOORS: usize = 16;
 pub const NO_DOOR: u8 = 0;
-pub const NO_FOLK: u8 = 0;
+pub const NO_NPC: u8 = 0;
 
 pub const Tile = enum(u8) {
     /// Built, and shaped by `gen.shapeWalls`.
@@ -519,6 +519,7 @@ pub const Gas = enum {
 pub const SMOKE_THICK: u16 = 20;
 
 pub const Level = struct {
+    pub const WAS = .{.{ "npc", "folk" }};
     barrier: [CELLS]u8 = @splat(0),
     caltrops: [CELLS]struct { turns: u8 = 0, rank: u8 = 0 } = @splat(.{}),
     flames: [CELLS]u8 = @splat(0),
@@ -540,8 +541,8 @@ pub const Level = struct {
     /// Caustic gas, Brogue's volume.
     gas: [CELLS]u16,
     torch: Torches,
-    /// 1-based into the map's folk; `NO_FOLK` is none. The legacy save reader takes the fields before it.
-    folk: [CELLS]u8 = @splat(NO_FOLK),
+    /// 1-based into the map's NPCs; `NO_NPC` is none. The legacy save reader takes the fields before it.
+    npc: [CELLS]u8 = @splat(NO_NPC),
     /// Healing gas, Brogue's volume.
     healing: [CELLS]u16 = @splat(0),
     /// Steam boiled off water by fire, Qud's.
@@ -766,27 +767,27 @@ pub const Level = struct {
         self.volumes(kind)[idx(p)] +|= volume;
     }
 
-    pub fn folkAt(self: *const Level, p: P) ?usize {
-        const f = cellOr(u8, &self.folk, p, NO_FOLK);
-        return if (f == NO_FOLK) null else f - 1;
+    pub fn npcAt(self: *const Level, p: P) ?usize {
+        const f = cellOr(u8, &self.npc, p, NO_NPC);
+        return if (f == NO_NPC) null else f - 1;
     }
 
-    pub fn putFolk(self: *Level, p: P, i: usize) void {
-        self.folk[idx(p)] = @intCast(i + 1);
+    pub fn putNpc(self: *Level, p: P, i: usize) void {
+        self.npc[idx(p)] = @intCast(i + 1);
     }
 
-    pub fn clearFolk(self: *Level) void {
-        self.folk = @splat(NO_FOLK);
+    pub fn clearNpcs(self: *Level) void {
+        self.npc = @splat(NO_NPC);
     }
 
-    /// A body or barrel; folk are no target, so not counted.
+    /// A body or barrel; NPCs are no target, so not counted.
     pub fn taken(self: *const Level, p: P) bool {
         return self.who(p) != NO_ONE or self.hasBarrel(p);
     }
 
-    /// A body, barrel or folk stands there.
+    /// A body, barrel or NPC stands there.
     pub fn held(self: *const Level, p: P) bool {
-        return self.taken(p) or self.folkAt(p) != null;
+        return self.taken(p) or self.npcAt(p) != null;
     }
 
     pub fn vacant(self: *const Level, p: P) bool {
@@ -867,7 +868,7 @@ pub const Level = struct {
     pub fn stepOk(self: *const Level, from: P, d: mathx.Dir, ignore: u16) bool {
         if (!self.passOk(from, d)) return false;
         const to = from.add(d.delta());
-        if (self.hasBarrel(to) or self.folkAt(to) != null) return false;
+        if (self.hasBarrel(to) or self.npcAt(to) != null) return false;
         const w = self.who(to);
         return w == NO_ONE or w == ignore;
     }

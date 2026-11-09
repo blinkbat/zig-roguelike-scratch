@@ -306,7 +306,8 @@ test "Character page shortcuts open switch and close without acting or carrying 
             try std.testing.expectEqual(at, g.sim.heroActor().?.at);
             checked += 1;
         }
-        g.st = .{ .device = .keys, .character_page = .skills };
+        const pages = comptime std.enums.values(input.CharacterPage);
+        g.st = .{ .device = .keys, .character_page = pages[pages.len - 1] };
         game.update(g, 0);
         try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     }
@@ -316,8 +317,7 @@ test "Character page shortcuts open switch and close without acting or carrying 
     try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(clock, g.sim.clock);
     try std.testing.expectEqual(mana, g.sim.mana);
-    std.debug.print("Character shortcuts: {d} page openings, 5 toggles, death guarded; no turns or mana spent\n", .{checked});
-}
+    std.debug.print("Character shortcuts: {d} page openings, 5 toggles, death guarded; no turns or mana spent\n", .{checked});}
 
 test "an arena restart restores its selected opponent and hero" {
     const g = try game.boot(std.testing.allocator);

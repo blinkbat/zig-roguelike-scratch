@@ -292,12 +292,14 @@ pub fn validate(snapshot: *Snapshot) !void {
     if (snapshot.summary.hp != body.hp or snapshot.summary.max != body.max or snapshot.summary.gold != run.gold) return error.Damaged;
 }
 
-/// The conversation it was in and the one it was waiting on name lines the map still has.
+/// The conversation it was in and the one it was waiting on name lines the map still has; NPCs stood on the map, quests at stages there are.
 fn validatePlot(plot: *const @FieldType(data.Portable, "plot"), s: *const atlas.script.Script) !void {
     if (plot.asked) |d| if (d >= s.dialog_n) return error.Damaged;
+    for (plot.spots) |spot| if (spot) |p| if (!grid.Level.inside(p)) return error.Damaged;
+    for (plot.quests) |q| if (!atlas.script.STAGE_SPAN.holds(q.stage)) return error.Damaged;
     const talk = plot.talk orelse return;
     if (talk.dialog >= s.dialog_n or talk.line >= s.dialog[talk.dialog].line_n or talk.cursor >= atlas.script.MAX_CHOICES) return error.Damaged;
-    if (talk.folk) |f| if (f >= s.folk_n) return error.Damaged;
+    if (talk.npc) |f| if (f >= s.npc_n) return error.Damaged;
 }
 
 fn validateDoors(level: *const grid.Level, node: ?*const atlas.Node) !void {

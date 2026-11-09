@@ -3,6 +3,8 @@ const rl = @import("raylib");
 const input = @import("../core/input.zig");
 const mathx = @import("../core/mathx.zig");
 const script = @import("../map/script.zig");
+const grid = @import("../map/grid.zig");
+const atlas = @import("../map/atlas.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
@@ -60,23 +62,27 @@ const WHEEL_NOTCH: i32 = 2;
 pub const Page = enum {
     dialogs,
     script,
+    quests,
 
     pub fn label(p: Page) [:0]const u8 {
         return switch (p) {
             .dialogs => "Dialog",
             .script => "Script",
+            .quests => "Quests",
         };
     }
 
     pub fn tip(p: Page) [:0]const u8 {
         return switch (p) {
-            .dialogs => "Folk and the conversations they open: lines, choices and what each does",
+            .dialogs => "NPCs and the conversations they open: lines, choices and what each does",
             .script => "Triggers: when every condition holds after a turn, their actions run in order",
+            .quests => "Quests the journal lists: titles, and what each stage asks; actions give and finish them",
         };
     }
 };
 
 const LineAt = struct { d: u8, l: u8 };
+const StageAt = struct { q: u8, k: u8 };
 const ChoiceAt = struct { d: u8, l: u8, c: u8 };
 const TableAt = struct { t: script.Table, i: u8 };
 /// An action in place: a trigger's, a line's or a choice's.
@@ -87,7 +93,7 @@ const ActAt = union(enum) {
 };
 /// The one piece of words being typed into, written to the map as it is typed.
 const Focus = union(enum) {
-    folk: u8,
+    npc: u8,
     dialog: u8,
     line: LineAt,
     who: LineAt,
@@ -96,13 +102,17 @@ const Focus = union(enum) {
     trigger: u8,
     table: TableAt,
     note: ActAt,
+    quest: u8,
+    title: u8,
+    stage: StageAt,
 };
-pub const Pick = union(enum) { none, folk: u8, dialog: u8 };
+pub const Pick = union(enum) { none, npc: u8, dialog: u8 };
 
 pub const State = struct {
     pick: Pick = .none,
     line: u8 = 0,
     trigger: ?u8 = null,
+    quest: ?u8 = null,
     focus: ?Focus = null,
     field: Field = .{},
     /// A field took this frame's click.
@@ -114,18 +124,19 @@ pub const State = struct {
 };
 
 pub const Seen = struct {
-    folk: usize = 0,
+    npcs: usize = 0,
     dialogs: usize = 0,
     triggers: usize = 0,
+    quests: usize = 0,
 
     pub fn of(m: *const script.Script) Seen {
-        return .{ .folk = m.folk_n, .dialogs = m.dialog_n, .triggers = m.trigger_n };
+        return .{ .npcs = m.npc_n, .dialogs = m.dialog_n, .triggers = m.trigger_n, .quests = m.quest_n };
     }
 };
 
-pub fn openFolk(ed: *editor.Editor, i: u8) void {
+pub fn openNpc(ed: *editor.Editor, i: u8) void {
     open(ed, .dialogs);
-    ed.plot.pick = .{ .folk = i };
+    ed.plot.pick = .{ .npc = i };
 }
 
 pub fn open(ed: *editor.Editor, p: Page) void {
@@ -134,9 +145,11 @@ pub fn open(ed: *editor.Editor, p: Page) void {
     if (!std.meta.eql(ed.plot.seen, Seen.of(&ed.map.script))) {
         ed.plot.pick = .none;
         ed.plot.trigger = null;
+        ed.plot.quest = null;
     }
     if (p == .dialogs and ed.plot.pick == .none and ed.map.script.dialog_n > 0) ed.plot.pick = .{ .dialog = 0 };
     if (p == .script and ed.plot.trigger == null and ed.map.script.trigger_n > 0) ed.plot.trigger = 0;
+    if (p == .quests and ed.plot.quest == null and ed.map.script.quest_n > 0) ed.plot.quest = 0;
     ed.ask(.{ .plot = p });
 }
 
@@ -190,6 +203,7 @@ const Words = union(enum) {
     say: *script.Say,
     ask: *script.Ask,
     note: *script.Note,
+    title: *script.Title,
 
     fn text(w: Words) []const u8 {
         return switch (w) {
@@ -221,11 +235,11 @@ fn plainChar(c: u8) bool {
     return script.plain(&[_]u8{c});
 }
 
-const Unique = union(enum) { dialog: u8, line: LineAt, trigger: u8, table: TableAt };
+const Unique = union(enum) { dialog: u8, line: LineAt, trigger: u8, table: TableAt, quest: u8 };
 
 fn target(m: *Script, f: Focus) ?Target {
     return switch (f) {
-        .folk => |i| if (i < m.folk_n) .{ .words = .{ .who = &m.folk[i].name } } else null,
+        .npc => |i| if (i < m.npc_n) .{ .words = .{ .who = &m.npc[i].name } } else null,
         .dialog => |i| if (i < m.dialog_n) .{ .words = .{ .name = &m.dialog[i].name }, .unique = .{ .dialog = i } } else null,
         .line => |at| if (lineOf(m, at)) |ln| .{ .words = .{ .name = &ln.name }, .unique = .{ .line = at } } else null,
         .who => |at| if (lineOf(m, at)) |ln| .{ .words = .{ .who = &ln.who } } else null,
@@ -234,6 +248,9 @@ fn target(m: *Script, f: Focus) ?Target {
         .trigger => |i| if (i < m.trigger_n) .{ .words = .{ .name = &m.trigger[i].name }, .unique = .{ .trigger = i } } else null,
         .table => |at| if (at.i < m.names(at.t).len) .{ .words = .{ .name = tableName(m, at) }, .unique = .{ .table = at } } else null,
         .note => |at| if (actOf(m, at)) |a| .{ .words = .{ .note = &a.note } } else null,
+        .quest => |i| if (i < m.quest_n) .{ .words = .{ .name = &m.quest[i].name }, .unique = .{ .quest = i } } else null,
+        .title => |i| if (i < m.quest_n) .{ .words = .{ .title = &m.quest[i].title } } else null,
+        .stage => |at| if (at.q < m.quest_n and at.k < m.quest[at.q].stage_n) .{ .words = .{ .note = &m.quest[at.q].stage[at.k] } } else null,
     };
 }
 
@@ -244,6 +261,7 @@ fn put(m: *Script, t: Target, s: []const u8) bool {
         .line => |at| script.renameIn(m.dialog[at.d].line[0..m.dialog[at.d].line_n], at.l, s),
         .trigger => |i| script.renameIn(m.trigger[0..m.trigger_n], i, s),
         .table => |at| m.rename(at.t, at.i, s),
+        .quest => |i| script.renameIn(m.quest[0..m.quest_n], i, s),
     };
 }
 
@@ -292,6 +310,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     switch (ed.modal.plot) {
         .script => drawScript(ed, g),
         .dialogs => drawDialogs(ed, g),
+        .quests => drawQuests(ed, g),
     }
     if (clicked and !s.claimed and !ed.fresh) s.focus = null;
     s.seen = Seen.of(&ed.map.script);
@@ -443,7 +462,7 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.plot;
     const m = &ed.map.script;
     switch (s.pick) {
-        .folk => |i| if (i >= m.folk_n) {
+        .npc => |i| if (i >= m.npc_n) {
             s.pick = .none;
         },
         .dialog => |i| if (i >= m.dialog_n) {
@@ -456,16 +475,16 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     var buf: [widgets.LINE]u8 = undefined;
     const list = listArea(ed, f);
     var y = list.begin(&ed.clip);
-    countHeading(g, f.x, y, lw, "Folk", m.folk_n, script.MAX_FOLK);
+    countHeading(g, f.x, y, lw, "NPCs", m.npc_n, script.MAX_NPCS);
     y += STEP;
-    if (m.folk_n == 0) {
-        caption(g, f.x, y, lw, "Place folk with their tool on a painted node", look.DIM);
+    if (m.npc_n == 0) {
+        caption(g, f.x, y, lw, "Place NPCs with their tool", look.DIM);
         y += STEP;
     }
-    for (m.folks(), 0..) |*fk, i| {
-        const line = std.fmt.bufPrintZ(&buf, "{s}  (node {d})", .{ fk.called(), fk.node }) catch "";
-        if (button(ed, g, widgets.row(f.x, y, lw - GAP), line, s.pick == .folk and s.pick.folk == i, true, "What this folk is called and which dialog it opens")) {
-            s.pick = .{ .folk = @intCast(i) };
+    for (m.npcs(), 0..) |*npc, i| {
+        const line = std.fmt.bufPrintZ(&buf, "{s}  (node {d})", .{ npc.called(), npc.node }) catch "";
+        if (button(ed, g, widgets.row(f.x, y, lw - GAP), line, s.pick == .npc and s.pick.npc == i, true, "What this NPC is called and which dialog it opens")) {
+            s.pick = .{ .npc = @intCast(i) };
             s.detail.top = 0;
         }
         y += STEP;
@@ -490,65 +509,155 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     }
     const right = rightOf(ed, f, list, y);
     switch (s.pick) {
-        .none => caption(g, right.x, f.y, right.w, "Pick a folk or a dialog", look.DIM),
-        .folk => |i| drawFolk(ed, g, i, right.x, f.y, right.w),
+        .none => caption(g, right.x, f.y, right.w, "Pick an NPC or a dialog", look.DIM),
+        .npc => |i| drawNpc(ed, g, i, right.x, f.y, right.w),
         .dialog => |i| drawDialog(ed, g, i, right.x, f.y, right.w, f.bottom),
     }
 }
 
-fn drawFolk(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) void {
+fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) void {
     const m = &ed.map.script;
-    const fk = &m.folk[i];
+    const npc = &m.npc[i];
     var buf: [widgets.LINE]u8 = undefined;
     var y = top;
-    heading(g, x, y, w, std.fmt.bufPrint(&buf, "Folk on node {d} at {d},{d}", .{ fk.node, fk.at.x, fk.at.y }) catch "");
+    var title: [atlas.TITLE_MAX]u8 = undefined;
+    heading(g, x, y, w, std.fmt.bufPrint(&buf, "NPC on {s}", .{ed.nodeName(npc.node, &title)}) catch "");
     y += STEP;
     caption(g, x, y, LABEL_W, "Called", look.TEXT);
-    words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W), .{ .folk = i }, script.STRANGER);
+    words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W), .{ .npc = i }, script.STRANGER);
     y += STEP;
     caption(g, x, y, LABEL_W, "Talks with", look.TEXT);
     var talks = widgets.Lay{ .x = x + LABEL_W, .y = y };
-    const by = stepper(ed, g, talks.take(TALK_W), talksTo(m, fk), m.dialog_n > 0, "Which dialog speaking to it opens", false);
+    const by = stepper(ed, g, talks.take(TALK_W), talksTo(m, npc), m.dialog_n > 0, "Which dialog speaking to it opens", false);
     if (by != 0) {
-        optionalStep(&fk.dialog, by, m.dialog_n);
+        optionalStep(&npc.dialog, by, m.dialog_n);
         ed.bank();
     }
     if (button(ed, g, talks.take(BTN_W), "New dialog for it", false, m.dialog_n < script.MAX_DIALOGS, "A dialog of one line, named for it, that it opens")) {
         var nb: [script.NAME_MAX]u8 = undefined;
-        if (m.addDialog(stemOf(&nb, fk.called()))) |d| {
-            fk.dialog = d;
+        if (m.addDialog(stemOf(&nb, npc.called()))) |d| {
+            npc.dialog = d;
             ed.bank();
         }
     }
     y += STEP;
-    if (fk.dialog) |d| {
+    if (npc.dialog) |d| {
         if (button(ed, g, widgets.row(x + LABEL_W, y, TALK_W), "Edit its dialog", false, true, null)) {
             ed.plot.pick = .{ .dialog = d };
             ed.plot.line = 0;
         }
         y += STEP;
     }
-    y += GAP;
+    caption(g, x, y, LABEL_W, "Stands", look.TEXT);
+    var stands = widgets.Lay{ .x = x + LABEL_W, .y = y };
+    const moved = stepper(ed, g, stands.take(TALK_W), spotWords(npc.spot, &buf), true, "On its painted cell, beside a prop, or far from the doors; the last two are found afresh on each roll of its node", false);
+    if (moved != 0) stepSpot(ed, i, moved);
+    switch (npc.spot) {
+        .by => |*t| {
+            const prop_by = stepper(ed, g, stands.take(WHICH_W), @tagName(t.*), PROPS.len > 1, "Which prop it stands beside: the first in reading order with room round it", false);
+            if (prop_by != 0) {
+                t.* = mathx.stepIn(grid.Tile, &PROPS, t.*, prop_by, 0);
+                ed.changed();
+            }
+        },
+        .at, .far => {},
+    }
+    y += STEP;
+    caption(g, x, y, LABEL_W, "Stands while", look.TEXT);
+    if (npc.shows) |*c| {
+        condRow(ed, g, x + LABEL_W, y, w - LABEL_W - DROP_W - GAP, c);
+        if (dropButton(ed, g, x + w, y, true, "Always stands")) {
+            npc.shows = null;
+            ed.bank();
+        }
+    } else if (button(ed, g, widgets.row(x + LABEL_W, y, BTN_W), "+ Condition", false, true, "Gone, and talked to by no one, while it does not hold")) {
+        npc.shows = .{ .kind = .always };
+        ed.bank();
+    }
+    y += STEP;
+    caption(g, x, y, LABEL_W, "Looks like", look.TEXT);
+    const kinds = std.enums.values(actor.Kind);
+    const looks_by = stepper(ed, g, widgets.row(x + LABEL_W, y, TALK_W), if (npc.looks) |k| actor.row(k).name else "a person", true, "The body it is drawn as", false);
+    if (looks_by != 0) {
+        var at: ?u8 = if (npc.looks) |k| @intCast(std.mem.indexOfScalar(actor.Kind, kinds, k).?) else null;
+        optionalStep(&at, looks_by, kinds.len);
+        npc.looks = if (at) |k| kinds[k] else null;
+        ed.bank();
+    }
+    y += STEP + GAP;
     var foot = widgets.Lay{ .x = x, .y = y };
     if (button(ed, g, foot.take(BTN_W), "Show on the map", false, true, "Close and look at it")) {
         const c = editor.Editor.canvas(g);
-        ed.visit(c, fk.node, fk.at);
-        ed.showCell(c, fk.at);
+        ed.visit(c, npc.node, npc.cell() orelse grid.MIDDLE);
+        ed.preview();
+        const at = ed.scene.npcSpot(ed.map, i) orelse npc.cell() orelse grid.MIDDLE;
+        ed.showCell(c, at);
         close(ed);
         return;
     }
-    if (button(ed, g, foot.take(BTN_W), "Remove it", false, true, "Take this folk off the map; any trigger that waited on its nearness never fires")) {
-        m.dropFolk(i);
+    if (button(ed, g, foot.take(BTN_W), "Remove it", false, true, "Take this NPC off the map; any trigger that waited on its nearness never fires")) {
+        m.dropNpc(i);
         ed.changed();
         ed.plot.pick = .none;
     }
 }
 
-pub fn talksTo(m: *const Script, f: *const script.Folk) []const u8 {
+/// What an NPC may stand beside.
+const PROPS = blk: {
+    var out: []const grid.Tile = &.{};
+    for (std.enums.values(grid.Tile)) |t| {
+        if (script.besideable(t)) out = out ++ &[_]grid.Tile{t};
+    }
+    break :blk out[0..out.len].*;
+};
+const FIRST_PROP: grid.Tile = .caravan;
+
+comptime {
+    std.debug.assert(std.mem.indexOfScalar(grid.Tile, &PROPS, FIRST_PROP) != null);
+}
+
+fn spotWords(s: script.Spot, buf: []u8) []const u8 {
+    return switch (s) {
+        .at => |p| std.fmt.bufPrint(buf, "on its cell {d},{d}", .{ p.x, p.y }) catch "",
+        .by => "beside a prop",
+        .far => "far from the doors",
+    };
+}
+
+/// NPC `i`'s spot stepped `by` round its kinds: a painted cell only on a painted node, and only where it now stands free.
+fn stepSpot(ed: *editor.Editor, i: u8, by: i32) void {
+    const npc = &ed.map.script.npc[i];
+    const SpotKind = std.meta.Tag(script.Spot);
+    var k = std.meta.activeTag(npc.spot);
+    const cell = paintedCell(ed, i);
+    for (0..std.enums.values(SpotKind).len) |_| {
+        k = cycle(SpotKind, k, by);
+        if (k != .at or cell != null) break;
+    }
+    if (k == std.meta.activeTag(npc.spot)) return;
+    npc.spot = switch (k) {
+        .at => .{ .at = cell.? },
+        .by => .{ .by = FIRST_PROP },
+        .far => .far,
+    };
+    ed.changed();
+}
+
+/// Where NPC `i` stands now, when that is a painted node's open cell no other NPC is painted on.
+fn paintedCell(ed: *editor.Editor, i: u8) ?mathx.P {
+    const npc = &ed.map.script.npc[i];
+    if (npc.node != ed.node or ed.map.node[npc.node].unrolled()) return null;
+    ed.preview();
+    const at = ed.scene.npcSpot(ed.map, i) orelse return null;
+    if (!ed.map.npcFits(npc.node, at) or ed.map.script.npcAt(npc.node, at) != null) return null;
+    return at;
+}
+
+pub fn talksTo(m: *const Script, f: *const script.Npc) []const u8 {
     return if (f.dialog) |d| m.dialog[d].name.text() else "nothing to say";
 }
 
-/// A dialog name from a folk's: its words lowered and joined by `_`, where it reads back.
+/// A dialog name from an NPC's: its words lowered and joined by `_`, where it reads back.
 fn stemOf(buf: *[script.NAME_MAX]u8, name: []const u8) []const u8 {
     var n: usize = 0;
     for (name) |c| {
@@ -575,7 +684,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     var y = top;
     const users = m.dialogUsers(di);
     const drop = if (users > 0) std.fmt.bufPrintZ(&buf, "Used {d} times", .{users}) catch "" else "Delete dialog";
-    if (nameRow(ed, g, x, y, w, "Dialog", .{ .dialog = di }, drop, users == 0, "Delete it; a dialog folk or triggers still name cannot go")) {
+    if (nameRow(ed, g, x, y, w, "Dialog", .{ .dialog = di }, drop, users == 0, "Delete it; a dialog an NPC or trigger still names cannot go")) {
         if (m.dropDialog(di)) {
             ed.bank();
             s.pick = .none;
@@ -740,23 +849,20 @@ fn actKindOk(m: *const Script, k: script.ActKind, spoken: bool) bool {
 fn fitAct(m: *Script, a: *script.Act, spoken: bool) void {
     while (!actKindOk(m, a.kind, spoken)) a.kind = cycle(script.ActKind, a.kind, 1);
     if (script.actRef(a.kind)) |r| fitRef(m, r, &a.slot) else a.slot = 0;
-    if ((a.kind == .timer or a.kind == .wait) and a.n < 0) a.n = 0;
+    a.n = a.kind.span().clamp(a.n);
+    if (a.kind == .quest and a.questop == .stage) a.n = stagesOf(m, a.slot, 1).clamp(a.n);
 }
 
 /// The map has something for `r` to name; a table always does, as one is coined.
 fn refOk(m: *const Script, r: ?script.Ref) bool {
-    return switch (r orelse return true) {
-        .table => true,
-        .folk => m.folk_n > 0,
-        .dialog => m.dialog_n > 0,
-    };
+    const ref = r orelse return true;
+    return ref == .table or m.refLen(ref) > 0;
 }
 
 fn fitRef(m: *Script, r: script.Ref, slot: *u8) void {
     switch (r) {
         .table => |t| fitSlot(m, t, slot),
-        .folk => slot.* = @min(slot.*, m.folk_n - 1),
-        .dialog => slot.* = @min(slot.*, m.dialog_n - 1),
+        .npc, .dialog, .quest => slot.* = @intCast(@min(slot.*, m.refLen(r) - 1)),
     }
 }
 
@@ -815,9 +921,12 @@ const ACT_WORDS = std.EnumArray(script.ActKind, []const u8).init(.{
     .timer = "start timer",
     .wait = "wait",
     .preserve = "keep it ready",
+    .quest = "quest",
 });
 const SETOP_WORDS = std.EnumArray(script.Setop, []const u8).init(.{ .off = "clear it", .on = "set it", .flip = "flip it" });
 const COUNTOP_WORDS = std.EnumArray(script.Countop, []const u8).init(.{ .set = "set to", .add = "add", .sub = "take" });
+const QUESTOP_WORDS = std.EnumArray(script.Questop, []const u8).init(.{ .stage = "to stage", .done = "finish it" });
+const STATE_WORDS = std.EnumArray(script.QuestState, []const u8).init(.{ .unstarted = "not begun", .active = "under way", .done = "finished" });
 
 fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.Act, at: ActAt, spoken: bool) void {
     const kw = kindW(w);
@@ -846,7 +955,25 @@ fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.
             numberStep(ed, g, lay.take(ws[1]), &a.n, a.kind.span(), " turns", "Turns it runs before it is done");
         },
         .wait => numberStep(ed, g, widgets.row(fx, y, UNIT_W), &a.n, a.kind.span(), " turns", "Spent turns held before the next action"),
+        .quest => {
+            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, COUNTOP_W, NUMBER_W });
+            const before = a.*;
+            questStep(ed, g, lay.take(ws[0]), &a.slot);
+            wordStep(ed, g, lay.take(ws[1]), script.Questop, &a.questop, &QUESTOP_WORDS, "Begin it or move it to a stage, or finish it; a finished quest stays finished");
+            if (a.slot != before.slot or a.questop != before.questop) fitAct(&ed.map.script, a, spoken);
+            if (a.questop == .stage) numberStep(ed, g, lay.take(ws[2]), &a.n, stagesOf(&ed.map.script, a.slot, 1), "", "Which stage, from the first");
+        },
     }
+}
+
+fn questStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, slot: *u8) void {
+    const m = &ed.map.script;
+    indexStep(ed, g, r, m.quest[slot.*].titled(), slot, m.quest_n, "Which quest; they are kept in the Quests page");
+}
+
+/// The stages quest `q` has, from `lo`.
+fn stagesOf(m: *const Script, q: u8, lo: i32) script.Span {
+    return m.quest[q].reach(lo);
 }
 
 fn dialogStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, slot: *u8) void {
@@ -878,10 +1005,12 @@ const COND_WORDS = std.EnumArray(script.CondKind, []const u8).init(.{
     .timer = "timer",
     .elapsed = "turns passed",
     .region = "hero in region",
-    .near = "hero near folk",
+    .near = "hero near NPC",
     .talked = "has heard",
     .deaths = "deaths of",
     .alive = "alive here",
+    .quest = "quest is",
+    .stage = "quest stage",
 });
 const CMP_WORDS = std.EnumArray(script.Cmp, []const u8).init(.{ .lt = "under", .le = "at most", .eq = "exactly", .ge = "at least", .gt = "over" });
 
@@ -896,7 +1025,7 @@ fn fitCond(ed: *editor.Editor, c: *script.Cond) void {
     switch (c.kind) {
         .near => {
             c.n = c.kind.span().clamp(c.n);
-            if (c.n == 0) c.n = 2;
+            if (c.n == 0) c.n = script.NEAR_DEFAULT;
         },
         .region => {
             c.node = @intCast(ed.node);
@@ -905,7 +1034,7 @@ fn fitCond(ed: *editor.Editor, c: *script.Cond) void {
                 c.to = b.hi.sub(.{ .x = 1, .y = 1 });
             }
         },
-        .always, .never, .flag, .counter, .timer, .elapsed, .talked, .deaths, .alive => {},
+        .always, .never, .flag, .counter, .timer, .elapsed, .talked, .deaths, .alive, .quest, .stage => {},
     }
 }
 
@@ -951,7 +1080,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
         },
         .near => {
             const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, UNIT_W });
-            indexStep(ed, g, lay.take(ws[0]), m.folk[c.slot].called(), &c.slot, m.folk_n, "Which folk");
+            indexStep(ed, g, lay.take(ws[0]), m.npc[c.slot].called(), &c.slot, m.npc_n, "Which NPC");
             numberStep(ed, g, lay.take(ws[1]), &c.n, c.kind.span(), " cells", "How near, in steps either way");
         },
         .talked => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &c.slot),
@@ -964,6 +1093,19 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
             }
             cmpStep(ed, g, lay.take(ws[1]), &c.cmp);
             numberStep(ed, g, lay.take(ws[2]), &c.n, c.kind.span(), "", "How many");
+        },
+        .quest => {
+            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, TOGGLE_W });
+            questStep(ed, g, lay.take(ws[0]), &c.slot);
+            wordStep(ed, g, lay.take(ws[1]), script.QuestState, &c.state, &STATE_WORDS, "Where it has to stand");
+        },
+        .stage => {
+            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, OP_W, NUMBER_W });
+            const was = c.slot;
+            questStep(ed, g, lay.take(ws[0]), &c.slot);
+            if (c.slot != was) c.n = stagesOf(m, c.slot, 0).clamp(c.n);
+            cmpStep(ed, g, lay.take(ws[1]), &c.cmp);
+            numberStep(ed, g, lay.take(ws[2]), &c.n, stagesOf(m, c.slot, 0), "", "Its stage, from the first; 0 before it begins, and the last it reached once finished");
         },
     }
 }
@@ -1078,7 +1220,78 @@ fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i
     return y;
 }
 
-test "a folk's name gives its dialog a name the map reads back" {
+fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
+    const s = &ed.plot;
+    const m = &ed.map.script;
+    if (s.quest) |q| if (q >= m.quest_n) {
+        s.quest = null;
+    };
+    const f = frameOf(ed, g, "Quests");
+    const lw = f.listW();
+    var buf: [widgets.LINE]u8 = undefined;
+    const list = listArea(ed, f);
+    var y = list.begin(&ed.clip);
+    countHeading(g, f.x, y, lw, "Quests", m.quest_n, script.MAX_QUESTS);
+    if (rightButton(ed, g, f.x + lw - GAP, y, NEW_W, "+ New", m.quest_n < script.MAX_QUESTS, "A quest of one blank stage")) {
+        if (m.addQuest()) |q| {
+            ed.bank();
+            s.quest = q;
+            s.detail.top = 0;
+        }
+    }
+    y += STEP;
+    for (m.quests(), 0..) |*q, i| {
+        if (button(ed, g, widgets.row(f.x, y, lw - GAP), std.fmt.bufPrintZ(&buf, "{s}", .{q.titled()}) catch "", if (s.quest) |at| at == i else false, true, "Its title and what each stage asks")) {
+            s.quest = @intCast(i);
+            s.detail.top = 0;
+        }
+        y += STEP;
+    }
+    const right = rightOf(ed, f, list, y);
+    const qi = s.quest orelse return caption(g, right.x, f.y, right.w, "Pick a quest: the journal lists it once an action brings it to a stage", look.DIM);
+    const area = s.detail.at(raster.rect(right.x, f.y, right.w, f.bottom - f.y));
+    const end = drawQuest(ed, g, qi, right.x, area.begin(&ed.clip), right.w - PAD);
+    area.close(&ed.clip, end, 0);
+}
+
+fn drawQuest(ed: *editor.Editor, g: *game.Game, qi: u8, x: i32, top: i32, w: i32) i32 {
+    const m = &ed.map.script;
+    const q = &m.quest[qi];
+    var buf: [widgets.LINE]u8 = undefined;
+    var y = top;
+    const users = m.questUsers(qi);
+    const drop = if (users > 0) std.fmt.bufPrintZ(&buf, "Used {d} times", .{users}) catch "" else "Delete quest";
+    if (nameRow(ed, g, x, y, w, "Quest", .{ .quest = qi }, drop, users == 0, "Delete it; a quest conditions or actions still name cannot go")) {
+        if (m.dropQuest(qi)) {
+            ed.bank();
+            ed.plot.quest = null;
+            return y + STEP;
+        }
+    }
+    y += STEP;
+    caption(g, x, y, LABEL_W, "Title", look.TEXT);
+    words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W), .{ .title = qi }, "(blank: its name)");
+    y += STEP + GAP;
+    countHeading(g, x, y, w, "Stages", q.stage_n, script.MAX_STAGES);
+    if (rightButton(ed, g, x + w, y, CHOICE_ADD_W, "+ Stage", q.stage_n < script.MAX_STAGES, "What the journal asks next")) {
+        if (mathx.push(script.Note, &q.stage, &q.stage_n, .{})) ed.bank();
+    }
+    y += STEP;
+    var k: u8 = 0;
+    while (k < q.stage_n) : (k += 1) {
+        caption(g, x, y, LABEL_W, std.fmt.bufPrint(&buf, "{d}. Asks", .{k + 1}) catch "", look.TEXT);
+        words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W - DROP_W - GAP), .{ .stage = .{ .q = qi, .k = k } }, "(what the journal asks)");
+        if (dropButton(ed, g, x + w, y, q.stage_n > 1, "Take this stage away; whatever named a later stage names the one it became")) {
+            m.dropStage(qi, k);
+            ed.bank();
+            break;
+        }
+        y += STEP;
+    }
+    return y;
+}
+
+test "an NPC's name gives its dialog a name the map reads back" {
     var buf: [script.NAME_MAX]u8 = undefined;
     try std.testing.expectEqualStrings("old_wenna", stemOf(&buf, "Old Wenna!"));
     try std.testing.expectEqualStrings("", stemOf(&buf, "  "));
@@ -1098,4 +1311,27 @@ test "typed words refuse what the map's words refuse" {
     try std.testing.expect(f.insert("a" ** script.NAME_MAX));
     try std.testing.expect(script.Name.of(f.text()).eql(f.text()));
     std.debug.print("typed words: 3 refusals (control markers, tab, one past the name limit) and a full name accepted\n", .{});
+}
+
+test "changing a quest action fits its stage to the new quest's objectives" {
+    const trigger = @import("../play/trigger.zig");
+    const log = @import("../play/log.zig");
+    var m = Script{};
+    const first = m.addQuest().?;
+    m.quest[first].stage_n = 3;
+    const second = m.addQuest().?;
+    _ = m.quest[second].stage[0].set("Return to the merchant");
+    var a = script.Act{ .kind = .quest, .slot = first, .n = 3 };
+    a.slot = second;
+    fitAct(&m, &a, false);
+    var runtime = trigger.Runtime{};
+    var history = log.Log{};
+    runtime.apply(&m, &a, &history);
+    try std.testing.expectEqual(@as(u8, 1), runtime.quests[second].stage);
+    try std.testing.expectEqualStrings("Return to the merchant", m.quest[second].asks(runtime.quests[second].stage));
+    a = .{ .kind = .quest, .slot = second, .questop = .done, .n = 3 };
+    a.questop = .stage;
+    fitAct(&m, &a, true);
+    try std.testing.expectEqual(@as(i32, 1), a.n);
+    std.debug.print("quest actions: changing quest and resuming stage mode both retain a real objective\n", .{});
 }

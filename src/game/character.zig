@@ -17,8 +17,24 @@ const skills = @import("skills.zig");
 const tactics = @import("tactics.zig");
 const skillbar = @import("../play/skillbar.zig");
 const consumable = @import("../play/consumable.zig");
+const quest_log = @import("../ui/quests.zig");
+const script = atlas.script;
 const P = mathx.P;
 const PAUSE = menu.PAUSE;
+
+/// The run's quests under way, at what each stage asks, then those finished.
+pub fn questEntries(g: *const game.Game, out: *[script.MAX_QUESTS]quest_log.Entry) []const quest_log.Entry {
+    const w = g.sim.map orelse return out[0..0];
+    var n: usize = 0;
+    for ([_]script.QuestState{ .active, .done }) |state| {
+        for (w.script.quests(), 0..) |*q, i| {
+            const at = g.pic.quests_shown[i];
+            if (at.state != state) continue;
+            _ = mathx.push(quest_log.Entry, out, &n, .{ .title = q.titled(), .asks = q.asks(at.stage), .done = state == .done });
+        }
+    }
+    return out[0..n];
+}
 
 pub fn openPause(g: *game.Game) void {
     g.pause_menu = .{};
@@ -173,6 +189,7 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     if (g.character.page == .loot) if (g.sim.heroAt()) |from| if (goldReached(g, from, g.character.loot_at)) |pile| {
         v.loot_gold = pile.amount;
     };
+    v.quests = quest_log.Journal.of(&g.face, questEntries(g, &g.journal), book.QUESTS_BOX);
     return v;
 }
 
@@ -477,4 +494,39 @@ pub fn drawPause(g: *game.Game) void {
             menu.drawBack(&g.face, g.screen, &g.st);
         },
     }
+}
+
+test "the Quests tab scrolls to its last screenful without a turn and reopens at the first" {
+    const alloc = std.testing.allocator;
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    const w = try alloc.create(atlas.Atlas);
+    defer alloc.destroy(w);
+    w.* = .{};
+    @import("harness.zig").arena(g, grid.MIDDLE, &.{});
+    g.sim.map = w;
+    for (0..script.MAX_QUESTS) |_| {
+        const q = w.script.addQuest().?;
+        _ = w.script.quest[q].stage[0].set("a word " ** (script.NOTE_MAX / 7));
+        g.sim.plot.quests[q] = .{ .state = .active, .stage = 1 };
+    }
+    game.settle(g);
+    g.st = .{ .device = .keys, .character_page = .quests };
+    game.update(g, 0);
+    try std.testing.expectEqual(game.PausePage.character, g.pause_page);
+    try std.testing.expectEqual(book.Page.quests, g.character.page);
+    try std.testing.expectEqual(script.MAX_QUESTS, bookView(g, &g.nearby).quests.entries.len);
+    const clock = g.sim.clock;
+    const last = bookView(g, &g.nearby).quests.last_top;
+    g.st = .{ .scroll = -100 };
+    game.update(g, mathx.FRAME_DT);
+    try std.testing.expectEqual(last, g.character.top);
+    try std.testing.expectEqualDeep(clock, g.sim.clock);
+    g.st = .{ .device = .keys, .character_page = .quests };
+    game.update(g, 0);
+    g.st = .{ .device = .keys, .character_page = .quests };
+    game.update(g, 0);
+    try std.testing.expectEqual(@as(usize, 0), g.character.top);
+    try std.testing.expectEqual(book.Page.quests, g.character.page);
+    std.debug.print("Quests tab: {d} quests scroll to entry {d}, no turn spent, reopened at the first\n", .{ script.MAX_QUESTS, last });
 }

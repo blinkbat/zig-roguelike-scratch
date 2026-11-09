@@ -10,13 +10,25 @@ const Script = script.Script;
 pub const Error = error{ BadLine, TooMany, BadLink };
 
 /// Each script line's first word; the map's other words and knobs must not take one.
-pub const Word = enum { flag, counter, timer, dialog, line, who, say, act, ask, need, gets, then, folk, trigger, when, do };
+pub const Word = enum { flag, counter, timer, quest, stage, dialog, line, who, say, act, ask, need, gets, then, npc, shows, looks, trigger, when, do };
+const BY = "by";
+const FAR = "far";
 const ARROW = " -> ";
 const NONE = script.NONE;
 const ONCE = [2][]const u8{ "repeats", "once" };
 const PARKED = [2][]const u8{ "live", "parked" };
 const ON = [2][]const u8{ "off", "on" };
 const DONE = [2][]const u8{ "running", "done" };
+
+/// Earlier spellings of a word, still read.
+const FORMER_WORDS = .{.{ "folk", Word.npc }};
+
+/// The script word `text` spells, or spelled once.
+pub fn wordOf(text: []const u8) ?Word {
+    if (std.meta.stringToEnum(Word, text)) |w| return w;
+    inline for (FORMER_WORDS) |was| if (std.mem.eql(u8, text, was[0])) return was[1];
+    return null;
+}
 
 fn says(comptime w: Word) []const u8 {
     return firstWord(w);
@@ -44,6 +56,16 @@ pub fn write(s: *const Script, w: anytype) !void {
     inline for (comptime std.enums.values(script.Table)) |t| {
         for (s.names(t)) |*nm| try w.print(@tagName(t) ++ " {s}\n", .{nm.text()});
     }
+    for (s.quests()) |*q| {
+        try w.print(says(.quest) ++ "{s}", .{q.name.text()});
+        if (q.title.n > 0) try w.print(" {s}", .{q.title.text()});
+        try w.writeByte('\n');
+        for (q.stages()) |*st| {
+            try w.writeAll(comptime std.mem.trimRight(u8, says(.stage), " "));
+            if (st.n > 0) try w.print(" {s}", .{st.text()});
+            try w.writeByte('\n');
+        }
+    }
     for (s.dialogs()) |*d| {
         try w.print(says(.dialog) ++ "{s}\n", .{d.name.text()});
         for (d.lines()) |*l| {
@@ -59,10 +81,18 @@ pub fn write(s: *const Script, w: anytype) !void {
             if (l.then) |t| try w.print(says(.then) ++ "{s}\n", .{d.line[t].name.text()});
         }
     }
-    for (s.folks()) |*f| {
-        try w.print(says(.folk) ++ "{d} {d} {d} {s}", .{ f.node, f.at.x, f.at.y, if (f.dialog) |d| s.dialog[d].name.text() else NONE });
+    for (s.npcs()) |*f| {
+        try w.print(says(.npc) ++ "{d} ", .{f.node});
+        switch (f.spot) {
+            .at => |p| try w.print("{d} {d}", .{ p.x, p.y }),
+            .by => |t| try w.print(BY ++ " {s}", .{@tagName(t)}),
+            .far => try w.writeAll(FAR),
+        }
+        try w.print(" {s}", .{if (f.dialog) |d| s.dialog[d].name.text() else NONE});
         if (f.name.n > 0) try w.print(" {s}", .{f.name.text()});
         try w.writeByte('\n');
+        if (f.shows) |*c| try putCond(w, s, .shows, c);
+        if (f.looks) |k| try w.print(says(.looks) ++ "{s}\n", .{@tagName(k)});
     }
     for (s.triggers()) |*t| {
         try w.print(says(.trigger) ++ "{s} {d} {s} {s}\n", .{ t.name.text(), t.priority, ONCE[@intFromBool(t.once)], PARKED[@intFromBool(t.parked)] });
@@ -88,6 +118,8 @@ fn putCond(w: anytype, s: *const Script, comptime lead: Word, c: *const script.C
         .near => try w.print(" {d} {d}", .{ c.slot, c.n }),
         .talked => try w.print(" {s}", .{s.dialog[c.slot].name.text()}),
         .deaths, .alive => try w.print(" {s} {s} {d}", .{ @tagName(c.foe), c.cmp.tok(), c.n }),
+        .quest => try w.print(" {s} {s}", .{ s.quest[c.slot].name.text(), @tagName(c.state) }),
+        .stage => try w.print(" {s} {s} {d}", .{ s.quest[c.slot].name.text(), c.cmp.tok(), c.n }),
     }
     try w.writeByte('\n');
 }
@@ -103,6 +135,10 @@ fn putAct(w: anytype, s: *const Script, comptime lead: Word, a: *const script.Ac
         .counter => try w.print(" {s} {s} {d}", .{ s.counter[a.slot].text(), @tagName(a.countop), a.n }),
         .timer => try w.print(" {s} {d}", .{ s.timer[a.slot].text(), a.n }),
         .wait => try w.print(" {d}", .{a.n}),
+        .quest => switch (a.questop) {
+            .stage => try w.print(" {s} stage {d}", .{ s.quest[a.slot].name.text(), a.n }),
+            .done => try w.print(" {s} done", .{s.quest[a.slot].name.text()}),
+        },
     }
     try w.writeByte('\n');
 }
@@ -119,23 +155,19 @@ const Index = struct {
         var lines = Lines.of(text);
         while (lines.next()) |line| {
             var f = line;
-            const word = std.meta.stringToEnum(Word, f.next() orelse continue) orelse continue;
+            const word = wordOf(f.next() orelse continue) orelse continue;
             switch (word) {
                 .dialog => {
                     const name = try nameOf(&f);
                     if (ix.findDialog(name) != null) return error.BadLine;
-                    if (ix.dialog_n == script.MAX_DIALOGS) return error.TooMany;
-                    ix.dialog[ix.dialog_n] = script.Name.of(name);
-                    ix.dialog_n += 1;
+                    if (!mathx.push(script.Name, &ix.dialog, &ix.dialog_n, script.Name.of(name))) return error.TooMany;
                 },
                 .line => {
                     if (ix.dialog_n == 0) return error.BadLine;
                     const d = ix.dialog_n - 1;
                     const name = try nameOf(&f);
                     if (ix.findLine(d, name) != null) return error.BadLine;
-                    if (ix.line_n[d] == script.MAX_LINES) return error.TooMany;
-                    ix.line[d][ix.line_n[d]] = script.Name.of(name);
-                    ix.line_n[d] += 1;
+                    if (!mathx.push(script.Name, &ix.line[d], &ix.line_n[d], script.Name.of(name))) return error.TooMany;
                 },
                 else => {},
             }
@@ -158,6 +190,8 @@ pub const Reader = struct {
     line: ?u8 = null,
     choice: ?u8 = null,
     trigger: ?u8 = null,
+    quest: ?u8 = null,
+    npc: ?u8 = null,
 
     pub fn of(text: []const u8) Error!Reader {
         return .{ .index = try Index.of(text) };
@@ -172,20 +206,31 @@ pub const Reader = struct {
                 if (s.find(table, name) != null) return error.BadLine;
                 _ = s.declare(table, name) orelse return error.TooMany;
             },
+            .quest => {
+                r.leave();
+                const name = try nameOf(f);
+                if (s.findQuest(name) != null) return error.BadLine;
+                var q = script.Quest{ .name = script.Name.of(name) };
+                if (!q.title.set(rest(f))) return error.BadLine;
+                if (!mathx.push(script.Quest, &s.quest, &s.quest_n, q)) return error.TooMany;
+                r.quest = s.quest_n - 1;
+            },
+            .stage => {
+                const q = &s.quest[r.quest orelse return error.BadLine];
+                var stage = script.Note{};
+                if (!stage.set(rest(f))) return error.BadLine;
+                if (!mathx.push(script.Note, &q.stage, &q.stage_n, stage)) return error.TooMany;
+            },
             .dialog => {
                 r.leave();
-                if (s.dialog_n == script.MAX_DIALOGS) return error.TooMany;
-                s.dialog[s.dialog_n] = .{ .name = script.Name.of(try nameOf(f)) };
-                r.dialog = s.dialog_n;
-                s.dialog_n += 1;
+                if (!mathx.push(script.Dialog, &s.dialog, &s.dialog_n, .{ .name = script.Name.of(try nameOf(f)) })) return error.TooMany;
+                r.dialog = s.dialog_n - 1;
             },
             .line => {
                 const d = try r.dialogOf(s);
-                if (d.line_n == script.MAX_LINES) return error.TooMany;
-                d.line[d.line_n] = .{ .name = script.Name.of(try nameOf(f)) };
-                r.line = d.line_n;
+                if (!mathx.push(script.Line, &d.line, &d.line_n, .{ .name = script.Name.of(try nameOf(f)) })) return error.TooMany;
+                r.line = d.line_n - 1;
                 r.choice = null;
-                d.line_n += 1;
             },
             .who => {
                 const l = try r.lineOf(s);
@@ -197,9 +242,7 @@ pub const Reader = struct {
             },
             .act => {
                 const l = try r.lineOf(s);
-                if (l.act_n == script.LINE_ACTS) return error.TooMany;
-                l.act[l.act_n] = try spokenAct(s, f);
-                l.act_n += 1;
+                if (!mathx.push(script.Act, &l.act, &l.act_n, try spokenAct(s, f))) return error.TooMany;
             },
             .ask => {
                 const l = try r.lineOf(s);
@@ -208,12 +251,10 @@ pub const Reader = struct {
                 const ask_n, const next_at = if (std.mem.lastIndexOf(u8, all, ARROW)) |split|
                     .{ split, split + ARROW.len }
                 else if (std.mem.startsWith(u8, all, unasked)) .{ 0, unasked.len } else return error.BadLine;
-                if (l.choice_n == script.MAX_CHOICES) return error.TooMany;
                 var c = script.Choice{ .next = try r.lineNamed(std.mem.trim(u8, all[next_at..], " ")) };
                 if (!c.ask.set(all[0..ask_n])) return error.BadLine;
-                l.choice[l.choice_n] = c;
-                r.choice = l.choice_n;
-                l.choice_n += 1;
+                if (!mathx.push(script.Choice, &l.choice, &l.choice_n, c)) return error.TooMany;
+                r.choice = l.choice_n - 1;
             },
             .need => {
                 const c = try r.choiceOf(s);
@@ -222,46 +263,48 @@ pub const Reader = struct {
             },
             .gets => {
                 const c = try r.choiceOf(s);
-                if (c.act_n == script.CHOICE_ACTS) return error.TooMany;
-                c.act[c.act_n] = try spokenAct(s, f);
-                c.act_n += 1;
+                if (!mathx.push(script.Act, &c.act, &c.act_n, try spokenAct(s, f))) return error.TooMany;
             },
             .then => {
                 const l = try r.lineOf(s);
                 if (l.then != null) return error.BadLine;
                 l.then = try r.lineNamed(f.next() orelse return error.BadLine) orelse return error.BadLine;
             },
-            .folk => {
+            .npc => {
                 r.leave();
-                var folk = script.Folk{ .node = try int(u8, f), .at = try cell(f) };
+                var npc = script.Npc{ .node = try int(u8, f), .spot = try spotOf(f) };
                 const talk = f.next() orelse return error.BadLine;
-                if (!std.mem.eql(u8, talk, NONE)) folk.dialog = r.index.findDialog(talk) orelse return error.BadLink;
-                if (!folk.name.set(rest(f))) return error.BadLine;
-                if (s.folk_n == script.MAX_FOLK) return error.TooMany;
-                _ = s.addFolk(folk) orelse return error.BadLine;
+                if (!std.mem.eql(u8, talk, NONE)) npc.dialog = r.index.findDialog(talk) orelse return error.BadLink;
+                if (!npc.name.set(rest(f))) return error.BadLine;
+                if (s.npc_n == script.MAX_NPCS) return error.TooMany;
+                r.npc = s.addNpc(npc) orelse return error.BadLine;
+            },
+            .shows => {
+                const npc = &s.npc[r.npc orelse return error.BadLine];
+                if (npc.shows != null) return error.BadLine;
+                npc.shows = try r.cond(s, f);
+            },
+            .looks => {
+                const npc = &s.npc[r.npc orelse return error.BadLine];
+                if (npc.looks != null) return error.BadLine;
+                npc.looks = try value(actor.Kind, f);
             },
             .trigger => {
                 r.leave();
-                if (s.trigger_n == script.MAX_TRIGGERS) return error.TooMany;
                 var t = script.Trigger{ .name = script.Name.of(try nameOf(f)) };
                 t.priority = try int(i8, f);
                 t.once = try pick(f, ONCE);
                 t.parked = try pick(f, PARKED);
-                s.trigger[s.trigger_n] = t;
-                r.trigger = s.trigger_n;
-                s.trigger_n += 1;
+                if (!mathx.push(script.Trigger, &s.trigger, &s.trigger_n, t)) return error.TooMany;
+                r.trigger = s.trigger_n - 1;
             },
             .when => {
                 const t = &s.trigger[r.trigger orelse return error.BadLine];
-                if (t.cond_n == script.MAX_CONDS) return error.TooMany;
-                t.cond[t.cond_n] = try r.cond(s, f);
-                t.cond_n += 1;
+                if (!mathx.push(script.Cond, &t.cond, &t.cond_n, try r.cond(s, f))) return error.TooMany;
             },
             .do => {
                 const t = &s.trigger[r.trigger orelse return error.BadLine];
-                if (t.act_n == script.MAX_ACTS) return error.TooMany;
-                t.act[t.act_n] = try r.act(s, f);
-                t.act_n += 1;
+                if (!mathx.push(script.Act, &t.act, &t.act_n, try r.act(s, f))) return error.TooMany;
             },
         }
     }
@@ -271,6 +314,8 @@ pub const Reader = struct {
         r.line = null;
         r.choice = null;
         r.trigger = null;
+        r.quest = null;
+        r.npc = null;
     }
 
     fn dialogOf(r: *Reader, s: *Script) Error!*script.Dialog {
@@ -329,6 +374,15 @@ pub const Reader = struct {
                 c.cmp = try cmpOf(f);
                 c.n = try int(i32, f);
             },
+            .quest => {
+                c.slot = try questOf(s, f);
+                c.state = try value(script.QuestState, f);
+            },
+            .stage => {
+                c.slot = try questOf(s, f);
+                c.cmp = try cmpOf(f);
+                c.n = try int(i32, f);
+            },
         }
         return c;
     }
@@ -353,10 +407,36 @@ pub const Reader = struct {
                 a.n = try int(i32, f);
             },
             .wait => a.n = try int(i32, f),
+            .quest => {
+                a.slot = try questOf(s, f);
+                a.questop = try value(script.Questop, f);
+                a.n = switch (a.questop) {
+                    .stage => try int(i32, f),
+                    .done => 1,
+                };
+            },
         }
         return a;
     }
 };
+
+fn questOf(s: *const Script, f: *Tokens) Error!u8 {
+    return s.findQuest(f.next() orelse return error.BadLine) orelse error.BadLink;
+}
+
+/// A painted cell, `by` a prop, or `far`.
+fn spotOf(f: *Tokens) Error!script.Spot {
+    const first = f.peek() orelse return error.BadLine;
+    if (std.mem.eql(u8, first, BY)) {
+        _ = f.next();
+        return .{ .by = try value(grid.Tile, f) };
+    }
+    if (std.mem.eql(u8, first, FAR)) {
+        _ = f.next();
+        return .far;
+    }
+    return .{ .at = try cell(f) };
+}
 
 fn spokenAct(s: *const Script, f: *Tokens) Error!script.Act {
     const r = Reader{ .index = .{} };
@@ -428,6 +508,11 @@ pub const SAMPLE =
     \\flag met_wenna
     \\counter coins
     \\timer dusk
+    \\quest lost_ring The Lost Ring
+    \\stage Find the ring Wenna dropped down the well.
+    \\stage
+    \\stage Bring it back to Wenna.
+    \\quest errand
     \\dialog wenna
     \\line root
     \\who Old Wenna
@@ -440,15 +525,23 @@ pub const SAMPLE =
     \\line deeper
     \\say Rats. Slime. Worse, past the gate.
     \\act text Wenna points down the dark passage.
+    \\act quest lost_ring stage 1
     \\then root
-    \\folk 0 6 5 wenna Old Wenna
-    \\folk 0 7 5 -
+    \\npc 0 6 5 wenna Old Wenna
+    \\npc 0 7 5 -
+    \\npc 0 by caravan - Pedlar
+    \\shows quest lost_ring done
+    \\looks pib
+    \\npc 0 far wenna
     \\trigger greet 5 once live
     \\when near 0 2
     \\when flag met_wenna off
+    \\when quest errand unstarted
+    \\when stage lost_ring <= 2
     \\do text Someone hums by the cistern.
     \\do dialog wenna
     \\do flag met_wenna on
+    \\do quest lost_ring done
     \\trigger tally 0 repeats parked
     \\when deaths rat >= 3
     \\when alive slime = 0
@@ -475,7 +568,7 @@ pub fn readAlone(text: []const u8, s: *Script, node_n: usize) Error!void {
     var lines = Lines.of(text);
     while (lines.next()) |line| {
         var f = line;
-        const word = std.meta.stringToEnum(Word, f.next() orelse continue) orelse return error.BadLine;
+        const word = wordOf(f.next() orelse continue) orelse return error.BadLine;
         try r.take(s, word, &f);
         if (f.next() != null) return error.BadLine;
     }
@@ -484,6 +577,17 @@ pub fn readAlone(text: []const u8, s: *Script, node_n: usize) Error!void {
 
 fn testRead(text: []const u8, s: *Script) Error!void {
     return readAlone(text, s, 1);
+}
+
+test "an NPC written under its old word reads, and writes back under the new one" {
+    const s = try std.testing.allocator.create(Script);
+    defer std.testing.allocator.destroy(s);
+    try testRead("folk 0 3 3 - Old Wenna\n", s);
+    try std.testing.expectEqual(@as(u8, 1), s.npc_n);
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    defer buf.deinit();
+    try write(s, buf.writer());
+    try std.testing.expectEqualStrings("npc 0 3 3 - Old Wenna\n", buf.items);
 }
 
 test "a script reads back to the same text, every condition and action kind with it" {
@@ -498,8 +602,8 @@ test "a script reads back to the same text, every condition and action kind with
     try std.testing.expectEqual(@as(?u8, 1), d.line[0].choice[0].next);
     try std.testing.expectEqual(@as(?u8, null), d.line[0].choice[1].next);
     try std.testing.expectEqual(@as(?u8, 0), d.line[1].then);
-    try std.testing.expectEqual(@as(?u8, 0), s.folk[0].dialog);
-    try std.testing.expectEqualStrings(script.STRANGER, s.folk[1].called());
+    try std.testing.expectEqual(@as(?u8, 0), s.npc[0].dialog);
+    try std.testing.expectEqualStrings(script.STRANGER, s.npc[1].called());
     var conds = std.EnumSet(script.CondKind).initEmpty();
     var acts = std.EnumSet(script.ActKind).initEmpty();
     for (s.triggers()) |*t| {
@@ -537,13 +641,33 @@ test "a script with a dangling name, a misplaced line or a trigger's action in a
         "trigger t 0 once live\ndo wait -1\n",
         "trigger t 0 once live\nwhen elapsed >= 01\n",
         "when always\n",
-        "folk 0 99 99 -\n",
-        "folk 0 3 3 nope\n",
-        "folk 0 3 3 -\nfolk 0 3 3 -\n",
-        "folk 1 3 3 -\n",
+        "npc 0 99 99 -\n",
+        "npc 0 3 3 nope\n",
+        "npc 0 3 3 -\nnpc 0 3 3 -\n",
+        "npc 1 3 3 -\n",
         "dialog end\nline a\n",
         "dialog -\nline a\n",
         "dialog d\nline a\nask Hi -> end\ngets text " ++ "x" ** (script.NOTE_MAX + 1) ++ "\n",
+        "stage Find it.\n",
+        "quest q\nquest q\n",
+        "quest end\n",
+        "quest q " ++ "t" ** (script.TITLE_MAX + 1) ++ "\n",
+        "quest q\n" ++ "stage\n" ** (script.MAX_STAGES + 1),
+        "trigger t 0 once live\ndo quest nope done\n",
+        "quest q\ntrigger t 0 once live\ndo quest q stage 0\n",
+        "quest q\ntrigger t 0 once live\ndo quest q stage 9\n",
+        "quest q\ntrigger t 0 once live\ndo quest q finish\n",
+        "quest q\ntrigger t 0 once live\nwhen quest q begun\n",
+        "quest q\ntrigger t 0 once live\nwhen stage q >= 9\n",
+        "npc 0 by nothing -\n",
+        "npc 0 near -\n",
+        "npc 0 by -\n",
+        "looks pib\n",
+        "shows always\n",
+        "npc 0 far -\nlooks pib\nlooks rat\n",
+        "npc 0 far -\nshows always\nshows never\n",
+        "npc 0 far -\nlooks dragon\n",
+        "npc 0 far -\nshows flag nope on\n",
     };
     for (bad) |t| try std.testing.expect(std.meta.isError(testRead(t, s)));
     try testRead("dialog d\nline a\nask Hi -> there -> end\n", s);

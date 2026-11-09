@@ -190,7 +190,7 @@ fn isPlot(ed: *const editor.Editor, page: editor.plot.Page) bool {
 fn familyFigure(ed: *editor.Editor, g: *game.Game, f: editor.Family, r: rl.Rectangle) void {
     switch (f) {
         .terrain => swatch(g, ed.ink.get(.first), r),
-        .props, .foes, .folk, .doors => toolFigure(g, ed.family_tool.get(f), r),
+        .props, .foes, .npc, .doors => toolFigure(g, ed.family_tool.get(f), r),
     }
 }
 
@@ -230,7 +230,7 @@ pub fn drawSide(ed: *editor.Editor, g: *game.Game) void {
             y = drawFoeTypes(ed, g, col, y);
             y = drawTools(ed, g, col, y, .foes);
         },
-        .props, .folk => y = drawTools(ed, g, col, y, ed.family),
+        .props, .npc => y = drawTools(ed, g, col, y, ed.family),
         .doors => {
             y = drawTools(ed, g, col, y, .doors);
             y += widgets.GAP;
@@ -547,6 +547,10 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, col: Column, box: rl.Rectangle)
         wrong = true;
         thingRow(ed, g, col, &y, "{d} foe(s) no walk reaches", .{is.foes_cut_off}, WARN, null);
     }
+    if (ed.here().raidAstray()) {
+        wrong = true;
+        thingRow(ed, g, col, &y, "Night raiders' door is not on this node", .{}, WARN, null);
+    }
     const endless = ed.map.script.endless();
     if (endless > 0) {
         wrong = true;
@@ -564,9 +568,12 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, col: Column, box: rl.Rectangle)
     }
     for (ed.scene.shownFoes()) |f| thingRow(ed, g, col, &y, "{s}  {d},{d}", .{ editor.kindName(f.kind), f.at.x, f.at.y }, look.TEXT, f.at);
     const s = &ed.map.script;
-    for (s.folks()) |f| {
+    for (s.npcs(), 0..) |f, i| {
         if (f.node != ed.node) continue;
-        thingRow(ed, g, col, &y, "{s}  {d},{d}  talks: {s}", .{ f.called(), f.at.x, f.at.y, editor.plot.talksTo(s, &f) }, look.TEXT, f.at);
+        if (ed.scene.npcSpot(ed.map, i)) |at|
+            thingRow(ed, g, col, &y, "{s}  {d},{d}  talks: {s}", .{ f.called(), at.x, at.y, editor.plot.talksTo(s, &f) }, look.TEXT, at)
+        else
+            thingRow(ed, g, col, &y, "{s}  finds no place on this roll", .{f.called()}, WARN, null);
     }
     switch (ed.plan().*) {
         .bespoke => |*b| {
@@ -609,12 +616,18 @@ pub fn toolPicture(g: *const game.Game, t: editor.Tool) ?rl.Texture2D {
         .barrel => g.sprites.barrel,
         .foe => |k| g.sprites.body(k),
         .start => g.sprites.body(actor.HERO),
-        .paint, .torch, .folk, .door, .link => null,
+        .paint, .torch, .npc, .door, .link => null,
     };
 }
 
 pub fn toolFigure(g: *game.Game, t: editor.Tool, r: rl.Rectangle) void {
     widgets.figure(&g.face, toolPicture(g, t), t.look_(), r);
+}
+
+/// An NPC as it looks: the body it is drawn as, else the NPC tool's figure.
+pub fn npcFigure(g: *game.Game, f: *const atlas.script.Npc, r: rl.Rectangle) void {
+    const k = f.looks orelse return toolFigure(g, .npc, r);
+    widgets.figure(&g.face, g.sprites.body(k), look.body(k), r);
 }
 
 pub fn bareBg(t: grid.Tile) rl.Color {
@@ -710,7 +723,7 @@ fn hover(ed: *editor.Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
     for (ed.scene.shownFoes()) |f| {
         if (f.at.eq(p)) wr.print(", a {s}", .{actor.row(f.kind).name}) catch {};
     }
-    if (ed.map.script.folkAt(ed.node, p)) |f| wr.print(", {s} (folk)", .{ed.map.script.folk[f].called()}) catch {};
+    if (placement.npcAt(ed, p)) |f| wr.print(", {s} (NPC)", .{ed.map.script.npc[f].called()}) catch {};
     if (ed.scene.start_at) |s| {
         if (s.eq(p)) wr.writeAll(", the start") catch {};
     }

@@ -400,7 +400,7 @@ fn veilSprite(g: *game.Game, t: rl.Texture2D, c: Cam, p: P, focus: look.Focused)
 }
 
 fn inkCell(g: *game.Game, c: Cam, p: P, here: grid.Tile, stood: *const grid.CellSet) void {
-    if (shownAt(g, stood, p)) return;
+    if (shownAt(g, stood, p) or (g.pic.npcShown(p) != null and g.pic.litShown(&g.sim, p))) return;
     const m = c.mid(p);
     look.inkTile(&g.face, here, m.x, m.y, game.GLYPH);
 }
@@ -713,11 +713,13 @@ pub fn drawMap(g: *game.Game) void {
         drawBarrel(g, &b, false);
         if (g.sprites.barrel) |t| shineOver(g, t, spriteRect(t, b.s.x, b.s.y), mathx.cellOf(b.mid), b.shine.tint(look.LIT));
     }
-    var folk_cells = grid.Cells.of(lo, hi);
-    while (folk_cells.next()) |p| {
-        if (g.sim.lv.folkAt(p) == null or !g.pic.litShown(&g.sim, p)) continue;
+    var npc_cells = grid.Cells.of(lo, hi);
+    while (npc_cells.next()) |p| {
+        const i = g.pic.npcShown(p) orelse continue;
+        if (!g.pic.litShown(&g.sim, p)) continue;
         const f = Prop.at(g, c, p, false);
-        drawFigure(g, null, look.FOLK, f.s, false, f.mid, &f.shine, 0, 1);
+        const body = if (g.sim.map) |w| if (i < w.script.npc_n) w.script.npc[i].looks else null else null;
+        if (body) |k| drawFigure(g, g.sprites.body(k), look.body(k), f.s, false, f.mid, &f.shine, 0, 1) else drawFigure(g, null, look.NPC, f.s, false, f.mid, &f.shine, 0, 1);
     }
     std.sort.insertion(Shown, bodies, {}, struct {
         fn less(_: void, a: Shown, b: Shown) bool {

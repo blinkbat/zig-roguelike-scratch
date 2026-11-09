@@ -9,6 +9,7 @@ pub const Nearby = character_view.Nearby;
 pub const View = character_view.View;
 pub const Command = character_view.Command;
 pub const SIZE = layout.SIZE;
+pub const QUESTS_BOX = layout.AREA;
 pub const verifyCards = item_card.verify;
 pub const verifyStats = character_stats.verify;
 const BOTH_HANDS = "Both hands";
@@ -33,6 +34,7 @@ const line_icons = @import("../gfx/line_icons.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
 const trees = @import("trees.zig");
+const quest_log = @import("quests.zig");
 const display = @import("../core/window.zig");
 const P = mathx.P;
 pub const Book = struct {
@@ -102,13 +104,14 @@ pub const Book = struct {
         return switch (self.page) {
             .equipment => items.SLOTS.len,
             .inventory => stocked(view) + view.inventory.n,
-            .stats => 0,
+            .stats, .quests => 0,
             .passives => progress.NODES.len,
             .skills => progress.skills(view.class).len,
             .nearby, .loot => view.nearby.len,
         };
     }
     fn settledTop(self: *const Book, view: View) usize {
+        if (self.page == .quests) return @min(self.top, view.quests.last_top);
         const visible = self.visibleRows();
         return @min(mathx.reveal(self.top, self.cursor, visible), self.count(view) -| visible);
     }
@@ -120,7 +123,7 @@ pub const Book = struct {
         return switch (self.page) {
             .passives => .passives,
             .skills => .skills,
-            .equipment, .inventory, .stats, .nearby, .loot => null,
+            .equipment, .inventory, .stats, .quests, .nearby, .loot => null,
         };
     }
     fn treeView(self: *const Book) trees.View {
@@ -167,7 +170,7 @@ pub const Book = struct {
             .equipment => view.inventory.gear.slots.get(items.SLOTS[self.cursor]),
             .inventory => if (self.bagIndex(view)) |b| view.inventory.bag[b] else null,
             .nearby, .loot => if (self.cursor < view.nearby.len) view.nearby[self.cursor].item() else null,
-            .stats, .passives, .skills => null,
+            .stats, .passives, .skills, .quests => null,
         };
     }
     fn destination(self: *const Book, view: View) items.Slot {
@@ -183,7 +186,7 @@ pub const Book = struct {
                 break :blk null;
             },
             .inventory => if (stockAt(view, self.cursor)) |k| .{ .use = k } else .{ .equip = .{ .index = self.bagIndex(view).?, .slot = self.destination(view) } },
-            .stats => null,
+            .stats, .quests => null,
             .passives => if (view.growth.canAllocate(self.cursor)) .{ .passive = self.cursor } else null,
             .skills => blk: {
                 const act = self.selectedSkill(view);
@@ -196,7 +199,7 @@ pub const Book = struct {
         return switch (self.page) {
             .loot => layout.LOOT_SIZE,
             .nearby => .{ .x = layout.DIRECT_W, .y = self.nearbyActionY(view) + layout.ACTION_H + menu.PANEL_PAD },
-            .equipment, .inventory, .stats, .passives, .skills => layout.SIZE,
+            .equipment, .inventory, .stats, .passives, .skills, .quests => layout.SIZE,
         };
     }
     pub fn surface(self: *const Book, screen: P, view: View) menu.Surface {
@@ -209,7 +212,7 @@ pub const Book = struct {
         return switch (self.page) {
             .loot => layout.LOOT_ROWS,
             .nearby => layout.DIRECT_VISIBLE_ROWS,
-            .equipment, .inventory, .stats, .passives, .skills => layout.VISIBLE_ROWS,
+            .equipment, .inventory, .stats, .passives, .skills, .quests => layout.VISIBLE_ROWS,
         };
     }
     fn noteY(self: *const Book, view: View) i32 {
@@ -258,6 +261,7 @@ pub const Book = struct {
         }
         if (self.page == .skills and st.hit(menu.CHANGE)) return .{ .bindings = self.selectedSkill(view) };
         if (self.page == .stats and st.hit(menu.CHANGE)) self.advanced = !self.advanced;
+        if (self.page == .quests) self.top = view.quests.scroll(self.top, st);
         if (self.page == .passives) {
             if (!st.dragging) self.mouse_panning = false;
             if (st.middle_click) if (st.pointer) |p| {
@@ -355,6 +359,7 @@ pub const Book = struct {
                 if (!progress.basic(act)) c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (view.growth.canLearn(view.class, act)) 1 else look.FADED_A });
             },
             .stats => c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = if (self.advanced) "Main stats" else "Advanced" }),
+            .quests => {},
             .equipment, .inventory, .nearby, .loot => if (self.count(view) > 0) {
                 const chosen = self.selected(view);
                 const label: [:0]const u8 = if (chosen == null)
@@ -363,7 +368,7 @@ pub const Book = struct {
                     .equipment => character_view.verbOf(.unequip),
                     .inventory => character_view.verbOf(.equip),
                     .nearby, .loot => character_view.verbOf(.pickup),
-                    .stats, .passives, .skills => unreachable,
+                    .stats, .passives, .skills, .quests => unreachable,
                 };
                 c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = label });
                 if (self.page == .loot) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = character_view.verbOf(.take_all) });
@@ -380,7 +385,7 @@ pub const Book = struct {
         const at: P = switch (self.page) {
             .loot => .{ .x = layout.DETAIL_X, .y = layout.LOOT_FOOT_Y },
             .nearby => .{ .x = layout.LIST_X, .y = self.nearbyActionY(view) },
-            .equipment, .inventory, .stats, .passives, .skills => .{ .x = layout.DETAIL_X, .y = layout.ACTION_Y },
+            .equipment, .inventory, .stats, .passives, .skills, .quests => .{ .x = layout.DETAIL_X, .y = layout.ACTION_Y },
         };
         return raster.rect(at.x + i * (layout.ACTION_W + menu.ACTION_GAP), at.y, layout.ACTION_W, layout.ACTION_H);
     }
@@ -396,7 +401,7 @@ pub const Book = struct {
             },
             .inventory, .nearby, .loot => raster.rect(layout.LIST_X, (if (self.direct()) self.directTop() else y + layout.LIST_Y) + (@as(i32, @intCast(i)) - @as(i32, @intCast(self.top))) * layout.ROW_HEIGHT, layout.LIST_W, layout.ROW_HEIGHT),
             .passives, .skills => trees.cellBox(self.treePanel().?, view.class, i, self.treeView()),
-            .stats => unreachable,
+            .stats, .quests => unreachable,
         };
     }
     /// A command can shrink the list under the cursor before the next `step` clamps it.
@@ -422,8 +427,10 @@ pub const Book = struct {
             xp.say("Level  {d}     XP  {d} / {d}", .{ view.growth.level, view.growth.xp, view.growth.needed() });
             face.drawMiddle(xp.text(), layout.DETAIL_X, layout.HEADER_MID, font.SMALL, look.DIM);
             for (PAGES, 0..) |page, i| tab(face, layout.tabBox(i), page, self.page == page, view.device);
-            if (self.treePanel() == null) rl.drawLine(layout.DIVIDER_X, layout.CONTENT_TOP, layout.DIVIDER_X, layout.DIVIDER_FOOT, look.EDGE);
-            if (self.treePanel()) |panel| {
+            if (self.treePanel() == null and self.page != .quests) rl.drawLine(layout.DIVIDER_X, layout.CONTENT_TOP, layout.DIVIDER_X, layout.DIVIDER_FOOT, look.EDGE);
+            if (self.page == .quests) {
+                quest_log.draw(face, view.quests.entries, self.top, QUESTS_BOX);
+            } else if (self.treePanel()) |panel| {
                 trees.draw(panel, face, sprites, view.class, view.growth, self.treeView(), view.device, .{ .stats = view.stats(), .gear = view.inventory.gear, .steady = view.steady }, on);
             } else if (self.page == .stats) {
                 if (self.advanced) character_stats.drawAdvanced(face, view) else character_stats.draw(face, view);
@@ -447,7 +454,7 @@ pub const Book = struct {
         }
         if (!self.direct()) for ([_]bool{ false, true }) |next| {
             const m = raster.middleAt(layout.shoulderBox(next));
-            prompt_icon.Prompt.menuOn(view.device, if (next) menu.PAGE_NEXT else menu.PAGE_PREV).draw(face, m.x, m.y, font.BODY, 1);
+            prompt_icon.Prompt.menuOn(view.device, if (next) menu.PAGE_NEXT else menu.PAGE_PREV).draw(face, m.x, m.y, layout.TAB_TEXT, 1);
         };
     }
 
@@ -547,7 +554,7 @@ pub const Book = struct {
                     } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, look.itemInk(.normal));
                     listRow(face, x, y, n.label(&name_buf), inkOf(n.item()), n.command().verb());
                 },
-                .passives, .skills, .stats => unreachable,
+                .passives, .skills, .stats, .quests => unreachable,
             }
         }
     }
@@ -555,7 +562,7 @@ pub const Book = struct {
         return switch (self.page) {
             .inventory => (view.inventory.swapped(self.bagIndex(view).?, slot) catch view.inventory.gear).statsWithout(slot, view.base),
             .nearby, .loot => neededAttrs(view, self.selected(view).?, slot),
-            .equipment, .stats, .passives, .skills => view.inventory.gear.statsWithout(slot, view.base),
+            .equipment, .stats, .passives, .skills, .quests => view.inventory.gear.statsWithout(slot, view.base),
         };
     }
     fn drawDetail(self: *const Book, face: *const font.Face, view: View) void {
@@ -660,12 +667,26 @@ fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: in
     const m = raster.middleAt(r);
     const text = menu.named(page);
     const ink = if (on) look.TEXT else look.DIM;
+    const size = layout.TAB_TEXT;
     if (!device.pad()) {
         const prompt = prompt_icon.Prompt{ .key = page.shortcut().?.caption() };
-        const left = m.x - @divTrunc(prompt.width(face, font.BODY) + menu.PROMPT_GAP + face.width(text, font.BODY), 2);
-        const after = prompt.drawFrom(face, left, m.y, font.BODY, if (on) 1 else layout.OFF_TAB_A);
-        face.drawMiddle(text, after + menu.PROMPT_GAP, m.y, font.BODY, ink);
-    } else face.centred(text, m.x, m.y, font.BODY, ink);
+        const left = m.x - @divTrunc(tabWidth(face, page), 2);
+        const after = prompt.drawFrom(face, left, m.y, size, if (on) 1 else layout.OFF_TAB_A);
+        face.drawMiddle(text, after + menu.PROMPT_GAP, m.y, size, ink);
+    } else face.centred(text, m.x, m.y, size, ink);
+}
+/// A keyboard tab's shortcut and name, the widest it draws.
+fn tabWidth(face: *const font.Face, page: Page) i32 {
+    const prompt = prompt_icon.Prompt{ .key = page.shortcut().?.caption() };
+    return prompt.width(face, layout.TAB_TEXT) + menu.PROMPT_GAP + face.width(menu.named(page), layout.TAB_TEXT);
+}
+/// Every tab's shortcut and name fit inside it, in the loaded font.
+pub fn verifyTabs(face: *const font.Face) !void {
+    const room: i32 = @as(i32, @intFromFloat(layout.tabBox(0).width)) - 2 * layout.TAB_PAD;
+    var widest: i32 = 0;
+    for (PAGES) |page| widest = @max(widest, tabWidth(face, page));
+    if (widest > room) return error.TabOverflow;
+    std.debug.print("character tabs: widest label {d}px of {d}px\n", .{ widest, room });
 }
 fn offhandWeapon(gear: items.Gear, slot: items.Slot) ?items.Item {
     return if (slot == .left_hand) gear.twoHander() else null;
@@ -782,6 +803,34 @@ test "the book opens on its tabs: left and right choose one, confirm enters it, 
     try std.testing.expect(book.tabbing);
     try std.testing.expectEqual(Page.inventory, book.page);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
+}
+
+test "the quests tab is chosen from the tabs, scrolls once entered, and backs out to the tabs" {
+    const inv = items.Inventory{};
+    const growth = progress.State.of(.archer);
+    var view = testView(&inv, &growth);
+    const long = quest_log.Entry{ .title = "Quest", .asks = "a word " ** 40, .done = false };
+    const entries = [_]quest_log.Entry{long} ** 12;
+    view.quests = quest_log.Journal.of(&menu.TestFace{}, &entries, QUESTS_BOX);
+    try std.testing.expect(view.quests.last_top > 1);
+    const screen = display.WINDOW;
+    var book = Book{ .page = .skills };
+    book.open();
+    _ = book.step(&.{ .walk = .e }, screen, view);
+    try std.testing.expect(book.tabbing and book.page == .quests);
+    _ = book.step(&.{ .walk = .s }, screen, view);
+    try std.testing.expectEqual(@as(usize, 0), book.top);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view) == null);
+    try std.testing.expect(!book.tabbing);
+    _ = book.step(&.{ .walk = .s }, screen, view);
+    try std.testing.expectEqual(@as(usize, 1), book.top);
+    _ = book.step(&.{ .scroll = -100 }, screen, view);
+    try std.testing.expectEqual(view.quests.last_top, book.top);
+    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
+    try std.testing.expect(book.tabbing and book.page == .quests);
+    _ = book.step(&.{ .walk = .w }, screen, view);
+    try std.testing.expectEqual(Page.skills, book.page);
+    std.debug.print("quests tab: chosen from the tabs, scrolled to entry {d} once entered, back to the tabs\n", .{view.quests.last_top});
 }
 
 test "the passives tab reads menu input until entered, and a click on its drawn zoom enters and zooms" {

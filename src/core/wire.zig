@@ -26,6 +26,18 @@ pub fn counted(comptime T: type, comptime field: []const u8) ?[]const u8 {
     return null;
 }
 
+/// The name `field` of `T` was once written under, as `T` declares in its `WAS` pairs.
+pub fn formerly(comptime T: type, comptime field: []const u8) ?[]const u8 {
+    if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "WAS")) {
+        inline for (T.WAS) |entry| {
+            if (comptime !@hasField(T, entry[0])) @compileError(@typeName(T) ++ ".WAS names " ++ entry[0] ++ ", not its field");
+            if (comptime @hasField(T, entry[1])) @compileError(@typeName(T) ++ ".WAS reads " ++ entry[1] ++ ", still a field");
+            if (comptime std.mem.eql(u8, field, entry[0])) return entry[1];
+        }
+    }
+    return null;
+}
+
 pub fn maxSize(comptime T: type) usize {
     return maxSizeOf(Defaults, T);
 }
@@ -220,7 +232,8 @@ pub fn Codec(comptime Policy: type) type {
             var record = try Record.init(cursor);
             while (try record.next()) |entry| {
                 inline for (fields, 0..) |f, index| {
-                    if (std.mem.eql(u8, entry.name, f.name)) {
+                    const was = comptime formerly(T, f.name);
+                    if (std.mem.eql(u8, entry.name, f.name) or (was != null and std.mem.eql(u8, entry.name, was.?))) {
                         if (seen.isSet(index)) return error.Damaged;
                         seen.set(index);
                         if (comptime Policy.countField(T, f.name) != null) {
@@ -401,6 +414,23 @@ test "wire conversion skips retired fields and preserves signedness and named en
     try std.testing.expectEqual(@as(u16, 13), elements.get(.cold));
     try std.testing.expectEqual(@as(u16, 0), elements.get(.poison));
     std.debug.print("wire conversion: retired field skipped, unsafe signed casts refused, reordered enum keys retained and new key defaulted\n", .{});
+}
+
+test "a renamed field reads what was written under its former name" {
+    const C = Codec(Defaults);
+    const Old = struct { folk: u8, kept: u8 };
+    const New = struct {
+        npc: u8,
+        kept: u8,
+        pub const WAS = .{.{ "npc", "folk" }};
+    };
+    var bytes = std.ArrayList(u8).init(std.testing.allocator);
+    defer bytes.deinit();
+    try C.write(&bytes, Old{ .folk = 4, .kept = 9 });
+    var back: New = undefined;
+    try C.read(bytes.items, &back);
+    try std.testing.expectEqual(@as(u8, 4), back.npc);
+    try std.testing.expectEqual(@as(u8, 9), back.kept);
 }
 
 test "wire max size is exactly what the largest value writes" {

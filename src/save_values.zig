@@ -4,6 +4,8 @@ const progress = @import("play/progress.zig");
 const mathx = @import("core/mathx.zig");
 const wire = @import("core/wire.zig");
 const data = @import("save_data.zig");
+const script = @import("map/script.zig");
+const actor = @import("play/actor.zig");
 
 const SavedRng = struct { xoshiro256: [4]u64 };
 const Node = progress.passives.Node;
@@ -70,6 +72,48 @@ comptime {
     }
 }
 
+/// An NPC as kept: where it stands in `spot`, or, written before NPCs stood anywhere but a painted cell, in `at`.
+const SavedNpc = struct {
+    node: u8 = 0,
+    at: mathx.P = .{ .x = 0, .y = 0 },
+    spot: ?script.Spot = null,
+    name: script.Who = .{},
+    dialog: ?u8 = null,
+    shows: ?script.Cond = null,
+    looks: ?actor.Kind = null,
+};
+const NPC_KEPT = .{ "node", "name", "dialog", "shows", "looks" };
+
+comptime {
+    for (std.meta.fields(script.Npc)) |f| {
+        if (std.mem.eql(u8, f.name, "spot")) continue;
+        if (@FieldType(SavedNpc, f.name) != f.type) @compileError("SavedNpc does not keep script.Npc." ++ f.name);
+        for (NPC_KEPT) |kept| {
+            if (std.mem.eql(u8, kept, f.name)) break;
+        } else @compileError("NPC_KEPT misses script.Npc." ++ f.name);
+    }
+}
+
+test "an NPC kept before it could stand off a painted cell loads where it stood" {
+    const C = wire.Codec(Policy);
+    const Old = struct { node: u8, at: mathx.P, name: script.Who, dialog: ?u8 };
+    var bytes = std.ArrayList(u8).init(std.testing.allocator);
+    defer bytes.deinit();
+    try wire.Codec(struct {
+        pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {
+            return wire.counted(T, field);
+        }
+    }).write(&bytes, Old{ .node = 1, .at = .{ .x = 6, .y = 5 }, .name = script.Who.of("Wenna"), .dialog = 0 });
+    var back: script.Npc = undefined;
+    try C.read(bytes.items, &back);
+    try std.testing.expectEqualDeep(script.Npc{ .node = 1, .spot = .{ .at = .{ .x = 6, .y = 5 } }, .name = script.Who.of("Wenna"), .dialog = 0 }, back);
+    bytes.clearRetainingCapacity();
+    const now = script.Npc{ .node = 2, .spot = .{ .by = .caravan }, .looks = .pib, .shows = .{ .kind = .quest, .state = .done } };
+    try C.write(&bytes, now);
+    try C.read(bytes.items, &back);
+    try std.testing.expectEqualDeep(now, back);
+}
+
 pub const Policy = struct {
     pub fn restoreStart(state: *progress.State, class: hero.Class) void {
         state.nodes.set(progress.start(class));
@@ -87,11 +131,16 @@ pub const Policy = struct {
     }
 
     pub fn Stored(comptime T: type) type {
-        return if (T == mathx.Rng) SavedRng else if (T == progress.State) SavedProgress else T;
+        return if (T == mathx.Rng) SavedRng else if (T == progress.State) SavedProgress else if (T == script.Npc) SavedNpc else T;
     }
 
     pub fn encode(value: anytype) wire.Error!Stored(@TypeOf(value)) {
         if (@TypeOf(value) == mathx.Rng) return .{ .xoshiro256 = value.impl.s };
+        if (@TypeOf(value) == script.Npc) {
+            var result = SavedNpc{ .spot = value.spot };
+            inline for (NPC_KEPT) |name| @field(result, name) = @field(value, name);
+            return result;
+        }
         var result = SavedProgress{};
         inline for (std.meta.fields(progress.State)) |f| {
             if (comptime carried(f.name)) @field(result, f.name) = @field(value, f.name);
@@ -109,6 +158,11 @@ pub const Policy = struct {
             const rng = mathx.Rng{ .impl = .{ .s = stored.xoshiro256 } };
             if (!rng.valid()) return error.Damaged;
             return rng;
+        }
+        if (T == script.Npc) {
+            var npc = script.Npc{ .spot = stored.spot orelse .{ .at = stored.at } };
+            inline for (NPC_KEPT) |name| @field(npc, name) = @field(stored, name);
+            return npc;
         }
         var result = progress.State{};
         inline for (std.meta.fields(progress.State)) |f| {

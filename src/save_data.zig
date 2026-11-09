@@ -36,7 +36,7 @@ pub const Visit = @FieldType(Header, "visits");
 const HEAD_FIELDS = std.meta.fieldNames(Header);
 
 /// The level's first field added since raw saves were written; every field from it on is newer.
-const LEVEL_ADDED_FROM = "folk";
+const LEVEL_ADDED_FROM = "npc";
 /// What raw saves wrote before fields were added to the end of the level and the map; the legacy reader takes them in this shape.
 pub const LegacyLevel = blk: {
     const Level = @FieldType(Visit, "lv");
@@ -92,6 +92,7 @@ const UNSAVED = .{
         "loot_gold",
         "nearby",
         "pause_page",
+        "journal",
         "debug",
         "mode",
         "died_in",
@@ -314,15 +315,15 @@ test "the legacy shapes keep every byte older raw saves wrote and convert both w
     const now = try std.testing.allocator.create(Visit);
     defer std.testing.allocator.destroy(now);
     now.lv = grid.Level.blank();
-    now.lv.putFolk(.{ .x = 3, .y = 4 }, 2);
+    now.lv.putNpc(.{ .x = 3, .y = 4 }, 2);
     now.lv.tile[7] = .lava;
     convert(raw, now);
     try std.testing.expectEqual(grid.Tile.lava, raw.lv.tile[7]);
     now.lv.tile[7] = .floor;
     convert(now, raw);
     try std.testing.expectEqual(grid.Tile.lava, now.lv.tile[7]);
-    try std.testing.expectEqual(@as(?usize, null), now.lv.folkAt(.{ .x = 3, .y = 4 }));
-    std.debug.print("legacy shapes: map and level read without their added fields; a visit converts both ways and the added folk default\n", .{});
+    try std.testing.expectEqual(@as(?usize, null), now.lv.npcAt(.{ .x = 3, .y = 4 }));
+    std.debug.print("legacy shapes: map and level read without their added fields; a visit converts both ways and the added NPCs default\n", .{});
 }
 
 pub const Summary = struct {

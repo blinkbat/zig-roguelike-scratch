@@ -7,6 +7,8 @@ const procgen = @import("procgen.zig");
 const carve = @import("carve.zig");
 const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
+pub const post = @import("../play/post.zig");
+pub const raid = @import("../play/raid.zig");
 const climate = @import("climate.zig");
 const listing = @import("listing.zig");
 const atlas_text = @import("atlas_text.zig");
@@ -84,6 +86,8 @@ pub const Procgen = struct {
     feature_n: usize = 0,
     foes: pack.Spec = .{},
     sky: climate.Climate = .{},
+    post: post.Post = .{},
+    raid: raid.Raid = .{},
 
     pub fn features(self: *const Procgen) []const Feature {
         return self.feature[0..self.feature_n];
@@ -106,6 +110,8 @@ pub const Procgen = struct {
         q.floor = q.floor.fit();
         for (q.featuresMut()) |*f| f.* = f.fit();
         q.foes = q.foes.fit();
+        q.post = q.post.fit();
+        q.raid = q.raid.fit();
         return q;
     }
 
@@ -270,6 +276,14 @@ pub const Node = struct {
         return n;
     }
 
+    /// Raiders whose raid door this node does not have, so they never come.
+    pub fn raidAstray(self: *const Node) bool {
+        return switch (self.plan) {
+            .procgen => |*pg| pg.raid.raiders > 0 and pg.raid.raid_door >= self.door_n,
+            .bespoke => false,
+        };
+    }
+
     pub fn doors(self: *const Node) []const Door {
         return self.door[0..self.door_n];
     }
@@ -353,8 +367,9 @@ pub const Node = struct {
         return out[0..self.door_n];
     }
 
-    /// A procgen node's packs round the hero arriving at `at`, exit packs by its doors.
+    /// A procgen node's guards by its carts, then its packs round the hero arriving at `at`, exit packs by its doors.
     pub fn placePacks(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P) void {
+        post.place(lv, pool, self.plan.procgen.post);
         var buf: [grid.MAX_DOORS]P = undefined;
         pack.place(lv, pool, rng, at, self.doorCells(&buf), &self.plan.procgen.foes);
     }
@@ -406,8 +421,8 @@ pub const Atlas = struct {
         return self.node[0..self.node_n];
     }
 
-    /// Open bespoke floor with no door, barrel or foe on it; any folk already there aside.
-    pub fn folkFits(self: *const Atlas, n: usize, p: P) bool {
+    /// Open bespoke floor with no door, barrel or foe on it; any NPC already there aside.
+    pub fn npcFits(self: *const Atlas, n: usize, p: P) bool {
         if (n >= self.node_n or !grid.Level.inside(p)) return false;
         const nd = &self.node[n];
         return switch (nd.plan) {
@@ -416,39 +431,43 @@ pub const Atlas = struct {
         };
     }
 
-    pub fn folkGoes(self: *const Atlas, n: usize, p: P) bool {
-        return self.folkFits(n, p) and self.script.folkAt(n, p) == null and self.script.folk_n < script.MAX_FOLK;
-    }
-
-    /// Where node `n` takes a barrel: `Node.barrelGoes`, and no folk stands there.
+    /// Where node `n` takes a barrel: `Node.barrelGoes`, and no NPC stands there.
     pub fn barrelGoes(self: *const Atlas, n: usize, b: *const Bespoke, p: P) bool {
-        return self.node[n].barrelGoes(b, p) and self.script.folkAt(n, p) == null;
+        return self.node[n].barrelGoes(b, p) and self.script.npcAt(n, p) == null;
     }
 
-    /// Where node `n` takes a `k`: `Node.foeGoes`, and no folk stands there.
+    /// Where node `n` takes a `k`: `Node.foeGoes`, and no NPC stands there.
     pub fn foeGoes(self: *const Atlas, n: usize, b: *const Bespoke, p: P, k: actor.Kind) bool {
-        return self.node[n].foeGoes(b, p, k) and self.script.folkAt(n, p) == null;
+        return self.node[n].foeGoes(b, p, k) and self.script.npcAt(n, p) == null;
     }
 
-    /// Node `n`'s folk that no longer fit where they stand go, as `parse` would refuse them; whether any did.
-    pub fn pruneFolk(self: *Atlas, n: usize) bool {
-        var pruned = false;
-        var i: usize = self.script.folk_n;
-        while (i > 0) {
-            i -= 1;
-            const f = self.script.folk[i];
-            if (f.node != n or self.folkFits(n, f.at)) continue;
-            self.script.dropFolk(@intCast(i));
-            pruned = true;
-        }
-        return pruned;
+    /// Node `n`'s NPCs that no longer fit where they stand go, as `parse` would refuse them; whether any did.
+    pub fn pruneNpcs(self: *Atlas, n: usize) bool {
+        return self.script.dropNpcsWhere(struct {
+            map: *const Atlas,
+            node: usize,
+            pub fn drops(on: @This(), _: usize, npc: *const script.Npc) bool {
+                const at = npc.cell() orelse return false;
+                return npc.node == on.node and !on.map.npcFits(on.node, at);
+            }
+        }{ .map = self, .node = n });
     }
 
-    /// Node `n`'s folk onto its level, where they can still stand.
-    pub fn stampFolk(self: *const Atlas, n: usize, lv: *grid.Level) void {
-        lv.clearFolk();
-        for (self.script.folks(), 0..) |*f, i| {
-            if (f.node == n and lv.walkable(f.at) and !lv.taken(f.at)) lv.putFolk(f.at, i);
+    /// Node `n`'s NPCs that `shown.shows` onto its level, where they can still stand: a painted one on its cell,
+    /// any other where `stood` keeps it, else on its spot found now, off the node's own foes, every other NPC's cell, shown or not, and `shown.lying`, and kept there.
+    pub fn stampNpcs(self: *const Atlas, n: usize, lv: *grid.Level, stood: *script.Stood, shown: anytype) void {
+        lv.clearNpcs();
+        var avoid = shown.lying();
+        for (self.node[n].placed()) |f| avoid.set(grid.Level.idx(f.at));
+        for (self.script.npcs(), 0..) |*npc, i| if (npc.node == n) if (self.script.standsAt(i, stood)) |c| avoid.set(grid.Level.idx(c));
+        for (self.script.npcs(), 0..) |*npc, i| {
+            if (npc.node != n or !shown.shows(i)) continue;
+            const at = self.script.standsAt(i, stood) orelse blk: {
+                const p = spotFor(lv, npc.spot, &avoid) orelse continue;
+                stood[i] = p;
+                break :blk p;
+            };
+            if (lv.vacant(at)) lv.putNpc(at, i);
         }
     }
 
@@ -497,6 +516,12 @@ pub const Atlas = struct {
         self.unlink(at);
         const nd = &self.node[at.node];
         mathx.removeAt(Door, &nd.door, &nd.door_n, at.door, null);
+        if (nd.plan == .procgen) {
+            const r = &nd.plan.procgen.raid;
+            if (script.renumbered(r.raid_door, at.door)) |door_index| {
+                r.raid_door = door_index;
+            } else r.* = .{};
+        }
         self.renumber(at, Atlas.pastDoor);
     }
 
@@ -562,10 +587,77 @@ pub const Atlas = struct {
         const nd = &self.node[from.node];
         if (nd.unrolled()) return true;
         nd.sketch(scratch);
-        self.stampFolk(from.node, scratch);
+        var stood: script.Stood = @splat(null);
+        self.stampNpcs(from.node, scratch, &stood, EVERY_NPC);
         return landing(scratch, from.at, nd.placed()) != null;
     }
 };
+
+/// Shows every NPC, whatever its condition, with nothing lying anywhere.
+pub const EVERY_NPC = struct {
+    pub fn shows(_: @This(), _: usize) bool {
+        return true;
+    }
+
+    pub fn lying(_: @This()) grid.CellSet {
+        return grid.CellSet.initEmpty();
+    }
+}{};
+
+/// Where an NPC placed by `spot` stands on `lv`: free dry ground off the rim, every door and `avoid`.
+pub fn spotFor(lv: *const grid.Level, spot: script.Spot, avoid: *const grid.CellSet) ?P {
+    return switch (spot) {
+        .at => |p| p,
+        .by => |t| beside(lv, t, avoid),
+        .far => farFromDoors(lv, avoid),
+    };
+}
+
+fn standsFree(lv: *const grid.Level, p: P, avoid: *const grid.CellSet) bool {
+    return !grid.Level.onRim(p) and lv.vacant(p) and lv.doorAt(p) == null and !lv.at(p).wet() and !avoid.isSet(grid.Level.idx(p));
+}
+
+/// Beside the first `t` in reading order with room round it: in front of it before its sides, its sides before behind it.
+fn beside(lv: *const grid.Level, t: grid.Tile, avoid: *const grid.CellSet) ?P {
+    for (lv.tile, 0..) |here, i| {
+        if (here != t) continue;
+        const foot = t.footprint(grid.Level.of(i));
+        var best: ?P = null;
+        var rank: i32 = std.math.maxInt(i32);
+        var ring = foot.grown(1).cells();
+        while (ring.next()) |q| {
+            if (foot.holds(q) or !grid.Level.inside(q) or !standsFree(lv, q, avoid)) continue;
+            const r: i32 = if (q.y > foot.lo.y) 0 else if (q.y == foot.lo.y) 1 else 2;
+            if (r >= rank) continue;
+            best = q;
+            rank = r;
+        }
+        if (best) |b| return b;
+    }
+    return null;
+}
+
+/// The free ground the longest walk from the nearest door; from the first open cell when there is none.
+fn farFromDoors(lv: *const grid.Level, avoid: *const grid.CellSet) ?P {
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    var doors: ?grid.Flood = null;
+    for (0..grid.CELLS) |i| {
+        const d = grid.Level.of(i);
+        if (lv.doorAt(d) == null) continue;
+        if (doors) |*f| f.seed(d) else doors = grid.Flood.init(lv, d, &dist, &queue);
+    }
+    var flood = doors orelse grid.Flood.init(lv, lv.firstOpen() orelse return null, &dist, &queue);
+    while (flood.next()) |_| {}
+    var best: ?P = null;
+    var most: i32 = -1;
+    for (dist, 0..) |d, i| {
+        if (d <= most or !standsFree(lv, grid.Level.of(i), avoid)) continue;
+        best = grid.Level.of(i);
+        most = d;
+    }
+    return best;
+}
 
 pub const NO_FLOOR = "{s} has no open floor to start on";
 pub const NOT_LOADED = "{s} did not load ({s})";
@@ -631,6 +723,26 @@ test "removing a node unlinks the doors into it and renumbers the rest" {
     try std.testing.expectEqual(@as(usize, 1), a.start.node);
     a.removeDoor(.{ .node = 1, .door = 0 });
     try std.testing.expectEqual(@as(?Link, null), a.node[0].door[0].to);
+}
+
+test "removing doors preserves the raid entrance or clears its removed reference" {
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const n = a.add(.{ .procgen = .{ .raid = .{ .raiders = 3, .raid_door = 1 } } }).?;
+    for (0..3) |i| _ = a.addDoor(n, .{ .x = @intCast(5 + i), .y = 5 });
+    const entrance = a.node[n].door[1].at;
+    a.removeDoor(.{ .node = n, .door = 2 });
+    try std.testing.expectEqual(@as(u8, 1), a.node[n].plan.procgen.raid.raid_door);
+    a.removeDoor(.{ .node = n, .door = 0 });
+    const r = &a.node[n].plan.procgen.raid;
+    try std.testing.expectEqual(@as(u8, 0), r.raid_door);
+    try std.testing.expectEqual(@as(u8, 3), r.raiders);
+    try std.testing.expect(entrance.eq(a.node[n].door[r.raid_door].at));
+    a.removeDoor(.{ .node = n, .door = 0 });
+    try std.testing.expectEqualDeep(raid.Raid{}, r.*);
+    _ = a.addDoor(n, .{ .x = 8, .y = 5 });
+    try std.testing.expectEqual(@as(u8, 0), r.raiders);
+    std.debug.print("raid entrance: later deletion preserves it, earlier deletion renumbers it, removal clears it before replacement\n", .{});
 }
 
 test "a bespoke node's doors open their cells and a torch hangs only over floor" {
@@ -820,6 +932,91 @@ test "the strand's door leads to a tee: the whole caravan camp walks from where 
     std.debug.print("the caravan over {d} rolls: every open cell walks from its door at {d},{d}; {d} carts, {d} bridged in stone\n", .{ RUNS, door.x, door.y, carts, bridges });
     try std.testing.expect(carts >= RUNS * 2);
     try std.testing.expectEqual(@as(usize, RUNS), bridges);
+}
+
+test "the caravan posts three guards beside its carts, apart from the merchant, and no foe near a cart, on every roll" {
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    try a.load(std.testing.allocator, START);
+    const link = a.node[a.start.node].doors()[0].to orelse return error.NoLink;
+    const nd = &a.node[link.node];
+    var lv: grid.Level = undefined;
+    var fewest: usize = post.GUARDS_MAX;
+    var foes: usize = 0;
+    const RUNS = 50;
+    for (0..RUNS) |i| {
+        const seed = 0x6A2D +% i *% grid.TEST_SEED_STRIDE;
+        var stood: script.Stood = @splat(null);
+        nd.stamp(&lv, seed);
+        a.stampNpcs(link.node, &lv, &stood, EVERY_NPC);
+        const at = landing(&lv, nd.doors()[link.door].at, &.{}) orelse return error.NoFloor;
+        var pool = actor.Pool{};
+        _ = pool.spawn(&lv, actor.Actor.of(actor.HERO, at));
+        var rng = mathx.Rng.init(seed);
+        nd.placePacks(&lv, &pool, &rng, at);
+        var guards: usize = 0;
+        for (pool.constSlice()) |g| {
+            if (g.foe()) {
+                var near = grid.Cells.around(g.at, pack.CAMP_GAP - 1);
+                while (near.next()) |q| try std.testing.expect(!grid.Level.inside(q) or (lv.at(q) != .caravan and lv.at(q) != .caravan_part));
+                foes += 1;
+            }
+            if (g.kind != post.GUARD) continue;
+            guards += 1;
+            try std.testing.expect(lv.npcAt(g.at) == null);
+            var cart = false;
+            var round = grid.Cells.around(g.at, 1);
+            while (round.next()) |q| cart = cart or (grid.Level.inside(q) and (lv.at(q) == .caravan or lv.at(q) == .caravan_part));
+            try std.testing.expect(cart);
+        }
+        fewest = @min(fewest, guards);
+    }
+    std.debug.print("the caravan over {d} rolls: at least {d} guards, each beside a cart; {d} foes, none within {d} cells of a cart\n", .{ RUNS, fewest, foes, pack.CAMP_GAP - 1 });
+    try std.testing.expect(foes > RUNS);
+    try std.testing.expectEqual(@as(usize, 3), fewest);
+}
+
+test "the caravan's merchant stands beside a cart, and the stolen baby pib far up the goblin camp, on every roll" {
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    try a.load(std.testing.allocator, START);
+    const caravan = (a.node[a.start.node].doors()[0].to orelse return error.NoLink).node;
+    const north = a.node[caravan].doors()[1].to orelse return error.NoLink;
+    const s = &a.script;
+    const merchant = for (s.npcs(), 0..) |f, i| {
+        if (f.node == caravan and std.mem.eql(u8, f.called(), "Merchant")) break i;
+    } else return error.NoMerchant;
+    const baby = for (s.npcs(), 0..) |f, i| {
+        if (f.node == north.node) break i;
+    } else return error.NoBabyPib;
+    try std.testing.expect(s.findQuest("stolen_pib") != null);
+    var lv: grid.Level = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    var nearest_walk: i32 = grid.CELLS;
+    const door = a.node[north.node].doors()[north.door].at;
+    const RUNS = 50;
+    for (0..RUNS) |i| {
+        const seed = 0xFA2 +% i *% grid.TEST_SEED_STRIDE;
+        var stood: script.Stood = @splat(null);
+        a.node[caravan].stamp(&lv, seed);
+        a.stampNpcs(caravan, &lv, &stood, EVERY_NPC);
+        const at = stood[merchant] orelse return error.NoPlace;
+        try std.testing.expectEqual(@as(?usize, merchant), lv.npcAt(at));
+        var cart = false;
+        var round = grid.Cells.around(at, 1);
+        while (round.next()) |q| cart = cart or (grid.Level.inside(q) and (lv.at(q) == .caravan or lv.at(q) == .caravan_part));
+        try std.testing.expect(cart);
+        a.node[north.node].stamp(&lv, seed);
+        a.stampNpcs(north.node, &lv, &stood, EVERY_NPC);
+        const pib = stood[baby] orelse return error.NoPlace;
+        _ = grid.distances(&lv, door, &dist, &queue);
+        const walk = dist[grid.Level.idx(pib)];
+        try std.testing.expect(walk > 0);
+        nearest_walk = @min(nearest_walk, walk);
+    }
+    std.debug.print("start map over {d} rolls: the merchant beside a cart every time; the baby pib at least {d} steps from the goblin camp's door\n", .{ RUNS, nearest_walk });
+    try std.testing.expect(nearest_walk >= grid.H / 2);
 }
 
 test "the strand grows a few glowing plants on every roll" {

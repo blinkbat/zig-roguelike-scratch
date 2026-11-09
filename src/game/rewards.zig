@@ -9,6 +9,7 @@ const damage = @import("../play/damage.zig");
 const areas = @import("../play/area.zig");
 const items = @import("../play/items.zig");
 const progress = @import("../play/progress.zig");
+const raid = @import("../play/raid.zig");
 const flask = @import("../play/flask.zig");
 const consumable = @import("../play/consumable.zig");
 const Simulation = @import("sim.zig").Simulation;
@@ -103,19 +104,21 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     sim.pool.items[slot].unmask(&sim.lv);
     const fallen = sim.pool.items[slot];
     if (fallen.kind.ally()) {
-        sim.sayAt(fallen.at, "The {s} crumbles.", .{actor.row(fallen.kind).name});
+        sim.sayAt(fallen.at, "The {s} {s}.", .{ actor.row(fallen.kind).name, actor.row(fallen.kind).falls });
         return .{ .gold = 0, .frightened = .initEmpty() };
     }
     sim.kills +|= 1;
     sim.plot.died(fallen.kind);
-    gainExperience(sim, fallen.kind);
-    const reward = lootOf(sim, fallen);
+    const spoils = !fallen.raider;
+    const xp = progress.xpOf(fallen.kind);
+    gainExperience(sim, if (spoils) xp else std.math.divCeil(u32, xp, raid.XP_DIVISOR) catch unreachable);
+    const reward: items.Loot = if (spoils) lootOf(sim, fallen) else .{};
     if (reward.gold > 0) dropGold(sim, fallen.at, reward.gold);
     if (reward.item) |item| dropItem(sim, .{ .item = item, .at = fallen.at, .source = target.value });
     if (reward.supply) |k| _ = dropSupply(sim, .{ .kind = k, .at = fallen.at, .source = target.value });
-    for (std.enums.values(flask.Kind)) |k| if (sim.inventory.gear.holds(k)) sim.flasks.getPtr(k).fill(flask.PER_KILL);
+    if (spoils) for (std.enums.values(flask.Kind)) |k| if (sim.inventory.gear.holds(k)) sim.flasks.getPtr(k).fill(flask.PER_KILL);
     const mana_before = sim.mana;
-    if (sim.heroBody()) |h| if (h.alive) sim.gainMana(sim.inventory.gear.manaOnKill());
+    if (spoils) if (sim.heroBody()) |h| if (h.alive) sim.gainMana(sim.inventory.gear.manaOnKill());
     var caught = Caught.initEmpty();
     switch (actor.row(fallen.kind).blow) {
         .burst => |b| switch (b) {
@@ -132,7 +135,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
         .strike => {},
     }
     const family = fallen.kind.family();
-    if (sim.pool.tally(family).left == 0) {
+    if (spoils and sim.pool.tally(family).left == 0) {
         sim.log.say("The last {s} is dead.", .{actor.row(family).name});
         sim.chronicle.mark(.{ .cleared = family });
     }
@@ -238,8 +241,7 @@ fn litFlames(sim: *const Simulation, area: *const areas.Burst) usize {
     return n;
 }
 
-fn gainExperience(sim: *Simulation, kind: actor.Kind) void {
-    const xp = progress.xpOf(kind);
+fn gainExperience(sim: *Simulation, xp: u32) void {
     const before = sim.growth;
     const levels = sim.growth.gain(xp);
     sim.log.push(.progress, "{s} gains {d} experience.", .{ sim.name.text(), xp });

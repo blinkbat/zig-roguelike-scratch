@@ -571,19 +571,19 @@ test "a modal, rename, view or tool change disarms a node deletion" {
     try std.testing.expectEqual(nodes, ed.map.node_n);
 }
 
-test "the Dialog page forgets a folk pick whose list changed while it was shut" {
+test "the Dialog page forgets an NPC pick whose list changed while it was shut" {
     const ed = try testEditor();
     defer ed.destroy();
-    for (0..3) |i| _ = ed.map.script.addFolk(.{ .at = .{ .x = @intCast(2 + i), .y = 2 } }).?;
-    editor.plot.openFolk(ed, 1);
+    for (0..3) |i| _ = ed.map.script.addNpc(.{ .spot = .{ .at = .{ .x = @intCast(2 + i), .y = 2 } } }).?;
+    editor.plot.openNpc(ed, 1);
     ed.plot.seen = editor.plot.Seen.of(&ed.map.script);
     ed.modal = .none;
     editor.plot.open(ed, .dialogs);
-    try std.testing.expectEqual(editor.plot.Pick{ .folk = 1 }, ed.plot.pick);
+    try std.testing.expectEqual(editor.plot.Pick{ .npc = 1 }, ed.plot.pick);
     ed.modal = .none;
-    ed.map.script.dropFolk(0);
+    ed.map.script.dropNpc(0);
     editor.plot.open(ed, .dialogs);
-    try std.testing.expect(ed.plot.pick != .folk);
+    try std.testing.expect(ed.plot.pick != .npc);
 }
 
 test "a node added is named as it is added, one undo for both" {
@@ -755,7 +755,7 @@ test "paste previews reuse unchanged content and follow cells clipboard terrain 
     ed.board.cells.foe[0].kind = .pib;
     try std.testing.expectEqual(@as(usize, 0), placement.layAside(ed, at).left);
     try std.testing.expectEqual(actor.Kind.pib, ed.trial.foe[ed.trial.foeAt(beside).?].kind);
-    click(ed, .folk, at);
+    click(ed, .npc, at);
     ed.modal = .none;
     try std.testing.expectEqual(@as(usize, 1), placement.layAside(ed, at).left);
     ed.undo();
@@ -1243,47 +1243,47 @@ fn typeInto(ed: *editor.Editor, s: []const u8) void {
     editor.plot.keys(ed);
 }
 
-test "folk: placing one opens its words, typing is one undo step, and nothing else may share its cell" {
+test "NPC: placing one opens its words, typing is one undo step, and nothing else may share its cell" {
     const ed = try testBespoke();
     defer ed.destroy();
     ed.tool = .paint;
     placement.laySpan(ed, .{ .from = .{ .x = 4, .y = 5 }, .erase = false, .shape = .rect }, .{ .x = 9, .y = 8 });
     const at = P{ .x = 6, .y = 6 };
-    click(ed, .folk, at);
+    click(ed, .npc, at);
     try std.testing.expectEqual(editor.Modal{ .plot = .dialogs }, ed.modal);
-    try std.testing.expectEqual(editor.plot.Pick{ .folk = 0 }, ed.plot.pick);
+    try std.testing.expectEqual(editor.plot.Pick{ .npc = 0 }, ed.plot.pick);
     ed.modal = .none;
     click(ed, .{ .foe = .rat }, at);
     click(ed, .barrel, at);
     try std.testing.expect(ed.map.node[0].plan.bespoke.foeAt(at) == null);
     try std.testing.expect(!ed.map.node[0].plan.bespoke.barrel[grid.Level.idx(at)]);
     ed.modal = .{ .plot = .dialogs };
-    ed.plot.focus = .{ .folk = 0 };
+    ed.plot.focus = .{ .npc = 0 };
     ed.plot.field.set("");
     ed.gesture();
     const before = ed.history.at;
     typeInto(ed, "Old ");
     typeInto(ed, "Wenna");
-    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.folk[0].name.text());
+    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.npc[0].name.text());
     try std.testing.expectEqual(before + 1, ed.history.at);
     ed.desk = .{ .paste = true, .paste_text = "x" ** atlas.script.WHO_MAX };
     editor.plot.keys(ed);
-    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.folk[0].name.text());
+    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.npc[0].name.text());
     ed.desk = .{ .undo = true };
     editor.plot.keys(ed);
-    try std.testing.expectEqualStrings("", ed.map.script.folk[0].name.text());
+    try std.testing.expectEqualStrings("", ed.map.script.npc[0].name.text());
     try std.testing.expect(ed.plot.focus == null);
     ed.desk = .{ .redo = true, .paint_hit = true };
     editor.plot.keys(ed);
-    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.folk[0].name.text());
-    ed.map.script.folk[0].name = atlas.script.Who.of("Wenna");
+    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.npc[0].name.text());
+    ed.map.script.npc[0].name = atlas.script.Who.of("Wenna");
     ed.bank();
     ed.undo();
-    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.folk[0].name.text());
+    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.npc[0].name.text());
     ed.undo();
-    try std.testing.expectEqualStrings("", ed.map.script.folk[0].name.text());
+    try std.testing.expectEqualStrings("", ed.map.script.npc[0].name.text());
     ed.modal = .none;
     paintClick(ed, .wall, at);
-    try std.testing.expectEqual(@as(u8, 0), ed.map.script.folk_n);
-    std.debug.print("editor folk: placement opens its words, foe and barrel refused on it, typing undone in one step, a wall takes it away\n", .{});
+    try std.testing.expectEqual(@as(u8, 0), ed.map.script.npc_n);
+    std.debug.print("editor NPCs: placement opens its words, foe and barrel refused on it, typing undone in one step, a wall takes it away\n", .{});
 }

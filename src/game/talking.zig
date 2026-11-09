@@ -3,6 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const script = @import("../map/script.zig");
 const trigger = @import("../play/trigger.zig");
+const items = @import("../play/items.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
 const menu = @import("../ui/menu.zig");
 const panel = @import("../ui/talk.zig");
@@ -19,40 +20,88 @@ pub fn afterTurn(g: *game.Game) void {
     const s = scriptOf(g) orelse return;
     if (g.mode == .dead) return;
     g.sim.plot.turn(s, g.sim.world(), &g.sim.log);
+    restand(g);
 }
 
 /// On arriving at a node, no time passing.
 pub fn arrived(g: *game.Game) void {
     const s = scriptOf(g) orelse return;
     g.sim.plot.evaluate(s, g.sim.world(), &g.sim.log);
+    restand(g);
+    g.pic.npc_shown = g.sim.lv.npc;
+    g.pic.quests_shown = g.sim.plot.quests;
 }
 
-/// A folk with something to say the hero sees standing beside it.
+/// The NPCs the plot lets stand, and the node's ground drops a new spot keeps off.
+const Standing = struct {
+    rt: *const trigger.Runtime,
+    s: *const script.Script,
+    w: trigger.World,
+    ground: *const items.Ground,
+
+    pub fn shows(self: Standing, i: usize) bool {
+        return self.rt.shows(self.s, i, self.w);
+    }
+
+    pub fn lying(self: Standing) grid.CellSet {
+        return self.ground.lying();
+    }
+};
+
+/// Node `n`'s NPCs onto `lv`, those whose condition holds where they stand this run.
+pub fn stampNpcs(g: *game.Game, n: usize, lv: *grid.Level) void {
+    stampIn(g, n, lv, g.sim.world());
+}
+
+/// Node `n`'s NPCs as the hero arrives at `at`, before a fresh node's foes stand: its own world, not the one left.
+pub fn stampEntering(g: *game.Game, n: usize, at: P, back: bool) void {
+    var world = g.sim.world();
+    world.node = n;
+    world.hero = at;
+    if (!back) world.alive = .initFill(0);
+    stampIn(g, n, &g.sim.lv, world);
+}
+
+fn stampIn(g: *game.Game, n: usize, lv: *grid.Level, world: trigger.World) void {
+    const w = g.sim.map orelse return lv.clearNpcs();
+    const ground = if (n == g.sim.node) &g.sim.ground else &g.sim.visits[n].ground;
+    w.stampNpcs(n, lv, &g.sim.plot.spots, Standing{ .rt = &g.sim.plot, .s = &w.script, .w = world, .ground = ground });
+}
+
+/// The hero's node's NPCs again, as what the plot says may have changed who stands.
+pub fn restand(g: *game.Game) void {
+    stampNpcs(g, g.sim.node, &g.sim.lv);
+}
+
+/// An NPC with something to say the hero sees drawn beside it.
 pub fn beside(g: *game.Game) ?usize {
     const s = scriptOf(g) orelse return null;
     const at = g.sim.heroAt() orelse return null;
     var cells = grid.Cells.around(at, game.INTERACT_REACH);
     while (cells.next()) |p| {
-        if (p.eq(at) or !g.sim.lv.isLit(p)) continue;
-        const f = g.sim.lv.folkAt(p) orelse continue;
-        if (f < s.folk_n) if (s.folk[f].dialog) |d| if (s.opens(d)) return f;
+        if (p.eq(at) or !g.pic.litShown(&g.sim, p)) continue;
+        const f = g.pic.npcShown(p) orelse continue;
+        if (f < s.npc_n) if (s.npc[f].dialog) |d| if (s.opens(d)) return f;
     }
     return null;
 }
 
-/// Opens the folk's conversation; speaking spends no turn.
-pub fn speak(g: *game.Game, folk: usize) void {
+/// Opens the NPC's conversation; speaking spends no turn.
+pub fn speak(g: *game.Game, npc: usize) void {
     const s = scriptOf(g) orelse return;
-    if (folk >= s.folk_n) return;
-    const f = &s.folk[folk];
-    if (g.sim.heroAt()) |at| g.pic.turnHero(&g.sim, f.at.x - at.x);
+    if (npc >= s.npc_n) return;
+    const who = &s.npc[npc];
+    if (g.sim.heroAt()) |at| if (g.sim.plot.spotOf(s, npc)) |there| g.pic.turnHero(&g.sim, there.x - at.x);
     game.holdWalk(g);
-    if (f.dialog) |d| if (g.sim.plot.open(s, d, @intCast(folk), &g.sim.log)) {
-        g.mode = .talk;
-        g.sim.unsaved = true;
-        return;
-    };
-    g.sim.log.say("{s} has nothing to say.", .{f.called()});
+    if (who.dialog) |d| if (g.sim.plot.open(s, d, @intCast(npc), &g.sim.log)) return opened(g);
+    g.sim.log.say("{s} has nothing to say.", .{who.called()});
+}
+
+fn opened(g: *game.Game) void {
+    game.holdWalk(g);
+    g.mode = .talk;
+    g.sim.unsaved = true;
+    restand(g);
 }
 
 /// A conversation up, or one a trigger asked for once the turn is drawn: it takes the screen.
@@ -67,9 +116,7 @@ pub fn due(g: *game.Game) bool {
         return false;
     };
     if (!g.sim.plot.open(s, g.sim.plot.takeAsked().?, null, &g.sim.log)) return false;
-    game.holdWalk(g);
-    g.mode = .talk;
-    g.sim.unsaved = true;
+    opened(g);
     return true;
 }
 
@@ -109,8 +156,10 @@ pub fn step(g: *game.Game) void {
     };
     if (!picked and rt.talk != null and (g.st.hit(menu.CONFIRM) or g.st.clicked(shown.layout.action))) {
         rt.confirm(s, w, &g.sim.log);
+        picked = true;
         g.sim.unsaved = true;
     }
+    if (picked) restand(g);
     if (rt.talk == null) finished(g);
 }
 
@@ -145,7 +194,7 @@ fn testWorld(text: []const u8) !*atlas.Atlas {
 
 const press = harness.press;
 
-test "bumping a folk opens its conversation without a turn; it closes only through an ending" {
+test "bumping an NPC opens its conversation without a turn; it closes only through an ending" {
     const w = try testWorld(
         \\flag met
         \\dialog wenna
@@ -157,14 +206,14 @@ test "bumping a folk opens its conversation without a turn; it closes only throu
         \\act flag met on
         \\say Wenna. I keep the cistern.
         \\then root
-        \\folk 0 6 5 wenna Old Wenna
-        \\folk 0 5 6 -
+        \\npc 0 6 5 wenna Old Wenna
+        \\npc 0 5 6 -
     );
     defer std.testing.allocator.destroy(w);
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     game.beginMapAt(g, w, w.start, 9);
-    try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.folkAt(.{ .x = 6, .y = 5 }));
+    try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(.{ .x = 6, .y = 5 }));
     try std.testing.expect(!g.sim.lv.vacant(.{ .x = 6, .y = 5 }));
     const turns = g.sim.plot.turns;
     const at = g.sim.heroActor().?.at;
@@ -187,7 +236,7 @@ test "bumping a folk opens its conversation without a turn; it closes only throu
     game.heroStep(g, .s, 0);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqualStrings("Stranger has nothing to say.", g.sim.log.line(0).?);
-    std.debug.print("folk: bump opens a conversation on turn {d}; back refused, two lines walked and an ending closes it\n", .{turns});
+    std.debug.print("NPCs: bump opens a conversation on turn {d}; back refused, two lines walked and an ending closes it\n", .{turns});
 }
 
 test "a choice clicked while confirm is pressed is one pick" {
@@ -202,7 +251,7 @@ test "a choice clicked while confirm is pressed is one pick" {
         \\act flag met on
         \\say Wenna. I keep the cistern.
         \\then root
-        \\folk 0 6 5 wenna Old Wenna
+        \\npc 0 6 5 wenna Old Wenna
     );
     defer std.testing.allocator.destroy(w);
     const g = try game.boot(std.testing.allocator);
@@ -227,7 +276,7 @@ test "a direction held as the conversation moves to another line does not walk t
         \\say Well?
         \\ask Stay. -> end
         \\ask Go. -> end
-        \\folk 0 6 5 wenna Old Wenna
+        \\npc 0 6 5 wenna Old Wenna
     );
     defer std.testing.allocator.destroy(w);
     const g = try game.boot(std.testing.allocator);
@@ -253,8 +302,8 @@ test "a dialog no way through ends never opens, while one whose way out is gated
         \\say Not yet.
         \\ask Leave. -> end
         \\need flag met on
-        \\folk 0 6 5 loop Looper
-        \\folk 0 5 6 gated Keeper
+        \\npc 0 6 5 loop Looper
+        \\npc 0 5 6 gated Keeper
     );
     defer std.testing.allocator.destroy(w);
     try std.testing.expect(!w.script.dialog[0].ends());
@@ -280,7 +329,7 @@ test "a dialog with a reachable line no way out of never opens, though its first
         \\line held
         \\say Stay forever.
         \\then held
-        \\folk 0 6 5 trap Trapper
+        \\npc 0 6 5 trap Trapper
     );
     defer std.testing.allocator.destroy(w);
     try std.testing.expect(!w.script.dialog[0].ends());
@@ -293,7 +342,7 @@ test "a dialog with a reachable line no way out of never opens, though its first
     try std.testing.expectEqualStrings("Trapper has nothing to say.", g.sim.log.line(0).?);
 }
 
-test "a way out that never shows ends nothing: its folk has nothing to say and a trigger asking for it goes on" {
+test "a way out that never shows ends nothing: its NPC has nothing to say and a trigger asking for it goes on" {
     const w = try testWorld(
         \\flag reward
         \\dialog stuck
@@ -302,7 +351,7 @@ test "a way out that never shows ends nothing: its folk has nothing to say and a
         \\ask Again. -> root
         \\ask Bye. -> end
         \\need never
-        \\folk 0 6 5 stuck Stuck
+        \\npc 0 6 5 stuck Stuck
         \\trigger asks 0 once live
         \\when elapsed >= 1
         \\do dialog stuck
@@ -321,6 +370,136 @@ test "a way out that never shows ends nothing: its folk has nothing to say and a
     try std.testing.expectEqual(@as(?u8, null), g.sim.plot.asked);
     try std.testing.expect(g.sim.plot.flags[0]);
     try std.testing.expect(!g.sim.plot.runs[0].held);
+}
+
+test "NPCs stand by a prop and far off; a quest given, carried and finished takes one away and brings another" {
+    const w = try testWorld(
+        \\flag carrying
+        \\quest pib The Stolen Pib
+        \\stage Find it.
+        \\stage Bring it back.
+        \\dialog merchant
+        \\line root
+        \\say Well met.
+        \\ask Help? -> help
+        \\need quest pib unstarted
+        \\ask Here it is. -> thanks
+        \\need flag carrying on
+        \\ask Bye. -> end
+        \\line help
+        \\say Find my pib.
+        \\act quest pib stage 1
+        \\line thanks
+        \\say Thank you.
+        \\act flag carrying off
+        \\act quest pib done
+        \\dialog lost
+        \\line root
+        \\say Squeak.
+        \\ask Take it. -> end
+        \\gets flag carrying on
+        \\gets quest pib stage 2
+        \\npc 0 by chest merchant Merchant
+        \\npc 0 far lost Baby pib
+        \\shows stage pib < 2
+        \\looks pib
+        \\npc 0 by chest - Baby pib
+        \\shows quest pib done
+    );
+    defer std.testing.allocator.destroy(w);
+    const chest = P{ .x = 10, .y = 6 };
+    w.node[0].plan.bespoke.tile[grid.Level.idx(chest)] = .chest;
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, 9);
+    try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(.{ .x = 9, .y = 7 }));
+    const far = g.sim.plot.spots[1] orelse return error.NoPlace;
+    try std.testing.expectEqual(@as(?usize, 1), g.sim.lv.npcAt(far));
+    try std.testing.expect(mathx.dist(far, .{ .x = 2, .y = 2 }) >= 15);
+    try std.testing.expectEqual(@as(?P, null), g.sim.plot.spots[2]);
+    speak(g, 0);
+    press(g, menu.CONFIRM);
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(trigger.Progress{ .state = .active, .stage = 1 }, g.sim.plot.quests[0]);
+    try std.testing.expectEqualStrings("New quest: The Stolen Pib.", g.sim.log.line(0).?);
+    speak(g, 1);
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try std.testing.expectEqual(@as(?usize, null), g.sim.lv.npcAt(far));
+    try std.testing.expectEqual(@as(u8, 2), g.sim.plot.quests[0].stage);
+    speak(g, 0);
+    press(g, menu.CONFIRM);
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(script.QuestState.done, g.sim.plot.quests[0].state);
+    const home = g.sim.plot.spots[2] orelse return error.NoPlace;
+    try std.testing.expectEqual(@as(?usize, 2), g.sim.lv.npcAt(home));
+    try std.testing.expectEqual(@as(i32, 1), mathx.dist(home, chest));
+    game.update(g, 0);
+    var buf: [script.MAX_QUESTS]@import("../ui/quests.zig").Entry = undefined;
+    const log = game.character.questEntries(g, &buf);
+    try std.testing.expect(log.len == 1 and log[0].done);
+    g.st = .{ .device = .keys, .character_page = .quests };
+    game.update(g, 0);
+    try std.testing.expectEqual(game.PausePage.character, g.pause_page);
+    try std.testing.expect(game.character.bookView(g, &g.nearby).quests.entries[0].done);
+    std.debug.print("NPCs: merchant beside the chest, baby pib {d} cells off the first open ground; carried away at stage 2, a second pib home at {d},{d} once done\n", .{ mathx.dist(far, .{ .x = 2, .y = 2 }), home.x, home.y });
+}
+
+test "an NPC's found spot keeps off the node's painted foes and what lies on the ground" {
+    const w = try testWorld(
+        \\npc 0 far - Hermit
+    );
+    defer std.testing.allocator.destroy(w);
+    var lv: grid.Level = undefined;
+    var stood: script.Stood = @splat(null);
+    w.node[0].sketch(&lv);
+    w.stampNpcs(0, &lv, &stood, atlas.EVERY_NPC);
+    const first = stood[0] orelse return error.NoPlace;
+    try std.testing.expect(w.node[0].plan.bespoke.addFoe(.{ .kind = .rat, .at = first }));
+    stood = @splat(null);
+    w.node[0].sketch(&lv);
+    w.stampNpcs(0, &lv, &stood, atlas.EVERY_NPC);
+    const second = stood[0] orelse return error.NoPlace;
+    try std.testing.expect(!second.eq(first));
+    const Lying = struct {
+        cell: P,
+        pub fn shows(_: @This(), _: usize) bool {
+            return true;
+        }
+        pub fn lying(self: @This()) grid.CellSet {
+            var cells = grid.CellSet.initEmpty();
+            cells.set(grid.Level.idx(self.cell));
+            return cells;
+        }
+    };
+    stood = @splat(null);
+    w.node[0].sketch(&lv);
+    w.stampNpcs(0, &lv, &stood, Lying{ .cell = second });
+    const third = stood[0] orelse return error.NoPlace;
+    try std.testing.expect(!third.eq(first) and !third.eq(second));
+}
+
+test "an NPC's found spot keeps off a painted NPC listed after it" {
+    const alone = try testWorld(
+        \\npc 0 far - Hermit
+    );
+    defer std.testing.allocator.destroy(alone);
+    var lv: grid.Level = undefined;
+    var stood: script.Stood = @splat(null);
+    alone.node[0].sketch(&lv);
+    alone.stampNpcs(0, &lv, &stood, atlas.EVERY_NPC);
+    const far = stood[0] orelse return error.NoPlace;
+    var text: [64]u8 = undefined;
+    const w = try testWorld(try std.fmt.bufPrint(&text, "npc 0 far - Hermit\nnpc 0 {d} {d} - Painted", .{ far.x, far.y }));
+    defer std.testing.allocator.destroy(w);
+    stood = @splat(null);
+    w.node[0].sketch(&lv);
+    w.stampNpcs(0, &lv, &stood, atlas.EVERY_NPC);
+    const hermit = stood[0] orelse return error.NoPlace;
+    std.debug.print("far spot {d},{d} painted over: hermit moved to {d},{d}\n", .{ far.x, far.y, hermit.x, hermit.y });
+    try std.testing.expect(!hermit.eq(far));
+    try std.testing.expectEqual(@as(?usize, 1), lv.npcAt(far));
+    try std.testing.expectEqual(@as(?usize, 0), lv.npcAt(hermit));
 }
 
 test "a trigger's conversation waits for the turn to be drawn, then takes the screen" {

@@ -29,15 +29,26 @@ pub const Run = struct {
     last: ?u32 = null,
 };
 
+pub const QUEST_BEGUN = "New quest: {s}.";
+pub const QUEST_MOVED = "Quest updated: {s}.";
+pub const QUEST_DONE = "Quest complete: {s}.";
+
 /// The conversation on screen.
 pub const Talk = struct {
+    pub const WAS = .{.{ "npc", "folk" }};
     dialog: u8,
     line: u8 = 0,
     cursor: u8 = 0,
-    folk: ?u8 = null,
+    npc: ?u8 = null,
 };
 
-/// SC1's switches, counters and timers, each trigger's progress and the one conversation that may be up.
+/// A quest's place in the run; its stage stays when it is done.
+pub const Progress = struct {
+    state: script.QuestState = .unstarted,
+    stage: u8 = 0,
+};
+
+/// SC1's switches, counters and timers, each trigger's progress, quests and the one conversation that may be up.
 pub const Runtime = struct {
     flags: [script.MAX_FLAGS]bool = @splat(false),
     counters: [script.MAX_COUNTERS]i32 = @splat(0),
@@ -49,9 +60,23 @@ pub const Runtime = struct {
     /// A dialog a trigger asked for, opened once the turn is drawn.
     asked: ?u8 = null,
     talk: ?Talk = null,
+    quests: [script.MAX_QUESTS]Progress = @splat(.{}),
+    /// Where each NPC placed on its node's roll was first stood this run.
+    spots: script.Stood = @splat(null),
 
     pub fn died(self: *Runtime, k: actor.Kind) void {
         self.deaths.getPtr(k.family()).* +|= 1;
+    }
+
+    /// NPC `i` stands while what it `shows` holds.
+    pub fn shows(self: *const Runtime, s: *const Script, i: usize, w: World) bool {
+        const c = s.npc[i].shows orelse return true;
+        return self.holds(s, &c, w);
+    }
+
+    /// Where NPC `i` stands, once it has stood anywhere.
+    pub fn spotOf(self: *const Runtime, s: *const Script, i: usize) ?P {
+        return s.standsAt(i, &self.spots);
     }
 
     /// A spent turn: timers and waits count down, then every trigger is looked at.
@@ -103,12 +128,14 @@ pub const Runtime = struct {
             .elapsed => c.cmp.holds(self.turns, c.n),
             .region => w.node == c.node and c.region().holds(w.hero),
             .near => blk: {
-                const f = &s.folk[c.slot];
-                break :blk f.node == w.node and mathx.dist(f.at, w.hero) <= c.n;
+                const at = self.spotOf(s, c.slot) orelse break :blk false;
+                break :blk s.npc[c.slot].node == w.node and mathx.dist(at, w.hero) <= c.n;
             },
             .talked => self.talked[c.slot],
             .deaths => c.cmp.holds(self.deaths.get(c.foe.family()), c.n),
             .alive => c.cmp.holds(w.alive.get(c.foe.family()), c.n),
+            .quest => self.quests[c.slot].state == c.state,
+            .stage => c.cmp.holds(self.quests[c.slot].stage, c.n),
         };
     }
 
@@ -139,9 +166,9 @@ pub const Runtime = struct {
                     r.at += 1;
                     r.preserved = true;
                 },
-                .text, .flag, .counter, .timer => {
+                .text, .flag, .counter, .timer, .quest => {
                     r.at += 1;
-                    self.apply(a, l);
+                    self.apply(s, a, l);
                 },
             }
         }
@@ -150,9 +177,10 @@ pub const Runtime = struct {
         if (!r.preserved) r.fired = true;
     }
 
-    pub fn apply(self: *Runtime, a: *const script.Act, l: *log.Log) void {
+    pub fn apply(self: *Runtime, s: *const Script, a: *const script.Act, l: *log.Log) void {
         switch (a.kind) {
             .dialog, .wait, .preserve => {},
+            .quest => self.advanceQuest(s, a, l),
             .text => l.say("{s}", .{a.note.text()}),
             .flag => self.flags[a.slot] = switch (a.setop) {
                 .off => false,
@@ -171,6 +199,26 @@ pub const Runtime = struct {
         }
     }
 
+    /// A finished quest stays finished; a stage it already stands at says nothing.
+    fn advanceQuest(self: *Runtime, s: *const Script, a: *const script.Act, l: *log.Log) void {
+        const q = &self.quests[a.slot];
+        const title = s.quest[a.slot].titled();
+        if (q.state == .done) return;
+        switch (a.questop) {
+            .done => {
+                q.state = .done;
+                l.say(QUEST_DONE, .{title});
+            },
+            .stage => {
+                const n: u8 = @intCast(a.n);
+                if (q.state == .active and q.stage == n) return;
+                const was = q.state;
+                q.* = .{ .state = .active, .stage = n };
+                if (was == .unstarted) l.say(QUEST_BEGUN, .{title}) else l.say(QUEST_MOVED, .{title});
+            },
+        }
+    }
+
     /// The dialog a trigger asked for, taken to be opened.
     pub fn takeAsked(self: *Runtime) ?u8 {
         const d = self.asked orelse return null;
@@ -179,9 +227,9 @@ pub const Runtime = struct {
     }
 
     /// Opens dialog `d` at its first line, its actions done; refused while one is up, or when a line it reaches has no way to an end.
-    pub fn open(self: *Runtime, s: *const Script, d: u8, folk: ?u8, l: *log.Log) bool {
+    pub fn open(self: *Runtime, s: *const Script, d: u8, npc: ?u8, l: *log.Log) bool {
         if (self.talk != null or !s.opens(d)) return false;
-        self.talk = .{ .dialog = d, .folk = folk };
+        self.talk = .{ .dialog = d, .npc = npc };
         self.enter(s, l);
         return true;
     }
@@ -189,7 +237,7 @@ pub const Runtime = struct {
     fn enter(self: *Runtime, s: *const Script, l: *log.Log) void {
         const t = &self.talk.?;
         t.cursor = 0;
-        for (s.dialog[t.dialog].line[t.line].acts()) |*a| self.apply(a, l);
+        for (s.dialog[t.dialog].line[t.line].acts()) |*a| self.apply(s, a, l);
     }
 
     pub fn lineOf(self: *const Runtime, s: *const Script) ?*const script.Line {
@@ -201,8 +249,8 @@ pub const Runtime = struct {
     pub fn speaker(self: *const Runtime, s: *const Script) []const u8 {
         const ln = self.lineOf(s) orelse return "";
         if (ln.who.n > 0) return ln.who.text();
-        const f = self.talk.?.folk orelse return "";
-        return s.folk[f].called();
+        const f = self.talk.?.npc orelse return "";
+        return s.npc[f].called();
     }
 
     /// The choices whose gates hold, in order; a hidden one is not offered at all.
@@ -232,7 +280,7 @@ pub const Runtime = struct {
         if (shown.len == 0) return self.go(s, ln.then, w, l);
         if (row >= shown.len) return;
         const c = &ln.choice[shown[row]];
-        for (c.acts()) |*a| self.apply(a, l);
+        for (c.acts()) |*a| self.apply(s, a, l);
         self.go(s, c.next, w, l);
     }
 
@@ -458,7 +506,7 @@ test "region and near read the hero's own node; deaths and alive count a whole f
         \\flag inside
         \\flag close
         \\flag cleared
-        \\folk 1 10 10 -
+        \\npc 1 10 10 -
         \\trigger box 0 once live
         \\when region 1 2 2 4 4
         \\do flag inside on
@@ -510,7 +558,7 @@ test "a conversation walks its lines: gates hide choices, numbering follows what
         \\then root
         \\line gate
         \\say Then go.
-        \\folk 0 5 5 hunter Old Hunter
+        \\npc 0 5 5 hunter Old Hunter
     );
     defer t.done();
     var buf: [script.MAX_CHOICES]u8 = undefined;
@@ -537,6 +585,44 @@ test "a conversation walks its lines: gates hide choices, numbering follows what
     try std.testing.expect(t.rt.talked[0]);
 }
 
+test "a quest begins at a stage, moves on, finishes for good, and its conditions read where it stands" {
+    const t = try Test.of(
+        \\flag begun
+        \\flag late
+        \\flag finished
+        \\quest pib The Stolen Pib
+        \\stage Find it.
+        \\stage Bring it back.
+        \\trigger begun 0 once live
+        \\when quest pib active
+        \\do flag begun on
+        \\trigger late 0 once live
+        \\when stage pib >= 2
+        \\do flag late on
+        \\trigger finished 0 once live
+        \\when quest pib done
+        \\do flag finished on
+    );
+    defer t.done();
+    const q = t.s.findQuest("pib").?;
+    t.turns(1, .{});
+    try std.testing.expect(!t.flag("begun"));
+    t.rt.apply(&t.s, &.{ .kind = .quest, .slot = q, .n = 1 }, &t.l);
+    t.rt.apply(&t.s, &.{ .kind = .quest, .slot = q, .n = 1 }, &t.l);
+    t.turns(1, .{});
+    try std.testing.expect(t.flag("begun") and !t.flag("late"));
+    t.rt.apply(&t.s, &.{ .kind = .quest, .slot = q, .n = 2 }, &t.l);
+    t.rt.apply(&t.s, &.{ .kind = .quest, .slot = q, .questop = .done, .n = 1 }, &t.l);
+    t.rt.apply(&t.s, &.{ .kind = .quest, .slot = q, .n = 1 }, &t.l);
+    t.turns(1, .{});
+    try std.testing.expect(t.flag("late") and t.flag("finished"));
+    try std.testing.expectEqual(Progress{ .state = .done, .stage = 2 }, t.rt.quests[q]);
+    try std.testing.expectEqualStrings("New quest: The Stolen Pib.", t.l.line(2).?);
+    try std.testing.expectEqualStrings("Quest updated: The Stolen Pib.", t.l.line(1).?);
+    try std.testing.expectEqualStrings("Quest complete: The Stolen Pib.", t.l.line(0).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), t.l.line(3));
+}
+
 test "a counter saturates rather than wrapping, and a text action reaches the log" {
     const t = try Test.of(
         \\counter n
@@ -548,7 +634,7 @@ test "a counter saturates rather than wrapping, and a text action reaches the lo
     defer t.done();
     t.turns(1, .{});
     t.rt.counters[0] = std.math.maxInt(i32);
-    t.rt.apply(&.{ .kind = .counter, .countop = .add, .n = 5 }, &t.l);
+    t.rt.apply(&t.s, &.{ .kind = .counter, .countop = .add, .n = 5 }, &t.l);
     try std.testing.expectEqual(std.math.maxInt(i32), t.counter("n"));
     try std.testing.expectEqualStrings("The gate grinds open somewhere to the north.", t.l.line(0).?);
     std.debug.print("trigger runtime: saturating counter and text action checked\n", .{});
