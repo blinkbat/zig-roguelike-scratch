@@ -225,15 +225,8 @@ pub const Tail = blk: {
     @setEvalBranchQuota(10_000);
     var fs: [TAIL_FIELDS.len]std.builtin.Type.StructField = undefined;
     for (TAIL_FIELDS, 0..) |f, i| {
-        const T = @FieldType(Of(f[0]), f[1]);
-        const default = fallback: {
-            if (contains(&REQUIRED_FIELDS, f[1])) break :fallback null;
-            for (std.meta.fields(Of(f[0]))) |source| {
-                if (std.mem.eql(u8, source.name, f[1])) break :fallback source.default_value_ptr;
-            }
-            unreachable;
-        };
-        fs[i] = fieldOf(f[1], T, default);
+        const source = std.meta.fieldInfo(Of(f[0]), @field(std.meta.FieldEnum(Of(f[0])), f[1]));
+        fs[i] = fieldOf(f[1], source.type, if (contains(&REQUIRED_FIELDS, f[1])) null else source.default_value_ptr);
     }
     break :blk Struct(fs);
 };

@@ -1029,7 +1029,7 @@ fn ringTrig(steps: usize) []const [2]f32 {
         for (&ring_trig, RING_STEPS_MIN..) |*row, n| {
             for (row[0..n], 0..) |*t, i| {
                 const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / @as(f32, @floatFromInt(n));
-                t.* = .{ @cos(angle), @sin(angle) };
+                t.* = heading(angle);
             }
         }
         ring_trig_ready = true;

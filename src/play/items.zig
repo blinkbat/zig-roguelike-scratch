@@ -757,12 +757,12 @@ pub const Gear = struct {
     }
 
     pub fn onHit(self: Gear, attack: attrs.Attack) WeaponEffect {
-        if (self.weapon(attack) == null) return .{};
+        const held = self.wielded(attack) orelse return .{};
         var out = WeaponEffect{ .penetration = self.sum(.penetration) };
         for (self.slots.values) |maybe| if (maybe) |it| {
             for (it.mods) |m| if (m) |a| if (a.kind == .imbue) out.imbue(a.element, @intCast(a.value));
         };
-        const innate = spec(self.slots.get(.right_hand).?.kind).innate orelse return out;
+        const innate = held.innate orelse return out;
         const fixed: WeaponEffect = switch (innate) {
             .bleed => |b| .{ .bleed = b.chance, .bleed_damage = b.damage },
             .stun => |n| .{ .stun = n },
@@ -812,15 +812,18 @@ pub const Gear = struct {
         return it.meets(self.statsWithout(slot, base));
     }
 
-    pub fn weapon(self: Gear, attack: attrs.Attack) ?damage.Base {
+    fn wielded(self: Gear, attack: attrs.Attack) ?Spec {
         const it = self.slots.get(.right_hand) orelse return null;
         const s = spec(it.kind);
-        return if (s.attack == attack) s.damage else null;
+        return if (s.attack == attack and s.damage != null) s else null;
+    }
+
+    pub fn weapon(self: Gear, attack: attrs.Attack) ?damage.Base {
+        return (self.wielded(attack) orelse return null).damage;
     }
 
     pub fn scaling(self: Gear, attack: attrs.Attack) attrs.Style {
-        if (self.weapon(attack) != null) return spec(self.slots.get(.right_hand).?.kind).style;
-        return attack.defaultStyle();
+        return if (self.wielded(attack)) |s| s.style else attack.defaultStyle();
     }
 };
 

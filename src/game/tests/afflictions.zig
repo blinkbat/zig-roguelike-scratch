@@ -131,7 +131,7 @@ test "hero blindness does not hide it from unblinded foes beyond adjacent cells"
         harness.arena(g, FROM, &.{});
         const id = harness.spawnAt(g, .rat, ahead, false);
         if (obstacle == 1) {
-            for (0..@intCast(grid.H)) |y| g.sim.lv.set(.{ .x = between.x, .y = @intCast(y) }, .wall);
+            harness.wallIn(&g.sim.lv, .{ .x = between.x, .y = 0 }, .{ .x = between.x, .y = grid.H - 1 });
         } else if (obstacle == 2) {
             for (0..@intCast(grid.H)) |y| g.sim.lv.smoke[grid.Level.idx(.{ .x = between.x, .y = @intCast(y) })] = 60000;
         }
@@ -160,7 +160,7 @@ test "a confused hero's moves stray about as often as its chance, only onto move
     const WALLED = 64;
     for (0..WALLED) |seed| {
         harness.arena(g, FROM, &.{});
-        for (mathx.ALL_DIRS) |d| if (d != .e) g.sim.lv.set(FROM.add(d.delta()), .wall);
+        harness.hemIn(&g.sim.lv, FROM, EAST);
         g.sim.heroActor().?.confusion.start();
         g.sim.rng = mathx.Rng.init(seed);
         game.heroStep(g, .e, 0);

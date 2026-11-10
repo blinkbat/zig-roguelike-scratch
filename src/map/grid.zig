@@ -17,6 +17,7 @@ pub const SIZE = P{ .x = W, .y = H };
 pub const MIDDLE = P{ .x = @divTrunc(W, 2), .y = @divTrunc(H, 2) };
 
 pub const NO_ONE: u16 = 0;
+pub const OFF_MAP: Tile = .wall;
 pub const MAX_TORCHES: usize = 32;
 /// Only the first this many glowing tiles give light (`Level.glowing`).
 pub const MAX_GLOWS: usize = 64;
@@ -571,7 +572,7 @@ pub const Level = struct {
 
     pub fn blank() Level {
         return .{
-            .tile = [_]Tile{.wall} ** CELLS,
+            .tile = [_]Tile{OFF_MAP} ** CELLS,
             .shape = [_]?WallShape{null} ** CELLS,
             .seen = [_]bool{false} ** CELLS,
             .lit = [_]bool{false} ** CELLS,
@@ -675,7 +676,7 @@ pub const Level = struct {
     }
 
     pub fn at(self: *const Level, p: P) Tile {
-        return cellOr(Tile, &self.tile, p, .wall);
+        return cellOr(Tile, &self.tile, p, OFF_MAP);
     }
 
     pub fn set(self: *Level, p: P, t: Tile) void {
@@ -869,6 +870,10 @@ pub const Level = struct {
         return cellOr(u8, &self.barrier, p, 0) > 0;
     }
 
+    pub fn wetAt(self: *const Level, p: P) bool {
+        return self.at(p).wet();
+    }
+
     pub fn burning(self: *const Level, p: P) bool {
         return cellOr(u8, &self.flames, p, 0) > 0;
     }
@@ -886,9 +891,12 @@ pub const Level = struct {
     /// `ignore` is the mover's own id.
     pub fn stepOk(self: *const Level, from: P, d: mathx.Dir, ignore: u16) bool {
         if (!self.passOk(from, d)) return false;
-        const to = from.add(d.delta());
-        if (self.hasBarrel(to) or self.npcAt(to) != null) return false;
-        const w = self.who(to);
+        return self.clearFor(from.add(d.delta()), ignore);
+    }
+
+    pub fn clearFor(self: *const Level, p: P, ignore: u16) bool {
+        if (self.hasBarrel(p) or self.npcAt(p) != null) return false;
+        const w = self.who(p);
         return w == NO_ONE or w == ignore;
     }
 };

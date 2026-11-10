@@ -10,6 +10,12 @@ pub const View = character_view.View;
 pub const Command = character_view.Command;
 pub const SIZE = layout.SIZE;
 pub const QUESTS_BOX = layout.AREA;
+
+/// The journal measured with the face the quests page draws in on `screen`.
+pub fn journalOn(screen: P, face: font.Face, entries: []const quest_log.Entry) quest_log.Journal {
+    const drawn = menu.Surface.of(screen, layout.SIZE).faceFor(face);
+    return quest_log.Journal.of(&drawn, entries, QUESTS_BOX);
+}
 pub const verifyCards = item_card.verify;
 pub const verifyStats = character_stats.verify;
 const BOTH_HANDS = "Both hands";
@@ -847,7 +853,7 @@ test "the passives tab reads menu input until entered, and a click on its drawn 
     try std.testing.expect(book.tabbing and book.page == .passives);
     const zoom = book.zoom;
     const box = trees.zoomBox(true);
-    const p = book.surface(screen, view).screenOf(.{ .x = box.x + box.width / 2, .y = box.y + box.height / 2 });
+    const p = book.surface(screen, view).screenOf(raster.middle(box));
     _ = book.step(&.{ .click = true, .pointer = p }, screen, view);
     try std.testing.expect(!book.tabbing and book.treeActive() and book.zoom > zoom);
     book.choose(.stats);
@@ -1084,7 +1090,7 @@ test "a stick pushed where no passive lies keeps the pan, as the keys do" {
     _ = book.step(&.{ .tree = .{ .pan = .{ .x = 1, .y = 1 }, .dt = 0.25 } }, screen, view);
     const pan = book.pan;
     try std.testing.expect(pan.x != 0 or pan.y != 0);
-    const move: rl.Vector2 = .{ .x = @floatFromInt(dead_end[1].x), .y = @floatFromInt(dead_end[1].y) };
+    const move = raster.vec(dead_end[1]);
     _ = book.step(&.{ .tree = .{ .move = move } }, screen, view);
     try std.testing.expectEqual(dead_end[0], book.cursor);
     try std.testing.expectEqual(pan, book.pan);

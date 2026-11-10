@@ -620,6 +620,10 @@ pub fn toolFigure(g: *game.Game, t: editor.Tool, r: rl.Rectangle) void {
 /// An NPC as it looks: the body it is drawn as, else the NPC tool's figure.
 pub fn npcFigure(g: *game.Game, f: *const atlas.script.Npc, r: rl.Rectangle) void {
     const k = f.looks orelse return toolFigure(g, .npc, r);
+    bodyFigure(g, k, r);
+}
+
+pub fn bodyFigure(g: *game.Game, k: actor.Kind, r: rl.Rectangle) void {
     widgets.figure(&g.face, g.sprites.body(k), look.body(k), r);
 }
 

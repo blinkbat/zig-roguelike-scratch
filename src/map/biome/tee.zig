@@ -490,7 +490,7 @@ const ChestSite = struct {
 
     /// Deep water with water all round it, apart from the other chests.
     fn fits(s: ChestSite, q: P) bool {
-        if (!grid.Level.inside(q) or s.lv.at(q) != .water) return false;
+        if (s.lv.at(q) != .water) return false;
         for (s.chests) |c| if (mathx.dist(c, q) < CHEST_APART) return false;
         var round = grid.Cells.around(q, 1);
         while (round.next()) |n| if (!s.lv.at(n).wet()) return false;
@@ -502,7 +502,7 @@ const ChestSite = struct {
 fn wade(lv: *grid.Level, at: P, shore: P) void {
     var cells = grid.Cells.around(at, 1);
     while (cells.next()) |q| {
-        if (grid.Level.inside(q) and lv.at(q) == .water) lv.set(q, .shallows);
+        if (lv.at(q) == .water) lv.set(q, .shallows);
     }
     const dx: f32 = @floatFromInt(shore.x - at.x);
     const dy: f32 = @floatFromInt(shore.y - at.y);

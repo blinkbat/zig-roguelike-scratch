@@ -471,7 +471,7 @@ fn pickedAt(ed: *Editor, p: P) ?editor.Tool {
         if (!t.fits(ed.here()) or !holds(ed, t, p)) continue;
         return switch (t) {
             .foe => .{ .foe = ed.plan().bespoke.foe[ed.plan().bespoke.foeAt(p).?].kind },
-            else => t,
+            .paint, .barrel, .torch, .npc, .door, .link, .start => t,
         };
     }
     return null;

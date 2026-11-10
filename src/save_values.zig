@@ -86,6 +86,12 @@ fn npcKept(comptime name: []const u8) bool {
     return !std.mem.eql(u8, name, "spot");
 }
 
+fn copyKept(comptime T: type, comptime kept: anytype, into: anytype, from: anytype) void {
+    inline for (std.meta.fields(T)) |f| {
+        if (comptime kept(f.name)) @field(into, f.name) = @field(from, f.name);
+    }
+}
+
 comptime {
     for (std.meta.fields(script.Npc)) |f| {
         if (!npcKept(f.name)) continue;
@@ -137,16 +143,12 @@ pub const Policy = struct {
         if (@TypeOf(value) == mathx.Rng) return .{ .xoshiro256 = value.impl.s };
         if (@TypeOf(value) == script.Npc) {
             var result = SavedNpc{ .spot = value.spot };
-            inline for (std.meta.fields(script.Npc)) |f| {
-                if (comptime npcKept(f.name)) @field(result, f.name) = @field(value, f.name);
-            }
+            copyKept(script.Npc, npcKept, &result, value);
             return result;
         }
         if (@TypeOf(value) != progress.State) @compileError("save_values.Policy cannot encode " ++ @typeName(@TypeOf(value)));
         var result = SavedProgress{};
-        inline for (std.meta.fields(progress.State)) |f| {
-            if (comptime carried(f.name)) @field(result, f.name) = @field(value, f.name);
-        }
+        copyKept(progress.State, carried, &result, value);
         var allocated = value.nodes.iterator(.{});
         while (allocated.next()) |index| {
             result.allocations[result.n] = NodeKey.of(progress.NODES[index]);
@@ -163,16 +165,12 @@ pub const Policy = struct {
         }
         if (T == script.Npc) {
             var npc = script.Npc{ .spot = stored.spot orelse .{ .at = stored.at } };
-            inline for (std.meta.fields(script.Npc)) |f| {
-                if (comptime npcKept(f.name)) @field(npc, f.name) = @field(stored, f.name);
-            }
+            copyKept(script.Npc, npcKept, &npc, stored);
             return npc;
         }
         if (T != progress.State) @compileError("save_values.Policy cannot decode " ++ @typeName(T));
         var result = progress.State{};
-        inline for (std.meta.fields(progress.State)) |f| {
-            if (comptime carried(f.name)) @field(result, f.name) = @field(stored, f.name);
-        }
+        copyKept(progress.State, carried, &result, stored);
         for (stored.allocations[0..stored.n], 0..) |key, index| {
             for (stored.allocations[0..index]) |previous| if (std.meta.eql(key, previous)) return error.Damaged;
             for (progress.NODES, 0..) |node, current| {

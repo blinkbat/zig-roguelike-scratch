@@ -195,6 +195,17 @@ pub fn wallRow(lv: *grid.Level, y: i32, x0: i32, x1: i32) void {
     wallIn(lv, .{ .x = x0, .y = y }, .{ .x = x1, .y = y });
 }
 
+pub fn hemIn(lv: *grid.Level, at: P, open: ?P) void {
+    for (mathx.ALL_DIRS) |d| {
+        const p = at.add(d.delta());
+        if (open == null or !p.eq(open.?)) lv.set(p, .wall);
+    }
+}
+
+pub fn sameRgb(a: rl.Color, b: rl.Color) bool {
+    return a.r == b.r and a.g == b.g and a.b == b.b;
+}
+
 pub fn grassOver(lv: *grid.Level) void {
     for (&lv.tile) |*t| {
         if (t.* == .floor) t.* = .grass;
@@ -373,6 +384,8 @@ pub fn pressWalking(g: *game.Game, b: input.Button, d: ?mathx.Dir) void {
 
 pub const TEST_DT = mathx.TEST_DT;
 pub const TEST_TOL: f32 = TEST_DT * 1.5;
+pub const FADING_S: f32 = 0.04;
+pub const FADE_FRAMES = 120;
 
 /// Seconds of idle frames until `done(g, slot)`, a second at most.
 pub fn framesUntil(g: *game.Game, slot: usize, comptime done: fn (*game.Game, usize) bool) f32 {

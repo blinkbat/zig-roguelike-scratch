@@ -46,10 +46,10 @@ test "thorns returns melee damage with the incoming impact and ignores dodges an
                 try std.testing.expectApproxEqAbs(impact, g.pic.fx.impacts.landsIn(.fromIndex(g.sim.heroSlot().?)), 0.0001);
                 game.update(g, impact - 0.001);
                 try std.testing.expectEqual(hp, g.pic.pictured[slot].hp);
-                try std.testing.expectEqual(hero_hp, g.pic.pictured[g.sim.heroSlot().?].hp);
+                try std.testing.expectEqual(hero_hp, g.pic.heroShown(&g.sim).?.hp);
                 game.update(g, 0.002);
                 try std.testing.expectEqual(hp - expected, g.pic.pictured[slot].hp);
-                try std.testing.expect(g.pic.pictured[g.sim.heroSlot().?].hp < hero_hp);
+                try std.testing.expect(g.pic.heroShown(&g.sim).?.hp < hero_hp);
             }
             harness.drawnOut(g);
             try std.testing.expectEqual(hp - expected, g.pic.pictured[slot].hp);
@@ -332,12 +332,7 @@ test "a crossbowman retreats when crowded and fires when pinned or cornered" {
         const id = harness.spawnAt(g, .bandit_crossbowman, at, true);
         if (pinned) {
             g.sim.pool.get(id).?.pin.turns = 2;
-        } else {
-            for (mathx.ALL_DIRS) |d| {
-                const cell = at.add(d.delta());
-                if (!cell.eq(hero)) g.sim.lv.set(cell, .wall);
-            }
-        }
+        } else harness.hemIn(&g.sim.lv, at, hero);
         game.settle(g);
         const hp = g.sim.heroActor().?.hp;
         g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
@@ -592,7 +587,7 @@ test "a caustic bloat with no way to the archer still flits a third of its turns
     var moved: usize = 0;
     for (0..harness.TRIES) |i| {
         harness.arena(g, hero, &.{});
-        for (mathx.ALL_DIRS) |d| g.sim.lv.set(hero.add(d.delta()), .wall);
+        harness.hemIn(&g.sim.lv, hero, null);
         const id = harness.spawnAt(g, .bloat, at, true);
         g.sim.rng = mathx.Rng.init(i);
         combat.endTurn(g);
@@ -729,9 +724,9 @@ test "a pib's landed stab bleeds the archer about three times in ten, drawn once
         if (h.bleed.turns == 0) continue;
         bled += 1;
         try std.testing.expectEqual(bleeding.TURNS, h.bleed.turns);
-        try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[g.sim.heroSlot().?].status.get(.bleeding));
+        try std.testing.expectEqual(@as(u8, 0), g.pic.heroShown(&g.sim).?.status.get(.bleeding));
         harness.drawnOut(g);
-        try std.testing.expectEqual(bleeding.TURNS, g.pic.pictured[g.sim.heroSlot().?].status.get(.bleeding));
+        try std.testing.expectEqual(bleeding.TURNS, g.pic.heroShown(&g.sim).?.status.get(.bleeding));
     }
     std.debug.print("a pib beside the archer: {d} stabs, {d} landed, {d} bleeds\n", .{ harness.TRIES, landed, bled });
     try std.testing.expect(landed > 0 and landed < harness.TRIES);

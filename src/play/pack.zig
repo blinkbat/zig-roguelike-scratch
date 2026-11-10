@@ -416,11 +416,7 @@ fn ponds(lv: *const grid.Level) grid.CellSet {
     return out;
 }
 
-const Water = grid.Spread(*const grid.Level, wetAt);
-
-fn wetAt(lv: *const grid.Level, p: P) bool {
-    return lv.at(p).wet();
-}
+const Water = grid.Spread(*const grid.Level, grid.Level.wetAt);
 
 /// Lava cells with no lava beside them: camp fires, not lava fields.
 fn fires(lv: *const grid.Level) grid.CellSet {

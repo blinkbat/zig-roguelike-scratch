@@ -218,7 +218,7 @@ pub const Grant = struct {
 
     pub fn perk(g: Grant, p: *Perks) void {
         switch (g.kind) {
-            inline else => |t| if (comptime @hasField(Perks, @tagName(t))) {
+            inline else => |t| if (comptime t.perk()) {
                 @field(p, @tagName(t)) += g.amount;
             },
         }

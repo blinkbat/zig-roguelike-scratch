@@ -178,7 +178,7 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     if (g.character.page == .loot) if (g.sim.heroAt()) |from| if (goldReached(g, from, g.character.loot_at)) |pile| {
         v.loot_gold = pile.amount;
     };
-    v.quests = quest_log.Journal.of(&g.face, questEntries(g, &g.journal), book.QUESTS_BOX);
+    v.quests = book.journalOn(g.screen, g.face, questEntries(g, &g.journal));
     return v;
 }
 

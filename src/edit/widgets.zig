@@ -41,6 +41,7 @@ pub const STEP_W: i32 = 30;
 pub const STEP_PITCH: i32 = STEP_W + GAP;
 pub const DROP = "x";
 pub const SCROLL_W: i32 = 3;
+pub const NO_BOX = rl.Rectangle{ .x = 0, .y = 0, .width = 0, .height = 0 };
 pub const WHEEL_PX: i32 = ROW_H;
 const THUMB_MIN: f32 = 24;
 const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
@@ -253,6 +254,10 @@ pub fn share(w: i32, parts: i32, lo: i32, hi: i32) i32 {
     return std.math.clamp(@divTrunc(w, parts), lo, hi);
 }
 
+pub fn rowsIn(h: i32, row_h: i32) usize {
+    return @intCast(@max(1, @divTrunc(h, row_h)));
+}
+
 pub fn rowsOf(n: usize, cols: usize) i32 {
     return @intCast(std.math.divCeil(usize, n, cols) catch unreachable);
 }
@@ -349,7 +354,7 @@ pub const Scroll = struct {
 };
 
 pub const Scrolled = struct {
-    box: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+    box: rl.Rectangle = NO_BOX,
     top: i32 = 0,
     most: i32 = 0,
 

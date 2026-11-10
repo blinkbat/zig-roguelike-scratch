@@ -20,7 +20,6 @@ const pack = @import("../play/pack.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const menu = @import("../ui/menu.zig");
-const wording = @import("../core/wording.zig");
 const game = @import("../game.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
@@ -125,7 +124,7 @@ fn knobRows(ed: *editor.Editor, g: *game.Game, y: *i32, owner: anytype, comptime
             section(g, y, k.caption());
             inline for (k.parts, 0..) |part, i| {
                 if (!panel.clipped(ed, y.*)) {
-                    panel.rowLabel(g, column(g), y.*, comptime wording.spoken(part), widgets.TEXT);
+                    panel.rowLabel(g, column(g), y.*, comptime menu.capital(part), widgets.TEXT);
                     stepNumber(ed, g, y.*, owner, k, i, 1, live);
                 }
                 y.* += widgets.ROW_STEP;
@@ -723,9 +722,8 @@ fn valueSlot(g: *const game.Game, y: i32, k: usize, n: usize) rl.Rectangle {
 
 fn cycle(comptime T: type, v: T, by: i32) T {
     if (by == 0) return v;
-    const values = comptime std.enums.values(T);
-    var next = mathx.stepIn(T, values, v, std.math.sign(by), null);
-    while (!grid.knobbable(T, next)) next = mathx.stepIn(T, values, next, std.math.sign(by), null);
+    var next = mathx.cycle(T, v, std.math.sign(by));
+    while (!grid.knobbable(T, next)) next = mathx.cycle(T, next, std.math.sign(by));
     return next;
 }
 

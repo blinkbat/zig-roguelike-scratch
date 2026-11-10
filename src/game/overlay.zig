@@ -360,7 +360,7 @@ pub fn inspectStep(g: *game.Game) void {
     if (here.spot == .actor) {
         const wheel = if (game.overLog(g)) 0 else g.st.scroll;
         const scroll = -wheel + @as(i32, @intFromBool(g.st.hit(menu.PAGE_NEXT))) - @as(i32, @intFromBool(g.st.hit(menu.PAGE_PREV)));
-        g.inspect_scroll = @intCast(std.math.clamp(@as(i32, @intCast(g.inspect_scroll)) + scroll, 0, @as(i32, hud.TIP_LINES_MAX - 1)));
+        g.inspect_scroll = mathx.nudge(g.inspect_scroll, scroll, hud.TIP_LINES_MAX);
     }
     if (g.st.pointing()) {
         for (spots) |part| if (under(part, g.st.pointer.?)) {

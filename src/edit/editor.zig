@@ -947,7 +947,7 @@ pub fn popupRow(box: rl.Rectangle, which: Which, k: usize) rl.Rectangle {
 
 /// Of its rows, how many fit the screen at once; the wheel scrolls the rest.
 pub fn popupShown(ed: *const Editor, w: Which, screen_h: i32) usize {
-    const fit: usize = @intCast(@max(1, @divTrunc(screen_h - 2 * widgets.PAD, popupShape(w).row_h)));
+    const fit = widgets.rowsIn(screen_h - 2 * widgets.PAD, popupShape(w).row_h);
     return @min(popupLen(ed, w), fit);
 }
 

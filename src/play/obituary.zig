@@ -4,6 +4,7 @@ const heroes = @import("hero.zig");
 const chronicle = @import("chronicle.zig");
 const skillbar = @import("skillbar.zig");
 const gas = @import("../map/gas.zig");
+const grid = @import("../map/grid.zig");
 const wording = @import("../core/wording.zig");
 const Source = chronicle.Source;
 const Turn = chronicle.Turn;
@@ -92,14 +93,7 @@ const CONTRIBUTORS_MAX = SOURCES_MAX + std.meta.fields(What).len - 1;
 
 /// Most contributors a report weighs.
 pub const TOP: usize = 3;
-pub const Top = struct {
-    items: [TOP]Contributor = undefined,
-    n: usize = 0,
-
-    pub fn slice(self: *const Top) []const Contributor {
-        return self.items[0..self.n];
-    }
-};
+pub const Top = grid.Bounded(Contributor, TOP);
 
 /// A stun's weight is this share of the damage taken from it on.
 const ENABLER: f32 = 0.6;
@@ -165,13 +159,10 @@ fn unused(ctx: *const Context, comptime field: std.meta.FieldEnum(chronicle.Star
 
 /// What killed the hero, ranked: the top `TOP`, weights summing to 1.
 pub fn contributors(ctx: *const Context) Top {
-    var all: [CONTRIBUTORS_MAX]Contributor = undefined;
-    var n: usize = 0;
+    var all = grid.Bounded(Contributor, CONTRIBUTORS_MAX){};
     const t = taken(ctx);
     const total: f32 = @floatFromInt(@max(1, t.total));
-    var sources: [SOURCES_MAX]Source = undefined;
-    var sums: [SOURCES_MAX]i32 = undefined;
-    var ns: usize = 0;
+    var sources = grid.Bounded(struct { by: Source, sum: i32 }, SOURCES_MAX){};
     var torn: i32 = 0;
     var tore = false;
     var misses: usize = 0;
@@ -182,16 +173,12 @@ pub fn contributors(ctx: *const Context) Top {
                 torn += h.dmg;
                 tore = true;
             }
-            for (sources[0..ns], sums[0..ns]) |s, *sum| {
-                if (std.meta.eql(s, h.by)) {
-                    sum.* += h.dmg;
+            for (sources.items[0..sources.n]) |*s| {
+                if (std.meta.eql(s.by, h.by)) {
+                    s.sum += h.dmg;
                     break;
                 }
-            } else {
-                sources[ns] = h.by;
-                sums[ns] = h.dmg;
-                ns += 1;
-            }
+            } else sources.push(.{ .by = h.by, .sum = h.dmg });
         },
         .stunned => |k| if (stun == null) {
             stun = .{ .turn = ti, .event = ei, .by = k };
@@ -199,61 +186,35 @@ pub fn contributors(ctx: *const Context) Top {
         .missed => misses += 1,
         else => {},
     };
-    for (sources[0..ns], sums[0..ns]) |s, sum| {
-        if (sum <= 0) continue;
-        all[n] = .{ .weight = @as(f32, @floatFromInt(sum)) / total, .what = .{ .source = s } };
-        n += 1;
+    for (sources.slice()) |s| {
+        if (s.sum <= 0) continue;
+        all.push(.{ .weight = @as(f32, @floatFromInt(s.sum)) / total, .what = .{ .source = s.by } });
     }
     if (stun) |s| {
         var after: i32 = 0;
         for (ctx.turns[s.turn..], s.turn..) |*turn, ti| for (turn.slice(), 0..) |e, ei| {
             if (e == .hurt and (ti > s.turn or ei > s.event)) after += e.hurt.dmg;
         };
-        all[n] = .{ .weight = ENABLER * @as(f32, @floatFromInt(after)) / total, .what = .{ .stun = .{ .by = s.by, .turn = ctx.turns[s.turn].number } } };
-        n += 1;
+        all.push(.{ .weight = ENABLER * @as(f32, @floatFromInt(after)) / total, .what = .{ .stun = .{ .by = s.by, .turn = ctx.turns[s.turn].number } } });
     }
     var starved: usize = 0;
     for (ctx.turns, 0..) |*turn, i| {
         if (turn.start.starved and hurtIn(turn) and !used(ctx, i, chronicle.WARD)) starved += 1;
     }
-    if (starved > 0) {
-        all[n] = .{ .weight = STARVED * @as(f32, @floatFromInt(starved)) / @as(f32, @floatFromInt(ctx.turns.len)), .what = .starved };
-        n += 1;
-    }
-    if (ctx.outnumbered()) {
-        all[n] = .{ .weight = PER_FOE_BESIDE * @as(f32, @floatFromInt(ctx.beside)), .what = .outnumbered };
-        n += 1;
-    }
-    if (ctx.cornered()) {
-        all[n] = .{ .weight = CORNERED, .what = .cornered };
-        n += 1;
-    }
-    if (tore) {
-        all[n] = .{ .weight = @as(f32, @floatFromInt(torn)) / total, .what = .torn };
-        n += 1;
-    }
-    if (unused(ctx, .flask, chronicle.FLASK, true)) {
-        all[n] = .{ .weight = FLASK_UNUSED, .what = .flask };
-        n += 1;
-    }
-    if (unused(ctx, .ward, chronicle.WARD, false)) {
-        all[n] = .{ .weight = WARD_UNUSED, .what = .ward };
-        n += 1;
-    }
-    if (ctx.unlucky()) {
-        all[n] = .{ .weight = BEST_ROLL, .what = .best_roll };
-        n += 1;
-    }
-    if (misses > 0) {
-        all[n] = .{ .weight = PER_MISS * @as(f32, @floatFromInt(misses)), .what = .{ .missed = misses } };
-        n += 1;
-    }
-    std.mem.sort(Contributor, all[0..n], {}, heavier);
-    while (n > 0 and all[n - 1].weight <= 0) n -= 1;
-    var top = Top{ .n = @min(TOP, n) };
+    if (starved > 0) all.push(.{ .weight = STARVED * @as(f32, @floatFromInt(starved)) / @as(f32, @floatFromInt(ctx.turns.len)), .what = .starved });
+    if (ctx.outnumbered()) all.push(.{ .weight = PER_FOE_BESIDE * @as(f32, @floatFromInt(ctx.beside)), .what = .outnumbered });
+    if (ctx.cornered()) all.push(.{ .weight = CORNERED, .what = .cornered });
+    if (tore) all.push(.{ .weight = @as(f32, @floatFromInt(torn)) / total, .what = .torn });
+    if (unused(ctx, .flask, chronicle.FLASK, true)) all.push(.{ .weight = FLASK_UNUSED, .what = .flask });
+    if (unused(ctx, .ward, chronicle.WARD, false)) all.push(.{ .weight = WARD_UNUSED, .what = .ward });
+    if (ctx.unlucky()) all.push(.{ .weight = BEST_ROLL, .what = .best_roll });
+    if (misses > 0) all.push(.{ .weight = PER_MISS * @as(f32, @floatFromInt(misses)), .what = .{ .missed = misses } });
+    std.mem.sort(Contributor, all.items[0..all.n], {}, heavier);
+    while (all.n > 0 and all.items[all.n - 1].weight <= 0) all.n -= 1;
+    var top = Top{ .n = @min(TOP, all.n) };
     var sum: f32 = 0;
-    for (all[0..top.n]) |c| sum += c.weight;
-    for (all[0..top.n], top.items[0..top.n]) |c, *out| {
+    for (all.items[0..top.n]) |c| sum += c.weight;
+    for (all.items[0..top.n], top.items[0..top.n]) |c, *out| {
         out.* = c;
         out.weight = if (sum > 0) c.weight / sum else 0;
     }

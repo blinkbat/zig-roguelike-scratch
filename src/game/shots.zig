@@ -363,10 +363,10 @@ fn shootQuests(g: *game.Game) !void {
     const entries = [_]quests.Entry{.{ .title = "The Stolen Pib", .asks = "Search the goblin camp beyond the north road and return the missing pib to the caravan merchant.", .done = false }} ** (script.MAX_QUESTS - 1) ++ [_]quests.Entry{.{ .title = "The Last Quest", .asks = "", .done = true }};
     const inventory = items.Inventory{};
     const growth = progress.State.of(heroes.DEFAULT);
-    const view = book.View{ .class = heroes.DEFAULT, .name = "Archer", .inventory = &inventory, .growth = &growth, .base = growth.attributes(heroes.DEFAULT), .quests = quests.Journal.of(&g.face, &entries, book.QUESTS_BOX) };
     var b = book.Book{};
     b.choose(.quests);
     inline for (.{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
+        const view = book.View{ .class = heroes.DEFAULT, .name = "Archer", .inventory = &inventory, .growth = &growth, .base = growth.attributes(heroes.DEFAULT), .quests = book.journalOn(size, g.face, &entries) };
         const target = try rl.loadRenderTexture(size.x, size.y);
         defer rl.unloadRenderTexture(target);
         inline for (.{ "first", "last" }) |at| {
@@ -639,10 +639,7 @@ fn checkDebugOption(g: *game.Game, target: rl.RenderTexture2D, option: *bool, co
     const changed = differentPixels(before, disabled);
     if (changed == 0) return error.DebugOptionDidNotChangeFrame;
     option.* = true;
-    drawInto(g, target);
-    const restored = try readTarget(target);
-    defer rl.unloadImage(restored);
-    if (differentPixels(before, restored) != 0) return error.DebugOptionDidNotRestoreFrame;
+    if (try redrawnDiff(g, target, before) != 0) return error.DebugOptionDidNotRestoreFrame;
     std.debug.print("Debug {s}: {d} pixels changed, exact restoration\n", .{ name, changed });
 }
 
@@ -651,6 +648,13 @@ fn differentPixels(a: rl.Image, b: rl.Image) usize {
     var px = pixels(a.width, a.height);
     while (px.next()) |p| changed += @intFromBool(!sameRgb(rl.getImageColor(a, p.x, p.y), rl.getImageColor(b, p.x, p.y)));
     return changed;
+}
+
+fn redrawnDiff(g: *game.Game, target: rl.RenderTexture2D, base: rl.Image) !usize {
+    drawInto(g, target);
+    const now = try readTarget(target);
+    defer rl.unloadImage(now);
+    return differentPixels(base, now);
 }
 
 fn pixels(width: i32, height: i32) grid.Cells {
@@ -888,11 +892,7 @@ fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
         g.light.bake(&g.sim.lv, view.lo, view.hi);
         var images: [2]rl.Image = undefined;
         for (0..2) |i| {
-            rl.beginTextureMode(target);
-            rl.clearBackground(rl.Color.white);
-            if (!game.scene.shadowPass(g, c, g.pic.groundShown(&g.sim), if (i == 0) view else grid.Box.inMap(0), &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
-            rl.endTextureMode();
-            images[i] = try readTarget(target);
+            images[i] = try shadowMask(g, target, c, if (i == 0) view else grid.Box.inMap(0));
         }
         defer for (images) |im| rl.unloadImage(im);
         var different: usize = 0;
@@ -1116,16 +1116,10 @@ pub fn shootTrees(g: *game.Game) !void {
     defer rl.unloadImage(faded_grass);
     const grass_hidden = g.pic.occlusion[grid.Level.idx(grass)];
     g.pic.occlusion[grid.Level.idx(grass)] = 0;
-    drawInto(g, target);
-    const opaque_grass = try readTarget(target);
-    defer rl.unloadImage(opaque_grass);
-    const grass_pixels = differentPixels(faded_grass, opaque_grass);
+    const grass_pixels = try redrawnDiff(g, target, faded_grass);
     if (grass_pixels == 0) return error.GrassOcclusionDidNotChangeFrame;
     g.pic.occlusion[grid.Level.idx(grass)] = grass_hidden;
-    drawInto(g, target);
-    const restored_grass = try readTarget(target);
-    defer rl.unloadImage(restored_grass);
-    if (differentPixels(faded_grass, restored_grass) != 0) return error.GrassOcclusionDidNotRestoreFrame;
+    if (try redrawnDiff(g, target, faded_grass) != 0) return error.GrassOcclusionDidNotRestoreFrame;
     std.debug.print("reed occlusion GPU check: {d} pixels changed, exact restoration\n", .{grass_pixels});
     g.sim.lv.gas[grid.Level.idx(grass)] = VEIL_GAS;
     g.cloud.settle(&g.sim.lv);
@@ -1139,8 +1133,8 @@ pub fn shootTrees(g: *game.Game) !void {
     std.debug.print("reed patch captures: body depth, smooth hiding/restoration and shared gas fade checked\n", .{});
 }
 
-const FADING_S: f32 = 0.04;
-const FADE_FRAMES = 120;
+const FADING_S = game.harness.FADING_S;
+const FADE_FRAMES = game.harness.FADE_FRAMES;
 const VEIL_GAS = 60;
 
 fn fadeOut(g: *game.Game) void {
@@ -1215,10 +1209,7 @@ fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []con
     g.cinema.options = .{};
     try capture(g, target, CINEMA_DIR ++ "/" ++ name ++ "-all.png");
     g.cinema.options = cinema.Options.off;
-    drawInto(g, target);
-    const restored = try readTarget(target);
-    defer rl.unloadImage(restored);
-    if (differentPixels(base, restored) != 0) return error.CinemaOffChangedFrame;
+    if (try redrawnDiff(g, target, base) != 0) return error.CinemaOffChangedFrame;
 }
 
 const CINEMA_FRAMES = 120;
@@ -2232,18 +2223,22 @@ fn checkRememberedBarrels(g: *game.Game, target: rl.RenderTexture2D, before: rl.
     std.debug.print("remembered barrel GPU: {d} reflection pixels survive unseen destruction and clear with memory\n", .{kept});
 }
 
+fn shadowMask(g: *game.Game, target: rl.RenderTexture2D, c: game.scene.Cam, cast: grid.Box) !rl.Image {
+    {
+        rl.beginTextureMode(target);
+        defer rl.endTextureMode();
+        rl.clearBackground(rl.Color.white);
+        if (!game.scene.shadowPass(g, c, g.pic.groundShown(&g.sim), cast, &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
+    }
+    return readTarget(target);
+}
+
 fn checkHiddenShadowMask(g: *game.Game, target: rl.RenderTexture2D, visible: bool) !void {
     game.prepare(g);
     const c = game.scene.Cam.of(g);
     const view = game.scene.viewBox(g, c);
     g.light.bake(&g.sim.lv, view.lo, view.hi);
-    {
-        rl.beginTextureMode(target);
-        defer rl.endTextureMode();
-        rl.clearBackground(rl.Color.white);
-        if (!game.scene.shadowPass(g, c, g.pic.groundShown(&g.sim), view, &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
-    }
-    const img = try readTarget(target);
+    const img = try shadowMask(g, target, c, view);
     defer rl.unloadImage(img);
     var hits = std.EnumArray(Hidden, usize).initFill(0);
     var leaked: usize = 0;
@@ -2367,9 +2362,7 @@ fn meanDraw(g: *game.Game, target: rl.RenderTexture2D, warm: usize, n: usize) !f
 /// The fewest pixels a shot check counts as an effect drawn at all.
 const MIN_PIXELS = 100;
 
-fn sameRgb(a: rl.Color, b: rl.Color) bool {
-    return a.r == b.r and a.g == b.g and a.b == b.b;
-}
+const sameRgb = game.harness.sameRgb;
 
 /// Draws into `target`, whose batch raylib flushes at `endTextureMode`, and saves it.
 fn capture(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {

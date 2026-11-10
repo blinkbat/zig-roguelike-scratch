@@ -265,13 +265,13 @@ test "the spotlight eases onto the chosen hero and only its words stay shown" {
     var l = Lineup{};
     _ = l.step(&.{ .walk = .e }, SCREENS[0]);
     try std.testing.expectEqual(@as(usize, 1), l.at);
-    l.tick(1.0 / 60.0);
+    l.tick(mathx.FRAME_DT);
     try std.testing.expect(l.spot > 0 and l.spot < 1);
     try std.testing.expect(l.shown[0] < 1 and l.shown[1] > 0 and l.shown[2] == 0);
     var frames: usize = 1;
     var last = l.spot;
     while (l.spot != 1 or l.shown[0] != 0 or l.shown[1] != 1) : (frames += 1) {
-        l.tick(1.0 / 60.0);
+        l.tick(mathx.FRAME_DT);
         try std.testing.expect(l.spot >= last);
         last = l.spot;
         try std.testing.expect(frames < 120);

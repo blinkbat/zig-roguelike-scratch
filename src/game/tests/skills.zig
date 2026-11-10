@@ -1150,7 +1150,7 @@ test "dodging spends the foe turn without damage, bleeding or mana shield loss" 
                 game.update(g, harness.TEST_DT);
                 try std.testing.expect(g.pic.busy > 0);
                 harness.drawnOut(g);
-                try std.testing.expectEqual(h.hp, g.pic.pictured[g.sim.heroSlot().?].hp);
+                try std.testing.expectEqual(h.hp, g.pic.heroShown(&g.sim).?.hp);
                 try std.testing.expectEqual(g.sim.mana, g.pic.manaShown(&g.sim));
                 if (dodged) try std.testing.expectEqual(@as(f32, 0), g.pic.fx.impacts.flashOf(.fromIndex(g.sim.heroSlot().?)));
                 checked += 1;
@@ -1483,10 +1483,7 @@ test "a half split into the cell of a body the same blow kills slides out once t
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{cell});
     g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     const id = harness.splittable(g, at, false);
-    var ring = grid.Box.around(at, 1).cells();
-    while (ring.next()) |p| {
-        if (!p.eq(at) and !p.eq(cell)) g.sim.lv.set(p, .wall);
-    }
+    harness.hemIn(&g.sim.lv, at, cell);
     game.settle(g);
     harness.use(g, .frost_nova);
     const dying = harness.foeSlot(0);
@@ -1513,10 +1510,7 @@ test "a half split onto Fire Wall's flames catches fire as a step into them woul
     const cell = P{ .x = 25, .y = 20 };
     harness.heroArena(g, .wizard, from, &.{});
     const id = harness.splittable(g, at, false);
-    var ring = grid.Box.around(at, 1).cells();
-    while (ring.next()) |p| {
-        if (!p.eq(at) and !p.eq(cell)) g.sim.lv.set(p, .wall);
-    }
+    harness.hemIn(&g.sim.lv, at, cell);
     g.sim.lv.flames[grid.Level.idx(cell)] = 3;
     game.settle(g);
     combat.wound(g, id, .{ .dmg = 4, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
@@ -1710,7 +1704,7 @@ test "a mana shield turns a bite onto mana, the orb dropping as the bite lands, 
     try std.testing.expectEqual(after_cast, g.sim.mana + g.pic.mana_held);
     g.st = .{};
     game.update(g, harness.TEST_DT);
-    try std.testing.expectEqual(ward.TURNS, g.pic.pictured[g.sim.heroSlot().?].status.get(.warded));
+    try std.testing.expectEqual(ward.TURNS, g.pic.heroShown(&g.sim).?.status.get(.warded));
     try std.testing.expect(g.pic.mana_held > 0);
     harness.drawnOut(g);
     try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);

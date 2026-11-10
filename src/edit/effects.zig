@@ -396,7 +396,7 @@ fn drawStage(g: *game.Game, v: *Viewer, stage: rl.Rectangle, cell: f32) void {
     if (s == .level_up) v.effects.level_up.drawBeam(hero_at, o[0], o[1], cell);
     v.effects.draw(o[0], o[1], cell);
     switch (s) {
-        .mark, .level_up => widgets.figure(&g.face, g.sprites.body(actor.HERO), look.body(actor.HERO), body),
+        .mark, .level_up => panel.bodyFigure(g, actor.HERO, body),
         .torch => v.effects.drawTorch(body.x + cell / 2, body.y + cell / 2, cell, 0, 1, 1),
         .hit, .embers, .drip, .shimmer, .whirl, .arc, .missile, .net, .wisps, .glowbulb, .splash, .dust, .juke, .fire_wall => {},
     }

@@ -225,12 +225,6 @@ pub const Simulation = struct {
         return actor.Pool.idOf(slot) == self.hero;
     }
 
-    /// A body stands at `p` that nothing shows: a chest that is a mimic, a leech under the water.
-    pub fn hiddenAt(self: *const Simulation, p: P) bool {
-        const a = self.pool.getConst(self.lv.who(p)) orelse return false;
-        return a.veiled();
-    }
-
     pub fn allyAt(self: *const Simulation, p: P) bool {
         const a = self.pool.getConst(self.lv.who(p)) orelse return false;
         return a.kind.ally();

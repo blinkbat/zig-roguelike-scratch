@@ -131,8 +131,8 @@ fn tileRect(kind: grid.Tile, tex: rl.Texture2D, c: Cam, p: P) rl.Rectangle {
 }
 
 /// `t` on `p`, catching its shine as the band crosses it.
-fn drawShining(g: *const game.Game, t: rl.Texture2D, c: Cam, p: P, dx: i32) void {
-    const rect = spriteRect(t, c.sx(p) + dx, c.sy(p));
+fn drawShining(g: *const game.Game, t: rl.Texture2D, c: Cam, p: P) void {
+    const rect = spriteRect(t, c.sx(p), c.sy(p));
     raster.stretch(t, rect, look.LIT);
     shineOver(g, t, rect, p, look.LIT);
 }
@@ -163,7 +163,7 @@ fn drawFigureLetter(g: *game.Game, l: look.Look, s: P, flash: f32, opacity: f32)
 fn drawCoins(g: *const game.Game, c: Cam, pile: items.Coins) void {
     const tex = if (pile.large()) g.sprites.large_coins else g.sprites.small_coins;
     if (tex) |t| {
-        drawShining(g, t, c, pile.at, 0);
+        drawShining(g, t, c, pile.at);
     } else {
         const m = c.mid(pile.at);
         g.face.centred("$", m.x, m.y, game.GLYPH, look.UI_GOLD);
@@ -189,6 +189,10 @@ fn outline(c: Cam, p: P, col: rl.Color) void {
 
 fn fillCell(c: Cam, p: P, col: rl.Color) void {
     rl.drawRectangleRec(c.box(p), col);
+}
+
+fn fillLit(g: *const game.Game, c: Cam, cells: []const P, col: rl.Color) void {
+    for (cells) |p| if (g.sim.lv.isLit(p)) fillCell(c, p, col);
 }
 
 /// Barrels stay remembered until the hero's visible breaking blow lands, or until it sees them gone.
@@ -370,7 +374,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P,
         const here = ground.at(p);
         defer if (looseBag(here, bags, p)) {
             if (g.sprites.item_bag) |t| {
-                drawShining(g, t, c, p, 0);
+                drawShining(g, t, c, p);
                 veilSprite(g, t, c, p, .sharp);
             }
         };
@@ -534,10 +538,11 @@ fn mirrorsOnWater(ground: *const grid.Level, c: Cam, rect: rl.Rectangle, foot: f
     return false;
 }
 
-fn mirrorSprite(g: *const game.Game, c: Cam, ground: *const grid.Level, p: P, kind: grid.Tile, t: rl.Texture2D, tint: rl.Color) void {
+fn mirrorSprite(g: *const game.Game, c: Cam, ground: *const grid.Level, p: P, kind: grid.Tile, t: rl.Texture2D, shaded: bool) void {
     const rect = tileRect(kind, t, c, p);
     const foot = g.light.footY(t, rect);
     if (!mirrorsOnWater(ground, c, rect, foot)) return;
+    const tint = if (shaded) sceneryTint(g, p) else look.LIT;
     const r = Reflection.begin(g, foot, mirrorFade(g, foot, g.light.topY(t, rect), foot));
     defer r.end();
     raster.stretch(t, rect, tint);
@@ -549,10 +554,10 @@ fn drawMirrorScenery(g: *game.Game, c: Cam, ground: *const grid.Level, view: gri
         const kind = ground.at(p);
         if (!footprintSeen(g, p, kind)) continue;
         if (look.standsOver(kind)) {
-            if (tileTexture(g, ground, kind, p, bags)) |t| mirrorSprite(g, c, ground, p, kind, t, if (memory) look.LIT else sceneryTint(g, p));
+            if (tileTexture(g, ground, kind, p, bags)) |t| mirrorSprite(g, c, ground, p, kind, t, !memory);
         }
         if (!memory and looseBag(kind, bags, p)) {
-            if (g.sprites.item_bag) |t| mirrorSprite(g, c, ground, p, kind, t, sceneryTint(g, p));
+            if (g.sprites.item_bag) |t| mirrorSprite(g, c, ground, p, kind, t, true);
         }
         if (barrelShownAt(g, p)) {
             var b = Prop.at(g, c, p, false);
@@ -562,11 +567,13 @@ fn drawMirrorScenery(g: *game.Game, c: Cam, ground: *const grid.Level, view: gri
     }
 }
 
-fn drawMirrorTorches(g: *game.Game, c: Cam, flames: []const light.Flame, memory: bool) void {
+fn drawMirrorTorches(g: *game.Game, c: Cam, ground: *const grid.Level, flames: []const light.Flame, memory: bool) void {
     for (flames) |f| {
         if (f.kind != .wall) continue;
         const foot = f.foot * game.CELL_F - @as(f32, @floatFromInt(c.y));
         const top = f.at[1] * game.CELL_F - @as(f32, @floatFromInt(c.y + game.authored(fx.TORCH_TOP_PX)));
+        const x = f.at[0] * game.CELL_F - @as(f32, @floatFromInt(c.x));
+        if (!mirrorsOnWater(ground, c, .{ .x = x - game.CELL_F, .y = top, .width = 2 * game.CELL_F, .height = foot - top }, foot)) continue;
         const r = Reflection.begin(g, foot, mirrorFade(g, foot, top, foot));
         defer r.end();
         drawFlame(g, c, f, if (memory or !g.pic.litShown(&g.sim, mathx.cellOf(f.at))) 0 else flameLit(f));
@@ -586,14 +593,14 @@ fn drawFlame(g: *game.Game, c: Cam, f: light.Flame, lit: f32) void {
 pub fn drawMirrors(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.Box, bags: *const grid.CellSet, bodies: []const Shown, flames: []const light.Flame) ?sprite.Mirrors {
     if (!g.sprites.beginMirror(g.screen, g.framebuffer, true)) return null;
     drawMirrorScenery(g, c, ground, view, bags, true);
-    drawMirrorTorches(g, c, flames, true);
+    drawMirrorTorches(g, c, ground, flames, true);
     if (!g.sprites.beginMirror(g.screen, g.framebuffer, false)) {
         rl.gl.rlEnableBackfaceCulling();
         return null;
     }
     drawMirrorScenery(g, c, ground, view, bags, false);
     for (bodies) |*b| drawBody(g, b, true);
-    drawMirrorTorches(g, c, flames, false);
+    drawMirrorTorches(g, c, ground, flames, false);
     return g.sprites.endMirror(g.framebuffer);
 }
 
@@ -669,16 +676,12 @@ pub fn drawMap(g: *game.Game) void {
         }
         if (g.mode.aim.act().reticle() == .bow and aim_legal) {
             const f = skills.shownFlight(g, from, g.mode.aim.act(), g.mode.aim.mark);
-            for (f.path[0..f.len]) |p| if (g.sim.lv.isLit(p)) {
-                fillCell(c, p, look.AIM_PATH);
-            };
+            fillLit(g, c, f.path[0..f.len], look.AIM_PATH);
             switch (g.mode.aim.act()) {
                 inline else => |a| if (comptime a.bursts()) if (f.impact()) |at| {
                     if (g.sim.lv.isLit(at)) {
                         const area = skillbar.Act.elemental(a).burst(&g.sim.lv, from, at);
-                        for (area.slice()) |p| {
-                            if (g.sim.lv.isLit(p)) fillCell(c, p, look.aimArea(a));
-                        }
+                        fillLit(g, c, area.slice(), look.aimArea(a));
                     }
                 },
             }
@@ -700,9 +703,7 @@ pub fn drawMap(g: *game.Game) void {
                 for (arc.slice()) |p| fillCell(c, p, look.AIM_PATH);
             } else if (comptime a.reticle() == .ground and @hasDecl(skillbar.Act.skill(a), "area")) {
                 const area = skillbar.Act.skill(a).area(&g.sim.lv, g.mode.aim.mark);
-                if (aim_legal) for (area.slice()) |p| {
-                    if (g.sim.lv.isLit(p)) fillCell(c, p, look.AIM_PATH);
-                };
+                if (aim_legal) fillLit(g, c, area.slice(), look.AIM_PATH);
             },
         }
     }

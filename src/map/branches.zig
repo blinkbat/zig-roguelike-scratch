@@ -313,7 +313,7 @@ fn ringJoined(lv: *const grid.Level, p: P) bool {
         const a = ring[todo[top]];
         for (ring[0..n], 0..) |b, k| {
             const bit = @as(u8, 1) << @intCast(k);
-            if (seen & bit != 0 or mathx.dist(a, b) != 1) continue;
+            if (seen & bit != 0 or !mathx.adjacent(a, b)) continue;
             seen |= bit;
             todo[top] = @intCast(k);
             top += 1;

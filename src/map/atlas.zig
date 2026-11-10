@@ -124,14 +124,14 @@ pub const FIRST_FEATURE = std.enums.values(Kind)[0];
 
 pub const Bespoke = struct {
     pub const COUNTED = .{.{ "foe", "foe_n" }};
-    tile: [grid.CELLS]grid.Tile = [_]grid.Tile{.wall} ** grid.CELLS,
+    tile: [grid.CELLS]grid.Tile = [_]grid.Tile{grid.OFF_MAP} ** grid.CELLS,
     barrel: [grid.CELLS]bool = [_]bool{false} ** grid.CELLS,
     torch: grid.Torches = .{},
     foe: [MAX_FOES]Foe = undefined,
     foe_n: usize = 0,
 
     pub fn tileAt(self: *const Bespoke, p: P) grid.Tile {
-        return grid.cellOr(grid.Tile, &self.tile, p, .wall);
+        return grid.cellOr(grid.Tile, &self.tile, p, grid.OFF_MAP);
     }
 
     pub fn floorAt(self: *const Bespoke, p: P) bool {

@@ -21,6 +21,27 @@ const glide = @import("../glide.zig");
 const P = mathx.P;
 const HERO = actor.HERO;
 
+fn expectFadeAndRestore(g: *game.Game, i: usize, away: P) !void {
+    g.pic.ease(&g.sim, 0);
+    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
+    g.pic.ease(&g.sim, harness.FADING_S);
+    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 1);
+    for (0..harness.FADE_FRAMES) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    try std.testing.expect(g.pic.occlusion[i] > 0.99);
+    const hero = g.sim.heroSlot().?;
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, away);
+    g.pic.ease(&g.sim, harness.FADING_S);
+    try std.testing.expect(g.pic.occlusion[i] > 0.99);
+    g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
+    g.pic.ease(&g.sim, harness.FADING_S);
+    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 0.99);
+    for (0..harness.FADE_FRAMES) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    try std.testing.expect(g.pic.occlusion[i] < 0.01);
+    g.pic.occlusion[i] = 1;
+    game.settle(g);
+    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
+}
+
 test "large tree boughs fade with the pictured hero and only their base blocks" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -34,24 +55,7 @@ test "large tree boughs fade with the pictured hero and only their base blocks" 
     try std.testing.expect(g.sim.lv.walkable(behind));
     try std.testing.expect(!g.sim.lv.walkable(base) and g.sim.lv.at(base).blind());
     try std.testing.expect(sprite_assets.Assets.of(&g.sim.lv).tiles.contains(.large_tree));
-    g.pic.ease(&g.sim, 0);
-    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
-    g.pic.ease(&g.sim, 0.04);
-    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 1);
-    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
-    try std.testing.expect(g.pic.occlusion[i] > 0.99);
-    const hero = g.sim.heroSlot().?;
-    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 22, .y = 20 });
-    g.pic.ease(&g.sim, 0.04);
-    try std.testing.expect(g.pic.occlusion[i] > 0.99);
-    g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
-    g.pic.ease(&g.sim, 0.04);
-    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 0.99);
-    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
-    try std.testing.expect(g.pic.occlusion[i] < 0.01);
-    g.pic.occlusion[i] = 1;
-    game.settle(g);
-    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
+    try expectFadeAndRestore(g, i, .{ .x = 22, .y = 20 });
     std.debug.print("large tree: base-only collision, picture-based fade and restoration, idle easing and map reset checked\n", .{});
 }
 
@@ -62,7 +66,7 @@ test "large trees fade around a drawn foe behind them but not an unseen one" {
     const unseen = P{ .x = 30, .y = 20 };
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{ seen, unseen });
     harness.grassOver(&g.sim.lv);
-    for (10..31) |y| g.sim.lv.set(.{ .x = 28, .y = @intCast(y) }, .wall);
+    harness.wallIn(&g.sim.lv, .{ .x = 28, .y = 10 }, .{ .x = 28, .y = 30 });
     g.sim.lv.set(seen.add(.{ .x = 0, .y = 1 }), .large_tree);
     g.sim.lv.set(unseen.add(.{ .x = 0, .y = 1 }), .large_tree);
     game.settle(g);
@@ -70,7 +74,7 @@ test "large trees fade around a drawn foe behind them but not an unseen one" {
     const far = grid.Level.idx(unseen.add(.{ .x = 0, .y = 1 }));
     try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(seen))) != null);
     try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(unseen))) == null);
-    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    for (0..harness.FADE_FRAMES) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
     try std.testing.expect(g.pic.occlusion[near] > 0.99);
     try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[far]);
     try std.testing.expectEqual([2]f32{ 24.5, 20.5 }, g.pic.occluder[near]);
@@ -89,24 +93,7 @@ test "sight blocking reeds use pictured hero occlusion within their own walkable
     try std.testing.expect(look.occludes(.reeds) and !look.tall(.reeds));
     try std.testing.expect(!look.occludes(.grass) and !look.occludes(.tall_grass));
     try std.testing.expect(g.sim.lv.walkable(at) and g.sim.lv.at(at).blind());
-    g.pic.ease(&g.sim, 0);
-    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
-    g.pic.ease(&g.sim, 0.04);
-    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 1);
-    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
-    try std.testing.expect(g.pic.occlusion[i] > 0.99);
-    const hero = g.sim.heroSlot().?;
-    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 20, .y = 21 });
-    g.pic.ease(&g.sim, 0.04);
-    try std.testing.expect(g.pic.occlusion[i] > 0.99);
-    g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
-    g.pic.ease(&g.sim, 0.04);
-    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 0.99);
-    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
-    try std.testing.expect(g.pic.occlusion[i] < 0.01);
-    g.pic.occlusion[i] = 1;
-    game.settle(g);
-    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
+    try expectFadeAndRestore(g, i, .{ .x = 20, .y = 21 });
     std.debug.print("reeds: walkable sight blocker, pictured overlap, smooth fade/restoration and map reset checked\n", .{});
 }
 
@@ -334,7 +321,7 @@ test "a step onto dirt or sand kicks up its own dust at the footfall, once" {
         harness.stepTo(g, g.sim.hero, to);
         game.update(g, g.pic.glide[slot].span());
         var n: usize = 0;
-        for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and m.col.r == case.ink.r and m.col.g == case.ink.g and m.col.b == case.ink.b);
+        for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and harness.sameRgb(m.col, case.ink));
         try std.testing.expect(n > 0);
         const emitted = g.pic.fx.head;
         game.update(g, 1);

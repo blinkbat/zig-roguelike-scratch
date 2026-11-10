@@ -24,11 +24,7 @@ pub fn spread(lv: *const grid.Level, at: P, range: i32, ctx: anytype, comptime k
 
 /// The deep water and shallows within `range` of `at` that a burst there reaches, though no body could stand in the deep.
 pub fn wetIn(lv: *const grid.Level, at: P, range: i32) Burst {
-    return reached(lv, at, range, wet, {}, every);
-}
-
-fn wet(lv: *const grid.Level, p: P) bool {
-    return lv.at(p).wet();
+    return reached(lv, at, range, grid.Level.wetAt, {}, every);
 }
 
 fn reached(lv: *const grid.Level, at: P, range: i32, comptime ground: fn (*const grid.Level, P) bool, ctx: anytype, comptime keep: fn (@TypeOf(ctx), P) bool) Burst {

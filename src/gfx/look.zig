@@ -201,6 +201,7 @@ const SHRUB_INK = rgb(0x6f9a4a);
 const STONE_INK = rgb(0x8a7f6a);
 const HIDE_INK = rgb(0xb07a4e);
 const PIB_INK = rgb(0xe89aa6);
+const OPEN_CHEST_INK = rgb(0x96724d);
 
 const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .wall = .{ .sym = "#", .ch = '#', .fg = rgb(0x9a8e78), .bg = null, .mini = STONE_INK, .mini_dim = rgb(0x46434c) },
@@ -228,7 +229,7 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .tall_grass = .{ .sym = "\"", .ch = '"', .fg = rgb(0x7aa84e), .bg = null, .mini = rgb(0x3a5630), .mini_dim = rgb(0x1c2818) },
     .shrooms = .{ .sym = "•", .ch = ',', .fg = rgb(0xd8ccb4), .bg = null, .mini = rgb(0x3c4a30), .mini_dim = rgb(0x1e241a) },
     .chest = .{ .sym = "C", .ch = 'C', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = rgb(0x66502b) },
-    .chest_open = .{ .sym = "O", .ch = 'O', .fg = rgb(0x96724d), .bg = null, .mini = rgb(0x96724d), .mini_dim = rgb(0x443422) },
+    .chest_open = .{ .sym = "O", .ch = 'O', .fg = OPEN_CHEST_INK, .bg = null, .mini = OPEN_CHEST_INK, .mini_dim = rgb(0x443422) },
     .swamp_tree = .{ .sym = "S", .ch = 'S', .fg = TREE_INK.fg, .bg = null, .mini = TREE_INK.mini, .mini_dim = TREE_INK.mini_dim },
     .large_tree = .{ .sym = "L", .ch = 'L', .fg = TREE_INK.fg, .bg = null, .mini = TREE_INK.mini, .mini_dim = TREE_INK.mini_dim },
     .glow_plant = .{ .sym = "&", .ch = '&', .fg = rgb(0x9fd2ff), .bg = null, .mini = rgb(0x7fb2e0), .mini_dim = rgb(0x2e4256) },

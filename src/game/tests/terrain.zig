@@ -502,10 +502,7 @@ test "flames scorch the body standing in them each turn and may set it burning, 
         try std.testing.expectEqual(harness.TEST_HP - scorch, h.hp);
         try std.testing.expectEqual(harness.TEST_HP, g.pic.heroShown(&g.sim).?.hp);
         ignited += @intFromBool(h.burn.turns > 0);
-        g.st = .{};
-        var t: f32 = 0;
-        while (t < 1 and !harness.caughtUp(g, g.sim.heroSlot().?)) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
-        try std.testing.expect(t < 1);
+        try std.testing.expect(harness.framesUntil(g, g.sim.heroSlot().?, harness.caughtUp) < 1);
         try std.testing.expectEqual(h.burn.turns, g.pic.heroShown(&g.sim).?.status.get(.burning));
     }
     try std.testing.expect(harness.logged(g, fire.NAME));

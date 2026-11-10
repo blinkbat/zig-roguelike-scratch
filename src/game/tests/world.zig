@@ -316,8 +316,7 @@ test "a night raider is drawn coming in only once the hero's action of that turn
         const slot = before;
         try std.testing.expect(g.sim.pool.items[slot].raider);
         const early = harness.drawn(g, slot);
-        var t: f32 = 0;
-        while (t < lead + 0.05) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
+        harness.idleFor(g, lead + 0.05);
         if (!harness.drawn(g, slot)) {
             harness.drawnOut(g);
             continue;
@@ -522,7 +521,7 @@ test "a glowbulb shot in the dark keeps its pool drawn, and the foe it lit, unti
 
 fn wispsOf(g: *const game.Game, ink: @TypeOf(look.GAS)) usize {
     var n: usize = 0;
-    for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and m.grow > 0 and m.col.r == ink.r and m.col.g == ink.g and m.col.b == ink.b);
+    for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and m.grow > 0 and harness.sameRgb(m.col, ink));
     return n;
 }
 

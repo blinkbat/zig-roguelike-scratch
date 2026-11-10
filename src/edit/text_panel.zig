@@ -288,9 +288,9 @@ pub const State = struct {
     typed_author: bool = false,
     leave: ?Leave = null,
     note: Note(255) = .{},
-    passage_box: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
-    nav_box: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
-    list_box: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+    passage_box: rl.Rectangle = widgets.NO_BOX,
+    nav_box: rl.Rectangle = widgets.NO_BOX,
+    list_box: rl.Rectangle = widgets.NO_BOX,
     category: ?[]const u8 = null,
     owner: ?[]const u8 = null,
     nav_top: usize = 0,
@@ -628,7 +628,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
     const x = origin.x;
     const y = origin.y;
     const width = widgets.insetW(r);
-    const rows: usize = @intCast(@max(1, @divTrunc(@as(i32, @intFromFloat(r.height)) - fieldHeight(0), LINE_H)));
+    const rows = widgets.rowsIn(@as(i32, @intFromFloat(r.height)) - fieldHeight(0), LINE_H);
     _ = f.layout(width, FontKey.of(&g.face), &g.face);
     const breaks = f.starts[0 .. f.lines + 1];
     const lines = f.lines;
@@ -702,7 +702,7 @@ fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bot
         yy += widgets.ROW_STEP;
     }
     s.nav_box = raster.rect(x, yy, w, @max(0, bottom - yy));
-    s.nav_rows = @intCast(@max(1, @divTrunc(bottom - yy, NAV_ROW)));
+    s.nav_rows = widgets.rowsIn(bottom - yy, NAV_ROW);
     var count: usize = 0;
     var previous: []const u8 = "";
     for (s.groups.items) |group| {
@@ -772,7 +772,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     drawNavigation(ed, g, x, y, nav_w, bottom);
     widgets.drawFit(&g.face, "Passages", TEXT, list_w, false, list_x, y, look.UI_GOLD);
     const list_y = y + LINE_H;
-    s.rows = @intCast(@max(1, @divTrunc(bottom - list_y - DETAIL - LEAD, ENTRY_H)));
+    s.rows = widgets.rowsIn(bottom - list_y - DETAIL - LEAD, ENTRY_H);
     s.top = widgets.clampTop(s.top, s.results.items.len, s.rows);
     s.list_box = raster.rect(list_x, list_y, list_w, @as(i32, @intCast(s.rows)) * ENTRY_H);
     if (s.data) |c| {
@@ -803,7 +803,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         widgets.drawFit(&g.face, "No matching passages.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + LEAD, look.TEXT);
         widgets.drawFit(&g.face, "Clear search or choose another group.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + LEAD + DETAIL + LEAD, look.DIM);
     }
-    s.passage_box = raster.rect(0, 0, 0, 0);
+    s.passage_box = widgets.NO_BOX;
     if (s.selected) |i| if (s.data) |c| {
         const e = c.entries()[i];
         widgets.drawFit(&g.face, e.owner, TEXT, right_w, false, right_x, y, look.TEXT);

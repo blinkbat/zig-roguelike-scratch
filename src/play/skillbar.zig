@@ -111,7 +111,7 @@ pub const Act = enum {
     /// What it does for a hero drinking `bonus` and reaching `reach_` cells.
     pub fn describe(a: Act, w: anytype, bonus: flask.Bonus, reach_: i32) void {
         switch (a) {
-            inline else => |t| if (comptime has(t, "describe"))
+            inline else => |t| if (comptime t.declares("describe"))
                 module(t).?.describe(w, bonus)
             else if (comptime t.moves())
                 contracts.describeReach(module(t).?, w, reach_)
@@ -136,10 +136,6 @@ pub const Act = enum {
 
     fn module(comptime a: Act) ?type {
         return SKILLS.get(a).module;
-    }
-
-    fn has(comptime a: Act, comptime decl: []const u8) bool {
-        return CONTRACTS.get(a).has(decl);
     }
 
     pub const Reticle = contracts.Reticle;
@@ -223,7 +219,7 @@ pub const Act = enum {
                 .bow => bow.aimable(lv, from, to, reach_),
                 .swing => module(t).?.aimable(lv, from, to),
                 .leap, .rush => module(t).?.aimable(lv, from, to, reach_),
-                .ground => grid.Level.inside(to) and mathx.dist(from, to) <= reach_ and lv.walkable(to) and lv.isLit(to) and grid.litLine(lv, from, to),
+                .ground => mathx.dist(from, to) <= reach_ and lv.walkable(to) and lv.isLit(to) and grid.litLine(lv, from, to),
             } else unreachable,
         };
     }
@@ -254,7 +250,7 @@ pub const Act = enum {
 
     /// An elemental skill's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
     pub fn elemental(comptime a: Act) type {
-        if (!has(a, "ELEMENT")) @compileError("no element");
+        if (!a.declares("ELEMENT")) @compileError("no element");
         return module(a).?;
     }
 
