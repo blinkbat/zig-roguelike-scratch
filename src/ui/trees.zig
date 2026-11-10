@@ -176,6 +176,16 @@ fn overviewPrompt(device: input.Device) prompt_icon.Prompt {
     return if (device.pad()) prompt_icon.Prompt.menuOn(device, input.TreeKeys.PAD_OVERVIEW) else .{ .key = input.TreeKeys.OVERVIEW_CAPTION };
 }
 
+pub fn action(panel: Panel, class: hero.Class, growth: *const progress.State, i: usize) ?bool {
+    return switch (panel) {
+        .skills => blk: {
+            const act = progress.skills(class)[i].act;
+            break :blk if (progress.basic(act)) null else growth.canLearn(class, act);
+        },
+        .passives => if (growth.nodes.isSet(i)) null else growth.canAllocate(i),
+    };
+}
+
 pub fn actionBox() rl.Rectangle {
     return raster.rect(TEXT_X, ACTION_Y, TEXT_W, BUTTON_H);
 }
@@ -208,8 +218,14 @@ fn frame(face: *const font.Face, title: [:0]const u8, points: u16) void {
 }
 
 fn backdrop(box: rl.Rectangle) void {
-    rl.drawRectangleRec(box, BACK);
-    rl.drawRectangleLinesEx(box, 1, BORDER);
+    menu.boxed(box, BACK, BORDER);
+}
+
+fn button(face: *const font.Face, box: rl.Rectangle, label: [:0]const u8, enabled: bool, on_width: f32, on_ink: rl.Color) void {
+    rl.drawRectangleRec(box, TILE);
+    rl.drawRectangleLinesEx(box, if (enabled) on_width else 1, if (enabled) on_ink else BORDER);
+    const mid = raster.middleAt(box);
+    face.centred(label, mid.x, mid.y, font.BODY, if (enabled) look.TEXT else LOCKED);
 }
 
 fn drawPoints(face: *const font.Face, points: u16, right: bool) void {
@@ -319,8 +335,7 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         if (i == cursor and view.focused) rl.drawRectangleLinesEx(raster.grown(box, SKILL_FOCUS_GROW), 2, FOCUS);
         line_icons.drawSkill(sprites, s.act, mid.x - line_icons.SKILL_PX / 2, mid.y - line_icons.SKILL_PX / 2, skillAlpha(class, growth, s));
         const plaque = raster.rect(mid.x + PLAQUE_AT.x, mid.y + PLAQUE_AT.y, PLAQUE_W, PLAQUE_H);
-        rl.drawRectangleRec(plaque, BACK);
-        rl.drawRectangleLinesEx(plaque, 1, ink);
+        menu.boxed(plaque, BACK, ink);
         var rank: menu.Note(16) = .{};
         if (progress.basic(s.act)) rank.say("Basic", .{}) else rank.say("{d}/{d}", .{ growth.ranks.get(s.act), progress.rankLimit(s.act) });
         const pm = raster.middleAt(plaque);
@@ -328,7 +343,7 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         face.drawMid(s.act.name(), mid.x, mid.y + SKILL_NAME_DY, font.SMALL, if (growth.unlocked(s.act) or i == cursor) look.TEXT else LOCKED);
     }
     legend(face, &SkillState.LEGEND);
-    skillDetails(face, class, growth, skills[cursor], loadout);
+    skillDetails(face, class, growth, cursor, loadout);
 }
 
 fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Skill, buf: *Prose) ?[:0]const u8 {
@@ -343,11 +358,7 @@ fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Ski
 }
 
 fn drawAction(face: *const font.Face, label: [:0]const u8, enabled: bool) void {
-    const box = actionBox();
-    rl.drawRectangleRec(box, TILE);
-    menu.outline(box, enabled, OWNED, BORDER);
-    const mid = raster.middleAt(box);
-    face.centred(label, mid.x, mid.y, font.BODY, if (enabled) look.TEXT else LOCKED);
+    button(face, actionBox(), label, enabled, 2, OWNED);
 }
 
 const Hit = progress.Hit;
@@ -368,7 +379,8 @@ fn hitText(act: skillbar.Act, hit: Hit, text: *Prose) [:0]const u8 {
     return text.text();
 }
 
-fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progress.State, s: progress.Skill, loadout: Loadout) void {
+fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progress.State, cursor: usize, loadout: Loadout) void {
+    const s = progress.skills(class)[cursor];
     const x = TEXT_X;
     face.engraved(s.act.name(), x, NAME_Y, font.HEAD, look.TEXT);
     var rank: menu.Note(64) = .{};
@@ -431,7 +443,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     }
     var reason: Prose = .{};
     if (skillReason(class, growth, s, &reason)) |why| _ = paragraph(face, why, x, REASON_Y, TEXT_W, if (growth.canLearn(class, s.act)) OWNED else look.DIM);
-    if (!progress.basic(s.act)) drawAction(face, if (maximum) "Maximum rank" else if (learned) "Upgrade skill" else "Learn skill", growth.canLearn(class, s.act));
+    if (action(.skills, class, growth, cursor)) |enabled| drawAction(face, if (maximum) "Maximum rank" else if (learned) "Upgrade skill" else "Learn skill", enabled);
 }
 
 const Layout = struct {
@@ -630,12 +642,8 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
     if (view.focused) ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + NODE_FOCUS_GROW, FOCUS);
     rl.endScissorMode();
     for ([_]bool{ false, true }) |increase| {
-        const box = zoomBox(increase);
         const enabled = if (increase) view.zoom < ZOOM_MAX else view.zoom > ZOOM_MIN;
-        rl.drawRectangleRec(box, TILE);
-        rl.drawRectangleLinesEx(box, 1, if (enabled) AVAILABLE else BORDER);
-        const mid = raster.middleAt(box);
-        face.centred(if (increase) "+" else "-", mid.x, mid.y, font.BODY, if (enabled) look.TEXT else LOCKED);
+        button(face, zoomBox(increase), if (increase) "+" else "-", enabled, 1, AVAILABLE);
     }
     menu.action(face, overviewBox(), overviewPrompt(device), OVERVIEW);
     passiveDetails(face, class, growth, view.cursor);
@@ -661,7 +669,6 @@ fn passiveDetails(face: *const font.Face, class: hero.Class, growth: *const prog
     const x = TEXT_X;
     const state = NodeState.of(growth, i);
     const origin = progress.bonusAt(class, i) == null;
-    const enabled = growth.canAllocate(i);
     face.draw(if (n.ring == 0) armName(n.arm) else n.name, x, TITLE_Y, font.SMALL, look.DIM);
     var y: i32 = GRANT_Y;
     if (origin) {
@@ -671,10 +678,10 @@ fn passiveDetails(face: *const font.Face, class: hero.Class, growth: *const prog
     y = grantRow(face, x, y, n.grant);
     if (n.bump) |bump| y = grantRow(face, x, y, bump);
     if (grantNoteOf(n)) |line| _ = paragraph(face, line, x, y + RULE_GAP, TEXT_W, look.DIM);
-    if (state == .allocated) {
+    const enabled = action(.passives, class, growth, i) orelse {
         face.draw("Allocated", x, ACTION_Y, font.BODY, OWNED);
         return;
-    }
+    };
     const reason: []const u8 = switch (state) {
         .allocated => unreachable,
         .distant => "Allocate a preceding node first.",

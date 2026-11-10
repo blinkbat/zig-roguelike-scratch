@@ -409,12 +409,13 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
             rl.drawLine(x - 7, y + 7, x + 7, y - 7, colour);
         },
         .confused => {
-            var at = rl.Vector2{ .x = @floatFromInt(x), .y = @floatFromInt(y) };
+            const origin = raster.vec(.{ .x = x, .y = y });
+            var at = origin;
             for (1..SWIRL_STEPS + 1) |i| {
                 const k: f32 = @floatFromInt(i);
                 const a = k * 0.9;
                 const r = k * 0.55;
-                const next = rl.Vector2{ .x = @as(f32, @floatFromInt(x)) + @cos(a) * r, .y = @as(f32, @floatFromInt(y)) + @sin(a) * r };
+                const next = rl.Vector2{ .x = origin.x + @cos(a) * r, .y = origin.y + @sin(a) * r };
                 rl.drawLineV(at, next, colour);
                 at = next;
             }

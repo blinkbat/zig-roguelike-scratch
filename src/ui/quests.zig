@@ -38,11 +38,6 @@ pub const Journal = struct {
     }
 };
 
-fn asking(face: anytype, e: Entry, w: i32, wrapped: *font.Wrapped, lines: *[font.WRAP_LINES_MAX][:0]const u8) usize {
-    if (!underWay(e)) return 0;
-    return font.wrap(face, e.asks, font.BODY, w, wrapped, lines);
-}
-
 fn underWay(e: Entry) bool {
     return !e.done and e.asks.len > 0;
 }
@@ -61,16 +56,11 @@ pub fn draw(face: *const font.Face, entries: []const Entry, top: usize, box: rl.
     var y = first;
     if (entries.len == 0) return face.text(NONE, x, y, font.BODY, look.DIM);
     var fit: [LINE_MAX]u8 = undefined;
-    var wrapped: font.Wrapped = undefined;
-    var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
     for (entries[@min(top, entries.len - 1)..]) |e| {
         if (y > first and y + entryHeight(face, e, w) - ENTRY_GAP > bottom) break;
         face.text(face.fit(&fit, e.title, font.BODY, w, false), x, y, font.BODY, if (e.done) look.DIM else look.UI_GOLD);
         y += font.BODY_LINE;
-        for (lines[0..asking(face, e, w, &wrapped, &lines)]) |line| {
-            face.text(line, x, y, font.BODY, look.TEXT);
-            y += font.BODY_LINE;
-        }
+        if (underWay(e)) y = face.paragraphWith(font.Face.text, e.asks, x, y, w, font.BODY, look.TEXT);
         y += ENTRY_GAP;
     }
 }

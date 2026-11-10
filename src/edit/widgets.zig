@@ -28,7 +28,6 @@ pub const TITLE: i32 = 32;
 pub const LINE_STEP: i32 = TEXT + GAP;
 pub const DETAIL_STEP: i32 = DETAIL + GAP;
 pub const HEADING_H: i32 = DETAIL_STEP;
-pub const TEXT_DY: i32 = @divTrunc(ROW_H - TEXT, 2);
 pub const DETAIL_DY: i32 = @divTrunc(ROW_H - DETAIL, 2);
 pub const INSPECT_INNER_W: i32 = INSPECT_W - PAD * 2;
 pub const LINE: usize = 200;
@@ -68,7 +67,9 @@ pub fn textFace(face: *const font.Face) prompt_text.Face {
 }
 
 /// Modals disable underlying hits; opening one suppresses its own first-frame hits.
-pub fn hot(controls: Controls, r: rl.Rectangle, live: bool, modal: bool, tip: ?[:0]const u8) struct { hot: bool, hit: bool } {
+pub const Hot = struct { hot: bool, hit: bool };
+
+pub fn hot(controls: Controls, r: rl.Rectangle, live: bool, modal: bool, tip: ?[:0]const u8) Hot {
     const on_layer = controls.accepting and (modal or !controls.covered);
     const in_clip = if (controls.clip) |c| raster.holds(c, controls.pointer) else true;
     const hovered = on_layer and in_clip and raster.holds(r, controls.pointer);
@@ -198,6 +199,12 @@ pub fn plate(r: rl.Rectangle, on: bool, hot_: bool) void {
 
 pub fn hoverEdge(r: rl.Rectangle, hot_: bool) void {
     if (hot_) rl.drawRectangleLinesEx(r, 1, HOVER);
+}
+
+pub fn hoverHit(controls: Controls, r: rl.Rectangle, modal: bool, tip: ?[:0]const u8) Hot {
+    const h = hot(controls, r, true, modal, tip);
+    hoverEdge(r, h.hot);
+    return h;
 }
 
 pub fn row(x: i32, y: i32, w: i32) rl.Rectangle {

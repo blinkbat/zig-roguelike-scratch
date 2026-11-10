@@ -489,12 +489,11 @@ fn raiders(g: *game.Game) void {
     const r = nd.plan.procgen.raid;
     const now = g.sim.clock.since(g.sim.days);
     for (0..atlas.raid.arriving(r, game.rollOf(g.sim.seed, g.sim.node), now -| day.TURN_MINUTES, now)) |_| {
-        const over = tactics.spentSlot(g);
-        if (over == null and !g.sim.pool.hasRoomFor(atlas.raid.RAIDER)) return;
+        if (!tactics.canRise(g, atlas.raid.RAIDER)) return;
         const at = atlas.landing(&g.sim.lv, door, &.{}) orelse return;
         var body = actor.Actor.of(atlas.raid.RAIDER, at);
         body.raider = true;
-        const id = tactics.rise(g, body, over, 0);
+        const id = tactics.rise(g, body, tactics.spentSlot(g), g.pic.lead orelse 0);
         g.sim.sayAt(at, "A {s} raider comes in from the dark.", .{actor.row(atlas.raid.RAIDER).name});
         tactics.landed(g, id);
     }
@@ -991,17 +990,18 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
             const lethal = h.lethal;
             g.sim.log.push(.danger, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), h.dmg });
             g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = kind }, .dmg = h.dmg, .before = before, .best = blow.rolled == s.hit.hi } });
-            if (!lethal and h.dmg > 0 and g.sim.procStatus(hero, .bleed, s.bleeds)) {
+            const wounded = !lethal and h.dmg > 0;
+            if (wounded and g.sim.procStatus(hero, .bleed, s.bleeds)) {
                 g.sim.log.push(.danger, "{s} {s}!", .{ g.sim.name.text(), hero.bleed.said() });
                 hero.bleed.start();
             }
-            if (!lethal and h.dmg > 0 and g.sim.procStatus(hero, .stun, s.stuns)) {
+            if (wounded and g.sim.procStatus(hero, .stun, s.stuns)) {
                 hero.clock.stun();
                 g.sim.sayTakes(g.sim.heroSlot().?, hero, turn_clock.STUNNED);
                 g.sim.chronicle.note(.{ .stunned = kind });
             }
             const chills = damage.resistedChance(s.chills, defended.elements.get(glacial.ELEMENT));
-            if (!lethal and h.dmg > 0 and g.sim.procStatus(hero, glacial.AILMENT, chills)) {
+            if (wounded and g.sim.procStatus(hero, glacial.AILMENT, chills)) {
                 hero.chill.apply();
                 g.sim.sayTakes(g.sim.heroSlot().?, hero, glacial.TAKES);
             }

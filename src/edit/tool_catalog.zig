@@ -8,7 +8,6 @@ const menu = @import("../ui/menu.zig");
 const widgets = @import("widgets.zig");
 const Desk = input.Desk;
 
-pub const SHIFT_STEP = widgets.SHIFT_STEP;
 pub const TORCH_RULE = "hangs on a wall with floor below it";
 pub const BARREL_RULE = "stands on " ++ @tagName(grid.BARREL_GROUND) ++ " and breaks for gold";
 pub const FOE_RULE = "stands on open floor; a swimmer in water, a mimic on bare ground";
@@ -263,7 +262,7 @@ pub const HELP = [_]HelpSection{
             widgets.KNOB_ARROWS.glyphs[1],
             widgets.PAGE_ARROWS.glyphs[0],
             widgets.PAGE_ARROWS.glyphs[1],
-            SHIFT_STEP,
+            widgets.SHIFT_STEP,
         }),
     } },
     .{ .head = "VIEW", .column = 1, .lines = &.{

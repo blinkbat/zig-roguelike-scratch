@@ -24,7 +24,6 @@ const hero = @import("hero.zig");
 const flask = @import("flask.zig");
 const consumable = @import("consumable.zig");
 const contracts = @import("skill_contract.zig");
-const passives = @import("passives.zig");
 const wording = @import("../core/wording.zig");
 const tactics = @import("tactics.zig");
 const rend = @import("rend.zig");

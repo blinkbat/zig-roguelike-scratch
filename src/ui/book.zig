@@ -351,12 +351,12 @@ pub const Book = struct {
             .passives => {
                 for ([_]bool{ false, true }) |increase| c.add(trees.zoomBox(increase), if (increase) menu.CHANGE else menu.REMOVE, .drawn);
                 c.add(trees.overviewBox(), input.TreeKeys.PAD_OVERVIEW, .drawn);
-                if (!view.growth.nodes.isSet(self.cursor)) c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (view.growth.canAllocate(self.cursor)) 1 else look.FADED_A });
+                if (trees.action(.passives, view.class, view.growth, self.cursor)) |enabled| c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (enabled) 1 else look.FADED_A });
             },
             .skills => {
                 const act = self.selectedSkill(view);
                 c.add(trees.bindBox(), menu.CHANGE, .{ .label = if (view.growth.unlocked(act)) character_view.verbOf(.bindings) else "Bindings" });
-                if (!progress.basic(act)) c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (view.growth.canLearn(view.class, act)) 1 else look.FADED_A });
+                if (trees.action(.skills, view.class, view.growth, self.cursor)) |enabled| c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (enabled) 1 else look.FADED_A });
             },
             .stats => c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = if (self.advanced) "Main stats" else "Advanced" }),
             .quests => {},
@@ -427,7 +427,7 @@ pub const Book = struct {
             xp.say("Level  {d}     XP  {d} / {d}", .{ view.growth.level, view.growth.xp, view.growth.needed() });
             face.drawMiddle(xp.text(), layout.DETAIL_X, layout.HEADER_MID, font.SMALL, look.DIM);
             for (PAGES, 0..) |page, i| tab(face, layout.tabBox(i), page, self.page == page, view.device);
-            if (self.treePanel() == null and self.page != .quests) rl.drawLine(layout.DIVIDER_X, layout.CONTENT_TOP, layout.DIVIDER_X, layout.DIVIDER_FOOT, look.EDGE);
+            if (self.treePanel() == null and self.page != .quests) divider(layout.CONTENT_TOP, layout.DIVIDER_FOOT);
             if (self.page == .quests) {
                 quest_log.draw(face, view.quests.entries, self.top, QUESTS_BOX);
             } else if (self.treePanel()) |panel| {
@@ -464,7 +464,7 @@ pub const Book = struct {
             var holding: menu.Note(100) = .{};
             holding.say(comptime menu.named(Page.inventory) ++ "  {d} / {d}     Gold  {d}", .{ view.inventory.n, items.BAG_MAX, view.gold });
             face.draw(holding.text(), layout.LIST_X, layout.HOLDING_Y, font.SMALL, look.DIM);
-            rl.drawLine(layout.DIVIDER_X, layout.LOOT_TOP, layout.DIVIDER_X, layout.LOOT_TOP + layout.CARD_H, look.EDGE);
+            divider(layout.LOOT_TOP, layout.LOOT_TOP + layout.CARD_H);
         }
         self.drawCells(face, sprites, view);
         if (self.count(view) == 0) {
@@ -537,9 +537,9 @@ pub const Book = struct {
                 },
                 .inventory => if (stockAt(view, i)) |k| {
                     var carried: menu.Note(24) = .{};
-                    carried.say("{d} carried", .{view.inventory.stacks.get(k)});
-                    line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, look.itemInk(.normal));
-                    listRow(face, x, y, menu.titleOf(k), look.itemInk(.normal), carried.text());
+                    carried.say(item_card.CARRIED_FMT, .{view.inventory.stacks.get(k)});
+                    line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
+                    listRow(face, x, y, menu.titleOf(k), inkOf(null), carried.text());
                 } else {
                     const at = i - stocked(view);
                     const it = view.inventory.bag[at];
@@ -551,7 +551,7 @@ pub const Book = struct {
                     const n = view.nearby[i];
                     if (n.item()) |it| {
                         line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
-                    } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, look.itemInk(.normal));
+                    } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
                     listRow(face, x, y, n.label(&name_buf), inkOf(n.item()), n.command().verb());
                 },
                 .passives, .skills, .stats, .quests => unreachable,
@@ -623,6 +623,9 @@ fn pageStep(st: *const input.State) ?i32 {
     return null;
 }
 
+fn divider(top: i32, foot: i32) void {
+    rl.drawLine(layout.DIVIDER_X, top, layout.DIVIDER_X, foot, look.EDGE);
+}
 fn header(face: *const font.Face, text: [:0]const u8) void {
     face.engraved(text, layout.LIST_X, font.Face.topFor(layout.HEADER_MID, font.HEAD), font.HEAD, look.TEXT);
 }
@@ -669,7 +672,7 @@ fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: in
     const ink = if (on) look.TEXT else look.DIM;
     const size = layout.TAB_TEXT;
     if (!device.pad()) {
-        const prompt = prompt_icon.Prompt{ .key = page.shortcut().?.caption() };
+        const prompt = tabPrompt(page);
         const left = m.x - @divTrunc(tabWidth(face, page), 2);
         const after = prompt.drawFrom(face, left, m.y, size, if (on) 1 else layout.OFF_TAB_A);
         face.drawMiddle(text, after + menu.PROMPT_GAP, m.y, size, ink);
@@ -677,8 +680,10 @@ fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: in
 }
 /// A keyboard tab's shortcut and name, the widest it draws.
 fn tabWidth(face: *const font.Face, page: Page) i32 {
-    const prompt = prompt_icon.Prompt{ .key = page.shortcut().?.caption() };
-    return prompt.width(face, layout.TAB_TEXT) + menu.PROMPT_GAP + face.width(menu.named(page), layout.TAB_TEXT);
+    return tabPrompt(page).width(face, layout.TAB_TEXT) + menu.PROMPT_GAP + face.width(menu.named(page), layout.TAB_TEXT);
+}
+fn tabPrompt(page: Page) prompt_icon.Prompt {
+    return .{ .key = page.shortcut().?.caption() };
 }
 /// Every tab's shortcut and name fit inside it, in the loaded font.
 pub fn verifyTabs(face: *const font.Face) !void {

@@ -77,12 +77,16 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
 
 /// Open ground a skeleton may stand on, with room in the pool for it.
 fn raisable(g: *const game.Game, at: P) bool {
-    return fits(.skeleton, &g.sim.lv, at) and (g.sim.pool.hasRoomFor(.skeleton) or spentSlot(g) != null);
+    return fits(.skeleton, &g.sim.lv, at) and canRise(g, .skeleton);
+}
+
+pub fn canRise(g: *const game.Game, kind: actor.Kind) bool {
+    return g.sim.pool.hasRoomFor(kind) or spentSlot(g) != null;
 }
 
 /// Where an ally of `kind` may rise or follow the hero to.
 pub fn fits(kind: actor.Kind, lv: *const grid.Level, p: P) bool {
-    return actor.dwells(kind, lv, p) and lv.doorAt(p) == null;
+    return actor.standsOffDoor(kind, lv, p);
 }
 
 /// The first spent slot (`actor.Pool.spentFrom`) no longer drawn.
@@ -153,13 +157,13 @@ pub fn span(g: *const game.Game, act: skillbar.Act, from: P, start: P, end: P) ?
 /// A swing or rush whose only body is one nothing shows or an ally: neither a target nor an empty landing.
 pub fn strikesHidden(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
     switch (act.reticle() orelse return false) {
-        .rush => return g.sim.hiddenAt(at) or g.sim.allyAt(at),
+        .rush => return g.sim.untargetableAt(at),
         .swing => switch (act) {
             inline else => |a| {
-                if (comptime !a.sweeps()) return g.sim.hiddenAt(at) or g.sim.allyAt(at);
+                if (comptime !a.sweeps()) return g.sim.untargetableAt(at);
                 const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, at);
                 for (arc.slice()) |p| {
-                    if (g.sim.lv.taken(p) and !g.sim.hiddenAt(p) and !g.sim.allyAt(p)) return false;
+                    if (g.sim.lv.taken(p) and !g.sim.untargetableAt(p)) return false;
                 }
                 return true;
             },

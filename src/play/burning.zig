@@ -2,9 +2,10 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const fire = @import("../map/fire.zig");
 const damage = @import("damage.zig");
+const resilience = @import("resilience.zig");
 
 pub const COST: i32 = 4;
-pub const AILMENT = @import("resilience.zig").Kind.burn;
+pub const AILMENT = resilience.Kind.burn;
 pub const CHANCE: u32 = 50;
 pub const TURNS: u8 = 3;
 pub const PER_TURN: i32 = 4;
@@ -28,9 +29,7 @@ pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 pub const procs = damage.chance(CHANCE);
 pub const chance = damage.flat(CHANCE);
 
-pub fn afflict(a: anytype, _: *mathx.Rng) void {
-    a.burn.start();
-}
+pub const afflict = resilience.Starts(AILMENT).afflict;
 
 test "burning begins next turn, lasts three ticks and refreshes without stacking or postponing a tick" {
     var b = Burn{};

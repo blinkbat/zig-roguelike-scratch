@@ -5,7 +5,6 @@ const procgen = @import("procgen.zig");
 const actor = @import("../play/actor.zig");
 const store = @import("../core/store.zig");
 const pack = @import("../play/pack.zig");
-const climate = @import("climate.zig");
 const atlas = @import("atlas.zig");
 const script_text = @import("script_text.zig");
 const P = mathx.P;
@@ -242,15 +241,11 @@ fn lastBespoke(self: *atlas.Atlas) Error!*atlas.Bespoke {
     return (try lastNode(self)).plan.bespokeOf() orelse error.BadLine;
 }
 
-/// A procgen node's base lines: each named for, and holding, a field of its floor; the foes', sky's, post's and raid's are `GROUPS`.
+/// A procgen node's base lines: each named for, and holding, a field of its floor; its other fields' are `GROUPS`.
 pub fn floorKnobs(comptime a: Algo) []const []const u8 {
     return armKnobs(Floor, a);
 }
 const FLOOR_KNOBS_MAX = mostKnobs(Floor);
-pub const FOE_KNOBS = knobsOf(pack.Spec, MAKEUP_FIELDS);
-pub const SKY_KNOBS = knobsOf(climate.Climate, &.{});
-pub const POST_KNOBS = knobsOf(atlas.post.Post, &.{});
-pub const RAID_KNOBS = knobsOf(atlas.raid.Raid, &.{});
 /// Every other line's first word, which no knob may take.
 const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe };
 const ONCE_FILE = std.EnumSet(Word).initOne(.start);
@@ -262,12 +257,23 @@ pub fn featureKnobs(comptime k: Kind) []const []const u8 {
 }
 const FEATURE_KNOBS_MAX = mostKnobs(Feature);
 const FeatureKnobSet = std.StaticBitSet(FEATURE_KNOBS_MAX);
-const GROUPS = [_]struct { field: []const u8, knobs: []const []const u8 }{
-    .{ .field = "foes", .knobs = FOE_KNOBS },
-    .{ .field = "sky", .knobs = SKY_KNOBS },
-    .{ .field = "post", .knobs = POST_KNOBS },
-    .{ .field = "raid", .knobs = RAID_KNOBS },
+pub const GROUPS = blk: {
+    const Group = struct { field: []const u8, knobs: []const []const u8 };
+    var all: []const Group = &.{};
+    for (std.meta.fields(atlas.Procgen)) |f| {
+        if (!grouped(f)) continue;
+        all = all ++ &[_]Group{.{ .field = f.name, .knobs = knobsOf(f.type, if (f.type == pack.Spec) MAKEUP_FIELDS else &.{}) }};
+    }
+    break :blk all;
 };
+
+fn grouped(comptime f: std.builtin.Type.StructField) bool {
+    if (f.type == Floor) return false;
+    for (atlas.Procgen.COUNTED) |c| {
+        if (std.mem.eql(u8, f.name, c[0]) or std.mem.eql(u8, f.name, c[1])) return false;
+    }
+    return true;
+}
 const GROUP_KNOBS = blk: {
     var all: []const []const u8 = &.{};
     for (GROUPS) |grp| all = all ++ grp.knobs;

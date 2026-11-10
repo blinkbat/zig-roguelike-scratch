@@ -149,9 +149,7 @@ fn choiceRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime U: type, v: *U
 }
 
 fn valueHit(ed: *editor.Editor, value: rl.Rectangle, tip: [:0]const u8) bool {
-    const h = widgets.hot(ed.controls(), value, true, false, tip);
-    widgets.hoverEdge(value, h.hot);
-    return h.hit;
+    return widgets.hoverHit(ed.controls(), value, false, tip).hit;
 }
 
 const DrawStep = struct { fmt: []const u8, tips: [2][:0]const u8, min: u8, max: u8 };
@@ -614,10 +612,13 @@ comptime {
     @setEvalBranchQuota(1_000_000);
     for (std.enums.values(atlas.Algo)) |a| covers(@FieldType(atlas.Floor, @tagName(a)), rowsOf(a), atlas_text.floorKnobs(a));
     for (std.enums.values(atlas.Kind)) |k| covers(@FieldType(atlas.Feature, @tagName(k)), featureRowsOf(k), atlas_text.featureKnobs(k));
-    covers(@FieldType(atlas.Procgen, "foes"), &FOE_ROWS, atlas_text.FOE_KNOBS);
-    covers(@FieldType(atlas.Procgen, "sky"), &SKY_ROWS, atlas_text.SKY_KNOBS);
-    covers(@FieldType(atlas.Procgen, "post"), &POST_ROWS, atlas_text.POST_KNOBS);
-    covers(@FieldType(atlas.Procgen, "raid"), &RAID_ROWS, atlas_text.RAID_KNOBS);
+    for (atlas_text.GROUPS) |grp| covers(@FieldType(atlas.Procgen, grp.field), groupRows(grp.field), grp.knobs);
+}
+
+fn groupRows(comptime field: []const u8) []const Knob {
+    const all = .{ .foes = &FOE_ROWS, .sky = &SKY_ROWS, .post = &POST_ROWS, .raid = &RAID_ROWS };
+    if (!@hasField(@TypeOf(all), field)) @compileError(field ++ " has no rows on the generator");
+    return @field(all, field);
 }
 
 fn structRow(comptime field: [:0]const u8, comptime T: type, comptime tips: anytype) Knob {

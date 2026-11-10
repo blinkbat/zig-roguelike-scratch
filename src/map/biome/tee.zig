@@ -287,10 +287,14 @@ fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lo
     var m = carve.Meander.init(a, b, wander).within(above);
     while (m.next(rng)) |c| {
         carve.disc(lv, c, r, TRAIL, null);
-        var cells = grid.Cells.around(c, clear);
-        while (cells.next()) |q| {
-            if (grid.Level.inside(q)) kept.set(grid.Level.idx(q));
-        }
+        keep(kept, grid.Box.around(c, clear));
+    }
+}
+
+fn keep(kept: *grid.CellSet, b: grid.Box) void {
+    var cells = b.cells();
+    while (cells.next()) |q| {
+        if (grid.Level.inside(q)) kept.set(grid.Level.idx(q));
     }
 }
 
@@ -302,7 +306,11 @@ const Spot = struct {
     fn free(s: Spot, q: P) bool {
         if (grid.Level.onRim(q)) return false;
         const i = grid.Level.idx(q);
-        return s.lv.tile[i] == TRAIL and !s.kept.isSet(i) and !s.lv.barrel[i];
+        return s.lv.tile[i] == TRAIL and s.unheld(i);
+    }
+
+    fn unheld(s: Spot, i: usize) bool {
+        return !s.kept.isSet(i) and !s.lv.barrel[i];
     }
 
     fn roomy(s: Spot, q: P, t: grid.Tile) bool {
@@ -402,8 +410,7 @@ fn layable(t: grid.Tile) bool {
 
 /// Ground a pond or a goblin camp may be laid over, at least `clear` from the caravan camp's middle.
 const Site = struct {
-    lv: *const grid.Level,
-    kept: *const grid.CellSet,
+    spot: Spot,
     caravan: P,
     clear: i32,
 
@@ -415,7 +422,7 @@ const Site = struct {
     fn layableAt(s: Site, q: P) bool {
         if (!ABOVE_FOOT.holds(q)) return false;
         const i = grid.Level.idx(q);
-        return !s.kept.isSet(i) and !s.lv.barrel[i] and layable(s.lv.tile[i]);
+        return s.spot.unheld(i) and layable(s.spot.lv.tile[i]);
     }
 
     /// A goblin camp's art with its corner at `lo`, and a cell round it.
@@ -445,10 +452,10 @@ const PondSite = struct {
         while (cells.next()) |q| {
             const into = pond_at.inDisc(q);
             if (into < -WATER_APART) continue;
-            if (s.site.lv.at(q).wet()) return false;
+            if (s.site.spot.lv.at(q).wet()) return false;
             if (!pond_at.reaches(q)) continue;
             if (!s.site.layableAt(q)) return false;
-            shore = shore or (into < 0 and s.site.lv.at(q) == OPEN);
+            shore = shore or (into < 0 and s.site.spot.lv.at(q) == OPEN);
         }
         return shore;
     }
@@ -458,7 +465,7 @@ const PondSite = struct {
 fn pond(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *grid.CellSet) void {
     const r: f32 = @floatFromInt(p.pond);
     const angle = rng.angle();
-    const site = PondSite{ .site = .{ .lv = lv, .kept = kept, .caravan = caravan, .clear = @as(i32, p.camp) + p.pond + CLEAR_OF_CARTS }, .r = r, .angle = angle };
+    const site = PondSite{ .site = .{ .spot = .{ .lv = lv, .kept = kept }, .caravan = caravan, .clear = @as(i32, p.camp) + p.pond + CLEAR_OF_CARTS }, .r = r, .angle = angle };
     const c = grid.Box.inMap(p.pond + 1).rollWhere(rng, POND_TRIES, site, PondSite.fits) orelse return;
     const s = Crescent.of(c, r, angle);
     var cells = s.box().cells();
@@ -502,7 +509,7 @@ fn wade(lv: *grid.Level, at: P, shore: P) void {
     const steps: usize = @intFromFloat(@ceil(@max(@abs(dx), @abs(dy))));
     for (1..steps + 1) |k| {
         const f = @as(f32, @floatFromInt(k)) / @as(f32, @floatFromInt(steps));
-        const q = P{ .x = at.x + @as(i32, @intFromFloat(@round(dx * f))), .y = at.y + @as(i32, @intFromFloat(@round(dy * f))) };
+        const q = at.add(mathx.roundCell(dx * f, dy * f));
         const t = lv.at(q);
         if (!t.wet()) return;
         if (t == .water) lv.set(q, .shallows);
@@ -512,12 +519,11 @@ fn wade(lv: *grid.Level, at: P, shore: P) void {
 fn goblinCamps(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *grid.CellSet) void {
     const size = setpiece.size(CAMP_ART);
     const half = @divTrunc(@max(size.x, size.y), 2);
-    const site = Site{ .lv = lv, .kept = kept, .caravan = caravan, .clear = @as(i32, p.camp) + CLEAR_OF_CARTS + half };
+    const site = Site{ .spot = .{ .lv = lv, .kept = kept }, .caravan = caravan, .clear = @as(i32, p.camp) + CLEAR_OF_CARTS + half };
     for (0..p.camps) |_| {
         const at = grid.Box.inMap(2).rollForWhere(rng, size.x, size.y, SITE_TRIES, site, Site.campFits) orelse continue;
         setpiece.place(lv, at, CAMP_ART, PAL);
-        var cells = grid.Box.sizedP(at, size).grown(1).cells();
-        while (cells.next()) |q| kept.set(grid.Level.idx(q));
+        keep(kept, grid.Box.sizedP(at, size).grown(1));
     }
 }
 

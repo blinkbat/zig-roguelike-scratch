@@ -910,6 +910,11 @@ pub fn holdWalk(g: *Game) void {
     g.mouse.stop();
 }
 
+pub fn toPlay(g: *Game) void {
+    g.mode = .play;
+    holdWalk(g);
+}
+
 pub fn deathShown(g: *const Game) bool {
     return g.mode == .dead and g.pic.quiet();
 }

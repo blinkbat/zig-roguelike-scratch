@@ -278,9 +278,7 @@ const FIERY = damage.Resists.init(.{ .cold = -50, .fire = damage.RESIST_MAX, .ch
 
 pub fn innateResist(k: Kind, status: resilience.Kind) u8 {
     return switch (status) {
-        .stun => row(k).stun_resist,
-        .fright => row(k).fright_resist,
-        .burn, .bleed, .chill, .pin, .shock, .sunder, .blind, .confusion, .enfeeble, .maim => 0,
+        inline else => |t| if (@hasField(Row, @tagName(t) ++ "_resist")) @field(row(k), @tagName(t) ++ "_resist") else 0,
     };
 }
 
@@ -320,6 +318,10 @@ pub fn groundFits(k: Kind, t: grid.Tile) bool {
 pub fn dwells(k: Kind, lv: *const grid.Level, p: P) bool {
     if (!grid.Level.inside(p) or !groundFits(k, lv.at(p)) or lv.taken(p) or lv.npcAt(p) != null or lv.hasBarrier(p)) return false;
     return !row(k).disguised or lv.doorAt(p) == null;
+}
+
+pub fn standsOffDoor(k: Kind, lv: *const grid.Level, p: P) bool {
+    return dwells(k, lv, p) and lv.doorAt(p) == null;
 }
 
 /// Where a `k` may be pushed or pulled to: wherever its feet, or its fins, can go.
@@ -505,7 +507,16 @@ pub const Actor = struct {
 pub const Afflicted = std.EnumSet(resilience.Kind);
 
 /// The statuses worn on a body's own turn, each kept in the `Actor` field its kind names.
-pub const AFFLICTIONS = [_]resilience.Kind{ .shock, .sunder, .blind, .confusion, .enfeeble, .maim };
+pub const AFFLICTIONS = blk: {
+    var ks: []const resilience.Kind = &.{};
+    for (std.enums.values(resilience.Kind)) |k| {
+        if (!@hasField(Actor, @tagName(k))) continue;
+        const F = @FieldType(Actor, @tagName(k));
+        if (@typeInfo(F) == .@"struct" and @hasDecl(F, "wear")) ks = ks ++ &[_]resilience.Kind{k};
+    }
+    std.debug.assert(std.mem.eql(resilience.Kind, ks, &.{ .shock, .sunder, .blind, .confusion, .enfeeble, .maim }));
+    break :blk ks[0..ks.len].*;
+};
 
 pub const MAX: usize = 64;
 

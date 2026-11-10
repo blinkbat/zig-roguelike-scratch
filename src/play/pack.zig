@@ -4,6 +4,7 @@ const grid = @import("../map/grid.zig");
 const gen = @import("../map/gen.zig");
 const tee = @import("../map/biome/tee.zig");
 const actor = @import("actor.zig");
+const post = @import("post.zig");
 
 const P = mathx.P;
 
@@ -519,7 +520,7 @@ fn campOf(lv: *const grid.Level) grid.CellSet {
 fn carts(lv: *const grid.Level) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     for (&lv.tile, 0..) |t, i| {
-        if (t == .caravan or t == .caravan_part) out.set(i);
+        if (t.whole() == post.POST) out.set(i);
     }
     return out;
 }

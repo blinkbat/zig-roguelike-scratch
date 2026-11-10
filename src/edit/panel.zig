@@ -449,9 +449,7 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
         modals.fieldRow(ed, g, slot);
     } else if (nodeDropdown(ed, g, slot)) editor.openPopup(ed, slot, .node, ed.node, g.screen.y);
     y += widgets.ROW_STEP;
-    var detail_buf: [widgets.LINE]u8 = undefined;
-    const nd = ed.here();
-    widgets.textFace(&g.face).draw(nodeDetail(nd, &detail_buf), col.left(), y, DETAIL, nodeInk(nd));
+    drawNodeDetail(g, ed.here(), col.left(), y);
     y += DETAIL + widgets.BLOCK_GAP;
     var node = widgets.Across{ .col = col, .y = y, .n = 2 };
     if (smallButton(ed, g, node.next(), "Rename", ed.renaming, true, widgets.keyed("Name this node", Desk.RENAME_CAPTION)) and !ed.renamed) ed.startRename();
@@ -498,14 +496,17 @@ const DROP_CARET = "v";
 
 /// A node in the dropdown: its title and what it is; true when picked.
 pub fn nodeRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, n: usize, modal: bool) bool {
-    var detail_buf: [widgets.LINE]u8 = undefined;
     const h = widgets.hot(ed.controls(), r, true, modal, "Open this node");
     widgets.plate(r, n == ed.node, h.hot);
     const y: i32 = @intFromFloat(r.y);
     drawNodeTitle(ed, g, n, r, y + editor.TITLE_DY);
-    const nd = &ed.map.node[n];
-    widgets.textFace(&g.face).draw(nodeDetail(nd, &detail_buf), widgets.textX(r), y + editor.TITLE_DY + editor.NODE_DETAIL_DY, DETAIL, nodeInk(nd));
+    drawNodeDetail(g, &ed.map.node[n], widgets.textX(r), y + editor.TITLE_DY + editor.NODE_DETAIL_DY);
     return h.hit;
+}
+
+fn drawNodeDetail(g: *const game.Game, nd: *const atlas.Node, x: i32, y: i32) void {
+    var buf: [widgets.LINE]u8 = undefined;
+    widgets.textFace(&g.face).draw(nodeDetail(nd, &buf), x, y, DETAIL, nodeInk(nd));
 }
 
 fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {

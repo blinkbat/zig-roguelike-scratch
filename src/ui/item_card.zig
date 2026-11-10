@@ -14,6 +14,7 @@ const TWO_HANDED = "Two-handed";
 const ONE_HANDED = "One-handed";
 pub const EMPTY_SLOT = "Empty slot";
 const CONSUMABLE = "Consumable";
+pub const CARRIED_FMT = "{d} carried";
 
 const CARD_LINE = font.SMALL_LINE;
 /// Down from a card's top: its rule, name (or "Empty slot"), slot and first stat line.
@@ -154,7 +155,11 @@ comptime {
 
 fn head(face: *const font.Face, x: i32, y: i32, width: i32, caption: ?[:0]const u8) void {
     if (caption) |c| face.draw(c, x, y, font.LABEL, look.DIM);
-    rl.drawLine(x, y + CARD_RULE, x + width, y + CARD_RULE, look.EDGE);
+    rule(x, y + CARD_RULE, width);
+}
+
+fn rule(x: i32, y: i32, width: i32) void {
+    rl.drawLine(x, y, x + width, y, look.EDGE);
 }
 
 pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consumable.Kind, carried: u8, caption: ?[:0]const u8) void {
@@ -164,7 +169,7 @@ pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consuma
     const act = skillbar.Act.ofSupply(k);
     const top = face.paragraph(act.desc(), x, y + CARD_STATS, width, font.SMALL, look.TEXT);
     var line: menu.Note(40) = .{};
-    line.say("{d} carried, 1 turn to use", .{carried});
+    line.say(CARRIED_FMT ++ ", 1 turn to use", .{carried});
     face.draw(line.text(), x, top + MODS_BELOW, font.LABEL, look.DIM);
 }
 
@@ -194,7 +199,7 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     }
     if (item.magical()) {
         top += MODS_ABOVE;
-        rl.drawLine(x, top, x + width, top, look.EDGE);
+        rule(x, top, width);
         top += MODS_BELOW;
         var shown: Mods = undefined;
         for (modsOf(item, &shown)) |m| {

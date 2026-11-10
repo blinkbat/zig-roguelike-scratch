@@ -42,8 +42,7 @@ pub const Slot = enum {
 
     pub fn ofFlask(k: flask.Kind) Slot {
         return switch (k) {
-            .life => .life_flask,
-            .mana => .mana_flask,
+            inline else => |t| @field(Slot, @tagName(t) ++ "_flask"),
         };
     }
 
@@ -291,8 +290,7 @@ pub const Kind = enum {
 
     pub fn ofFlask(k: flask.Kind) Kind {
         return switch (k) {
-            .life => .life_flask,
-            .mana => .mana_flask,
+            inline else => |t| @field(Kind, @tagName(t) ++ "_flask"),
         };
     }
 
@@ -391,21 +389,14 @@ pub const WeaponEffect = struct {
 
     pub fn chance(self: WeaponEffect, k: resilience.Kind) u32 {
         return switch (k) {
-            .bleed => self.bleed,
-            .stun => self.stun,
-            .burn => self.burn,
-            .chill => self.chill,
-            .shock => self.shock,
-            .pin, .sunder, .blind, .confusion, .enfeeble, .maim, .fright => 0,
+            inline else => |t| if (@hasField(WeaponEffect, @tagName(t))) @field(self, @tagName(t)) else 0,
         };
     }
 
     fn imbue(self: *WeaponEffect, e: damage.Element, n: u32) void {
         switch (imbued(e)) {
-            .burn => self.burn += n,
-            .chill => self.chill += n,
-            .shock => self.shock += n,
-            .bleed, .stun, .pin, .sunder, .blind, .confusion, .enfeeble, .maim, .fright => unreachable,
+            inline .burn, .chill, .shock => |t| @field(self, @tagName(t)) += n,
+            else => unreachable,
         }
     }
 };

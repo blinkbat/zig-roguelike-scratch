@@ -87,9 +87,13 @@ fn aimAt(run: *game.Game, by: ?input.Button, act: skillbar.Act, from: P, mark: ?
         return;
     };
     aiming(run, by, act);
-    run.mode.aim.mark = to;
-    run.pic.turnHero(&run.sim, to.x - from.x);
+    markAim(run, from, to);
+}
+
+pub fn markAim(run: *game.Game, from: P, at: P) void {
+    run.mode.aim.mark = at;
     rememberTarget(run);
+    run.pic.turnHero(&run.sim, at.x - from.x);
 }
 
 pub fn aiming(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
@@ -190,6 +194,10 @@ fn leap(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
     run.sim.unsaved = true;
     game.castSight(run, to);
     if (act.free()) return;
+    endAtOnce(run);
+}
+
+fn endAtOnce(run: *game.Game) void {
     run.pic.lead = 0;
     combat.endTurn(run);
 }
@@ -204,8 +212,7 @@ fn drink(run: *game.Game, act: skillbar.Act, k: flask.Kind) void {
         .mana => look.WARD,
     });
     run.sim.log.push(.recovery, "{s} drinks a {s} flask.", .{ run.sim.name.text(), menu.word(k) });
-    run.pic.lead = 0;
-    combat.endTurn(run);
+    endAtOnce(run);
 }
 
 fn useSupply(run: *game.Game, comptime act: skillbar.Act, comptime k: consumable.Kind) void {
@@ -219,8 +226,7 @@ fn useSupply(run: *game.Game, comptime act: skillbar.Act, comptime k: consumable
     sayDone(run, act);
     run.pic.fx.shimmer(mathx.centre(hero.at), look.TEXT);
     run.pic.settleHero(&run.sim, 0);
-    run.pic.lead = 0;
-    combat.endTurn(run);
+    endAtOnce(run);
 }
 
 pub fn recover(run: *game.Game) void {
@@ -379,12 +385,7 @@ fn rushTo(run: *game.Game, from: P, comptime action: skillbar.Act, mark: P) void
 /// Over the hero's own cell, so the reticle reaches the far side of a corridor.
 pub fn nudgeAim(run: *game.Game, d: mathx.Dir) void {
     const hero = run.sim.heroActor() orelse return;
-    if (run.mode.aim.act().attack() != null and run.mode.aim.act().reticle() != .bow) if (targetToward(run, hero.at, d)) |at| {
-        run.mode.aim.mark = at;
-        rememberTarget(run);
-        run.pic.turnHero(&run.sim, at.x - hero.at.x);
-        return;
-    };
+    if (run.mode.aim.act().attack() != null and run.mode.aim.act().reticle() != .bow) if (targetToward(run, hero.at, d)) |at| return markAim(run, hero.at, at);
     var to = run.mode.aim.mark.add(d.delta());
     switch (run.mode.aim.act().reticle().?) {
         .leap, .rush, .ground => if (!juke.inReach(hero.at, to, run.sim.reachOf(run.mode.aim.act())) or !grid.Level.inside(to)) return,
@@ -394,9 +395,7 @@ pub fn nudgeAim(run: *game.Game, d: mathx.Dir) void {
         },
         .swing => to = hero.at.add(d.delta()),
     }
-    run.mode.aim.mark = to;
-    rememberTarget(run);
-    run.pic.turnHero(&run.sim, to.x - hero.at.x);
+    markAim(run, hero.at, to);
 }
 
 fn targetToward(run: *game.Game, from: P, d: mathx.Dir) ?P {

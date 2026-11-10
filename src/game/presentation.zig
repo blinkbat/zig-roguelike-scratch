@@ -570,7 +570,11 @@ pub const Presentation = struct {
     }
 
     fn fading(self: *const Presentation, sim: *const Simulation, i: usize) bool {
-        return self.fx.impacts.isDying(.fromIndex(i)) and !self.standing(sim, i) and self.split_from[i] == null and !self.under.isSet(i) and !self.masked.isSet(i);
+        return self.fx.impacts.isDying(.fromIndex(i)) and !self.standing(sim, i) and self.split_from[i] == null and !self.boxedOrSunk(i);
+    }
+
+    fn boxedOrSunk(self: *const Presentation, i: usize) bool {
+        return self.under.isSet(i) or self.masked.isSet(i);
     }
 
     pub fn casterAt(self: *const Presentation, sim: *const Simulation, i: usize, area: grid.Box) ?rl.Vector2 {
@@ -581,7 +585,7 @@ pub const Presentation = struct {
 
     /// Standing as a body, not underwater or in its chest.
     fn figured(self: *const Presentation, sim: *const Simulation, i: usize) bool {
-        return self.standing(sim, i) and !sim.pool.items[i].disguised and !self.under.isSet(i) and !self.masked.isSet(i);
+        return self.standing(sim, i) and !sim.pool.items[i].disguised and !self.boxedOrSunk(i);
     }
 
     /// What is drawn at `p`: a mimic's chest until its death is, a glowbulb until the bump, arrow or blow that bursts it lands,
@@ -783,8 +787,7 @@ pub const Presentation = struct {
     }
 
     pub fn npcShown(self: *const Presentation, p: P) ?usize {
-        if (!grid.Level.inside(p)) return null;
-        const f = self.npc_shown[grid.Level.idx(p)];
+        const f = grid.cellOr(u8, &self.npc_shown, p, grid.NO_NPC);
         return if (f == grid.NO_NPC) null else f - 1;
     }
 
@@ -1033,8 +1036,8 @@ pub const Presentation = struct {
 
     fn scheduleBlows(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming) void {
         if (owed.bit) |b| switch (b) {
-            .hurt, .kill => |after| self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(sim.heroSlot().?), .at = timing.hero_at, .lethal = b == .kill, .after = after } }, .{ .from = timing.body.at, .wait = timing.impact_in }),
-            .burst => |after| self.strike(sim, gas, .{ .actor = .{ .slot = timing.slot, .at = timing.body.at, .lethal = true, .after = after } }, .{ .from = timing.hero_at, .wait = timing.impact_in }),
+            .hurt, .kill => |after| self.strikeBody(sim, gas, .fromIndex(sim.heroSlot().?), timing.hero_at, b == .kill, after, .{ .from = timing.body.at, .wait = timing.impact_in }),
+            .burst => |after| self.strikeBody(sim, gas, timing.slot, timing.body.at, true, after, .{ .from = timing.hero_at, .wait = timing.impact_in }),
             .snare => |held| if (held) |after| self.recordRecovery(sim, timing.impact_in, after),
             .miss => {},
         };
@@ -1057,7 +1060,7 @@ pub const Presentation = struct {
             for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h, .{ .from = timing.body.at, .wait = timing.impact_in });
         }
         if (owed.thorns) |h| {
-            self.strike(sim, gas, .{ .actor = .{ .slot = timing.slot, .at = timing.body.at, .lethal = h.kill, .after = h.after } }, .{ .from = timing.hero_at, .wait = timing.impact_in });
+            self.strikeBody(sim, gas, timing.slot, timing.body.at, h.kill, h.after, .{ .from = timing.hero_at, .wait = timing.impact_in });
             if (h.recovery) |after| self.recordRecovery(sim, timing.impact_in, after);
         }
         if (owed.struck) |s| if (s.impact) |hit| self.strike(sim, gas, hit, .{ .from = timing.body.at, .wait = timing.impact_in });
@@ -1143,7 +1146,7 @@ pub const Presentation = struct {
     fn harmShown(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, at: P, lands: f32, h: Harm, fiery: bool, in_view: bool, s: fx.Sting) void {
         if (h.recovery) |after| self.recordRecovery(sim, lands, after);
         if (h.kill) {
-            self.strike(sim, gas, .{ .actor = .{ .slot = s.slot, .at = at, .lethal = true, .after = h.after } }, .{ .from = at, .wait = lands, .fire = fiery });
+            self.strikeBody(sim, gas, s.slot, at, true, h.after, .{ .from = at, .wait = lands, .fire = fiery });
         } else if (in_view) {
             var shown = s;
             shown.after = h.after;
@@ -1185,6 +1188,10 @@ pub const Presentation = struct {
             },
             .strike => {},
         }
+    }
+
+    fn strikeBody(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, slot: actor.ActorSlot, at: P, lethal: bool, after: fx.After, s: Stroke) void {
+        self.strike(sim, gas, .{ .actor = .{ .slot = slot, .at = at, .lethal = lethal, .after = after } }, s);
     }
 
     /// `a` shimmering in its own colour as `wait` runs out.

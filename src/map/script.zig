@@ -205,6 +205,7 @@ pub const QuestState = enum { unstarted, active, done };
 
 /// A quest's stage, counted from 1; 0 before it begins.
 pub const STAGE_SPAN = Span{ .lo = 0, .hi = MAX_STAGES };
+pub const QUEST_STAGE_SPAN = Span{ .lo = 1, .hi = MAX_STAGES };
 
 /// Each kind reads only its own fields; `slot` indexes the table its kind names.
 pub const Cond = struct {
@@ -248,7 +249,7 @@ pub const ActKind = enum {
         return switch (k) {
             .dialog, .text, .flag, .counter, .preserve => SIGNED_SPAN,
             .timer, .wait => COUNT_SPAN,
-            .quest => .{ .lo = 1, .hi = MAX_STAGES },
+            .quest => QUEST_STAGE_SPAN,
         };
     }
 };
@@ -373,7 +374,7 @@ pub const Dialog = struct {
         return indexOfName(self.lines(), name);
     }
 
-    /// Every line reachable from its first has some way to an end, taking every gate as one that may hold or not.
+    /// Every line reachable from its first offers a way to an end, taking every gate as one that may hold or not.
     pub fn ends(self: *const Dialog) bool {
         if (self.line_n == 0) return true;
         var ending = Lines.initEmpty();
@@ -406,13 +407,25 @@ pub const Dialog = struct {
         return if (at < self.line_n) at else null;
     }
 
+    /// A way to an end is offered whichever gates hold: an ungated choice to one, else `then` and every gated choice.
     fn goesOn(self: *const Dialog, l: *const Line, ending: *const Lines) bool {
-        var buf: [EXITS]?u8 = undefined;
-        for (l.exits(&buf)) |next| {
-            if (next == null) return true;
-            if (self.lineOf(next)) |at| if (ending.isSet(at)) return true;
+        if (!l.thenUsed()) {
+            for (l.choices()) |*c| {
+                if (c.always() and self.endsAt(c.next, ending)) return true;
+            }
+            return false;
         }
-        return false;
+        if (!self.endsAt(l.then, ending)) return false;
+        for (l.choices()) |*c| {
+            if (c.possible() and !self.endsAt(c.next, ending)) return false;
+        }
+        return true;
+    }
+
+    fn endsAt(self: *const Dialog, next: ?u8, ending: *const Lines) bool {
+        if (next == null) return true;
+        const at = self.lineOf(next) orelse return false;
+        return ending.isSet(at);
     }
 
     fn reach(self: *const Dialog, next: ?u8, reached: *Lines, todo: *[MAX_LINES]u8, n: *usize) void {
@@ -827,7 +840,7 @@ pub const Script = struct {
         }
         var acts = self.actIterMut();
         while (acts.next()) |a| {
-            if (a.kind == .quest and a.slot == q) shiftStage(&a.n, gone, qs.reach(ActKind.span(.quest).lo));
+            if (a.kind == .quest and a.slot == q) shiftStage(&a.n, gone, qs.reach(QUEST_STAGE_SPAN.lo));
         }
     }
 
@@ -853,7 +866,7 @@ pub const Script = struct {
         for (std.enums.values(Table)) |t| {
             const all = self.names(t);
             for (all) |*nm| {
-                if (!nm.valid() or !token(nm.text())) return false;
+                if (!tokenName(nm)) return false;
             }
             if (!distinct(all)) return false;
         }
@@ -867,14 +880,14 @@ pub const Script = struct {
             if ((self.npcAt(f.node, at) orelse return false) != i) return false;
         }
         for (self.quests()) |*q| {
-            if (!q.name.valid() or !token(q.name.text()) or !q.title.valid() or !bounded(q)) return false;
+            if (!tokenName(&q.name) or !q.title.valid() or !bounded(q)) return false;
             for (q.stages()) |*st| if (!st.valid()) return false;
         }
         if (!distinct(self.quests())) return false;
         for (self.dialogs()) |*d| {
-            if (!d.name.valid() or !token(d.name.text()) or d.line_n == 0 or !bounded(d)) return false;
+            if (!tokenName(&d.name) or d.line_n == 0 or !bounded(d)) return false;
             for (d.lines()) |*l| {
-                if (!l.name.valid() or !token(l.name.text()) or !l.who.valid() or !l.say.valid()) return false;
+                if (!tokenName(&l.name) or !l.who.valid() or !l.say.valid()) return false;
                 if (!bounded(l)) return false;
                 if (l.then) |t| if (t >= d.line_n) return false;
                 for (l.acts()) |*a| if (!a.kind.spoken() or !self.actFits(a)) return false;
@@ -889,7 +902,7 @@ pub const Script = struct {
         }
         if (!distinct(self.dialogs())) return false;
         for (self.triggers()) |*t| {
-            if (!t.name.valid() or !token(t.name.text()) or !bounded(t)) return false;
+            if (!tokenName(&t.name) or !bounded(t)) return false;
             if (!PRIORITY.holds(t.priority)) return false;
             for (t.conds()) |*c| if (!self.condFits(c, node_n)) return false;
             for (t.acts()) |*a| if (!self.actFits(a)) return false;
@@ -924,7 +937,7 @@ pub const Script = struct {
 
     fn actFits(self: *const Script, a: *const Act) bool {
         if (!self.slotFits(actRef(a.kind), a.slot) or !a.note.valid()) return false;
-        if (a.kind == .quest and a.questop == .stage and !self.quest[a.slot].reach(ActKind.span(.quest).lo).holds(a.n)) return false;
+        if (a.kind == .quest and a.questop == .stage and !self.quest[a.slot].reach(QUEST_STAGE_SPAN.lo).holds(a.n)) return false;
         return a.kind.span().holds(a.n);
     }
 };
@@ -1081,6 +1094,10 @@ fn freshName(buf: *[NAME_MAX]u8, stem: []const u8, owner: anytype, comptime take
 
 pub fn cut(comptime T: type, items: []T, n: *u8, i: usize) void {
     mathx.removeAt(T, items, n, i, .{});
+}
+
+fn tokenName(nm: *const Name) bool {
+    return nm.valid() and token(nm.text());
 }
 
 fn bounded(x: anytype) bool {

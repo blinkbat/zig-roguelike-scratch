@@ -308,7 +308,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const v = ed.effects orelse return;
     const page = widgets.pageFrame(&g.face, g.screen, TITLE);
     const f = page.frame;
-    widgets.titleHint(&g.face, f, TITLE, Desk.NAV_CAPTION ++ " or " ++ Desk.PAINT_CAPTION ++ " picks one" ++ menu.SEP ++ Desk.ENTER_CAPTION ++ " replays" ++ menu.SEP ++ Desk.BACK_CAPTION ++ " closes");
+    widgets.titleHint(&g.face, f, TITLE, modals.PICKS_ONE ++ menu.SEP ++ Desk.ENTER_CAPTION ++ " replays" ++ menu.SEP ++ modals.CLOSES);
     const col = page.column();
     const list = raster.rect(col.left(), f.y, LIST_W, page.bottom - f.y);
     drawList(ed, g, v, list);

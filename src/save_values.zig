@@ -82,15 +82,14 @@ const SavedNpc = struct {
     shows: ?script.Cond = null,
     looks: ?actor.Kind = null,
 };
-const NPC_KEPT = .{ "node", "name", "dialog", "shows", "looks" };
+fn npcKept(comptime name: []const u8) bool {
+    return !std.mem.eql(u8, name, "spot");
+}
 
 comptime {
     for (std.meta.fields(script.Npc)) |f| {
-        if (std.mem.eql(u8, f.name, "spot")) continue;
+        if (!npcKept(f.name)) continue;
         if (@FieldType(SavedNpc, f.name) != f.type) @compileError("SavedNpc does not keep script.Npc." ++ f.name);
-        for (NPC_KEPT) |kept| {
-            if (std.mem.eql(u8, kept, f.name)) break;
-        } else @compileError("NPC_KEPT misses script.Npc." ++ f.name);
     }
 }
 
@@ -138,9 +137,12 @@ pub const Policy = struct {
         if (@TypeOf(value) == mathx.Rng) return .{ .xoshiro256 = value.impl.s };
         if (@TypeOf(value) == script.Npc) {
             var result = SavedNpc{ .spot = value.spot };
-            inline for (NPC_KEPT) |name| @field(result, name) = @field(value, name);
+            inline for (std.meta.fields(script.Npc)) |f| {
+                if (comptime npcKept(f.name)) @field(result, f.name) = @field(value, f.name);
+            }
             return result;
         }
+        if (@TypeOf(value) != progress.State) @compileError("save_values.Policy cannot encode " ++ @typeName(@TypeOf(value)));
         var result = SavedProgress{};
         inline for (std.meta.fields(progress.State)) |f| {
             if (comptime carried(f.name)) @field(result, f.name) = @field(value, f.name);
@@ -161,9 +163,12 @@ pub const Policy = struct {
         }
         if (T == script.Npc) {
             var npc = script.Npc{ .spot = stored.spot orelse .{ .at = stored.at } };
-            inline for (NPC_KEPT) |name| @field(npc, name) = @field(stored, name);
+            inline for (std.meta.fields(script.Npc)) |f| {
+                if (comptime npcKept(f.name)) @field(npc, f.name) = @field(stored, f.name);
+            }
             return npc;
         }
+        if (T != progress.State) @compileError("save_values.Policy cannot decode " ++ @typeName(T));
         var result = progress.State{};
         inline for (std.meta.fields(progress.State)) |f| {
             if (comptime carried(f.name)) @field(result, f.name) = @field(stored, f.name);

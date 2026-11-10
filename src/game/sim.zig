@@ -236,6 +236,11 @@ pub const Simulation = struct {
         return a.kind.ally();
     }
 
+    pub fn untargetableAt(self: *const Simulation, p: P) bool {
+        const a = self.pool.getConst(self.lv.who(p)) orelse return false;
+        return a.veiled() or a.kind.ally();
+    }
+
     pub fn heroRow(self: *const Simulation) actor.Row {
         return actor.row(self.class.kind());
     }
@@ -383,8 +388,7 @@ pub const Simulation = struct {
         for (self.pool.slice(), 0..) |a, i| {
             const r = if (self.isHero(i)) self.heroLight() else actor.row(a.kind).light;
             if (!a.alive or r <= 0) continue;
-            carried[n] = .{ .at = if (self.isHero(i)) from else a.at, .reach = r };
-            n += 1;
+            _ = mathx.push(lume.Source, &carried, &n, .{ .at = if (self.isHero(i)) from else a.at, .reach = r });
         }
         const sight = blind.sight(if (self.heroBody()) |h| h.blind.turns > 0 else false, self.heroRow().sight);
         lume.see(&self.lv, from, sight, lume.skyReach(self.outdoors, self.clock.hour(), sight), carried[0..n]);

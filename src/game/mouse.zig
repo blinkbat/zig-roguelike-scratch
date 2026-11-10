@@ -130,12 +130,8 @@ pub fn aim(g: *game.Game) bool {
     if (!g.st.pointing() and !dropped) return false;
     const at = cell(g) orelse return false;
     const h = g.sim.heroActor() orelse return false;
-    if (g.mode.aim.act().reticle() == .swing) {
-        const d = mathx.toward(h.at, at) orelse return false;
-        g.mode.aim.mark = h.at.add(d.delta());
-    } else g.mode.aim.mark = at;
-    skills.rememberTarget(g);
-    g.pic.turnHero(&g.sim, g.mode.aim.mark.x - h.at.x);
+    const mark = if (g.mode.aim.act().reticle() == .swing) h.at.add((mathx.toward(h.at, at) orelse return false).delta()) else at;
+    skills.markAim(g, h.at, mark);
     return g.st.click or dropped;
 }
 

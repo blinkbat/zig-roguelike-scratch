@@ -120,7 +120,7 @@ pub fn smooth(lv: *grid.Level, passes: u32, solid: grid.Tile, open: grid.Tile) v
         for (0..grid.CELLS) |i| walled[padded(i)] = @intFromBool(lv.tile[i] == solid);
         for (0..grid.CELLS) |i| {
             const t = lv.tile[i];
-            next[i] = if (t != solid and t != open) t else if (grid.Level.onRim(grid.Level.of(i)) or crowded(&walled, padded(i))) solid else open;
+            next[i] = if (t != solid and t != open) t else if (rimAt(i) or crowded(&walled, padded(i))) solid else open;
         }
         lv.tile = next;
     }

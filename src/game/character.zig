@@ -88,8 +88,7 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
         const cell = grid.Level.idx(l.at);
         if (listed.isSet(cell)) continue;
         listed.set(cell);
-        out[n] = if (g.sim.lv.at(l.at).isChest()) .{ .chest = l.at } else .{ .bag = l.at };
-        n += 1;
+        _ = mathx.push(book.Nearby, out, &n, if (g.sim.lv.at(l.at).isChest()) .{ .chest = l.at } else .{ .bag = l.at });
     };
     var cells = grid.Cells.around(at, game.INTERACT_REACH);
     while (cells.next()) |p| {
@@ -97,15 +96,9 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
         if (!listed.isSet(grid.Level.idx(p))) {
             const chest = chestReached(g, at, p);
             const gold = goldReached(g, at, p);
-            if (chest or gold != null) {
-                out[n] = if (chest or g.sim.lv.at(p).isChest()) .{ .chest = p } else .{ .gold = gold.? };
-                n += 1;
-            }
+            if (chest or gold != null) _ = mathx.push(book.Nearby, out, &n, if (chest or g.sim.lv.at(p).isChest()) .{ .chest = p } else .{ .gold = gold.? });
         }
-        if (doorReached(g, at, p) != null) {
-            out[n] = .{ .door = p };
-            n += 1;
-        }
+        if (doorReached(g, at, p) != null) _ = mathx.push(book.Nearby, out, &n, .{ .door = p });
     }
     return out[0..n];
 }
@@ -114,14 +107,10 @@ fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
     const from = g.sim.heroAt() orelse return out[0..0];
     var n: usize = 0;
     for (g.sim.ground.drops[0..g.sim.ground.n], 0..) |drop, i| {
-        if (!inLoot(g, from, at, drop)) continue;
-        out[n] = .{ .loot = .{ .index = i, .item = drop.item } };
-        n += 1;
+        if (inLoot(g, from, at, drop)) _ = mathx.push(book.Nearby, out, &n, .{ .loot = .{ .index = i, .item = drop.item } });
     }
     for (g.sim.ground.supplies[0..g.sim.ground.supply_n], 0..) |s, i| {
-        if (!inLoot(g, from, at, s)) continue;
-        out[n] = .{ .supply = .{ .index = i, .kind = s.kind } };
-        n += 1;
+        if (inLoot(g, from, at, s)) _ = mathx.push(book.Nearby, out, &n, .{ .supply = .{ .index = i, .kind = s.kind } });
     }
     return out[0..n];
 }
@@ -209,8 +198,7 @@ pub fn openLoot(g: *game.Game, at: P) void {
     if (chestReached(g, h.at, at)) {
         if (!game.combat.openChest(g, at)) return;
         g.pic.turnHero(&g.sim, at.x - h.at.x);
-        g.mode = .play;
-        game.holdWalk(g);
+        game.toPlay(g);
         spendTurn(g);
         return;
     }
@@ -393,8 +381,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             if (p.eq(h.at)) {
                 if (h.pin.holding()) game.struggle(g) else g.sim.travel = link;
             } else if (h.hampered()) {
-                g.mode = .play;
-                game.holdWalk(g);
+                game.toPlay(g);
                 return game.heroStep(g, mathx.dirTo(h.at, p).?, 0);
             } else game.heroTo(g, p);
             g.pic.turnHero(&g.sim, dx);
@@ -452,13 +439,9 @@ pub fn pauseStep(g: *game.Game) void {
             switch (game.PAUSE_ROWS[i]) {
                 .resume_ => g.mode = .play,
                 .debug => game.debugging.open(g, .main),
-                .back => {
+                inline .back, .quit => |r| {
                     g.mode = .play;
-                    g.exit = .back;
-                },
-                .quit => {
-                    g.mode = .play;
-                    g.exit = .quit;
+                    g.exit = @field(game.Exit, @tagName(r));
                 },
             }
         },

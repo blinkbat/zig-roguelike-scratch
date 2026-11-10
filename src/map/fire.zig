@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
+const carve = @import("carve.zig");
 const gas = @import("gas.zig");
 const ice = @import("ice.zig");
 const damage = @import("../play/damage.zig");
@@ -144,7 +145,7 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32, kept: *const grid.CellS
 
 fn field(t: grid.Tile) grid.Level {
     var lv = grid.openFloor();
-    for (&lv.tile) |*c| c.* = t;
+    carve.fill(&lv, t);
     return lv;
 }
 
@@ -248,8 +249,7 @@ test "a fire of no heat burns a whole reed bed down, and no grass beyond it" {
     var rng = mathx.Rng.init(0x2EED);
     var lv = field(.grass);
     const bed = grid.Box.sized(AT, 9, 5);
-    var cells = bed.cells();
-    while (cells.next()) |p| lv.set(p, .reeds);
+    carve.box(&lv, bed, .reeds);
     lay(&lv, AT, BURNS, 0);
     _ = try burnOut(&lv, &rng, 0);
     var reeds: usize = 0;

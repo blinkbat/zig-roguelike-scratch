@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const bleeding = @import("bleeding.zig");
 const damage = @import("damage.zig");
+const resilience = @import("resilience.zig");
 
 pub const COST: i32 = 6;
 pub const AILMENT = bleeding.AILMENT;
@@ -13,9 +14,7 @@ pub const CHANCE: u32 = mathx.PERCENT;
 pub const procs = damage.chance(CHANCE);
 pub const chance = damage.flat(CHANCE);
 
-pub fn afflict(a: anytype, _: *mathx.Rng) void {
-    a.bleed.start();
-}
+pub const afflict = resilience.Starts(AILMENT).afflict;
 
 test "a barbed arrow always opens a bleed" {
     var rng = mathx.Rng.init(0xBA4B);

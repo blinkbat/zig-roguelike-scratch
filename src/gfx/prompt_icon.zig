@@ -60,20 +60,21 @@ pub const Prompt = union(enum) {
     pub fn draw(p: Prompt, face: *const font.Face, cx: i32, cy: i32, h: i32, alpha: f32) void {
         const w = p.width(face, h);
         const box = raster.rect(cx - @divTrunc(w, 2), cy - @divTrunc(h, 2), w, h);
+        const ink = look.fade(PROMPT_INK, alpha);
         switch (p) {
             .stick => |side| {
                 const c = raster.vec(.{ .x = cx, .y = cy });
                 const radius: f32 = @as(f32, @floatFromInt(h)) * 0.46;
                 rl.drawCircleV(c, radius, look.fade(PROMPT_BODY, alpha));
                 rl.drawRing(c, radius - STICK_RIM_PX, radius, 0, 360, 24, look.fade(PROMPT_EDGE, alpha));
-                face.centred(if (side == .left) "L" else "R", cx, cy, labelPx(h), look.fade(PROMPT_INK, alpha));
+                face.centred(if (side == .left) "L" else "R", cx, cy, labelPx(h), ink);
             },
             .dpad, .arrows => {
                 const step = @divTrunc(h, 3);
                 for (input.DPAD) |d| {
                     const offset = d.delta();
-                    const ink = if (p == .dpad and offset.x != 0) PROMPT_EDGE else PROMPT_INK;
-                    promptArrow(d, cx + offset.x * step, cy + offset.y * step, arrowPx(h), look.fade(ink, alpha));
+                    const arm = if (p == .dpad and offset.x != 0) look.fade(PROMPT_EDGE, alpha) else ink;
+                    promptArrow(d, cx + offset.x * step, cy + offset.y * step, arrowPx(h), arm);
                 }
             },
             .mouse => |button| {
@@ -82,18 +83,18 @@ pub const Prompt = union(enum) {
                 const y: f32 = @floatFromInt(cy);
                 const s: f32 = @floatFromInt(h);
                 if (button == .left or button == .right) {
-                    rl.drawRectangleRec(.{ .x = x + (if (button == .left) -s * 0.24 else @as(f32, 0.04)), .y = y - s * 0.33, .width = s * 0.2, .height = s * 0.3 }, look.fade(PROMPT_INK, alpha));
+                    rl.drawRectangleRec(.{ .x = x + (if (button == .left) -s * 0.24 else @as(f32, 0.04)), .y = y - s * 0.33, .width = s * 0.2, .height = s * 0.3 }, ink);
                 } else {
-                    WHEEL_ROUND.fill(.{ .x = x - WHEEL_PX / 2, .y = y - s * 0.3, .width = WHEEL_PX, .height = s * 0.3 }, look.fade(PROMPT_INK, alpha));
+                    WHEEL_ROUND.fill(.{ .x = x - WHEEL_PX / 2, .y = y - s * 0.3, .width = WHEEL_PX, .height = s * 0.3 }, ink);
                     if (button == .wheel) for ([_]mathx.Dir{ .n, .s }) |d| {
-                        promptArrow(d, cx, cy + d.delta().y * @divTrunc(h, 3), arrowPx(h), look.fade(PROMPT_INK, alpha));
+                        promptArrow(d, cx, cy + d.delta().y * @divTrunc(h, 3), arrowPx(h), ink);
                     };
                 }
             },
             .face => |f| faceButton(face, f.button, f.sony, cx, cy, h, alpha),
             .pill => |s| {
                 pill(box, alpha);
-                face.centred(s, cx, cy, labelPx(h), look.fade(PROMPT_INK, alpha));
+                face.centred(s, cx, cy, labelPx(h), ink);
             },
             .view => {
                 pill(box, alpha);
@@ -108,7 +109,7 @@ pub const Prompt = union(enum) {
                 const direction: ?mathx.Dir = for (input.ARROW_KEYS) |a| {
                     if (std.mem.eql(u8, s, a.caption)) break a.d;
                 } else null;
-                if (direction) |d| promptArrow(d, cx, cy - @divTrunc(h, 12), @divTrunc(h, 2), look.fade(PROMPT_INK, alpha)) else face.centred(s, cx, cy - @divTrunc(h, 12), labelPx(h), look.fade(PROMPT_INK, alpha));
+                if (direction) |d| promptArrow(d, cx, cy - @divTrunc(h, 12), @divTrunc(h, 2), ink) else face.centred(s, cx, cy - @divTrunc(h, 12), labelPx(h), ink);
             },
         }
     }

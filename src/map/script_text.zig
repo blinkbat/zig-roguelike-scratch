@@ -58,11 +58,11 @@ pub fn write(s: *const Script, w: anytype) !void {
     }
     for (s.quests()) |*q| {
         try w.print(says(.quest) ++ "{s}", .{q.name.text()});
-        if (q.title.n > 0) try w.print(" {s}", .{q.title.text()});
+        try putTail(w, &q.title);
         try w.writeByte('\n');
         for (q.stages()) |*st| {
-            try w.writeAll(comptime std.mem.trimRight(u8, says(.stage), " "));
-            if (st.n > 0) try w.print(" {s}", .{st.text()});
+            try w.writeAll(@tagName(Word.stage));
+            try putTail(w, st);
             try w.writeByte('\n');
         }
     }
@@ -89,7 +89,7 @@ pub fn write(s: *const Script, w: anytype) !void {
             .far => try w.writeAll(FAR),
         }
         try w.print(" {s}", .{if (f.dialog) |d| s.dialog[d].name.text() else NONE});
-        if (f.name.n > 0) try w.print(" {s}", .{f.name.text()});
+        try putTail(w, &f.name);
         try w.writeByte('\n');
         if (f.shows) |*c| try putCond(w, s, .shows, c);
         if (f.looks) |k| try w.print(says(.looks) ++ "{s}\n", .{@tagName(k)});
@@ -99,6 +99,10 @@ pub fn write(s: *const Script, w: anytype) !void {
         for (t.conds()) |*c| try putCond(w, s, .when, c);
         for (t.acts()) |*a| try putAct(w, s, .do, a);
     }
+}
+
+fn putTail(w: anytype, words: anytype) !void {
+    if (words.n > 0) try w.print(" {s}", .{words.text()});
 }
 
 fn target(d: *const script.Dialog, next: ?u8) []const u8 {
@@ -130,7 +134,7 @@ fn putAct(w: anytype, s: *const Script, comptime lead: Word, a: *const script.Ac
     switch (a.kind) {
         .preserve => {},
         .dialog => try w.print(" {s}", .{s.dialog[a.slot].name.text()}),
-        .text => if (a.note.n > 0) try w.print(" {s}", .{a.note.text()}),
+        .text => try putTail(w, &a.note),
         .flag => try w.print(" {s} {s}", .{ s.flag[a.slot].text(), @tagName(a.setop) }),
         .counter => try w.print(" {s} {s} {d}", .{ s.counter[a.slot].text(), @tagName(a.countop), a.n }),
         .timer => try w.print(" {s} {d}", .{ s.timer[a.slot].text(), a.n }),
@@ -232,13 +236,10 @@ pub const Reader = struct {
                 r.line = d.line_n - 1;
                 r.choice = null;
             },
-            .who => {
+            inline .who, .say => |t| {
                 const l = try r.lineOf(s);
-                if (l.who.n > 0 or !l.who.set(try said(f))) return error.BadLine;
-            },
-            .say => {
-                const l = try r.lineOf(s);
-                if (l.say.n > 0 or !l.say.set(try said(f))) return error.BadLine;
+                const words = &@field(l, @tagName(t));
+                if (words.n > 0 or !words.set(try said(f))) return error.BadLine;
             },
             .act => {
                 const l = try r.lineOf(s);
@@ -412,7 +413,7 @@ pub const Reader = struct {
                 a.questop = try value(script.Questop, f);
                 a.n = switch (a.questop) {
                     .stage => try int(i32, f),
-                    .done => script.ActKind.span(.quest).lo,
+                    .done => script.QUEST_STAGE_SPAN.lo,
                 };
             },
         }

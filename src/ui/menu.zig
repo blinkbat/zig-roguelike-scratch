@@ -127,9 +127,13 @@ pub const ACTION_WIDE = mathx.P{ .x = 220, .y = 40 };
 pub const ACTION_GAP: i32 = 8;
 pub const PANEL_PAD: i32 = 24;
 
+pub fn boxed(r: rl.Rectangle, fill: rl.Color, edge: rl.Color) void {
+    rl.drawRectangleRec(r, fill);
+    rl.drawRectangleLinesEx(r, 1, edge);
+}
+
 pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon.Prompt, label: [:0]const u8) void {
-    rl.drawRectangleRec(r, look.PICK_BG);
-    rl.drawRectangleLinesEx(r, 1, look.EDGE);
+    boxed(r, look.PICK_BG, look.EDGE);
     const text_x = actionPrompt(face, r, prompt, 1);
     const text_w = @as(i32, @intFromFloat(r.x + r.width)) - ACTION_PAD - text_x;
     face.centred(label, text_x + @divTrunc(text_w, 2), raster.middleAt(r).y, font.BODY, look.TEXT);

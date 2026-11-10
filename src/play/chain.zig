@@ -1,5 +1,4 @@
 const std = @import("std");
-const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
 const actor = @import("actor.zig");

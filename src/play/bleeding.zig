@@ -1,5 +1,4 @@
 const std = @import("std");
-const mathx = @import("../core/mathx.zig");
 const damage = @import("damage.zig");
 
 pub const AILMENT = @import("resilience.zig").Kind.bleed;

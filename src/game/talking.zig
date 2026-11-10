@@ -91,8 +91,8 @@ pub fn speak(g: *game.Game, npc: usize) void {
     if (npc >= s.npc_n) return;
     const who = &s.npc[npc];
     if (g.sim.heroAt()) |at| if (g.sim.plot.spotOf(s, npc)) |there| g.pic.turnHero(&g.sim, there.x - at.x);
-    game.holdWalk(g);
     if (who.dialog) |d| if (g.sim.plot.open(s, d, @intCast(npc), &g.sim.log)) return opened(g);
+    game.holdWalk(g);
     g.sim.log.say("{s} has nothing to say.", .{who.called()});
 }
 
@@ -149,22 +149,22 @@ pub fn step(g: *game.Game) void {
         rt.talk.?.cursor = @intCast(row);
         if (g.st.click) {
             rt.pick(s, row, w, &g.sim.log);
-            g.sim.unsaved = true;
             picked = true;
         }
     };
     if (!picked and rt.talk != null and (g.st.hit(menu.CONFIRM) or g.st.clicked(shown.layout.action))) {
         rt.confirm(s, w, &g.sim.log);
         picked = true;
-        g.sim.unsaved = true;
     }
-    if (picked) restand(g);
+    if (picked) {
+        g.sim.unsaved = true;
+        restand(g);
+    }
     if (rt.talk == null) finished(g);
 }
 
 fn finished(g: *game.Game) void {
-    g.mode = .play;
-    game.holdWalk(g);
+    game.toPlay(g);
 }
 
 pub fn draw(g: *game.Game) void {
@@ -329,6 +329,32 @@ test "a dialog with a reachable line no way out of never opens, though its first
     game.heroStep(g, .e, 0);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqualStrings("Trapper has nothing to say.", g.sim.log.line(0).?);
+}
+
+test "a dialog whose only way out is gated beside an ungated loop never opens, nor one whose gated choice loops" {
+    const w = try testWorld(
+        \\flag f
+        \\dialog hidden
+        \\line a
+        \\say Again.
+        \\ask Again. -> a
+        \\ask Leave. -> end
+        \\need flag f on
+        \\dialog looping
+        \\line a
+        \\say Ask.
+        \\ask About it. -> b
+        \\need flag f on
+        \\line b
+        \\say It.
+        \\then a
+        \\npc 0 6 5 hidden Hider
+    );
+    defer std.testing.allocator.destroy(w);
+    try std.testing.expect(!w.script.dialog[0].ends());
+    try std.testing.expect(!w.script.dialog[1].ends());
+    try std.testing.expectEqual(@as(usize, 2), w.script.endless());
+    std.debug.print("dialogs: {d} with a way out only some gates offer refused\n", .{w.script.endless()});
 }
 
 test "a way out that never shows ends nothing: its NPC has nothing to say and a trigger asking for it goes on" {

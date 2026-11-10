@@ -478,8 +478,8 @@ fn skillSources(a: std.mem.Allocator, bytes: [:0]const u8) ![]const SkillSource 
         if (t.tag != .keyword_const or i + 6 >= ts.len) continue;
         if (ts[i + 2].tag != .equal or !std.mem.eql(u8, slice(bytes, ts[i + 3]), "@import") or ts[i + 5].tag != .string_literal) continue;
         const path = try std.zig.string_literal.parseAlloc(a, slice(bytes, ts[i + 5]));
-        if (std.mem.indexOfScalar(u8, path, '/') != null or !std.mem.endsWith(u8, path, ".zig")) continue;
-        try imports.put(slice(bytes, ts[i + 1]), try std.fmt.allocPrint(a, "play.{s}", .{path[0 .. path.len - 4]}));
+        if (std.mem.indexOfScalar(u8, path, '/') != null or !std.mem.endsWith(u8, path, ZIG)) continue;
+        try imports.put(slice(bytes, ts[i + 1]), try std.fmt.allocPrint(a, "play.{s}", .{stem(path)}));
     }
     var result = std.ArrayList(SkillSource).init(a);
     var braces = std.ArrayList(usize).init(a);
@@ -522,8 +522,7 @@ fn humanize(a: std.mem.Allocator, value: []const u8) ![]const u8 {
 
 fn moduleOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
     const start: usize = if (std.mem.startsWith(u8, path, SRC)) SRC.len else 0;
-    const end = if (std.mem.endsWith(u8, path, ZIG)) path.len - ZIG.len else path.len;
-    const module = try a.dupe(u8, path[start..end]);
+    const module = try a.dupe(u8, stem(path)[start..]);
     std.mem.replaceScalar(u8, module, '/', '.');
     return module;
 }
@@ -541,8 +540,11 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (contains(&EFFECT_SOURCES, rel)) return "Effects";
         if (contains(&LOOK_SOURCES, rel)) return "Look";
     }
-    const base = std.fs.path.basename(path);
-    return humanize(a, if (std.mem.endsWith(u8, base, ZIG)) base[0 .. base.len - ZIG.len] else base);
+    return humanize(a, stem(std.fs.path.basename(path)));
+}
+
+fn stem(path: []const u8) []const u8 {
+    return if (std.mem.endsWith(u8, path, ZIG)) path[0 .. path.len - ZIG.len] else path;
 }
 
 fn textRole(name: []const u8) ?[]const u8 {
@@ -617,7 +619,7 @@ const ContextScan = struct {
                 const name = std.zig.string_literal.parseAlloc(s.a, slice(s.bytes, s.ts[i + 3])) catch return null;
                 return if (name.len > 0) name else null;
             }
-            if (oneOfToken(s.ts[i].tag, &.{ .l_brace, .l_paren, .l_bracket })) i = s.pairs[i];
+            if (oneOfToken(s.ts[i].tag, &OPENERS)) i = s.pairs[i];
         }
         return null;
     }
@@ -640,7 +642,7 @@ const ContextScan = struct {
             const end = s.expressionEnd(i + 2);
             var at = i + 2;
             while (at <= end and ts[at].tag != .equal) : (at += 1) {
-                if (oneOfToken(ts[at].tag, &.{ .l_brace, .l_paren, .l_bracket })) at = s.pairs[at];
+                if (oneOfToken(ts[at].tag, &OPENERS)) at = s.pairs[at];
             }
             if (at <= end) try s.scopes.append(.{ .name = slice(s.bytes, ts[i]), .end = end, .kind = .member });
         } else if (ts[i].tag == .l_paren and i > 0 and ts[i - 1].tag == .identifier and (i < 2 or ts[i - 2].tag != .keyword_fn)) {
@@ -692,13 +694,15 @@ const ContextScan = struct {
     }
 };
 
+const OPENERS = [_]Token.Tag{ .l_brace, .l_paren, .l_bracket };
+
 fn oneOfToken(tag: Token.Tag, choices: []const Token.Tag) bool {
     for (choices) |choice| if (tag == choice) return true;
     return false;
 }
 
 fn enumType(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []const Token, pairs: []const usize, at: usize) !?[]const u8 {
-    if (at < 3 or ts[at - 1].tag != .equal or ts[at - 2].tag != .identifier or ts[at - 3].tag != .keyword_const) return null;
+    if (!namesConst(ts, at)) return null;
     if (!std.mem.startsWith(u8, path, SRC) or !std.mem.endsWith(u8, path, ZIG)) return null;
     var name = std.ArrayList(u8).init(a);
     try name.appendSlice(try moduleOf(a, path));
@@ -707,13 +711,17 @@ fn enumType(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []con
         var open = i + 1;
         if (open < ts.len and ts[open].tag == .l_paren) open = pairs[open] + 1;
         if (open >= at or ts[open].tag != .l_brace or pairs[open] < at) continue;
-        if (i < 3 or ts[i - 1].tag != .equal or ts[i - 2].tag != .identifier or ts[i - 3].tag != .keyword_const) return null;
+        if (!namesConst(ts, i)) return null;
         try name.append('.');
         try name.appendSlice(slice(bytes, ts[i - 2]));
     }
     try name.append('.');
     try name.appendSlice(slice(bytes, ts[at - 2]));
     return try name.toOwnedSlice();
+}
+
+fn namesConst(ts: []const Token, at: usize) bool {
+    return at >= 3 and ts[at - 1].tag == .equal and ts[at - 2].tag == .identifier and ts[at - 3].tag == .keyword_const;
 }
 
 fn declaration(bytes: []const u8, ts: []const Token, before: usize) ?[]const u8 {

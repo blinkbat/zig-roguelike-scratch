@@ -7,7 +7,7 @@ const P = mathx.P;
 
 pub const GUARD: actor.Kind = .caravan_guard;
 pub const GUARDS_MAX: u8 = 8;
-const POST: grid.Tile = .caravan;
+pub const POST: grid.Tile = .caravan;
 
 /// The guards a procgen node posts beside its carts.
 pub const Post = struct {
@@ -40,7 +40,7 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, post: Post) void {
 
 /// Free dry ground a guard may stand on.
 fn stands(lv: *const grid.Level, q: P) bool {
-    return !grid.Level.onRim(q) and actor.dwells(GUARD, lv, q) and lv.doorAt(q) == null and !lv.at(q).wet();
+    return !grid.Level.onRim(q) and actor.standsOffDoor(GUARD, lv, q) and !lv.at(q).wet();
 }
 
 test "guards stand beside the carts, a cart at a time, and none without a cart" {

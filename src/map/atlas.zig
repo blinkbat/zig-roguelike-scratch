@@ -109,9 +109,9 @@ pub const Procgen = struct {
         var q = self.*;
         q.floor = q.floor.fit();
         for (q.featuresMut()) |*f| f.* = f.fit();
-        q.foes = q.foes.fit();
-        q.post = q.post.fit();
-        q.raid = q.raid.fit();
+        inline for (std.meta.fields(Procgen)) |f| {
+            if (comptime @typeInfo(f.type) == .@"struct" and @hasDecl(f.type, "fit")) @field(q, f.name) = @field(q, f.name).fit();
+        }
         return q;
     }
 
@@ -941,6 +941,14 @@ test "the strand's door leads to a tee: the whole caravan camp walks from where 
     try std.testing.expectEqual(@as(usize, RUNS), bridges);
 }
 
+fn besideCart(lv: *const grid.Level, p: P) bool {
+    var round = grid.Cells.around(p, 1);
+    while (round.next()) |q| {
+        if (grid.Level.inside(q) and lv.at(q).whole() == .caravan) return true;
+    }
+    return false;
+}
+
 test "the caravan posts three guards beside its carts, apart from the merchant, and no foe near a cart, on every roll" {
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);
@@ -971,10 +979,7 @@ test "the caravan posts three guards beside its carts, apart from the merchant, 
             if (g.kind != post.GUARD) continue;
             guards += 1;
             try std.testing.expect(lv.npcAt(g.at) == null);
-            var cart = false;
-            var round = grid.Cells.around(g.at, 1);
-            while (round.next()) |q| cart = cart or (grid.Level.inside(q) and lv.at(q).whole() == .caravan);
-            try std.testing.expect(cart);
+            try std.testing.expect(besideCart(&lv, g.at));
         }
         fewest = @min(fewest, guards);
     }
@@ -1010,10 +1015,7 @@ test "the caravan's merchant stands beside a cart, and the stolen baby pib far u
         a.stampNpcs(caravan, &lv, &stood, EVERY_NPC);
         const at = stood[merchant] orelse return error.NoPlace;
         try std.testing.expectEqual(@as(?usize, merchant), lv.npcAt(at));
-        var cart = false;
-        var round = grid.Cells.around(at, 1);
-        while (round.next()) |q| cart = cart or (grid.Level.inside(q) and lv.at(q).whole() == .caravan);
-        try std.testing.expect(cart);
+        try std.testing.expect(besideCart(&lv, at));
         a.node[north.node].stamp(&lv, seed);
         a.stampNpcs(north.node, &lv, &stood, EVERY_NPC);
         const pib = stood[baby] orelse return error.NoPlace;

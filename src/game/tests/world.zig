@@ -290,6 +290,45 @@ test "a skeleton follows through a door that leads to another door on the same n
     std.debug.print("three trips between doors on one node: {d} skeleton\n", .{allies});
 }
 
+test "a night raider is drawn coming in only once the hero's action of that turn lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    const n = w.add(.{ .procgen = .{ .floor = .{ .open = .{} }, .foes = .{ .packs = 0 }, .raid = .{ .raiders = 3 } } }).?;
+    _ = w.addDoor(n, .{ .x = 40, .y = 0 }).?;
+    w.start = .{ .node = n, .at = .{ .x = 40, .y = 2 } };
+    game.beginMapAt(g, w, w.start, 7);
+    g.sim.unkillable = true;
+    defer g.sim.unkillable = false;
+    g.sim.clock = day.Clock.at(day.SUNSET - 1);
+    const lead: f32 = 0.2;
+    for (0..400) |_| {
+        const before = g.sim.pool.n;
+        g.pic.lead = lead;
+        game.combat.endTurn(g);
+        g.st = .{};
+        game.update(g, 0);
+        if (g.sim.pool.n == before) {
+            harness.drawnOut(g);
+            continue;
+        }
+        const slot = before;
+        try std.testing.expect(g.sim.pool.items[slot].raider);
+        const early = harness.drawn(g, slot);
+        var t: f32 = 0;
+        while (t < lead + 0.05) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
+        if (!harness.drawn(g, slot)) {
+            harness.drawnOut(g);
+            continue;
+        }
+        std.debug.print("a raider came in under a {d:.1} s action: drawn at once {}, drawn after it {}\n", .{ lead, early, true });
+        try std.testing.expect(!early);
+        return;
+    }
+    return error.NoRaiderSeen;
+}
+
 test "a node's night raiders come in by its raid door, each at its own turn, from dusk to dawn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
