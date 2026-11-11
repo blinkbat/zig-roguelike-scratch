@@ -10,6 +10,7 @@ const ward = @import("../play/ward.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("look.zig");
 const light = @import("light.zig");
+const lume = @import("../map/lume.zig");
 const menu = @import("../ui/menu.zig");
 
 pub const Matter = enum { blood, ooze, wood, ichor };
@@ -58,7 +59,7 @@ const StatusGlow = struct {
 };
 const BURN_GLOW = StatusGlow{ .radius = 2, .gain = 0.55 };
 const WARD_GLOW = StatusGlow{ .radius = 1.5, .gain = 0.25 };
-pub const FLAMES_GLOW = StatusGlow{ .radius = 1.6, .gain = 0.45 };
+pub const FLAMES_GLOW = StatusGlow{ .radius = @as(f32, @floatFromInt(lume.FIRE_REACH)) + 0.5, .gain = 0.3 };
 /// What a body suffers for turns, in the order the hud names them.
 pub const Status = enum {
     bleeding,

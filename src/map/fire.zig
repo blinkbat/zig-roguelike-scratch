@@ -83,6 +83,11 @@ pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) us
     return n;
 }
 
+fn smoulder(lv: *grid.Level, p: P) void {
+    const room = (grid.SMOKE_THICK - 1) -| lv.volumeAt(.smoke, p);
+    if (room > 0) lv.release(.smoke, p, @min(SMOKE, room));
+}
+
 pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32, kept: *const grid.CellSet) bool {
     if (std.mem.allEqual(u8, &lv.flames, 0)) return false;
     const was = lv.flames;
@@ -91,7 +96,7 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32, kept: *const grid.CellS
     for (was, 0..) |left, i| {
         if (left == 0) continue;
         const p = grid.Level.of(i);
-        if (lv.tile[i].burns()) lv.release(.smoke, p, SMOKE);
+        if (lv.tile[i].burns()) smoulder(lv, p);
         if (chance == 0) continue;
         const heat = lv.heat[i];
         for (mathx.ALL_DIRS) |d| {
@@ -273,6 +278,19 @@ test "a burning tile smokes, laid flames on bare floor do not, and a fire of no 
     try std.testing.expectEqual(ASH, lv.at(AT));
     try std.testing.expectEqual(grid.Tile.floor, lv.at(bare));
     try std.testing.expect(!lv.burning(AT) and !lv.burning(bare));
+}
+
+test "a field fire's smoke never thickens enough to hide what lies past it" {
+    var rng = mathx.Rng.init(0x5E0);
+    var lv = field(.grass);
+    lay(&lv, AT, BURNS, 3);
+    var turns: usize = 0;
+    while (!std.mem.allEqual(u8, &lv.flames, 0)) : (turns += 1) {
+        try std.testing.expect(turns < NEVER);
+        _ = turn(&lv, &rng, 0, &NONE_KEPT);
+        gas.turn(&lv, &rng);
+        for (0..grid.CELLS) |i| try std.testing.expect(!lv.hidesBeyond(grid.Level.of(i)));
+    }
 }
 
 test "dousing puts out only burning cells, by its chance, and leaves their tiles unburnt" {

@@ -10,6 +10,7 @@ const P = mathx.P;
 
 /// Cells a torch's flame lights, from the floor below it, or a glowing plant from its own cell.
 pub const TORCH_REACH: i32 = 7;
+pub const FIRE_REACH: i32 = 3;
 
 pub fn torchFloor(wall: P) P {
     return wall.add(mathx.Dir.s.delta());
@@ -44,6 +45,10 @@ fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, 
     var glows = lv.glowing();
     while (glows.next()) |p| {
         if (mathx.dist(p, viewer) <= near) torchPool(lv, p, out);
+    }
+    for (&lv.flames, 0..) |left, i| {
+        const p = grid.Level.of(i);
+        if (left > 0 and mathx.dist(p, viewer) <= sight + FIRE_REACH) fov.castInto(lv, p, FIRE_REACH, out);
     }
     for (carried) |s| fov.castInto(lv, s.at, s.reach, out);
 }
@@ -107,6 +112,28 @@ test "a torch's pool is seen across the dark, and a cell once seen is remembered
     see(&lv, away, 10, 0, &lamp);
     try std.testing.expect(!lv.isLit(under) and lv.isSeen(under));
     try std.testing.expect(!lv.isSeen(.{ .x = at.x - 8, .y = at.y + 9 }));
+}
+
+test "flames light their own pool in the dark until they go out, and a burnt reed bed stops hiding what lies past it" {
+    var lv = grid.openFloor();
+    const at = P{ .x = 40, .y = 30 };
+    const lamp = [_]Source{.{ .at = at, .reach = 2 }};
+    const blaze = P{ .x = 46, .y = 30 };
+    const beside = P{ .x = 46, .y = 33 };
+    const reed = P{ .x = 44, .y = 30 };
+    see(&lv, at, 10, 0, &lamp);
+    try std.testing.expect(!lv.isLit(blaze) and !lv.isLit(beside));
+    lv.flames[grid.Level.idx(blaze)] = 1;
+    see(&lv, at, 10, 0, &lamp);
+    try std.testing.expect(lv.isLit(blaze) and lv.isLit(beside));
+    try std.testing.expect(!lv.isLit(.{ .x = 46, .y = 30 + FIRE_REACH + 1 }));
+    lv.set(reed, .reeds);
+    see(&lv, at, 10, 0, &lamp);
+    try std.testing.expect(!lv.inLos(blaze));
+    lv.set(reed, .dirt);
+    lv.flames[grid.Level.idx(blaze)] = 0;
+    see(&lv, at, 10, 0, &lamp);
+    try std.testing.expect(lv.inLos(blaze) and !lv.isLit(blaze));
 }
 
 test "a glowing plant lights its own pool at night, out to the hero's sight and no farther" {
