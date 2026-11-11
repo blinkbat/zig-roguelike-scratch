@@ -296,14 +296,14 @@ pub fn body(k: actor.Kind) Look {
 
 pub const GLYPH_SHADOW = rl.Color{ .r = 0, .g = 0, .b = 0, .a = DROP_SHADOW_A };
 pub const GLYPH_SHADOW_PX: i32 = 4;
-pub const DROP_SHADOW_A: u8 = 200;
+const DROP_SHADOW_A: u8 = 200;
 
 /// Brogue's `poisonGasColor`, the caustic bloat's.
 const CAUSTIC_BLOAT = rgb(0xbf40d9);
 pub const GAS = rgb(0xd0609a);
 pub const HEALING_GAS = rgb(0x2ed6c0);
 pub const STEAM = rgb(0xe6e8ea);
-pub const SMOKE = rgb(0x5a5652);
+const SMOKE = rgb(0x5a5652);
 
 pub fn gasInk(g: grid.Gas) rl.Color {
     return switch (g) {
@@ -455,8 +455,8 @@ pub const Focused = struct {
     }
 };
 
-pub const FOCUS_CENTRE_W = 0.4;
-pub const FOCUS_SIDE_W = (1 - FOCUS_CENTRE_W) / 4.0;
+const FOCUS_CENTRE_W = 0.4;
+const FOCUS_SIDE_W = (1 - FOCUS_CENTRE_W) / 4.0;
 pub const FOCUS_WEIGHTS = shaders.glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W }) ++
     \\vec4 crossBlur(vec4 centre, vec4 sides) {
     \\    return centre * FOCUS_CENTRE_W + sides * FOCUS_SIDE_W;

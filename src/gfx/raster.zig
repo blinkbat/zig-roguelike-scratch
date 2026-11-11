@@ -55,6 +55,10 @@ pub fn grown(r: rl.Rectangle, by: f32) rl.Rectangle {
     return .{ .x = r.x - by, .y = r.y - by, .width = r.width + 2 * by, .height = r.height + 2 * by };
 }
 
+pub fn around(x: f32, y: f32, rx: f32, ry: f32) rl.Rectangle {
+    return .{ .x = x - rx, .y = y - ry, .width = rx * 2, .height = ry * 2 };
+}
+
 pub fn blit(t: rl.Texture2D, src: rl.Rectangle, dest: rl.Rectangle, tint: rl.Color) void {
     rl.drawTexturePro(t, src, dest, .{ .x = 0, .y = 0 }, 0, tint);
 }

@@ -108,6 +108,10 @@ pub const Kind = enum {
         return spec(k).slots;
     }
 
+    pub fn fits(k: Kind, slot: Slot) bool {
+        return std.mem.indexOfScalar(Slot, k.slots(), slot) != null;
+    }
+
     pub fn ofFlask(k: flask.Kind) Kind {
         return switch (k) {
             inline else => |t| @field(Kind, @tagName(t) ++ "_flask"),
@@ -253,11 +257,6 @@ const SPECS = std.EnumArray(Kind, Spec).init(.{
 
 pub fn spec(k: Kind) Spec {
     return SPECS.getPtrConst(k).*;
-}
-
-pub fn baseName(k: Kind, buf: []u8) [:0]const u8 {
-    const base = baseOf(k);
-    return wording.recased(buf, std.fmt.bufPrintZ(buf, "{s}", .{base}) catch base, .title);
 }
 
 pub fn baseOf(k: Kind) [:0]const u8 {

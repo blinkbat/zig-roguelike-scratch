@@ -258,7 +258,7 @@ const MARKS_SPAN: f32 = 0.56;
 
 /// `jitter` is a fraction of the gap between headings.
 fn ringDir(rng: *mathx.Rng, i: usize, n: usize, jitter: f32) [2]f32 {
-    return heading((@as(f32, @floatFromInt(i)) + rng.unit() * jitter) * mathx.TAU / @as(f32, @floatFromInt(n)));
+    return heading(mathx.spoke(@as(f32, @floatFromInt(i)) + rng.unit() * jitter, n));
 }
 
 pub const FRIGHT_WORDS = [_][:0]const u8{ "Eek!", "Ah!", "[snorts]", "[squeals]" };
@@ -720,7 +720,7 @@ pub const Fx = struct {
         const breath = @sin(self.seconds.at() * WARD_RAD_S);
         const r = m.cell * (WARD_R + breath * 0.02);
         for (0..WARD_DOTS) |i| {
-            const a = @as(f32, @floatFromInt(i)) * mathx.TAU / WARD_DOTS;
+            const a = mathx.spoke(@floatFromInt(i), WARD_DOTS);
             const k = 0.35 + 0.25 * @sin(a * 3 + self.seconds.at() * 2);
             pixel.rect(.{ .x = m.x + m.cell * 0.5 + @cos(a) * r, .y = m.y + m.cell * 0.5 + @sin(a) * r }, 1, 2, pxScale(m.cell), look.fade(m.ink, k));
         }
@@ -759,7 +759,7 @@ pub const Fx = struct {
     fn drawConfused(self: *const Fx, m: Mark) void {
         const t = self.seconds.at() * 3 + @as(f32, @floatFromInt(m.seed));
         for (0..CONFUSION_DOTS) |i| {
-            const a = t + @as(f32, @floatFromInt(i)) * mathx.TAU / CONFUSION_DOTS;
+            const a = t + mathx.spoke(@floatFromInt(i), CONFUSION_DOTS);
             const at = rl.Vector2{ .x = m.x + m.cell * (0.5 + @cos(a) * HALO_R), .y = m.y + m.cell * (HALO_Y + @sin(a) * HALO_R * 0.35) };
             pixel.rect(at, 2, 2, pxScale(m.cell), look.fade(m.ink, 0.65 + 0.3 * @sin(a)));
         }
@@ -1003,7 +1003,7 @@ fn ringTrig(steps: usize) []const [2]f32 {
     if (!ring_trig_ready) {
         for (&ring_trig, RING_STEPS_MIN..) |*row, n| {
             for (row[0..n], 0..) |*t, i| {
-                const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / @as(f32, @floatFromInt(n));
+                const angle = mathx.spoke(@floatFromInt(i), n);
                 t.* = heading(angle);
             }
         }
@@ -1074,7 +1074,7 @@ test "a ring's dots from the cached angles are the dots its own trig gives" {
         var want: [ringDotsMax()][2]i32 = undefined;
         var n: usize = 0;
         for (0..steps) |i| {
-            const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / @as(f32, @floatFromInt(steps));
+            const angle = mathx.spoke(@floatFromInt(i), steps);
             const d = [2]i32{ @intFromFloat(@round(@cos(angle) * r)), @intFromFloat(@round(@sin(angle) * r * RIPPLE_FLAT)) };
             if (n > 0 and (std.meta.eql(d, want[n - 1]) or std.meta.eql(d, want[0]))) continue;
             want[n] = d;

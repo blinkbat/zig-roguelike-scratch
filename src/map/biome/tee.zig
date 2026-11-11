@@ -68,6 +68,7 @@ const POND_TRIES: usize = 400;
 const SITE_TRIES: usize = 400;
 const CHEST_APART: i32 = 3;
 const CLEAR_OF_CARTS: i32 = 12;
+const CAMP_BOX = grid.Box.inMap(2);
 const CAMP_ART = setpiece.rows(.camp);
 
 comptime {
@@ -493,7 +494,7 @@ fn goblinCamps(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *g
     const half = @divTrunc(@max(size.x, size.y), 2);
     const site = Site{ .spot = .{ .lv = lv, .kept = kept }, .caravan = caravan, .clear = @as(i32, p.camp) + CLEAR_OF_CARTS + half };
     for (0..p.camps) |_| {
-        const at = grid.Box.inMap(2).rollForWhere(rng, size.x, size.y, SITE_TRIES, site, Site.campFits) orelse continue;
+        const at = CAMP_BOX.rollForWhere(rng, size.x, size.y, SITE_TRIES, site, Site.campFits) orelse continue;
         setpiece.place(lv, at, CAMP_ART, PAL);
         keep(kept, grid.Box.sizedP(at, size).grown(1));
     }

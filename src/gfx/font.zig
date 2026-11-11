@@ -283,8 +283,7 @@ const Ink = struct {
 /// `put` as raw quads inside an open `rl_quads` batch, coloured down the line by `ink`, split where its gradient bends.
 fn putInked(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, ink: Ink) void {
     const src, const dst = placed(f, i, x, y, scale);
-    const tw: f32 = @floatFromInt(f.texture.width);
-    const th: f32 = @floatFromInt(f.texture.height);
+    const tw, const th = raster.sizeOf(f.texture);
     const bottom = dst.y + dst.height;
     const bend = ink.split();
     if (bend > dst.y and bend < bottom) {

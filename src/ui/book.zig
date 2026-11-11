@@ -33,6 +33,7 @@ const item_bases = @import("../play/item_bases.zig");
 const items = @import("../play/items.zig");
 const consumable = @import("../play/consumable.zig");
 const progress = @import("../play/progress.zig");
+const passives = @import("../play/passives.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
@@ -97,7 +98,7 @@ pub const Book = struct {
         if (self.page == .passives) self.recentre();
     }
     fn walkTree(self: *Book, dx: f32, dy: f32) void {
-        const next = progress.passives.step(self.cursor, dx, dy);
+        const next = passives.step(self.cursor, dx, dy);
         if (next != self.cursor) self.browse(next);
     }
     fn selectedSkill(self: *const Book, view: View) skillbar.Act {
@@ -108,7 +109,7 @@ pub const Book = struct {
             .equipment => item_bases.SLOTS.len,
             .inventory => stocked(view) + view.inventory.n,
             .stats, .quests => 0,
-            .passives => progress.NODES.len,
+            .passives => passives.NODES.len,
             .skills => progress.skills(view.class).len,
             .nearby, .loot => view.nearby.len,
         };
@@ -147,7 +148,7 @@ pub const Book = struct {
     }
     pub fn enter(self: *Book, view: View) void {
         if (self.count(view) == 0) return;
-        if (self.page == .passives) self.browse(progress.start(view.class));
+        if (self.page == .passives) self.browse(passives.start(view.class));
     }
     fn turnTo(self: *Book, page: Page, view: View) void {
         self.choose(page);
@@ -350,12 +351,10 @@ pub const Book = struct {
             .passives => {
                 for ([_]bool{ false, true }) |increase| c.add(trees.zoomBox(increase), if (increase) menu.CHANGE else menu.REMOVE, .drawn);
                 c.add(trees.overviewBox(), input.TreeKeys.PAD_OVERVIEW, .drawn);
-                if (trees.action(.passives, view.class, view.growth, self.cursor)) |enabled| c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (enabled) 1 else look.FADED_A });
             },
             .skills => {
                 const act = self.selectedSkill(view);
                 c.add(trees.bindBox(), menu.CHANGE, .{ .label = if (view.growth.unlocked(act)) character_view.verbOf(.bindings) else "Bindings" });
-                if (trees.action(.skills, view.class, view.growth, self.cursor)) |enabled| c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (enabled) 1 else look.FADED_A });
             },
             .stats => c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = if (self.advanced) "Main stats" else "Advanced" }),
             .quests => {},
@@ -377,6 +376,7 @@ pub const Book = struct {
                 };
             },
         }
+        if (self.treePanel()) |panel| if (trees.action(panel, view.class, view.growth, self.cursor)) |enabled| c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (enabled) 1 else look.FADED_A });
         return c;
     }
     fn actionBox(self: *const Book, b: input.Button, view: View) rl.Rectangle {
@@ -538,20 +538,20 @@ pub const Book = struct {
                     var carried: menu.Note(24) = .{};
                     carried.say(item_card.CARRIED_FMT, .{view.inventory.stacks.get(k)});
                     line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
-                    listRow(face, x, y, menu.titleOf(k), inkOf(null), carried.text());
+                    listRow(face, x, row_mid, menu.titleOf(k), inkOf(null), carried.text());
                 } else {
                     const at = i - stocked(view);
                     const it = view.inventory.bag[at];
                     const slots = it.kind.slots();
                     line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
-                    listRow(face, x, y, it.name(&name_buf), inkOf(it), if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name());
+                    listRow(face, x, row_mid, it.name(&name_buf), inkOf(it), if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name());
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];
                     if (n.item()) |it| {
                         line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
                     } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
-                    listRow(face, x, y, n.label(&name_buf), inkOf(n.item()), n.command().verb());
+                    listRow(face, x, row_mid, n.label(&name_buf), inkOf(n.item()), n.command().verb());
                 },
                 .passives, .skills, .stats, .quests => unreachable,
             }
@@ -626,8 +626,7 @@ fn divider(top: i32, foot: i32) void {
 fn header(face: *const font.Face, text: [:0]const u8) void {
     face.engraved(text, layout.LIST_X, font.Face.topFor(layout.HEADER_MID, font.HEAD), font.HEAD, look.TEXT);
 }
-fn listRow(face: *const font.Face, x: i32, y: i32, text: [:0]const u8, ink: rl.Color, second: [:0]const u8) void {
-    const mid = y + layout.ROW_HEIGHT / 2;
+fn listRow(face: *const font.Face, x: i32, mid: i32, text: [:0]const u8, ink: rl.Color, second: [:0]const u8) void {
     var fitted: [items.NAME_MAX]u8 = undefined;
     face.drawMiddle(face.fit(&fitted, text, font.BODY, layout.SECOND_X - layout.TEXT_X - layout.COLUMN_GAP, false), x + layout.TEXT_X, mid, font.BODY, ink);
     face.drawMiddle(second, x + layout.SECOND_X, mid, font.SMALL, look.DIM);
@@ -931,7 +930,7 @@ test "tree browsing is free and point actions issue one command" {
     growth.active_points = 2;
     const view = testView(&inv, &growth);
     const screen = display.SCREEN_720;
-    var book = Book{ .page = .passives, .cursor = progress.passives.branchFirst(.rogue_evade) };
+    var book = Book{ .page = .passives, .cursor = passives.branchFirst(.rogue_evade) };
     try std.testing.expectEqual(trees.ZOOM_START, book.zoom);
     try std.testing.expect(book.treeActive());
     const original_cursor = book.cursor;
@@ -939,7 +938,7 @@ test "tree browsing is free and point actions issue one command" {
     try std.testing.expect(book.zoom < trees.ZOOM_START and book.pan.x > 0 and book.pan.y < 0);
     try std.testing.expectEqual(original_cursor, book.cursor);
     _ = book.step(&.{ .tree = .{ .move = .{ .x = 1, .y = 0 } } }, screen, view);
-    try std.testing.expectEqual(progress.passives.step(original_cursor, 1, 0), book.cursor);
+    try std.testing.expectEqual(passives.step(original_cursor, 1, 0), book.cursor);
     try std.testing.expectEqual(@as(f32, 0), book.pan.x);
     _ = book.step(&.{ .tree = .{ .zoom = 1, .dt = 100 } }, screen, view);
     try std.testing.expectEqual(trees.ZOOM_MAX, book.zoom);
@@ -1050,9 +1049,9 @@ test "a stick pushed where no passive lies keeps the pan, as the keys do" {
     var growth = progress.State.of(.archer);
     const view = testView(&inv, &growth);
     const screen = display.SCREEN_720;
-    const dead_end = found: for (0..progress.NODES.len) |i| {
+    const dead_end = found: for (0..passives.NODES.len) |i| {
         for (mathx.CARDINALS) |delta| {
-            if (progress.passives.step(i, @floatFromInt(delta.x), @floatFromInt(delta.y)) == i) break :found .{ i, delta };
+            if (passives.step(i, @floatFromInt(delta.x), @floatFromInt(delta.y)) == i) break :found .{ i, delta };
         }
     } else unreachable;
     var book = Book{ .page = .passives, .cursor = dead_end[0] };

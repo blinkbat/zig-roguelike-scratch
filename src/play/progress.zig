@@ -22,10 +22,10 @@ const XP_BASE: u64 = 40;
 const XP_STEP: u64 = 20;
 const POINTS_PER_LEVEL: u16 = 1;
 pub const POINT_COST: u16 = 1;
-pub const passives = @import("passives.zig");
+const passives = @import("passives.zig");
 const Node = passives.Node;
-pub const NODES = passives.NODES;
-pub const start = passives.start;
+const NODES = passives.NODES;
+const start = passives.start;
 
 pub fn xpOf(k: actor.Kind) u32 {
     return @intCast(actor.row(k).hp);
@@ -81,7 +81,7 @@ pub fn skills(c: hero.Class) []const Skill {
 }
 
 fn innate(act: skillbar.Act) bool {
-    return act == .wait or act == .secondary or act.carried();
+    return std.mem.indexOfScalar(skillbar.Act, &skillbar.COMMON, act) != null or act.carried();
 }
 
 comptime {
@@ -236,14 +236,9 @@ pub const State = struct {
     }
 
     /// What scales `act`'s blow with `gear`, for previews and live rolls alike.
-    pub fn blowOf(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act) ?Blow {
+    fn blowOf(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act) ?Blow {
         const attack = act.attack() orelse return null;
         return .{ .by = self.skillAttrs(equipped, gear, act), .style = gear.scaling(attack), .bases = act.equippedBases(gear) };
-    }
-
-    pub fn hit(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act) ?Hit {
-        const b = self.blowOf(equipped, gear, act) orelse return null;
-        return b.hit(act);
     }
 
     pub fn preparedBlow(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act, steady: u8) ?Blow {
@@ -385,8 +380,6 @@ test "small mana costs round discounts up and paid skills stay paid at every ran
 }
 
 test "passive origins preserve class bases and failed purchases preserve the whole state" {
-    var paid: usize = 0;
-    var failed: usize = 0;
     for (hero.CLASSES) |c| {
         var state = State.of(c);
         try std.testing.expectEqual(@as(usize, 1), state.nodes.count());
@@ -399,7 +392,6 @@ test "passive origins preserve class bases and failed purchases preserve the who
             const poor = state;
             try std.testing.expect(!state.allocate(root));
             try std.testing.expectEqualDeep(poor, state);
-            failed += 1;
 
             state.passive_points = 1;
             state.active_points = 7;
@@ -410,14 +402,12 @@ test "passive origins preserve class bases and failed purchases preserve the who
             var want = before;
             want.points.getPtr(passives.Arm.of(other).stat().attr().?).* += passives.ROOT_GRANT;
             try std.testing.expectEqualDeep(want, state.attributes(c));
-            paid += 1;
         }
         state.passive_points = 3;
         for ([_]usize{ start(c), NODES.len, passives.branchFirst(.warrior_life) + passives.PER_BRANCH - 1 }) |blocked| {
             const before = state;
             try std.testing.expect(!state.allocate(blocked));
             try std.testing.expectEqualDeep(before, state);
-            failed += 1;
         }
     }
 }

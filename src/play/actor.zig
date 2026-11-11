@@ -93,10 +93,7 @@ pub const Kind = enum {
     }
 
     pub fn gasses(k: Kind) bool {
-        return switch (row(k).blow) {
-            .burst => |b| b == .gas,
-            .strike => false,
-        };
+        return row(k).blow.bursts(.gas);
     }
 };
 
@@ -179,8 +176,12 @@ pub const Blow = union(enum) {
     burst: Burst,
 
     pub fn pyre(b: Blow) bool {
+        return b.bursts(.fire);
+    }
+
+    pub fn bursts(b: Blow, kind: Burst) bool {
         return switch (b) {
-            .burst => |kind| kind == .fire,
+            .burst => |k| k == kind,
             .strike => false,
         };
     }
@@ -900,8 +901,7 @@ test "a leech swims only through water toward the hero and surfaces only beside 
     const id = pool.spawn(&lv, Actor.of(.bog_leech, .{ .x = 10, .y = 10 }));
     const hero = P{ .x = 18, .y = 10 };
     var at = pool.get(id).?.at;
-    var steps: usize = 0;
-    while (swim(&lv, at, .bog_leech, hero)) |d| : (steps += 1) {
+    while (swim(&lv, at, .bog_leech, hero)) |d| {
         pool.move(&lv, id, at.add(d.delta()));
         at = pool.get(id).?.at;
         try std.testing.expect(lv.at(at).wet());

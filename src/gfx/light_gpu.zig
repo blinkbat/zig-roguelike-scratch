@@ -418,5 +418,5 @@ fn glowAlpha(r: f32) f32 {
 }
 
 pub fn glowAt(g: rl.Texture2D, x: f32, y: f32, rx: f32, ry: f32, c: rl.Color) void {
-    raster.stretch(g, .{ .x = x - rx, .y = y - ry, .width = rx * 2, .height = ry * 2 }, c);
+    raster.stretch(g, raster.around(x, y, rx, ry), c);
 }

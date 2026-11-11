@@ -672,7 +672,7 @@ test "a hero killed while a bag's loot is open takes none of its gold" {
     character.openLoot(g, at);
     try std.testing.expectEqual(book.Page.loot, g.character.page);
     harness.setLife(g.sim.heroActor().?, 1, harness.TEST_HP);
-    g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = true }});
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0), .lands = true }});
     game.combat.endTurn(g);
     try std.testing.expect(g.sim.heroActor() == null);
     harness.drawnOut(g);

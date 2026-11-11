@@ -274,7 +274,7 @@ fn polygon(comptime cx: f32, comptime cy: f32, comptime r: f32, comptime n: usiz
 }
 
 fn corner(cx: f32, cy: f32, r: f32, n: usize, turn: f32, i: usize) [2]f32 {
-    const a = mathx.TAU * (@as(f32, @floatFromInt(i)) + turn) / @as(f32, @floatFromInt(n)) - std.math.pi / 2.0;
+    const a = mathx.spoke(@as(f32, @floatFromInt(i)) + turn, n) - std.math.pi / 2.0;
     return .{ cx + r * @cos(a), cy + r * @sin(a) };
 }
 
@@ -359,11 +359,11 @@ fn inkSkills() void {
 pub const ItemSize = enum(i32) { row = 24, cell = 48 };
 
 pub fn drawItem(sprites: *const sprite.Sprites, k: item_bases.Kind, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
-    drawIcon(sprites, @intFromEnum(k), size, cx, cy, ink);
+    drawIcon(sprites, std.enums.EnumIndexer(item_bases.Kind).indexOf(k), size, cx, cy, ink);
 }
 
 pub fn drawSupply(sprites: *const sprite.Sprites, k: consumable.Kind, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
-    drawIcon(sprites, ITEM_KINDS.len + @intFromEnum(k), size, cx, cy, ink);
+    drawIcon(sprites, ITEM_KINDS.len + std.enums.EnumIndexer(consumable.Kind).indexOf(k), size, cx, cy, ink);
 }
 
 fn drawIcon(sprites: *const sprite.Sprites, i: usize, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {

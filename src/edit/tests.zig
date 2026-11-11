@@ -176,10 +176,9 @@ test "the erasing cursor marks a cell legal exactly when erasing it there remove
 }
 
 test "painting a bespoke node: a door opens its wall and no wall paints over it" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
     const w = ed.map;
-    _ = w.add(.{ .bespoke = .{} });
     ed.tool = .paint;
     placement.laySpan(ed, .{ .from = .{ .x = 4, .y = 5 }, .erase = false, .shape = .rect }, .{ .x = 9, .y = 5 });
     click(ed, .door, .{ .x = 10, .y = 5 });
@@ -204,10 +203,9 @@ test "painting a bespoke node: a door opens its wall and no wall paints over it"
 }
 
 test "the link tool joins doors on two nodes, and a procgen node takes doors but no floor" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
     const w = ed.map;
-    _ = w.add(.{ .bespoke = .{} });
     _ = w.add(.{ .procgen = .{} });
     click(ed, .door, .{ .x = 3, .y = 3 });
     ed.select(1);
@@ -539,9 +537,8 @@ test "undo and redo disarm deletion when a node index changes owners" {
 }
 
 test "a modal, rename, view or tool change disarms a node deletion" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.map.add(.{ .bespoke = .{} }).?;
     const nodes = ed.map.node_n;
     ed.delete_armed = ed.node;
     ed.ask(.help);

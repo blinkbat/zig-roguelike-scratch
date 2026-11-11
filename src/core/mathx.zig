@@ -6,6 +6,10 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
+pub fn spoke(at: f32, n: anytype) f32 {
+    return at * TAU / @as(f32, @floatFromInt(n));
+}
+
 pub fn lerp2(a: [2]f32, b: [2]f32, t: f32) [2]f32 {
     return .{ lerpF(a[0], b[0], t), lerpF(a[1], b[1], t) };
 }

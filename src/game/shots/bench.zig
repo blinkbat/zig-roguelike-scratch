@@ -10,6 +10,8 @@ const SHOT_BIOME = @import("capture.zig").SHOT_BIOME;
 const SHOT_OUTDOOR = @import("capture.zig").SHOT_OUTDOOR;
 const SHOT_SEED = @import("capture.zig").SHOT_SEED;
 const drawInto = @import("capture.zig").drawInto;
+const dropAtlas = @import("capture.zig").dropAtlas;
+const heapAtlas = @import("capture.zig").heapAtlas;
 const renderTarget = @import("capture.zig").renderTarget;
 const loadStrand = @import("poses.zig").loadStrand;
 const poseGas = @import("poses.zig").poseGas;
@@ -69,9 +71,8 @@ pub fn benchWalk(g: *game.Game) !void {
 }
 
 fn benchStrand(g: *game.Game, target: rl.RenderTexture2D) !void {
-    const w = try std.heap.c_allocator.create(atlas.Atlas);
-    defer std.heap.c_allocator.destroy(w);
-    defer g.sim.map = null;
+    const w = try heapAtlas();
+    defer dropAtlas(g, w);
     try loadStrand(g, w);
     g.sim.clock = day.Clock.at(day.NOON);
     game.settle(g);
@@ -112,9 +113,8 @@ fn benchEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
 
 fn benchAssets(g: *game.Game) !void {
     const alloc = std.heap.c_allocator;
-    const w = try alloc.create(atlas.Atlas);
-    defer alloc.destroy(w);
-    defer g.sim.map = null;
+    const w = try heapAtlas();
+    defer dropAtlas(g, w);
     inline for ([_][]const u8{ SHOT_OUTDOOR, SHOT_BIOME, SHOT_OUTDOOR }) |name| {
         try w.load(alloc, atlas.mapPath(name));
         game.beginMapAt(g, w, w.start, SHOT_SEED);

@@ -41,7 +41,7 @@ pub const Item = struct {
     }
 
     pub fn fits(self: Item, slot: item_bases.Slot) bool {
-        return std.mem.indexOfScalar(item_bases.Slot, self.kind.slots(), slot) != null;
+        return self.kind.fits(slot);
     }
 
     pub fn magical(self: Item) bool {
@@ -94,7 +94,8 @@ pub const Item = struct {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            inline else => |k| if (comptime k.granted()) k.grant(m.value).apply(a),
+            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity => {},
+            inline else => |k| k.grant(m.value).apply(a),
         };
     }
 
@@ -109,6 +110,10 @@ pub const Item = struct {
         return a.meets(item_bases.spec(self.kind).needs);
     }
 };
+
+pub fn baseName(k: item_bases.Kind, buf: []u8) [:0]const u8 {
+    return (Item{ .kind = k }).name(buf);
+}
 
 pub fn unrolled(rng: *mathx.Rng) Item {
     return .{ .kind = rng.pick(item_bases.Kind, &loot.BASES) };
@@ -130,7 +135,7 @@ pub fn rollRare(rng: *mathx.Rng) Item {
 
 fn affix(out: *Item, rng: *mathx.Rng, rare: bool) void {
     if (rare) out.rare_name = affixes.RareName.roll(rng);
-    const count = if (rare) rng.range(affixes.RARE_LEAST, affixes.AFFIXES_MAX) else rng.range(1, 2 * affixes.MAGIC_SIDE);
+    const count = if (rare) rng.range(affixes.RARE_LEAST, affixes.AFFIXES_MAX) else rng.range(1, affixes.MAGIC_MOST);
     for (0..@intCast(count)) |i| {
         const a = rng.pickWhere(affixes.AffixRoll, &affixes.AFFIXES, out.*, Item.allowsRoll).?;
         const from = a.kind.elements();
@@ -144,7 +149,7 @@ test "rare items roll distinct legal affixes and persistent combinatorial names"
     var bases = std.EnumSet(item_bases.Kind).initEmpty();
     var firsts = std.EnumSet(affixes.RareName.First).initEmpty();
     var lasts = std.EnumSet(affixes.RareName.Last).initEmpty();
-    var sizes = [_]usize{ 0, 0 };
+    var sizes: [affixes.AFFIXES_MAX - affixes.RARE_LEAST + 1]usize = @splat(0);
     for (0..100000) |_| {
         const it = roll(&rng, 0);
         counts.getPtr(it.rarity()).* += 1;
@@ -161,9 +166,9 @@ test "rare items roll distinct legal affixes and persistent combinatorial names"
             sides[@intFromBool(m.kind.prefix())] += 1;
             try std.testing.expect(m.value >= affixes.affixOf(m.kind).lo and m.value <= affixes.affixOf(m.kind).hi);
         };
-        try std.testing.expect(seen.count() >= 3 and seen.count() <= 4);
-        try std.testing.expect(sides[0] <= 2 and sides[1] <= 2);
-        sizes[seen.count() - 3] += 1;
+        try std.testing.expect(seen.count() >= affixes.RARE_LEAST and seen.count() <= affixes.AFFIXES_MAX);
+        try std.testing.expect(sides[0] <= affixes.RARE_SIDE and sides[1] <= affixes.RARE_SIDE);
+        sizes[seen.count() - affixes.RARE_LEAST] += 1;
     }
     try std.testing.expect(counts.get(.normal) > 74000 and counts.get(.normal) < 76000);
     try std.testing.expect(counts.get(.magic) > 19000 and counts.get(.magic) < 21000);

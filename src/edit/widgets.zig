@@ -39,14 +39,14 @@ pub const STEP_PITCH: i32 = STEP_W + GAP;
 pub const DROP = "x";
 pub const SCROLL_W: i32 = 3;
 pub const NO_BOX = rl.Rectangle{ .x = 0, .y = 0, .width = 0, .height = 0 };
-pub const WHEEL_PX: i32 = ROW_H;
+const WHEEL_PX: i32 = ROW_H;
 const THUMB_MIN: f32 = 24;
 const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
 pub const PANEL_BG = look.EDIT_PANEL;
 pub const ROW_ON = look.EDIT_ROW_ON;
 pub const ON = look.EDIT_ON;
 pub const HOVER = look.EDIT_HOVER;
-pub const LIVE_FILL = look.fade(ROW_ON, 0.5);
+const LIVE_FILL =look.fade(ROW_ON, 0.5);
 const DEAD_FILL = look.fade(ROW_ON, 0.2);
 pub const LIVE_EDGE = look.fade(look.EDGE, 0.85);
 const DEAD_EDGE = look.fade(look.EDGE, 0.35);
@@ -65,7 +65,7 @@ pub fn textFace(face: *const font.Face) prompt_text.Face {
 }
 
 /// Modals disable underlying hits; opening one suppresses its own first-frame hits.
-pub const Hot = struct { hot: bool, hit: bool };
+const Hot = struct { hot: bool, hit: bool };
 
 pub fn hot(controls: Controls, r: rl.Rectangle, live: bool, modal: bool, tip: ?[:0]const u8) Hot {
     const on_layer = controls.accepting and (modal or !controls.covered);
@@ -289,7 +289,7 @@ pub fn clampTop(top: usize, n: usize, rows: usize) usize {
     return @min(top, n -| rows);
 }
 
-pub fn scrollBy(top: *i32, most: i32, by: i32) void {
+fn scrollBy(top: *i32, most: i32, by: i32) void {
     top.* = std.math.clamp(top.* + by, 0, most);
 }
 
@@ -426,7 +426,7 @@ pub fn drawRight(face: *const font.Face, s: [:0]const u8, size: i32, right: i32,
     return w;
 }
 
-pub fn divider(x: i32, top: i32, bottom: i32) void {
+fn divider(x: i32, top: i32, bottom: i32) void {
     vrule(x - @divTrunc(PAD, 2), top, bottom);
 }
 

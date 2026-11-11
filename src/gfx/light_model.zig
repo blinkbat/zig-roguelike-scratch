@@ -86,7 +86,7 @@ const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
 };
 /// Channels above the knee roll off toward the ceiling, the brightest any light makes the art, however many sources stack.
 const KNEE: f32 = 1.1;
-pub const CEILING: f32 = 1.4;
+const CEILING: f32 = 1.4;
 const ROLL: f32 = CEILING - KNEE;
 
 comptime {

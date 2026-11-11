@@ -225,7 +225,7 @@ pub const Tail = blk: {
     @setEvalBranchQuota(10_000);
     var fs: [TAIL_FIELDS.len]std.builtin.Type.StructField = undefined;
     for (TAIL_FIELDS, 0..) |f, i| {
-        const source = std.meta.fieldInfo(Of(f[0]), @field(std.meta.FieldEnum(Of(f[0])), f[1]));
+        const source = sourceField(f);
         fs[i] = fieldOf(f[1], source.type, if (contains(&REQUIRED_FIELDS, f[1])) null else source.default_value_ptr);
     }
     break :blk Struct(fs);
@@ -240,11 +240,15 @@ pub const TAIL = blk: {
 pub const Portable = blk: {
     var fs: [PORTABLE_FIELDS.len]std.builtin.Type.StructField = undefined;
     for (PORTABLE_FIELDS, 0..) |f, i| {
-        const source = std.meta.fieldInfo(Of(f[0]), @field(std.meta.FieldEnum(Of(f[0])), f[1]));
+        const source = sourceField(f);
         fs[i] = fieldOf(f[1], source.type, source.default_value_ptr orelse @compileError(f[1] ++ " needs a default for files written before it"));
     }
     break :blk Struct(fs);
 };
+
+fn sourceField(comptime f: anytype) std.builtin.Type.StructField {
+    return std.meta.fieldInfo(Of(f[0]), @field(std.meta.FieldEnum(Of(f[0])), f[1]));
+}
 
 pub fn Struct(comptime fields: anytype) type {
     return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fields, .decls = &.{}, .is_tuple = false } });

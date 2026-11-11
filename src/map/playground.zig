@@ -44,10 +44,7 @@ comptime {
 }
 
 pub fn indexOf(patch: Patch) usize {
-    for (PATCHES, 0..) |p, i| {
-        if (std.meta.eql(p, patch)) return i;
-    }
-    unreachable;
+    return mathx.indexOfEql(Patch, PATCHES, patch).?;
 }
 
 pub fn boxOf(i: usize) grid.Box {

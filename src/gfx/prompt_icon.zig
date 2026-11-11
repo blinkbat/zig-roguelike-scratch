@@ -175,7 +175,7 @@ fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i3
             rl.drawLineEx(.{ .x = c.x - s, .y = c.y + s }, .{ .x = c.x + s, .y = c.y - s }, line, col);
         },
         .b => rl.drawRing(c, s - line / 2, s + line / 2, 0, 360, 24, col),
-        .x => rl.drawRectangleLinesEx(.{ .x = c.x - s, .y = c.y - s, .width = s * 2, .height = s * 2 }, line, col),
+        .x => rl.drawRectangleLinesEx(raster.around(c.x, c.y, s, s), line, col),
         .y => {
             const top = rl.Vector2{ .x = c.x, .y = c.y - s * 1.1 };
             const left = rl.Vector2{ .x = c.x - s * 1.1, .y = c.y + s * 0.8 };

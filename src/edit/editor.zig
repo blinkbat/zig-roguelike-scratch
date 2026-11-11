@@ -26,6 +26,7 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
+const script_text = @import("../map/script_text.zig");
 const listing = @import("../map/listing.zig");
 const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
@@ -447,8 +448,12 @@ pub const Editor = struct {
         ed.family = f;
     }
 
+    pub fn inspectable(ed: *Editor, i: Inspect) bool {
+        return i != .generator or ed.rolled() != null;
+    }
+
     pub fn setInspect(ed: *Editor, i: Inspect) void {
-        if (i == .generator and ed.rolled() == null) return;
+        if (!ed.inspectable(i)) return;
         if (i != ed.inspect) ed.pane.getPtr(.inspector).top = 0;
         ed.inspect = i;
         ed.delete_armed = null;
@@ -483,7 +488,7 @@ pub const Editor = struct {
 
     fn fitTool(ed: *Editor) void {
         if (!ed.tool.fits(ed.here())) ed.hold(.door);
-        if (ed.inspect == .generator and ed.rolled() == null) ed.inspect = .things;
+        if (!ed.inspectable(ed.inspect)) ed.inspect = .things;
     }
 
     /// Preserve paste across node selection; cancel pending links and gestures.
@@ -909,14 +914,18 @@ pub fn popupLen(ed: *const Editor, w: Which) usize {
     };
 }
 
-const PopupShape = struct { row_h: i32, inset: i32, w: f32 };
+const PopupShape = struct { row_h: i32, inset: i32, w: f32, scrolls: bool };
 
 fn popupShape(w: Which) PopupShape {
     return switch (w) {
-        .algo, .feature => .{ .row_h = widgets.ROW_H, .inset = 0, .w = POPUP_W },
-        .file => .{ .row_h = widgets.ROW_H, .inset = 0, .w = FILE_MENU_W },
-        .node => .{ .row_h = NODE_H, .inset = NODE_GAP, .w = POPUP_W },
+        .algo, .feature => .{ .row_h = widgets.ROW_H, .inset = 0, .w = POPUP_W, .scrolls = true },
+        .file => .{ .row_h = widgets.ROW_H, .inset = 0, .w = FILE_MENU_W, .scrolls = false },
+        .node => .{ .row_h = NODE_H, .inset = NODE_GAP, .w = POPUP_W, .scrolls = true },
     };
+}
+
+pub fn popupScrolls(w: Which) bool {
+    return popupShape(w).scrolls;
 }
 
 pub fn popupRow(box: rl.Rectangle, which: Which, k: usize) rl.Rectangle {
@@ -967,7 +976,7 @@ fn drawPopup(ed: *Editor, g: *game.Game) void {
         },
         .algo, .feature => knobs.choiceRows(ed, g, box, p.which, top, shown),
     }
-    if (p.which != .file) widgets.scrollbarIn(box, top, shown, len);
+    if (popupScrolls(p.which)) widgets.scrollbarIn(box, top, shown, len);
 }
 
 fn drawTip(ed: *const Editor, g: *game.Game) void {
@@ -1012,7 +1021,7 @@ pub fn capture(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8
         ed.tool = q.t;
         placement.place(ed, q.at);
     }
-    try @import("../map/script_text.zig").readAlone(SHOT_SCRIPT, &ed.map.script, ed.map.node_n);
+    try script_text.readAlone(SHOT_SCRIPT, &ed.map.script, ed.map.node_n);
     for ([_]usize{ 1, 2 }) |n| {
         ed.select(n);
         ed.tool = .door;
@@ -1179,5 +1188,5 @@ fn snapAs(ed: *Editor, g: *game.Game, target: rl.RenderTexture2D, comptime fmt: 
 
 fn snap(ed: *Editor, g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {
     render(ed, g, target);
-    try game.shots.exportTarget(target, path);
+    try @import("../game/shots/capture.zig").exportTarget(target, path);
 }

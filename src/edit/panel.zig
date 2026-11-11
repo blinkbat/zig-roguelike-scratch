@@ -459,7 +459,7 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     y += widgets.ROW_STEP + widgets.BLOCK_GAP;
     var tabs = widgets.Across{ .col = col, .y = y, .n = std.enums.values(editor.Inspect).len };
     for (std.enums.values(editor.Inspect)) |i| {
-        const live = i != .generator or ed.rolled() != null;
+        const live = ed.inspectable(i);
         if (smallButton(ed, g, tabs.next(), menu.named(i), ed.inspect == i, live, if (live) INSPECT_TIPS.get(i) else "Only a procgen node is rolled from a generator")) ed.setInspect(i);
     }
     tabs.done();

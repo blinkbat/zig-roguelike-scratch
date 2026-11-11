@@ -363,10 +363,10 @@ fn oneWay(cells: []const P) bool {
 }
 
 fn walkReaches(lv: *const grid.Level, from: P, comptime steps: i32, most: usize) bool {
-    const w = 2 * steps + 1;
-    var seen = [_]bool{false} ** (w * w);
-    var queue: [w * w]P = undefined;
-    var depth: [w * w]i32 = undefined;
+    const area: usize = @intCast(comptime grid.Cells.square(steps));
+    var seen = [_]bool{false} ** area;
+    var queue: [area]P = undefined;
+    var depth: [area]i32 = undefined;
     const window = grid.Box.around(from, steps);
     seen[window.slot(from).?] = true;
     queue[0] = from;
@@ -577,7 +577,6 @@ test "every floor has a few of each foe it has ground for, each on its own groun
     var fewest = std.EnumArray(actor.Kind, usize).initFill(actor.MAX);
     var lone_slimes: usize = 0;
     var lone_bandits: usize = 0;
-    var dry: usize = 0;
     for (0..200) |i| {
         const seed: u64 = 0x9AC5 +% i *% grid.TEST_SEED_STRIDE;
         const f = gen.build(&lv, seed);
@@ -586,7 +585,6 @@ test "every floor has a few of each foe it has ground for, each on its own groun
             const p = grid.Level.of(c);
             if (mathx.dist(p, f.start) >= GAP and actor.dwells(k, &lv, p)) housed.insert(k);
         };
-        dry += @intFromBool(!housed.contains(.bog_leech));
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(seed);
         place(&lv, &pool, &rng, f.start, &.{}, &.{});

@@ -1,5 +1,6 @@
 const std = @import("std");
 const atlas = @import("atlas.zig");
+const contains = @import("../core/text.zig").contains;
 
 /// A map file's name, `.map` and all.
 const FILE_MAX: usize = 64;
@@ -33,9 +34,7 @@ pub fn pathFor(buf: []u8, folder: []const u8, name: []const u8) ?[]const u8 {
 
 /// Windows device names, which no file may take even with an extension.
 fn reserved(stem: []const u8) bool {
-    for ([_][]const u8{ "con", "prn", "aux", "nul" }) |d| {
-        if (std.mem.eql(u8, stem, d)) return true;
-    }
+    if (contains(&.{ "con", "prn", "aux", "nul" }, stem)) return true;
     return stem.len == 4 and (std.mem.startsWith(u8, stem, "com") or std.mem.startsWith(u8, stem, "lpt")) and std.ascii.isDigit(stem[3]) and stem[3] != '0';
 }
 

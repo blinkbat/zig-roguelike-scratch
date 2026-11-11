@@ -36,7 +36,9 @@ const SHOT_BIOME = @import("capture.zig").SHOT_BIOME;
 const SHOT_OUTDOOR = @import("capture.zig").SHOT_OUTDOOR;
 const SHOT_SEED = @import("capture.zig").SHOT_SEED;
 const capture = @import("capture.zig").capture;
+const dropAtlas = @import("capture.zig").dropAtlas;
 const exportTarget = @import("capture.zig").exportTarget;
+const heapAtlas = @import("capture.zig").heapAtlas;
 const pixels = @import("capture.zig").pixels;
 const readTarget = @import("capture.zig").readTarget;
 const renderTarget = @import("capture.zig").renderTarget;
@@ -61,7 +63,7 @@ fn captureCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     game.settle(g);
     g.pic.turnToward(.fromInt(id), -1);
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-pack.png");
-    g.sim.rng = h.bitesRng(g, &.{.{ .id = id, .lands = true }});
+    g.sim.rng = h.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
     h.use(g, .wait);
     const hp_after_shot = g.sim.heroActor().?.hp;
     const shot = g.pic.foe_shots[slot] orelse return error.CrossbowmanDidNotShoot;
@@ -251,8 +253,8 @@ pub fn captureGeneral(g: *game.Game) !void {
     try captureLevelUp(g);
 
     {
-        const w = try std.heap.c_allocator.create(atlas.Atlas);
-        defer std.heap.c_allocator.destroy(w);
+        const w = try heapAtlas();
+        defer dropAtlas(g, w);
         try overviews(g, w);
         {
             try w.load(std.heap.c_allocator, atlas.mapPath(SHOT_BIOME));
@@ -318,9 +320,8 @@ pub fn loadStrand(g: *game.Game, w: *atlas.Atlas) !void {
 }
 
 fn capturePlayground(g: *game.Game, target: rl.RenderTexture2D) !void {
-    const w = try std.heap.c_allocator.create(atlas.Atlas);
-    defer std.heap.c_allocator.destroy(w);
-    defer g.sim.map = null;
+    const w = try heapAtlas();
+    defer dropAtlas(g, w);
     defer g.sim.playground = false;
     game.enterPlayground(g, w);
     const Pose = struct { patch: grid.Tile, name: [:0]const u8, fading: ?[:0]const u8 = null };
@@ -423,7 +424,6 @@ pub const MORNING: f32 = day.SUNRISE + 3;
 const AFTERNOON: f32 = day.SUNSET - 3.5;
 pub const EVENING: f32 = day.SUNSET - 3;
 const DUSK: f32 = day.SUNSET - 0.7;
-pub const LATE_DUSK: f32 = day.SUNSET - 0.5;
 const EARLY_NIGHT: f32 = day.SUNSET + 2;
 pub const NIGHT: f32 = day.SUNSET + 2.5;
 const POSE_GAS_TURNS: usize = 3;
@@ -796,11 +796,9 @@ fn overviewPath(buf: []u8, map: []const u8) ![:0]const u8 {
 
 test "map overview paths preserve folders with repeated map names" {
     const paths = [_][]const u8{ "main", "foo", "a/foo", "b/foo", "a/deeper/foo", "foo.png/bar" };
-    var checked: usize = 0;
     inline for (paths) |path| {
         var buf: [listing.PATH_MAX + 32]u8 = undefined;
         try std.testing.expectEqualStrings(SHOTS_MAPS ++ "/" ++ path ++ atlas.EXT ++ "/overview.png", try overviewPath(&buf, atlas.PREFIX ++ path ++ atlas.EXT));
-        checked += 1;
     }
 }
 

@@ -13,6 +13,7 @@ const tactics = @import("../play/tactics.zig");
 const tactics_exec = @import("tactics_exec.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
+const font = @import("../gfx/font.zig");
 const line_icons = @import("../gfx/line_icons.zig");
 const dual = @import("../gfx/ground.zig");
 const light = @import("../gfx/light.zig");
@@ -472,7 +473,7 @@ fn footOf(g: *const game.Game, tex: ?rl.Texture2D, s: P) f32 {
 
 fn drawMirrored(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, stands: P, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, opacity: f32) void {
     const foot = footOf(g, tex, stands);
-    const top = if (tex) |t| g.light.topY(t, spriteRect(t, s.x, s.y)) else @as(f32, @floatFromInt(s.y + game.HALF_CELL - @divTrunc(game.GLYPH, 2)));
+    const top = if (tex) |t| g.light.topY(t, spriteRect(t, s.x, s.y)) else @as(f32, @floatFromInt(font.Face.topFor(s.y + game.HALF_CELL, game.GLYPH)));
     const bounds = mirrorFade(g, foot, top, footOf(g, tex, s));
     const r = Reflection.begin(g, foot, if (tex == null) bounds else null);
     defer r.end();
@@ -497,8 +498,7 @@ fn drawBody(g: *game.Game, b: *const Shown, mirrored: bool) void {
 }
 
 fn darken(shine: *light.Shine, dark: f32) void {
-    const one: @Vector(3, f32) = @splat(1);
-    const k = one + (@as(@Vector(3, f32), fx.DEATH_RGB) - one) * @as(@Vector(3, f32), @splat(dark));
+    const k = sky.mix(sky.splat(1), fx.DEATH_RGB, dark);
     shine.ambient *= k;
     shine.floor *= k;
     shine.emission *= k;
@@ -1111,7 +1111,7 @@ pub fn drawDayNight(g: *game.Game) void {
 fn sunGlyph(at: rl.Vector2, col: rl.Color) void {
     rl.drawCircleV(at, SUN_R, col);
     for (0..SUN_RAYS) |i| {
-        const a = mathx.TAU * @as(f32, @floatFromInt(i)) / SUN_RAYS;
+        const a = mathx.spoke(@floatFromInt(i), SUN_RAYS);
         const d = rl.Vector2{ .x = @cos(a), .y = @sin(a) };
         rl.drawLineEx(at.add(d.scale(SUN_RAY_IN)), at.add(d.scale(SUN_RAY_OUT)), 1, col);
     }

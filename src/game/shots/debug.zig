@@ -7,6 +7,8 @@ const SHOTS_DIR = @import("capture.zig").SHOTS_DIR;
 const capture = @import("capture.zig").capture;
 const differentPixels = @import("capture.zig").differentPixels;
 const drawInto = @import("capture.zig").drawInto;
+const dropAtlas = @import("capture.zig").dropAtlas;
+const heapAtlas = @import("capture.zig").heapAtlas;
 const readTarget = @import("capture.zig").readTarget;
 const redrawnDiff = @import("capture.zig").redrawnDiff;
 const target720 = @import("capture.zig").target720;
@@ -18,10 +20,9 @@ const captureLoot = @import("ui.zig").captureLoot;
 
 pub fn captureDebug(g: *game.Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR ++ "/debug");
-    const screen = g.screen;
-    defer g.screen = screen;
-    const target = try target720(g);
-    defer rl.unloadRenderTexture(target);
+    const shot = try target720(g);
+    defer shot.close(g);
+    const target = shot.target;
     poseWaterMirrors(g, MORNING, true);
     g.pic.fx.zap(0, POSE_ZAP);
     try capture(g, target, SHOTS_DIR ++ "/debug/all-on.png");
@@ -29,9 +30,8 @@ pub fn captureDebug(g: *game.Game) !void {
         try checkDebugOption(g, target, &@field(g.light.options, f.name), f.name);
     }
     try checkDebugOption(g, target, &g.debug.visuals.water_reflections, "water_reflections");
-    const w = try std.heap.c_allocator.create(atlas.Atlas);
-    defer std.heap.c_allocator.destroy(w);
-    defer g.sim.map = null;
+    const w = try heapAtlas();
+    defer dropAtlas(g, w);
     try loadStrand(g, w);
     try checkDebugOption(g, target, &g.debug.visuals.weather, "weather");
     game.character.openPause(g);

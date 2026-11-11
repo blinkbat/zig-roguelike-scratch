@@ -1,6 +1,8 @@
 const std = @import("std");
 const rl = @import("raylib");
+const mathx = @import("../../core/mathx.zig");
 const grid = @import("../../map/grid.zig");
+const atlas = @import("../../map/atlas.zig");
 const game = @import("../../game.zig");
 
 pub const SHOT_SEED: u64 = 0x5EED_1234;
@@ -13,9 +15,30 @@ pub fn renderTarget(g: *game.Game) !rl.RenderTexture2D {
     return rl.loadRenderTexture(g.screen.x, g.screen.y);
 }
 
-pub fn target720(g: *game.Game) !rl.RenderTexture2D {
+pub const Target720 = struct {
+    target: rl.RenderTexture2D,
+    screen: mathx.P,
+
+    pub fn close(self: Target720, g: *game.Game) void {
+        rl.unloadRenderTexture(self.target);
+        g.screen = self.screen;
+    }
+};
+
+pub fn target720(g: *game.Game) !Target720 {
+    const screen = g.screen;
+    errdefer g.screen = screen;
     g.screen = game.SCREEN_720;
-    return renderTarget(g);
+    return .{ .target = try renderTarget(g), .screen = screen };
+}
+
+pub fn heapAtlas() !*atlas.Atlas {
+    return std.heap.c_allocator.create(atlas.Atlas);
+}
+
+pub fn dropAtlas(g: *game.Game, w: *atlas.Atlas) void {
+    g.sim.map = null;
+    std.heap.c_allocator.destroy(w);
 }
 
 pub fn differentPixels(a: rl.Image, b: rl.Image) usize {

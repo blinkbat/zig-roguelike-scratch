@@ -14,12 +14,12 @@ const fx = @import("../../gfx/fx.zig");
 const look = @import("../../gfx/look.zig");
 const climate = @import("../../map/climate.zig");
 const day = @import("../../map/day.zig");
-const poses = @import("../shots/poses.zig");
 const harness = @import("../harness.zig");
 const menu = @import("../../ui/menu.zig");
 const game = @import("../../game.zig");
 const P = mathx.P;
 const HERO = actor.HERO;
+const LATE_DUSK: f32 = day.SUNSET - 0.5;
 
 test "a body faces right until it steps, aims or turns on someone to its left, and straight up or down keeps it" {
     const g = try game.boot(std.testing.allocator);
@@ -83,7 +83,7 @@ test "the archer sees further by day than by night out of doors, and as little a
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 40, .y = 30 }, &.{});
     var seen: [4]usize = undefined;
-    for ([_]f32{ day.NOON, poses.LATE_DUSK, day.MIDNIGHT }, 0..) |h, i| {
+    for ([_]f32{ day.NOON, LATE_DUSK, day.MIDNIGHT }, 0..) |h, i| {
         g.sim.clock = day.Clock.at(h);
         game.settle(g);
         seen[i] = std.mem.count(bool, &g.sim.lv.lit, &.{true});
@@ -139,7 +139,7 @@ test "tight diagonals carry movement sight projectiles melee and gas in all four
         try std.testing.expectEqual(ahead, g.sim.pool.get(rat).?.at);
         const hp = g.sim.heroActor().?.hp;
         const rat_hp = g.sim.pool.get(rat).?.hp;
-        g.sim.rng = harness.meleeThenBites(g, rat, &.{rat});
+        g.sim.rng = harness.meleeThenFoeAttacks(g, rat, &.{rat});
         harness.nudge(g, d);
         try std.testing.expectEqual(near, g.sim.heroActor().?.at);
         try std.testing.expect(g.sim.heroActor().?.hp < hp);

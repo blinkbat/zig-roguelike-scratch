@@ -30,7 +30,8 @@ const WIDE_W: i32 = KEY_W * 4;
 const FIELD_Y: i32 = 68;
 const GRID_Y: i32 = 136;
 const GRID_W: i32 = @max(@as(i32, COLS) * KEY_W, @as(i32, LAST.len) * WIDE_W);
-const CONTENT_H: i32 = GRID_Y + @as(i32, ROWS) * KEY_H;
+const GRID_H: i32 = @as(i32, ROWS) * KEY_H;
+const CONTENT_H: i32 = GRID_Y + GRID_H;
 const CARET = menu.CARET;
 const AT_DONE = Entry{ .row = ROWS - 1, .col = DONE_AT };
 
@@ -43,7 +44,7 @@ fn keyBox(screen: mathx.P, row: usize, col: usize) rl.Rectangle {
 
 fn contentBox(screen: mathx.P) rl.Rectangle {
     const column = raster.rect(0, 0, GRID_W, CONTENT_H);
-    const body = stage.besideBounds(raster.rect(0, GRID_Y, GRID_W, @as(i32, ROWS) * KEY_H), screen);
+    const body = stage.besideBounds(raster.rect(0, GRID_Y, GRID_W, GRID_H), screen);
     const left = @min(column.x, body.x);
     const top = @min(column.y, body.y);
     const right = @max(column.x + column.width, body.x + body.width);
@@ -53,7 +54,7 @@ fn contentBox(screen: mathx.P) rl.Rectangle {
 
 pub fn gridBox(screen: mathx.P) rl.Rectangle {
     const content = contentBox(screen);
-    return .{ .x = content.x, .y = content.y + GRID_Y, .width = GRID_W, .height = @as(i32, ROWS) * KEY_H };
+    return .{ .x = content.x, .y = content.y + GRID_Y, .width = GRID_W, .height = GRID_H };
 }
 
 const Outcome = enum { done, back };

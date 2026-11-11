@@ -3,6 +3,7 @@ const ground_items = @import("../play/ground_items.zig");
 const inventory = @import("../play/inventory.zig");
 const items = @import("../play/items.zig");
 const progress = @import("../play/progress.zig");
+const passives = @import("../play/passives.zig");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
@@ -270,7 +271,7 @@ pub fn characterCommand(g: *game.Game, command: book.Command) void {
         },
         .passive => |i| {
             if (!drawnFor(g) or !g.sim.growth.allocate(i)) return;
-            g.sim.log.push(.progress, "{s} allocated.", .{progress.NODES[i].name});
+            g.sim.log.push(.progress, "{s} allocated.", .{passives.NODES[i].name});
             game.syncStats(g);
             g.sim.unsaved = true;
         },

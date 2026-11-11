@@ -77,7 +77,8 @@ pub fn choiceRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, which: e
     const was = pg.*;
     switch (which) {
         .feature => |i| if (i < pg.feature_n) popupRows(ed, g, atlas.Feature, &pg.feature[i], box, which, top, shown),
-        .algo, .node, .file => popupRows(ed, g, atlas.Floor, &pg.floor, box, which, top, shown),
+        .algo => popupRows(ed, g, atlas.Floor, &pg.floor, box, which, top, shown),
+        .node, .file => unreachable,
     }
     if (ed.popup == null) refit(ed, pg, was);
 }

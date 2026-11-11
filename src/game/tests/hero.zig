@@ -1,6 +1,7 @@
 const attacks = @import("../attacks.zig");
 const std = @import("std");
 const progress = @import("../../play/progress.zig");
+const passives = @import("../../play/passives.zig");
 const mathx = @import("../../core/mathx.zig");
 const heroes = @import("../../play/hero.zig");
 const bow = @import("../../play/bow.zig");
@@ -94,7 +95,7 @@ test "attack resolution returns harm and statuses without advancing the picture"
     const target = g.sim.pool.get(harness.foeId(0)).?;
     harness.setLife(target, 20, 20);
     g.pic.catchUp(&g.sim);
-    const before = g.pic.pictured[1];
+    const before = g.pic.pictured[harness.foeSlot(0)];
     const raw = attacks.Roll{ .dmg = 3, .hit_checked = true, .effect = .{ .bleed = 100, .bleed_damage = 2, .stun = 100 } };
     const outcome = attacks.resolve(&g.sim, .fromInt(harness.foeId(0)), raw, .chosen).?;
     try std.testing.expect(outcome == .hit);
@@ -105,8 +106,8 @@ test "attack resolution returns harm and statuses without advancing the picture"
     try std.testing.expect(hit.bled != null and hit.stunned);
     try std.testing.expectEqual(@as(i32, 2), target.bleed.amount);
     try std.testing.expect(hit.at.eq(target.at));
-    try std.testing.expectEqualDeep(before, g.pic.pictured[1]);
-    try std.testing.expect(!g.pic.owed[1].any());
+    try std.testing.expectEqualDeep(before, g.pic.pictured[harness.foeSlot(0)]);
+    try std.testing.expect(!g.pic.owed[harness.foeSlot(0)].any());
     const rng = g.sim.rng;
     const log = g.sim.log;
     try std.testing.expect(attacks.resolve(&g.sim, .fromInt(harness.foeId(1)), raw, .chosen) == null);
@@ -149,16 +150,16 @@ test "hero post-action death prevents gas spread and foe actions while clearing 
     g.sim.lv.addGas(from, @import("../../map/gas.zig").BURST);
     const lv = g.sim.lv;
     const rng = g.sim.rng;
-    const foe = g.sim.pool.items[1];
+    const foe = g.sim.pool.items[harness.foeSlot(0)];
     g.sim.stepped = true;
     g.sim.displaced.set(1);
     combat.endTurn(g);
     try std.testing.expect(g.mode == .dead);
     try std.testing.expectEqualDeep(rng, g.sim.rng);
     try std.testing.expectEqualDeep(lv.gas, g.sim.lv.gas);
-    try std.testing.expectEqualDeep(foe.clock, g.sim.pool.items[1].clock);
-    try std.testing.expectEqual(foe.at, g.sim.pool.items[1].at);
-    try std.testing.expect(!g.pic.owed[1].any());
+    try std.testing.expectEqualDeep(foe.clock, g.sim.pool.items[harness.foeSlot(0)].clock);
+    try std.testing.expectEqual(foe.at, g.sim.pool.items[harness.foeSlot(0)].at);
+    try std.testing.expect(!g.pic.owed[harness.foeSlot(0)].any());
     try std.testing.expect(!g.sim.stepped);
     try std.testing.expectEqual(@as(usize, 0), g.sim.displaced.count());
     for (g.sim.ran) |ran| try std.testing.expectEqual(@as(usize, 0), ran.count());
@@ -197,7 +198,7 @@ fn firstLifeTick(max: i32) i32 {
 }
 
 fn takeNode(g: *game.Game, name: []const u8) void {
-    for (progress.NODES, 0..) |n, i| if (std.mem.eql(u8, n.name, name)) return g.sim.growth.nodes.set(i);
+    for (passives.NODES, 0..) |n, i| if (std.mem.eql(u8, n.name, name)) return g.sim.growth.nodes.set(i);
     unreachable;
 }
 
@@ -548,14 +549,14 @@ test "a flask's first heal shows on its own turn and later recovery precedes the
     h.hp = 10;
     g.pic.catchUp(&g.sim);
     const hero = g.sim.heroSlot().?;
-    g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = false }});
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0),.lands = false }});
     harness.use(g, .life_flask);
     const first_tick = 10 + firstLifeTick(h.max);
     try std.testing.expectEqual(first_tick, h.hp);
     g.st = .{};
     game.update(g, 0);
     try std.testing.expectEqual(first_tick, g.pic.pictured[hero].hp);
-    g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = true }});
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0),.lands = true }});
     harness.use(g, .wait);
     const healed = first_tick + firstLifeTick(h.max);
     try std.testing.expect(h.hp < healed);

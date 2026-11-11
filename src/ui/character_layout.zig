@@ -83,10 +83,11 @@ const SLOT_LEFT = 65;
 const SLOT_TOP = 62;
 const HANDS_Y = 128;
 const LOW_Y = 320;
+const SLOT_COLS = [_]i32{ SLOT_BIG, SLOT_SMALL, SLOT_BIG, SLOT_SMALL, SLOT_BIG };
 const SLOT_X = blk: {
-    var xs: [5]i32 = undefined;
+    var xs: [SLOT_COLS.len]i32 = undefined;
     var x: i32 = SLOT_LEFT;
-    for (&xs, [_]i32{ SLOT_BIG, SLOT_SMALL, SLOT_BIG, SLOT_SMALL, SLOT_BIG }) |*at, w| {
+    for (&xs, SLOT_COLS) |*at, w| {
         at.* = x;
         x += w + SLOT_GUTTER;
     }

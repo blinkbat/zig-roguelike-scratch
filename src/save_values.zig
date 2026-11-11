@@ -1,6 +1,7 @@
 const std = @import("std");
 const hero = @import("play/hero.zig");
 const progress = @import("play/progress.zig");
+const passives = @import("play/passives.zig");
 const mathx = @import("core/mathx.zig");
 const wire = @import("core/wire.zig");
 const data = @import("save_data.zig");
@@ -8,7 +9,7 @@ const script = @import("map/script.zig");
 const actor = @import("play/actor.zig");
 
 const SavedRng = struct { xoshiro256: [4]u64 };
-const Node = progress.passives.Node;
+const Node = passives.Node;
 const NodeKey = struct {
     arm: @FieldType(Node, "arm"),
     branch: @FieldType(Node, "branch") = null,
@@ -23,11 +24,11 @@ const NodeKey = struct {
 
 test "save values retain passive identities refund retired nodes and preserve the RNG stream" {
     var state = progress.State.of(.wizard);
-    state.nodes.set(progress.start(.knight));
+    state.nodes.set(passives.start(.knight));
     state.passive_points = 3;
     var stored = try Policy.encode(state);
     try std.testing.expectEqualDeep(state, try Policy.decode(progress.State, stored));
-    stored.allocations[stored.n] = .{ .arm = progress.NODES[0].arm, .ring = 255 };
+    stored.allocations[stored.n] = .{ .arm = passives.NODES[0].arm, .ring = 255 };
     stored.n += 1;
     const recovered = try Policy.decode(progress.State, stored);
     try std.testing.expectEqual(state.passive_points + 1, recovered.passive_points);
@@ -60,8 +61,8 @@ fn carried(comptime name: []const u8) bool {
 
 comptime {
     @setEvalBranchQuota(100_000);
-    if (progress.NODES.len > ALLOCATION_MAX) @compileError("raise the saved allocation limit");
-    for (progress.NODES, 0..) |node, index| for (progress.NODES[0..index]) |other| {
+    if (passives.NODES.len > ALLOCATION_MAX) @compileError("raise the saved allocation limit");
+    for (passives.NODES, 0..) |node, index| for (passives.NODES[0..index]) |other| {
         if (std.meta.eql(NodeKey.of(node), NodeKey.of(other))) @compileError("passive save identities must be unique");
     };
     for (std.meta.fields(progress.State)) |f| {
@@ -120,7 +121,7 @@ test "an NPC kept before it could stand off a painted cell loads where it stood"
 
 pub const Policy = struct {
     pub fn restoreStart(state: *progress.State, class: hero.Class) void {
-        state.nodes.set(progress.start(class));
+        state.nodes.set(passives.start(class));
         for (progress.skills(class)) |skill| if (skill.initial and state.ranks.get(skill.act) == 0) {
             state.ranks.set(skill.act, 1);
         };
@@ -150,7 +151,7 @@ pub const Policy = struct {
         copyKept(progress.State, carried, &result, value);
         var allocated = value.nodes.iterator(.{});
         while (allocated.next()) |index| {
-            result.allocations[result.n] = NodeKey.of(progress.NODES[index]);
+            result.allocations[result.n] = NodeKey.of(passives.NODES[index]);
             result.n += 1;
         }
         return result;
@@ -172,7 +173,7 @@ pub const Policy = struct {
         copyKept(progress.State, carried, &result, stored);
         for (stored.allocations[0..stored.n], 0..) |key, index| {
             for (stored.allocations[0..index]) |previous| if (std.meta.eql(key, previous)) return error.Damaged;
-            for (progress.NODES, 0..) |node, current| {
+            for (passives.NODES, 0..) |node, current| {
                 if (std.meta.eql(key, NodeKey.of(node))) {
                     result.nodes.set(current);
                     break;

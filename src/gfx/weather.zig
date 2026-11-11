@@ -137,7 +137,7 @@ pub const Weather = struct {
                 const k = d.since / fall.splash_s;
                 const r = mathx.lerpF(1, fall.ring, k) * scale;
                 for (0..SPLASH_DROPS) |i| {
-                    const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / SPLASH_DROPS;
+                    const angle = mathx.spoke(@floatFromInt(i), SPLASH_DROPS);
                     pixel.rect(.{ .x = x + @cos(angle) * r, .y = y + @sin(angle) * r * 0.5 }, 1, 1, scale, look.fade(INK, a * (1 - k)));
                 }
             }

@@ -4,6 +4,7 @@ const grid = @import("grid.zig");
 const procgen = @import("procgen.zig");
 const actor = @import("../play/actor.zig");
 const store = @import("../core/store.zig");
+const contains = @import("../core/text.zig").contains;
 const pack = @import("../play/pack.zig");
 const atlas = @import("atlas.zig");
 const script_text = @import("script_text.zig");
@@ -354,10 +355,7 @@ fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const 
     @setEvalBranchQuota(100_000);
     comptime var out: []const []const u8 = &.{};
     inline for (std.meta.fields(T)) |f| {
-        const skipped = for (skip) |s| {
-            if (std.mem.eql(u8, s, f.name)) break true;
-        } else false;
-        if (!skipped) out = out ++ &[_][]const u8{f.name};
+        if (!contains(skip, f.name)) out = out ++ &[_][]const u8{f.name};
     }
     return out;
 }

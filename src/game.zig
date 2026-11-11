@@ -39,7 +39,6 @@ const vignette = @import("gfx/vignette.zig");
 const sky = @import("gfx/sky.zig");
 const weather = @import("gfx/weather.zig");
 const climate = @import("map/climate.zig");
-pub const shots = @import("game/shots/capture.zig");
 pub const scene = @import("game/scene.zig");
 pub const overlay = @import("game/overlay.zig");
 pub const character = @import("game/character.zig");
@@ -392,13 +391,13 @@ fn followerCell(lv: *const grid.Level, kind: actor.Kind, hero: P) ?P {
     var near = grid.Nearest{ .from = hero };
     var cells = grid.Cells.around(hero, FOLLOWER_REACH);
     while (cells.next()) |p| {
-        if (tactics_exec.fits(kind, lv, p) and grid.sightLine(lv, hero, p)) near.offer(p);
+        if (actor.standsOffDoor(kind, lv, p) and grid.sightLine(lv, hero, p)) near.offer(p);
     }
     if (near.best) |p| return p;
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var flood = grid.Flood.init(lv, hero, &dist, &queue);
-    while (flood.next()) |q| if (tactics_exec.fits(kind, lv, q)) return q;
+    while (flood.next()) |q| if (actor.standsOffDoor(kind, lv, q)) return q;
     return null;
 }
 

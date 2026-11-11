@@ -4,6 +4,7 @@ const item_bases = @import("../../play/item_bases.zig");
 const items = @import("../../play/items.zig");
 const loot = @import("../../play/loot.zig");
 const progress = @import("../../play/progress.zig");
+const passives = @import("../../play/passives.zig");
 const rl = @import("raylib");
 const mathx = @import("../../core/mathx.zig");
 const input = @import("../../core/input.zig");
@@ -35,6 +36,8 @@ const SHOTS_DIR = @import("capture.zig").SHOTS_DIR;
 const SHOT_SEED = @import("capture.zig").SHOT_SEED;
 const capture = @import("capture.zig").capture;
 const drawInto = @import("capture.zig").drawInto;
+const dropAtlas = @import("capture.zig").dropAtlas;
+const heapAtlas = @import("capture.zig").heapAtlas;
 const exportTarget = @import("capture.zig").exportTarget;
 const readTarget = @import("capture.zig").readTarget;
 const renderTarget = @import("capture.zig").renderTarget;
@@ -137,9 +140,8 @@ fn captureInspect(g: *game.Game) !void {
 fn captureTalk(g: *game.Game) !void {
     const screen = g.screen;
     defer g.screen = screen;
-    const w = try std.heap.c_allocator.create(atlas.Atlas);
-    defer std.heap.c_allocator.destroy(w);
-    defer g.sim.map = null;
+    const w = try heapAtlas();
+    defer dropAtlas(g, w);
     w.* = .{};
     const n = w.add(.{ .bespoke = .{} }).?;
     var floor = grid.Box.sized(.{ .x = 6, .y = 4 }, 20, 10).cells();
@@ -196,10 +198,9 @@ pub fn captureRares(g: *game.Game) !void {
 }
 
 fn captureTactics(g: *game.Game) !void {
-    const previous = g.screen;
-    defer g.screen = previous;
-    const target = try target720(g);
-    defer rl.unloadRenderTexture(target);
+    const shot = try target720(g);
+    defer shot.close(g);
+    const target = shot.target;
     try std.fs.cwd().makePath(SHOTS_DIR ++ "/tactics");
     inline for (heroes.CLASSES) |class| {
         game.harness.heroArena(g, class, .{ .x = 20, .y = 20 }, &.{});
@@ -259,10 +260,9 @@ fn captureTactics(g: *game.Game) !void {
 
 fn captureMouse(g: *game.Game) !void {
     try std.fs.cwd().makePath(MOUSE_DIR);
-    const screen = g.screen;
-    defer g.screen = screen;
-    const target = try target720(g);
-    defer rl.unloadRenderTexture(target);
+    const shot = try target720(g);
+    defer shot.close(g);
+    const target = shot.target;
     try app.captureMenus(g, target);
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 24, .y = 20 }});
     g.st = .{ .device = .keys, .modifier = g.bar.modifier };
@@ -324,12 +324,11 @@ fn checkHiddenAim(g: *game.Game, target: rl.RenderTexture2D, comptime act: skill
 const BAG_GOLD = 37;
 
 pub fn captureLoot(g: *game.Game) !void {
-    const screen = g.screen;
-    defer g.screen = screen;
     const device = g.st.device;
     defer g.st.device = device;
-    const target = try target720(g);
-    defer rl.unloadRenderTexture(target);
+    const shot = try target720(g);
+    defer shot.close(g);
+    const target = shot.target;
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     game.harness.grassOver(&g.sim.lv);
     const bag = P{ .x = 19, .y = 20 };
@@ -420,13 +419,11 @@ pub fn captureLevelUp(g: *game.Game) !void {
 }
 
 pub fn captureCharacter(g: *game.Game) !void {
-    const w = try std.heap.c_allocator.create(atlas.Atlas);
-    defer std.heap.c_allocator.destroy(w);
-    defer g.sim.map = null;
-    const screen = g.screen;
-    defer g.screen = screen;
-    const target = try target720(g);
-    defer rl.unloadRenderTexture(target);
+    const w = try heapAtlas();
+    defer dropAtlas(g, w);
+    const shot = try target720(g);
+    defer shot.close(g);
+    const target = shot.target;
     spar.author(w, .slime);
     g.sim.class = heroes.DEFAULT;
     game.beginMapAt(g, w, w.start, SHOT_SEED);
@@ -458,7 +455,7 @@ pub fn captureCharacter(g: *game.Game) !void {
     inline for (book.PAGES) |page| {
         g.character.choose(page);
 
-        if (page == .passives) g.character.cursor = progress.start(g.sim.class);
+        if (page == .passives) g.character.cursor = passives.start(g.sim.class);
         if (page == .equipment) g.character.cursor = @intFromEnum(item_bases.Slot.helm);
         try capture(g, target, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ ".png");
     }
@@ -537,7 +534,7 @@ pub fn captureCharacter(g: *game.Game) !void {
             g.st.device = d;
             g.character.choose(.passives);
 
-            g.character.cursor = progress.start(g.sim.class);
+            g.character.cursor = passives.start(g.sim.class);
             try capture(g, target, SHOTS_DIR ++ "/tree-controls-" ++ @tagName(d) ++ ".png");
         }
         g.character.pan = .{ .x = 1.5, .y = -0.8 };
@@ -577,23 +574,23 @@ pub fn captureCharacter(g: *game.Game) !void {
         g.sim.class = .knight;
         g.sim.growth = progress.State.of(g.sim.class);
         g.sim.growth.passive_points = 30;
-        const branch = progress.passives.branchFirst(.warrior_life);
-        for (branch..branch + progress.passives.PER_BRANCH - 1) |i| _ = g.sim.growth.allocate(i);
-        const bridge = progress.passives.bridgeFirst(.warrior_rogue);
+        const branch = passives.branchFirst(.warrior_life);
+        for (branch..branch + passives.PER_BRANCH - 1) |i| _ = g.sim.growth.allocate(i);
+        const bridge = passives.bridgeFirst(.warrior_rogue);
         _ = g.sim.growth.allocate(bridge);
         g.character.choose(.passives);
 
-        g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
+        g.character.cursor = branch + passives.PER_BRANCH - 1;
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-capstone.png");
         g.character.zoom = 2.2;
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-zoom.png");
         g.character.zoom = 1;
         g.character.cursor = branch + 1;
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-interest.png");
-        g.character.cursor = progress.passives.bridgeFirst(.warrior_rogue);
+        g.character.cursor = passives.bridgeFirst(.warrior_rogue);
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-bridge.png");
         g.sim.growth.passive_points = 0;
-        g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
+        g.character.cursor = branch + passives.PER_BRANCH - 1;
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-no-points.png");
     }
     {

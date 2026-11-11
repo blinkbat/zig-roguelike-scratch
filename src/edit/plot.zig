@@ -348,23 +348,23 @@ const Frame = struct {
     }
 };
 
-fn split(w: i32, comptime shares: []const i32, comptime caps: []const i32) [shares.len]i32 {
-    var total: i32 = 0;
-    inline for (shares) |s| total += s;
-    const room = w - GAP * @as(i32, @intCast(shares.len - 1));
-    var out: [shares.len]i32 = undefined;
-    inline for (shares, caps, 0..) |s, cap, i| out[i] = @max(SPLIT_MIN_W, @min(cap, @divTrunc(room * s, total)));
-    return out;
-}
-
 const Split = struct { shares: []const i32, caps: []const i32 };
 const NAME_CMP_NUMBER = Split{ .shares = &.{ 4, 3, 3 }, .caps = &.{ WHICH_W, OP_W, NUMBER_W } };
 const NAME_OP_NUMBER = Split{ .shares = &.{ 4, 3, 3 }, .caps = &.{ WHICH_W, COUNTOP_W, NUMBER_W } };
 const NAME_TOGGLE = Split{ .shares = &.{ 3, 2 }, .caps = &.{ WHICH_W, TOGGLE_W } };
 const NAME_UNITS = Split{ .shares = &.{ 3, 2 }, .caps = &.{ WHICH_W, UNIT_W } };
+const NAME_SETOP = Split{ .shares = &.{ 3, 2 }, .caps = &.{ WHICH_W, OP_W } };
+const CMP_UNITS = Split{ .shares = &.{ 1, 1 }, .caps = &.{ OP_W, ELAPSED_W } };
+const REGION_FROM = Split{ .shares = &.{ 3, 2 }, .caps = &.{ REGION_W, BTN_W } };
+const FOE_CMP_NUMBER = Split{ .shares = &.{ 4, 3, 3 }, .caps = &.{ FOE_W, OP_W, NUMBER_W } };
 
 fn splitBy(w: i32, comptime s: Split) [s.shares.len]i32 {
-    return split(w, s.shares, s.caps);
+    var total: i32 = 0;
+    inline for (s.shares) |share| total += share;
+    const room = w - GAP * @as(i32, @intCast(s.shares.len - 1));
+    var out: [s.shares.len]i32 = undefined;
+    inline for (s.shares, s.caps, 0..) |share, cap, i| out[i] = @max(SPLIT_MIN_W, @min(cap, @divTrunc(room * share, total)));
+    return out;
 }
 
 fn listArea(ed: *editor.Editor, f: Frame) widgets.Scroll {
@@ -470,7 +470,6 @@ fn countHead(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, comptime
     return rightButton(ed, g, x + w, y, add_w, label, n < most, tip);
 }
 
-/// `<` and `>` round `value`; -1 or 1 as one is pressed, `SHIFT_STEP` times that when `shift`; 0 otherwise.
 fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, live: bool, tip: ?[:0]const u8, shift: bool) i32 {
     const step = widgets.Step{ .tip = tip, .live = live };
     return widgets.stepper(ed.controls(), &g.face, r, value, widgets.PAGE_ARROWS, .{ step, step }, shift);
@@ -740,7 +739,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     const lx = x;
     countHeading(g, lx, y, lines_w, "Lines", d.line_n, script.MAX_LINES);
     y += STEP;
-    var line_buf: [script.NAME_MAX + script.SAY_MAX + 5]u8 = undefined;
+    var line_buf: [script.NAME_MAX + script.SAY_MAX + "> ".len + ": ".len + 1]u8 = undefined;
     for (d.lines(), 0..) |*ln, i| {
         const first = if (ln.say.n > 0) ln.say.text() else SILENT;
         const label = std.fmt.bufPrintZ(&line_buf, "{s}{s}: {s}", .{ if (i == 0) "> " else "", ln.name.text(), first }) catch "";
@@ -956,7 +955,7 @@ fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.
         .dialog => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &a.slot),
         .text => words(ed, g, widgets.row(fx, y, fw), .{ .note = at }, "(the line the log shows)"),
         .flag => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, OP_W });
+            const ws = splitBy(fw, NAME_SETOP);
             tableStep(ed, g, lay.take(ws[0]), script.actRef(a.kind).?.table, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Setop, &a.setop, &SETOP_WORDS, null);
         },
@@ -1079,12 +1078,12 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
             numberStep(ed, g, lay.take(ws[2]), &c.n, c.kind.span(), "", "The number it is held to");
         },
         .elapsed => {
-            const ws = split(fw, &.{ 1, 1 }, &.{ OP_W, ELAPSED_W });
+            const ws = splitBy(fw, CMP_UNITS);
             cmpStep(ed, g, lay.take(ws[0]), &c.cmp);
             numberStep(ed, g, lay.take(ws[1]), &c.n, c.kind.span(), " turns", "Spent turns since the run began");
         },
         .region => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ REGION_W, BTN_W });
+            const ws = splitBy(fw, REGION_FROM);
             caption(g, fx, y, ws[0], std.fmt.bufPrint(&buf, "node {d}: {d},{d} to {d},{d}", .{ c.node, c.from.x, c.from.y, c.to.x, c.to.y }) catch "", look.TEXT);
             _ = lay.take(ws[0]);
             if (button(ed, g, lay.take(ws[1]), "From selection", false, ed.selection != null, widgets.keyed("This node and the cells selected on it", comptime editor.Shape.select.caption()))) {
@@ -1100,7 +1099,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
         },
         .talked => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &c.slot),
         .deaths, .alive => {
-            const ws = split(fw, &.{ 4, 3, 3 }, &.{ FOE_W, OP_W, NUMBER_W });
+            const ws = splitBy(fw, FOE_CMP_NUMBER);
             const by = stepper(ed, g, lay.take(ws[0]), actor.row(c.foe).name, true, "Which foe; a slime counts its halves", false);
             if (by != 0) {
                 c.foe = mathx.stepIn(actor.Kind, &actor.FOES, c.foe, by, 0);

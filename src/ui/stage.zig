@@ -98,8 +98,8 @@ fn spotlight(cx: f32, top: f32, feet: f32, size: f32) void {
     const ry = size * POOL_RY;
     const core = look.fade(BEAM, POOL_A);
     for (0..POOL_SEGMENTS) |s| {
-        const a0 = mathx.TAU * @as(f32, @floatFromInt(s)) / POOL_SEGMENTS;
-        const a1 = mathx.TAU * @as(f32, @floatFromInt(s + 1)) / POOL_SEGMENTS;
+        const a0 = mathx.spoke(@floatFromInt(s), POOL_SEGMENTS);
+        const a1 = mathx.spoke(@floatFromInt(s + 1), POOL_SEGMENTS);
         vertex(cx, feet, core);
         vertex(cx + rx * @cos(a1), feet + ry * @sin(a1), clear);
         vertex(cx + rx * @cos(a0), feet + ry * @sin(a0), clear);

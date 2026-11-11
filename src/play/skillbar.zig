@@ -380,8 +380,10 @@ const CARRIED = blk: {
     break :blk acts[0..acts.len].*;
 };
 
-fn kitOf(comptime basic: Act, comptime own: []const Act) [3 + own.len + CARRIED.len]Act {
-    return [_]Act{ basic, .wait, .secondary } ++ own[0..own.len].* ++ CARRIED;
+pub const COMMON = [_]Act{ .wait, .secondary };
+
+fn kitOf(comptime basic: Act, comptime own: []const Act) [1 + COMMON.len + own.len + CARRIED.len]Act {
+    return [_]Act{basic} ++ COMMON ++ own[0..own.len].* ++ CARRIED;
 }
 
 const ARCHER_KIT = kitOf(.shoot, &.{ .juke, .steady_aim, .burning_arrow, .glacial_shot, .barbed_arrow, .caltrops, .pinning_shot, .overwatch, .piercing_shot });
@@ -558,39 +560,33 @@ fn primary(c: hero.Class) Row {
 test "arrows reach the bow's five tiles; each bolt reaches its own, and aims no further" {
     const lv = grid.openFloor();
     const from = mathx.P{ .x = 20, .y = 20 };
-    var n: usize = 0;
     for (ACTS) |a| {
         if (a.reticle() != .bow) continue;
         const reach = a.reach();
         try std.testing.expectEqual(a.bolt() == null, reach == bow.RANGE);
         try std.testing.expect(a.aimable(&lv, from, from.add(.{ .x = reach, .y = 0 })));
         try std.testing.expect(!a.aimable(&lv, from, from.add(.{ .x = reach + 1, .y = 0 })));
-        n += 1;
     }
     try std.testing.expectEqual(@as(i32, 5), bow.RANGE);
 }
 
 test "each afflicting skill's stated chance is what its roll lands" {
     const TRIES = 4000;
-    var n: usize = 0;
     inline for (comptime std.enums.values(Act)) |a| if (comptime a.ailment()) |ail| {
         var rng = mathx.Rng.init(0xA11);
         var landed: u32 = 0;
         for (0..TRIES) |_| landed += @intFromBool(Act.skill(a).procs(&rng, 0));
         const pc = landed * mathx.PERCENT / TRIES;
         try std.testing.expect(pc + 3 >= ail.chance and pc <= ail.chance + 3);
-        n += 1;
     };
 }
 
 test "each class starts with its own skills bound, and only skills of its kit" {
     for (hero.CLASSES) |c| {
         const bar = Bar.of(c);
-        var bound: usize = 0;
         for (EVERY_SLOT) |s| {
             const a = bar.at(s) orelse continue;
             try std.testing.expect(std.mem.indexOfScalar(Act, kit(c), a) != null);
-            bound += 1;
         }
     }
     try std.testing.expectEqual(@as(?Act, .spark), Bar.of(.wizard).at(.{ .set = .primary, .button = .x }));

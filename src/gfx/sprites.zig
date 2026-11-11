@@ -144,7 +144,7 @@ pub const Sprites = struct {
         return null;
     }
 
-    pub fn sheets(self: *const Sprites) ground.Grounds {
+    fn sheets(self: *const Sprites) ground.Grounds {
         var s = ground.Grounds.initEmpty();
         for (std.enums.values(ground.Ground)) |g| s.setPresent(g, self.grounds.getPtrConst(g).* != null);
         return s;
@@ -202,7 +202,7 @@ pub const Sprites = struct {
 
     pub fn drawWaterEdges(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
         inline for (sprite_assets.WATER_EDGES) |pair| if (@field(self, pair.name)) |tex| {
-            for (std.enums.values(WaterBand)) |band| {
+            if (beds.shown.contains(pair.upper) and beds.shown.contains(pair.lower)) for (std.enums.values(WaterBand)) |band| {
                 const depth = band.depth();
                 const surface = band.surface() and self.beginWater(water, origin, px, depth);
                 const face = if (band.face()) self.waterFace(water) else null;
@@ -222,7 +222,7 @@ pub const Sprites = struct {
                     }
                 }
                 if (surface or face != null) rl.endShaderMode();
-            }
+            };
         };
     }
 
@@ -421,7 +421,7 @@ pub const Sprites = struct {
     }
 
     fn pointRect(at: [2]f32, px: f32) rl.Rectangle {
-        return .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px };
+        return raster.around(at[0], at[1], px / 2, px / 2);
     }
 
     fn squarePart(self: *const Sprites, t: grid.Tile, cell: [2]f32, px: f32, uv: [2]f32, span: f32) void {

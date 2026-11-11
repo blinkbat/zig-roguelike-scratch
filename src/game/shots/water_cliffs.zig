@@ -63,19 +63,14 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
     }.of);
     studyLit(g, true, day.NOON);
     try capture(g, target, SHOTS_DIR ++ "/water-cliffs/grass-day.png");
-    for (&g.sim.lv.tile) |*t| if (t.* == .grass) {
-        t.* = .dirt;
-    };
+    game.harness.retile(&g.sim.lv, .grass, .dirt);
     studyLit(g, true, day.NOON);
     try capture(g, target, SHOTS_DIR ++ "/water-cliffs/dirt-day.png");
     studyLit(g, true, NIGHT);
     try capture(g, target, SHOTS_DIR ++ "/water-cliffs/dirt-night.png");
     const lands = [_]grid.Tile{ .sand, .snow, .ice, .floor, .rubble, .crop };
     for (lands, 0..) |land, n| {
-        const previous = if (n == 0) .dirt else lands[n - 1];
-        for (&g.sim.lv.tile) |*t| if (t.* == previous) {
-            t.* = land;
-        };
+        game.harness.retile(&g.sim.lv, if (n == 0) .dirt else lands[n - 1], land);
         studyLit(g, true, day.NOON);
         var path: [128]u8 = undefined;
         try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/{s}-day.png", .{@tagName(land)}));
@@ -174,13 +169,18 @@ fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
 }
 
 const GLINT_INK = look.rgb(0x302010);
+const SWATCH_PX = 256;
+const SWATCH_ORIGIN: f32 = -608;
+const SWATCH_LO = P{ .x = 8, .y = 8 };
+const SWATCH_HI = P{ .x = 15, .y = 15 };
+const SHIMMER_S: f32 = 1.7;
 
 fn swatch(w: i32, h: i32, c: rl.Color, comptime missing: anyerror) !rl.Texture2D {
     return raster.canvas(w, h, c, .point) orelse return missing;
 }
 
 fn checkWaterCapTint(g: *game.Game) !void {
-    const target = try rl.loadRenderTexture(256, 256);
+    const target = try rl.loadRenderTexture(SWATCH_PX, SWATCH_PX);
     defer rl.unloadRenderTexture(target);
     const sight = try swatch(1, 1, .{ .r = 128, .g = 128, .b = 128, .a = 255 }, error.WaterVisibilityMissing);
     defer rl.unloadTexture(sight);
@@ -206,18 +206,18 @@ fn checkWaterCapTint(g: *game.Game) !void {
     var checked: usize = 0;
     for ([_]bool{ false, true }) |effects| {
         const view = sprite.WaterView{
-            .screen = .{ 256, 256 },
+            .screen = .{ SWATCH_PX, SWATCH_PX },
             .visibility = sight,
             .glints = if (effects) shine else dark,
             .mirror = if (effects) .{ .live = mirror, .memory = blank } else null,
             .shimmer = effects,
-            .seconds = 1.7,
+            .seconds = SHIMMER_S,
         };
         for ([_]f32{ -640, -544 }) |y_origin| {
-            const origin = [2]f32{ -608, y_origin };
+            const origin = [2]f32{ SWATCH_ORIGIN, y_origin };
             var beds: ground.Beds = undefined;
             @memset(&lv.tile, .shallows);
-            beds.fill(&lv, .{ .x = 8, .y = 8 }, .{ .x = 15, .y = 15 }, false);
+            beds.fill(&lv, SWATCH_LO, SWATCH_HI, false);
             const reference = try waterSample(g, target, &beds, view, origin);
             defer rl.unloadImage(reference);
             for (&lv.tile, 0..) |*t, i| if (grid.Level.of(i).y >= 11) {
@@ -230,7 +230,7 @@ fn checkWaterCapTint(g: *game.Game) !void {
             rl.endTextureMode();
             const cap = try readTarget(target);
             defer rl.unloadImage(cap);
-            var px = pixels(256, 256);
+            var px = pixels(SWATCH_PX, SWATCH_PX);
             while (px.next()) |p| {
                 const actual = rl.getImageColor(cap, p.x, p.y);
                 if (actual.a == 0) continue;
@@ -248,7 +248,7 @@ const TemplateLayer = enum { ground, bare, faces, caps, edges };
 fn waterCliffTemplates(g: *game.Game) !void {
     game.prepare(g);
     if (g.sprites.bank_cap == null) return error.BankCapShaderMissing;
-    const target = try rl.loadRenderTexture(256, 256);
+    const target = try rl.loadRenderTexture(SWATCH_PX, SWATCH_PX);
     defer rl.unloadRenderTexture(target);
     const pairs = [_][2]grid.Tile{ .{ .dirt, .shallows }, .{ .dirt, .water }, .{ .shallows, .water } };
     for (pairs, 0..) |pair, n| {
@@ -259,9 +259,9 @@ fn waterCliffTemplates(g: *game.Game) !void {
             for (ground.AROUND) |a| lv.set(p.add(a.d), if (mask & a.bit != 0) pair[0] else pair[1]);
         }
         var beds: ground.Beds = undefined;
-        beds.fill(&lv, .{ .x = 8, .y = 8 }, .{ .x = 15, .y = 15 }, false);
+        beds.fill(&lv, SWATCH_LO, SWATCH_HI, false);
         g.sprites.sync(sprite_assets.Assets.of(&lv));
-        const origin = [2]f32{ -608, -608 };
+        const origin = [2]f32{ SWATCH_ORIGIN, SWATCH_ORIGIN };
         for (std.enums.values(TemplateLayer)) |pass| {
             rl.beginTextureMode(target);
             rl.clearBackground(rl.Color.blank);
@@ -448,7 +448,7 @@ pub fn checkWaterSurface(g: *game.Game) !void {
     view.shimmer = true;
     const swelled = try waterSample(g, target, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(swelled);
-    view.seconds = 1.7;
+    view.seconds = SHIMMER_S;
     const later = try waterSample(g, target, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(later);
     var swelling = [_]usize{0} ** DRY;
@@ -470,7 +470,7 @@ pub fn checkWaterSurface(g: *game.Game) !void {
         }
     }
     if (swelling[0] < MIN_PIXELS or swelling[1] < MIN_PIXELS or moving < MIN_PIXELS) return error.WaterShimmerMissing;
-    std.debug.print("water shimmer GPU: {d}/{d} deep/shallow highlight pixels swell, {d} move in 1.7 s; grass, memory and alpha untouched\n", .{ swelling[0], swelling[1], moving });
+    std.debug.print("water shimmer GPU: {d}/{d} deep/shallow highlight pixels swell, {d} move in {d} s; grass, memory and alpha untouched\n", .{ swelling[0], swelling[1], moving, SHIMMER_S });
 }
 
 pub fn checkMapEdge(g: *game.Game, target: rl.RenderTexture2D) !void {

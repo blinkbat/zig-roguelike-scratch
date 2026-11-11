@@ -1,7 +1,8 @@
 const std = @import("std");
 const game = @import("../../game.zig");
 const grid = @import("../../map/grid.zig");
-const atlas = @import("../../map/atlas.zig");
+const carve = @import("../../map/carve.zig");
+const atlas =@import("../../map/atlas.zig");
 const mathx = @import("../../core/mathx.zig");
 const actor = @import("../../play/actor.zig");
 const damage = @import("../../play/damage.zig");
@@ -122,9 +123,9 @@ test "rain out of doors dampens fire hits and ignition, and the card names it be
     game.settle(g);
     var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
-    const tip = overlay.tipOf(g, .{ .actor = 2 }, &title, &body).?;
+    const tip = overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body).?;
     var expected: [256]u8 = undefined;
-    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d}/{d} HP\n---\nFloor\nNo Effects\nDrizzle\n+5% Fire Resistance\n-10% Chance To Burn", .{ g.pic.pictured[1].hp, a.max }), tip.body);
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d}/{d} HP\n---\nFloor\nNo Effects\nDrizzle\n+5% Fire Resistance\n-10% Chance To Burn", .{ g.pic.pictured[harness.foeSlot(0)].hp, a.max }), tip.body);
 }
 
 test "terrain reeds affect real hero hits without applying harm or statuses on misses" {
@@ -163,12 +164,12 @@ test "terrain inspection uses pictured characters and tiles while excluding hidd
     const a = g.sim.pool.get(harness.foeId(0)).?;
     g.sim.lv.set(at, .shallows);
     game.settle(g);
-    const shown = g.pic.pictured[1].hp;
+    const shown = g.pic.pictured[harness.foeSlot(0)].hp;
     a.hp = 1;
     a.burn.start();
     var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
-    const tip = overlay.tipOf(g, .{ .actor = 2 }, &title, &body).?;
+    const tip = overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body).?;
     var expected: [256]u8 = undefined;
     try std.testing.expectEqualStrings("Rat", tip.title);
     try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d}/{d} HP\n---\nShallows\n+25% Fire Resistance\n-25% Lightning Resistance\n-25% Chance To Burn", .{ shown, a.max }), tip.body);
@@ -180,10 +181,10 @@ test "terrain inspection uses pictured characters and tiles while excluding hidd
     };
     try std.testing.expectEqual(@as(usize, 2), found);
     g.sim.lv.lit[grid.Level.idx(at)] = false;
-    try std.testing.expect(overlay.tipOf(g, .{ .actor = 2 }, &title, &body) == null);
+    try std.testing.expect(overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body) == null);
     g.sim.lv.lit[grid.Level.idx(at)] = true;
     g.pic.split_from[1] = 0;
-    try std.testing.expect(overlay.tipOf(g, .{ .actor = 2 }, &title, &body) == null);
+    try std.testing.expect(overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body) == null);
 }
 
 test "terrain inspection retains the drawn tile and modifiers until freezing and melting land" {
@@ -222,7 +223,7 @@ test "inspection includes visible actors beside the HUD and excludes actors beyo
         g.st.pointer = shown.add(.{ .x = game.HALF_CELL, .y = game.HALF_CELL });
         const hovered = overlay.hovered(g);
         try std.testing.expect(hovered != null);
-        try std.testing.expectEqual(game.Spot{ .actor = 2 }, hovered.?.spot);
+        try std.testing.expectEqual(game.Spot{ .actor = harness.foeId(0) }, hovered.?.spot);
         var parts: [overlay.SPOTS_MAX]overlay.Part = undefined;
         for ([_]P{
             .{ .x = -game.CELL, .y = shown.y },
@@ -345,8 +346,7 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
 }
 
 fn meadow(g: *game.Game, around: P, r: i32) void {
-    var cells = grid.Cells.around(around, r);
-    while (cells.next()) |p| g.sim.lv.set(p, .grass);
+    carve.box(&g.sim.lv, grid.Box.around(around, r), .grass);
     game.settle(g);
 }
 
@@ -360,7 +360,6 @@ test "a fireball on grass sets some alight as its blast lands, and the fire spre
     const from = P{ .x = 20, .y = 20 };
     const at = P{ .x = 26, .y = 20 };
     var caught: usize = 0;
-    var burnt: usize = 0;
     var smoked = false;
     const blazes: usize = 40;
     for (0..blazes) |seed| {
@@ -386,7 +385,6 @@ test "a fireball on grass sets some alight as its blast lands, and the fire spre
         }
         for (g.sim.lv.tile, 0..) |t, i| {
             if (t != fire.ASH) continue;
-            burnt += 1;
             try std.testing.expect(mathx.dist(at, grid.Level.of(i)) <= fireball.BLAST + @as(i32, fireball.KINDLE.heat));
         }
     }
@@ -531,8 +529,7 @@ test "a frost nova freezes the shallows round it, drawn as it lands, cutting con
     const near = P{ .x = 21, .y = 20 };
     const far = P{ .x = 23, .y = 20 };
     harness.heroArena(g, .wizard, from, &.{});
-    var pool = grid.Cells.around(from, 3);
-    while (pool.next()) |p| g.sim.lv.set(p, .shallows);
+    carve.box(&g.sim.lv, grid.Box.around(from, 3), .shallows);
     game.settle(g);
     try std.testing.expect(shock.conducted(&g.sim.lv, from).has(.{ .x = 22, .y = 20 }));
     harness.aimAt(g, .frost_nova, from);
@@ -617,8 +614,7 @@ test "cold leaves the shallows a swimmer lies in open" {
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 22, .y = 20 };
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    var pool = grid.Cells.around(at, 1);
-    while (pool.next()) |p| g.sim.lv.set(p, .shallows);
+    carve.box(&g.sim.lv, grid.Box.around(at, 1), .shallows);
     _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(.bog_leech, at));
     const area = areas.patch(&g.sim.lv, at, 1);
     try std.testing.expect(rewards.freezeRound(&g.sim, &area));

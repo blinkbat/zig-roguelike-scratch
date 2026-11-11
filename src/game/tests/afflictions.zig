@@ -17,6 +17,7 @@ const character = @import("../character.zig");
 const combat = @import("../combat.zig");
 const harness = @import("../harness.zig");
 const grid = @import("../../map/grid.zig");
+const carve = @import("../../map/carve.zig");
 const game = @import("../../game.zig");
 const P = mathx.P;
 
@@ -49,7 +50,7 @@ test "a shock adds half again to the next hit on either side, then is spent" {
         const hero = g.sim.heroActor().?;
         if (shocked) hero.shock.start();
         const hp = hero.hp;
-        g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
+        g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
         combat.endTurn(g);
         out.* = hp - g.sim.heroActor().?.hp;
         try std.testing.expectEqual(@as(u8, 0), g.sim.heroActor().?.shock.turns);
@@ -269,7 +270,7 @@ test "an enfeebled body's blows deal 30% less, rounded up, on either side" {
         harness.toughen(g.sim.heroActor().?);
         const id = harness.openMimic(g, EAST);
         if (weak) enfeeble.afflict(g.sim.pool.get(id).?, &g.sim.rng);
-        g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
+        g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
         combat.endTurn(g);
         out.* = harness.TEST_HP - g.sim.heroActor().?.hp;
     }
@@ -368,8 +369,7 @@ test "a slime half split off by a conducting blow carries the shock its parent t
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .wizard, FROM, &.{});
     const struck = P{ .x = 24, .y = 20 };
-    var cells = grid.Cells.around(struck, 1);
-    while (cells.next()) |p| g.sim.lv.set(p, .shallows);
+    carve.box(&g.sim.lv, grid.Box.around(struck, 1), .shallows);
     const id = harness.spawnAt(g, .slime, struck, false);
     harness.setLife(g.sim.pool.get(id).?, 20, 20);
     const born = g.sim.pool.n;

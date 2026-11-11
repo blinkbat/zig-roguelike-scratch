@@ -1,5 +1,6 @@
 const std = @import("std");
 const progress = @import("../../play/progress.zig");
+const passives = @import("../../play/passives.zig");
 const mathx = @import("../../core/mathx.zig");
 const input = @import("../../core/input.zig");
 const grid = @import("../../map/grid.zig");
@@ -316,7 +317,7 @@ test "Character page shortcuts open switch and close without acting or carrying 
             try std.testing.expectEqual(game.PausePage.character, g.pause_page);
             try std.testing.expectEqual(book.Page.of(page), g.character.page);
             try std.testing.expect(g.st.walk == null and g.pending == null);
-            if (page == .passives) try std.testing.expectEqual(progress.start(g.sim.class), g.character.cursor);
+            if (page == .passives) try std.testing.expectEqual(passives.start(g.sim.class), g.character.cursor);
             try std.testing.expectEqual(at, g.sim.heroActor().?.at);
         }
         const pages = comptime std.enums.values(input.CharacterPage);
@@ -344,8 +345,8 @@ test "an arena restart restores its selected opponent and hero" {
     g.sim.mana = 0;
     game.restart(g);
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
-    try std.testing.expectEqual(actor.Kind.bloat, g.sim.pool.items[1].kind);
-    try std.testing.expect(g.sim.pool.items[1].alive);
+    try std.testing.expectEqual(actor.Kind.bloat, g.sim.pool.items[harness.foeSlot(0)].kind);
+    try std.testing.expect(g.sim.pool.items[harness.foeSlot(0)].alive);
     try std.testing.expectEqual(actor.row(HERO).hp, g.sim.heroActor().?.hp);
     try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     try std.testing.expectEqual(spar.HERO, g.sim.heroActor().?.at);

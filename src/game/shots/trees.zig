@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../../core/mathx.zig");
 const grid = @import("../../map/grid.zig");
+const carve = @import("../../map/carve.zig");
 const day = @import("../../map/day.zig");
 const game = @import("../../game.zig");
 const glide = @import("../glide.zig");
@@ -79,8 +80,7 @@ pub fn captureTrees(g: *game.Game) !void {
     game.harness.arena(g, .{ .x = 24, .y = 18 }, &.{});
     game.harness.grassOver(&g.sim.lv);
     const grass = P{ .x = 24, .y = 18 };
-    var patch = grid.Cells.of(.{ .x = 23, .y = 17 }, .{ .x = 26, .y = 20 });
-    while (patch.next()) |p| g.sim.lv.set(p, .reeds);
+    carve.box(&g.sim.lv, .{ .lo = .{ .x = 23, .y = 17 }, .hi = .{ .x = 26, .y = 20 } }, .reeds);
     studyLit(g, true, day.NOON);
     g.st = .{};
     try capture(g, target, SHOTS_DIR ++ "/trees/grass-opaque.png");

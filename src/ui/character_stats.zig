@@ -128,6 +128,8 @@ fn quiet(n: i32, col: rl.Color) rl.Color {
     return if (n == 0) look.DIM else if (n < 0) look.LOSS else col;
 }
 
+const Part = struct { [:0]const u8, rl.Color };
+
 /// One column of the sheet, top down; `dry` lays it out without drawing to check it fits.
 const Column = struct {
     face: *const font.Face,
@@ -154,12 +156,28 @@ const Column = struct {
     }
 
     fn entry(column: *Column, label: [:0]const u8, value: [:0]const u8, tier: Tier, col: rl.Color) void {
-        column.fits(column.face.width(label, tier.label().size()) + ROW_GAP + column.face.width(value, tier.size()));
+        column.line(label, &.{.{ value, col }}, tier);
+    }
+
+    fn line(column: *Column, label: [:0]const u8, parts: []const Part, tier: Tier) void {
+        var w: i32 = 0;
+        for (parts) |p| w += column.face.width(p[0], tier.size());
+        column.fits(column.face.width(label, tier.label().size()) + ROW_GAP + w);
         if (!column.dry) {
             tier.label().put(column.face, label, column.x, column.y + tier.labelDrop(), look.TEXT);
-            tier.put(column.face, value, column.x + STAT_W - column.face.width(value, tier.size()), column.y, col);
+            var at = column.x + STAT_W - w;
+            for (parts) |p| {
+                tier.put(column.face, p[0], at, column.y, p[1]);
+                at += column.face.width(p[0], tier.size());
+            }
         }
         column.y += column.step(tier);
+    }
+
+    fn amount(column: *Column, label: [:0]const u8, comptime fmt: []const u8, n: i32, ink: rl.Color) void {
+        var text: menu.Note(48) = .{};
+        text.say(fmt, .{n});
+        column.entry(label, text.text(), .plain, quiet(n, ink));
     }
 
     fn stat(column: *Column, measure: Measure, figures: Figures, tier: Tier, col: rl.Color) void {
@@ -180,24 +198,11 @@ const Column = struct {
         if (hit.physical.hi > 0) physical.say("{d}-{d}", .{ hit.physical.lo, hit.physical.hi });
         if (hit.element) |e| element.say("{d}-{d} {s}", .{ e.lo, e.hi, menu.word(act.element().?) });
         const join: [:0]const u8 = if (physical.n > 0 and element.n > 0) " + " else "";
-        const parts = [_]struct { [:0]const u8, rl.Color }{
+        column.line(act.name(), &.{
             .{ physical.text(), look.PHYSICAL },
             .{ join, look.DIM },
             .{ element.text(), look.arrowInk(act) },
-        };
-        const tier = Tier.key;
-        var w: i32 = 0;
-        for (parts) |p| w += column.face.width(p[0], tier.size());
-        column.fits(column.face.width(act.name(), tier.label().size()) + ROW_GAP + w);
-        if (!column.dry) {
-            tier.label().put(column.face, act.name(), column.x, column.y + tier.labelDrop(), look.TEXT);
-            var at = column.x + STAT_W - w;
-            for (parts) |p| {
-                tier.put(column.face, p[0], at, column.y, p[1]);
-                at += column.face.width(p[0], tier.size());
-            }
-        }
-        column.y += column.step(tier);
+        }, .key);
         const chances = chancesOf(act, hit, effect);
         var any = false;
         var at = column.x;
@@ -281,28 +286,17 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     const perks = view.inventory.gear.perks(view.growth.perks());
     text.say("{d} / {d} turns", .{ hero.manaRegen(perks), hero.MANA_REGEN_TURNS });
     left.entry("Mana recovery", text.text(), .plain, look.MANA_TEXT);
-    text.say("{d}", .{perks.life_on_hit});
-    left.entry("Life on hit", text.text(), .plain, quiet(perks.life_on_hit, look.LIFE_TEXT));
-    text.say("{d}", .{perks.life_on_kill});
-    left.entry("Life on kill", text.text(), .plain, quiet(perks.life_on_kill, look.LIFE_TEXT));
-    text.say("+{d}%", .{perks.life_flask});
-    left.entry("Life flask recovery", text.text(), .plain, quiet(perks.life_flask, look.LIFE_TEXT));
-    const mana_on_kill = view.inventory.gear.manaOnKill();
-    text.say("{d}", .{mana_on_kill});
-    left.entry("Mana on kill", text.text(), .plain, quiet(mana_on_kill, look.MANA_TEXT));
-    const mana_flask = view.inventory.gear.draughts(perks).mana;
-    text.say("+{d}%", .{mana_flask});
-    left.entry("Mana flask recovery", text.text(), .plain, quiet(mana_flask, look.MANA_TEXT));
+    left.amount("Life on hit", "{d}", perks.life_on_hit, look.LIFE_TEXT);
+    left.amount("Life on kill", "{d}", perks.life_on_kill, look.LIFE_TEXT);
+    left.amount("Life flask recovery", "+{d}%", perks.life_flask, look.LIFE_TEXT);
+    left.amount("Mana on kill", "{d}", view.inventory.gear.manaOnKill(), look.MANA_TEXT);
+    left.amount("Mana flask recovery", "+{d}%", view.inventory.gear.draughts(perks).mana, look.MANA_TEXT);
     left.stat(.gold_find, figures, .plain, quiet(attributes.gold_find, look.UI_GOLD));
     left.stat(.item_rarity, figures, .plain, quiet(attributes.item_rarity, look.MAGIC));
 
     var right = Column{ .face = face, .x = layout.DETAIL_X, .dry = dry, .row = TIGHT_ROW };
     right.heading("RESISTANCES");
-    for (std.enums.values(damage.Element)) |e| {
-        const n = view.resists.get(e);
-        text.say("{d}%", .{n});
-        right.entry(resistanceLabel(e), text.text(), .plain, quiet(n, look.elementInk(e)));
-    }
+    for (std.enums.values(damage.Element)) |e| right.amount(resistanceLabel(e), "{d}%", view.resists.get(e), look.elementInk(e));
     right.y += SECTION_GAP;
     right.heading("STATUS RESISTANCE");
     for (std.enums.values(resilience.Kind)) |k| {

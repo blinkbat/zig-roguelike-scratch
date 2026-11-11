@@ -117,11 +117,11 @@ pub fn Codec(comptime Policy: type) type {
                         const fields = std.meta.fields(T);
                         try integer(out, FieldCount, @intCast(fields.len));
                         inline for (fields) |f| {
-                            const size_at = try beginField(out, f.name);
                             if (comptime Policy.countField(T, f.name)) |count| {
+                                const size_at = try beginField(out, f.name);
                                 try array(out, &@field(value, f.name), @field(value, count));
-                            } else try write(out, &@field(value, f.name));
-                            endField(out, size_at);
+                                endField(out, size_at);
+                            } else try field(out, f.name, &@field(value, f.name));
                         }
                     }
                 },

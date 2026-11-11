@@ -103,7 +103,7 @@ pub const Mod = enum {
         const s = item_bases.spec(k);
         const slot = s.slots[0];
         const weapon = s.damage != null;
-        const ring = std.mem.indexOfScalar(item_bases.Slot, s.slots, .left_ring) != null;
+        const ring = k.fits(.left_ring);
         const armour = slot.armour();
         return switch (m) {
             .physical_damage => weapon,
@@ -236,8 +236,10 @@ pub const Affix = struct {
 
 pub const MAGIC_SIDE: usize = 1;
 pub const RARE_SIDE: usize = 2;
-pub const AFFIXES_MAX = 2 * RARE_SIDE;
-pub const RARE_LEAST = 2 * MAGIC_SIDE + 1;
+const SIDES = 2;
+pub const MAGIC_MOST = SIDES * MAGIC_SIDE;
+pub const AFFIXES_MAX = SIDES * RARE_SIDE;
+pub const RARE_LEAST = MAGIC_MOST + 1;
 
 test "magic affixes respect equipment eligibility prefix suffix and rolled bounds" {
     var rng = mathx.Rng.init(0xAFF1);
@@ -271,6 +273,6 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
     try std.testing.expectEqualStrings("bear's leather gloves of precision", gloves.spoken(&name));
     try std.testing.expectEqualStrings("Leather Gloves of Precision", (items.Item{ .kind = .gloves, .mods = .{ .{ .kind = .crit, .value = 3 }, null, null, null } }).name(&name));
     try std.testing.expectEqualStrings("Fire-Warded Hunter's Hood", (items.Item{ .kind = .hood, .mods = .{ .{ .kind = .resistance, .value = 10, .element = .fire }, null, null, null } }).name(&name));
-    try std.testing.expectEqualStrings("Short Sword", item_bases.baseName(.sword, &name));
+    try std.testing.expectEqualStrings("Short Sword", items.baseName(.sword, &name));
     try std.testing.expectEqualStrings("Magus Fold", (items.Item{ .kind = .robes, .rare_name = .{ .first = .Magus, .last = .Fold } }).spoken(&name));
 }

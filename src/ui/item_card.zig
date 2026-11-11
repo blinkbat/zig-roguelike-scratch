@@ -182,7 +182,7 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     var name_buf: [items.NAME_MAX]u8 = undefined;
     _ = face.paragraph(item.name(&name_buf), x, y + CARD_NAME, width, font.BODY, ink);
     var base_buf: [items.NAME_MAX]u8 = undefined;
-    if (item.rarity() == .rare) face.draw(item_bases.baseName(item.kind, &base_buf), x, y + CARD_NAME + font.BODY_LINE, font.LABEL, look.TEXT);
+    if (item.rarity() == .rare) face.draw(items.baseName(item.kind, &base_buf), x, y + CARD_NAME + font.BODY_LINE, font.LABEL, look.TEXT);
     var metadata: menu.Note(100) = .{};
     const slot_name = if (slot == .right_hand) (if (spec.two_handed) TWO_HANDED else ONE_HANDED) else slot.name();
     if (spec.damage != null) metadata.say("{s}  /  {s}", .{ slot_name, menu.named(spec.style.attr()) }) else metadata.say("{s}", .{slot_name});

@@ -221,10 +221,10 @@ comptime {
     for (std.enums.values(Ground)) |g| std.debug.assert(of(g.tile()).? == g);
 }
 
-pub const NW: u4 = 1;
-pub const NE: u4 = 2;
-pub const SW: u4 = 4;
-pub const SE: u4 = 8;
+const NW: u4 = 1;
+const NE: u4 = 2;
+const SW: u4 = 4;
+const SE: u4 = 8;
 pub const FULL: u4 = NW | NE | SW | SE;
 
 /// A ground sheet's 16 cells, read across its 4x4 block, by mask: `tools/tile_art/ground_corners.lua`.

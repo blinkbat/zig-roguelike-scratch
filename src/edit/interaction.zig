@@ -55,7 +55,7 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
     }
     if (ed.modal != .none or ed.renaming) return;
     if (ed.popup) |pp| {
-        if (pp.which != .file and desk.wheel != 0) ed.popup_top = widgets.scrollTop(ed.popup_top, desk.notch(), editor.popupLen(ed, pp.which), editor.popupShown(ed, pp.which, screen_height));
+        if (editor.popupScrolls(pp.which) and desk.wheel != 0) ed.popup_top = widgets.scrollTop(ed.popup_top, desk.notch(), editor.popupLen(ed, pp.which), editor.popupShown(ed, pp.which, screen_height));
         if (desk.clicked() and !ed.mouseIn(editor.popupRect(ed, pp, screen_height))) {
             ed.popup = null;
             ed.fresh = true;

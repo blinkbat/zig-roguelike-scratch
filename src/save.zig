@@ -9,6 +9,7 @@ const grid = @import("map/grid.zig");
 const actor = @import("play/actor.zig");
 const hero = @import("play/hero.zig");
 const progress = @import("play/progress.zig");
+const passives = @import("play/passives.zig");
 
 pub const SLOTS: usize = 3;
 pub const NOT_WRITTEN = "The last save did not write ({s})";
@@ -76,25 +77,25 @@ const NO_PART: u8 = 255;
 const TREE = blk: {
     @setEvalBranchQuota(100_000);
     var h = std.hash.Wyhash.init(0);
-    for (progress.NODES, 0..) |n, i| {
+    for (passives.NODES, 0..) |n, i| {
         h.update(n.name);
         h.update(&.{ @intFromEnum(n.arm), if (n.branch) |v| @intFromEnum(v) else NO_PART, if (n.seam) |v| @intFromEnum(v) else NO_PART, n.ring, n.slot, @intFromEnum(n.tier), @intFromEnum(n.grant.kind) });
         h.update(&std.mem.toBytes(n.grant.amount));
         h.update(&.{if (n.bump) |g| @intFromEnum(g.kind) else NO_PART});
         if (n.bump) |g| h.update(&std.mem.toBytes(g.amount));
-        var buf: [progress.passives.MAX_FEED]usize = undefined;
-        const fs = progress.passives.feeders(i, &buf);
+        var buf: [passives.MAX_FEED]usize = undefined;
+        const fs = passives.feeders(i, &buf);
         h.update(&std.mem.toBytes(fs.len));
         for (fs) |f| h.update(&std.mem.toBytes(f));
     }
-    for (hero.CLASSES) |c| h.update(&std.mem.toBytes(progress.start(c)));
+    for (hero.CLASSES) |c| h.update(&std.mem.toBytes(passives.start(c)));
     break :blk h.final();
 };
 
 comptime {
     for (.{
-        .{ progress.passives.Node, .{ "arm", "branch", "seam", "ring", "slot", "name", "tier", "grant", "bump" } },
-        .{ progress.passives.Grant, .{ "kind", "amount" } },
+        .{ passives.Node, .{ "arm", "branch", "seam", "ring", "slot", "name", "tier", "grant", "bump" } },
+        .{ passives.Grant, .{ "kind", "amount" } },
     }) |pair| {
         const fields = std.meta.fields(pair[0]);
         if (fields.len != pair[1].len) @compileError("save.TREE hashes a different field list than " ++ @typeName(pair[0]));

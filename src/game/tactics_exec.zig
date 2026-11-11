@@ -75,15 +75,11 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
 }
 
 fn raisable(g: *const game.Game, at: P) bool {
-    return fits(.skeleton, &g.sim.lv, at) and canRise(g, .skeleton);
+    return actor.standsOffDoor(.skeleton, &g.sim.lv, at) and canRise(g, .skeleton);
 }
 
 pub fn canRise(g: *const game.Game, kind: actor.Kind) bool {
     return g.sim.pool.hasRoomFor(kind) or spentSlot(g) != null;
-}
-
-pub fn fits(kind: actor.Kind, lv: *const grid.Level, p: P) bool {
-    return actor.standsOffDoor(kind, lv, p);
 }
 
 pub fn spentSlot(g: *const game.Game) ?usize {

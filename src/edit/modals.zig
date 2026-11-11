@@ -18,6 +18,7 @@ const game = @import("../game.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const effects = @import("effects.zig");
+const text_panel = @import("text_panel.zig");
 const Desk = input.Desk;
 const DETAIL = widgets.DETAIL;
 const TITLE = widgets.TITLE;
@@ -29,7 +30,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
     switch (ed.modal) {
         .none => {},
         .prompt => |p| drawPrompt(ed, g, p),
-        .text => @import("text_panel.zig").draw(ed, g),
+        .text => text_panel.draw(ed, g),
         .plot => editor.plot.draw(ed, g),
         .help => drawHelp(ed, g),
         .objects => drawObjects(ed, g),
