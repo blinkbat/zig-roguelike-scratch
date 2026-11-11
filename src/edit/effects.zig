@@ -313,7 +313,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const stage = raster.rect(x, f.y + widgets.TITLE + widgets.GAP, @intFromFloat(px(COLS, cell)), @intFromFloat(px(ROWS, cell)));
     drawStage(g, v, stage, cell);
     widgets.outline(stage);
-    var controls = widgets.Lay{ .x = x, .y = @as(i32, @intFromFloat(stage.y + stage.height)) + widgets.GAP };
+    var controls = widgets.Lay{ .x = x, .y = raster.bottom(stage) + widgets.GAP };
     for (SPEEDS, 0..) |s, i| {
         if (editor.modalButton(ed, g, controls.take(SPEED_W), s.label, v.speed == i, true, "How fast the stage plays")) v.speed = i;
     }

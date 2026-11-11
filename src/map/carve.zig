@@ -82,6 +82,10 @@ pub const Noise = struct {
     }
 };
 
+pub fn stretch(v: f32, gain: f32) f32 {
+    return std.math.clamp((v - 0.5) * gain + 0.5, 0, 1);
+}
+
 pub fn fill(lv: *grid.Level, t: grid.Tile) void {
     lv.tile = [_]grid.Tile{t} ** grid.CELLS;
 }

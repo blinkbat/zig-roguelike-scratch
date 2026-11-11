@@ -16,6 +16,7 @@ const actor = @import("../play/actor.zig");
 const grid = @import("../map/grid.zig");
 const terrain = @import("../play/terrain.zig");
 const progress = @import("../play/progress.zig");
+const tactics = @import("../play/tactics.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
@@ -451,9 +452,10 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             const w = body.writer();
             writeDescription(g, act, w);
             if (act.reticle() != null) w.print("\nRange: {d} cells", .{g.sim.reachOf(act)}) catch {};
-            if (g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, act, g.sim.heroSteady())) |h| {
+            if (g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, act, g.sim.heroReadied())) |h| {
                 if (h.physical.hi > 0) w.print("\n" ++ damage.PHYSICAL_FMT, .{ h.physical.lo, h.physical.hi }) catch {};
                 if (h.element) |e| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi }) catch {};
+                if (h.imbued) |f| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(tactics.Imbue.IMBUES), f.lo, f.hi }) catch {};
                 w.print("\n" ++ attrs.SCALES_FMT, .{menu.named(h.style.attr())}) catch {};
             }
             if (v.drinks) |n|

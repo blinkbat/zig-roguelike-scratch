@@ -180,9 +180,9 @@ pub const Simulation = struct {
         self.stepped = true;
     }
 
-    pub fn heroSteady(self: *const Simulation) u8 {
-        const h = self.heroBody() orelse return 0;
-        return h.tactics.steady;
+    pub fn heroReadied(self: *const Simulation) progress.Readied {
+        const h = self.heroBody() orelse return .{};
+        return .{ .steady = h.tactics.steady, .imbued = h.tactics.imbue > 0 };
     }
 
     pub fn heroSlot(self: *const Simulation) ?usize {

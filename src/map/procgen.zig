@@ -324,8 +324,7 @@ test "a set piece in a thicket opens onto the ground round it, so no join fills 
         var shut: usize = 0;
         for (0..COUNT_RUNS) |i| {
             const seed = 0x5E7 +% i *% grid.TEST_SEED_STRIDE;
-            var rng = mathx.Rng.init(seed);
-            lay(wilds, &lv, &rng, seed, p);
+            var rng = laidAt(wilds, &lv, seed, p);
             var lots: buildings.Lots = .{};
             setpiece.apply(&lv, &rng, seed, wilds.palette(p), &lots, .{ .piece = pc, .count = 1 });
             _ = st.label(&lv);
@@ -351,8 +350,7 @@ test "a set piece in a thicket or in rock keeps its ground through the joins" {
             var lost: usize = 0;
             for (0..COUNT_RUNS) |i| {
                 const seed = 0x5E7 +% i *% grid.TEST_SEED_STRIDE;
-                var rng = mathx.Rng.init(seed);
-                lay(base, &lv, &rng, seed, p);
+                var rng = laidAt(base, &lv, seed, p);
                 const art = setpiece.rows(pc);
                 const at = setpiece.cornerFor(grid.MIDDLE, art);
                 setpiece.place(&lv, at, art, pal);
@@ -379,8 +377,7 @@ test "a house in a thicket or in rock keeps its floor through the joins" {
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
             const seed = 0x51ED +% i *% grid.TEST_SEED_STRIDE;
-            var rng = mathx.Rng.init(seed);
-            lay(base, &lv, &rng, seed, p);
+            var rng = laidAt(base, &lv, seed, p);
             var lots: buildings.Lots = .{};
             buildings.apply(&lv, &rng, seed, pal, &lots, (buildings.Params{}).fit());
             if (joinsLose(&lv, &rng, pal, .{}, .floor)) lost += 1;
@@ -397,8 +394,7 @@ test "a small house or shrine walled in by an earlier feature keeps its floor th
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
             const seed = 0xB0DE +% i *% grid.TEST_SEED_STRIDE;
-            var rng = mathx.Rng.init(seed);
-            lay(base, &lv, &rng, seed, p);
+            var rng = laidAt(base, &lv, seed, p);
             var lots: buildings.Lots = .{};
             if (base == wilds) border.apply(&lv, &rng, seed, pal, (border.Params{}).fit()) else buildings.apply(&lv, &rng, seed, pal, &lots, SMALL_HOUSES);
             lots.begin();
@@ -419,8 +415,7 @@ test "a small house a later thicket shuts in keeps its floor through the joins" 
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
             const seed = 0x7A1C +% i *% grid.TEST_SEED_STRIDE;
-            var rng = mathx.Rng.init(seed);
-            lay(wilds, &lv, &rng, seed, p);
+            var rng = laidAt(wilds, &lv, seed, p);
             var lots: buildings.Lots = .{};
             buildings.apply(&lv, &rng, seed, pal, &lots, SMALL_HOUSES);
             scatter.apply(&lv, &rng, seed, pal, thicket.fit());
@@ -439,8 +434,7 @@ test "a house floored as the base's own ground keeps it through the joins, a bor
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
             const seed = 0xF100 +% i *% grid.TEST_SEED_STRIDE;
-            var rng = mathx.Rng.init(seed);
-            lay(b[0], &lv, &rng, seed, p);
+            var rng = laidAt(b[0], &lv, seed, p);
             var lots: buildings.Lots = .{};
             buildings.apply(&lv, &rng, seed, pal, &lots, SMALL_HOUSES);
             border.apply(&lv, &rng, seed, pal, rim);
@@ -467,8 +461,7 @@ test "a field in a thicket keeps its fence through the joins" {
         var broken: usize = 0;
         for (0..COUNT_RUNS) |i| {
             const seed = 0xFA2E +% i *% grid.TEST_SEED_STRIDE;
-            var rng = mathx.Rng.init(seed);
-            lay(base, &lv, &rng, seed, p);
+            var rng = laidAt(base, &lv, seed, p);
             var lots: buildings.Lots = .{};
             farms.apply(&lv, &rng, seed, pal, &lots, (farms.Params{}).fit());
             if (joinsLose(&lv, &rng, pal, .{ .lots = lots.slice() }, .fence)) broken += 1;
@@ -487,8 +480,7 @@ test "a cliff's fords keep their crossing through the joins" {
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
             const seed = 0xF02D +% i *% grid.TEST_SEED_STRIDE;
-            var rng = mathx.Rng.init(seed);
-            lay(b, &lv, &rng, seed, p);
+            var rng = laidAt(b, &lv, seed, p);
             base = lv.tile;
             river.apply(&lv, &rng, seed, pal, cliff);
             carve.seal(&lv, pal.solid);
@@ -512,8 +504,7 @@ test "a house or set piece is raised clear of what an earlier feature laid" {
         var hit: usize = 0;
         for (0..COUNT_RUNS) |i| {
             const seed = 0x4A3 +% i *% grid.TEST_SEED_STRIDE;
-            var rng = mathx.Rng.init(seed);
-            lay(b[0], &lv, &rng, seed, p);
+            var rng = laidAt(b[0], &lv, seed, p);
             var lots: buildings.Lots = .{};
             base = lv.tile;
             farms.apply(&lv, &rng, seed, pal, &lots, (farms.Params{ .count = 6 }).fit());
@@ -529,6 +520,12 @@ test "a house or set piece is raised clear of what an earlier feature laid" {
         }
         try std.testing.expectEqual(@as(usize, 0), hit);
     }
+}
+
+fn laidAt(comptime base: type, lv: *grid.Level, seed: u64, p: anytype) mathx.Rng {
+    var rng = mathx.Rng.init(seed);
+    lay(base, lv, &rng, seed, p);
+    return rng;
 }
 
 fn joinsLose(lv: *grid.Level, rng: *mathx.Rng, pal: carve.Palette, laid: carve.Laid, t: grid.Tile) bool {

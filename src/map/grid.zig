@@ -863,6 +863,13 @@ pub fn nearest(from: P, set: anytype) ?P {
     return null;
 }
 
+pub fn anyNear(p: P, others: []const P, gap: i32) bool {
+    for (others) |q| {
+        if (mathx.dist(p, q) < gap) return true;
+    }
+    return false;
+}
+
 /// The cell round `foot` that `ok` takes: in front of it before its sides, its sides before behind it, reading order within each.
 pub fn besideFoot(foot: Box, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) ?P {
     var best: ?P = null;

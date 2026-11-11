@@ -124,19 +124,14 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     var height: [grid.CELLS]f32 = undefined;
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
-        const h = lerp(p.height, stretch(elevation.at(q, s, 4)));
+        const h = lerp(p.height, carve.stretch(elevation.at(q, s, 4), STRETCH));
         height[i] = h;
-        const heat = lerp(p.heat, stretch(warmth.at(q, s * 2, 2))) - @max(0, h - LAPSE_FROM);
-        const b = classify(h, lerp(p.rain, stretch(rainfall.at(q, s, 3))), lerp(p.drain, stretch(drainage.at(q, s, 3))), heat);
+        const heat = lerp(p.heat, carve.stretch(warmth.at(q, s * 2, 2), STRETCH)) - @max(0, h - LAPSE_FROM);
+        const b = classify(h, lerp(p.rain, carve.stretch(rainfall.at(q, s, 3), STRETCH)), lerp(p.drain, carve.stretch(drainage.at(q, s, 3), STRETCH)), heat);
         lv.tile[i] = groundOf(b, grain.at(q, GRAIN_SCALE, 2), rng.unit());
     }
     for (0..p.rivers) |_| river(lv, rng, &height);
     carve.rim(lv, palette(p).solid);
-}
-
-/// Value noise bunches round the middle; this spreads it back toward 0 and 1.
-fn stretch(v: f32) f32 {
-    return std.math.clamp((v - 0.5) * STRETCH + 0.5, 0, 1);
 }
 
 fn river(lv: *grid.Level, rng: *mathx.Rng, height: *[grid.CELLS]f32) void {

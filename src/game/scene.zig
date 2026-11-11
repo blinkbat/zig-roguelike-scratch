@@ -1084,7 +1084,7 @@ pub fn miniFrame(screen_w: i32) rl.Rectangle {
 pub fn dayLine(screen_w: i32) struct { x0: i32, x1: i32, y: i32 } {
     const m = miniOrigin(screen_w);
     const f = miniFrame(screen_w);
-    return .{ .x0 = m.x + DAY_INSET, .x1 = m.x + MINI_W - DAY_INSET, .y = @as(i32, @intFromFloat(f.y + f.height)) + DAY_GAP };
+    return .{ .x0 = m.x + DAY_INSET, .x1 = m.x + MINI_W - DAY_INSET, .y = raster.bottom(f) + DAY_GAP };
 }
 
 pub fn drawDayNight(g: *game.Game) void {

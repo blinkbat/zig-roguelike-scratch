@@ -157,18 +157,17 @@ fn faceInk(b: FaceButton, sony: bool) rl.Color {
 fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i32, h: i32, alpha: f32) void {
     const r: f32 = @as(f32, @floatFromInt(h)) / 2;
     const c = raster.vec(.{ .x = cx, .y = cy });
-    const ink = faceInk(b, sony);
+    const col = look.fade(faceInk(b, sony), alpha);
     rl.drawCircleV(c, r, look.fade(PROMPT_LIP, alpha));
     rl.drawCircleV(c, r - FACE_LIP_PX, look.fade(PROMPT_BODY, alpha));
     rl.drawCircleV(.{ .x = c.x, .y = c.y - r * 0.12 }, r * 0.78, look.fade(PROMPT_FACE, alpha));
-    rl.drawRing(c, r - FACE_RING_PX, r - FACE_LIP_PX, 0, 360, 32, look.fade(ink, alpha));
+    rl.drawRing(c, r - FACE_RING_PX, r - FACE_LIP_PX, 0, 360, 32, col);
     if (!sony) {
         const letter = [_:0]u8{std.ascii.toUpper(@tagName(b)[0])};
-        return face.centred(&letter, cx, cy, labelPx(h), look.fade(ink, alpha));
+        return face.centred(&letter, cx, cy, labelPx(h), col);
     }
     const s = r * 0.42;
     const line = @max(MARK_PX, r * 0.16);
-    const col = look.fade(ink, alpha);
     switch (b) {
         .a => {
             rl.drawLineEx(.{ .x = c.x - s, .y = c.y - s }, .{ .x = c.x + s, .y = c.y + s }, line, col);

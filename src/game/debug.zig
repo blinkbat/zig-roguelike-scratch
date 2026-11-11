@@ -84,9 +84,23 @@ pub const State = struct {
 
 const LIMITS = [_]i32{ 0, 30, 60, 120, 144 };
 
+fn rowOf(comptime page: Page) Row {
+    return @field(Row, @tagName(page));
+}
+
+const PAGE_ROWS = blk: {
+    var out: [std.meta.fields(Page).len - 1]Row = undefined;
+    var n: usize = 0;
+    for (std.enums.values(Page)) |p| if (p != .main) {
+        out[n] = rowOf(p);
+        n += 1;
+    };
+    break :blk out;
+};
+
 pub fn rows(page: Page) []const Row {
     return switch (page) {
-        .main => &.{ .gameplay, .lighting, .effects, .display, .diagnostics },
+        .main => &PAGE_ROWS,
         .gameplay => &.{ .restart_map, .reveal_map, .unkillable },
         .lighting => &.{ .composed_lighting, .shadows, .body_lighting, .effect_lights },
         .effects => &.{ .bloom, .atmosphere, .depth_of_field, .water_reflections, .water_glints, .weather },
@@ -187,7 +201,7 @@ pub fn step(g: *game.Game) void {
         } else {
             const row: Row = switch (g.debug.page) {
                 .main => unreachable,
-                inline else => |page| @field(Row, @tagName(page)),
+                inline else => |page| rowOf(page),
             };
             select(g, row);
         }

@@ -147,10 +147,6 @@ pub const Act = enum {
         return a.contract().reticle;
     }
 
-    pub fn defaultStyle(a: Act) ?attrs.Style {
-        return (a.attack() orelse return null).defaultStyle();
-    }
-
     pub fn attack(a: Act) ?attrs.Attack {
         return a.contract().delivery;
     }
@@ -484,7 +480,10 @@ pub const Bar = struct {
     }
 
     pub fn firstEmpty(self: Bar) ?Slot {
-        for (EVERY_SLOT) |s| if (self.at(s) == null) return s;
+        for (EVERY_SLOT) |s| {
+            if (s.set == .secondary and self.modifier == null) continue;
+            if (self.at(s) == null) return s;
+        }
         return null;
     }
 
@@ -635,6 +634,13 @@ test "moving the secondary set's modifier carries off whatever sat on its new bu
     try std.testing.expectEqual(@as(?Act, .wait), bar.at(.{ .set = .primary, .button = .lb }));
     try std.testing.expectEqual(@as(?Act, .shoot), bar.at(.{ .set = .secondary, .button = .lb }));
     try std.testing.expectEqual(@as(?Act, .secondary), bar.at(.{ .set = .secondary, .button = .rb }));
+}
+
+test "with no modifier, a full primary set has no empty slot to fill" {
+    var bar = Bar{};
+    bar.bind(.{ .set = .primary, .button = .lb }, .shoot);
+    for (SLOTS) |b| if (bar.at(.{ .set = .primary, .button = b }) == null) bar.bind(.{ .set = .primary, .button = b }, .wait);
+    try std.testing.expectEqual(@as(?Slot, null), bar.firstEmpty());
 }
 
 test "a skill bound over the modifier unbinds it, and removing a slot empties it" {

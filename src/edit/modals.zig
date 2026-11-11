@@ -134,11 +134,13 @@ pub const PICKS_ONE = Desk.NAV_CAPTION ++ " or " ++ Desk.PAINT_CAPTION ++ " pick
 pub const CLOSES = Desk.BACK_CAPTION ++ " closes";
 
 fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
-    const grid_w = @as(i32, VIEW_COLS) * VIEW_CELL;
+    const chrome = widgets.MODAL_HEAD + widgets.PAD + widgets.ROW_STEP;
+    const pitch = @min(VIEW_CELL, @divTrunc(g.screen.y - chrome, widgets.rowsOf(editor.SEEN.len, VIEW_COLS)));
+    const grid_w = @as(i32, VIEW_COLS) * pitch;
     const title = OBJECTS_TITLE;
-    var cells = panel.Tiles{ .x = 0, .y = 0, .cols = VIEW_COLS, .pitch = VIEW_CELL, .size = VIEW_CELL - widgets.GAP };
+    var cells = panel.Tiles{ .x = 0, .y = 0, .cols = VIEW_COLS, .pitch = pitch, .size = pitch - widgets.GAP };
     const cells_h = cells.height(editor.SEEN.len);
-    const f = widgets.modalFrame(&g.face, g.screen, VIEW_W, widgets.MODAL_HEAD + widgets.PAD + cells_h + widgets.ROW_STEP, title, false);
+    const f = widgets.modalFrame(&g.face, g.screen, VIEW_W, chrome + cells_h, title, false);
     const x = f.x;
     const w = f.w;
     const y = f.y;

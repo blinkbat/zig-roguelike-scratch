@@ -27,16 +27,16 @@ fn expectFadeAndRestore(g: *game.Game, i: usize, away: P) !void {
     g.pic.ease(&g.sim, harness.FADING_S);
     try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 1);
     for (0..harness.FADE_FRAMES) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
-    try std.testing.expect(g.pic.occlusion[i] > 0.99);
+    try std.testing.expect(g.pic.occlusion[i] > harness.FADED);
     const hero = g.sim.heroSlot().?;
     g.sim.pool.move(&g.sim.lv, g.sim.hero, away);
     g.pic.ease(&g.sim, harness.FADING_S);
-    try std.testing.expect(g.pic.occlusion[i] > 0.99);
+    try std.testing.expect(g.pic.occlusion[i] > harness.FADED);
     g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
     g.pic.ease(&g.sim, harness.FADING_S);
-    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 0.99);
+    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < harness.FADED);
     for (0..harness.FADE_FRAMES) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
-    try std.testing.expect(g.pic.occlusion[i] < 0.01);
+    try std.testing.expect(g.pic.occlusion[i] < harness.UNFADED);
     g.pic.occlusion[i] = 1;
     game.settle(g);
     try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
@@ -74,7 +74,7 @@ test "large trees fade around a drawn foe behind them but not an unseen one" {
     try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(seen))) != null);
     try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(unseen))) == null);
     for (0..harness.FADE_FRAMES) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
-    try std.testing.expect(g.pic.occlusion[near] > 0.99);
+    try std.testing.expect(g.pic.occlusion[near] > harness.FADED);
     try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[far]);
     try std.testing.expectEqual([2]f32{ 24.5, 20.5 }, g.pic.occluder[near]);
 }

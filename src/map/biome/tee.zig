@@ -226,13 +226,9 @@ fn woods(lv: *grid.Level, rng: *mathx.Rng, seed: u64, plan: Plan, p: Params) voi
     while (cells.next()) |q| {
         if (lv.at(q) != OPEN) continue;
         const thin = 1 - @as(f32, @floatFromInt(q.x)) / reach;
-        if (rise(clumps.at(q, THICKET_SCALE, 2)) < mathx.fraction(p.thicket) * thin) lv.set(q, SOLID);
+        if (carve.stretch(clumps.at(q, THICKET_SCALE, 2), NOISE_GAIN / 2) < mathx.fraction(p.thicket) * thin) lv.set(q, SOLID);
     }
     carve.scatterIn(lv, rng, p.trees, .{ .tile = OPEN }, .large_tree, true, wood);
-}
-
-fn rise(v: f32) f32 {
-    return swing(v) * 0.5 + 0.5;
 }
 
 fn roads(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params, kept: *grid.CellSet) void {
@@ -465,7 +461,7 @@ const ChestSite = struct {
 
     fn fits(s: ChestSite, q: P) bool {
         if (s.lv.at(q) != .water) return false;
-        for (s.chests) |c| if (mathx.dist(c, q) < CHEST_APART) return false;
+        if (grid.anyNear(q, s.chests, CHEST_APART)) return false;
         var round = grid.Cells.around(q, 1);
         while (round.next()) |n| if (!s.lv.at(n).wet()) return false;
         return true;
@@ -676,7 +672,7 @@ test "a tee's crescent pond, its chests and its goblin camps' fires are all walk
 }
 
 test "the biggest camp frays as far as its blob reaches, past a box of its radius" {
-    const c = P{ .x = grid.W / 2, .y = grid.H / 2 };
+    const c = grid.MIDDLE;
     var past: usize = 0;
     for (0..RUNS) |i| {
         var lv = grid.openFloor();

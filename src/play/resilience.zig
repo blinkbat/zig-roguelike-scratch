@@ -7,7 +7,7 @@ pub const EXPIRY: u8 = 5;
 pub const ABOUT = std.fmt.comptimePrint("Repeated harmful statuses build resistance. Each successful application adds {d}%; it expires after {d} turns without another successful application.", .{ GAIN, EXPIRY });
 
 /// The module owning `k`'s turns, `TAKES` and `STATUS`; stun lives on the clock and fright on the actor.
-pub fn module(comptime k: Kind) type {
+pub fn module(comptime k: Kind) ?type {
     return switch (k) {
         .burn => @import("burning.zig"),
         .bleed => @import("bleeding.zig"),
@@ -19,14 +19,13 @@ pub fn module(comptime k: Kind) type {
         .confusion => @import("confusion.zig"),
         .enfeeble => @import("enfeeble.zig"),
         .maim => @import("maim.zig"),
-        .stun, .fright => @compileError(@tagName(k) ++ " has no module of its own"),
+        .stun, .fright => null,
     };
 }
 
 comptime {
     for (std.enums.values(Kind)) |k| {
-        if (k == .stun or k == .fright) continue;
-        const m = module(k);
+        const m = module(k) orelse continue;
         std.debug.assert(m.AILMENT == k and @hasDecl(m, "TAKES") and @hasDecl(m, "STATUS"));
     }
 }

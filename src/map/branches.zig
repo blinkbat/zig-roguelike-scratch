@@ -91,10 +91,10 @@ const Graph = struct {
                     }
                     continue;
                 }
-                const dir = next[v];
+                const dir: mathx.Dir = @enumFromInt(next[v]);
                 next[v] += 1;
-                if (g.edges[v] & (@as(u8, 1) << @intCast(dir)) == 0) continue;
-                const to = nodeOf(blockAt(v).add(mathx.ALL_DIRS[dir].delta()));
+                if (g.edges[v] & (@as(u8, 1) << @intFromEnum(dir)) == 0) continue;
+                const to = nodeOf(blockAt(v).add(dir.delta()));
                 if (g.rank[to] == NONE) {
                     g.parent[to] = v;
                     g.enter(@intCast(to), &count);
@@ -250,11 +250,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
         const p = grid.Level.of(i);
         if (kind.has(lv, p)) _ = mathx.push(P, &placed, &have, p);
         if (!rewardAt(lv, p) or p.eq(origin)) continue;
-        var near_door = false;
-        for (doors) |door| {
-            if (mathx.dist(p, door) < DOOR_CLEAR) near_door = true;
-        }
-        if (near_door) continue;
+        if (grid.anyNear(p, doors, DOOR_CLEAR)) continue;
         var edges: usize = 0;
         for (mathx.CARDINALS) |d| {
             const q = p.add(d);
@@ -270,11 +266,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
     var added: usize = 0;
     while (have < target and count > 0) {
         const p = rng.takeFrom(P, &spots, &count);
-        var near = false;
-        for (placed[0..have]) |other| {
-            if (mathx.dist(p, other) < rule.gap) near = true;
-        }
-        if (near) continue;
+        if (grid.anyNear(p, placed[0..have], rule.gap)) continue;
         if (!keepsRoute(blocked, p, origin, open, joined, &dist, &queue)) continue;
         kind.put(lv, p);
         _ = mathx.push(P, &placed, &have, p);

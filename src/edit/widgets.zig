@@ -123,9 +123,7 @@ pub fn rowText(face: *const font.Face, s: []const u8, size: i32, x: i32, y: i32,
     drawFit(face, s, size, w, false, x, midIn(y, ROW_H, size), col);
 }
 
-pub fn rightX(r: rl.Rectangle) i32 {
-    return @intFromFloat(r.x + r.width);
-}
+pub const rightX = raster.right;
 
 const LABEL_PAD: i32 = 10;
 
@@ -135,9 +133,11 @@ pub fn labelW(face: *const font.Face, label: [:0]const u8, size: i32) i32 {
 
 pub const Step = struct { tip: ?[:0]const u8, live: bool = true };
 
-const Arrows = struct { glyphs: [2][:0]const u8, size: i32, modal: bool, well: bool };
-pub const KNOB_ARROWS = Arrows{ .glyphs = .{ "-", "+" }, .size = TEXT, .modal = false, .well = false };
-pub const PAGE_ARROWS = Arrows{ .glyphs = .{ "<", ">" }, .size = DETAIL, .modal = true, .well = true };
+pub const LESS = "-";
+pub const MORE = "+";
+const Arrows = struct { less: [:0]const u8, more: [:0]const u8, size: i32, modal: bool, well: bool };
+pub const KNOB_ARROWS = Arrows{ .less = LESS, .more = MORE, .size = TEXT, .modal = false, .well = false };
+pub const PAGE_ARROWS = Arrows{ .less = "<", .more = ">", .size = DETAIL, .modal = true, .well = true };
 
 /// Arrows either side of `value`: -1 or 1 as one is pressed, `SHIFT_STEP` times that when `shift`; 0 otherwise.
 pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, value: []const u8, arrows: Arrows, steps: [2]Step, shift: bool) i32 {
@@ -145,8 +145,8 @@ pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, valu
     const y: i32 = @intFromFloat(r.y);
     const w: i32 = @intFromFloat(r.width);
     var by: i32 = 0;
-    if (buttonOn(controls, face, row(x, y, STEP_W), arrows.glyphs[0], false, steps[0].live, arrows.modal, steps[0].tip)) by = -1;
-    if (buttonOn(controls, face, row(x + w - STEP_W, y, STEP_W), arrows.glyphs[1], false, steps[1].live, arrows.modal, steps[1].tip)) by = 1;
+    if (buttonOn(controls, face, row(x, y, STEP_W), arrows.less, false, steps[0].live, arrows.modal, steps[0].tip)) by = -1;
+    if (buttonOn(controls, face, row(x + w - STEP_W, y, STEP_W), arrows.more, false, steps[1].live, arrows.modal, steps[1].tip)) by = 1;
     if (arrows.well) rl.drawRectangle(x + STEP_W, y, w - 2 * STEP_W, ROW_H, LIVE_FILL);
     var fit_buf: [LINE]u8 = undefined;
     const shown = textFace(face).fit(&fit_buf, value, arrows.size, @intFromFloat(stepValue(r).width), false);

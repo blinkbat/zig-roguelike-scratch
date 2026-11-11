@@ -110,7 +110,7 @@ pub const View = struct {
     mana: Vital = .{},
     resists: damage.Resists = .initFill(0),
     status_resist: std.EnumArray(resilience.Kind, resilience.Standing) = .initFill(.{}),
-    steady: u8 = 0,
+    readied: progress.Readied = .{},
     /// Null with no hero standing: the sheet's own, without terrain or sunder.
     defence: ?Defence = null,
     quests: quest_log.Journal = .{},

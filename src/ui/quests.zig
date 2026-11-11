@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const font = @import("../gfx/font.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
 const script = @import("../map/script.zig");
 const menu = @import("menu.zig");
 
@@ -47,7 +48,7 @@ fn entryHeight(face: anytype, e: Entry, w: i32) i32 {
 pub fn draw(face: *const font.Face, entries: []const Entry, top: usize, box: rl.Rectangle) void {
     const x: i32 = @intFromFloat(box.x);
     const w: i32 = @intFromFloat(box.width);
-    const bottom: i32 = @intFromFloat(box.y + box.height);
+    const bottom = raster.bottom(box);
     const first: i32 = @intFromFloat(box.y);
     var y = first;
     if (entries.len == 0) return face.text(NONE, x, y, font.BODY, look.DIM);

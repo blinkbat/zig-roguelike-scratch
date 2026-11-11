@@ -216,7 +216,7 @@ pub const Sprites = struct {
                     const at = cellAt(origin, p, px);
                     if (corners.pairMask(pair.upper, pair.lower) != null) {
                         raster.blit(tex, src, pointRect(at, px), look.LIT);
-                    } else for (0..4) |q| {
+                    } else for (0..ground.AROUND.len) |q| {
                         if (!corners.edgeQuarter(pair.upper, pair.lower, q)) continue;
                         raster.blit(tex, quarterOf(src, q), quarterRect(at, px, q), look.LIT);
                     }
@@ -287,11 +287,11 @@ pub const Sprites = struct {
     }
 
     fn quarterRect(at: [2]f32, px: f32, q: usize) rl.Rectangle {
-        return .{ .x = at[0] + (sideShift(q % 2) - 0.5) * px, .y = at[1] + (sideShift(q / 2) - 0.5) * px, .width = px / 2, .height = px / 2 };
+        return .{ .x = at[0] + (sideShift(q % ground.DOWN) - 0.5) * px, .y = at[1] + (sideShift(q / ground.DOWN) - 0.5) * px, .width = px / 2, .height = px / 2 };
     }
 
     fn quarterOf(src: rl.Rectangle, q: usize) rl.Rectangle {
-        return .{ .x = src.x + sideShift(q % 2) * src.width, .y = src.y + sideShift(q / 2) * src.height, .width = src.width / 2, .height = src.height / 2 };
+        return .{ .x = src.x + sideShift(q % ground.DOWN) * src.width, .y = src.y + sideShift(q / ground.DOWN) * src.height, .width = src.width / 2, .height = src.height / 2 };
     }
 
     pub fn drawWaterCliffCaps(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
@@ -304,7 +304,7 @@ pub const Sprites = struct {
             const piece = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
             const at = cellAt(origin, p, px);
             for (0..2) |side| {
-                const north = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = -1 });
+                const north = p.add(ground.AROUND[ground.NW_AT + side * ground.ACROSS].d);
                 const gr = beds.ground(north) orelse continue;
                 const depth = beds.ground(piece.wetAt(p, side)) orelse continue;
                 if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
@@ -336,7 +336,7 @@ pub const Sprites = struct {
         sheet: bool,
 
         fn lowerQuarter(self: BankFill, side: usize) rl.Rectangle {
-            return quarterOf(self.piece.src, if (self.sheet) side else 3 - side);
+            return quarterOf(self.piece.src, if (self.sheet) side else ground.SE_AT - side);
         }
 
         fn offset(self: BankFill) [2]f32 {

@@ -43,18 +43,19 @@ const readTarget = @import("capture.zig").readTarget;
 const renderTarget = @import("capture.zig").renderTarget;
 const sameRgb = @import("capture.zig").sameRgb;
 const target720 = @import("capture.zig").target720;
+const targetAt = @import("capture.zig").targetAt;
+const TACTICS_DIR = SHOTS_DIR ++ "/tactics";
+const LEVEL_UP_DIR = SHOTS_DIR ++ "/level-up";
 const NIGHT = @import("poses.zig").NIGHT;
 const poseForest = @import("poses.zig").poseForest;
 const posePicker = @import("poses.zig").posePicker;
 const studyAt = @import("poses.zig").studyAt;
 
 pub fn captureEditor(g: *game.Game) !void {
-    const screen = g.screen;
-    defer g.screen = screen;
     for (game.SCREENS) |size| {
-        g.screen = size;
-        const target = try renderTarget(g);
-        defer rl.unloadRenderTexture(target);
+        const shot = try targetAt(g, size);
+        defer shot.close(g);
+        const target = shot.target;
         var dir_buf: [128]u8 = undefined;
         const dir = try std.fmt.bufPrint(&dir_buf, SHOTS_DIR ++ "/editor-{d}x{d}", .{ size.x, size.y });
         try std.fs.cwd().makePath(dir);
@@ -105,11 +106,11 @@ fn captureQuests(g: *game.Game) !void {
 }
 
 fn captureInspect(g: *game.Game) !void {
-    const screen = g.screen;
-    defer g.screen = screen;
     inline for (.{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
         const suffix = std.fmt.comptimePrint("{d}", .{size.y});
-        g.screen = size;
+        const shot = try targetAt(g, size);
+        defer shot.close(g);
+        const target = shot.target;
         const h = game.harness;
         const from = P{ .x = 20, .y = 20 };
         const at = P{ .x = 23, .y = 20 };
@@ -125,8 +126,6 @@ fn captureInspect(g: *game.Game) !void {
         g.mode = .inspect;
         g.inspecting = .{ .actor = id };
         g.inspect_scroll = 0;
-        const target = try renderTarget(g);
-        defer rl.unloadRenderTexture(target);
         try capture(g, target, SHOTS_DIR ++ "/inspect-enemy-water-" ++ suffix ++ ".png");
         g.inspecting = .{ .actor = g.sim.hero };
         try capture(g, target, SHOTS_DIR ++ "/inspect-hero-reeds-" ++ suffix ++ ".png");
@@ -138,8 +137,6 @@ fn captureInspect(g: *game.Game) !void {
 }
 
 fn captureTalk(g: *game.Game) !void {
-    const screen = g.screen;
-    defer g.screen = screen;
     const w = try heapAtlas();
     defer dropAtlas(g, w);
     w.* = .{};
@@ -150,13 +147,13 @@ fn captureTalk(g: *game.Game) !void {
     try script_text.readAlone(editor.SHOT_SCRIPT, &w.script, w.node_n);
     inline for (.{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
         const suffix = std.fmt.comptimePrint("{d}", .{size.y});
-        g.screen = size;
+        const shot = try targetAt(g, size);
+        defer shot.close(g);
+        const target = shot.target;
         game.beginMapAt(g, w, w.start, 5);
         g.st = .{ .device = .keys };
         g.sim.plot = .{};
         game.talking.speak(g, 0);
-        const target = try renderTarget(g);
-        defer rl.unloadRenderTexture(target);
         try capture(g, target, SHOTS_DIR ++ "/talk-choices-" ++ suffix ++ ".png");
         g.sim.plot.pick(&w.script, 0, g.sim.world(), &g.sim.log);
         try capture(g, target, SHOTS_DIR ++ "/talk-line-" ++ suffix ++ ".png");
@@ -166,8 +163,6 @@ fn captureTalk(g: *game.Game) !void {
 }
 
 pub fn captureRares(g: *game.Game) !void {
-    const screen = g.screen;
-    defer g.screen = screen;
     game.harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{});
     const crusher = items.Item{ .kind = .axe, .rare_name = .{ .first = .Spine, .last = .Crusher }, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .crit, .value = 5 }, .{ .kind = .life_on_kill, .value = 2 } } };
     const maw = items.Item{ .kind = .ring, .rare_name = .{ .first = .Void, .last = .Maw }, .mods = .{ .{ .kind = .dexterity, .value = 3 }, .{ .kind = .resistance, .value = 20, .element = .chaos }, .{ .kind = .mana, .value = 3 }, .{ .kind = .spoils, .value = 25 } } };
@@ -180,9 +175,9 @@ pub fn captureRares(g: *game.Game) !void {
     game.harness.drawnOut(g);
     inline for (game.SCREENS) |size| {
         const tag = std.fmt.comptimePrint("{d}", .{size.y});
-        g.screen = size;
-        const target = try renderTarget(g);
-        defer rl.unloadRenderTexture(target);
+        const shot = try targetAt(g, size);
+        defer shot.close(g);
+        const target = shot.target;
         game.character.openCharacter(g);
         g.character.choose(.inventory);
         g.character.cursor = 0;
@@ -201,7 +196,7 @@ fn captureTactics(g: *game.Game) !void {
     const shot = try target720(g);
     defer shot.close(g);
     const target = shot.target;
-    try std.fs.cwd().makePath(SHOTS_DIR ++ "/tactics");
+    try std.fs.cwd().makePath(TACTICS_DIR);
     inline for (heroes.CLASSES) |class| {
         game.harness.heroArena(g, class, .{ .x = 20, .y = 20 }, &.{});
         g.sim.growth.active_points = 10;
@@ -211,11 +206,11 @@ fn captureTactics(g: *game.Game) !void {
             const act = s.act;
             g.character.cursor = i;
             g.sim.growth.ranks.set(act, 1);
-            try capture(g, target, SHOTS_DIR ++ "/tactics/tree-" ++ @tagName(act) ++ ".png");
+            try capture(g, target, TACTICS_DIR ++ "/tree-" ++ @tagName(act) ++ ".png");
             g.sim.growth.ranks.set(act, 2);
-            try capture(g, target, SHOTS_DIR ++ "/tactics/tree-" ++ @tagName(act) ++ "-upgrade.png");
+            try capture(g, target, TACTICS_DIR ++ "/tree-" ++ @tagName(act) ++ "-upgrade.png");
             g.sim.growth.ranks.set(act, progress.RANKS);
-            try capture(g, target, SHOTS_DIR ++ "/tactics/tree-" ++ @tagName(act) ++ "-maximum.png");
+            try capture(g, target, TACTICS_DIR ++ "/tree-" ++ @tagName(act) ++ "-maximum.png");
         }
     }
     game.harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
@@ -223,17 +218,17 @@ fn captureTactics(g: *game.Game) !void {
     g.mode.aim.mark = .{ .x = 23, .y = 19 };
     skills.confirmAim(g);
     g.mode.aim.mark = .{ .x = 23, .y = 21 };
-    try capture(g, target, SHOTS_DIR ++ "/tactics/barrier-preview.png");
+    try capture(g, target, TACTICS_DIR ++ "/barrier-preview.png");
     skills.confirmAim(g);
     game.harness.drawnOut(g);
-    try capture(g, target, SHOTS_DIR ++ "/tactics/barrier-raised.png");
+    try capture(g, target, TACTICS_DIR ++ "/barrier-raised.png");
     game.harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
     skills.useSkill(g, .{ .act = .caltrops, .by = .x });
     g.mode.aim.mark = .{ .x = 23, .y = 20 };
-    try capture(g, target, SHOTS_DIR ++ "/tactics/caltrops-preview.png");
+    try capture(g, target, TACTICS_DIR ++ "/caltrops-preview.png");
     skills.confirmAim(g);
     game.harness.drawnOut(g);
-    try capture(g, target, SHOTS_DIR ++ "/tactics/caltrops-laid.png");
+    try capture(g, target, TACTICS_DIR ++ "/caltrops-laid.png");
     game.harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
     g.sim.growth.ranks.set(.fire_wall, 1);
     _ = game.harness.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
@@ -245,17 +240,17 @@ fn captureTactics(g: *game.Game) !void {
     g.mode.aim.mark = .{ .x = 23, .y = 19 };
     skills.confirmAim(g);
     g.mode.aim.mark = .{ .x = 23, .y = 21 };
-    try capture(g, target, SHOTS_DIR ++ "/tactics/fire-wall-preview.png");
+    try capture(g, target, TACTICS_DIR ++ "/fire-wall-preview.png");
     skills.confirmAim(g);
     game.harness.drawnOut(g);
-    try capture(g, target, SHOTS_DIR ++ "/tactics/fire-wall-chill-fright.png");
+    try capture(g, target, TACTICS_DIR ++ "/fire-wall-chill-fright.png");
     _ = g.sim.inventory.add(.{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 }, null, null } });
     game.character.openCharacter(g);
     g.character.choose(.inventory);
     g.character.cursor = 0;
-    try capture(g, target, SHOTS_DIR ++ "/tactics/item-prefix-suffix.png");
+    try capture(g, target, TACTICS_DIR ++ "/item-prefix-suffix.png");
     g.sim.inventory.bag[0].mods = .{ .{ .kind = .opportunist, .value = 30 }, .{ .kind = .crit, .value = 5 }, null, null };
-    try capture(g, target, SHOTS_DIR ++ "/tactics/item-wrapped-affix.png");
+    try capture(g, target, TACTICS_DIR ++ "/item-wrapped-affix.png");
 }
 
 fn captureMouse(g: *game.Game) !void {
@@ -400,20 +395,20 @@ pub fn captureLoot(g: *game.Game) !void {
 pub fn captureLevelUp(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
-    try std.fs.cwd().makePath(SHOTS_DIR ++ "/level-up");
-    inline for (.{ .{ "day", day.NOON }, .{ "night", NIGHT } }) |scene| {
+    try std.fs.cwd().makePath(LEVEL_UP_DIR);
+    inline for (.{ .{ .name = "day", .hour = day.NOON }, .{ .name = "night", .hour = NIGHT } }) |scene| {
         poseForest(g);
-        studyAt(g, true, scene[1]);
+        studyAt(g, true, scene.hour);
         g.st = .{ .device = .keys };
         g.pic.settleXp(&g.sim);
-        try capture(g, target, SHOTS_DIR ++ "/level-up/" ++ scene[0] ++ "-before.png");
+        try capture(g, target, LEVEL_UP_DIR ++ "/" ++ scene.name ++ "-before.png");
         _ = g.sim.growth.gain(@intCast(g.sim.growth.needed()));
         game.update(g, 0);
         var elapsed: f32 = 0;
         inline for (.{ 0.12, 0.4, 0.9, 1.5, 2.1 }, 0..) |time, i| {
             game.update(g, time - elapsed);
             elapsed = time;
-            try capture(g, target, std.fmt.comptimePrint(SHOTS_DIR ++ "/level-up/{s}-{d}.png", .{ scene[0], i }));
+            try capture(g, target, std.fmt.comptimePrint(LEVEL_UP_DIR ++ "/{s}-{d}.png", .{ scene.name, i }));
         }
     }
 }
@@ -594,18 +589,15 @@ pub fn captureCharacter(g: *game.Game) !void {
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-no-points.png");
     }
     {
-        const book_screen = g.screen;
         const device = g.st.device;
-        defer g.screen = book_screen;
         defer g.st.device = device;
         inline for (.{ game.WINDOW, game.SCREEN_1080 }) |size| {
-            g.screen = size;
+            const large = try targetAt(g, size);
+            defer large.close(g);
             g.st.device = .keys;
-            const large = try renderTarget(g);
-            defer rl.unloadRenderTexture(large);
             inline for (book.PAGES) |page| {
                 g.character.choose(page);
-                try capture(g, large, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ "-" ++ std.fmt.comptimePrint("{d}", .{size.x}) ++ ".png");
+                try capture(g, large.target, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ "-" ++ std.fmt.comptimePrint("{d}", .{size.x}) ++ ".png");
             }
         }
     }

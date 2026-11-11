@@ -501,7 +501,7 @@ pub const Fx = struct {
     fn spray(self: *Fx, at: [2]f32, dir: ?[2]f32, s: Spray, n: usize) void {
         const rng = &self.rng;
         for (0..n) |_| {
-            const d = dir orelse heading(rng.unit() * mathx.TAU);
+            const d = dir orelse heading(rng.angle());
             const along = rng.between(s.along_lo, s.along_hi);
             const across = rng.spread(2 * s.fan);
             self.emit(.{
@@ -821,7 +821,7 @@ pub const Fx = struct {
     }
 
     fn footSpot(self: *Fx, at: [2]f32, near: f32) struct { dir: [2]f32, p: [3]f32 } {
-        const dir = heading(self.rng.unit() * mathx.TAU);
+        const dir = heading(self.rng.angle());
         const out = self.rng.between(near, 1);
         return .{ .dir = dir, .p = .{ at[0] + dir[0] * SPLASH_R * out, at[1] + SPLASH_FOOT + dir[1] * SPLASH_RY * out, 0.02 } };
     }

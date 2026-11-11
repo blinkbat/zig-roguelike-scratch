@@ -83,8 +83,11 @@ const WATER_FADE_FS = shaders.glslConsts(.{
     .DEEP = look.WATER_DEEP,
     .SHALLOW = look.WATER_SHALLOW,
 }) ++
+    \\float shallowOf(float depth) {
+    \\    return smoothstep(DEEP, SHALLOW, depth);
+    \\}
     \\float waterFade(float depth, float screenHeight) {
-    \\    float shallow = smoothstep(DEEP, SHALLOW, depth);
+    \\    float shallow = shallowOf(depth);
     \\    return mix(SCREEN_FADE.x, mix(SCREEN_FADE_DEEP, SCREEN_FADE.y, shallow), clamp(1.0 - gl_FragCoord.y / screenHeight, 0.0, 1.0));
     \\}
     \\
@@ -137,7 +140,7 @@ pub const WATER_FS = shaders.FS_HEAD ++ WATER_FADE_FS ++ shaders.glslConsts(.{
     \\        remembered.rgb *= light.rgb * OVERBRIGHT;
     \\        reflected = mix(remembered, texture(mirror, uv), light.a);
     \\    }
-    \\    float shallow = smoothstep(DEEP, SHALLOW, depth);
+    \\    float shallow = shallowOf(depth);
     \\    float strength = mix(MIRROR_DEEP, MIRROR_SHALLOW, shallow);
     \\    vec3 shine = reflected.rgb * MIRROR_TINT * strength;
     \\    shine = mix(vec3(dot(shine, LUMA)), shine, SATURATION);

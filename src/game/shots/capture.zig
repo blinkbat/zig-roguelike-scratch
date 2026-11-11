@@ -15,21 +15,25 @@ pub fn renderTarget(g: *game.Game) !rl.RenderTexture2D {
     return rl.loadRenderTexture(g.screen.x, g.screen.y);
 }
 
-pub const Target720 = struct {
+pub const Sized = struct {
     target: rl.RenderTexture2D,
     screen: mathx.P,
 
-    pub fn close(self: Target720, g: *game.Game) void {
+    pub fn close(self: Sized, g: *game.Game) void {
         rl.unloadRenderTexture(self.target);
         g.screen = self.screen;
     }
 };
 
-pub fn target720(g: *game.Game) !Target720 {
+pub fn targetAt(g: *game.Game, size: mathx.P) !Sized {
     const screen = g.screen;
     errdefer g.screen = screen;
-    g.screen = game.SCREEN_720;
+    g.screen = size;
     return .{ .target = try renderTarget(g), .screen = screen };
+}
+
+pub fn target720(g: *game.Game) !Sized {
+    return targetAt(g, game.SCREEN_720);
 }
 
 pub fn heapAtlas() !*atlas.Atlas {
@@ -101,6 +105,10 @@ pub fn exportTarget(target: rl.RenderTexture2D, path: [:0]const u8) !void {
     defer rl.unloadImage(img);
     // Blending leaves alpha in the target that a window never shows.
     rl.imageFormat(&img, .uncompressed_r8g8b8);
-    if (!rl.exportImage(img, path)) return error.ExportFailed;
+    try exportImage(img, path);
     std.debug.print("{s} written\n", .{path});
+}
+
+pub fn exportImage(img: rl.Image, path: [:0]const u8) !void {
+    if (!rl.exportImage(img, path)) return error.ExportFailed;
 }

@@ -42,6 +42,14 @@ pub fn middleAt(r: rl.Rectangle) mathx.P {
     return .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
 }
 
+pub fn right(r: rl.Rectangle) i32 {
+    return @intFromFloat(r.x + r.width);
+}
+
+pub fn bottom(r: rl.Rectangle) i32 {
+    return @intFromFloat(r.y + r.height);
+}
+
 pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
     blit(t, whole(t), dest, tint);
 }

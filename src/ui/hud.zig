@@ -208,9 +208,7 @@ pub fn statuses(layout: Layout, sprites: *const sprite.Sprites, face: *const fon
 pub fn counter(face: *const font.Face, box: rl.Rectangle, n: u32) void {
     var buf: [12]u8 = undefined;
     const label = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch "";
-    const right: i32 = @intFromFloat(box.x + box.width);
-    const bottom: i32 = @intFromFloat(box.y + box.height);
-    face.text(label, right - face.width(label, font.SMALL) - COUNT_INSET.x, bottom - font.SMALL - COUNT_INSET.y, font.SMALL, look.TEXT);
+    face.text(label, raster.right(box) - face.width(label, font.SMALL) - COUNT_INSET.x, raster.bottom(box) - font.SMALL - COUNT_INSET.y, font.SMALL, look.TEXT);
 }
 
 const FOCUS_GROW: f32 = 4;
@@ -275,7 +273,7 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
     var x = centredOver(over, TIP_W, screen);
     var y = above(@min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y), h);
     if (over.y < @as(f32, @floatFromInt(layout.top)) and over.y < @as(f32, @floatFromInt(h + TIP_GAP + TIP_MARGIN))) {
-        const right = @as(i32, @intFromFloat(over.x + over.width)) + TIP_GAP;
+        const right = raster.right(over) + TIP_GAP;
         const left = @as(i32, @intFromFloat(over.x)) - TIP_GAP - TIP_W;
         const fits_right = right + TIP_W <= screen.x - TIP_MARGIN;
         if (fits_right or left >= TIP_MARGIN) {

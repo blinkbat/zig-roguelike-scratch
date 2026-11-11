@@ -182,6 +182,7 @@ pub const Imbue = struct {
     pub const COST: i32 = 4;
     pub const TURNS: u8 = 6;
     pub const FIRE = damage.Base{ .lo = 2, .hi = 4 };
+    pub const IMBUES: damage.Element = .fire;
     pub const DESCRIPTION = std.fmt.comptimePrint("Charge your weapon with fire for {d} turns. Melee blows deal added fire damage and may ignite.", .{TURNS});
     pub fn ignites(rank: u8) u32 {
         return 15 + 15 * @as(u32, ranked(rank));

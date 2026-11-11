@@ -4,6 +4,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const hero = @import("../play/hero.zig");
 const progress = @import("../play/progress.zig");
+const tactics = @import("../play/tactics.zig");
 const passives = @import("../play/passives.zig");
 const attrs = @import("../play/attrs.zig");
 const Gear = @import("../play/gear.zig").Gear;
@@ -21,7 +22,7 @@ const AREA = @import("character_layout.zig").AREA;
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
 pub const View = struct { cursor: usize = 0, zoom: f32 = ZOOM_MIN, pan: rl.Vector2 = .{ .x = 0, .y = 0 }, focused: bool = true };
-const Loadout = struct { stats: attrs.Attrs, gear: Gear, steady: u8 = 0 };
+const Loadout = struct { stats: attrs.Attrs, gear: Gear, readied: progress.Readied = .{} };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
 pub const ZOOM_START: f32 = 2.4;
@@ -39,10 +40,10 @@ const WHEEL_FOOT: f32 = 44;
 const WHEEL = rl.Rectangle{ .x = CANVAS.x + @as(f32, @floatFromInt(INSET)), .y = CANVAS.y + WHEEL_TOP, .width = CANVAS.width - 2 * @as(f32, @floatFromInt(INSET)), .height = CANVAS.height - WHEEL_TOP - WHEEL_FOOT };
 const TEXT_X: i32 = @as(i32, @intFromFloat(DETAIL.x)) + INSET;
 const TEXT_W: i32 = @as(i32, @intFromFloat(DETAIL.width)) - 2 * INSET;
-const CANVAS_RIGHT: i32 = @as(i32, @intFromFloat(CANVAS.x + CANVAS.width)) - INSET;
+const CANVAS_RIGHT: i32 = raster.right(CANVAS) - INSET;
 const CANVAS_LEFT: i32 = @as(i32, @intFromFloat(CANVAS.x)) + INSET;
 const CANVAS_TOP: i32 = @intFromFloat(CANVAS.y);
-const CANVAS_BOTTOM: i32 = @intFromFloat(CANVAS.y + CANVAS.height);
+const CANVAS_BOTTOM: i32 = raster.bottom(CANVAS);
 const DETAIL_TOP: i32 = @intFromFloat(DETAIL.y);
 const FOOT_MID: i32 = CANVAS_BOTTOM - @as(i32, @intFromFloat(WHEEL_FOOT)) / 2;
 const LEGEND_STEP: i32 = 140;
@@ -52,7 +53,7 @@ const BUTTON_H: i32 = 34;
 const ACTION_FOOT_GAP: i32 = 8;
 const REASON_GAP: i32 = 10;
 const BIND_GAP: i32 = 8;
-const DETAIL_BOTTOM: i32 = @intFromFloat(DETAIL.y + DETAIL.height);
+const DETAIL_BOTTOM: i32 = raster.bottom(DETAIL);
 const ACTION_Y: i32 = DETAIL_BOTTOM - ACTION_FOOT_GAP - BUTTON_H;
 const REASON_Y: i32 = ACTION_Y - REASON_GAP - font.SMALL;
 const BIND_Y: i32 = REASON_Y - BIND_GAP - BUTTON_H;
@@ -344,7 +345,7 @@ const Hit = progress.Hit;
 const Prose = menu.Note(128);
 
 fn skillHit(growth: *const progress.State, act: skillbar.Act, loadout: Loadout) ?Hit {
-    return growth.preparedHit(loadout.stats, loadout.gear, act, loadout.steady);
+    return growth.preparedHit(loadout.stats, loadout.gear, act, loadout.readied);
 }
 
 fn hitText(act: skillbar.Act, hit: Hit, text: *Prose) [:0]const u8 {
@@ -354,7 +355,11 @@ fn hitText(act: skillbar.Act, hit: Hit, text: *Prose) [:0]const u8 {
         } else {
             text.say(damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi });
         }
+    } else if (hit.imbued) |f| {
+        text.say(damage.MIXED_FMT, .{ hit.physical.lo, hit.physical.hi, f.lo, f.hi, menu.word(tactics.Imbue.IMBUES) });
+        return text.text();
     } else text.say(damage.PHYSICAL_FMT, .{ hit.physical.lo, hit.physical.hi });
+    if (hit.imbued) |f| text.writer().print(damage.ADDED_FMT, .{ f.lo, f.hi, menu.word(tactics.Imbue.IMBUES) }) catch {};
     return text.text();
 }
 

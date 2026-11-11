@@ -51,6 +51,7 @@ pub const Span = struct { lo: i32, hi: i32 };
 pub const PHYSICAL_FMT = "Physical damage: {d}-{d}";
 pub const ELEMENT_FMT = "{s} damage: {d}-{d}";
 pub const MIXED_FMT = "Damage: {d}-{d} physical, {d}-{d} {s}";
+pub const ADDED_FMT = ", {d}-{d} {s}";
 
 pub const Damage = struct {
     physical: i32 = 0,

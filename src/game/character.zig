@@ -165,7 +165,7 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     const life = g.pic.lifeShown(&g.sim);
     var v = book.View{ .class = g.sim.class, .name = g.sim.name.text(), .inventory = &g.sim.inventory, .growth = growth, .base = growth.attributes(g.sim.class), .gold = if (now) g.sim.gold else g.pic.gold_shown, .nearby = shownNearby(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.sim.lv.at(g.character.loot_at) == .chest_open, .life = .{ .now = life.hp, .max = life.max }, .mana = .{ .now = g.pic.manaShown(&g.sim), .max = g.sim.manaMax() } };
     if (g.sim.heroBody()) |h| {
-        v.steady = h.tactics.steady;
+        v.readied = g.sim.heroReadied();
         const at = g.pic.drawnCell(&g.sim, g.sim.heroSlot().?) orelse h.at;
         const pictured = g.pic.heroShown(&g.sim);
         const buildup = if (pictured) |shown| shown.resilience else h.resilience;

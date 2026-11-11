@@ -211,7 +211,7 @@ const App = struct {
             }
             if (slot.* != .empty) menu.action(&g.face, remove, prompt_icon.Prompt.menuOf(&g.st, DELETE), if (app.armed == i) "Delete it?" else "Delete save");
         }
-        menu.mid(g.face, g.screen, app.note.text(), @as(i32, @intFromFloat(last.y + last.height)) + menu.NOTE_GAP, menu.NOTE, look.DIM);
+        menu.mid(g.face, g.screen, app.note.text(), raster.bottom(last) + menu.NOTE_GAP, menu.NOTE, look.DIM);
     }
 
     fn slotFree(app: *App) bool {
@@ -634,17 +634,15 @@ const MOUSE_DIR = capture.MOUSE_DIR;
 pub fn captureHeroes(g: *game.Game) !void {
     try std.fs.cwd().makePath(HEROES_DIR);
     const alloc = std.heap.c_allocator;
-    const map = try alloc.create(atlas.Atlas);
+    const map = try capture.heapAtlas();
     defer alloc.destroy(map);
     var app = App{ .alloc = alloc, .g = g, .map = map, .edit_path = atlas.MAIN, .class = .wizard };
     app.entry.name = hero.Name.of("Arwen");
     g.st = .{ .device = .keys };
-    const screen = g.screen;
-    defer g.screen = screen;
     inline for (game.SCREENS) |size| {
-        g.screen = size;
-        const target = try rl.loadRenderTexture(size.x, size.y);
-        defer rl.unloadRenderTexture(target);
+        const shot = try capture.targetAt(g, size);
+        defer shot.close(g);
+        const target = shot.target;
         const at = std.fmt.comptimePrint("-{d}p.png", .{size.y});
         app.page = .class;
         app.classes = .on(0);
@@ -745,7 +743,7 @@ fn fixtureHall() ossuary.Hall {
 
 pub fn captureMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
     const alloc = std.heap.c_allocator;
-    const map = try alloc.create(atlas.Atlas);
+    const map = try capture.heapAtlas();
     defer alloc.destroy(map);
     var app = App{ .alloc = alloc, .g = g, .map = map, .edit_path = atlas.MAIN };
     app.listing.scan();
@@ -760,17 +758,14 @@ pub fn captureMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
         app.page = page;
         try capturePage(&app, target, MOUSE_DIR ++ "/title-" ++ @tagName(page) ++ ".png");
     }
-    const screen = g.screen;
     inline for (game.SCREENS) |size| {
-        g.screen = size;
-        const sized = try rl.loadRenderTexture(size.x, size.y);
-        defer rl.unloadRenderTexture(sized);
+        const sized = try capture.targetAt(g, size);
+        defer sized.close(g);
         inline for (.{ Page.main, Page.load, Page.ossuary, Page.bones }) |page| {
             app.page = page;
-            try capturePage(&app, sized, std.fmt.comptimePrint(MOUSE_DIR ++ "/title-{s}-{d}p.png", .{ @tagName(page), size.y }));
+            try capturePage(&app, sized.target, std.fmt.comptimePrint(MOUSE_DIR ++ "/title-{s}-{d}p.png", .{ @tagName(page), size.y }));
         }
     }
-    g.screen = screen;
     var empty = App{ .alloc = alloc, .g = g, .map = map, .edit_path = atlas.MAIN, .page = .ossuary };
     try capturePage(&empty, target, MOUSE_DIR ++ "/title-ossuary-empty.png");
     var longest: [listing.STEM_MAX + 1]u8 = @splat('W');

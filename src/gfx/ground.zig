@@ -264,6 +264,17 @@ pub const AROUND = [4]struct { d: P, bit: u4 }{
     .{ .d = .{ .x = -1, .y = 0 }, .bit = SW },
     .{ .d = .{ .x = 0, .y = 0 }, .bit = SE },
 };
+pub const NW_AT: usize = 0;
+pub const NE_AT: usize = 1;
+pub const SW_AT: usize = 2;
+pub const SE_AT: usize = 3;
+pub const ACROSS: usize = NE_AT - NW_AT;
+pub const DOWN: usize = SW_AT - NW_AT;
+
+comptime {
+    for ([_]usize{ NW_AT, NE_AT, SW_AT, SE_AT }, [_]u4{ NW, NE, SW, SE }) |at, bit| std.debug.assert(AROUND[at].bit == bit);
+    for (AROUND, 0..) |a, i| std.debug.assert(a.d.x == @as(i32, i % DOWN) - 1 and a.d.y == @as(i32, i / DOWN) - 1);
+}
 
 const Corners = struct {
     rank: [4]u8,
@@ -291,7 +302,7 @@ const Corners = struct {
     pub fn edgeQuarter(self: Corners, upper: Ground, lower: Ground, quarter: usize) bool {
         if (self.pairMask(upper, lower) != null) return true;
         if (upper == .shallows) return self.rank[quarter] != Ground.dirt.rank();
-        for ([_]usize{ quarter, quarter ^ 2, quarter ^ 1, quarter ^ 3 }) |q| {
+        for ([_]usize{ quarter, quarter ^ DOWN, quarter ^ ACROSS, quarter ^ (ACROSS | DOWN) }) |q| {
             if (self.rank[q] == Ground.dirt.rank()) continue;
             return self.rank[q] == lower.rank();
         }
@@ -299,7 +310,7 @@ const Corners = struct {
     }
 
     pub fn waterCliffFor(self: Corners, bank: Bank) ?BankPiece {
-        return .of(bank.matches(self.rank[0], self.rank[2]), bank.matches(self.rank[1], self.rank[3]));
+        return .of(bank.matches(self.rank[NW_AT], self.rank[SW_AT]), bank.matches(self.rank[NE_AT], self.rank[SE_AT]));
     }
 
     fn holds(self: Corners, g: Ground) bool {
@@ -437,12 +448,12 @@ fn cliffFeet(comptime text: []const u8) Profile {
     return feet;
 }
 
-fn bankCell(lv: *const grid.Level, p: P) bool {
-    if (bankHeight(lv.at(p)) == 0) return false;
+fn bankAt(lv: *const grid.Level, p: P) ?Bank {
+    if (bankHeight(lv.at(p)) == 0) return null;
     const above = p.add(.{ .x = 0, .y = -1 });
-    if (!grid.Level.inside(above)) return false;
-    const north = bedAt(lv, above, false) orelse return false;
-    return bankAbove(north.tile(), lv.at(p));
+    if (!grid.Level.inside(above)) return null;
+    const north = bedAt(lv, above, false) orelse return null;
+    return Bank.of(north.tile(), lv.at(p));
 }
 
 pub fn bankFoot(lv: *const grid.Level, q: [2]f32) ?f32 {
@@ -463,9 +474,7 @@ const BankShape = struct {
     pieces: [2]BankPiece,
 
     fn of(lv: *const grid.Level, c: P) ?BankShape {
-        if (!bankCell(lv, c)) return null;
-        const north = bedAt(lv, c.add(.{ .x = 0, .y = -1 }), false).?;
-        const bank = Bank.of(north.tile(), lv.at(c)).?;
+        const bank = bankAt(lv, c) orelse return null;
         var s = BankShape{ .water = bedAt(lv, c, false).?, .pieces = undefined };
         for (&s.pieces, 0..) |*piece, h| piece.* = pieceAt(lv, bank, c.add(.{ .x = @intCast(h), .y = 0 }));
         return s;

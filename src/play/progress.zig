@@ -5,6 +5,8 @@ const actor = @import("actor.zig");
 const skillbar = @import("skillbar.zig");
 const Gear = @import("gear.zig").Gear;
 const damage = @import("damage.zig");
+const tactics = @import("tactics.zig");
+const item_bases = @import("item_bases.zig");
 const mathx = @import("../core/mathx.zig");
 
 pub const RANKS: u8 = 3;
@@ -96,7 +98,16 @@ comptime {
     };
 }
 
-pub const Hit = struct { physical: damage.Span, element: ?damage.Span, style: attrs.Style };
+pub const Hit = struct { physical: damage.Span, element: ?damage.Span, style: attrs.Style, imbued: ?damage.Span = null };
+/// The hero's held buffs that change a blow's roll.
+pub const Readied = struct {
+    steady: u8 = 0,
+    imbued: bool = false,
+
+    pub fn imbues(self: Readied, attack: attrs.Attack) bool {
+        return self.imbued and attack == .melee;
+    }
+};
 pub const Blow = struct {
     by: attrs.Attrs,
     style: attrs.Style,
@@ -241,18 +252,28 @@ pub const State = struct {
         return .{ .by = self.skillAttrs(equipped, gear, act), .style = gear.scaling(attack), .bases = act.equippedBases(gear) };
     }
 
-    pub fn preparedBlow(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act, steady: u8) ?Blow {
+    pub fn preparedBlow(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act, readied: Readied) ?Blow {
         var out = self.blowOf(equipped, gear, act) orelse return null;
-        const t = @import("tactics.zig");
-        if (steady > 0 and t.SteadyAim.readies(act)) {
-            out.by.damage_bonus.getPtr(out.style).* += t.SteadyAim.bonus(steady);
-            out.by.crit_bonus += t.SteadyAim.critical(steady);
+        const steady = readied.steady;
+        if (steady > 0 and tactics.SteadyAim.readies(act)) {
+            out.by.damage_bonus.getPtr(out.style).* += tactics.SteadyAim.bonus(steady);
+            out.by.crit_bonus += tactics.SteadyAim.critical(steady);
         }
         return out;
     }
 
-    pub fn preparedHit(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act, steady: u8) ?Hit {
-        return (self.preparedBlow(equipped, gear, act, steady) orelse return null).hit(act);
+    pub fn preparedHit(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act, readied: Readied) ?Hit {
+        const blow = self.preparedBlow(equipped, gear, act, readied) orelse return null;
+        var out = blow.hit(act);
+        if (out.physical.hi > 0 and readied.imbues(act.attack().?)) out.imbued = blow.by.elementSpan(blow.style, tactics.Imbue.FIRE, tactics.Imbue.IMBUES);
+        return out;
+    }
+
+    /// The ailments a landing blow may bring: the weapon's, and Imbue's ignite while it holds.
+    pub fn onHit(self: *const State, gear: Gear, attack: attrs.Attack, readied: Readied) item_bases.WeaponEffect {
+        var out = gear.onHit(attack);
+        if (readied.imbues(attack)) out.imbue(tactics.Imbue.IMBUES, tactics.Imbue.ignites(self.ranks.get(.imbue)));
+        return out;
     }
 
     pub fn cost(self: *const State, act: skillbar.Act) i32 {
@@ -318,6 +339,18 @@ test "a versed wizard binds every skill of its tree in place of its flasks" {
     const bar = state.flasklessBar(.wizard);
     for (skills(.wizard)) |s| try std.testing.expect(bar.slotOf(s.act) != null);
     try std.testing.expect(bar.slotOf(.life_flask) == null and bar.slotOf(.mana_flask) == null);
+}
+
+test "Imbue's fire and ignite show on melee previews only while it holds" {
+    var state = State.versed(.knight);
+    state.ranks.set(.imbue, 2);
+    const gear = Gear{};
+    const by = hero.Class.knight.attrs();
+    const lit = Readied{ .imbued = true };
+    try std.testing.expect(state.preparedHit(by, gear, .cleave, .{}).?.imbued == null);
+    try std.testing.expect(state.preparedHit(by, gear, .cleave, lit).?.imbued != null);
+    try std.testing.expectEqual(gear.onHit(.melee).burn + tactics.Imbue.ignites(2), state.onHit(gear, .melee, lit).burn);
+    try std.testing.expectEqual(gear.onHit(.ranged).burn, state.onHit(gear, .ranged, lit).burn);
 }
 
 test "experience awards both point pools; passive paths cross class regions; active skills obey class and rank limits" {

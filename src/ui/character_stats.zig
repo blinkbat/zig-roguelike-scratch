@@ -8,6 +8,7 @@ const item_bases = @import("../play/item_bases.zig");
 const damage = @import("../play/damage.zig");
 const resilience = @import("../play/resilience.zig");
 const progress = @import("../play/progress.zig");
+const tactics = @import("../play/tactics.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
@@ -134,10 +135,19 @@ const Part = struct { [:0]const u8, rl.Color };
 const Column = struct {
     face: *const font.Face,
     x: i32,
+    foot: i32,
     y: i32 = layout.CONTENT_TOP,
     dry: bool = false,
     cramped: bool = false,
     row: i32 = STAT_ROW,
+
+    fn left(face: *const font.Face, dry: bool, row: i32) Column {
+        return .{ .face = face, .x = STATS_X, .foot = LEFT_FOOT, .dry = dry, .row = row };
+    }
+
+    fn right(face: *const font.Face, dry: bool, row: i32) Column {
+        return .{ .face = face, .x = layout.DETAIL_X, .foot = RIGHT_FOOT, .dry = dry, .row = row };
+    }
 
     fn step(column: *const Column, tier: Tier) i32 {
         return if (tier == .headline) HEADLINE_ROW else column.row;
@@ -197,11 +207,16 @@ const Column = struct {
         var element: menu.Note(40) = .{};
         if (hit.physical.hi > 0) physical.say("{d}-{d}", .{ hit.physical.lo, hit.physical.hi });
         if (hit.element) |e| element.say("{d}-{d} {s}", .{ e.lo, e.hi, menu.word(act.element().?) });
+        var imbued: menu.Note(24) = .{};
+        if (hit.imbued) |f| imbued.say("{d}-{d} {s}", .{ f.lo, f.hi, menu.word(tactics.Imbue.IMBUES) });
         const join: [:0]const u8 = if (physical.n > 0 and element.n > 0) " + " else "";
+        const fire_join: [:0]const u8 = if (imbued.n > 0) " + " else "";
         column.line(act.name(), &.{
             .{ physical.text(), look.PHYSICAL },
             .{ join, look.DIM },
             .{ element.text(), look.arrowInk(act) },
+            .{ fire_join, look.DIM },
+            .{ imbued.text(), look.elementInk(tactics.Imbue.IMBUES) },
         }, .key);
         const chances = chancesOf(act, hit, effect);
         var any = false;
@@ -240,7 +255,7 @@ const CRITS = [_]Measure{ .weapon_crit, .spell_crit };
 fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     const figures = Figures.of(view);
     const attributes = figures.attrs;
-    var left = Column{ .face = face, .x = STATS_X, .dry = dry };
+    var left = Column.left(face, dry, STAT_ROW);
     left.heading("SURVIVAL");
     left.vital(hud.LIFE, view.life, look.LIFE_TEXT);
     left.vital(hud.MANA, view.mana, look.MANA_TEXT);
@@ -259,10 +274,10 @@ fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     gold.say("{d}", .{view.gold});
     left.entry("Gold", gold.text(), .plain, look.LEVEL_GOLD);
 
-    var right = Column{ .face = face, .x = layout.DETAIL_X, .dry = dry };
+    var right = Column.right(face, dry, STAT_ROW);
     right.heading("DAMAGE");
     for (skillbar.kit(view.class)) |act| if (act.attack() != null and act.supplyOf() == null and view.growth.unlocked(act)) {
-        right.skill(act, view.growth.preparedHit(attributes, view.inventory.gear, act, view.steady).?, view.inventory.gear.onHit(act.attack().?));
+        right.skill(act, view.growth.preparedHit(attributes, view.inventory.gear, act, view.readied).?, view.growth.onHit(view.inventory.gear, act.attack().?, view.readied));
     };
     right.y += CRIT_GAP;
     for (CRITS) |measure| right.stat(measure, figures, .plain, look.TEXT);
@@ -272,7 +287,7 @@ fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
 fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     const figures = Figures.of(view);
     const attributes = figures.attrs;
-    var left = Column{ .face = face, .x = STATS_X, .dry = dry, .row = TIGHT_ROW };
+    var left = Column.left(face, dry, TIGHT_ROW);
     left.heading("DAMAGE MODIFIERS");
     for (attr.STYLES) |s| left.stat(.{ .style = s }, figures, .plain, quiet(attributes.increase(s), look.TEXT));
     left.stat(.physical, figures, .plain, quiet(attributes.physical_bonus, look.PHYSICAL));
@@ -294,7 +309,7 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     left.stat(.gold_find, figures, .plain, quiet(attributes.gold_find, look.UI_GOLD));
     left.stat(.item_rarity, figures, .plain, quiet(attributes.item_rarity, look.MAGIC));
 
-    var right = Column{ .face = face, .x = layout.DETAIL_X, .dry = dry, .row = TIGHT_ROW };
+    var right = Column.right(face, dry, TIGHT_ROW);
     right.heading("RESISTANCES");
     for (std.enums.values(damage.Element)) |e| right.amount(resistanceLabel(e), "{d}%", view.resists.get(e), look.elementInk(e));
     right.y += SECTION_GAP;
@@ -333,9 +348,9 @@ pub fn verify(face: *const font.Face) !void {
         view.mana = .{ .now = 999, .max = 999 };
         for (std.enums.values(resilience.Kind)) |k| view.status_resist.set(k, .{ .percent = 100, .turns = resilience.EXPIRY });
         for ([_][2]Column{ sheet(face, view, true), advancedSheet(face, view, true) }) |cols| {
-            for (cols, [_]i32{ LEFT_FOOT, RIGHT_FOOT }) |col, foot| {
-                if (col.cramped or col.y > foot) {
-                    std.debug.print("stats overflow {s}: column at x {d} reaches {d} of {d}, cramped {}\n", .{ @tagName(class), col.x, col.y, foot, col.cramped });
+            for (cols) |col| {
+                if (col.cramped or col.y > col.foot) {
+                    std.debug.print("stats overflow {s}: column at x {d} reaches {d} of {d}, cramped {}\n", .{ @tagName(class), col.x, col.y, col.foot, col.cramped });
                     return error.StatsOverflow;
                 }
                 checked += 1;

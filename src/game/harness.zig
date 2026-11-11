@@ -388,6 +388,8 @@ pub const TEST_DT = mathx.TEST_DT;
 pub const TEST_TOL: f32 = TEST_DT * 1.5;
 pub const FADING_S: f32 = 0.04;
 pub const FADE_FRAMES = 120;
+pub const FADED: f32 = 0.99;
+pub const UNFADED: f32 = 0.01;
 
 pub fn framesUntil(g: *game.Game, slot: usize, comptime done: fn (*game.Game, usize) bool) f32 {
     g.st = .{};
@@ -445,6 +447,18 @@ pub fn affixed(kind: item_bases.Kind, affix: affixes.Affix) items.Item {
     var it = items.Item{ .kind = kind };
     it.mods[0] = affix;
     return it;
+}
+
+pub const HARVEST_LIFE: i32 = 2;
+
+pub fn harvestRing() items.Item {
+    return affixed(.ring, .{ .kind = .life_on_kill, .value = HARVEST_LIFE });
+}
+
+pub fn bleedingOut(a: *actor.Actor) void {
+    a.hp = 1;
+    a.bleed.startWith(2);
+    a.bleed.fresh = false;
 }
 
 pub const TEST_GAS = 100;

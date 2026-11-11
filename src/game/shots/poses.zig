@@ -356,18 +356,18 @@ fn capturePlayground(g: *game.Game, target: rl.RenderTexture2D) !void {
 fn captureEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
     try captureArrows();
     inline for (.{
-        .{ heroes.Class.wizard, skillbar.Act.spark },
-        .{ heroes.Class.wizard, skillbar.Act.fireball },
-        .{ heroes.Class.wizard, skillbar.Act.chain_lightning },
-        .{ heroes.Class.wizard, skillbar.Act.frost_nova },
-        .{ heroes.Class.wizard, skillbar.Act.blink },
-        .{ heroes.Class.wizard, skillbar.Act.mana_shield },
-        .{ heroes.Class.archer, skillbar.Act.burning_arrow },
-        .{ heroes.Class.archer, skillbar.Act.glacial_shot },
+        .{ .class = heroes.Class.wizard, .act = skillbar.Act.spark },
+        .{ .class = heroes.Class.wizard, .act = skillbar.Act.fireball },
+        .{ .class = heroes.Class.wizard, .act = skillbar.Act.chain_lightning },
+        .{ .class = heroes.Class.wizard, .act = skillbar.Act.frost_nova },
+        .{ .class = heroes.Class.wizard, .act = skillbar.Act.blink },
+        .{ .class = heroes.Class.wizard, .act = skillbar.Act.mana_shield },
+        .{ .class = heroes.Class.archer, .act = skillbar.Act.burning_arrow },
+        .{ .class = heroes.Class.archer, .act = skillbar.Act.glacial_shot },
     }) |study| {
-        const act = study[1];
+        const act = study.act;
         const from = P{ .x = 20, .y = 20 };
-        game.harness.heroArena(g, study[0], from, &.{});
+        game.harness.heroArena(g, study.class, from, &.{});
         carve.box(&g.sim.lv, .{ .lo = .{ .x = 13, .y = 13 }, .hi = .{ .x = 33, .y = 28 } }, .grass);
         game.harness.wallRow(&g.sim.lv, 17, 18, 29);
         procgen.reshape(&g.sim.lv);

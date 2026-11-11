@@ -14,8 +14,10 @@ const game = @import("../../game.zig");
 const P = mathx.P;
 const MIN_PIXELS = @import("capture.zig").MIN_PIXELS;
 const SHOTS_DIR = @import("capture.zig").SHOTS_DIR;
+const WATER_CLIFFS_DIR = SHOTS_DIR ++ "/water-cliffs";
 const capture = @import("capture.zig").capture;
 const drawInto = @import("capture.zig").drawInto;
+const exportImage = @import("capture.zig").exportImage;
 const exportTarget = @import("capture.zig").exportTarget;
 const intoTarget = @import("capture.zig").intoTarget;
 const outOfTarget = @import("capture.zig").outOfTarget;
@@ -34,7 +36,7 @@ const studyLit = @import("poses.zig").studyLit;
 pub fn captureWaterCliffs(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
-    try std.fs.cwd().makePath(SHOTS_DIR ++ "/water-cliffs");
+    try std.fs.cwd().makePath(WATER_CLIFFS_DIR);
     try checkCaravanShadowCulling(g, target);
     try waterCliffTemplates(g);
     try checkWaterCapTint(g);
@@ -62,31 +64,31 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
         }
     }.of);
     studyLit(g, true, day.NOON);
-    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/grass-day.png");
+    try capture(g, target, WATER_CLIFFS_DIR ++ "/grass-day.png");
     game.harness.retile(&g.sim.lv, .grass, .dirt);
     studyLit(g, true, day.NOON);
-    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/dirt-day.png");
+    try capture(g, target, WATER_CLIFFS_DIR ++ "/dirt-day.png");
     studyLit(g, true, NIGHT);
-    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/dirt-night.png");
+    try capture(g, target, WATER_CLIFFS_DIR ++ "/dirt-night.png");
     const lands = [_]grid.Tile{ .sand, .snow, .ice, .floor, .rubble, .crop };
     for (lands, 0..) |land, n| {
         game.harness.retile(&g.sim.lv, if (n == 0) .dirt else lands[n - 1], land);
         studyLit(g, true, day.NOON);
         var path: [128]u8 = undefined;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/{s}-day.png", .{@tagName(land)}));
+        try capture(g, target, try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/{s}-day.png", .{@tagName(land)}));
     }
     for (&g.sim.lv.tile, 0..) |*t, i| if (t.* == .crop) {
         t.* = if (grid.Level.of(i).x < 21) .grass else .dirt;
     };
     studyLit(g, true, day.NOON);
-    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/mixed-day.png");
+    try capture(g, target, WATER_CLIFFS_DIR ++ "/mixed-day.png");
     for ([_]struct { hour: f32, name: []const u8 }{ .{ .hour = MORNING, .name = "morning" }, .{ .hour = EVENING, .name = "evening" } }) |sun| {
         studyLit(g, true, sun.hour);
         var path: [128]u8 = undefined;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/sun-{s}.png", .{sun.name}));
+        try capture(g, target, try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/sun-{s}.png", .{sun.name}));
         g.light.options.shadows = false;
         g.light.settle(&g.sim.lv);
-        try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/sun-{s}-off.png", .{sun.name}));
+        try capture(g, target, try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/sun-{s}-off.png", .{sun.name}));
         g.light.options.shadows = true;
         g.light.settle(&g.sim.lv);
     }
@@ -115,9 +117,9 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
         }
     }.of);
     studyLit(g, true, day.NOON);
-    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/stepped-depths.png");
+    try capture(g, target, WATER_CLIFFS_DIR ++ "/stepped-depths.png");
     poseWaterMirrors(g, day.NOON, true);
-    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/mirrors.png");
+    try capture(g, target, WATER_CLIFFS_DIR ++ "/mirrors.png");
     try checkWaterMirrors(g, target);
     try checkMapEdge(g, target);
 }
@@ -155,8 +157,8 @@ fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
         }
         if (different > 0) {
             if (missed == 0) {
-                if (!rl.exportImage(images[0], SHOTS_DIR ++ "/water-cliffs/caravan-shadow-culled.png")) return error.ExportFailed;
-                if (!rl.exportImage(images[1], SHOTS_DIR ++ "/water-cliffs/caravan-shadow-reference.png")) return error.ExportFailed;
+                try exportImage(images[0], WATER_CLIFFS_DIR ++ "/caravan-shadow-culled.png");
+                try exportImage(images[1], WATER_CLIFFS_DIR ++ "/caravan-shadow-reference.png");
             }
             std.debug.print("caravan culling torch {d},{d}: {d} differing pixels\n", .{ tx, ty, different });
             missed += different;
@@ -283,12 +285,12 @@ fn waterCliffTemplates(g: *game.Game) !void {
             rl.endTextureMode();
             var path: [128]u8 = undefined;
             const name = if (pass == .ground)
-                try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/template-{d}.png", .{n})
+                try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/template-{d}.png", .{n})
             else
-                try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/template-{d}-layer-{d}.png", .{ n, @intFromEnum(pass) });
+                try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/template-{d}-layer-{d}.png", .{ n, @intFromEnum(pass) });
             const img = try readTarget(target);
             defer rl.unloadImage(img);
-            if (!rl.exportImage(img, name)) return error.ExportFailed;
+            try exportImage(img, name);
         }
     }
 }
@@ -367,12 +369,12 @@ pub fn checkWaterSurface(g: *game.Game) !void {
     view.glints = gleam;
     const first = try waterSample(g, target, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(first);
-    if (!rl.exportImage(first, SHOTS_DIR ++ "/water-glints.png")) return error.ExportFailed;
+    try exportImage(first, SHOTS_DIR ++ "/water-glints.png");
     view.glints = dark;
     view.mirror = .{ .live = mirror.texture, .memory = blank };
     const second = try waterSample(g, target, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(second);
-    if (!rl.exportImage(second, SHOTS_DIR ++ "/water-mirror-mask.png")) return error.ExportFailed;
+    try exportImage(second, SHOTS_DIR ++ "/water-mirror-mask.png");
     var glinted = [_]usize{0} ** BANDS.len;
     var reflected = [_]usize{0} ** BANDS.len;
     var fixed: usize = 0;
@@ -469,7 +471,8 @@ pub fn checkWaterSurface(g: *game.Game) !void {
             }
         }
     }
-    if (swelling[0] < MIN_PIXELS or swelling[1] < MIN_PIXELS or moving < MIN_PIXELS) return error.WaterShimmerMissing;
+    for (swelling) |n| if (n < MIN_PIXELS) return error.WaterShimmerMissing;
+    if (moving < MIN_PIXELS) return error.WaterShimmerMissing;
     std.debug.print("water shimmer GPU: {d}/{d} deep/shallow highlight pixels swell, {d} move in {d} s; grass, memory and alpha untouched\n", .{ swelling[0], swelling[1], moving, SHIMMER_S });
 }
 

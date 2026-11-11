@@ -39,7 +39,7 @@ pub const Flight = struct {
 
     pub fn grounded(f: *const Flight, lv: *const grid.Level) ?P {
         const at = f.end() orelse return null;
-        if (f.struck != null or !(lv.at(at).solid() and lv.at(at).blind())) return at;
+        if (f.struck != null or !walled(lv.at(at))) return at;
         return if (f.len > 1) f.path[f.len - 2] else null;
     }
 
@@ -64,11 +64,15 @@ pub const Flight = struct {
         if (!grid.Level.inside(c) or f.len == f.most or lv.hasBarrier(c) or (!c.eq(to) and lv.at(c).blind())) return .stop;
         f.path[f.len] = c;
         f.len += 1;
-        if (lv.at(c).halts() or (lv.at(c).solid() and lv.at(c).blind())) return .last;
+        if (lv.at(c).halts() or walled(lv.at(c))) return .last;
         if (visible_only and !lv.isLit(c)) return .unseen;
         return .open;
     }
 };
+
+fn walled(t: grid.Tile) bool {
+    return t.solid() and t.blind();
+}
 
 /// `last`: a closed chest, which takes the missile whole; a mimic in it is struck.
 const Cell = enum { stop, unseen, open, last };

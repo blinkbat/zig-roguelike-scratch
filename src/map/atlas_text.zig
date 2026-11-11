@@ -146,6 +146,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
             .door => {
                 const nd = try lastNode(self);
                 const at = try cell(&f);
+                if (nd.doorAt(at) != null) return error.BadLine;
                 const k = self.addDoor(self.node_n - 1, at) orelse return error.TooMany;
                 if (f.peek() != null) nd.door[k].to = .{ .node = try int(usize, &f), .door = try int(usize, &f) };
             },
@@ -186,7 +187,12 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                 }
                 row += 1;
             },
-            .torch => if (!(try lastBespoke(self)).torch.add(try cell(&f))) return error.TooMany,
+            .torch => {
+                const torches = &(try lastBespoke(self)).torch;
+                const at = try cell(&f);
+                if (torches.has(at)) return error.BadLine;
+                if (!torches.add(at)) return error.TooMany;
+            },
             .foe => {
                 const b = try lastBespoke(self);
                 const k = try takeValue(actor.Kind, &f);

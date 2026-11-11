@@ -1003,7 +1003,7 @@ fn tableStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, t: script.Table
     const x: i32 = @intFromFloat(r.x);
     const y: i32 = @intFromFloat(r.y);
     indexStep(ed, g, widgets.row(x, y, w - widgets.STEP_W - GAP), all[slot.*].text(), slot, all.len, "Which one; names are kept in the Script page");
-    if (rightButton(ed, g, x + w, y, widgets.STEP_W, "+", all.len < Script.tableMax(t), "A new one, named for its kind; rename it in the Script page")) {
+    if (rightButton(ed, g, x + w, y, widgets.STEP_W, widgets.MORE, all.len < Script.tableMax(t), "A new one, named for its kind; rename it in the Script page")) {
         if (m.coin(t)) |i| {
             slot.* = i;
             ed.bank();
@@ -1153,7 +1153,7 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
         y += GAP;
         const all = m.names(t);
         countHeading(g, f.x, y, lw, comptime menu.capital(@tagName(t)) ++ "s", all.len, Script.tableMax(t));
-        if (rightButton(ed, g, f.x + lw - GAP, y, NAME_ADD_W, "+", all.len < Script.tableMax(t), "A new " ++ @tagName(t) ++ ", named for its kind")) {
+        if (rightButton(ed, g, f.x + lw - GAP, y, NAME_ADD_W, widgets.MORE, all.len < Script.tableMax(t), "A new " ++ @tagName(t) ++ ", named for its kind")) {
             if (m.coin(t)) |_| ed.bank();
         }
         y += STEP;

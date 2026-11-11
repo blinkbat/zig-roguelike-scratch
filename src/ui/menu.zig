@@ -124,7 +124,7 @@ pub fn boxed(r: rl.Rectangle, fill: rl.Color, edge: rl.Color) void {
 pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon.Prompt, label: [:0]const u8) void {
     boxed(r, look.PICK_BG, look.EDGE);
     const text_x = actionPrompt(face, r, prompt, 1);
-    const text_w = @as(i32, @intFromFloat(r.x + r.width)) - ACTION_PAD - text_x;
+    const text_w = raster.right(r) - ACTION_PAD - text_x;
     face.centred(label, text_x + @divTrunc(text_w, 2), raster.middleAt(r).y, font.BODY, look.TEXT);
 }
 

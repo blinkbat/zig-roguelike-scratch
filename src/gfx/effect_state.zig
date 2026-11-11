@@ -154,7 +154,7 @@ pub const Status = enum {
         return switch (s) {
             .warded => ward,
             .frightened, .resistant => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
-            else => resilience.module(comptime s.ailment().?),
+            else => resilience.module(comptime s.ailment().?).?,
         };
     }
 

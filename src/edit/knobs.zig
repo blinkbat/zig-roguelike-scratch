@@ -151,10 +151,10 @@ fn valueHit(ed: *editor.Editor, value: rl.Rectangle, tip: [:0]const u8) bool {
     return widgets.hoverHit(ed.controls(), value, false, tip).hit;
 }
 
-const DrawStep = struct { fmt: []const u8, tips: [2][:0]const u8, min: u8, max: u8 };
+const DrawStep = struct { fmt: []const u8, less: [:0]const u8, more: [:0]const u8, min: u8, max: u8 };
 const DRAW_STEPS = std.EnumArray(std.meta.Tag(pack.Draw), DrawStep).init(.{
-    .weight = .{ .fmt = "x{d}", .tips = .{ "Drawn less often against the others", "Drawn more often against the others" }, .min = pack.WEIGHT_MIN, .max = pack.WEIGHT_MAX },
-    .count = .{ .fmt = "={d}", .tips = .{ "One fewer of these packs", "One more of these packs" }, .min = pack.COUNT_MIN, .max = pack.COUNT_MAX },
+    .weight = .{ .fmt = "x{d}", .less = "Drawn less often against the others", .more = "Drawn more often against the others", .min = pack.WEIGHT_MIN, .max = pack.WEIGHT_MAX },
+    .count = .{ .fmt = "={d}", .less = "One fewer of these packs", .more = "One more of these packs", .min = pack.COUNT_MIN, .max = pack.COUNT_MAX },
 });
 
 fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bool) bool {
@@ -165,8 +165,8 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
         inline else => |*n, tag| {
             const s = comptime DRAW_STEPS.get(tag);
             bump(u8, n, stepper(ed, g, span, num(&buf, s.fmt, n.*), .{
-                .{ .tip = s.tips[0], .live = n.* > s.min },
-                .{ .tip = s.tips[1], .live = n.* < s.max },
+                .{ .tip = s.less, .live = n.* > s.min },
+                .{ .tip = s.more, .live = n.* < s.max },
             }));
         },
     }
@@ -270,8 +270,8 @@ const MakeupTool = enum {
     fn label(t: MakeupTool, w: Where) [:0]const u8 {
         return switch (t) {
             .where => w.label(),
-            .grow => "+",
-            .shrink => "-",
+            .grow => widgets.MORE,
+            .shrink => widgets.LESS,
             .drop => widgets.DROP,
         };
     }

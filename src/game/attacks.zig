@@ -44,7 +44,7 @@ pub const Rolled = struct {
     effect: item_bases.WeaponEffect = .{},
 
     pub fn physical(h: Rolled) Roll {
-        return .{ .dmg = h.blow.physical, .physical = h.blow.physical, .crit = h.crit, .effect = h.effect, .fire = h.blow.elements.get(.fire) };
+        return .{ .dmg = h.blow.physical, .physical = h.blow.physical, .crit = h.crit, .effect = h.effect, .fire = h.blow.elements.get(tactics.Imbue.IMBUES) };
     }
 
     /// Its whole blow past `resists`, armour still to take its physical part.
@@ -73,27 +73,12 @@ pub fn heroRollWith(rng: *mathx.Rng, sim: *const Simulation, comptime attack: at
 }
 
 fn imbuedScaled(rng: *mathx.Rng, sim: *const Simulation, attack: attrs.Attack, by: attrs.Attrs, style: attrs.Style, d: damage.Damage) Rolled {
+    const readied = sim.heroReadied();
     var fired = d;
-    fired.elements.getPtr(.fire).* += imbuedFire(rng, sim, attack);
+    if (readied.imbues(attack)) fired.elements.getPtr(tactics.Imbue.IMBUES).* +=tactics.Imbue.FIRE.roll(rng);
     var hit = scaled(rng, by, style, fired);
-    hit.effect = onHit(sim, attack);
+    hit.effect = sim.growth.onHit(sim.inventory.gear, attack, readied);
     return hit;
-}
-
-/// Imbue's fire on a melee blow, rolled before the blow scales; none while the weapon is not imbued.
-fn imbuedFire(rng: *mathx.Rng, sim: *const Simulation, attack: attrs.Attack) i32 {
-    return if (alight(sim, attack)) tactics.Imbue.FIRE.roll(rng) else 0;
-}
-
-fn alight(sim: *const Simulation, attack: attrs.Attack) bool {
-    const h = sim.heroBody() orelse return false;
-    return attack == .melee and h.tactics.imbue > 0;
-}
-
-fn onHit(sim: *const Simulation, attack: attrs.Attack) item_bases.WeaponEffect {
-    var out = sim.inventory.gear.onHit(attack);
-    if (alight(sim, attack)) out.burn += tactics.Imbue.ignites(sim.growth.ranks.get(.imbue));
-    return out;
 }
 
 pub fn heroMelee(sim: *Simulation) Roll {
@@ -116,7 +101,7 @@ pub fn heroScaled(sim: *Simulation, comptime act: skillbar.Act, raw: damage.Dama
 
 pub fn blowFor(sim: *const Simulation, comptime act: skillbar.Act) progress.Blow {
     comptime std.debug.assert(act.attack() != null);
-    return sim.growth.preparedBlow(sim.heroAttrs(), sim.inventory.gear, act, sim.heroSteady()).?;
+    return sim.growth.preparedBlow(sim.heroAttrs(), sim.inventory.gear, act, sim.heroReadied()).?;
 }
 
 pub fn basesFor(sim: *const Simulation, act: skillbar.Act) skillbar.EquippedBases {
@@ -233,8 +218,9 @@ pub const Outcome = union(enum) { miss, hit: Hit };
 pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chronicle.AttackOrigin) ?Outcome {
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
-    var r = raw.against(sim.combatStats(a).armour, &sim.rng);
-    r.dmg += damage.resisted(r.fire, sim.combatStats(a).elements.get(.fire));
+    const stats = sim.combatStats(a);
+    var r = raw.against(stats.armour, &sim.rng);
+    r.dmg += damage.resisted(r.fire, stats.elements.get(tactics.Imbue.IMBUES));
     r.fire = 0;
     r.dmg = blowOn(heroWeak(sim), r.opportunity orelse opportune(sim, a), &a.shock, r.dmg, r.applied);
     const kind = a.kind;
@@ -254,7 +240,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
             stunned = true;
         }
         inline for (IMBUED, affixes.IMBUES) |M, e| {
-            const chance = damage.resistedChance(r.effect.chance(M.AILMENT), sim.combatStats(a).elements.get(e));
+            const chance = damage.resistedChance(r.effect.chance(M.AILMENT), stats.elements.get(e));
             if (r.applied != M.AILMENT and sim.procStatus(a, M.AILMENT, chance)) {
                 M.afflict(a, &sim.rng);
                 imbued.insert(M.AILMENT);

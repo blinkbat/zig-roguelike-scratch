@@ -21,7 +21,7 @@ const glacial = @import("play/glacial.zig");
 const day = @import("map/day.zig");
 
 pub const MAGIC = "cistern-save\n";
-pub const VERSION: u64 = 2;
+const VERSION: u64 = 2;
 /// Runs saved before flasks were worn as items.
 const FLASKLESS: u64 = 1;
 const Code = wire.Codec(Policy);

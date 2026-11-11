@@ -91,7 +91,7 @@ test "thorns kills grant rewards and harvest after a shielded hit without blow r
     for ([_]bool{ false, true }) |lethal_hero| {
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
         g.sim.inventory.gear.slots.set(.chest, THORNS);
-        g.sim.inventory.gear.slots.set(.left_ring, harness.affixed(.ring, .{ .kind = .life_on_kill, .value = 2 }));
+        g.sim.inventory.gear.slots.set(.left_ring, harness.harvestRing());
         const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
         g.sim.pool.get(id).?.hp = 1;
         const hero = g.sim.heroActor().?;
@@ -109,7 +109,7 @@ test "thorns kills grant rewards and harvest after a shielded hit without blow r
             try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
             try std.testing.expect(g.sim.heroActor() == null);
         } else {
-            try std.testing.expectEqual(hp + 2, g.sim.heroActor().?.hp);
+            try std.testing.expectEqual(hp + harness.HARVEST_LIFE, g.sim.heroActor().?.hp);
             try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].thorns.?.recovery != null);
         }
         harness.stagger(g);

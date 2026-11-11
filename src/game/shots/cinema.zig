@@ -20,6 +20,7 @@ const readTarget = @import("capture.zig").readTarget;
 const redrawnDiff = @import("capture.zig").redrawnDiff;
 const renderTarget = @import("capture.zig").renderTarget;
 const sameRgb = @import("capture.zig").sameRgb;
+const targetAt = @import("capture.zig").targetAt;
 const MORNING = @import("poses.zig").MORNING;
 const NIGHT = @import("poses.zig").NIGHT;
 const POSE_ZAP = @import("poses.zig").POSE_ZAP;
@@ -119,13 +120,10 @@ fn checkCinema(g: *game.Game, target: rl.RenderTexture2D) !void {
         g.cinema.options = if (enabled) .{} else cinema.Options.off;
         std.debug.print("cinema {s}: {d:.3} ms mean headless draw over {d} frames\n", .{ if (enabled) "on" else "off", try meanDraw(g, target, 12, CINEMA_FRAMES), CINEMA_FRAMES });
     }
-    const screen = g.screen;
-    defer g.screen = screen;
-    for ([_]P{ game.SCREEN_720, game.SCREEN_1080, screen }) |size| {
-        g.screen = size;
-        const resized = try renderTarget(g);
-        defer rl.unloadRenderTexture(resized);
-        drawInto(g, resized);
+    for ([_]P{ game.SCREEN_720, game.SCREEN_1080, g.screen }) |size| {
+        const resized = try targetAt(g, size);
+        defer resized.close(g);
+        drawInto(g, resized.target);
         if (g.cinema.scene.?.texture.width != size.x or g.cinema.scene.?.texture.height != size.y or g.cinema.spread.?.texture.width != size.x or g.cinema.spread.?.texture.height != size.y) return error.CinemaResizeFailed;
     }
     std.debug.print("cinema targets: 720p, 1080p and restored dimensions checked\n", .{});

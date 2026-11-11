@@ -572,7 +572,7 @@ test "tactical regressions cover forced trap entries chest action cleanup and pr
     try std.testing.expect(g.sim.heroActor().?.tactics.overwatch == null);
     h.heroArena(g, .archer, from, &.{});
     g.sim.heroActor().?.tactics.steady = 3;
-    const preview = g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, .shoot, 3).?;
+    const preview = g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, .shoot, .{ .steady = 3 }).?;
     try std.testing.expectEqualDeep(attacks.blowFor(&g.sim, .shoot).hit(.shoot), preview);
 }
 
@@ -582,29 +582,27 @@ test "tactical reaction recovery waits for impact and Harvest restores life from
     const h = game.harness;
     const from = P{ .x = 20, .y = 20 };
     h.heroArena(g, .knight, from, &.{});
-    g.sim.inventory.gear.slots.set(.left_ring, game.harness.affixed(.ring, .{ .kind = .life_on_kill, .value = 2 }));
+    g.sim.inventory.gear.slots.set(.left_ring, h.harvestRing());
     game.syncStats(g);
     g.sim.heroActor().?.hp -= 10;
     const id = h.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
     game.settle(g);
     const before = g.sim.heroActor().?.hp;
     combat.reaction(g, id, .{ .dmg = 100 }, tactics.Unyielding.VERB, .{ .from = from, .wait = 0 }, id, null);
-    try std.testing.expectEqual(before + 2, g.sim.heroActor().?.hp);
+    try std.testing.expectEqual(before + h.HARVEST_LIFE, g.sim.heroActor().?.hp);
     g.pic.stepGlide(&g.sim, g.cloud, 0);
     g.pic.catchUp(&g.sim);
     try std.testing.expectEqual(before, g.pic.heroShown(&g.sim).?.hp);
     h.drawnOut(g);
-    try std.testing.expectEqual(before + 2, g.pic.heroShown(&g.sim).?.hp);
+    try std.testing.expectEqual(before + h.HARVEST_LIFE, g.pic.heroShown(&g.sim).?.hp);
     const bled = h.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
-    g.sim.pool.get(bled).?.hp = 1;
-    g.sim.pool.get(bled).?.bleed.startWith(2);
-    g.sim.pool.get(bled).?.bleed.fresh = false;
+    h.bleedingOut(g.sim.pool.get(bled).?);
     game.settle(g);
     game.harness.useAct(g, .wait);
     try std.testing.expect(g.sim.pool.get(bled) == null);
-    try std.testing.expectEqual(before + 4, g.sim.heroActor().?.hp);
+    try std.testing.expectEqual(before + 2 * h.HARVEST_LIFE, g.sim.heroActor().?.hp);
     h.drawnOut(g);
-    try std.testing.expectEqual(before + 4, g.pic.heroShown(&g.sim).?.hp);
+    try std.testing.expectEqual(before + 2 * h.HARVEST_LIFE, g.pic.heroShown(&g.sim).?.hp);
 }
 
 test "tactical overwatch reaction finishes before the next foe can expose its recovery" {
@@ -613,16 +611,14 @@ test "tactical overwatch reaction finishes before the next foe can expose its re
     const h = game.harness;
     const from = P{ .x = 20, .y = 20 };
     h.heroArena(g, .archer, from, &.{});
-    g.sim.inventory.gear.slots.set(.left_ring, game.harness.affixed(.ring, .{ .kind = .life_on_kill, .value = 2 }));
+    g.sim.inventory.gear.slots.set(.left_ring, h.harvestRing());
     game.syncStats(g);
     g.sim.heroActor().?.hp -= 10;
     const rat = h.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, true);
     g.sim.pool.get(rat).?.hp = 1;
     const bandit = h.spawnAt(g, .bandit_crossbowman, .{ .x = 24, .y = 21 }, true);
     const hidden = h.spawnAt(g, .rat, .{ .x = 40, .y = 20 }, false);
-    g.sim.pool.get(hidden).?.hp = 1;
-    g.sim.pool.get(hidden).?.bleed.startWith(2);
-    g.sim.pool.get(hidden).?.bleed.fresh = false;
+    h.bleedingOut(g.sim.pool.get(hidden).?);
     game.settle(g);
     h.aimAt(g, .overwatch, .{ .x = 25, .y = 20 });
     try std.testing.expect(g.pic.owed[actor.Pool.slot(rat)].reaction.?.recovery != null);

@@ -9,11 +9,10 @@ pub const Nearby = character_view.Nearby;
 pub const View = character_view.View;
 pub const Command = character_view.Command;
 pub const SIZE = layout.SIZE;
-pub const QUESTS_BOX = layout.AREA;
 
 pub fn journalOn(screen: P, face: font.Face, entries: []const quest_log.Entry) quest_log.Journal {
     const drawn = menu.Surface.of(screen, layout.SIZE).faceFor(face);
-    return quest_log.Journal.of(&drawn, entries, QUESTS_BOX);
+    return quest_log.Journal.of(&drawn, entries, layout.AREA);
 }
 pub const verifyCards = item_card.verify;
 pub const verifyStats = character_stats.verify;
@@ -428,9 +427,9 @@ pub const Book = struct {
             for (PAGES, 0..) |page, i| tab(face, layout.tabBox(i), page, self.page == page, view.device);
             if (self.treePanel() == null and self.page != .quests) divider(layout.CONTENT_TOP, layout.DIVIDER_FOOT);
             if (self.page == .quests) {
-                quest_log.draw(face, view.quests.entries, self.top, QUESTS_BOX);
+                quest_log.draw(face, view.quests.entries, self.top, layout.AREA);
             } else if (self.treePanel()) |panel| {
-                trees.draw(panel, face, sprites, view.class, view.growth, self.treeView(), view.device, .{ .stats = view.stats(), .gear = view.inventory.gear, .steady = view.steady }, on);
+                trees.draw(panel, face, sprites, view.class, view.growth, self.treeView(), view.device, .{ .stats = view.stats(), .gear = view.inventory.gear, .readied = view.readied }, on);
             } else if (self.page == .stats) {
                 if (self.advanced) character_stats.drawAdvanced(face, view) else character_stats.draw(face, view);
             } else {
@@ -795,7 +794,7 @@ test "the quests tab is chosen from the tabs, scrolls once entered, and backs ou
     var view = testView(&inv, &growth);
     const long = quest_log.Entry{ .title = "Quest", .asks = "a word " ** 40, .done = false };
     const entries = [_]quest_log.Entry{long} ** 12;
-    view.quests = quest_log.Journal.of(&menu.TestFace{}, &entries, QUESTS_BOX);
+    view.quests = quest_log.Journal.of(&menu.TestFace{}, &entries, layout.AREA);
     try std.testing.expect(view.quests.last_top > 1);
     const screen = display.WINDOW;
     var book = Book{ .page = .skills };

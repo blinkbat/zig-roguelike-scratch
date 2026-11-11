@@ -226,9 +226,9 @@ const TYPING_SET = blk: {
     break :blk set;
 };
 
-fn types(k: rl.KeyboardKey) bool {
+fn swallowed(typing: bool, k: rl.KeyboardKey) bool {
     const c = @intFromEnum(k);
-    return c >= 0 and c < TYPING_SET.capacity() and TYPING_SET.isSet(@intCast(c));
+    return typing and c >= 0 and c < TYPING_SET.capacity() and TYPING_SET.isSet(@intCast(c));
 }
 
 fn typingHeld() bool {
@@ -421,12 +421,13 @@ pub const State = struct {
 
     fn readPointer(self: *State, was_focused: bool) f32 {
         self.movePointer(if (rl.isCursorOnScreen()) mouseAt() else null, was_focused);
-        self.click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.left);
-        self.left_released = was_focused and self.pointer != null and rl.isMouseButtonReleased(.left);
-        self.right_click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.right);
-        self.middle_click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.middle);
-        self.dragging = was_focused and self.pointer != null and rl.isMouseButtonDown(.middle);
-        const wheel = if (self.pointer != null and was_focused) rl.getMouseWheelMove() else 0;
+        const over = was_focused and self.pointer != null;
+        self.click = over and rl.isMouseButtonPressed(.left);
+        self.left_released = over and rl.isMouseButtonReleased(.left);
+        self.right_click = over and rl.isMouseButtonPressed(.right);
+        self.middle_click = over and rl.isMouseButtonPressed(.middle);
+        self.dragging = over and rl.isMouseButtonDown(.middle);
+        const wheel = if (over) rl.getMouseWheelMove() else 0;
         self.scroll = self.wheel.notches(wheel);
         return wheel;
     }
@@ -451,7 +452,7 @@ pub const State = struct {
             }
             if (!alt_down) {
                 for (self.keysFor(b)) |k| {
-                    if (self.typing and types(k)) continue;
+                    if (swallowed(self.typing, k)) continue;
                     on = on or rl.isKeyPressed(k);
                     if (self.holdsByKeys(b)) hold = hold or rl.isKeyDown(k);
                 }
@@ -790,7 +791,7 @@ pub const Desk = struct {
         self.text_end = hit(TEXT_END);
         self.text_delete = repeated(TEXT_DELETE);
         self.text_all = ctrl and hit(TEXT_ALL);
-        self.paste_text = if (self.paste) rl.getClipboardText() else null;
+        self.paste_text = if (self.paste) clipboard() else null;
         self.nav = 0;
         for (NAV_KEYS, [2]i32{ -1, 1 }) |k, by| {
             if (repeated(k)) self.nav = by;
@@ -806,6 +807,12 @@ pub const Desk = struct {
             }
         }
         self.typed.read();
+    }
+
+    /// GLFW gives null when the clipboard holds no text, which raylib-zig's own wrapper would span.
+    fn clipboard() ?[:0]const u8 {
+        const p = rl.cdef.GetClipboardText();
+        return if (p == null) null else std.mem.span(p);
     }
 };
 
@@ -872,7 +879,7 @@ fn walkPressed(pad: ?i32, typing: bool, alt_down: bool) bool {
         if (pad) |at| if (w.pad) |b| if (rl.isGamepadButtonPressed(at, b)) return true;
         if (alt_down) continue;
         for (w.keys) |k| {
-            if (!(typing and types(k)) and rl.isKeyPressed(k)) return true;
+            if (!swallowed(typing, k) and rl.isKeyPressed(k)) return true;
         }
     }
     return false;
@@ -882,7 +889,7 @@ fn heldWalk(walks: []const Walk, typing: bool) mathx.P {
     var p = mathx.P{ .x = 0, .y = 0 };
     for (walks) |w| {
         for (w.keys) |k| {
-            if ((typing and types(k)) or !rl.isKeyDown(k)) continue;
+            if (swallowed(typing, k) or !rl.isKeyDown(k)) continue;
             p = p.add(w.d.delta());
             break;
         }
@@ -1094,7 +1101,7 @@ test "every direction walks on exactly one entry, and every bound key a name typ
     for (BUTTONS) |b| {
         for (b.keys()) |k| {
             const c = @intFromEnum(k);
-            if (c > ' ' and c <= '~') try std.testing.expect(types(k));
+            if (c > ' ' and c <= '~') try std.testing.expect(swallowed(true, k));
         }
     }
 }

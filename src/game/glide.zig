@@ -176,25 +176,27 @@ fn overshoot(k: f32) f32 {
 }
 
 test "two knocks queued behind a walk keep drawing the walk first" {
+    const FIRST_S: f32 = 0.13;
+    const SECOND_S: f32 = 0.41;
     const a = P{ .x = 4, .y = 4 };
     const walk = Glide.still(a, .hop).toward(.{ .x = 5, .y = 4 }, 0);
-    const first = walk.toward(.{ .x = 6, .y = 4 }, -0.13);
-    var second = first.toward(.{ .x = 7, .y = 4 }, -0.41);
+    const first = walk.toward(.{ .x = 6, .y = 4 }, -FIRST_S);
+    var second = first.toward(.{ .x = 7, .y = 4 }, -SECOND_S);
     var shown = walk;
     var at: f32 = 0;
     while (at < 0.6) : (at += 0.01) {
-        second.t = -0.41 + at;
-        const want = if (at < 0.13) blk: {
+        second.t = -SECOND_S + at;
+        const want = if (at < FIRST_S) blk: {
             shown.t = at;
             break :blk shown.now();
-        } else if (at < 0.41) blk: {
+        } else if (at < SECOND_S) blk: {
             var k = first;
-            k.t = -0.13 + at;
+            k.t = -FIRST_S + at;
             break :blk k.now();
         } else second.now();
         try std.testing.expectApproxEqAbs(want.x, second.now().x, 0.01);
         try std.testing.expectApproxEqAbs(want.y, second.now().y, 0.01);
     }
-    second.t = -0.41;
+    second.t = -SECOND_S;
     try std.testing.expectApproxEqAbs(cellPx(a).x, second.now().x, 0.01);
 }

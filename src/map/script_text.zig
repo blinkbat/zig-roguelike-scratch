@@ -53,7 +53,7 @@ pub fn firstWord(comptime w: anytype) []const u8 {
 
 pub fn write(s: *const Script, w: anytype) !void {
     inline for (comptime std.enums.values(script.Table)) |t| {
-        for (s.names(t)) |*nm| try w.print(@tagName(t) ++ " {s}\n", .{nm.text()});
+        for (s.names(t)) |*nm| try w.print(firstWord(t) ++ "{s}\n", .{nm.text()});
     }
     for (s.quests()) |*q| {
         try w.print(says(.quest) ++ "{s}", .{q.name.text()});
@@ -138,9 +138,9 @@ fn putAct(w: anytype, s: *const Script, comptime lead: Word, a: *const script.Ac
         .counter => try w.print(" {s} {s} {d}", .{ s.counter[a.slot].text(), @tagName(a.countop), a.n }),
         .timer => try w.print(" {s} {d}", .{ s.timer[a.slot].text(), a.n }),
         .wait => try w.print(" {d}", .{a.n}),
-        .quest => switch (a.questop) {
-            .stage => try w.print(" {s} stage {d}", .{ s.quest[a.slot].name.text(), a.n }),
-            .done => try w.print(" {s} done", .{s.quest[a.slot].name.text()}),
+        .quest => {
+            try w.print(" {s} {s}", .{ s.quest[a.slot].name.text(), @tagName(a.questop) });
+            if (a.questop == .stage) try w.print(" {d}", .{a.n});
         },
     }
     try w.writeByte('\n');

@@ -1001,7 +1001,7 @@ test "attribute damage and critical rolls reach melee, arrows, mixed arrows and 
             const raw = attacks.rollRaw(&expected_rng, c[1], attacks.basesFor(&g.sim, c[1]));
             const critical = c[0].attrs().crits(&expected_rng);
             criticals += @intFromBool(critical);
-            const expected = c[0].attrs().blow(comptime c[1].defaultStyle().?, raw, critical, &expected_rng).total(target.resists);
+            const expected = c[0].attrs().blow(comptime c[1].attack().?.defaultStyle(), raw, critical, &expected_rng).total(target.resists);
             harness.use(g, c[1]);
             try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
             skills.confirmAim(g);
@@ -1723,9 +1723,7 @@ test "a knocked rat's bleed lands once its knock slide has ended" {
     const i = harness.foeSlot(0);
     try std.testing.expectEqual(@as(i32, 24), rat.at.x);
     const bled = rat.hp;
-    g.st = .{};
-    var t: f32 = 0;
-    while (g.pic.pictured[i].hp != bled and t < 2) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
+    _ = harness.untilCaughtUp(g, &.{i});
     try std.testing.expectEqual(bled, g.pic.pictured[i].hp);
     try std.testing.expect(g.pic.glide[i].left() <= harness.TEST_TOL);
 }
