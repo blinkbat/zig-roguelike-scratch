@@ -72,6 +72,7 @@ pub const HOLDING_Y = CLOSE_Y + CLOSE_H + 4;
 pub const LOOT_TOP = HOLDING_Y + font.SMALL + DIRECT_GAP;
 pub const LOOT_ROWS = CARD_H / ROW_HEIGHT;
 pub const LOOT_FOOT_Y = LOOT_TOP + CARD_H + DIRECT_GAP;
+pub const LOOT_GOLD_GAP = 80;
 pub const LOOT_SIZE = P{ .x = WIDTH, .y = LOOT_FOOT_Y + ACTION_H + menu.PANEL_PAD };
 pub const REQUIREMENT_GAP = 10;
 pub const HELD_NOTE_DY = 42;

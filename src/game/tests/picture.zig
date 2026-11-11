@@ -22,20 +22,20 @@ const P = mathx.P;
 const HERO = actor.HERO;
 
 fn expectFadeAndRestore(g: *game.Game, i: usize, away: P) !void {
-    g.pic.ease(&g.sim, 0);
+    harness.ease(g, 0);
     try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
-    g.pic.ease(&g.sim, harness.FADING_S);
+    harness.ease(g, harness.FADING_S);
     try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 1);
-    for (0..harness.FADE_FRAMES) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    for (0..harness.FADE_FRAMES) |_| harness.ease(g, mathx.TEST_DT);
     try std.testing.expect(g.pic.occlusion[i] > harness.FADED);
     const hero = g.sim.heroSlot().?;
     g.sim.pool.move(&g.sim.lv, g.sim.hero, away);
-    g.pic.ease(&g.sim, harness.FADING_S);
+    harness.ease(g, harness.FADING_S);
     try std.testing.expect(g.pic.occlusion[i] > harness.FADED);
     g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
-    g.pic.ease(&g.sim, harness.FADING_S);
+    harness.ease(g, harness.FADING_S);
     try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < harness.FADED);
-    for (0..harness.FADE_FRAMES) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    for (0..harness.FADE_FRAMES) |_| harness.ease(g, mathx.TEST_DT);
     try std.testing.expect(g.pic.occlusion[i] < harness.UNFADED);
     g.pic.occlusion[i] = 1;
     game.settle(g);
@@ -47,8 +47,7 @@ test "large tree boughs fade with the pictured hero and only their base blocks" 
     defer game.shut(std.testing.allocator, g);
     const behind = P{ .x = 20, .y = 20 };
     const base = P{ .x = 20, .y = 21 };
-    harness.arena(g, behind, &.{});
-    harness.grassOver(&g.sim.lv);
+    harness.grassArena(g, behind, &.{});
     g.sim.lv.set(base, .large_tree);
     game.settle(g);
     const i = grid.Level.idx(base);
@@ -63,8 +62,7 @@ test "large trees fade around a drawn foe behind them but not an unseen one" {
     defer game.shut(std.testing.allocator, g);
     const seen = P{ .x = 24, .y = 20 };
     const unseen = P{ .x = 30, .y = 20 };
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{ seen, unseen });
-    harness.grassOver(&g.sim.lv);
+    harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{ seen, unseen });
     harness.wallIn(&g.sim.lv, .{ .x = 28, .y = 10 }, .{ .x = 28, .y = 30 });
     g.sim.lv.set(seen.add(.{ .x = 0, .y = 1 }), .large_tree);
     g.sim.lv.set(unseen.add(.{ .x = 0, .y = 1 }), .large_tree);
@@ -73,7 +71,7 @@ test "large trees fade around a drawn foe behind them but not an unseen one" {
     const far = grid.Level.idx(unseen.add(.{ .x = 0, .y = 1 }));
     try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(seen))) != null);
     try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(unseen))) == null);
-    for (0..harness.FADE_FRAMES) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    for (0..harness.FADE_FRAMES) |_| harness.ease(g, mathx.TEST_DT);
     try std.testing.expect(g.pic.occlusion[near] > harness.FADED);
     try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[far]);
     try std.testing.expectEqual([2]f32{ 24.5, 20.5 }, g.pic.occluder[near]);
@@ -83,8 +81,7 @@ test "sight blocking reeds use pictured hero occlusion within their own walkable
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 20, .y = 20 };
-    harness.arena(g, at, &.{});
-    harness.grassOver(&g.sim.lv);
+    harness.grassArena(g, at, &.{});
     g.sim.lv.set(at, .reeds);
     game.settle(g);
     const i = grid.Level.idx(at);
@@ -402,7 +399,7 @@ test "a foe stepping into the cell of a body still dying there sets off once tha
     _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), g.sim.pool.get(harness.foeId(0)).?.hp);
     const lands: f32 = 0.3;
     g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(dying), .at = cell, .lethal = true, .after = g.pic.afterOf(&g.sim, .fromIndex(dying)) } }, .{ .from = .{ .x = 20, .y = 20 }, .wait = lands });
-    g.sim.pool.move(&g.sim.lv, 3, cell);
+    g.sim.pool.move(&g.sim.lv, harness.foeId(1), cell);
     harness.staggerOnly(g, harness.foeId(1));
     var overlap: f32 = 0;
     var t: f32 = 0;
@@ -709,14 +706,14 @@ test "a body coming into sight fades in with its ground and shadow; one born in 
     const dt = mathx.FRAME_DT;
     g.sim.lv.lit[k] = false;
     g.light.visibility.snap(&g.sim.lv, false);
-    g.pic.ease(&g.sim, dt);
+    harness.ease(g, dt);
     try std.testing.expectEqual(@as(f32, 0), g.pic.sighted[i]);
     g.sim.lv.lit[k] = true;
     var first: f32 = 0;
     var frames: usize = 0;
     var apart: f32 = 0;
     while (g.pic.sighted[i] < 0.95) : (frames += 1) {
-        g.pic.ease(&g.sim, dt);
+        harness.ease(g, dt);
         g.light.visibility.step(&g.sim.lv, dt, false);
         if (frames == 0) first = g.pic.sighted[i];
         apart = @max(apart, @abs(g.pic.sighted[i] - g.light.visibility.sight[k]));
@@ -726,10 +723,10 @@ test "a body coming into sight fades in with its ground and shadow; one born in 
     try std.testing.expect(frames <= 15);
     g.sim.lv.lit[k] = false;
     g.pic.split_from[i] = g.sim.heroSlot().?;
-    g.pic.ease(&g.sim, dt);
+    harness.ease(g, dt);
     g.pic.split_from[i] = null;
     g.sim.lv.lit[k] = true;
-    g.pic.ease(&g.sim, dt);
+    harness.ease(g, dt);
     try std.testing.expectEqual(@as(f32, 1), g.pic.sighted[i]);
 }
 
@@ -814,7 +811,7 @@ test "a foe stepping out of sight takes its place in the turn" {
     const dark = ledge(g);
     game.castSight(g, .{ .x = 20, .y = 20 });
     try std.testing.expect(!g.sim.lv.isLit(dark));
-    g.sim.pool.move(&g.sim.lv, 2, dark);
+    g.sim.pool.move(&g.sim.lv, harness.foeId(0), dark);
     harness.staggerOnly(g, harness.foeId(0));
     try std.testing.expectApproxEqAbs(game.STAGGER_S, -g.pic.glide[rat].t, 1e-6);
 }
@@ -1124,7 +1121,7 @@ test "a foe the gas kills as it steps out of sight is drawn stepping out, not go
     const dark = ledge(g);
     game.castSight(g, .{ .x = 20, .y = 20 });
     try std.testing.expect(!g.sim.lv.isLit(dark));
-    g.sim.pool.move(&g.sim.lv, 2, dark);
+    g.sim.pool.move(&g.sim.lv, harness.foeId(0), dark);
     _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), actor.row(.rat).hp);
     g.pic.owed[rat].gassed = .{ .kill = true, .after = .{ .body = fx.Body.of(g.sim.pool.items[rat], 0) } };
     harness.staggerOnly(g, harness.foeId(0));

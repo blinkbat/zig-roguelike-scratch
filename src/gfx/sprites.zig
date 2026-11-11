@@ -511,6 +511,15 @@ pub const Sprites = struct {
     }
 };
 
+comptime {
+    for (std.meta.fields(Sprites)) |f| {
+        if (f.type != ?rl.Texture2D or @hasField(sprite_assets.Assets, f.name)) continue;
+        for ([_][]const u8{ "skills", "item_icons", "hud_border" }) |baked| {
+            if (std.mem.eql(u8, baked, f.name)) break;
+        } else @compileError("Sprites." ++ f.name ++ " has no Assets field, so sync never loads it");
+    }
+}
+
 const HUD_BORDER_PNG = sprite_assets.HUD_BORDER_PNG;
 pub const HUD_BORDER_CUT: i32 = 9;
 
@@ -520,7 +529,7 @@ fn hudPanel(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, fi
 }
 
 pub fn hudPanelIn(sprites: *const Sprites, r: rl.Rectangle, fill: rl.Color, tint: rl.Color) void {
-    hudPanel(sprites, @intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height), fill, tint);
+    hudPanel(sprites, raster.left(r), raster.top(r), raster.width(r), raster.height(r), fill, tint);
 }
 
 pub fn backing(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32) void {

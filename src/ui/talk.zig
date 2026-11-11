@@ -95,7 +95,7 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
         menu.band(r, on);
         const row = std.fmt.bufPrintZ(&buf, "{d}. {s}", .{ i + 1, label }) catch "";
         var fit_buf: [LINE_MAX]u8 = undefined;
-        face.text(face.fit(&fit_buf, row, font.BODY, l.text_w, false), l.text_x, @as(i32, @intFromFloat(r.y)) + @divTrunc(ROW_H - font.BODY, 2), font.BODY, menu.rowInk(on));
+        face.text(face.fit(&fit_buf, row, font.BODY, l.text_w, false), l.text_x, raster.top(r) + @divTrunc(ROW_H - font.BODY, 2), font.BODY, menu.rowInk(on));
     }
     menu.action(face, l.action, v.prompt, if (l.row_n > 0) "Choose" else "Continue");
 }

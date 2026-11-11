@@ -114,8 +114,7 @@ fn captureInspect(g: *game.Game) !void {
         const h = game.harness;
         const from = P{ .x = 20, .y = 20 };
         const at = P{ .x = 23, .y = 20 };
-        h.arena(g, from, &.{});
-        h.grassOver(&g.sim.lv);
+        h.grassArena(g, from, &.{});
         const id = h.spawnAt(g, .beefy_pib, at, true);
         g.sim.lv.set(at, .shallows);
         g.sim.lv.set(from, .reeds);
@@ -324,8 +323,7 @@ pub fn captureLoot(g: *game.Game) !void {
     const shot = try target720(g);
     defer shot.close(g);
     const target = shot.target;
-    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
     const bag = P{ .x = 19, .y = 20 };
     const chest = P{ .x = 21, .y = 20 };
     for ([_]item_bases.Kind{ .ring, .boots, .axe }) |kind| _ = g.sim.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null, null, null } }, .at = bag });
@@ -370,8 +368,7 @@ pub fn captureLoot(g: *game.Game) !void {
     for (0..18) |_| game.harness.nudge(g, .s);
     try capture(g, target, SHOTS_DIR ++ "/loot-dense-scrolled.png");
 
-    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{chest});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{chest});
     g.sim.loot_rng = game.harness.lootRng(true);
     game.settle(g);
     game.harness.slay(g, game.harness.foeId(0), g.sim.heroActor().?.at);
@@ -381,8 +378,7 @@ pub fn captureLoot(g: *game.Game) !void {
     game.character.openLoot(g, chest);
     try capture(g, target, SHOTS_DIR ++ "/loot-foe-blue.png");
 
-    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
     _ = g.sim.ground.gold(bag, BAG_GOLD);
     game.settle(g);
     try capture(g, target, SHOTS_DIR ++ "/loot-gold-only-ground.png");

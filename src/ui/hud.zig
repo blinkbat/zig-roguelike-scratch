@@ -194,8 +194,8 @@ pub fn statuses(layout: Layout, sprites: *const sprite.Sprites, face: *const fon
     for (shown, 0..) |s, k| {
         const turns = status.get(s);
         const box = statusBox(layout, shown.len, k);
-        const x: i32 = @intFromFloat(box.x);
-        const y: i32 = @intFromFloat(box.y);
+        const x = raster.left(box);
+        const y = raster.top(box);
         sprite.backingIn(sprites, box);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         if (s == .resistant) {
@@ -271,14 +271,14 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
     const first = @min(scroll, n - shown);
     const h = TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(shown)) * TIP_LINE;
     var x = centredOver(over, TIP_W, screen);
-    var y = above(@min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y), h);
+    var y = above(@min(raster.top(over), layout.top + STATUS_Y), h);
     if (over.y < @as(f32, @floatFromInt(layout.top)) and over.y < @as(f32, @floatFromInt(h + TIP_GAP + TIP_MARGIN))) {
         const right = raster.right(over) + TIP_GAP;
-        const left = @as(i32, @intFromFloat(over.x)) - TIP_GAP - TIP_W;
+        const left = raster.left(over) - TIP_GAP - TIP_W;
         const fits_right = right + TIP_W <= screen.x - TIP_MARGIN;
         if (fits_right or left >= TIP_MARGIN) {
             x = if (fits_right) right else left;
-            y = onScreen(@as(i32, @intFromFloat(over.y)) - @divTrunc(h, 2), h, screen.y);
+            y = onScreen(raster.top(over) - @divTrunc(h, 2), h, screen.y);
         }
     }
     sprite.backing(sprites, x, y, TIP_W, h);
@@ -300,7 +300,7 @@ pub fn prompt(face: *const font.Face, sprites: *const sprite.Sprites, screen: ma
     const w = face.width(text, font.BODY) + 2 * TIP_PAD;
     const h = font.BODY + 2 * TIP_PAD;
     const x = centredOver(over, w, screen);
-    const y = above(@intFromFloat(over.y), h);
+    const y = above(raster.top(over), h);
     sprite.backing(sprites, x, y, w, h);
     face.text(text, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
 }

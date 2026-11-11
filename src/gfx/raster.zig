@@ -8,8 +8,8 @@ pub fn whole(t: rl.Texture2D) rl.Rectangle {
     return rect(0, 0, t.width, t.height);
 }
 
-pub fn facing(t: rl.Texture2D, left: bool) rl.Rectangle {
-    return rect(0, 0, if (left) -t.width else t.width, t.height);
+pub fn facing(t: rl.Texture2D, leftward: bool) rl.Rectangle {
+    return rect(0, 0, if (leftward) -t.width else t.width, t.height);
 }
 
 pub fn sizeOf(t: rl.Texture2D) [2]f32 {
@@ -40,6 +40,22 @@ pub fn middle(r: rl.Rectangle) rl.Vector2 {
 pub fn middleAt(r: rl.Rectangle) mathx.P {
     const m = middle(r);
     return .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
+}
+
+pub fn left(r: rl.Rectangle) i32 {
+    return @intFromFloat(r.x);
+}
+
+pub fn top(r: rl.Rectangle) i32 {
+    return @intFromFloat(r.y);
+}
+
+pub fn width(r: rl.Rectangle) i32 {
+    return @intFromFloat(r.width);
+}
+
+pub fn height(r: rl.Rectangle) i32 {
+    return @intFromFloat(r.height);
 }
 
 pub fn right(r: rl.Rectangle) i32 {

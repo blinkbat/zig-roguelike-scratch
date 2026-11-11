@@ -79,7 +79,7 @@ pub const Inventory = struct {
 
     pub fn preview(self: *const Inventory, at: usize, slot: item_bases.Slot, base: attrs.Attrs) Failure!Gear {
         const after = try self.swapped(at, slot);
-        if (!after.valid(base)) return error.Requirements;
+        if (!after.validFrom(self.gear, base)) return error.Requirements;
         var n = self.n - 1;
         for (item_bases.SLOTS) |s| n += @intFromBool(self.displaced(after, slot, s));
         if (n > BAG_MAX) return error.Full;
@@ -103,7 +103,7 @@ pub const Inventory = struct {
         if (self.n == BAG_MAX) return error.Full;
         var after = self.gear;
         after.slots.set(slot, null);
-        if (!after.valid(base)) return error.Requirements;
+        if (!after.validFrom(self.gear, base)) return error.Requirements;
         std.debug.assert(self.add(it));
         self.gear = after;
     }
@@ -215,6 +215,20 @@ test "equipment failures preserve every carried item and the complete loadout" {
     const replacement = inv;
     try std.testing.expectError(error.Requirements, inv.equip(1, .left_ring, base));
     try expectInventoryUnchanged(&replacement, &inv);
+}
+
+test "gear already unmet on load comes off and does not block other slots" {
+    const weak = attrs.Attrs.of(.{ .strength = 12, .dexterity = 20, .intelligence = 10 });
+    var inv = Inventory{};
+    inv.gear.slots.set(.chest, .{ .kind = .mail });
+    inv.gear.slots.set(.helm, .{ .kind = .helmet });
+    try std.testing.expect(!inv.gear.valid(weak));
+    try std.testing.expect(inv.add(.{ .kind = .ring }));
+    try inv.equip(0, .left_ring, weak);
+    try inv.unequip(.chest, weak);
+    try inv.unequip(.helm, weak);
+    try std.testing.expect(inv.add(.{ .kind = .mail }));
+    try std.testing.expectError(error.Requirements, inv.equip(inv.n - 1, .chest, weak));
 }
 
 test "equipment swaps account for exact bag capacity and both displaced hands" {

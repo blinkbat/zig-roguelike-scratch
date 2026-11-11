@@ -118,10 +118,11 @@ const Chosen = struct { roll: attacks.Roll, takes: bool };
 /// A landing chosen blow through `a`'s armour, its ailment rolled first where `through` and the blow leaves it alive.
 fn chosenBlow(g: *game.Game, a: *actor.Actor, raw: attacks.Roll, comptime act: skillbar.Act, through: bool, resist: i16) Chosen {
     const M = skillbar.Act.skill(act);
-    var r = raw.against(g.sim.combatStats(a).armour, &g.sim.rng);
+    const stats = g.sim.combatStats(a);
+    var r = raw.against(stats.armour, &g.sim.rng);
     r.hit_checked = true;
     r.opportunity = attacks.opportune(&g.sim, a);
-    const takes = if (comptime act.afflicts()) attacks.afflicted(&g.sim, a, M, through and survives(&g.sim, a, r.dmg, M.AILMENT), resist) else false;
+    const takes = if (comptime act.afflicts()) attacks.afflicted(&g.sim, a, M, through and survives(&g.sim, a, r.burnt(stats.elements).dmg, M.AILMENT), resist) else false;
     if (comptime act.afflicts()) if (takes) {
         r.applied = M.AILMENT;
     };
@@ -536,12 +537,15 @@ fn finishTurnPicture(g: *game.Game) void {
 const Hurt = game.simulation.DamageResult;
 
 fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
-    gasTick(g, id, .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." });
-    gasTick(g, id, .scalded, .{ .hero = "The " ++ gas.STEAM_NAME ++ " scalds {s} for {d}." });
-    gasHeal(g, id);
-    scorch(g, id);
-    burnHarm(g, id);
-    bleedHarm(g, id, moved or g.sim.displaced.isSet(actor.Pool.slot(id)));
+    inline for (comptime std.enums.values(game.simulation.Tick)) |t| switch (t) {
+        .gassed => gasTick(g, id, .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." }),
+        .scalded => gasTick(g, id, .scalded, .{ .hero = "The " ++ gas.STEAM_NAME ++ " scalds {s} for {d}." }),
+        .healed => gasHeal(g, id),
+        .scorched => scorch(g, id),
+        .burned => burnHarm(g, id),
+        .bled => bleedHarm(g, id, moved or g.sim.displaced.isSet(actor.Pool.slot(id))),
+        .worn => {},
+    };
 }
 
 fn gasTick(g: *game.Game, id: u16, comptime tick: game.simulation.Tick, comptime said: Said) void {
@@ -699,7 +703,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
         } else if (besideWay(g, r.at, h.at)) |d| {
             reach(g, id, row, d.delta().x, null, af);
         }
-        if (r.fright == 0) g.sim.sayAt(r.at, "The {s} stops running.", .{row.name});
+        if (r.fright == 0 and r.alive) g.sim.sayAt(r.at, "The {s} stops running.", .{row.name});
         return;
     }
     if (groping) return;

@@ -154,7 +154,7 @@ fn connect(lv: *grid.Level, rng: *mathx.Rng) void {
         _ = grid.distances(lv, start, &dist, &queue);
         var orphan: ?P = null;
         for (0..grid.CELLS) |i| {
-            if (!lv.tile[i].solid() and dist[i] < 0) {
+            if (lv.openAt(i) and dist[i] < 0) {
                 orphan = grid.Level.of(i);
                 break;
             }

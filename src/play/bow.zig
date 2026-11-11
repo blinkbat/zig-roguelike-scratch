@@ -68,7 +68,23 @@ pub const Flight = struct {
         if (visible_only and !lv.isLit(c)) return .unseen;
         return .open;
     }
+
+    fn advance(f: *Flight, lv: *const grid.Level, seen: ?*const actor.Pool, ray: *grid.Ray, to: P, comptime visible_only: bool) ?Step {
+        while (ray.next()) |c| {
+            const cell = f.enter(lv, c, to, visible_only);
+            switch (cell) {
+                .stop => return null,
+                .unseen => continue,
+                .open, .last => {},
+            }
+            const w = lv.who(c);
+            return .{ .c = c, .cell = cell, .w = w, .body = if (w != grid.NO_ONE and !veiled(seen, w)) w else null };
+        }
+        return null;
+    }
 };
+
+const Step = struct { c: P, cell: Cell, w: u16, body: ?u16 };
 
 fn walled(t: grid.Tile) bool {
     return t.solid() and t.blind();
@@ -122,19 +138,12 @@ pub fn previewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to:
 fn trace(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, comptime visible_only: bool) Flight {
     var f = Flight{};
     var ray = grid.Ray.init(from, to);
-    while (ray.next()) |c| {
-        const cell = f.enter(lv, c, to, visible_only);
-        switch (cell) {
-            .stop => break,
-            .unseen => continue,
-            .open, .last => {},
-        }
-        const w = lv.who(c);
-        if (w != grid.NO_ONE and !veiled(seen, w)) {
-            f.struck = .{ .body = w };
+    while (f.advance(lv, seen, &ray, to, visible_only)) |s| {
+        if (s.body) |b| {
+            f.struck = .{ .body = b };
             break;
         }
-        if (cell == .last or f.prop(lv, c)) break;
+        if (s.cell == .last or f.prop(lv, s.c)) break;
     }
     return f;
 }
@@ -168,20 +177,13 @@ fn through(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, comp
     if (d == 0) return out;
     const f = &out.flight;
     var ray = grid.Ray.init(from, from.add(to.sub(from).scaled(@divFloor(RANGE + d - 1, d))));
-    while (ray.next()) |c| {
-        const cell = f.enter(lv, c, to, visible_only);
-        switch (cell) {
-            .stop => break,
-            .unseen => continue,
-            .open, .last => {},
-        }
-        const w = lv.who(c);
-        if (w != grid.NO_ONE and !veiled(seen, w)) {
-            out.body[out.n] = w;
+    while (f.advance(lv, seen, &ray, to, visible_only)) |s| {
+        if (s.body) |b| {
+            out.body[out.n] = b;
             out.step[out.n] = f.len - 1;
             out.n += 1;
-            if (cell == .last) break;
-        } else if (cell == .last or (w == grid.NO_ONE and f.prop(lv, c))) break;
+            if (s.cell == .last) break;
+        } else if (s.cell == .last or (s.w == grid.NO_ONE and f.prop(lv, s.c))) break;
     }
     if (f.struck == null and out.n > 0) f.struck = .{ .body = out.body[out.n - 1] };
     return out;

@@ -102,6 +102,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
             if (f.next() != null) return error.BadLine;
             continue;
         }
+        told.leave();
         const said = std.meta.stringToEnum(Word, word) orelse {
             const pg = try lastProcgen(self);
             if (pg.feature_n > 0) {
@@ -289,13 +290,6 @@ const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
 const COUNTED = @tagName(pack.Draw.count);
 const EXIT = "exit";
 
-fn takeWord(f: *Tokens, word: []const u8) bool {
-    const next = f.peek() orelse return false;
-    if (!std.mem.eql(u8, next, word)) return false;
-    _ = f.next();
-    return true;
-}
-
 fn takeLair(f: *Tokens) pack.Lair {
     const next = f.peek() orelse return .anywhere;
     const lair = std.meta.stringToEnum(pack.Lair, next) orelse return .anywhere;
@@ -461,6 +455,7 @@ fn takeValue(comptime T: type, f: *Tokens) Error!T {
 const int = script_text.int;
 const point = script_text.point;
 const cell = script_text.cell;
+const takeWord = script_text.takeWord;
 
 test "node names are read with their node and line, blank names skipped" {
     var it = NodeNames.of("roguelike-map 1\nnode bespoke\nname First room\r\nnode procgen wilds\nname   \nnode procgen open\n  name  Third  \n");
@@ -553,6 +548,14 @@ test "fresh map text refuses opened containers in terrain and generator choices"
     try std.testing.expectEqual(grid.Tile.chest, a.node[0].plan.bespoke.tile[0]);
     try a.parse(head ++ "node procgen open\nfeature scatter\ntile chest\n");
     try std.testing.expectEqual(grid.Tile.chest, a.node[0].plan.procgen.feature[0].scatter.tile);
+}
+
+test "a script line after a map line does not join the script entry before it" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const head = HEADER ++ "\nstart 0 5 5\nnode procgen open\ndialog talk\nline root\nsay Hello.\nnpc 0 far talk Pib\n";
+    try a.parse(head ++ "looks pib\n");
+    try std.testing.expectError(error.BadLine, a.parse(head ++ "node procgen open\nlooks pib\n"));
 }
 
 test "a map file with a one-way link, a door linked to itself, a stray word, a far box or a number not written plainly is refused" {

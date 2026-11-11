@@ -14,7 +14,6 @@ const raster = @import("../gfx/raster.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
 const knobs = @import("knobs.zig");
-const canvas = @import("canvas.zig");
 const modals = @import("modals.zig");
 const editor = @import("editor.zig");
 const text_panel = @import("text_panel.zig");
@@ -147,11 +146,10 @@ pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
     for (editor.FAMILIES) |f| {
         const label = menu.named(f);
         const r = tabs.take(@as(i32, @intFromFloat(TAB_PIC)) + widgets.GAP + widgets.labelW(&g.face, label, DETAIL));
-        const h = widgets.hot(ed.controls(), r, true, false, f.tip());
         widgets.buttonBack(r, true);
-        widgets.plate(r, ed.family == f, h.hot);
+        const h = widgets.plateHit(ed.controls(), r, ed.family == f, true, false, f.tip());
         const pic = widgets.pictureAt(r, @floatFromInt(widgets.GAP), TAB_PIC);
-        familyFigure(ed, g, f, pic);
+        toolIcon(ed, g, ed.family_tool.get(f), pic);
         widgets.textFace(&g.face).draw(label, widgets.rightX(pic) + widgets.GAP, tabs_y + widgets.DETAIL_DY, DETAIL, look.TEXT);
         if (h.hit) ed.openFamily(f);
     }
@@ -184,11 +182,8 @@ fn isPlot(ed: *const editor.Editor, page: editor.plot.Page) bool {
     };
 }
 
-fn familyFigure(ed: *editor.Editor, g: *game.Game, f: editor.Family, r: rl.Rectangle) void {
-    switch (f) {
-        .terrain => swatch(g, ed.ink.get(.first), r),
-        .props, .foes, .npc, .doors => toolFigure(g, ed.family_tool.get(f), r),
-    }
+fn toolIcon(ed: *editor.Editor, g: *game.Game, t: editor.Tool, r: rl.Rectangle) void {
+    if (t == .paint) swatch(g, ed.ink.get(.first), r) else toolFigure(g, t, r);
 }
 
 pub fn fileRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle) void {
@@ -280,11 +275,10 @@ fn toolRow(ed: *editor.Editor, g: *game.Game, col: Column, y: *i32, t: editor.To
     if (clippedH(ed, y.*, TOOL_ROW_H)) return;
     const r = raster.rect(col.left(), y.*, col.inner(), TOOL_ROW_H - widgets.GAP / 2);
     const live = t.fits(ed.here());
-    const h = widgets.hot(ed.controls(), r, live, false, if (live) t.tip() else editor.GENERATED);
-    widgets.plate(r, t.eql(ed.tool) and ed.shape != .select, h.hot);
+    const h = widgets.plateHit(ed.controls(), r, t.eql(ed.tool) and ed.shape != .select, live, false, if (live) t.tip() else editor.GENERATED);
     widgets.textFace(&g.face).draw(key, widgets.textX(r), widgets.midY(r, DETAIL), DETAIL, look.DIM);
     const pic = widgets.pictureAt(r, @floatFromInt(widgets.GAP + KEY_W), TOOL_PIC);
-    if (t == .paint) swatch(g, ed.ink.get(.first), pic) else toolFigure(g, t, pic);
+    toolIcon(ed, g, t, pic);
     const name_x = widgets.rightX(pic) + widgets.GAP * 2;
     widgets.drawFit(&g.face, t.name(), widgets.TEXT, widgets.rightX(r) - name_x - widgets.GAP, false, name_x, widgets.midY(r, widgets.TEXT), if (live) look.TEXT else look.DIM);
     if (!live) rl.drawRectangleRec(r, UNLIVE);
@@ -346,7 +340,7 @@ fn drawTerrain(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
     for (editor.INKS, 0..) |k, i| {
         const r = raster.rect(col.left() + editor.LABEL_W + @as(i32, @intCast(i)) * (SWATCH + widgets.GAP), widgets.midIn(y, widgets.ROW_H, SWATCH), SWATCH, SWATCH);
         swatch(g, ed.ink.get(k), r);
-        rl.drawRectangleLinesEx(r, canvas.INK_EDGE, INK_EDGES.get(k));
+        inkEdge(r, k);
         _ = widgets.hot(ed.controls(), r, true, false, INK_TIPS.get(k));
     }
     y += widgets.ROW_STEP + widgets.GAP;
@@ -356,7 +350,7 @@ fn drawTerrain(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
         const r = swatches.at(i);
         const h = widgets.hot(ed.controls(), r, true, false, PALETTE_TIPS.get(t));
         swatch(g, t, r);
-        if (inkOf(ed, t)) |k| rl.drawRectangleLinesEx(r, canvas.INK_EDGE, INK_EDGES.get(k)) else widgets.hoverEdge(r, h.hot);
+        if (inkOf(ed, t)) |k| inkEdge(r, k) else widgets.hoverEdge(r, h.hot);
         const second = h.hot and ed.desk.erase_hit;
         if (h.hit or second) {
             ed.ink.set(.of(second), t);
@@ -405,6 +399,10 @@ const INK_TIPS = std.EnumArray(editor.Ink, [:0]const u8).init(.{
     .first = "The first ink: " ++ Desk.PAINT_CAPTION ++ " paints it; " ++ Desk.PAINT_CAPTION ++ " on the palette picks it",
     .second = "The second ink: " ++ Desk.ERASE_CAPTION ++ " paints it; " ++ Desk.ERASE_CAPTION ++ " on the palette picks it",
 });
+
+fn inkEdge(r: rl.Rectangle, k: editor.Ink) void {
+    rl.drawRectangleLinesEx(r, widgets.INK_EDGE, INK_EDGES.get(k));
+}
 
 fn inkOf(ed: *const editor.Editor, t: grid.Tile) ?editor.Ink {
     for (editor.INKS) |k| {
@@ -475,9 +473,8 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
 
 fn nodeDropdown(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) bool {
     var buf: [widgets.LINE]u8 = undefined;
-    const h = widgets.hot(ed.controls(), r, true, false, "Open another node");
     widgets.buttonBackEdged(r, true, if (isPopup(ed, .node)) ON else widgets.LIVE_EDGE);
-    widgets.plate(r, false, h.hot);
+    const h = widgets.plateHit(ed.controls(), r, false, true, false, "Open another node");
     const y = widgets.midY(r, widgets.TEXT);
     const caret_w = widgets.drawRight(&g.face, DROP_CARET, widgets.TEXT, widgets.rightX(r), y, look.DIM);
     widgets.drawFit(&g.face, ed.nodeTitle(ed.node, &buf), widgets.TEXT, widgets.insetW(r) - caret_w - widgets.GAP, false, widgets.textX(r), y, look.TEXT);
@@ -487,8 +484,7 @@ fn nodeDropdown(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) bool {
 const DROP_CARET = "v";
 
 pub fn nodeRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, n: usize, modal: bool) bool {
-    const h = widgets.hot(ed.controls(), r, true, modal, "Open this node");
-    widgets.plate(r, n == ed.node, h.hot);
+    const h = widgets.plateHit(ed.controls(), r, n == ed.node, true, modal, "Open this node");
     const y: i32 = @intFromFloat(r.y);
     drawNodeTitle(ed, g, n, r, y + editor.TITLE_DY);
     drawNodeDetail(g, &ed.map.node[n], widgets.textX(r), y + editor.TITLE_DY + editor.NODE_DETAIL_DY);

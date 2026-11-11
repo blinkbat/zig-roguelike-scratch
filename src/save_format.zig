@@ -226,7 +226,7 @@ pub fn validate(snapshot: *Snapshot) !void {
         run.bar.modifier = null;
     };
     if (run.gold < 0 or run.mana < 0 or run.growth.level == 0) return error.Damaged;
-    if (run.growth.levelDue()) return error.Damaged;
+    _ = run.growth.gain(0);
     run.clock = day.Clock.at(run.clock.hour());
     run.mana_recovery = @mod(run.mana_recovery, hero.MANA_REGEN_TURNS);
     Policy.restoreStart(&run.growth, run.class);

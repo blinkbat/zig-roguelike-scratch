@@ -39,7 +39,7 @@ fn keyBox(screen: mathx.P, row: usize, col: usize) rl.Rectangle {
     const width: i32 = if (row < LETTERS.len) KEY_W else WIDE_W;
     const count: i32 = @intCast(Entry.width(row));
     const content = contentBox(screen);
-    return raster.rect(@as(i32, @intFromFloat(content.x)) + @divTrunc(GRID_W - count * width, 2) + @as(i32, @intCast(col)) * width, @as(i32, @intFromFloat(content.y)) + GRID_Y + @as(i32, @intCast(row)) * KEY_H, width, KEY_H);
+    return raster.rect(raster.left(content) + @divTrunc(GRID_W - count * width, 2) + @as(i32, @intCast(col)) * width, raster.top(content) + GRID_Y + @as(i32, @intCast(row)) * KEY_H, width, KEY_H);
 }
 
 fn contentBox(screen: mathx.P) rl.Rectangle {

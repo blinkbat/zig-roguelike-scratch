@@ -38,13 +38,13 @@ const DETAIL = rl.Rectangle{ .x = AREA.x + AREA.width - DETAIL_W, .y = AREA.y, .
 const WHEEL_TOP: f32 = 44;
 const WHEEL_FOOT: f32 = 44;
 const WHEEL = rl.Rectangle{ .x = CANVAS.x + @as(f32, @floatFromInt(INSET)), .y = CANVAS.y + WHEEL_TOP, .width = CANVAS.width - 2 * @as(f32, @floatFromInt(INSET)), .height = CANVAS.height - WHEEL_TOP - WHEEL_FOOT };
-const TEXT_X: i32 = @as(i32, @intFromFloat(DETAIL.x)) + INSET;
-const TEXT_W: i32 = @as(i32, @intFromFloat(DETAIL.width)) - 2 * INSET;
+const TEXT_X: i32 = raster.left(DETAIL) + INSET;
+const TEXT_W: i32 = raster.width(DETAIL) - 2 * INSET;
 const CANVAS_RIGHT: i32 = raster.right(CANVAS) - INSET;
-const CANVAS_LEFT: i32 = @as(i32, @intFromFloat(CANVAS.x)) + INSET;
-const CANVAS_TOP: i32 = @intFromFloat(CANVAS.y);
+const CANVAS_LEFT: i32 = raster.left(CANVAS) + INSET;
+const CANVAS_TOP: i32 = raster.top(CANVAS);
 const CANVAS_BOTTOM: i32 = raster.bottom(CANVAS);
-const DETAIL_TOP: i32 = @intFromFloat(DETAIL.y);
+const DETAIL_TOP: i32 = raster.top(DETAIL);
 const FOOT_MID: i32 = CANVAS_BOTTOM - @as(i32, @intFromFloat(WHEEL_FOOT)) / 2;
 const LEGEND_STEP: i32 = 140;
 const ZOOM_PX: i32 = 28;
@@ -74,7 +74,7 @@ const ARROW_CLEAR: i32 = 8;
 const PLAQUE_AT = P{ .x = 10, .y = 16 };
 const PLAQUE_W: i32 = 42;
 const PLAQUE_H: i32 = font.SMALL + 6;
-const SKILL_FOCUS_GROW: f32 = 5;
+const FOCUS_GROW: f32 = 5;
 const NAME_Y: i32 = DETAIL_TOP + 22;
 const RANK_Y: i32 = DETAIL_TOP + 56;
 const DESC_Y: i32 = DETAIL_TOP + 86;
@@ -93,7 +93,6 @@ const FOCUS = look.UI_FOCUS;
 const LINE = look.rgb(0x42413d);
 const OPEN_LINE = look.rgb(0x77705a);
 const NODE_HIT_GROW: f32 = 3;
-const NODE_FOCUS_GROW: f32 = 5;
 const NODE_KEEP_IN: f32 = 7;
 const OWNED_RING: f32 = 1;
 const CAPSTONE_RING: f32 = 3;
@@ -312,7 +311,7 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         const ink = skillInk(class, growth, s);
         rl.drawRectangleRec(box, TILE);
         rl.drawRectangleLinesEx(box, 2, ink);
-        if (i == cursor and view.focused) rl.drawRectangleLinesEx(raster.grown(box, SKILL_FOCUS_GROW), 2, FOCUS);
+        if (i == cursor and view.focused) rl.drawRectangleLinesEx(raster.grown(box, FOCUS_GROW), 2, FOCUS);
         line_icons.drawSkill(sprites, s.act, mid.x - line_icons.SKILL_PX / 2, mid.y - line_icons.SKILL_PX / 2, skillAlpha(class, growth, s));
         const plaque = raster.rect(mid.x + PLAQUE_AT.x, mid.y + PLAQUE_AT.y, PLAQUE_W, PLAQUE_H);
         menu.boxed(plaque, BACK, ink);
@@ -555,12 +554,16 @@ const NodeState = enum {
         return if (growth.nodes.isSet(i)) .allocated else if (growth.available(i)) .reachable else .distant;
     }
 
-    fn ink(self: NodeState) rl.Color {
+    fn standing(self: NodeState) SkillState {
         return switch (self) {
-            .allocated => OWNED,
-            .reachable => AVAILABLE,
-            .distant => LOCKED,
+            .allocated => .learned,
+            .reachable => .available,
+            .distant => .locked,
         };
+    }
+
+    fn ink(self: NodeState) rl.Color {
+        return self.standing().ink();
     }
 };
 
@@ -583,7 +586,7 @@ const Positions = [passives.N]rl.Vector2;
 
 fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progress.State, view: View, surface: menu.Surface, device: input.Device) void {
     backdrop(CANVAS);
-    rl.drawLine(@intFromFloat(DETAIL.x), DETAIL_TOP, @intFromFloat(DETAIL.x), CANVAS_BOTTOM, BORDER);
+    rl.drawLine(raster.left(DETAIL), DETAIL_TOP, raster.left(DETAIL), CANVAS_BOTTOM, BORDER);
     drawPoints(face, growth.passive_points, false);
     const layout = wheelLayout(view);
     var pos: Positions = undefined;
@@ -597,7 +600,7 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
     for (passives.NODES, 0..) |n, i| {
         const p = pos[i];
         const r = nodeRadius(i, layout.unit);
-        if (!layout.shows(p, p, r + NODE_FOCUS_GROW)) continue;
+        if (!layout.shows(p, p, r + FOCUS_GROW)) continue;
         const state = NodeState.of(growth, i);
         const ink = nodeInk(state, n.arm);
         if (state == .allocated) {
@@ -615,7 +618,7 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
             for ([_]f32{ -SEAM_MARK.y, SEAM_MARK.y }) |dy| rl.drawLineEx(.{ .x = p.x - SEAM_MARK.x, .y = p.y + dy }, .{ .x = p.x + SEAM_MARK.x, .y = p.y + dy }, 1, if (state == .allocated) BACK else armInk(s.to()));
         }
     }
-    if (view.focused) ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + NODE_FOCUS_GROW, FOCUS);
+    if (view.focused) ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + FOCUS_GROW, FOCUS);
     rl.endScissorMode();
     for ([_]bool{ false, true }) |increase| {
         const enabled = if (increase) view.zoom < ZOOM_MAX else view.zoom > ZOOM_MIN;
@@ -711,7 +714,7 @@ test "passive diagram fits all nodes and retains its selected node through zoom"
     const layout = wheelLayout(.{});
     for (passives.NODES, 0..) |_, i| {
         const p = layout.at(i);
-        const r = nodeRadius(i, layout.unit) + NODE_FOCUS_GROW;
+        const r = nodeRadius(i, layout.unit) + FOCUS_GROW;
         try std.testing.expect(p.x - r >= layout.box.x and p.y - r >= layout.box.y);
         try std.testing.expect(p.x + r <= layout.box.x + layout.box.width and p.y + r <= layout.box.y + layout.box.height);
         for (0..i) |j| {
@@ -723,7 +726,7 @@ test "passive diagram fits all nodes and retains its selected node through zoom"
             const view = View{ .cursor = i, .zoom = zoom };
             const zoomed = wheelLayout(view);
             const at = zoomed.at(i);
-            const radius = nodeRadius(i, zoomed.unit) + NODE_FOCUS_GROW;
+            const radius = nodeRadius(i, zoomed.unit) + FOCUS_GROW;
             try std.testing.expect(at.x - radius >= zoomed.box.x and at.y - radius >= zoomed.box.y);
             try std.testing.expect(at.x + radius <= zoomed.box.x + zoomed.box.width and at.y + radius <= zoomed.box.y + zoomed.box.height);
             const hit = cellBox(.passives, .knight, i, view);

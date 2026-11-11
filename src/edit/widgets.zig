@@ -38,6 +38,7 @@ pub const STEP_W: i32 = 30;
 pub const STEP_PITCH: i32 = STEP_W + GAP;
 pub const DROP = "x";
 pub const SCROLL_W: i32 = 3;
+pub const INK_EDGE: f32 = 2;
 pub const NO_BOX = rl.Rectangle{ .x = 0, .y = 0, .width = 0, .height = 0 };
 const WHEEL_PX: i32 = ROW_H;
 const THUMB_MIN: f32 = 24;
@@ -46,7 +47,7 @@ pub const PANEL_BG = look.EDIT_PANEL;
 pub const ROW_ON = look.EDIT_ROW_ON;
 pub const ON = look.EDIT_ON;
 pub const HOVER = look.EDIT_HOVER;
-const LIVE_FILL =look.fade(ROW_ON, 0.5);
+const LIVE_FILL = look.fade(ROW_ON, 0.5);
 const DEAD_FILL = look.fade(ROW_ON, 0.2);
 pub const LIVE_EDGE = look.fade(look.EDGE, 0.85);
 const DEAD_EDGE = look.fade(look.EDGE, 0.35);
@@ -88,9 +89,8 @@ fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: 
 }
 
 pub fn buttonSized(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, size: i32, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
-    const h = hot(controls, r, live, modal, tip);
     buttonBack(r, live);
-    plate(r, on, h.hot);
+    const h = plateHit(controls, r, on, live, modal, tip);
     drawFit(face, label, size, insetW(r), false, textX(r), midY(r, size), if (live) look.TEXT else look.DIM);
     return h.hit;
 }
@@ -105,8 +105,7 @@ pub fn buttonBackEdged(r: rl.Rectangle, live: bool, edge: rl.Color) void {
 }
 
 pub fn flatButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, ink: rl.Color, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
-    const h = hot(controls, r, live, modal, tip);
-    plate(r, on, h.hot);
+    const h = plateHit(controls, r, on, live, modal, tip);
     drawFit(face, label, DETAIL, insetW(r), false, textX(r), @as(i32, @intFromFloat(r.y)) + DETAIL_DY, ink);
     return h.hit;
 }
@@ -194,6 +193,12 @@ pub fn hoverEdge(r: rl.Rectangle, hot_: bool) void {
 pub fn hoverHit(controls: Controls, r: rl.Rectangle, modal: bool, tip: ?[:0]const u8) Hot {
     const h = hot(controls, r, true, modal, tip);
     hoverEdge(r, h.hot);
+    return h;
+}
+
+pub fn plateHit(controls: Controls, r: rl.Rectangle, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) Hot {
+    const h = hot(controls, r, live, modal, tip);
+    plate(r, on, h.hot);
     return h;
 }
 
@@ -498,6 +503,10 @@ const Page = struct {
 
     pub fn column(p: Page) Column {
         return .{ .x = p.frame.x, .w = p.frame.w };
+    }
+
+    pub fn foot(p: Page) i32 {
+        return p.bottom - ROW_H;
     }
 };
 

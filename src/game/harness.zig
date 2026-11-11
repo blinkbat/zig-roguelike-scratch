@@ -41,7 +41,12 @@ pub fn heroArena(g: *game.Game, c: heroes.Class, hero: P, rats: []const P) void 
     game.settle(g);
 }
 
-fn rngWhere(want: anytype) mathx.Rng {
+pub fn grassArena(g: *game.Game, hero: P, rats: []const P) void {
+    arena(g, hero, rats);
+    grassOver(&g.sim.lv);
+}
+
+pub fn rngWhere(want: anytype) mathx.Rng {
     var seed: u64 = 0;
     while (true) : (seed += 1) {
         var rng = mathx.Rng.init(seed);
@@ -328,12 +333,15 @@ pub fn barrelRng(item: bool) mathx.Rng {
     return rngWhere(Barrel{ .item = item });
 }
 
+pub const LETHAL_DMG: i32 = 1000;
+pub const SLAY_WAIT_S: f32 = 0.2;
+
 pub fn slay(g: *game.Game, id: u16, from: P) void {
-    combat.wound(g, id, .{ .dmg = 1000 }, combat.SHOOT, .{ .from = from, .wait = 0.2 });
+    combat.wound(g, id, .{ .dmg = LETHAL_DMG }, combat.SHOOT, .{ .from = from, .wait = SLAY_WAIT_S });
 }
 
 pub fn kill(g: *game.Game, id: u16, from: P, wait: f32) void {
-    combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = wait });
+    combat.wound(g, id, .{ .dmg = LETHAL_DMG, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = wait });
 }
 
 pub fn meleeThenFoeAttacks(g: *const game.Game, target: u16, attackers: []const u16) mathx.Rng {
@@ -350,13 +358,9 @@ pub fn meleeThenFoeAttacks(g: *const game.Game, target: u16, attackers: []const 
             const target_actor = combatant(s.g, s.target);
             if (s.g.sim.combatStats(hero).misses(s.g.sim.combatStats(target_actor), rng)) return false;
             _ = hit.against(s.g.sim.combatStats(target_actor).armour, rng);
-            for (s.attackers, 0..) |id, i| {
-                const a = combatant(s.g, id);
-                const strike = actor.row(a.kind).blow.strike;
-                const dmg = attacks.foeRoll(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(hero), strike) orelse return false;
-                if (i + 1 < s.attackers.len) armourBefore(s.g, strike, s.g.sim.combatStats(hero).armour, dmg, rng);
-            }
-            return true;
+            var landing: [actor.MAX]FoeAttack = undefined;
+            for (s.attackers, landing[0..s.attackers.len]) |id, *b| b.* = .{ .id = id, .lands = true };
+            return foeAttacksHold(s.g, hero.at, landing[0..s.attackers.len], rng);
         }
     };
     return rngWhere(Sequence{ .g = g, .target = target, .attackers = attackers });
@@ -391,23 +395,35 @@ pub const FADE_FRAMES = 120;
 pub const FADED: f32 = 0.99;
 pub const UNFADED: f32 = 0.01;
 
-pub fn framesUntil(g: *game.Game, slot: usize, comptime done: fn (*game.Game, usize) bool) f32 {
+const UNTIL_CAP_S: f32 = 1;
+const DRAWN_OUT_CAP_S: f32 = 2;
+
+fn framesWhile(g: *game.Game, cap: f32, ctx: anytype) f32 {
     g.st = .{};
     var t: f32 = 0;
-    while (!done(g, slot) and t < 1) : (t += TEST_DT) game.update(g, TEST_DT);
+    while (t < cap and !ctx.met(g)) : (t += TEST_DT) game.update(g, TEST_DT);
     return t;
+}
+
+pub fn framesUntil(g: *game.Game, slot: usize, comptime done: fn (*game.Game, usize) bool) f32 {
+    const Until = struct {
+        slot: usize,
+        fn met(u: @This(), run: *game.Game) bool {
+            return done(run, u.slot);
+        }
+    };
+    return framesWhile(g, UNTIL_CAP_S, Until{ .slot = slot });
 }
 
 pub fn untilCaughtUp(g: *game.Game, slots: []const usize) f32 {
-    g.st = .{};
-    var t: f32 = 0;
-    while (t < 1 and !allCaughtUp(g, slots)) : (t += TEST_DT) game.update(g, TEST_DT);
-    return t;
-}
-
-fn allCaughtUp(g: *game.Game, slots: []const usize) bool {
-    for (slots) |s| if (!caughtUp(g, s)) return false;
-    return true;
+    const AllCaughtUp = struct {
+        slots: []const usize,
+        fn met(a: @This(), run: *game.Game) bool {
+            for (a.slots) |s| if (!caughtUp(run, s)) return false;
+            return true;
+        }
+    };
+    return framesWhile(g, UNTIL_CAP_S, AllCaughtUp{ .slots = slots });
 }
 
 pub fn idleFor(g: *game.Game, secs: f32) void {
@@ -470,9 +486,16 @@ pub fn expectGroundShown(g: *game.Game) !void {
 }
 
 pub fn drawnOut(g: *game.Game) void {
-    g.st = .{};
-    var t: f32 = 0;
-    while (t < 2 and (g.pic.busy > 0 or turningAny(g))) : (t += TEST_DT) game.update(g, TEST_DT);
+    const Settled = struct {
+        fn met(_: @This(), run: *game.Game) bool {
+            return !(run.pic.busy > 0 or turningAny(run));
+        }
+    };
+    _ = framesWhile(g, DRAWN_OUT_CAP_S, Settled{});
+}
+
+pub fn ease(g: *game.Game, dt: f32) void {
+    g.pic.easeOver(&g.sim, g.pic.groundShown(&g.sim), dt);
 }
 
 fn turningAny(g: *game.Game) bool {

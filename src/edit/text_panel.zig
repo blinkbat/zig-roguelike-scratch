@@ -500,7 +500,7 @@ pub fn poseContext(ed: *editor.Editor, context: []const u8) !void {
 
 pub fn requestClose(ed: *editor.Editor, quit: bool) void {
     const s = &ed.words;
-    s.leave = if (quit) .quit else .close;
+    s.leave = if (quit or s.leave == .quit) .quit else .close;
     if (s.dirty()) return;
     finishClose(ed);
 }
@@ -508,8 +508,7 @@ pub fn requestClose(ed: *editor.Editor, quit: bool) void {
 fn finishClose(ed: *editor.Editor) void {
     const leave = ed.words.leave orelse return;
     ed.words.leave = null;
-    ed.modal = .none;
-    ed.fresh = true;
+    ed.closeModal();
     if (leave == .quit) ed.request(.quit);
 }
 
@@ -581,14 +580,8 @@ pub fn keys(ed: *editor.Editor) void {
         } else if (raster.holds(s.list_box, d.mouse)) s.top = widgets.scrollTop(s.top, by, n, s.rows);
     }
     if (d.nav != 0 and s.focus == .search and n > 0) {
-        var at: usize = 0;
-        var found = false;
-        for (s.results.items, 0..) |i, ordinal| if (s.selected == i) {
-            at = ordinal;
-            found = true;
-            break;
-        };
-        const next = if (found) mathx.wrap(at, d.nav, n) else if (d.nav < 0) n - 1 else 0;
+        const at = if (s.selected) |sel| std.mem.indexOfScalar(usize, s.results.items, sel) else null;
+        const next = if (at) |a| mathx.wrap(a, d.nav, n) else if (d.nav < 0) n - 1 else 0;
         if (s.pick(s.results.items[next])) s.top = mathx.reveal(s.top, next, s.rows);
     }
 }
@@ -678,8 +671,7 @@ fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8,
     const y = @as(i32, @intFromFloat(s.nav_box.y)) + @as(i32, @intCast(ordinal - s.nav_top)) * NAV_ROW;
     const w: i32 = @intFromFloat(s.nav_box.width);
     const r = raster.rect(x, y, w - widgets.GAP, NAV_ROW - BUTTON_GAP);
-    const h = widgets.hot(ed.controls(), r, s.leave == null, true, null);
-    widgets.plate(r, on, h.hot);
+    const h = widgets.plateHit(ed.controls(), r, on, s.leave == null, true, null);
     var buf: [32]u8 = undefined;
     const number = std.fmt.bufPrintZ(&buf, "{d}", .{count}) catch "";
     const number_w = widgets.drawRight(&g.face, number, DETAIL, x + w - widgets.GAP, y + LEAD, look.DIM);
@@ -700,39 +692,48 @@ fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bot
     s.nav_box = raster.rect(x, yy, w, @max(0, bottom - yy));
     s.nav_rows = widgets.rowsIn(bottom - yy, NAV_ROW);
     var count: usize = 0;
-    var previous: []const u8 = "";
-    for (s.groups.items) |group| {
-        if (group.matches == 0) continue;
-        if (s.category) |category| {
-            if (std.mem.eql(u8, category, group.category)) count += 1;
-        } else if (!std.mem.eql(u8, previous, group.category)) {
-            count += 1;
-            previous = group.category;
-        }
-    }
+    var counted = NavEntries{ .groups = s.groups.items, .category = s.category };
+    while (counted.next()) |_| count += 1;
     s.nav_count = count;
     s.nav_top = widgets.clampTop(s.nav_top, count, s.nav_rows);
+    var entries = NavEntries{ .groups = s.groups.items, .category = s.category };
     var ordinal: usize = 0;
-    if (s.category) |category| {
-        for (s.groups.items) |group| {
-            if (group.matches == 0 or !std.mem.eql(u8, category, group.category)) continue;
-            const on = if (s.owner) |owner| std.mem.eql(u8, owner, group.owner) else false;
-            if (navItem(ed, g, ordinal, group.owner, group.matches, on)) s.scope(category, group.owner);
-            ordinal += 1;
-        }
-    } else {
-        var at: usize = 0;
-        while (at < s.groups.items.len) {
-            const category = s.groups.items[at].category;
-            var matches: usize = 0;
-            while (at < s.groups.items.len and std.mem.eql(u8, category, s.groups.items[at].category)) : (at += 1) matches += s.groups.items[at].matches;
-            if (matches == 0) continue;
-            if (navItem(ed, g, ordinal, category, matches, false)) s.scope(category, null);
-            ordinal += 1;
-        }
+    while (entries.next()) |e| : (ordinal += 1) {
+        const category = entries.category orelse {
+            if (navItem(ed, g, ordinal, e.label, e.matches, false)) s.scope(e.label, null);
+            continue;
+        };
+        const on = if (s.owner) |owner| std.mem.eql(u8, owner, e.label) else false;
+        if (navItem(ed, g, ordinal, e.label, e.matches, on)) s.scope(category, e.label);
     }
     widgets.scrollbarIn(s.nav_box, s.nav_top, s.nav_rows, s.nav_count);
 }
+
+const NavEntry = struct { label: []const u8, matches: usize };
+
+const NavEntries = struct {
+    groups: []const Group,
+    category: ?[]const u8,
+    at: usize = 0,
+
+    fn next(it: *NavEntries) ?NavEntry {
+        if (it.category) |category| {
+            while (it.at < it.groups.len) {
+                const group = it.groups[it.at];
+                it.at += 1;
+                if (group.matches > 0 and std.mem.eql(u8, category, group.category)) return .{ .label = group.owner, .matches = group.matches };
+            }
+            return null;
+        }
+        while (it.at < it.groups.len) {
+            const category = it.groups[it.at].category;
+            var matches: usize = 0;
+            while (it.at < it.groups.len and std.mem.eql(u8, category, it.groups[it.at].category)) : (it.at += 1) matches += it.groups[it.at].matches;
+            if (matches > 0) return .{ .label = category, .matches = matches };
+        }
+        return null;
+    }
+};
 
 pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.words;
@@ -778,8 +779,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
             const e = c.entries()[i];
             const yy = list_y + @as(i32, @intCast(at)) * ENTRY_H;
             const r = raster.rect(list_x, yy, list_w - widgets.GAP, ENTRY_H - widgets.GAP);
-            const h = widgets.hot(ed.controls(), r, s.leave == null, true, null);
-            widgets.plate(r, s.selected == i, h.hot);
+            const h = widgets.plateHit(ed.controls(), r, s.selected == i, s.leave == null, true, null);
             widgets.drawFit(&g.face, e.role, TEXT, entry_w, false, list_x + widgets.GAP, yy + ROW_INSET, if (s.selected == i) look.UI_GOLD else look.TEXT);
             widgets.drawFit(&g.face, e.owner, DETAIL, entry_w, false, list_x + widgets.GAP, yy + LINE_H, look.DIM);
             var snippet: [SNIPPET_MAX]u8 = undefined;

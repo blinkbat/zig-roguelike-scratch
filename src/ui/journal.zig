@@ -41,9 +41,9 @@ pub fn box(screen: mathx.P) rl.Rectangle {
 }
 pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: mathx.P, log: *const Log) void {
     const r = box(screen);
-    const x: i32 = @intFromFloat(r.x);
-    const y: i32 = @intFromFloat(r.y);
-    const w: i32 = @intFromFloat(r.width);
+    const x = raster.left(r);
+    const y = raster.top(r);
+    const w = raster.width(r);
     if (sprites.log_fade) |fade| {
         rl.beginShaderMode(fade.shader);
         shaders.setUniform(fade.shader, fade.bounds, [2]f32{ @floatFromInt(screen.y - y - BOX_H), @floatFromInt(screen.y - y) });

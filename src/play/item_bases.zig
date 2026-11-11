@@ -142,9 +142,8 @@ pub const WeaponEffect = struct {
     }
 
     pub fn imbue(self: *WeaponEffect, e: damage.Element, n: u32) void {
-        switch (affixes.imbued(e)) {
-            inline .burn, .chill, .shock => |t| @field(self, @tagName(t)) += n,
-            else => unreachable,
+        switch (e) {
+            inline else => |el| @field(self, @tagName(affixes.imbued(el))) += n,
         }
     }
 };

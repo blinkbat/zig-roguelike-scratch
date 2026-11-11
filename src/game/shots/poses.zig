@@ -56,8 +56,7 @@ const cinemaWater = @import("cinema.zig").cinemaWater;
 
 fn captureCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     const h = game.harness;
-    h.arena(g, .{ .x = 21, .y = 20 }, &.{ .{ .x = 25, .y = 19 }, .{ .x = 26, .y = 21 } });
-    h.grassOver(&g.sim.lv);
+    h.grassArena(g, .{ .x = 21, .y = 20 }, &.{ .{ .x = 25, .y = 19 }, .{ .x = 26, .y = 21 } });
     const id = h.spawnAt(g, .bandit_crossbowman, .{ .x = 26, .y = 20 }, true);
     const slot = actor.Pool.slot(id);
     game.settle(g);
@@ -102,8 +101,7 @@ pub fn captureGeneral(g: *game.Game) !void {
     posePicker(g, game.harness.boundTo(g, .shoot));
     try capture(g, target, SHOTS_DIR ++ "/bind.png");
 
-    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
     const chest_at = P{ .x = 21, .y = 20 };
     g.sim.lv.set(chest_at, .chest);
     g.sim.lv.putBarrel(.{ .x = 23, .y = 20 });
@@ -515,8 +513,7 @@ comptime {
 }
 
 fn poseSteps(g: *game.Game, tile: grid.Tile) void {
-    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
     var cells = grid.Cells.of(.{ .x = 17, .y = 15 }, .{ .x = 30, .y = 26 });
     while (cells.next()) |p| g.sim.lv.set(p, if (p.x < 19) .water else tile);
     for (WADERS) |w| g.sim.pool.get(game.harness.spawnAt(g, w.kind, w.at, false)).?.unmask(&g.sim.lv);
@@ -532,8 +529,7 @@ fn poseSteps(g: *game.Game, tile: grid.Tile) void {
 }
 
 pub fn poseWaterMirrors(g: *game.Game, hour: f32, outdoors: bool) void {
-    game.harness.arena(g, .{ .x = 24, .y = 20 }, &.{.{ .x = 27, .y = 21 }});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 24, .y = 20 }, &.{.{ .x = 27, .y = 21 }});
     var cells = grid.Cells.of(.{ .x = 17, .y = 18 }, .{ .x = 33, .y = 26 });
     while (cells.next()) |p| g.sim.lv.set(p, if (p.y >= 23) .water else .shallows);
     for ([_]i32{ 19, 20, 21, 28, 29 }) |x| g.sim.lv.set(.{ .x = x, .y = 17 }, .shrub);
@@ -547,8 +543,7 @@ pub fn poseWaterMirrors(g: *game.Game, hour: f32, outdoors: bool) void {
 }
 
 pub fn poseForest(g: *game.Game) void {
-    game.harness.arena(g, .{ .x = 24, .y = 18 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 24, .y = 18 }, &.{});
     const rows = [_][]const u8{
         "...................",
         ".#####...####......",
@@ -560,23 +555,29 @@ pub fn poseForest(g: *game.Game) void {
         ".#..#..#..#..#..#..",
         "...................",
     };
-    stampRows(&g.sim.lv, .{ .x = 16, .y = 12 }, &rows, struct {
-        fn of(ch: u8) ?grid.Tile {
-            return if (ch == '#') .shrub else null;
-        }
-    }.of);
+    stampRows(&g.sim.lv, .{ .x = 16, .y = 12 }, &rows);
     posed(g, g.sim.outdoors);
 }
 
-pub fn stampRows(lv: *grid.Level, origin: P, rows: []const []const u8, comptime tileOf: fn (u8) ?grid.Tile) void {
+fn poseTile(ch: u8) ?grid.Tile {
+    return switch (ch) {
+        '#' => .shrub,
+        '=' => .bridge,
+        '~', 'w' => .water,
+        's' => .shallows,
+        'd' => .dirt,
+        else => null,
+    };
+}
+
+pub fn stampRows(lv: *grid.Level, origin: P, rows: []const []const u8) void {
     for (rows, 0..) |row, y| for (row, 0..) |ch, x| {
-        if (tileOf(ch)) |t| lv.set(origin.add(.{ .x = @intCast(x), .y = @intCast(y) }), t);
+        if (poseTile(ch)) |t| lv.set(origin.add(.{ .x = @intCast(x), .y = @intCast(y) }), t);
     };
 }
 
 fn poseBridges(g: *game.Game) void {
-    game.harness.arena(g, .{ .x = 28, .y = 18 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 28, .y = 18 }, &.{});
     const rows = [_][]const u8{
         "..=....==...===.....",
         "ss=ssss==sss===sssss",
@@ -588,22 +589,12 @@ fn poseBridges(g: *game.Game) void {
         "ss=ssss==sss===sssss",
         "..=....==...===.....",
     };
-    stampRows(&g.sim.lv, .{ .x = 15, .y = 14 }, &rows, struct {
-        fn of(ch: u8) ?grid.Tile {
-            return switch (ch) {
-                '=' => .bridge,
-                '~' => .water,
-                's' => .shallows,
-                else => null,
-            };
-        }
-    }.of);
+    stampRows(&g.sim.lv, .{ .x = 15, .y = 14 }, &rows);
     studyAt(g, true, day.NOON);
 }
 
 fn poseShadowStudy(g: *game.Game, hour: f32, outdoors: bool) void {
-    game.harness.arena(g, .{ .x = 24, .y = 21 }, &.{.{ .x = 29, .y = 22 }});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 24, .y = 21 }, &.{.{ .x = 29, .y = 22 }});
     game.harness.wallRow(&g.sim.lv, 16, 22, 26);
     if (!outdoors) g.sim.lv.addTorch(.{ .x = 24, .y = 16 });
     const props = [_]struct { t: grid.Tile, p: P }{
@@ -639,8 +630,7 @@ pub fn studyLit(g: *game.Game, outdoors: bool, hour: f32) void {
 }
 
 fn poseGlowbulbs(g: *game.Game) void {
-    game.harness.arena(g, .{ .x = 24, .y = 21 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 24, .y = 21 }, &.{});
     for ([_]P{ .{ .x = 22, .y = 19 }, .{ .x = 27, .y = 20 }, .{ .x = 25, .y = 23 } }) |p| g.sim.lv.set(p, .glow_plant);
 }
 
@@ -672,8 +662,7 @@ const HIDDEN_SHADOW_ROWS = std.EnumArray(Hidden, i32).init(.{ .forest = 14, .tre
 fn poseHiddenShadows(g: *game.Game, hour: ?f32) void {
     const x = HIDDEN_SHADOW_X;
     const row = HIDDEN_SHADOW_ROWS;
-    game.harness.arena(g, .{ .x = 22, .y = 19 }, &.{.{ .x = x, .y = row.get(.actor) }});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 22, .y = 19 }, &.{.{ .x = x, .y = row.get(.actor) }});
     g.sim.lv.set(.{ .x = x, .y = row.get(.forest) }, .shrub);
     g.sim.lv.set(.{ .x = x, .y = row.get(.forest) + 1 }, .shrub);
     g.sim.lv.set(.{ .x = x, .y = row.get(.tree) }, .shrub);

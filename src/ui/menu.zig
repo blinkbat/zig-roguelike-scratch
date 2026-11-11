@@ -30,6 +30,7 @@ const ROWS_DY: i32 = 16;
 const ROW_INSET: i32 = 4;
 pub const NOTE_GAP: i32 = 24;
 const MARK_GAP: i32 = 14;
+const SCREEN_MARGIN: i32 = 14;
 const MARK_L = ">";
 const ABOVE: i32 = TITLE - TITLE_DY + ROWS_DY;
 const BELOW: i32 = NOTE_GAP + NOTE;
@@ -129,7 +130,7 @@ pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon.Promp
 }
 
 pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon.Prompt, alpha: f32) i32 {
-    return prompt.drawFrom(face, @as(i32, @intFromFloat(r.x)) + ACTION_PAD, raster.middleAt(r).y, font.BODY, alpha) + PROMPT_GAP;
+    return prompt.drawFrom(face, raster.left(r) + ACTION_PAD, raster.middleAt(r).y, font.BODY, alpha) + PROMPT_GAP;
 }
 
 pub const Note = text.Note;
@@ -275,7 +276,7 @@ fn window(screen_h: i32, n: usize, at: usize) Window {
 const LIST_W: i32 = 640;
 
 pub fn listWidth(screen: mathx.P) i32 {
-    return @min(LIST_W, @max(1, screen.x - 2 * MARK_GAP));
+    return @min(LIST_W, @max(1, screen.x - 2 * SCREEN_MARGIN));
 }
 
 fn rowBox(screen: mathx.P, win: Window, i: usize) rl.Rectangle {
@@ -285,11 +286,11 @@ fn rowBox(screen: mathx.P, win: Window, i: usize) rl.Rectangle {
 }
 
 pub fn rowTextY(box: rl.Rectangle) i32 {
-    return @as(i32, @intFromFloat(box.y)) + ROW_INSET;
+    return raster.top(box) + ROW_INSET;
 }
 
 pub fn titleY(first: rl.Rectangle) i32 {
-    return @as(i32, @intFromFloat(first.y)) - TITLE_LEAD;
+    return raster.top(first) - TITLE_LEAD;
 }
 
 fn noteY(first: rl.Rectangle, count: usize) i32 {
@@ -305,7 +306,7 @@ pub fn draw(face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, ti
         listPanel(sprites, .{ .x = first.x, .y = first.y, .width = first.width, .height = @floatFromInt(rows.len * ROW_STEP) });
     }
     const inset = markInset(face);
-    const widest = @as(i32, @intFromFloat(first.width)) - 2 * inset;
+    const widest = raster.width(first) - 2 * inset;
     var fit_buf: [NOTE_MAX + 1]u8 = undefined;
     for (rows, win.from..) |whole, i| {
         const r = face.fit(&fit_buf, whole, ROW, widest, false);
@@ -313,7 +314,7 @@ pub fn draw(face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, ti
         const on = i == at;
         face.text(r, pick(face, box, on), rowTextY(box), ROW, rowInk(on));
     }
-    if (note) |n| _ = face.paragraph(n, @as(i32, @intFromFloat(first.x)) + inset, noteY(first, rows.len), widest, NOTE, look.DIM);
+    if (note) |n| _ = face.paragraph(n, raster.left(first) + inset, noteY(first, rows.len), widest, NOTE, look.DIM);
 }
 
 pub fn listPanel(sprites: *const sprite.Sprites, rows: rl.Rectangle) void {
@@ -325,7 +326,7 @@ fn markInset(face: font.Face) i32 {
 }
 
 pub fn pick(face: font.Face, box: rl.Rectangle, on: bool) i32 {
-    const x = @as(i32, @intFromFloat(box.x)) + markInset(face);
+    const x = raster.left(box) + markInset(face);
     band(box, on);
     if (on) face.text(MARK_L, x - MARK_GAP - face.width(MARK_L, ROW), rowTextY(box), ROW, look.UI_FOCUS);
     return x;
@@ -384,7 +385,7 @@ pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
 }
 
 fn fitScreen(face: font.Face, buf: *[NOTE_MAX + 1]u8, screen: mathx.P, s: [:0]const u8, size: i32) [:0]const u8 {
-    return face.fit(buf, s, size, screen.x - 2 * MARK_GAP, false);
+    return face.fit(buf, s, size, screen.x - 2 * SCREEN_MARGIN, false);
 }
 
 pub fn mid(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
@@ -403,7 +404,7 @@ pub fn heading(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: 
     const t = fitScreen(face, &buf, screen, s, size);
     const cx = @divTrunc(screen.x, 2);
     face.engravedMid(t, cx, y, size, col);
-    const half = @min(@divTrunc(face.width(t, size), 2) + RULE_REACH, @divTrunc(screen.x, 2) - MARK_GAP);
+    const half = @min(@divTrunc(face.width(t, size), 2) + RULE_REACH, @divTrunc(screen.x, 2) - SCREEN_MARGIN);
     rule(cx, y + @as(i32, @intFromFloat(@as(f32, @floatFromInt(size)) * RULE_DROP)), half, look.fade(accent, RULE_A * look.alphaOf(col)));
 }
 

@@ -19,8 +19,8 @@ pub const Journal = struct {
     last_top: usize = 0,
 
     pub fn of(face: anytype, entries: []const Entry, box: rl.Rectangle) Journal {
-        const w: i32 = @intFromFloat(box.width);
-        var room: i32 = @intFromFloat(box.height);
+        const w = raster.width(box);
+        var room = raster.height(box);
         var top = entries.len;
         while (top > 0) {
             room -= entryHeight(face, entries[top - 1], w);
@@ -46,10 +46,10 @@ fn entryHeight(face: anytype, e: Entry, w: i32) i32 {
 }
 
 pub fn draw(face: *const font.Face, entries: []const Entry, top: usize, box: rl.Rectangle) void {
-    const x: i32 = @intFromFloat(box.x);
-    const w: i32 = @intFromFloat(box.width);
+    const x = raster.left(box);
+    const w = raster.width(box);
     const bottom = raster.bottom(box);
-    const first: i32 = @intFromFloat(box.y);
+    const first = raster.top(box);
     var y = first;
     if (entries.len == 0) return face.text(NONE, x, y, font.BODY, look.DIM);
     var fit: [LINE_MAX]u8 = undefined;

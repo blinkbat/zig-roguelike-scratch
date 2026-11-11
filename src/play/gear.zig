@@ -108,11 +108,22 @@ pub const Gear = struct {
     }
 
     pub fn valid(self: Gear, base: attrs.Attrs) bool {
+        return self.validFrom(.{}, base);
+    }
+
+    /// A loaded save can wear unmet gear after a retune; only a change that unmeets an item is refused.
+    pub fn validFrom(self: Gear, before: Gear, base: attrs.Attrs) bool {
         if (self.twoHander() != null and self.slots.get(.left_hand) != null) return false;
         for (item_bases.SLOTS) |slot| if (self.slots.get(slot)) |it| {
-            if (!it.fits(slot) or !self.wornMeets(slot, base)) return false;
+            if (!it.fits(slot) or !self.keepsMet(before, slot, base)) return false;
         };
         return true;
+    }
+
+    pub fn keepsMet(self: Gear, before: Gear, slot: item_bases.Slot, base: attrs.Attrs) bool {
+        if (self.wornMeets(slot, base)) return true;
+        const was = before.slots.get(slot) orelse return false;
+        return std.meta.eql(@as(?items.Item, was), self.slots.get(slot)) and !before.wornMeets(slot, base);
     }
 
     /// `it` worn in `slot`, with the hands it displaces emptied.

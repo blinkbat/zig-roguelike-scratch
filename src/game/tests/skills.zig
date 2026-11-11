@@ -9,7 +9,7 @@ const mathx = @import("../../core/mathx.zig");
 const input = @import("../../core/input.zig");
 const grid = @import("../../map/grid.zig");
 const carve = @import("../../map/carve.zig");
-const gas =@import("../../map/gas.zig");
+const gas = @import("../../map/gas.zig");
 const menu = @import("../../ui/menu.zig");
 const book = @import("../../ui/book.zig");
 const heroes = @import("../../play/hero.zig");
@@ -33,6 +33,7 @@ const ward = @import("../../play/ward.zig");
 const charge = @import("../../play/charge.zig");
 const turn_clock = @import("../../play/clock.zig");
 const resilience = @import("../../play/resilience.zig");
+const terrain = @import("../../play/terrain.zig");
 const skillbar = @import("../../play/skillbar.zig");
 const look = @import("../../gfx/look.zig");
 const raster = @import("../../gfx/raster.zig");
@@ -756,7 +757,7 @@ test "smart aim retains a moved enemy across skills without spending or firing" 
     try std.testing.expectEqual(@as(?u16, harness.foeId(1)), g.target);
     harness.press(g, BACK);
     const moved = P{ .x = 25, .y = 22 };
-    g.sim.pool.move(&g.sim.lv, 3, moved);
+    g.sim.pool.move(&g.sim.lv, harness.foeId(1), moved);
     harness.useAct(g, .burning_arrow);
     try std.testing.expectEqual(moved, g.mode.aim.mark);
     try std.testing.expectEqual(@as(?u16, harness.foeId(1)), g.target);
@@ -811,12 +812,12 @@ test "smart aim replaces dead hidden blocked distant and invalid targets with a 
     const Invalid = enum { dead, hidden, blocked, distant, missing, hero };
     for (std.enums.values(Invalid)) |why| {
         harness.arena(g, from, &.{ first, second });
-        g.target = 2;
+        g.target = harness.foeId(0);
         switch (why) {
-            .dead => _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), 1000),
+            .dead => _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), harness.LETHAL_DMG),
             .hidden => g.sim.lv.lit[grid.Level.idx(first)] = false,
             .blocked => g.sim.lv.set(.{ .x = 21, .y = 20 }, .wall),
-            .distant => g.sim.pool.move(&g.sim.lv, 2, .{ .x = from.x + bow.RANGE + 1, .y = from.y }),
+            .distant => g.sim.pool.move(&g.sim.lv, harness.foeId(0), .{ .x = from.x + bow.RANGE + 1, .y = from.y }),
             .missing => g.target = actor.MAX,
             .hero => g.target = g.sim.hero,
         }
@@ -846,7 +847,7 @@ test "free projectile aim moves one cell in eight directions and retains melee a
     const clock = g.sim.clock;
     for (mathx.ALL_DIRS) |d| {
         g.mode = .play;
-        g.target = 2;
+        g.target = harness.foeId(0);
         harness.useAct(g, .shoot);
         g.mode.aim.mark = centre;
         skills.nudgeAim(g, d);
@@ -855,14 +856,14 @@ test "free projectile aim moves one cell in eight directions and retains melee a
         try std.testing.expectEqual(clock, g.sim.clock);
     }
     harness.heroArena(g, .knight, from, &.{ .{ .x = 20, .y = 19 }, .{ .x = 21, .y = 20 }, .{ .x = 23, .y = 20 } });
-    g.target = 3;
+    g.target = harness.foeId(1);
     harness.useAct(g, .shield_bash);
     try std.testing.expectEqual(@as(?u16, harness.foeId(1)), g.target);
     g.mode = .play;
     harness.useAct(g, .charge);
     try std.testing.expectEqual(@as(?u16, harness.foeId(1)), g.target);
     g.mode = .play;
-    g.sim.pool.move(&g.sim.lv, 3, .{ .x = 22, .y = 21 });
+    g.sim.pool.move(&g.sim.lv, harness.foeId(1), .{ .x = 22, .y = 21 });
     harness.useAct(g, .charge);
     try std.testing.expectEqual(@as(?u16, harness.foeId(0)), g.target);
     try std.testing.expectEqual(P{ .x = 20, .y = 19 }, g.mode.aim.mark);
@@ -1099,7 +1100,7 @@ test "dodging spends the foe turn without damage, bleeding or mana shield loss" 
                 if (warded) h.ward.raise();
                 const hp = h.hp;
                 const clock = g.sim.clock;
-                g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0),.lands = !dodged }});
+                g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0), .lands = !dodged }});
                 harness.use(g, .wait);
                 try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
                 if (dodged) {
@@ -1376,7 +1377,7 @@ test "a pinning shot holds a chasing rat to its cell for two to four of its turn
     harness.wakeFoes(g);
     biter.pin.turns = pinning.TURNS_HI;
     const hp = g.sim.heroActor().?.hp;
-    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0),.lands = true }});
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0), .lands = true }});
     harness.use(g, .wait);
     try std.testing.expect(g.sim.heroActor().?.hp < hp);
     try std.testing.expectEqual(@as(i32, 21), biter.at.x);
@@ -1576,12 +1577,13 @@ test "a shot that would miss from the reeds still lands on a mimic posing as its
     harness.arena(g, from, &.{});
     g.sim.lv.set(from, .reeds);
     const id = harness.spawnAt(g, .mimic, at, false);
-    var seed: u64 = 0;
-    while (true) : (seed += 1) {
-        var rng = mathx.Rng.init(seed);
-        if (!rng.percent(95)) break;
-    }
-    g.sim.rng = mathx.Rng.init(seed);
+    const Misses = struct {
+        hit: u32,
+        pub fn holds(m: @This(), rng: *mathx.Rng) bool {
+            return !rng.percent(m.hit);
+        }
+    };
+    g.sim.rng = harness.rngWhere(Misses{ .hit = (terrain.Stats{}).onRained(.reeds, 0).hit });
     combat.wound(g, id, .{ .dmg = 1 }, combat.SHOOT, .{ .from = from, .wait = 0 });
     const m = g.sim.pool.get(id).?;
     try std.testing.expect(!m.disguised and m.hp < m.max);
@@ -1626,7 +1628,7 @@ test "a mana shield turns a bite onto mana, the orb dropping as the bite lands, 
     harness.wakeFoes(g);
     const h = g.sim.heroActor().?;
     const hp = h.hp;
-    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0),.lands = true }});
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0), .lands = true }});
     harness.use(g, .mana_shield);
     const after_cast = manaAfter(g, .mana_shield);
     const bitten = after_cast - g.sim.mana;
@@ -1643,7 +1645,7 @@ test "a mana shield turns a bite onto mana, the orb dropping as the bite lands, 
     for (1..ward.TURNS) |_| harness.use(g, .wait);
     try std.testing.expectEqual(hp, h.hp);
     try std.testing.expectEqual(@as(u8, 0), h.ward.turns);
-    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0),.lands = true }});
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0), .lands = true }});
     harness.use(g, .wait);
     try std.testing.expect(h.hp < hp);
 }
@@ -1653,7 +1655,7 @@ test "mana shield deductions follow each staggered hit" {
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{ .{ .x = 21, .y = 20 }, .{ .x = 20, .y = 21 } });
     harness.wakeFoes(g);
-    g.sim.rng = harness.foeAttacksRng(g, &.{ .{ .id = harness.foeId(0),.lands = true }, .{ .id = harness.foeId(1),.lands = true } });
+    g.sim.rng = harness.foeAttacksRng(g, &.{ .{ .id = harness.foeId(0), .lands = true }, .{ .id = harness.foeId(1), .lands = true } });
     harness.use(g, .mana_shield);
     const before = manaAfter(g, .mana_shield);
     try std.testing.expectEqual(before, g.sim.mana + g.pic.mana_held);
@@ -1723,7 +1725,7 @@ test "a knocked rat's bleed lands once its knock slide has ended" {
     const i = harness.foeSlot(0);
     try std.testing.expectEqual(@as(i32, 24), rat.at.x);
     const bled = rat.hp;
-    _ = harness.untilCaughtUp(g, &.{i});
+    _ = harness.framesUntil(g, i, harness.caughtUp);
     try std.testing.expectEqual(bled, g.pic.pictured[i].hp);
     try std.testing.expect(g.pic.glide[i].left() <= harness.TEST_TOL);
 }

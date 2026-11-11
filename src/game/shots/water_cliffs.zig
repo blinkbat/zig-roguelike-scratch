@@ -40,8 +40,7 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
     try checkCaravanShadowCulling(g, target);
     try waterCliffTemplates(g);
     try checkWaterCapTint(g);
-    game.harness.arena(g, .{ .x = 24, .y = 19 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 24, .y = 19 }, &.{});
     const rows = [_][]const u8{
         "...................",
         "..sssssss...sss.....",
@@ -54,15 +53,7 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
         "..s...ss....wwwww...",
         "...................",
     };
-    stampRows(&g.sim.lv, .{ .x = 15, .y = 13 }, &rows, struct {
-        fn of(ch: u8) ?grid.Tile {
-            return switch (ch) {
-                's' => .shallows,
-                'w' => .water,
-                else => null,
-            };
-        }
-    }.of);
+    stampRows(&g.sim.lv, .{ .x = 15, .y = 13 }, &rows);
     studyLit(g, true, day.NOON);
     try capture(g, target, WATER_CLIFFS_DIR ++ "/grass-day.png");
     game.harness.retile(&g.sim.lv, .grass, .dirt);
@@ -107,15 +98,7 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
         "wwwwwwwsddddddddddd",
         "wwwwwwsdddddddddddd",
     };
-    stampRows(&g.sim.lv, .{ .x = 14, .y = 13 }, &stepped, struct {
-        fn of(ch: u8) ?grid.Tile {
-            return switch (ch) {
-                'w' => .water,
-                's' => .shallows,
-                else => .dirt,
-            };
-        }
-    }.of);
+    stampRows(&g.sim.lv, .{ .x = 14, .y = 13 }, &stepped);
     studyLit(g, true, day.NOON);
     try capture(g, target, WATER_CLIFFS_DIR ++ "/stepped-depths.png");
     poseWaterMirrors(g, day.NOON, true);
@@ -477,8 +460,7 @@ pub fn checkWaterSurface(g: *game.Game) !void {
 }
 
 pub fn checkMapEdge(g: *game.Game, target: rl.RenderTexture2D) !void {
-    game.harness.arena(g, .{ .x = 24, .y = grid.H - 4 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 24, .y = grid.H - 4 }, &.{});
     for (0..grid.W) |x| g.sim.lv.set(.{ .x = @intCast(x), .y = grid.H - 1 }, .grass);
     studyLit(g, true, day.NOON);
     const edge = @divTrunc(g.screen.y, 2);

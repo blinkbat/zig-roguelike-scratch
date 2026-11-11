@@ -149,8 +149,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     widgets.titleHint(&g.face, f, title, PICKS_ONE ++ SEP ++ CLOSES);
     for (editor.SEEN, 0..) |s, i| {
         const r = cells.at(i);
-        const hh = widgets.hot(ed.controls(), r, true, true, seenName(s));
-        widgets.plate(r, i == ed.seen_at, hh.hot);
+        const hh = widgets.plateHit(ed.controls(), r, i == ed.seen_at, true, true, seenName(s));
         seenPicture(g, s, widgets.pictureIn(r, VIEW_PIC, VIEW_PIC_TOP));
         if (hh.hit) ed.seen_at = i;
     }
@@ -310,7 +309,7 @@ pub fn fieldRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) void {
 }
 
 pub fn backButton(ed: *editor.Editor, g: *game.Game, f: widgets.Frame, y: i32, comptime label: []const u8) void {
-    if (backPressed(ed, g, f, y, label, null)) ed.modal = .none;
+    if (backPressed(ed, g, f, y, label, null)) ed.closeModal();
 }
 
 pub fn backPressed(ed: *editor.Editor, g: *game.Game, f: widgets.Frame, y: i32, comptime label: []const u8, tip: ?[:0]const u8) bool {

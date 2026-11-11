@@ -8,7 +8,23 @@ const data = @import("save_data.zig");
 const script = @import("map/script.zig");
 const actor = @import("play/actor.zig");
 
-const SavedRng = struct { xoshiro256: [4]u64 };
+const SavedRng = struct {
+    xoshiro256: [4]u64,
+
+    const Live = mathx.Rng;
+
+    fn of(rng: mathx.Rng) SavedRng {
+        return .{ .xoshiro256 = rng.impl.s };
+    }
+
+    fn live(stored: SavedRng) wire.Error!mathx.Rng {
+        const rng = mathx.Rng{ .impl = .{ .s = stored.xoshiro256 } };
+        if (!rng.valid()) return error.Damaged;
+        return rng;
+    }
+};
+
+const SAVED = .{ SavedRng, SavedProgress, SavedNpc };
 const Node = passives.Node;
 const NodeKey = struct {
     arm: @FieldType(Node, "arm"),
@@ -52,6 +68,33 @@ const SavedProgress = struct {
     ranks: @FieldType(progress.State, "ranks") = .initFill(0),
 
     pub const COUNTED = .{.{ "allocations", "n" }};
+    const Live = progress.State;
+
+    fn of(value: progress.State) SavedProgress {
+        var result = SavedProgress{};
+        copyKept(progress.State, carried, &result, value);
+        var allocated = value.nodes.iterator(.{});
+        while (allocated.next()) |index| {
+            result.allocations[result.n] = NodeKey.of(passives.NODES[index]);
+            result.n += 1;
+        }
+        return result;
+    }
+
+    fn live(stored: SavedProgress) wire.Error!progress.State {
+        var result = progress.State{};
+        copyKept(progress.State, carried, &result, stored);
+        for (stored.allocations[0..stored.n], 0..) |key, index| {
+            for (stored.allocations[0..index]) |previous| if (std.meta.eql(key, previous)) return error.Damaged;
+            for (passives.NODES, 0..) |node, current| {
+                if (std.meta.eql(key, NodeKey.of(node))) {
+                    result.nodes.set(current);
+                    break;
+                }
+            } else result.passive_points +|= progress.POINT_COST;
+        }
+        return result;
+    }
 };
 
 /// `nodes` is kept by identity in `allocations`.
@@ -81,6 +124,20 @@ const SavedNpc = struct {
     dialog: ?u8 = null,
     shows: ?script.Cond = null,
     looks: ?actor.Kind = null,
+
+    const Live = script.Npc;
+
+    fn of(value: script.Npc) SavedNpc {
+        var result = SavedNpc{ .spot = value.spot };
+        copyKept(script.Npc, npcKept, &result, value);
+        return result;
+    }
+
+    fn live(stored: SavedNpc) wire.Error!script.Npc {
+        var npc = script.Npc{ .spot = stored.spot orelse .{ .at = stored.at } };
+        copyKept(script.Npc, npcKept, &npc, stored);
+        return npc;
+    }
 };
 fn npcKept(comptime name: []const u8) bool {
     return !std.mem.eql(u8, name, "spot");
@@ -136,51 +193,18 @@ pub const Policy = struct {
     }
 
     pub fn Stored(comptime T: type) type {
-        return if (T == mathx.Rng) SavedRng else if (T == progress.State) SavedProgress else if (T == script.Npc) SavedNpc else T;
+        inline for (SAVED) |S| {
+            if (S.Live == T) return S;
+        }
+        return T;
     }
 
     pub fn encode(value: anytype) wire.Error!Stored(@TypeOf(value)) {
-        if (@TypeOf(value) == mathx.Rng) return .{ .xoshiro256 = value.impl.s };
-        if (@TypeOf(value) == script.Npc) {
-            var result = SavedNpc{ .spot = value.spot };
-            copyKept(script.Npc, npcKept, &result, value);
-            return result;
-        }
-        if (@TypeOf(value) != progress.State) @compileError("save_values.Policy cannot encode " ++ @typeName(@TypeOf(value)));
-        var result = SavedProgress{};
-        copyKept(progress.State, carried, &result, value);
-        var allocated = value.nodes.iterator(.{});
-        while (allocated.next()) |index| {
-            result.allocations[result.n] = NodeKey.of(passives.NODES[index]);
-            result.n += 1;
-        }
-        return result;
+        return Stored(@TypeOf(value)).of(value);
     }
 
     pub fn decode(comptime T: type, stored: Stored(T)) wire.Error!T {
-        if (T == mathx.Rng) {
-            const rng = mathx.Rng{ .impl = .{ .s = stored.xoshiro256 } };
-            if (!rng.valid()) return error.Damaged;
-            return rng;
-        }
-        if (T == script.Npc) {
-            var npc = script.Npc{ .spot = stored.spot orelse .{ .at = stored.at } };
-            copyKept(script.Npc, npcKept, &npc, stored);
-            return npc;
-        }
-        if (T != progress.State) @compileError("save_values.Policy cannot decode " ++ @typeName(T));
-        var result = progress.State{};
-        copyKept(progress.State, carried, &result, stored);
-        for (stored.allocations[0..stored.n], 0..) |key, index| {
-            for (stored.allocations[0..index]) |previous| if (std.meta.eql(key, previous)) return error.Damaged;
-            for (passives.NODES, 0..) |node, current| {
-                if (std.meta.eql(key, NodeKey.of(node))) {
-                    result.nodes.set(current);
-                    break;
-                }
-            } else result.passive_points +|= progress.POINT_COST;
-        }
-        return result;
+        return stored.live();
     }
 
     pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {

@@ -49,14 +49,12 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
     if (drop_feature) |i| pg.dropFeature(i);
     if (editor.button(ed, g, col.row(y), "+ Feature", false, pg.feature_n < atlas.MAX_FEATURES, ADD_FEATURE_TIP)) _ = pg.addFeature(atlas.FIRST_FEATURE);
     y += widgets.ROW_H + widgets.SECTION_GAP;
-    knobs(ed, g, &y, if (pg.floor.outdoor()) "Sky" else "Sky (this base is under a roof)", &pg.sky, &SKY_ROWS, pg.floor.outdoor());
-    y += widgets.BLOCK_GAP;
-    knobs(ed, g, &y, "Foes", fo, &FOE_ROWS, true);
-    y += widgets.BLOCK_GAP;
-    knobs(ed, g, &y, "Allies", &pg.post, &POST_ROWS, true);
-    y += widgets.BLOCK_GAP;
-    knobs(ed, g, &y, "Night raids", &pg.raid, &RAID_ROWS, true);
-    y += widgets.BLOCK_GAP;
+    inline for (GROUP_VIEWS) |gv| {
+        const open = gv.roofed == null or pg.floor.outdoor();
+        const title = if (gv.roofed) |roofed| (if (open) gv.title else roofed) else gv.title;
+        knobs(ed, g, &y, title, &@field(pg, gv.field), gv.rows, open);
+        y += widgets.BLOCK_GAP;
+    }
     section(g, &y, "Makeups");
     var drop: ?usize = null;
     for (fo.makeup[0..fo.makeup_n], 0..) |*m, i| {
@@ -179,8 +177,7 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
     for (0..pack.MAKEUP_MAX) |i| {
         const r = members.take(MEMBER_W);
         if (i >= m.n) continue;
-        const h = widgets.hot(ed.controls(), r, true, false, if (i == 0) "The lead: " ++ Desk.PAINT_CAPTION ++ " for the next foe" else "A member: " ++ Desk.PAINT_CAPTION ++ " for the next foe");
-        widgets.plate(r, false, h.hot);
+        const h = widgets.plateHit(ed.controls(), r, false, true, false, if (i == 0) "The lead: " ++ Desk.PAINT_CAPTION ++ " for the next foe" else "A member: " ++ Desk.PAINT_CAPTION ++ " for the next foe");
         const l = look.body(m.kind[i]);
         const at = raster.middleAt(r);
         g.face.glyph(l.ch, at.x, at.y, widgets.TEXT, l.fg);
@@ -613,10 +610,24 @@ comptime {
     for (atlas_text.GROUPS) |grp| covers(@FieldType(atlas.Procgen, grp.field), groupRows(grp.field), grp.knobs);
 }
 
+const GroupView = struct { field: []const u8, title: [:0]const u8, roofed: ?[:0]const u8 = null, rows: []const Knob };
+
+const GROUP_VIEWS = [_]GroupView{
+    .{ .field = "sky", .title = "Sky", .roofed = "Sky (this base is under a roof)", .rows = &SKY_ROWS },
+    .{ .field = "foes", .title = "Foes", .rows = &FOE_ROWS },
+    .{ .field = "post", .title = "Allies", .rows = &POST_ROWS },
+    .{ .field = "raid", .title = "Night raids", .rows = &RAID_ROWS },
+};
+
+comptime {
+    if (GROUP_VIEWS.len != atlas_text.GROUPS.len) @compileError("a generator group is not drawn");
+}
+
 fn groupRows(comptime field: []const u8) []const Knob {
-    const all = .{ .foes = &FOE_ROWS, .sky = &SKY_ROWS, .post = &POST_ROWS, .raid = &RAID_ROWS };
-    if (!@hasField(@TypeOf(all), field)) @compileError(field ++ " has no rows on the generator");
-    return @field(all, field);
+    inline for (GROUP_VIEWS) |gv| {
+        if (comptime std.mem.eql(u8, gv.field, field)) return gv.rows;
+    }
+    @compileError(field ++ " has no rows on the generator");
 }
 
 fn structRow(comptime field: [:0]const u8, comptime T: type, comptime tips: anytype) Knob {

@@ -5,6 +5,7 @@ const consumable = @import("consumable.zig");
 const item_bases = @import("item_bases.zig");
 const items = @import("items.zig");
 const inventory = @import("inventory.zig");
+const loot = @import("loot.zig");
 
 pub const GROUND_MAX = 512;
 pub const Drop = struct { item: items.Item, at: mathx.P, source: u16 = grid.NO_ONE };
@@ -14,10 +15,9 @@ pub const Coins = struct {
     amount: i32,
 
     pub fn large(c: Coins) bool {
-        return c.amount > LARGE_COINS;
+        return c.amount > loot.BARREL_GOLD.hi;
     }
 };
-const LARGE_COINS: i32 = 12;
 
 pub const Ground = struct {
     drops: [GROUND_MAX]Drop = undefined,

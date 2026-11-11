@@ -21,8 +21,7 @@ pub fn captureTrees(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
     try std.fs.cwd().makePath(TREES_DIR);
-    game.harness.arena(g, .{ .x = 24, .y = 18 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 24, .y = 18 }, &.{});
     const tree = P{ .x = 24, .y = 19 };
     g.sim.lv.set(tree, .large_tree);
     g.sim.lv.set(.{ .x = 27, .y = 19 }, .large_tree);
@@ -77,8 +76,7 @@ pub fn captureTrees(g: *game.Game) !void {
     g.sim.lv.set(.{ .x = 27, .y = 17 }, .large_tree);
     studyLit(g, true, day.NOON);
     try capture(g, target, TREES_DIR ++ "/water-reflection.png");
-    game.harness.arena(g, .{ .x = 24, .y = 18 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 24, .y = 18 }, &.{});
     const grass = P{ .x = 24, .y = 18 };
     carve.box(&g.sim.lv, .{ .lo = .{ .x = 23, .y = 17 }, .hi = .{ .x = 26, .y = 20 } }, .reeds);
     studyLit(g, true, day.NOON);

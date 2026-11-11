@@ -404,8 +404,14 @@ pub const Editor = struct {
         if (ed.drag != null) ed.history.cancelPreview(ed.map);
         ed.drag = null;
         ed.linking = null;
+        if (ed.popup != null) ed.fresh = true;
         ed.popup = null;
         ed.delete_armed = null;
+    }
+
+    pub fn dismiss(ed: *Editor) void {
+        ed.drop();
+        ed.fresh = true;
     }
 
     pub fn release(ed: *Editor) void {
@@ -618,6 +624,11 @@ pub const Editor = struct {
         ed.fresh = true;
     }
 
+    pub fn closeModal(ed: *Editor) void {
+        ed.modal = .none;
+        ed.fresh = true;
+    }
+
     pub fn askName(ed: *Editor, n: Naming) void {
         ed.naming = n;
         ed.field.put("");
@@ -643,7 +654,7 @@ pub const Editor = struct {
     pub fn openListed(ed: *Editor, i: usize) void {
         if (ed.listing.open(i)) return ed.showListing();
         ed.pending_path.put(ed.listing.at(i));
-        ed.modal = .none;
+        ed.closeModal();
         ed.request(.open);
     }
 
@@ -657,7 +668,7 @@ pub const Editor = struct {
         if (std.fs.cwd().access(p, .{})) {
             return ed.say("{s} is there already; open it, or pick another name", .{p});
         } else |e| if (e != error.FileNotFound) return ed.say("{s} could not be checked ({s})", .{ p, @errorName(e) });
-        ed.modal = .none;
+        ed.closeModal();
         switch (ed.naming) {
             .save_as => {
                 const keep = ed.file;
@@ -1042,9 +1053,10 @@ pub fn capture(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8
     ed.desk.mouse = .{ .x = @as(i32, @intFromFloat(hover_at.x)) + 8, .y = @as(i32, @intFromFloat(hover_at.y)) + 8 };
     ed.said_t = 0;
     const dir = std.fs.path.dirname(map_path) orelse ".";
-    for (std.enums.values(View), [_][:0]const u8{ map_path, graph_path }) |v, p| {
+    const view_paths = std.EnumArray(View, [:0]const u8).init(.{ .map = map_path, .graph = graph_path });
+    for (std.enums.values(View)) |v| {
         ed.view = v;
-        try snap(ed, g, target, p);
+        try snap(ed, g, target, view_paths.get(v));
     }
     ed.view = .map;
     openPopup(ed, panel.nodeSlot(g), .node, ed.node, g.screen.y);

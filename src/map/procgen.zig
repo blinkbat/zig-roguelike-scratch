@@ -73,15 +73,11 @@ pub const Floor = union(enum) {
     tee: tee.Params,
 
     pub fn of(a: Algo) Floor {
-        return switch (a) {
-            inline else => |t| @unionInit(Floor, @tagName(t), .{}),
-        };
+        return defaultArm(Floor, a);
     }
 
     pub fn fit(f: Floor) Floor {
-        return switch (f) {
-            inline else => |p, t| @unionInit(Floor, @tagName(t), carve.fitted(p)),
-        };
+        return fitArm(f);
     }
 
     pub fn outdoor(f: Floor) bool {
@@ -144,15 +140,11 @@ pub const Feature = union(enum) {
     coast: coast.Params,
 
     pub fn of(k: Kind) Feature {
-        return switch (k) {
-            inline else => |t| @unionInit(Feature, @tagName(t), .{}),
-        };
+        return defaultArm(Feature, k);
     }
 
     pub fn fit(f: Feature) Feature {
-        return switch (f) {
-            inline else => |p, t| @unionInit(Feature, @tagName(t), carve.fitted(p)),
-        };
+        return fitArm(f);
     }
 
     fn apply(f: Feature, lv: *grid.Level, rng: *mathx.Rng, seed: u64, pal: carve.Palette, lots: *buildings.Lots) void {
@@ -167,6 +159,18 @@ pub const Feature = union(enum) {
         }
     }
 };
+
+fn defaultArm(comptime U: type, tag: std.meta.Tag(U)) U {
+    return switch (tag) {
+        inline else => |t| @unionInit(U, @tagName(t), .{}),
+    };
+}
+
+fn fitArm(u: anytype) @TypeOf(u) {
+    return switch (u) {
+        inline else => |p, t| @unionInit(@TypeOf(u), @tagName(t), carve.fitted(p)),
+    };
+}
 
 fn takesLots(comptime m: type) bool {
     for (@typeInfo(@TypeOf(m.apply)).@"fn".params) |a| {

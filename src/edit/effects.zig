@@ -318,7 +318,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         if (editor.modalButton(ed, g, controls.take(SPEED_W), s.label, v.speed == i, true, "How fast the stage plays")) v.speed = i;
     }
     if (editor.modalButton(ed, g, controls.take(SPEED_W), widgets.keyed("Replay", Desk.ENTER_CAPTION), false, true, "Start it again")) v.reset();
-    modals.backButton(ed, g, f, page.bottom - widgets.ROW_H, "Close");
+    modals.backButton(ed, g, f, page.foot(), "Close");
 }
 
 fn stageCell(room: P) f32 {

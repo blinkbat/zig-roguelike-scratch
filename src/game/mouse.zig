@@ -227,6 +227,7 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
             if (!grid.Level.inside(q) or !g.sim.lv.isSeen(q)) continue;
             const i = grid.Level.idx(q);
             if (visited.isSet(i)) continue;
+            visited.set(i);
             const end = q.eq(to);
             if (!g.sim.lv.walkable(q) and !(end and g.sim.lv.at(q).opened() != null)) continue;
             if ((g.sim.lv.barrelSeen(q) or g.sim.lv.npcAt(q) != null) and !end) continue;
@@ -234,7 +235,6 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
             if (!end and g.sim.leadsTo(q) != null) continue;
             const way = if (head == 0) d else first[head];
             if (end) return way;
-            visited.set(i);
             first[tail] = way;
             queue[tail] = q;
             tail += 1;

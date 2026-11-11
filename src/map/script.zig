@@ -58,8 +58,7 @@ pub fn Words(comptime N: usize) type {
         }
 
         pub fn set(self: *Self, s: []const u8) bool {
-            const t = std.mem.trim(u8, s, " ");
-            if (t.len > N or !plain(t)) return false;
+            const t = fitText(s, N) orelse return false;
             self.buf = @splat(0);
             @memcpy(self.buf[0..t.len], t);
             self.n = @intCast(t.len);
@@ -82,6 +81,11 @@ pub const Say = Words(SAY_MAX);
 pub const Ask = Words(ASK_MAX);
 pub const Note = Words(NOTE_MAX);
 pub const Title = Words(TITLE_MAX);
+
+pub fn fitText(s: []const u8, max: usize) ?[]const u8 {
+    const t = std.mem.trim(u8, s, " ");
+    return if (t.len <= max and plain(t)) t else null;
+}
 
 pub fn plain(s: []const u8) bool {
     for (s) |c| {

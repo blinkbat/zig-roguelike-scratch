@@ -19,7 +19,6 @@ pub const verifyStats = character_stats.verify;
 const BOTH_HANDS = "Both hands";
 const BOTH_IN_USE = BOTH_HANDS ++ " in use";
 const EMPTY = "Empty";
-const LOOT_GOLD_GAP: i32 = 80;
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -483,7 +482,7 @@ pub const Book = struct {
         if (self.page == .loot and view.loot_gold > 0) {
             var coins: menu.Note(32) = .{};
             coins.say(hero.COINS_FMT, .{view.loot_gold});
-            face.draw(coins.text(), position_x - LOOT_GOLD_GAP - face.width(coins.text(), font.SMALL), note_y, font.SMALL, look.UI_GOLD);
+            face.draw(coins.text(), position_x - layout.LOOT_GOLD_GAP - face.width(coins.text(), font.SMALL), note_y, font.SMALL, look.UI_GOLD);
         }
     }
 
@@ -506,8 +505,8 @@ pub const Book = struct {
             var name_buf: [items.NAME_MAX]u8 = undefined;
             if (!self.inWindow(i)) continue;
             const r = self.cellBox(i, view);
-            const x: i32 = @intFromFloat(r.x);
-            const y: i32 = @intFromFloat(r.y);
+            const x = raster.left(r);
+            const y = raster.top(r);
             const row_mid = y + layout.ROW_HEIGHT / 2;
             const chosen = i == self.cursor and self.focused();
             rl.drawRectangleRec(r, look.BG);
@@ -515,12 +514,12 @@ pub const Book = struct {
             switch (self.page) {
                 .equipment => {
                     const slot = item_bases.SLOTS[i];
-                    const inner = @as(i32, @intFromFloat(r.width)) - 2 * layout.SLOT_INSET;
+                    const inner = raster.width(r) - 2 * layout.SLOT_INSET;
                     var fitted: [items.NAME_MAX]u8 = undefined;
                     face.draw(face.fit(&fitted, slotLabel(slot), layout.SLOT_LABEL, inner, false), x + layout.SLOT_INSET, y + layout.SLOT_INSET, layout.SLOT_LABEL, look.DIM);
                     const it = view.inventory.gear.slots.get(slot);
                     const named = r.height >= layout.NAMED_CELL_H;
-                    const foot = y + @as(i32, @intFromFloat(r.height)) - (if (named) layout.SLOT_INSET + font.SMALL else 0);
+                    const foot = y + raster.height(r) - (if (named) layout.SLOT_INSET + font.SMALL else 0);
                     const glyph = P{ .x = raster.middleAt(r).x, .y = @divTrunc(y + layout.SLOT_INSET + layout.SLOT_LABEL + foot, 2) };
                     const side: line_icons.ItemSize = if (named) .cell else .row;
                     const name_mid = foot + font.SMALL / 2;
@@ -690,7 +689,7 @@ fn dependent(view: View, at: usize, slot: item_bases.Slot) ?items.Item {
     const after = view.inventory.swapped(at, slot) catch return null;
     for (item_bases.SLOTS) |s| {
         if (s == slot) continue;
-        if (after.slots.get(s)) |other| if (!after.wornMeets(s, view.base)) return other;
+        if (after.slots.get(s)) |other| if (!after.keepsMet(view.inventory.gear, s, view.base)) return other;
     }
     return null;
 }

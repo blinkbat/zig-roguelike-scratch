@@ -787,7 +787,7 @@ pub fn update(g: *Game, dt: f32) void {
     } else if (g.mode == .play and g.st.hit(PAUSE)) {
         character.openPause(g);
     } else if (g.mode == .play and talking.due(g)) {} else if (stunnedTurn(g)) {
-        if (g.mode == .play) queuePress(g);
+        if (g.mode == .play) queuePress(g) else if (characterShown(g)) character.pauseStep(g);
     } else switch (g.mode) {
         .play => {
             if (g.sim.travel) |l| {

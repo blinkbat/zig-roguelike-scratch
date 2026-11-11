@@ -308,7 +308,7 @@ pub const Reader = struct {
         }
     }
 
-    fn leave(r: *Reader) void {
+    pub fn leave(r: *Reader) void {
         r.dialog = null;
         r.line = null;
         r.choice = null;
@@ -424,16 +424,16 @@ fn questOf(s: *const Script, f: *Tokens) Error!u8 {
 }
 
 fn spotOf(f: *Tokens) Error!script.Spot {
-    const first = f.peek() orelse return error.BadLine;
-    if (std.mem.eql(u8, first, BY)) {
-        _ = f.next();
-        return .{ .by = try value(grid.Tile, f) };
-    }
-    if (std.mem.eql(u8, first, FAR)) {
-        _ = f.next();
-        return .far;
-    }
+    if (takeWord(f, BY)) return .{ .by = try value(grid.Tile, f) };
+    if (takeWord(f, FAR)) return .far;
     return .{ .at = try cell(f) };
+}
+
+pub fn takeWord(f: *Tokens, word: []const u8) bool {
+    const next = f.peek() orelse return false;
+    if (!std.mem.eql(u8, next, word)) return false;
+    _ = f.next();
+    return true;
 }
 
 fn spokenAct(s: *const Script, f: *Tokens) Error!script.Act {

@@ -2,7 +2,7 @@ const std = @import("std");
 const game = @import("../../game.zig");
 const grid = @import("../../map/grid.zig");
 const carve = @import("../../map/carve.zig");
-const atlas =@import("../../map/atlas.zig");
+const atlas = @import("../../map/atlas.zig");
 const mathx = @import("../../core/mathx.zig");
 const actor = @import("../../play/actor.zig");
 const damage = @import("../../play/damage.zig");
@@ -183,7 +183,7 @@ test "terrain inspection uses pictured characters and tiles while excluding hidd
     g.sim.lv.lit[grid.Level.idx(at)] = false;
     try std.testing.expect(overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body) == null);
     g.sim.lv.lit[grid.Level.idx(at)] = true;
-    g.pic.split_from[1] = 0;
+    g.pic.split_from[harness.foeSlot(0)] = 0;
     try std.testing.expect(overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body) == null);
 }
 

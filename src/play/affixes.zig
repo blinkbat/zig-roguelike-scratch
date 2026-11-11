@@ -146,45 +146,49 @@ pub fn imbued(e: damage.Element) resilience.Kind {
 /// The modifiers loot rolls, in items.roll order, with their value ranges.
 pub const AffixRoll = struct { kind: Mod, lo: i32, hi: i32 };
 
-pub const AFFIXES = [_]AffixRoll{
-    .{ .kind = .life, .lo = 2, .hi = 6 },
-    .{ .kind = .mana, .lo = 1, .hi = 3 },
-    .{ .kind = .strength, .lo = 1, .hi = 3 },
-    .{ .kind = .dexterity, .lo = 1, .hi = 3 },
-    .{ .kind = .intelligence, .lo = 1, .hi = 3 },
-    .{ .kind = .physical_damage, .lo = 10, .hi = 20 },
-    .{ .kind = .spell_damage, .lo = 10, .hi = 20 },
-    .{ .kind = .crit, .lo = 2, .hi = 5 },
-    .{ .kind = .armour, .lo = 2, .hi = 4 },
-    .{ .kind = .dodge, .lo = 2, .hi = 4 },
-    .{ .kind = .resistance, .lo = 10, .hi = 20 },
-    .{ .kind = .mana_regen, .lo = 1, .hi = 1 },
-    .{ .kind = .life_on_kill, .lo = 1, .hi = 2 },
-    .{ .kind = .life_flask, .lo = 10, .hi = 20 },
-    .{ .kind = .penetration, .lo = 5, .hi = 10 },
-    .{ .kind = .thorns, .lo = 1, .hi = 2 },
-    .{ .kind = .spoils, .lo = 15, .hi = 25 },
-    .{ .kind = .imbue, .lo = 10, .hi = 20 },
-    .{ .kind = .resolve, .lo = 10, .hi = 20 },
-    .{ .kind = .lantern, .lo = 1, .hi = 1 },
-    .{ .kind = .mana_on_kill, .lo = 1, .hi = 2 },
-    .{ .kind = .mana_flask, .lo = 10, .hi = 20 },
-    .{ .kind = .masked, .lo = 25, .hi = 40 },
-    .{ .kind = .stillness, .lo = 1, .hi = 2 },
-    .{ .kind = .opportunist, .lo = 15, .hi = 30 },
-    .{ .kind = .bounding, .lo = 1, .hi = 1 },
-    .{ .kind = .alacrity, .lo = 1, .hi = 1 },
-};
+const Range = struct { lo: i32, hi: i32 };
 
-pub const MODS = blk: {
-    var out: [AFFIXES.len]Mod = undefined;
-    for (AFFIXES, &out) |a, *m| m.* = a.kind;
-    std.debug.assert(std.mem.eql(Mod, &out, std.enums.values(Mod)));
+const RANGES = std.EnumArray(Mod, Range).init(.{
+    .life = .{ .lo = 2, .hi = 6 },
+    .mana = .{ .lo = 1, .hi = 3 },
+    .strength = .{ .lo = 1, .hi = 3 },
+    .dexterity = .{ .lo = 1, .hi = 3 },
+    .intelligence = .{ .lo = 1, .hi = 3 },
+    .physical_damage = .{ .lo = 10, .hi = 20 },
+    .spell_damage = .{ .lo = 10, .hi = 20 },
+    .crit = .{ .lo = 2, .hi = 5 },
+    .armour = .{ .lo = 2, .hi = 4 },
+    .dodge = .{ .lo = 2, .hi = 4 },
+    .resistance = .{ .lo = 10, .hi = 20 },
+    .mana_regen = .{ .lo = 1, .hi = 1 },
+    .life_on_kill = .{ .lo = 1, .hi = 2 },
+    .life_flask = .{ .lo = 10, .hi = 20 },
+    .penetration = .{ .lo = 5, .hi = 10 },
+    .thorns = .{ .lo = 1, .hi = 2 },
+    .spoils = .{ .lo = 15, .hi = 25 },
+    .imbue = .{ .lo = 10, .hi = 20 },
+    .resolve = .{ .lo = 10, .hi = 20 },
+    .lantern = .{ .lo = 1, .hi = 1 },
+    .mana_on_kill = .{ .lo = 1, .hi = 2 },
+    .mana_flask = .{ .lo = 10, .hi = 20 },
+    .masked = .{ .lo = 25, .hi = 40 },
+    .stillness = .{ .lo = 1, .hi = 2 },
+    .opportunist = .{ .lo = 15, .hi = 30 },
+    .bounding = .{ .lo = 1, .hi = 1 },
+    .alacrity = .{ .lo = 1, .hi = 1 },
+});
+
+pub const MODS = std.enums.values(Mod)[0..std.enums.values(Mod).len].*;
+
+pub const AFFIXES = blk: {
+    var out: [MODS.len]AffixRoll = undefined;
+    for (MODS, &out) |m, *a| a.* = affixOf(m);
     break :blk out;
 };
 
 pub fn affixOf(k: Mod) AffixRoll {
-    return AFFIXES[@intFromEnum(k)];
+    const r = RANGES.get(k);
+    return .{ .kind = k, .lo = r.lo, .hi = r.hi };
 }
 
 pub const RareName = struct {

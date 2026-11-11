@@ -350,9 +350,9 @@ fn cause(ctx: *const Context, tagged: Tags, w: Writer) !void {
             try w.print(" was {s} by {s} {s}{s} {s}{s}.", .{ done(k) orelse "killed", article(if (mere.len > 0) mere else foe, false), mere, foe, ctx.place, dark });
         },
         .gas => if (tagged.contains(.own_goal))
-            try w.print("{} burst {} {s}{s}, then died in its gas.", .{ who, Indefinite{ .word = actor.row(.bloat).name }, ctx.place, dark })
+            try w.print("{} burst {} {s}{s}, then died in its gas.", .{ who, Indefinite{ .word = actor.row(GASSER).name }, ctx.place, dark })
         else if (tagged.contains(.burst_beside))
-            try w.print("{} died in gas from {} that burst nearby {s}{s}.", .{ who, Indefinite{ .word = actor.row(.bloat).name }, ctx.place, dark })
+            try w.print("{} died in gas from {} that burst nearby {s}{s}.", .{ who, Indefinite{ .word = actor.row(GASSER).name }, ctx.place, dark })
         else
             try w.print("{} choked on {s} {s}{s}.", .{ who, sourceName(.gas), ctx.place, dark }),
         .steam => try w.print("{} was scalded to death by {s} {s}{s}.", .{ who, sourceName(.steam), ctx.place, dark }),
@@ -360,6 +360,15 @@ fn cause(ctx: *const Context, tagged: Tags, w: Writer) !void {
         .bleed => try w.print("{} bled to death {s}{s}{s}.", .{ who, ctx.place, dark, if (ctx.killer.torn) " after moving" else "" }),
     }
 }
+
+const GASSER = blk: {
+    var found: ?actor.Kind = null;
+    for (std.enums.values(actor.Kind)) |k| if (k.gasses()) {
+        if (found != null) @compileError("obituary: more than one foe bursts into gas");
+        found = k;
+    };
+    break :blk found orelse @compileError("obituary: no foe bursts into gas");
+};
 
 fn sourceName(by: Source) []const u8 {
     return switch (by) {

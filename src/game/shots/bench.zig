@@ -81,8 +81,7 @@ fn benchStrand(g: *game.Game, target: rl.RenderTexture2D) !void {
 }
 
 fn benchGrass(g: *game.Game, target: rl.RenderTexture2D) !void {
-    game.harness.arena(g, .{ .x = 24, .y = 20 }, &.{});
-    game.harness.grassOver(&g.sim.lv);
+    game.harness.grassArena(g, .{ .x = 24, .y = 20 }, &.{});
     studyLit(g, true, day.NOON);
     game.prepare(g);
     const alt = g.sprites.grass2 orelse return error.GrassAlternateMissing;

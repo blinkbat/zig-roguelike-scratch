@@ -89,12 +89,14 @@ pub fn collectGold(sim: *Simulation, at: P) ?ground_items.Coins {
 pub fn noticeItems(sim: *Simulation, at: P) void {
     var name: [items.NAME_MAX]u8 = undefined;
     for (sim.ground.drops[0..sim.ground.n]) |drop| {
-        if (drop.at.eq(at)) sim.log.push(.loot, "{s} steps over {s}.", .{ sim.name.text(), drop.item.spoken(&name) });
+        if (drop.at.eq(at)) sim.log.push(.loot, STEPS_OVER, .{ sim.name.text(), drop.item.spoken(&name) });
     }
     for (sim.ground.supplies[0..sim.ground.supply_n]) |s| {
-        if (s.at.eq(at)) sim.log.push(.loot, "{s} steps over {s}.", .{ sim.name.text(), consumable.phrase(s.kind) });
+        if (s.at.eq(at)) sim.log.push(.loot, STEPS_OVER, .{ sim.name.text(), consumable.phrase(s.kind) });
     }
 }
+
+const STEPS_OVER = "{s} steps over {s}.";
 
 pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     const slot = target.slot().index;

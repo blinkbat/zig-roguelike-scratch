@@ -18,7 +18,6 @@ const Script = script.Script;
 
 const PAD = widgets.PAD;
 const GAP = widgets.GAP;
-const ROW = widgets.ROW_H;
 const STEP = widgets.ROW_STEP;
 const TEXT = widgets.TEXT;
 const DETAIL = widgets.DETAIL;
@@ -31,6 +30,7 @@ const TALK_W: i32 = 320;
 const TARGET_W: i32 = 300;
 const WHICH_W: i32 = 260;
 const NEW_W: i32 = 90;
+const NEW_LABEL = "+ New";
 const NAME_BTN_W: i32 = 210;
 const NAME_BTN_GAP: i32 = 10;
 const TOGGLE_W: i32 = 160;
@@ -89,8 +89,8 @@ const ChoiceAt = struct { d: u8, l: u8, c: u8 };
 const TableAt = struct { t: script.Table, i: u8 };
 const ActAt = union(enum) {
     trigger: struct { t: u8, a: u8 },
-    line: struct { d: u8, l: u8, a: u8 },
-    choice: struct { d: u8, l: u8, c: u8, a: u8 },
+    line: struct { at: LineAt, a: u8 },
+    choice: struct { at: ChoiceAt, a: u8 },
 };
 const Focus = union(enum) {
     npc: u8,
@@ -164,6 +164,7 @@ pub fn openNpc(ed: *editor.Editor, i: u8) void {
 pub fn open(ed: *editor.Editor, p: Page) void {
     ed.plot.focus = null;
     ed.plot.detail.top = 0;
+    ed.plot.list.top = 0;
     if (!std.meta.eql(ed.plot.seen, Seen.of(&ed.map.script))) {
         ed.plot.pick = .none;
         ed.plot.trigger = null;
@@ -202,7 +203,7 @@ pub fn keys(ed: *editor.Editor) void {
 
 fn close(ed: *editor.Editor) void {
     ed.plot.focus = null;
-    ed.modal = .none;
+    ed.closeModal();
 }
 
 fn typed(ed: *editor.Editor, t: Target) void {
@@ -307,8 +308,8 @@ const ActList = struct { items: []script.Act, n: *u8 };
 fn listOf(m: *Script, at: ActAt) ?ActList {
     return switch (at) {
         .trigger => |t| if (t.t < m.trigger_n) .{ .items = &m.trigger[t.t].act, .n = &m.trigger[t.t].act_n } else null,
-        .line => |l| if (lineOf(m, .{ .d = l.d, .l = l.l })) |ln| .{ .items = &ln.act, .n = &ln.act_n } else null,
-        .choice => |c| if (choiceOf(m, .{ .d = c.d, .l = c.l, .c = c.c })) |ch| .{ .items = &ch.act, .n = &ch.act_n } else null,
+        .line => |l| if (lineOf(m, l.at)) |ln| .{ .items = &ln.act, .n = &ln.act_n } else null,
+        .choice => |c| if (choiceOf(m, c.at)) |ch| .{ .items = &ch.act, .n = &ch.act_n } else null,
     };
 }
 
@@ -380,18 +381,18 @@ fn rightOf(ed: *editor.Editor, f: Frame, list: widgets.Scroll, y: i32) widgets.C
 fn frameOf(ed: *editor.Editor, g: *game.Game, p: Page) Frame {
     const page = widgets.pageFrame(&g.face, g.screen, p.label());
     const f = page.frame;
-    if (modals.backPressed(ed, g, f, page.bottom - ROW, "Close", "Every change is in the map already; it saves with it")) close(ed);
+    if (modals.backPressed(ed, g, f, page.foot(), "Close", "Every change is in the map already; it saves with it")) close(ed);
     const col = page.column();
-    return .{ .x = col.left(), .y = f.y, .w = col.inner(), .bottom = page.bottom - ROW - GAP };
+    return .{ .x = col.left(), .y = f.y, .w = col.inner(), .bottom = page.foot() - GAP };
 }
 
-fn listHead(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, comptime title: []const u8, n: usize, most: usize, tip: [:0]const u8) bool {
+fn listHead(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, comptime title: []const u8, n: usize, most: usize, add_w: i32, label: []const u8, tip: [:0]const u8) bool {
     countHeading(g, f.x, y, f.listW(), title, n, most);
-    return rightButton(ed, g, f.x + f.listW() - GAP, y, NEW_W, "+ New", n < most, tip);
+    return rightButton(ed, g, f.x + f.listW() - GAP, y, add_w, label, n < most, tip);
 }
 
-fn listRow(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, label: []const u8, on: bool, tip: [:0]const u8) bool {
-    const hit = button(ed, g, widgets.row(f.x, y, f.listW() - GAP), label, on, true, tip);
+fn listRow(ed: *editor.Editor, g: *game.Game, x: i32, w: i32, y: i32, label: []const u8, on: bool, tip: ?[:0]const u8) bool {
+    const hit = button(ed, g, widgets.row(x, y, w - GAP), label, on, true, tip);
     if (hit) ed.plot.detail.top = 0;
     return hit;
 }
@@ -553,11 +554,11 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     }
     for (m.npcs(), 0..) |*npc, i| {
         const line = std.fmt.bufPrint(&buf, "{s}  (node {d})", .{ npc.called(), npc.node }) catch "";
-        if (listRow(ed, g, f, y, line, s.pick == .npc and s.pick.npc == i, "What this NPC is called and which dialog it opens")) s.pick = .{ .npc = @intCast(i) };
+        if (listRow(ed, g, f.x, lw, y, line, s.pick == .npc and s.pick.npc == i, "What this NPC is called and which dialog it opens")) s.pick = .{ .npc = @intCast(i) };
         y += STEP;
     }
     y += GAP;
-    if (listHead(ed, g, f, y, "Dialogs", m.dialog_n, script.MAX_DIALOGS, "A new dialog of one empty line")) {
+    if (listHead(ed, g, f, y, "Dialogs", m.dialog_n, script.MAX_DIALOGS, NEW_W, NEW_LABEL, "A new dialog of one empty line")) {
         if (m.addDialog("")) |d| {
             ed.bank();
             s.pickDialog(d);
@@ -566,7 +567,7 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     }
     y += STEP;
     for (m.dialogs(), 0..) |*dl, i| {
-        if (listRow(ed, g, f, y, dl.name.text(), s.pick == .dialog and s.pick.dialog == i, "Its lines, what they say and where each choice goes")) s.pickDialog(@intCast(i));
+        if (listRow(ed, g, f.x, lw, y, dl.name.text(), s.pick == .dialog and s.pick.dialog == i, "Its lines, what they say and where each choice goes")) s.pickDialog(@intCast(i));
         y += STEP;
     }
     const right = rightOf(ed, f, list, y);
@@ -743,10 +744,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     for (d.lines(), 0..) |*ln, i| {
         const first = if (ln.say.n > 0) ln.say.text() else SILENT;
         const label = std.fmt.bufPrintZ(&line_buf, "{s}{s}: {s}", .{ if (i == 0) "> " else "", ln.name.text(), first }) catch "";
-        if (button(ed, g, widgets.row(lx, y, lines_w - GAP), label, s.line == i, true, if (i == 0) "Where it opens" else null)) {
-            s.line = @intCast(i);
-            s.detail.top = 0;
-        }
+        if (listRow(ed, g, lx, lines_w, y, label, s.line == i, if (i == 0) "Where it opens" else null)) s.line = @intCast(i);
         y += STEP;
     }
     const tools_w = lines_w - GAP;
@@ -786,7 +784,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
     const say_h = text_panel.fieldHeight(SAY_ROWS);
     words(ed, g, raster.rect(x + LABEL_W, y, w - LABEL_W, say_h), .{ .say = at }, SILENT);
     y += say_h + GAP;
-    y = actRows(ed, g, x, x, y, w, "When shown", .{ .line = .{ .d = di, .l = li, .a = 0 } });
+    y = actRows(ed, g, x, x, y, w, "When shown", .{ .line = .{ .at = at, .a = 0 } });
     y += GAP;
     if (countHead(ed, g, x, y, w, "Choices", ln.choice_n, script.MAX_CHOICES, CHOICE_ADD_W, "+ Choice", "Something the hero may answer")) {
         if (mathx.push(script.Choice, &ln.choice, &ln.choice_n, .{})) ed.bank();
@@ -806,7 +804,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
         caption(g, x + SUB_X, y, SUB_W, "shown if", look.DIM);
         optCond(ed, g, x, y, w, &ch.gate, "Always shown", "Hidden, not greyed, while it does not hold");
         y += STEP;
-        y = actRows(ed, g, x, x + SUB_X, y, w, "does", .{ .choice = .{ .d = di, .l = li, .c = c, .a = 0 } });
+        y = actRows(ed, g, x, x + SUB_X, y, w, "does", .{ .choice = .{ .at = cat, .a = 0 } });
         y += GAP;
     }
     const used = ln.thenUsed();
@@ -853,11 +851,11 @@ fn actRows(ed: *editor.Editor, g: *game.Game, x: i32, title_x: i32, top: i32, w:
 }
 
 fn withAct(at: ActAt, i: u8) ActAt {
-    return switch (at) {
-        .trigger => |t| .{ .trigger = .{ .t = t.t, .a = i } },
-        .line => |l| .{ .line = .{ .d = l.d, .l = l.l, .a = i } },
-        .choice => |c| .{ .choice = .{ .d = c.d, .l = c.l, .c = c.c, .a = i } },
-    };
+    var out = at;
+    switch (out) {
+        inline else => |*p| p.a = i,
+    }
+    return out;
 }
 
 fn actKindOk(m: *const Script, k: script.ActKind, spoken: bool) bool {
@@ -1136,7 +1134,7 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     var buf: [widgets.LINE]u8 = undefined;
     const list = listArea(ed, f);
     var y = list.begin(&ed.clip);
-    if (listHead(ed, g, f, y, "Triggers", m.trigger_n, script.MAX_TRIGGERS, "A trigger that always holds and does nothing yet")) {
+    if (listHead(ed, g, f, y, "Triggers", m.trigger_n, script.MAX_TRIGGERS, NEW_W, NEW_LABEL, "A trigger that always holds and does nothing yet")) {
         if (m.addTrigger()) |t| {
             ed.bank();
             s.trigger = t;
@@ -1146,14 +1144,13 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     y += STEP;
     for (m.triggers(), 0..) |*t, i| {
         const label = std.fmt.bufPrint(&buf, "{s}{s}", .{ t.name.text(), if (t.parked) "  (parked)" else "" }) catch "";
-        if (listRow(ed, g, f, y, label, if (s.trigger) |at| at == i else false, "When it fires and what it does")) s.trigger = @intCast(i);
+        if (listRow(ed, g, f.x, lw, y, label, if (s.trigger) |at| at == i else false, "When it fires and what it does")) s.trigger = @intCast(i);
         y += STEP;
     }
     inline for (comptime std.enums.values(script.Table)) |t| {
         y += GAP;
         const all = m.names(t);
-        countHeading(g, f.x, y, lw, comptime menu.capital(@tagName(t)) ++ "s", all.len, Script.tableMax(t));
-        if (rightButton(ed, g, f.x + lw - GAP, y, NAME_ADD_W, widgets.MORE, all.len < Script.tableMax(t), "A new " ++ @tagName(t) ++ ", named for its kind")) {
+        if (listHead(ed, g, f, y, comptime menu.capital(@tagName(t)) ++ "s", all.len, Script.tableMax(t), NAME_ADD_W, widgets.MORE, "A new " ++ @tagName(t) ++ ", named for its kind")) {
             if (m.coin(t)) |_| ed.bank();
         }
         y += STEP;
@@ -1226,7 +1223,7 @@ fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
     const f = frameOf(ed, g, .quests);
     const list = listArea(ed, f);
     var y = list.begin(&ed.clip);
-    if (listHead(ed, g, f, y, "Quests", m.quest_n, script.MAX_QUESTS, "A quest of one blank stage")) {
+    if (listHead(ed, g, f, y, "Quests", m.quest_n, script.MAX_QUESTS, NEW_W, NEW_LABEL, "A quest of one blank stage")) {
         if (m.addQuest()) |q| {
             ed.bank();
             s.quest = q;
@@ -1235,7 +1232,7 @@ fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
     }
     y += STEP;
     for (m.quests(), 0..) |*q, i| {
-        if (listRow(ed, g, f, y, q.titled(), if (s.quest) |at| at == i else false, "Its title and what each stage asks")) s.quest = @intCast(i);
+        if (listRow(ed, g, f.x, f.listW(), y, q.titled(), if (s.quest) |at| at == i else false, "Its title and what each stage asks")) s.quest = @intCast(i);
         y += STEP;
     }
     const right = rightOf(ed, f, list, y);

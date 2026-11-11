@@ -37,6 +37,13 @@ pub const Roll = struct {
         out.physical = 0;
         return out;
     }
+
+    pub fn burnt(self: Roll, resists: damage.Resists) Roll {
+        var out = self;
+        out.dmg += damage.resisted(self.fire, resists.get(tactics.Imbue.IMBUES));
+        out.fire = 0;
+        return out;
+    }
 };
 pub const Rolled = struct {
     blow: damage.Damage,
@@ -75,7 +82,7 @@ pub fn heroRollWith(rng: *mathx.Rng, sim: *const Simulation, comptime attack: at
 fn imbuedScaled(rng: *mathx.Rng, sim: *const Simulation, attack: attrs.Attack, by: attrs.Attrs, style: attrs.Style, d: damage.Damage) Rolled {
     const readied = sim.heroReadied();
     var fired = d;
-    if (readied.imbues(attack)) fired.elements.getPtr(tactics.Imbue.IMBUES).* +=tactics.Imbue.FIRE.roll(rng);
+    if (readied.imbues(attack)) fired.elements.getPtr(tactics.Imbue.IMBUES).* += tactics.Imbue.FIRE.roll(rng);
     var hit = scaled(rng, by, style, fired);
     hit.effect = sim.growth.onHit(sim.inventory.gear, attack, readied);
     return hit;
@@ -219,9 +226,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
     const stats = sim.combatStats(a);
-    var r = raw.against(stats.armour, &sim.rng);
-    r.dmg += damage.resisted(r.fire, stats.elements.get(tactics.Imbue.IMBUES));
-    r.fire = 0;
+    var r = raw.against(stats.armour, &sim.rng).burnt(stats.elements);
     r.dmg = blowOn(heroWeak(sim), r.opportunity orelse opportune(sim, a), &a.shock, r.dmg, r.applied);
     const kind = a.kind;
     const at = a.at;

@@ -209,8 +209,7 @@ pub const Label = struct {
 
     /// Trimmed. Whether it changed; null when refused.
     pub fn set(self: *Label, s: []const u8) ?bool {
-        const t = std.mem.trim(u8, s, " ");
-        if (t.len > NAME_MAX or !plain(t)) return null;
+        const t = script.fitText(s, NAME_MAX) orelse return null;
         if (std.mem.eql(u8, t, self.text())) return false;
         @memcpy(self.buf[0..t.len], t);
         self.n = t.len;

@@ -2,7 +2,7 @@ const std = @import("std");
 const mathx = @import("../../core/mathx.zig");
 const grid = @import("../../map/grid.zig");
 const carve = @import("../../map/carve.zig");
-const gen =@import("../../map/gen.zig");
+const gen = @import("../../map/gen.zig");
 const gas = @import("../../map/gas.zig");
 const menu = @import("../../ui/menu.zig");
 const actor = @import("../../play/actor.zig");
@@ -813,7 +813,7 @@ test "a foe a beefy pib sweeps is drawn struck as the sweep lands, not before" {
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 21 }});
     harness.toughenFoes(g);
-    const rat: usize = 1;
+    const rat = harness.foeSlot(0);
     _ = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
     g.sim.unkillable = true;
     harness.use(g, .wait);
@@ -883,7 +883,7 @@ test "a swept foe's skipped status turn waits for the sweep's impact" {
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
     harness.toughenFoes(g);
-    const rat: usize = 1;
+    const rat = harness.foeSlot(0);
     g.sim.pool.items[rat].chill = .{ .turns = glacial.TURNS, .phase = glacial.CYCLE - 1 };
     _ = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
     g.sim.unkillable = true;

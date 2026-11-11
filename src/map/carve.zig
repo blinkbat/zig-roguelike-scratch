@@ -488,7 +488,7 @@ pub const Stretches = struct {
         var seen = grid.CellSet.initEmpty();
         var n: u16 = 0;
         for (0..grid.CELLS) |c| {
-            if (seen.isSet(c) or lv.tile[c].solid() or (barred and lv.barrel[c])) continue;
+            if (seen.isSet(c) or !lv.openAt(c) or (barred and lv.barrel[c])) continue;
             const Way = Walked(barred);
             var spread = grid.Spread(Way, Way.has){ .ctx = .{ .lv = lv }, .steps = &grid.STEPS, .seen = &seen, .queue = &s.queue };
             spread.seed(grid.Level.of(c));
@@ -591,15 +591,19 @@ fn barBetween(lv: *const grid.Level, st: *Stretches, main: u16) ?usize {
     return null;
 }
 
+fn keepsBeside(t: grid.Tile) bool {
+    return t.liquid() or t.isChest();
+}
+
 fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, laid: Laid) Regions {
     const base = Over{ .tile = pal.open, .decked = true };
     var out = Regions.initEmpty();
     for (0..grid.CELLS) |i| {
-        if (region[i] == NONE) continue;
+        if (region[i] == NONE or out.isSet(region[i])) continue;
         const t = lv.tile[i];
         const other = !base.has(t) and t != pal.path;
         const opened = if (laid.before) |b| b[i].solid() else false;
-        if (other or opened or lv.door[i] != grid.NO_DOOR or near(lv, grid.Level.of(i), 1, Is(grid.Tile.liquid){})) out.set(region[i]);
+        if (other or opened or lv.door[i] != grid.NO_DOOR or near(lv, grid.Level.of(i), 1, Is(keepsBeside){})) out.set(region[i]);
     }
     for (laid.lots) |lot| {
         var cells = lot.cells();

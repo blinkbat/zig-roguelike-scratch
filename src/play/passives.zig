@@ -25,11 +25,21 @@ pub const Arm = enum {
     }
 
     pub fn of(c: hero.Class) Arm {
-        for (ARMS) |a| {
-            if (a.class() == c) return a;
-        }
-        unreachable;
+        return CLASS_ARMS.get(c);
     }
+};
+const CLASS_ARMS = blk: {
+    var out = std.EnumArray(hero.Class, Arm).initUndefined();
+    var seen = std.EnumSet(hero.Class).initEmpty();
+    for (ARMS) |a| {
+        if (seen.contains(a.class())) @compileError(@tagName(a.class()) ++ " belongs to more than one passive arm");
+        seen.insert(a.class());
+        out.set(a.class(), a);
+    }
+    for (hero.CLASSES) |c| {
+        if (!seen.contains(c)) @compileError(@tagName(c) ++ " has no passive arm");
+    }
+    break :blk out;
 };
 pub const Branch = enum {
     warrior_life,

@@ -427,7 +427,20 @@ comptime {
             if (std.mem.eql(u8, d[1], name)) break;
         } else @compileError(name ++ " has no source to check");
     }
+    for (FN_SOURCES) |d| {
+        if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "fn " ++ d[1] ++ "(") == null) @compileError(d[0] ++ " no longer defines " ++ d[1]);
+    }
 }
+
+const FN_SOURCES = [_][2][]const u8{
+    .{ "app.zig", "capturePage" },
+    .{ "edit/editor.zig", "capture" },
+    .{ "edit/editor.zig", "snap" },
+    .{ "edit/widgets.zig", "button" },
+    .{ "edit/widgets.zig", "buttonOn" },
+    .{ "edit/widgets.zig", "drawFit" },
+    .{ "gfx/font.zig", "drawMid" },
+};
 
 fn inputSource(path: []const u8) bool {
     return std.mem.startsWith(u8, path, SRC) and contains(&INPUT_SOURCES, path[SRC.len..]);

@@ -152,7 +152,7 @@ test "hero post-action death prevents gas spread and foe actions while clearing 
     const rng = g.sim.rng;
     const foe = g.sim.pool.items[harness.foeSlot(0)];
     g.sim.stepped = true;
-    g.sim.displaced.set(1);
+    g.sim.displaced.set(harness.foeSlot(0));
     combat.endTurn(g);
     try std.testing.expect(g.mode == .dead);
     try std.testing.expectEqualDeep(rng, g.sim.rng);
@@ -236,16 +236,16 @@ fn missedBlowArena(g: *game.Game) !u16 {
     g.sim.lv.set(from, .reeds);
     const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
     game.settle(g);
-    const attacker = g.sim.combatStats(g.sim.heroBody().?);
-    const defender = g.sim.combatStats(g.sim.pool.get(id).?);
-    for (0..1000) |seed| {
-        var rng = mathx.Rng.init(seed);
-        if (attacker.misses(defender, &rng)) {
-            g.sim.rng = mathx.Rng.init(seed);
-            return id;
+    const Stats = @TypeOf(g.sim.combatStats(g.sim.heroBody().?));
+    const Miss = struct {
+        attacker: Stats,
+        defender: Stats,
+        pub fn holds(m: @This(), rng: *mathx.Rng) bool {
+            return m.attacker.misses(m.defender, rng);
         }
-    }
-    return error.NoMissSeed;
+    };
+    g.sim.rng = harness.rngWhere(Miss{ .attacker = g.sim.combatStats(g.sim.heroBody().?), .defender = g.sim.combatStats(g.sim.pool.get(id).?) });
+    return id;
 }
 
 test "missed reactions preserve the chosen last deed while chosen attacks still report misses" {
@@ -549,14 +549,14 @@ test "a flask's first heal shows on its own turn and later recovery precedes the
     h.hp = 10;
     g.pic.catchUp(&g.sim);
     const hero = g.sim.heroSlot().?;
-    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0),.lands = false }});
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0), .lands = false }});
     harness.use(g, .life_flask);
     const first_tick = 10 + firstLifeTick(h.max);
     try std.testing.expectEqual(first_tick, h.hp);
     g.st = .{};
     game.update(g, 0);
     try std.testing.expectEqual(first_tick, g.pic.pictured[hero].hp);
-    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0),.lands = true }});
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0), .lands = true }});
     harness.use(g, .wait);
     const healed = first_tick + firstLifeTick(h.max);
     try std.testing.expect(h.hp < healed);

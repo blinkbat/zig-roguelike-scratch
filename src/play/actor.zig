@@ -567,7 +567,9 @@ pub const Pool = struct {
     }
 
     pub fn surface(self: *Pool, hero: P) void {
-        for (self.slice()) |*a| a.submerged = row(a.kind).lurks and mathx.dist(a.at, hero) > LURK_REACH;
+        for (self.slice()) |*a| if (a.alive) {
+            a.submerged = row(a.kind).lurks and mathx.dist(a.at, hero) > LURK_REACH;
+        };
     }
 
     pub fn get(self: *Pool, id: u16) ?*Actor {

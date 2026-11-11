@@ -140,7 +140,7 @@ const Beside = struct {
     fn of(box: rl.Rectangle, screen: mathx.P) Beside {
         const scale = scaleFor(screen);
         const size = look.SPRITE_PX * scale;
-        return .{ .scale = scale, .size = size, .feet = .{ .x = @as(i32, @intFromFloat(box.x)) - BESIDE_GAP - @divTrunc(size, 2), .y = raster.bottom(box) } };
+        return .{ .scale = scale, .size = size, .feet = .{ .x = raster.left(box) - BESIDE_GAP - @divTrunc(size, 2), .y = raster.bottom(box) } };
     }
 
     fn top(self: Beside) f32 {

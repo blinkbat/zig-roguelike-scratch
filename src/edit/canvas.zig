@@ -104,7 +104,7 @@ const SELECTED = look.fade(PICKED, 0.15);
 const GRID_INK = look.fade(look.EDGE, 0.35);
 const DOOR_BACK = look.fade(look.BG, 0.55);
 const PLAQUE_BG = look.fade(PANEL_BG, 0.85);
-pub const INK_EDGE: f32 = 2;
+const INK_EDGE = widgets.INK_EDGE;
 const PICK_EDGE: f32 = 3;
 /// Door numbers crowd their glyph below this many pixels a cell.
 const LABEL_PX: f32 = 32;
@@ -144,6 +144,10 @@ fn drawDoors(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
 
 fn drawCursor(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     const m = ed.mouseCell(c);
+    if (ed.cell_action != null) {
+        if (grid.Level.inside(m) and ed.mouseIn(c)) outlineCells(ed, c, placement.brushBox(m, 1), PICKED);
+        return;
+    }
     if (ed.pasting) {
         if (!ed.mouseIn(c)) return;
         const bd = &ed.board;

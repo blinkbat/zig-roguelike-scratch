@@ -42,23 +42,20 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
         if (desk.clicked()) ed.gesture();
         return;
     }
-    if (desk.play) ed.playStart();
-    if (desk.play_here) playHere(ed, bounds, over_canvas);
-    if (ed.action != .none) return;
     const view = ed.view;
     const node = ed.node;
-    shortcuts(ed, bounds, over_canvas);
-    if (desk.erase_hit and (ed.drag != null or ed.linking != null)) {
-        ed.drop();
-        ed.fresh = true;
-        return;
+    if (!ed.renamed) {
+        if (desk.play) ed.playStart();
+        if (desk.play_here) playHere(ed, bounds, over_canvas);
+        if (ed.action != .none) return;
+        shortcuts(ed, bounds, over_canvas);
     }
+    if (desk.erase_hit and (ed.drag != null or ed.linking != null)) return ed.dismiss();
     if (ed.modal != .none or ed.renaming) return;
     if (ed.popup) |pp| {
         if (editor.popupScrolls(pp.which) and desk.wheel != 0) ed.popup_top = widgets.scrollTop(ed.popup_top, desk.notch(), editor.popupLen(ed, pp.which), editor.popupShown(ed, pp.which, screen_height));
         if (desk.clicked() and !ed.mouseIn(editor.popupRect(ed, pp, screen_height))) {
-            ed.popup = null;
-            ed.fresh = true;
+            ed.dismiss();
         } else if (desk.clicked()) ed.gesture();
         return;
     }
@@ -186,7 +183,7 @@ pub fn backed(d: *const Desk) bool {
 
 fn dismissed(ed: *Editor) bool {
     if (!backed(&ed.desk)) return false;
-    ed.modal = .none;
+    ed.closeModal();
     return true;
 }
 
@@ -224,8 +221,7 @@ pub fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const p = ed.mouseCell(c);
     if (ed.cell_action) |action| {
         if (d.erase_hit or (d.paint_hit and !over)) {
-            ed.cell_action = null;
-            ed.fresh = true;
+            ed.dismiss();
         } else if (d.paint_hit and over) {
             ed.cell_action = null;
             switch (action) {

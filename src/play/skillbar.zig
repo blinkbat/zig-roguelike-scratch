@@ -204,7 +204,7 @@ pub const Act = enum {
                 .bow => bow.aimable(lv, from, to, reach_),
                 .swing => module(t).?.aimable(lv, from, to),
                 .leap, .rush => module(t).?.aimable(lv, from, to, reach_),
-                .ground => mathx.dist(from, to) <= reach_ and lv.walkable(to) and lv.isLit(to) and grid.litLine(lv, from, to),
+                .ground => juke.inReach(from, to, reach_) and lv.walkable(to) and lv.isLit(to) and grid.litLine(lv, from, to),
             } else unreachable,
         };
     }
@@ -404,6 +404,12 @@ comptime {
         std.debug.assert(n >= 1);
     }
     for (consumable.KINDS) |k| std.debug.assert(Act.ofSupply(k).supplyOf() == k);
+    for (std.enums.values(contracts.Declaration)) |d| {
+        const declared = for (ACTS) |a| {
+            if (CONTRACTS.get(a).declarations.contains(d)) break true;
+        } else false;
+        if (!declared) @compileError("no skill declares " ++ @tagName(d));
+    }
 }
 
 pub const Set = enum {

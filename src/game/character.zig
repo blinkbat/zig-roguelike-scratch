@@ -235,7 +235,7 @@ fn takeDrop(g: *game.Game, i: usize) bool {
         itemFailed(g, error.Full);
         return false;
     }
-    g.sim.log.push(.loot, "Picked up {s}.", .{item.spoken(&name)});
+    g.sim.log.push(.loot, PICKED_UP, .{item.spoken(&name)});
     return true;
 }
 
@@ -245,9 +245,11 @@ fn takeSupply(g: *game.Game, i: usize) bool {
         g.character.message.say(inventory.STACK_FULL, .{});
         return false;
     }
-    g.sim.log.push(.loot, "Picked up {s}.", .{consumable.phrase(kind)});
+    g.sim.log.push(.loot, PICKED_UP, .{consumable.phrase(kind)});
     return true;
 }
+
+const PICKED_UP = "Picked up {s}.";
 
 fn useCarried(g: *game.Game, k: consumable.Kind) void {
     if (!turnFree(g)) return;

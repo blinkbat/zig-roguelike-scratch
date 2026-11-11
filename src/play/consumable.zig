@@ -11,8 +11,6 @@ const P = mathx.P;
 pub const Kind = enum { bandage, smelling_salts, frost_vial };
 pub const KINDS = std.enums.values(Kind);
 pub const STACK_MAX: u8 = 20;
-pub const FOE_PERCENT = 8;
-pub const CHEST_PERCENT = 50;
 
 pub fn roll(rng: *mathx.Rng, percent: u32) ?Kind {
     return if (rng.percent(percent)) rng.pick(Kind, KINDS) else null;

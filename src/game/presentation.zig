@@ -299,8 +299,8 @@ pub const Presentation = struct {
 
     pub fn recordProjectile(self: *Presentation, from: P, act: skillbar.Act, flight: bow.Flight) Stroke {
         self.shot = .{ .flight = flight, .from = from, .act = act };
-        self.holdUntil(self.shot.?.ends());
-        const stroke = Stroke{ .from = from, .wait = self.shot.?.lands(), .fire = act.element() == .fire };
+        const loosed = self.loose(self.shot.?);
+        const stroke = Stroke{ .from = from, .wait = loosed.lands, .fire = act.element() == .fire };
         self.shot.?.zapInto(&self.fx);
         self.lead = stroke.wait;
         return stroke;
@@ -479,7 +479,8 @@ pub const Presentation = struct {
 
     pub fn standing(self: *const Presentation, sim: *const Simulation, i: usize) bool {
         if (self.split_from[i] != null or self.fx.impacts.revealing(.fromIndex(i))) return false;
-        return sim.pool.items[i].alive or self.fx.impacts.holds(.fromIndex(i)) or self.glide[i].done() < 1;
+        if (sim.pool.items[i].alive or self.fx.impacts.holds(.fromIndex(i))) return true;
+        return self.glide[i].done() < 1 and (!self.pictured[i].down() or self.fx.impacts.isDying(.fromIndex(i)));
     }
 
     pub fn gone(self: *const Presentation, sim: *const Simulation, i: usize) bool {
@@ -737,10 +738,6 @@ pub const Presentation = struct {
         self.xp_shown = self.xp_aim;
     }
 
-    pub fn ease(self: *Presentation, sim: *const Simulation, dt: f32) void {
-        self.easeOver(sim, self.groundShown(sim), dt);
-    }
-
     pub fn easeOver(self: *Presentation, sim: *const Simulation, ground: *const grid.Level, dt: f32) void {
         self.stepOcclusion(sim, &ground.tile, dt);
         self.stepSighted(sim, dt);
@@ -852,7 +849,7 @@ pub const Presentation = struct {
             }
             if (!a.alive and !self.pictured[i].down()) dying = true;
             if (self.pictured[i].down() or (a.alive and !self.fx.impacts.pending(.fromIndex(i)))) self.masked.unset(i);
-            if (self.dives[i] == null) self.under.setValue(i, a.submerged);
+            if (self.dives[i] == null and a.alive) self.under.setValue(i, a.submerged);
             const from = self.split_from[i] orelse continue;
             if (self.fx.impacts.revealing(.fromIndex(i)) or self.split_from[from] != null) continue;
             self.split_from[i] = null;
@@ -891,7 +888,7 @@ pub const Presentation = struct {
         if (warded) |c| self.recordRecovery(sim, std.mem.max(f32, part[0..sim.pool.n]), c);
         for (sim.pool.constSlice(), 0..) |*a, i| {
             if (!self.glide[i].to.eq(a.at)) self.glide[i] = self.glide[i].toward(a.at, late);
-            if (a.submerged != self.under.isSet(i) and self.dives[i] == null) self.dives[i] = part[i];
+            if (a.alive and a.submerged != self.under.isSet(i) and self.dives[i] == null) self.dives[i] = part[i];
         }
     }
 
@@ -932,9 +929,10 @@ pub const Presentation = struct {
         if (staggered and target.value != sim.hero and (moved or attack != null or owed.struck != null)) starts_at = @max(starts_at, turn.late + motion.left());
         if (staggered and moved and target.value != sim.hero) starts_at = @max(starts_at, turn.late + self.clearIn(sim, slot, body.at));
         if (staggered) turn.next_at = starts_at + game.STAGGER_S;
-        if (self.turning[slot]) |*t| t.in = if (staggered) starts_at - turn.late else start;
+        const begins_in = if (staggered) starts_at - turn.late else start;
+        if (self.turning[slot]) |*t| t.in = begins_in;
         const hero_at = if (owed.knock) |k| k.from else turn.hero_cell;
-        var finishes_in = if (staggered) starts_at - turn.late else if (moved) start else @max(start, motion.left());
+        var finishes_in = if (staggered or moved) begins_in else @max(start, motion.left());
         const bumps = owed.arrow == null and (owed.struck != null or attack != null);
         if (moved) {
             motion.* = motion.toward(destination, turn.late - starts_at);
@@ -945,7 +943,7 @@ pub const Presentation = struct {
             finishes_in = motion.left();
             self.holdUntil(finishes_in);
         }
-        var impact_in = (if (staggered) starts_at - turn.late else start) + game.BUMP_LANDS;
+        var impact_in = begins_in + game.BUMP_LANDS;
         if (arrow_seen) {
             const release = @max(start, starts_at - turn.late);
             const s = Shot{ .from = body.at, .flight = owed.arrow.?, .t = -release, .net = attack != null and attack.? == .snare };
@@ -1060,7 +1058,7 @@ pub const Presentation = struct {
             .scorched, .burned => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, true, in_view, .{ .slot = timing.slot, .fire_at = mark }),
             .bled => if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .drip = drip }),
         };
-        if (timing.body.submerged != self.under.isSet(timing.slot.index)) {
+        if (timing.body.alive and timing.body.submerged != self.under.isSet(timing.slot.index)) {
             const emerges_in = if (timing.staggered) @max(0, timing.starts_at - turn.late) else start;
             self.dives[timing.slot.index] = if (timing.body.submerged or timing.moved) timing.finishes_in else emerges_in;
         }
@@ -1098,7 +1096,7 @@ pub const Presentation = struct {
         };
         const kind: ?actor.Kind = if (body) |b| b.kind else null;
         const hero = impact == .actor and sim.isHero(impact.actor.slot.index);
-        const veiled = if (body) |b| b.veiled() else false;
+        const veiled = if (body) |b| b.disguised or (b.submerged and self.under.isSet(impact.actor.slot.index)) else false;
         if (hero or (self.litShown(sim, at) and !veiled)) {
             self.fx.strike(s.wait, .{ .impact = impact, .dir = dir, .matter = fx.matterOf(kind), .fire = s.fire });
             self.flashes(s.wait);

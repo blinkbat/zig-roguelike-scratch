@@ -21,6 +21,8 @@ pub const DROP_PERCENT = 10;
 pub const FOE_GOLD_PERCENT = 50;
 pub const MAGIC_PERCENT = 20;
 pub const RARE_PERCENT = 5;
+pub const FOE_SUPPLY_PERCENT = 8;
+pub const CHEST_SUPPLY_PERCENT = 50;
 
 /// A gold drop's range, both ends inclusive.
 pub const Gold = struct {
@@ -46,7 +48,7 @@ pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
     return .{
         .gold = if (rng.percent(FOE_GOLD_PERCENT)) FOE_GOLD.roll(rng) else 0,
         .item = if (rng.percent(DROP_PERCENT)) items.roll(rng, item_rarity) else null,
-        .supply = consumable.roll(rng, consumable.FOE_PERCENT),
+        .supply = consumable.roll(rng, FOE_SUPPLY_PERCENT),
     };
 }
 
@@ -54,7 +56,7 @@ pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
 pub fn chestLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
     const item = items.roll(rng, item_rarity);
     const gold = CHEST_GOLD.roll(rng);
-    return .{ .item = item, .gold = gold, .supply = consumable.roll(rng, consumable.CHEST_PERCENT) };
+    return .{ .item = item, .gold = gold, .supply = consumable.roll(rng, CHEST_SUPPLY_PERCENT) };
 }
 
 /// A chest's loot, its item rolled and then given up for a rare.
