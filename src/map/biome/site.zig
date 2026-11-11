@@ -3,7 +3,7 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Qud's historic sites: sectioned first (Bucklew's fix for WFC's sameness), each section grown by overlapping WFC, N=3.
+// Sectioned first (Bucklew's fix for WFC's sameness), each section grown by overlapping WFC, N=3.
 
 const P = mathx.P;
 
@@ -96,7 +96,6 @@ const Model = struct {
     n: usize = 0,
     /// `fits[p][d]`: the patterns that may sit one step in direction `d` from `p`.
     fits: [PATTERNS_MAX][DIRS.len]Bits = undefined,
-    /// Neighbour constraints for an unresolved cell.
     any: [DIRS.len]Bits = @splat(Bits.initEmpty()),
 
     fn of(art: []const []const u8) Model {
@@ -319,7 +318,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
 test "every template's model holds all its patterns and every one has a neighbour each way" {
     for (TEMPLATES) |art| {
         const m = Model.of(art);
-        std.debug.print("a template: {d} patterns of 3x3 with rotations and reflections, room for {d}\n", .{ m.n, PATTERNS_MAX });
         try std.testing.expect(m.n > 10 and m.n < PATTERNS_MAX);
         for (0..m.n) |a| {
             for (0..DIRS.len) |k| try std.testing.expect(m.fits[a][k].count() > 0);
@@ -343,5 +341,4 @@ test "site templates retain seeded terrain and RNG through solver representation
         try std.testing.expectEqualSlices(u64, &fixture.rng, &rng.impl.s);
         try std.testing.expect(carve.count(&lv, .wall) > 200 and carve.count(&lv, .floor) > 200);
     }
-    std.debug.print("site generation: all {d} templates retain exact seeded terrain, final RNG and wall/floor coverage\n", .{expected.values.len});
 }

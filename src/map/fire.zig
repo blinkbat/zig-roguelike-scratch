@@ -13,52 +13,38 @@ pub const CATCHES = "Fire takes hold!";
 pub const DIES = "The flames die out.";
 /// Turns a cell burns once it catches.
 pub const BURNS: u8 = 3;
-/// Each turn, a burning cell's chance to catch each neighbour that burns, to boil each wet one or to melt each frozen one.
 pub const SPREAD: u32 = 20;
-/// Smoke a burning tile gives off a turn.
 pub const SMOKE: u16 = 14;
-/// At the heaviest rain, the share of every chance to catch that it puts out.
 pub const RAIN_DAMP: f32 = 0.8;
-/// What a tile that burns leaves behind, a bridge aside (`ashOf`).
 pub const ASH: grid.Tile = .dirt;
-/// What standing in flames deals a turn, before fire resistance.
 pub const SCORCH: i32 = 3;
-/// The chance standing in flames sets a body burning, before its fire and burn resistance.
 pub const CATCH: u32 = 50;
-/// The cells landing fire may leap on from what it catches, unless its source says otherwise.
 pub const LANDED_HEAT: u8 = 2;
 
-/// Fire landing: its chance to catch each cell that burns, and the cells it may leap on from there.
 pub const Kindle = struct { chance: u32, heat: u8 = LANDED_HEAT };
 
-/// What `t` leaves as its fire goes out: a bridge drops into the water, shallow where something stands or lies, the rest burns to `ASH`.
 pub fn ashOf(t: grid.Tile, held: bool) grid.Tile {
     if (!t.spans()) return ASH;
     return if (held) .shallows else .water;
 }
 
-/// Every tile `t` may burn down to.
 pub fn ashes(t: grid.Tile) [2]grid.Tile {
     return .{ ashOf(t, false), ashOf(t, true) };
 }
 
-/// `now` is the ash of `was`, burnt down.
 pub fn burntDown(was: grid.Tile, now: grid.Tile) bool {
     return was.burns() and std.mem.indexOfScalar(grid.Tile, &ashes(was), now) != null;
 }
 
-/// What standing in flames deals a turn against `resists`.
 pub fn scorch(resists: damage.Resists) i32 {
     return damage.resisted(SCORCH, resists.get(.fire));
 }
 
-/// `chance` under rain of `rain`, 0 none to 1 a downpour.
 pub fn damped(chance: u32, rain: f32) u32 {
     const r = std.math.clamp(rain, 0, 1);
     return @intFromFloat(@round(@as(f32, @floatFromInt(chance)) * (1 - RAIN_DAMP * r)));
 }
 
-/// `p` burning for `turns`, its fire leaping `heat` cells on.
 pub fn lay(lv: *grid.Level, p: P, turns: u8, heat: u8) void {
     const i = grid.Level.idx(p);
     lv.flames[i] = @max(lv.flames[i], turns);
@@ -69,7 +55,6 @@ fn catches(lv: *const grid.Level, p: P) bool {
     return grid.Level.inside(p) and lv.at(p).burns() and !lv.burning(p);
 }
 
-/// Each cell of `cells` that burns catches by `k`'s chance under `rain`; how many did.
 pub fn kindle(lv: *grid.Level, cells: []const P, k: Kindle, rain: f32, rng: *mathx.Rng) usize {
     const chance = damped(k.chance, rain);
     if (chance == 0) return 0;
@@ -82,13 +67,10 @@ pub fn kindle(lv: *grid.Level, cells: []const P, k: Kindle, rain: f32, rng: *mat
     return n;
 }
 
-/// Every cold blow's chance to put out each burning cell it reaches.
 pub const DOUSE: u32 = 85;
-/// Every cold blow's chance to put out each burning body it reaches.
 pub const QUENCH: u32 = 50;
 pub const QUENCHED = "stops burning";
 
-/// Each burning cell of `cells` goes out by `chance`, leaving its tile unburnt; how many did.
 pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) usize {
     var n: usize = 0;
     for (cells) |p| {
@@ -101,9 +83,6 @@ pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) us
     return n;
 }
 
-/// A turn of the floor's fire: each burning tile smokes, each fire leaps to what burns beside it, boils the water and melts the frozen shallows beside it,
-/// then every cell burns a turn down, and a tile that burns goes to its `ashOf` as its fire goes out; true when any did.
-/// `kept` marks cells whose ground holds what deep water would take.
 pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32, kept: *const grid.CellSet) bool {
     if (std.mem.allEqual(u8, &lv.flames, 0)) return false;
     const was = lv.flames;
@@ -194,7 +173,6 @@ test "a fire in a field of grass leaps only as far as its heat, goes out in a fe
     for (0..4) |h| {
         const heat: u8 = @intCast(h);
         const a = try average(heat, 0, &rng);
-        std.debug.print("a grass fire of heat {d}: {d:.1} cells burnt on average, out to {d} cells, out in at most {d} turns\n", .{ heat, a.cells, a.reach, a.turns });
         try std.testing.expect(a.cells >= was and a.reach <= heat);
         if (heat == 0) try std.testing.expectEqual(@as(f32, 1), a.cells);
         was = a.cells;
@@ -209,7 +187,6 @@ test "rain damps every chance to catch, a downpour most" {
     const dry = try average(3, 0, &rng);
     const drizzle = try average(3, DRIZZLE, &rng);
     const downpour = try average(3, 1, &rng);
-    std.debug.print("a heat-3 grass fire burns {d:.1} cells dry, {d:.1} in a drizzle, {d:.1} in a downpour; spread {d}%/{d}%/{d}%\n", .{ dry.cells, drizzle.cells, downpour.cells, SPREAD, damped(SPREAD, DRIZZLE), damped(SPREAD, 1) });
     try std.testing.expect(downpour.cells < drizzle.cells and drizzle.cells < dry.cells);
 }
 
@@ -258,7 +235,6 @@ test "a fire of no heat burns a whole reed bed down, and no grass beyond it" {
         if (t == .reeds) reeds += 1;
         if (t == ASH and !bed.holds(grid.Level.of(i))) grass += 1;
     }
-    std.debug.print("a heat-0 fire in a 9x5 reed bed: {d} reeds left, {d} grass cells burnt beyond it\n", .{ reeds, grass });
     try std.testing.expectEqual(@as(usize, 0), reeds);
     try std.testing.expectEqual(@as(usize, 0), grass);
 }
@@ -309,7 +285,6 @@ test "dousing puts out only burning cells, by its chance, and leaves their tiles
         try std.testing.expectEqual(grid.Tile.grass, lv.at(AT));
         if (!lv.burning(AT)) try std.testing.expectEqual(@as(u8, 0), lv.heat[grid.Level.idx(AT)]);
     }
-    std.debug.print("a 50% douse put out {d}/{d} fires and nothing unlit\n", .{ out, TRIES });
     try std.testing.expect(out > TRIES / 3 and out < TRIES * 2 / 3);
     var lv = field(.grass);
     lay(&lv, AT, BURNS, 2);
@@ -329,7 +304,6 @@ test "kindling catches only what burns and is not alight, by its chance under th
         var wet = field(.grass);
         soaked += kindle(&wet, &.{AT}, k, 1, &rng);
     }
-    std.debug.print("a 50% kindling caught {d}/{d} dry, {d}/{d} in a downpour\n", .{ caught, TRIES, soaked, TRIES });
     try std.testing.expect(caught > TRIES / 3 and caught < TRIES * 2 / 3 and soaked < caught / 2);
     var lv = field(.floor);
     try std.testing.expectEqual(@as(usize, 0), kindle(&lv, &.{AT}, .{ .chance = mathx.PERCENT, .heat = 1 }, 0, &rng));

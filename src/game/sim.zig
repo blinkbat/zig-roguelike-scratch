@@ -16,7 +16,8 @@ const burning = @import("../play/burning.zig");
 const damage = @import("../play/damage.zig");
 const flask = @import("../play/flask.zig");
 const heroes = @import("../play/hero.zig");
-const items = @import("../play/items.zig");
+const ground_items = @import("../play/ground_items.zig");
+const inventory = @import("../play/inventory.zig");
 const passives = @import("../play/passives.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -26,15 +27,14 @@ const P = mathx.P;
 
 pub const Flasks = std.EnumArray(flask.Kind, flask.Flask);
 
-/// A node as the hero left it.
 pub const Visit = struct {
     lv: grid.Level,
     pool: actor.Pool,
     facing: [actor.MAX]actor.Facing,
-    ground: items.Ground,
+    ground: ground_items.Ground,
 };
 
-/// A body's harm ticks, each run at most once a turn.
+/// Each runs at most once a turn.
 pub const Tick = enum {
     gassed,
     scalded,
@@ -53,7 +53,6 @@ pub const Tick = enum {
         };
     }
 
-    /// What the chronicle says hurt the hero; none for a tick that harms nothing.
     pub fn source(t: Tick) ?chronicle.Source {
         return switch (t) {
             .gassed => .gas,
@@ -76,19 +75,15 @@ pub const DamageResult = struct {
 
 pub const UNKILLABLE_HP: i32 = 1;
 
-/// When each `Simulation` field is reset, every field in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     /// Defaulted as the hero is spawned: a run's first node and each node entered afresh.
     pub const hero = [_][]const u8{"pool"};
-    /// Defaulted as a run starts, besides `hero`.
     pub const start = [_][]const u8{ "visited", "node", "hero", "clock", "days" };
     /// Worked out from the map as a run starts, a node is entered and a saved run resumes.
     pub const derived = [_][]const u8{"outdoors"};
     /// Defaulted as a run starts, and again as a saved one resumes.
     pub const rebuilt = [_][]const u8{"chronicle"};
-    /// Defaulted as a run starts, besides `rebuilt`.
     pub const run = [_][]const u8{ "kills", "gold", "mana_recovery", "flasks", "cooldown", "stepped", "log", "inventory", "ground", "plot" };
-    /// Defaulted as a saved run resumes, besides `rebuilt`.
     pub const resumed = [_][]const u8{"unsaved"};
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
     pub const turn = [_][]const u8{ "travel", "order_n", "flowed" };
@@ -96,24 +91,19 @@ pub const Fields = struct {
     pub const marks = [_][]const u8{ "ran", "displaced" };
     /// Given their values by hand: by the app, as a run begins, or as a node is entered or left.
     pub const set = [_][]const u8{ "name", "class", "lv", "map", "visits", "rng", "seed", "mana", "growth", "loot_rng" };
-    /// Written before each read.
     pub const scratch = [_][]const u8{ "order", "flow", "queue" };
-    /// Kept across runs.
     pub const kept = [_][]const u8{ "unkillable", "playground" };
 };
 
-/// The run as it is, whatever has been drawn of it.
 pub const Simulation = struct {
     name: heroes.Name = heroes.DEFAULT.unnamed(),
-    /// Set before a run begins.
     class: heroes.Class = heroes.DEFAULT,
     clock: day.Clock = .{},
-    /// Whole days the clock has come round.
     days: u32 = 0,
     outdoors: bool = false,
-    /// Kept across runs, never saved.
+    /// Never saved.
     unkillable: bool = false,
-    /// The editor's playground: never saved; the app sets it for every run. Every class skill learned, casting free, never killed.
+    /// Never saved; the app sets it for every run.
     playground: bool = false,
     unsaved: bool = false,
     lv: grid.Level,
@@ -122,7 +112,6 @@ pub const Simulation = struct {
     /// The map being played; null plays one generated floor.
     map: ?*const atlas.Atlas = null,
     node: usize = 0,
-    /// Indexed by node.
     visits: *[atlas.MAX_NODES]Visit,
     visited: std.StaticBitSet(atlas.MAX_NODES) = .initEmpty(),
     /// The door the hero stepped onto this turn, gone through once the turn is drawn.
@@ -134,17 +123,15 @@ pub const Simulation = struct {
     mana: i32 = heroes.DEFAULT.attrs().mana(),
     mana_recovery: i32 = 0,
     flasks: Flasks = .initFill(.{}),
-    /// Turns until each can be used again.
     cooldown: std.EnumArray(skillbar.Act, u8) = .initFill(0),
     /// The hero stepped, leapt or was knocked back since its last action, which tears a bleed wider.
     stepped: bool = false,
     displaced: std.StaticBitSet(actor.MAX) = .initEmpty(),
-    inventory: items.Inventory = .{ .gear = .flasks },
+    inventory: inventory.Inventory = .{ .gear = .flasks },
     growth: progress.State = progress.State.of(heroes.DEFAULT),
-    ground: items.Ground = .{},
+    ground: ground_items.Ground = .{},
     loot_rng: mathx.Rng = mathx.Rng.init(1),
     log: log.Log = .{},
-    /// The map's triggers and conversation as the run has them.
     plot: trigger.Runtime = .{},
     chronicle: chronicle.Chronicle = .{},
     /// Living foes at turn start, nearest first; also their presentation order.
@@ -212,7 +199,6 @@ pub const Simulation = struct {
         return (self.heroBody() orelse return null).at;
     }
 
-    /// What the map's triggers read of the run.
     pub fn world(self: *const Simulation) trigger.World {
         var w = trigger.World{ .node = self.node, .hero = self.heroAt() orelse .{ .x = 0, .y = 0 } };
         for (self.pool.constSlice()) |a| {
@@ -251,7 +237,6 @@ pub const Simulation = struct {
         return self.inventory.gear.draughtsOver(self.growth.perks());
     }
 
-    /// How far the hero's `act` reaches: a movement skill further for Bounding.
     pub fn reachOf(self: *const Simulation, act: skillbar.Act) i32 {
         return act.reachWith(self.inventory.gear.bounding());
     }
@@ -280,7 +265,6 @@ pub const Simulation = struct {
         return self.weatherHere().get(.rain);
     }
 
-    /// What the sky over the hero is doing now; nothing under a roof.
     pub fn weatherHere(self: *const Simulation) climate.Now {
         return if (self.outdoors) self.weatherNow() else .initFill(0);
     }
@@ -302,7 +286,6 @@ pub const Simulation = struct {
         return true;
     }
 
-    /// Fire takes hold of `a` as far as its fire and burn resistance allow; true when it does.
     pub fn ignite(self: *Simulation, slot: usize, a: *actor.Actor) bool {
         return self.igniteFresh(slot, a, mathx.PERCENT);
     }
@@ -315,7 +298,6 @@ pub const Simulation = struct {
         return true;
     }
 
-    /// As `igniteBy`, saying so when `a` was not already burning.
     pub fn igniteFresh(self: *Simulation, slot: usize, a: *actor.Actor, of: u32) bool {
         const fresh = a.burn.turns == 0;
         if (!self.igniteBy(a, of)) return false;
@@ -370,12 +352,10 @@ pub const Simulation = struct {
         return self.climateNow().now(self.seed, self.clock.since(self.days));
     }
 
-    /// Cells round the hero its carried light reaches.
     pub fn heroLight(self: *const Simulation) i32 {
         return self.heroRow().light + self.inventory.gear.sum(.lantern);
     }
 
-    /// What the hero sees from `from`, by its own sight, the sky's and every carried light.
     pub fn see(self: *Simulation, from: P) void {
         var carried: [actor.MAX]lume.Source = undefined;
         var n: usize = 0;
@@ -392,27 +372,22 @@ pub const Simulation = struct {
         self.sayAs(.status, at, fmt, args);
     }
 
-    /// Logged only if `at` is in sight.
     pub fn sayAs(self: *Simulation, kind: log.Kind, at: P, comptime fmt: []const u8, args: anytype) void {
         if (self.lv.isLit(at)) self.log.push(kind, fmt, args);
     }
 
-    /// Logged once if any of `cells` is in sight.
     pub fn sayAnyAt(self: *Simulation, cells: []const P, comptime fmt: []const u8, args: anytype) void {
         for (cells) |p| if (self.lv.isLit(p)) return self.log.say(fmt, args);
     }
 
-    /// Logged only if `a` is seen, not underwater or in its chest.
     pub fn sayOf(self: *Simulation, a: *const actor.Actor, comptime fmt: []const u8, args: anytype) void {
         if (a.seenIn(&self.lv)) self.log.push(.status, fmt, args);
     }
 
-    /// The foe `a` `takes`, where seen.
     pub fn sayFoeTakes(self: *Simulation, a: *const actor.Actor, comptime takes: []const u8) void {
         self.sayOf(a, "The {s} " ++ takes ++ "!", .{actor.row(a.kind).name});
     }
 
-    /// The body in `slot` `takes`: the hero's as danger, a foe's where seen.
     pub fn sayTakes(self: *Simulation, slot: usize, a: *const actor.Actor, comptime takes: []const u8) void {
         if (self.isHero(slot)) self.log.push(.danger, "{s} " ++ takes ++ "!", .{self.name.text()}) else self.sayFoeTakes(a, takes);
     }

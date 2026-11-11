@@ -64,7 +64,6 @@ pub fn pickStep(i: usize, d: P, n: usize) usize {
     return @min(row * PICK_COLS + at % PICK_COLS, n - 1);
 }
 
-/// Opened from Character's skills, and backs out to them.
 pub fn openBinds(g: *game.Game) void {
     g.binds.menu = .browse;
     g.binds.assigning = null;

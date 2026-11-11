@@ -33,13 +33,11 @@ fn symmetric(row: Row, col: i32) bool {
     return c >= d * row.start and c <= d * row.end;
 }
 
-/// Symmetric shadowcasting: what `origin` sees is lit, and seen from then on.
 pub fn cast(lv: *grid.Level, origin: P, radius: i32) void {
     lv.lightless();
     castWith(lv, origin, radius, Sight{ .lv = lv });
 }
 
-/// Leaves the cells of `out` it does not reach as they were.
 pub fn castInto(lv: *const grid.Level, origin: P, radius: i32, out: *[grid.CELLS]bool) void {
     castWith(lv, origin, radius, Into{ .out = out });
 }
@@ -56,7 +54,6 @@ const Sight = struct {
     }
 };
 
-/// The terrain alone: smoke shades no burst.
 const Into = struct {
     out: *[grid.CELLS]bool,
 
@@ -105,7 +102,6 @@ fn scan(lv: *const grid.Level, sink: anytype, q: Quad, row_in: Row, radius: i32)
     }
 }
 
-/// The hero carries a light, so is never too dark to see.
 pub fn sees(lv: *const grid.Level, watcher: P, hero: P, reach: i32) bool {
     if (!grid.Level.inside(watcher) or !grid.Level.inside(hero) or mathx.dist(watcher, hero) > reach) return false;
     var found = false;
@@ -143,7 +139,6 @@ test "foe sight reads current occluders independently of hero sight and memory" 
     try std.testing.expect(sees(&lv, watcher, hero, 3));
     lv.set(between, .wall);
     try std.testing.expect(!sees(&lv, watcher, hero, 3));
-    std.debug.print("foe sight: independent hero radius, Chebyshev reach, current smoke and walls; no visibility or memory writes\n", .{});
 }
 
 test "an open floor lights a round pool, not a square one" {
@@ -155,7 +150,6 @@ test "an open floor lights a round pool, not a square one" {
         if (l) lit += 1;
     }
     const disc = std.math.pi * 8.5 * 8.5;
-    std.debug.print("radius 8: {d} cells lit, a disc is {d:.0}, a square would be {d}\n", .{ lit, disc, 17 * 17 });
     try std.testing.expect(@as(f32, @floatFromInt(lit)) > disc * 0.9);
     try std.testing.expect(@as(f32, @floatFromInt(lit)) < disc * 1.1);
 }
@@ -180,7 +174,6 @@ test "sight is symmetric through a field of pillars" {
         cast(&lv, p, r);
         if (fwd[i] != lv.isLit(o)) broken += 1;
     }
-    std.debug.print("{d} open cells inside the pool, {d} asymmetric\n", .{ checked, broken });
     try std.testing.expect(checked > 150);
     try std.testing.expectEqual(@as(usize, 0), broken);
 }

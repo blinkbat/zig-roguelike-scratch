@@ -21,7 +21,6 @@ pub const Options = struct {
     };
 };
 pub const Effect = std.meta.FieldEnum(Options);
-/// Drawn only over cells in sight now, not remembered ones.
 pub const LIVE_ONLY = std.EnumSet(Effect).init(.{ .bloom = true, .atmosphere = true });
 
 const Focus = struct { shader: rl.Shader, texel: i32, strength: i32 };
@@ -31,7 +30,6 @@ const Bloom = struct { shader: rl.Shader, field: i32, visibility: i32, glints: i
 const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, sunlight: i32, brightness: i32, direction: i32, weather_mist: i32 };
 const Grade = struct { shader: rl.Shader, visibility: i32, origin: i32, cell: i32, screen: i32 };
 
-/// How far toward grey remembered cells are drawn.
 const MEMORY_GREY: f32 = 0.7;
 
 const FOCUS_MAX: f32 = 0.24;
@@ -40,16 +38,13 @@ const BLOOM_STEP: f32 = 2.0;
 /// Rows from the hero that stay sharp, and from which scenery is softened fully.
 const SHARP_ROWS: f32 = 3.5;
 const SOFT_ROWS: f32 = 7.5;
-/// From a flame or a spell's light, how far its glow blooms.
 const EMISSIVE_REACH: f32 = 1.5;
 /// The dimmest sky the water mist is still drawn under, as a share of a clear noon.
 const AIR_DARKEST: f32 = 0.06;
 /// Cells upwind the light shafts look for crowns.
 const SHAFT_NEAR: f32 = 1.1;
 const SHAFT_FAR: f32 = 2.3;
-/// Cells past the view the field covers: the farthest shaft lookup, softened over one more.
 const FIELD_MARGIN: i32 = @intFromFloat(@ceil(SHAFT_FAR + 1));
-/// Each glow's share of the light it blooms from.
 const BLOOM_GAIN: f32 = 0.22;
 /// Peak opacity of the water mist, the canopy's light shafts and the dust motes in them.
 const MIST_GAIN: f32 = 0.065;
@@ -69,7 +64,6 @@ fn focusStrength(t: grid.Tile, at: [2]f32, hero: ?[2]f32) f32 {
     return FOCUS_MAX * mathx.smoothstep(SHARP_ROWS, SOFT_ROWS, @abs(at[1] - h[1]));
 }
 
-/// The field texture's channel for each fact about a cell: in sight now, water, near an emissive light, under a crown.
 const FIELD = .{ .lit = "r", .water = "g", .emissive = "b", .crown = "a" };
 const FIELD_DEFINES = std.fmt.comptimePrint("#define LIT {s}\n#define WATER {s}\n#define EMISSIVE {s}\n#define CROWN {s}\n", .{ FIELD.lit, FIELD.water, FIELD.emissive, FIELD.crown });
 
@@ -168,7 +162,6 @@ pub const Cinema = struct {
         } else self.composite(scene, view, visibility);
     }
 
-    /// The scene onto the outer target, remembered cells greyed.
     fn composite(self: *const Cinema, scene: rl.Texture2D, view: shaders.MapView, visibility: ?rl.Texture2D) void {
         const g = self.grade orelse return copyTarget(scene);
         const v = visibility orelse return copyTarget(scene);
@@ -205,7 +198,6 @@ pub const Cinema = struct {
         return Focused{ .texel = .{ 1 / size[0], 1 / size[1] }, .strength = strength };
     }
 
-    /// `mist` the weather's, 0 none to 1 its thickest.
     pub fn drawAir(self: *Cinema, l: *light.Light, origin: [2]f32, cell: f32, screen: mathx.P, mist: f32) void {
         if (!self.options.atmosphere) return;
         const k = l.sky orelse return;
@@ -224,7 +216,6 @@ pub const Cinema = struct {
     }
 };
 
-/// Sets `FIELD_FS`'s uniforms, `MAP_VIEW_FS`'s among them, on a program with their locations.
 fn setField(p: anytype, field: rl.Texture2D, visibility: rl.Texture2D, view: shaders.MapView) void {
     rl.setShaderValueTexture(p.shader, p.field, field);
     rl.setShaderValueTexture(p.shader, p.visibility, visibility);
@@ -349,14 +340,12 @@ test "cinema focus preserves nearby scenery and every gameplay tile" {
         }
     }
     try std.testing.expectEqual(look.SOFTENED.count(), focused);
-    std.debug.print("cinema focus: {d} scenery kinds soften only beyond {d} rows of the hero; ground and interactables stay sharp\n", .{ focused, SHARP_ROWS });
 }
 
 test "cinema emissive bounds preserve fractional lights and visible map edges" {
     const width: f32 = @floatFromInt(grid.W);
     const height: f32 = @floatFromInt(grid.H);
     const offsets = [_]f32{ -1.5, -0.01, 0, 0.5, 1.49, 1.5, 20.01, 20.5, height - 0.5, height + 0.01, width - 0.5, width + 0.01 };
-    var checked: usize = 0;
     for (offsets) |x| {
         for (offsets) |y| {
             var pixels: [grid.CELLS]rl.Color = undefined;
@@ -375,10 +364,8 @@ test "cinema emissive bounds preserve fractional lights and visible map edges" {
                 try std.testing.expectEqual(@as(u8, 97), @field(pixel, FIELD.water));
                 try std.testing.expectEqual(@as(u8, 39), @field(pixel, FIELD.crown));
                 expected_count += @intFromBool(expected);
-                checked += 1;
             }
             try std.testing.expectEqual(expected_count > 0, marked);
         }
     }
-    std.debug.print("cinema emissive bounds: {d} cells match full-map distance checks; hidden cells and other channels stay unchanged\n", .{checked});
 }

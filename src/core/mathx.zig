@@ -68,7 +68,6 @@ pub const P = struct {
         return .{ .x = a.x * k, .y = a.y * k };
     }
 
-    /// Each axis's sign: a step toward `a` from the origin.
     pub fn sign(a: P) P {
         return .{ .x = std.math.sign(a.x), .y = std.math.sign(a.y) };
     }
@@ -125,17 +124,14 @@ pub fn percentRound(hundredths: i64, rng: *Rng) i64 {
     return @divTrunc(hundredths, PERCENT) + @intFromBool(part > 0 and rng.percent(part));
 }
 
-/// The ending a noun counted `n` times takes.
 pub fn plural(n: anytype) []const u8 {
     return if (n == 1) "" else "s";
 }
 
-/// The share of `max` a `value` fills, held to 0..1.
 pub fn fillOf(value: i32, max: i32) f32 {
     return std.math.clamp(@as(f32, @floatFromInt(value)) / @as(f32, @floatFromInt(@max(1, max))), 0, 1);
 }
 
-/// How much of `full` a `value` out of `max` fills, held to 0..`full`.
 pub fn filled(value: i32, max: i32, full: i32) i32 {
     if (max <= 0) return 0;
     const clamped: i64 = std.math.clamp(value, 0, max);
@@ -174,7 +170,6 @@ pub fn nudge(i: usize, by: i32, n: usize) usize {
     return @intCast(std.math.clamp(@as(i32, @intCast(i)) + by, 0, @as(i32, @intCast(n - 1))));
 }
 
-/// The first of `rows` shown, moved the least that shows row `at`.
 pub fn reveal(top: usize, at: usize, rows: usize) usize {
     if (at < top) return at;
     if (at >= top + rows) return at + 1 - rows;
@@ -192,12 +187,10 @@ pub fn dist(a: P, b: P) i32 {
     return @intCast(@max(@abs(a.x - b.x), @abs(a.y - b.y)));
 }
 
-/// One cell apart, diagonals included: within a melee blow's reach.
 pub fn adjacent(a: P, b: P) bool {
     return dist(a, b) == 1;
 }
 
-/// The cells exactly `r` from `c`, row by row.
 pub const Ring = struct {
     c: P,
     r: i32,
@@ -248,7 +241,6 @@ pub fn distEuclid(a: P, b: P) f32 {
     return len(@floatFromInt(a.x - b.x), @floatFromInt(a.y - b.y));
 }
 
-/// `x, y` in a `w` by `h` grid stored row by row; null off it.
 pub fn slot(x: i32, y: i32, w: usize, h: usize) ?usize {
     if (x < 0 or y < 0 or x >= w or y >= h) return null;
     return @as(usize, @intCast(y)) * w + @as(usize, @intCast(x));
@@ -278,7 +270,6 @@ pub fn defaults(p: anytype) void {
     }
 }
 
-/// Takes `items[i]` out of the first `n.*`, the rest keeping their order, and leaves `blank` in the slot freed at the end.
 pub fn removeAt(comptime T: type, items: []T, n: anytype, i: usize, blank: ?T) void {
     std.mem.copyForwards(T, items[i .. n.* - 1], items[i + 1 .. n.*]);
     n.* -= 1;
@@ -299,9 +290,7 @@ pub fn push(comptime T: type, items: []T, n: anytype, x: T) bool {
     return true;
 }
 
-/// A test's fine frame, seconds, for timings read to a few milliseconds.
 pub const TEST_DT: f32 = 1.0 / 240.0;
-/// A frame at 60 a second, for a bench or a test that counts frames.
 pub const FRAME_DT: f32 = 1.0 / 60.0;
 
 /// Real seconds summed frame by frame, in f64: an f32 sum stops moving after a day or so.
@@ -353,7 +342,6 @@ pub const Dir = enum(u3) {
         return @enumFromInt(@intFromEnum(d) +% eighths);
     }
 
-    /// A cardinal's crosswise axis, as a step: east-west for north or south.
     pub fn across(d: Dir) P {
         const v = d.delta();
         return .{ .x = @intCast(@abs(v.y)), .y = @intCast(@abs(v.x)) };
@@ -378,7 +366,6 @@ pub const ALL_DIRS = std.enums.values(Dir);
 /// The four straight steps, east, west, south, north: generators draw in this order.
 pub const CARDINALS = [_]P{ Dir.e.delta(), Dir.w.delta(), Dir.s.delta(), Dir.n.delta() };
 
-/// The step `d` is, if it is one.
 pub fn stepDir(d: P) ?Dir {
     for (ALL_DIRS) |dir| {
         if (dir.delta().eq(d)) return dir;
@@ -534,17 +521,14 @@ pub const Rng = struct {
 };
 
 test "powi is std.math.pow bit for bit until a squaring goes subnormal" {
-    var checked: usize = 0;
     var bits: u32 = @bitCast(@as(f32, 0.35));
     const one: u32 = @bitCast(@as(f32, 1));
     while (bits <= one) : (bits += 97) {
         const x: f32 = @bitCast(bits);
         try std.testing.expectEqual(@as(u32, @bitCast(std.math.pow(f32, x, 80))), @as(u32, @bitCast(powi(x, 80))));
         try std.testing.expectEqual(@as(u32, @bitCast(std.math.pow(f32, x, 24))), @as(u32, @bitCast(powi(x, 24))));
-        checked += 1;
     }
     try std.testing.expectEqual(@as(f32, 0), powi(0, 80));
-    std.debug.print("powi: {d} inputs from 0.35 to 1 equal to std.math.pow\n", .{checked});
 }
 
 test "dir deltas run clockwise from north" {
@@ -593,7 +577,6 @@ pub fn cellHash(seed: u64, p: P) u64 {
     return std.hash.Wyhash.hash(seed, std.mem.asBytes(&coordinates));
 }
 
-/// The member of enum `T` `by` places on from `v`, wrapping round.
 pub fn cycle(comptime T: type, v: T, by: i32) T {
     return stepIn(T, std.enums.values(T), v, by, 0);
 }

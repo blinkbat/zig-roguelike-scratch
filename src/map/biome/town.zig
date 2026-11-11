@@ -5,8 +5,6 @@ const carve = @import("../carve.zig");
 const buildings = @import("../feature/buildings.zig");
 const setpiece = @import("../feature/setpiece.zig");
 
-// ADOM's Dwarftown, Dwarf Fortress's towns, Diablo II's Kurast canals, Qud's villages round a well.
-
 const P = mathx.P;
 
 pub const BLOCK_MIN: u8 = 8;
@@ -17,9 +15,7 @@ const HOUSE_LEAST: i32 = 5;
 const SPLIT_CHANCE: f32 = 0.7;
 /// The plaza's radius, a share of a block's side.
 const PLAZA_OF: f32 = 0.55;
-/// The street cleared round each gate.
 const GATE_R: f32 = 1.5;
-/// Cells either side of a gate's middle its way through the wall opens.
 const GATE_HALF: i32 = 1;
 const HOUSE = buildings.Params{ .barrels = 1, .torches = 30 };
 
@@ -27,7 +23,6 @@ pub const Wall = enum { none, wall, fence };
 
 pub const Params = struct {
     wall: Wall = .wall,
-    /// A block's side between streets.
     block: u8 = 14,
     street: u8 = 2,
     /// Percent of each block's lots built on.
@@ -151,7 +146,6 @@ test "no house's doorway opens on a canal" {
             }
         }
     }
-    std.debug.print("{d} towns all canals: {d} house floor cells shut off from the streets\n", .{ towns, sealed });
     try std.testing.expectEqual(@as(usize, 0), sealed);
 }
 
@@ -171,7 +165,6 @@ test "every town gate steps across its street, canal or not" {
             }
         }
     }
-    std.debug.print("{d} towns all canals: {d} cells of gate and street a step cannot cross\n", .{ TOWNS, wet });
     try std.testing.expectEqual(@as(usize, 0), wet);
 }
 
@@ -194,7 +187,6 @@ test "every gate of a walled town leads to its plaza, its top street a canal or 
             if (st.region[grid.Level.idx(g.at.add(g.in.delta()))] != plaza) dead += 1;
         }
     }
-    std.debug.print("{d} walled towns all canals: {d} gates leading nowhere\n", .{ TOWNS, dead });
     try std.testing.expectEqual(@as(usize, 0), dead);
 }
 
@@ -215,6 +207,5 @@ test "a town's houses each open onto its streets" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x7083);
     shape(&lv, &rng, 0, .{ .canals = 50 });
-    std.debug.print("a town: {d} wall, {d} floor, {d} canal, {d} bridge\n", .{ carve.count(&lv, .wall), carve.count(&lv, .floor), carve.count(&lv, .water), carve.count(&lv, .bridge) });
     try std.testing.expect(carve.count(&lv, .floor) > 400);
 }

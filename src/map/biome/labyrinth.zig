@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// ADOM's Minotaur Maze and the Water Dragon's Lair, braided.
-
 const P = mathx.P;
 
 pub const CHAMBER_MAX: u8 = 20;
@@ -105,7 +103,6 @@ test "a perfect maze reaches every cell from the middle" {
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     const reached = grid.distances(&lv, cellAt(MID), &dist, &queue);
-    std.debug.print("a {d}x{d} maze: {d} open cells, all reached: {}\n", .{ CELLS_X, CELLS_Y, carve.count(&lv, .floor), reached == carve.count(&lv, .floor) });
     try std.testing.expectEqual(carve.count(&lv, .floor), reached);
     try std.testing.expectEqual(CELLS_X * CELLS_Y * 2 - 1, reached);
 }

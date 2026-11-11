@@ -60,7 +60,6 @@ pub const Light = struct {
     canopy: [grid.CELLS]f32,
     /// Per light-map texel, `dapplingAt` its centre: fixed while the crowns are.
     dappling: [model.TEXELS]f32,
-    /// The baked level's banks.
     banks: dual.Banks,
 
     /// Initialize fields separately to avoid a temporary larger than the thread stack.
@@ -101,7 +100,6 @@ pub const Light = struct {
         self.pour(lv, t);
     }
 
-    /// `t`'s pool over the ground as it stands.
     fn pour(self: *const Light, lv: *const grid.Level, t: *model.Torch) void {
         var pool: [grid.CELLS]bool = @splat(false);
         lume.torchPool(lv, t.floor(), &pool);
@@ -113,13 +111,11 @@ pub const Light = struct {
         }
     }
 
-    /// A glowing plant gone from `p`: its light and its shadow with it, and the next plant unlit for want of lights now lit.
     pub fn uproot(self: *Light, lv: *const grid.Level, p: model.P) void {
         if (self.plantAt(p)) |i| _ = mathx.swapRemove(model.Torch, &self.torch, &self.torch_n, i);
         self.hangPlants(lv);
     }
 
-    /// Tiles changed under it: sight, shadows and torch pools take the ground as it now is.
     fn retile(self: *Light, lv: *const grid.Level) void {
         self.scratch.tile = lv.tile;
         self.countCasters(&self.scratch);
@@ -128,7 +124,6 @@ pub const Light = struct {
         for (self.torch[0..self.torch_n]) |*t| self.pour(lv, t);
     }
 
-    /// The glowing plants that give light and are not yet lit.
     fn hangPlants(self: *Light, lv: *const grid.Level) void {
         var glows = lv.glowing();
         while (glows.next()) |q| {
@@ -143,7 +138,6 @@ pub const Light = struct {
         return null;
     }
 
-    /// Takes the tiles drawn whenever they differ from those the light was last given.
     pub fn follow(self: *Light, lv: *const grid.Level) void {
         if (!std.mem.eql(grid.Tile, &self.scratch.tile, &lv.tile)) self.retile(lv);
     }
@@ -160,7 +154,6 @@ pub const Light = struct {
         self.visibility.reveal(lv, enabled);
     }
 
-    /// Drawn as terrain: explored, or everything while the debug reveal is on.
     pub fn remembers(self: *const Light, lv: *const grid.Level, p: model.P) bool {
         return self.reveal_map or lv.isSeen(p);
     }
@@ -321,7 +314,6 @@ pub const Light = struct {
         return mathx.lerpF(cloud, patch, k.sun());
     }
 
-    /// How much the canopy's dappled shade takes from the sun at `q`.
     fn dapplingAt(self: *const Light, q: [2]f32) f32 {
         const cover = visibility.sample(&self.canopy, q[0], q[1]);
         if (cover == 0) return 0;
@@ -337,7 +329,6 @@ pub const Light = struct {
         return model.memoryUnder(self.moon());
     }
 
-    /// How far the sky's casting light is the moon's: none under no sky.
     fn moon(self: *const Light) f32 {
         return if (self.sky) |k| k.moon else 0;
     }
@@ -346,7 +337,6 @@ pub const Light = struct {
         return if (self.sky) |k| model.mix(model.CARRY, model.MOON_CARRY, k.moon) else model.CARRY;
     }
 
-    /// The carried light `flat` cells from its carrier, warmed at its feet by night.
     fn carryColourAt(self: *const Light, flat: f32) model.Rgb {
         const warm = self.moon() * model.NIGHT_GLOW_SHARE * (1 - mathx.smoothstep(0, model.NIGHT_GLOW_R, flat));
         return model.mix(self.carryColour(), model.NIGHT_GLOW, warm);

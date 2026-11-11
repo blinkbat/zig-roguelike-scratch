@@ -9,10 +9,8 @@ pub const LESS: i32 = 30;
 pub const TAKES = "is enfeebled";
 pub const STATUS = std.fmt.comptimePrint("Deals {d}% less damage with its blows.", .{LESS});
 
-/// Its turns left striking weakly.
 pub const Enfeeble = resilience.Turns(TURNS);
 
-/// `dmg` as a blow struck by a body, enfeebled or not, deals it.
 pub fn weaken(enfeebled: bool, dmg: i32) i32 {
     if (!enfeebled or dmg <= 0) return dmg;
     return mathx.lessCeil(dmg, LESS);
@@ -32,5 +30,4 @@ test "an enfeebled blow deals 30% less, rounded up so it never falls to nothing,
     var weak: u8 = 0;
     while (e.wear()) weak += 1;
     try std.testing.expectEqual(TURNS, weak);
-    std.debug.print("enfeeble: {d} blows weakened by {d}% rounded up, {d} turns\n", .{ cases.len, LESS, weak });
 }

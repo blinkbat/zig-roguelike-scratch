@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// ADOM's cavernous levels: large circular rooms joined by short corridors, each to the nearest before it.
-
 const P = mathx.P;
 
 pub const CHAMBERS_MAX: u8 = 40;
@@ -67,6 +65,5 @@ test "chambers are round and joined" {
     shape(&lv, &rng, 1, .{});
     var st: carve.Stretches = .{};
     const parts = st.label(&lv);
-    std.debug.print("a cavern: {d} open cells in {d} stretch\n", .{ carve.count(&lv, .dirt), parts });
     try std.testing.expectEqual(@as(usize, 1), parts);
 }

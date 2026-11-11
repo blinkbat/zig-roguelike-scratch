@@ -3,7 +3,8 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const hero = @import("../play/hero.zig");
 const attr = @import("../play/attrs.zig");
-const items = @import("../play/items.zig");
+const inventory = @import("../play/inventory.zig");
+const item_bases = @import("../play/item_bases.zig");
 const damage = @import("../play/damage.zig");
 const resilience = @import("../play/resilience.zig");
 const progress = @import("../play/progress.zig");
@@ -17,7 +18,6 @@ const character_view = @import("character_view.zig");
 const View = character_view.View;
 const Vital = character_view.Vital;
 
-/// What the sheet reads: the view's attributes, with combat's own dodge.
 const Figures = struct {
     attrs: attr.Attrs,
     dodge: u32,
@@ -64,7 +64,6 @@ const Measure = union(enum) {
         };
     }
 
-    /// Its Stats page row.
     fn title(measure: Measure) [:0]const u8 {
         return switch (measure) {
             .attribute => |at| menu.named(at),
@@ -85,26 +84,20 @@ const Measure = union(enum) {
 };
 const STAT_W = 440;
 const STATS_X = 40;
-/// A section's title to its rule and to its first row, and row to row.
 const SECTION_RULE = 22;
 const SECTION_ROWS = 32;
 const STAT_ROW = font.BODY_LINE;
-/// The advanced sheet's rows, packed to fit every status.
 const TIGHT_ROW = font.SMALL + 2;
 const HEADLINE = font.HEAD_LINE;
 const HEADLINE_ROW = HEADLINE + 8;
 const CHANCE_ROW = font.LABEL + 3;
 const SECTION_GAP = 12;
 const CRIT_GAP = 20;
-/// Between a row's label and its value, at the least.
 const ROW_GAP = 16;
-/// Between one skill's chances to afflict.
 const CHANCE_GAP = 18;
-/// The lowest a column may reach: the right one stops above the actions.
 const LEFT_FOOT = layout.FOOT_Y;
 const RIGHT_FOOT = layout.ACTION_Y - SECTION_GAP;
 
-/// The sheet's type, fanciest first: what the player came to read, then what builds it, then the rest.
 const Tier = enum {
     headline,
     key,
@@ -118,7 +111,6 @@ const Tier = enum {
         };
     }
 
-    /// The display face engraved for the first two, the data face for the rest.
     fn put(t: Tier, face: *const font.Face, s: [:0]const u8, x: i32, y: i32, col: rl.Color) void {
         if (t == .plain) face.draw(s, x, y, t.size(), col) else face.engraved(s, x, y, t.size(), col);
     }
@@ -127,13 +119,11 @@ const Tier = enum {
         return if (t == .headline) .key else t;
     }
 
-    /// Its label beside its value shares their baseline.
     fn labelDrop(t: Tier) i32 {
         return @divTrunc((t.size() - t.label().size()) * 3, 4);
     }
 };
 
-/// Nothing to read in a zero, so it recedes.
 fn quiet(n: i32, col: rl.Color) rl.Color {
     return if (n == 0) look.DIM else if (n < 0) look.LOSS else col;
 }
@@ -184,8 +174,7 @@ const Column = struct {
         column.entry(label, text.text(), .headline, col);
     }
 
-    /// A skill's name, then its hit coloured part by part, then what it may afflict.
-    fn skill(column: *Column, act: skillbar.Act, hit: progress.Hit, effect: items.WeaponEffect) void {
+    fn skill(column: *Column, act: skillbar.Act, hit: progress.Hit, effect: item_bases.WeaponEffect) void {
         var physical: menu.Note(24) = .{};
         var element: menu.Note(40) = .{};
         if (hit.physical.hi > 0) physical.say("{d}-{d}", .{ hit.physical.lo, hit.physical.hi });
@@ -228,7 +217,7 @@ const Column = struct {
 };
 
 /// Each ailment a hit may bring, the skill's own roll first and the weapon's only if that missed, as combat rolls them.
-fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: items.WeaponEffect) std.EnumArray(resilience.Kind, u32) {
+fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: item_bases.WeaponEffect) std.EnumArray(resilience.Kind, u32) {
     var out = std.EnumArray(resilience.Kind, u32).initFill(0);
     if (act.ailment()) |ail| out.set(ail.kind, ail.chance);
     if (hit.physical.hi > 0) {
@@ -243,7 +232,6 @@ fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: items.WeaponEffect) s
 const DEFENCES = [_]Measure{ .reduction, .dodge };
 const CRITS = [_]Measure{ .weapon_crit, .spell_crit };
 
-/// What the player reads at a glance: life, mana and each skill's hit, then what builds them.
 fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     const figures = Figures.of(view);
     const attributes = figures.attrs;
@@ -276,7 +264,6 @@ fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     return .{ left, right };
 }
 
-/// D2's Advanced Stats: every bonus, recovery and resistance, zeros included.
 fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     const figures = Figures.of(view);
     const attributes = figures.attrs;
@@ -340,13 +327,12 @@ pub fn drawAdvanced(face: *const font.Face, view: View) void {
     _ = advancedSheet(face, view, false);
 }
 
-/// Every class with every skill learned keeps both sheets' rows inside their columns and above the actions.
 pub fn verify(face: *const font.Face) !void {
     var checked: usize = 0;
     for (hero.CLASSES) |class| {
         var growth = progress.State.of(class);
         for (progress.skills(class)) |s| growth.ranks.set(s.act, progress.RANKS);
-        var inv = items.Inventory{};
+        var inv = inventory.Inventory{};
         inv.gear.slots.set(.right_hand, .{ .kind = .axe });
         var view = View{ .class = class, .name = "", .inventory = &inv, .growth = &growth, .base = growth.attributes(class) };
         view.life = .{ .now = 999, .max = 999 };
@@ -371,5 +357,4 @@ test "a skill's status chances combine its own roll with the weapon's second rol
     try std.testing.expectEqual(@as(u32, 10), bash.get(.bleed));
     const spark = chancesOf(.spark, .{ .physical = .{ .lo = 0, .hi = 0 }, .element = .{ .lo = 1, .hi = 3 }, .style = .spell }, .{ .stun = 20 });
     try std.testing.expectEqual(@as(u32, 50), spark.get(.stun));
-    std.debug.print("status chances: bash 50% + mace 20% = {d}% stun; pure lightning ignores the weapon at {d}%\n", .{ bash.get(.stun), spark.get(.stun) });
 }

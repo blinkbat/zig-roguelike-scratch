@@ -3,6 +3,9 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const hero = @import("../play/hero.zig");
 const attr = @import("../play/attrs.zig");
+const ground_items = @import("../play/ground_items.zig");
+const inventory = @import("../play/inventory.zig");
+const item_bases = @import("../play/item_bases.zig");
 const items = @import("../play/items.zig");
 const damage = @import("../play/damage.zig");
 const resilience = @import("../play/resilience.zig");
@@ -36,7 +39,6 @@ pub const Page = enum {
         };
     }
 
-    /// Container selection and loot open without the character tabs.
     pub fn direct(self: Page) bool {
         return self.shortcut() == null;
     }
@@ -50,7 +52,7 @@ pub const PAGES = blk: {
 pub const Nearby = union(enum) {
     loot: struct { index: usize, item: items.Item },
     supply: struct { index: usize, kind: consumable.Kind },
-    gold: items.Coins,
+    gold: ground_items.Coins,
     bag: P,
     chest: P,
     door: P,
@@ -91,12 +93,11 @@ pub const Nearby = union(enum) {
     }
 };
 pub const Vital = struct { now: i32 = 0, max: i32 = 0 };
-/// Armour and dodge as combat resolves them where the hero stands, terrain and sunder included.
 const Defence = struct { dodge: u32, armour: i32 };
 pub const View = struct {
     class: hero.Class,
     name: []const u8,
-    inventory: *const items.Inventory,
+    inventory: *const inventory.Inventory,
     growth: *const progress.State,
     /// Class and passives, before gear.
     base: attr.Attrs,
@@ -126,8 +127,8 @@ pub const View = struct {
 };
 pub const Command = union(enum) {
     close,
-    equip: struct { index: usize, slot: items.Slot },
-    unequip: items.Slot,
+    equip: struct { index: usize, slot: item_bases.Slot },
+    unequip: item_bases.Slot,
     drop: usize,
     passive: usize,
     skill: skillbar.Act,

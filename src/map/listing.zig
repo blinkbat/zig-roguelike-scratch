@@ -3,9 +3,7 @@ const atlas = @import("atlas.zig");
 
 /// A map file's name, `.map` and all.
 const FILE_MAX: usize = 64;
-/// A map file's name before `.map`, as `pathFor` makes it.
 pub const STEM_MAX = FILE_MAX - atlas.EXT.len;
-/// The folders a listed map lies in below `DIR`, names and '/'s.
 const FOLDER_MAX: usize = 64;
 pub const PATH_MAX = atlas.PREFIX.len + FOLDER_MAX + FILE_MAX;
 const ListedPath = [PATH_MAX + 1]u8;
@@ -18,7 +16,6 @@ pub fn folderOf(path: []const u8) []const u8 {
     return rest[0 .. end + 1];
 }
 
-/// In `folder`, as `folderOf` gives it.
 pub fn pathFor(buf: []u8, folder: []const u8, name: []const u8) ?[]const u8 {
     var stem: [STEM_MAX]u8 = undefined;
     var n: usize = 0;
@@ -49,7 +46,6 @@ pub const Listing = struct {
     const DEPTH_MAX: usize = 8;
     file: [MAX]Listed = undefined,
     n: usize = 0,
-    /// The folder listed, below `DIR`: each folder's name and a '/', none at `DIR` itself.
     folder: [FOLDER_MAX]u8 = undefined,
     folder_n: usize = 0,
 
@@ -70,7 +66,6 @@ pub const Listing = struct {
         }
     };
 
-    /// A map's file, a folder's path and its '/', or `UP`.
     pub fn at(self: *const Listing, i: usize) [:0]const u8 {
         return self.file[i].text();
     }
@@ -79,7 +74,6 @@ pub const Listing = struct {
         return self.file[i].entry;
     }
 
-    /// What its row shows: a map's stem, a folder's name and its '/', or `UP`.
     pub fn label(self: *const Listing, i: usize) []const u8 {
         const p = self.at(i);
         return switch (self.entry(i)) {
@@ -89,19 +83,16 @@ pub const Listing = struct {
         };
     }
 
-    /// A map's file name before `EXT`.
     pub fn stem(self: *const Listing, i: usize) []const u8 {
         const p = self.at(i);
         const from = if (std.mem.lastIndexOfScalar(u8, p, '/')) |k| k + 1 else 0;
         return p[from .. p.len - atlas.EXT.len];
     }
 
-    /// The folder listed, below `DIR`.
     pub fn here(self: *const Listing) []const u8 {
         return self.folder[0..self.folder_n];
     }
 
-    /// Into the folder at `i`, or up from `UP`; false for a map.
     pub fn open(self: *Listing, i: usize) bool {
         switch (self.entry(i)) {
             .map => return false,
@@ -115,7 +106,6 @@ pub const Listing = struct {
         return true;
     }
 
-    /// To the folder above; false at `DIR` itself.
     pub fn up(self: *Listing) bool {
         if (self.folder_n == 0) return false;
         const inner = self.folder[0 .. self.folder_n - 1];
@@ -124,7 +114,6 @@ pub const Listing = struct {
         return true;
     }
 
-    /// `folder`, as `folderOf` gives it; `DIR` itself if it is not there.
     pub fn scanAt(self: *Listing, folder: []const u8) void {
         self.folder_n = 0;
         if (folder.len <= FOLDER_MAX) {
@@ -134,7 +123,6 @@ pub const Listing = struct {
         self.scan();
     }
 
-    /// The folder listed; `DIR` itself if that folder is gone.
     pub fn scan(self: *Listing) void {
         self.n = 0;
         if (self.folder_n > 0) self.add(.up, "{s}", .{UP});
@@ -146,7 +134,6 @@ pub const Listing = struct {
         self.sort();
     }
 
-    /// Every map in every folder of `DIR`, by path.
     pub fn scanAll(self: *Listing) void {
         self.n = 0;
         self.folder_n = 0;
@@ -166,7 +153,6 @@ pub const Listing = struct {
         return true;
     }
 
-    /// `walking` recursively collects maps from this depth, capped at `DEPTH_MAX`.
     fn gather(self: *Listing, walking: ?usize) bool {
         var buf: [PATH_MAX]u8 = undefined;
         var dir = std.fs.cwd().openDir(self.dirPath(&buf), .{ .iterate = true }) catch return false;
@@ -244,12 +230,10 @@ test "the maps folder lists its folders before its maps, and a folder opens with
     try std.testing.expect(std.mem.startsWith(u8, list.at(1), atlas.PREFIX ++ "qud/qud_"));
     try std.testing.expect(std.mem.startsWith(u8, list.label(1), "qud_"));
     try std.testing.expect(!list.open(1));
-    const inside = list.n;
     try std.testing.expect(list.open(0));
     try std.testing.expectEqual(@as(usize, 0), list.here().len);
     try std.testing.expect(!list.up());
     var all = Listing{};
     all.scanAll();
-    std.debug.print("{d} rows in {s}, {d} in qud/ with the way up, {d} maps in all\n", .{ top, atlas.DIR, inside, all.n });
     try std.testing.expect(all.n > top);
 }

@@ -13,10 +13,8 @@ pub const MANA_REGEN_TURNS: i32 = 5;
 pub fn manaRegen(perks: @import("passives.zig").Perks) i32 {
     return MANA_REGEN + perks.mana_regen;
 }
-/// Hp then most hp, as a save slot reads it.
 pub const HP_FMT = "HP {d}/{d}";
 pub const GOLD_FMT = "Gold {d}";
-/// A pile of coins.
 pub const COINS_FMT = "{d} gold";
 
 pub const Class = enum {
@@ -40,7 +38,6 @@ pub const Class = enum {
         return SPECS.getPtrConst(c).attrs;
     }
 
-    /// Its bump at a foe beside it.
     pub fn strike(c: Class) actor.Strike {
         return SPECS.getPtrConst(c).strike;
     }
@@ -102,7 +99,6 @@ pub const Name = struct {
         return mathx.push(u8, &self.buf, &self.n, c);
     }
 
-    /// Whether `push` would have spelt it, as a name read from a file must be.
     pub fn valid(self: *const Name) bool {
         return self.n <= MAX and Name.of(self.text()).n == self.n;
     }

@@ -76,5 +76,4 @@ test "editor naming fields paste atomically and replace selected names" {
     typed.typed.buf[0] = 'B';
     f.feed(&typed);
     try std.testing.expectEqualStrings("B", f.text());
-    std.debug.print("editor names: valid paste, 4 atomic rejections, select-all deletion and typed replacement checked\n", .{});
 }

@@ -63,7 +63,6 @@ pub const BOX_W: i32 = grid.W * THUMB;
 pub const BOX_TOP: i32 = widgets.TEXT + 2 * TITLE_DY;
 pub const BOX_H: i32 = BOX_TOP + grid.H * THUMB;
 pub const DOT_R: f32 = 4;
-/// Pixels past a door's dot a press still takes it.
 pub const DOT_SLOP: f32 = 3;
 pub const LABEL_W: i32 = 126;
 pub const STATUS_H: i32 = widgets.GAP + 2 * widgets.LINE_STEP;
@@ -87,16 +86,13 @@ pub const View = enum {
         return if (v == .map) .graph else .map;
     }
 };
-/// The brush panel down the left.
 pub const SIDE = widgets.Column{ .x = 0, .w = widgets.SIDE_W };
 pub const Family = tool_catalog.Family;
 pub const FAMILIES = tool_catalog.FAMILIES;
-/// The tabs of the node's panel.
 pub const Inspect = enum {
     things,
     generator,
 };
-/// The two scrolled panels either side of the canvas.
 pub const Pane = enum { side, inspector };
 pub const Band = struct { top: i32, bottom: i32 };
 const Stroke = enum { none, paint, erase };
@@ -109,9 +105,7 @@ pub const Ink = enum {
     }
 };
 pub const INKS = std.enums.values(Ink);
-/// Asked for, and done once any unsaved changes are saved or let go.
 pub const Pending = enum { leave, quit, open, new };
-/// A framed question with its buttons along the foot.
 pub const Prompt = enum { confirm, name, open };
 pub const Modal = union(enum) { none, prompt: Prompt, help, objects, effects, text, plot: plot.Page };
 const Naming = enum { new, save_as };
@@ -171,18 +165,15 @@ pub const Editor = struct {
     brush: usize = 0,
     view: View = .map,
     family: Family = .terrain,
-    /// The tool each tab last held, taken up again when it is opened.
     family_tool: std.EnumArray(Family, Tool) = blk: {
         var tools = std.EnumArray(Family, Tool).initUndefined();
         for (FAMILIES) |f| tools.set(f, f.first());
         break :blk tools;
     },
-    /// Of the foes tab, the one type it lists; null lists every foe.
+    /// null lists every foe.
     foe_type: ?actor.FoeType = null,
     inspect: Inspect = .things,
-    /// Each panel's scrolled area as last drawn, its scrolled pixels and how far it scrolls.
     pane: std.EnumArray(Pane, widgets.Scrolled) = .initFill(.{}),
-    /// The node dropdown's first row shown.
     popup_top: usize = 0,
     /// Set while a scrolled area is drawn: nothing outside it is hot.
     clip: ?rl.Rectangle = null,
@@ -196,7 +187,6 @@ pub const Editor = struct {
     thumbnails: thumbnails.Thumbnails = .{},
     selection: ?grid.Box = null,
     board: placement.Board = .{},
-    /// The paste laid aside for its ghost.
     trial: atlas.Bespoke = undefined,
     paste_preview: placement.PastePreview = .{},
     pasting: bool = false,
@@ -205,7 +195,6 @@ pub const Editor = struct {
     delete_armed: ?usize = null,
     popup: ?Popup = null,
     seen_at: usize = 0,
-    /// A cell the Things list jumped to, lit a moment.
     flash: ?P = null,
     flash_t: f32 = 0,
     pick: ?atlas.Link = null,
@@ -225,7 +214,6 @@ pub const Editor = struct {
     field: Field = .{},
     words: text_panel.State = .{},
     plot: plot.State = .{},
-    /// Made the first time the effects viewer opens.
     effects: ?*effects_view.Viewer = null,
     listing: listing.Listing = .{},
     listed_top: usize = 0,
@@ -265,7 +253,6 @@ pub const Editor = struct {
         return ed.file.text();
     }
 
-    /// The map it has open, read afresh from its file.
     pub fn reopen(ed: *Editor) !void {
         const keep = ed.file;
         return ed.open(keep.text());
@@ -444,13 +431,11 @@ pub const Editor = struct {
         ed.family_tool.set(t.family(), t);
     }
 
-    /// Whether the foes tab lists it under the type it narrows to.
     pub fn foeShown(ed: *const Editor, k: actor.Kind) bool {
         const want = ed.foe_type orelse return true;
         return actor.row(k).foe_type == want;
     }
 
-    /// Its tab in the brush panel, taking up the tool it last held where that fits.
     pub fn openFamily(ed: *Editor, f: Family) void {
         ed.showFamily(f);
         const t = ed.family_tool.get(f);
@@ -475,7 +460,6 @@ pub const Editor = struct {
         if (s != .select and !ed.tool.broad() and ed.paintable()) ed.setTool(.paint);
     }
 
-    /// Leaving Select keeps the tool it was taken up with.
     pub fn toggleSelect(ed: *Editor) void {
         if (ed.shape != .select) return ed.setShape(.select);
         ed.leaveSelect();
@@ -575,14 +559,12 @@ pub const Editor = struct {
         ed.setView(.map);
     }
 
-    /// Node `n`'s map, looking at `p` rather than refitted.
     pub fn visit(ed: *Editor, c: rl.Rectangle, n: usize, p: P) void {
         ed.goTo(n);
         ed.recentre = false;
         ed.lookAt(c, p);
     }
 
-    /// This node's map, looking at `p` and lighting it a moment.
     pub fn showCell(ed: *Editor, c: rl.Rectangle, p: P) void {
         ed.setView(.map);
         ed.lookAt(c, p);
@@ -707,14 +689,12 @@ pub const Editor = struct {
         return canvasOf(g.screen);
     }
 
-    /// Between the brush panel and the node's, under the bar and over the status line.
     pub fn canvasOf(screen: P) rl.Rectangle {
         const left = SIDE.x + SIDE.w;
         const band = bandOf(screen);
         return raster.rect(left, band.top, @max(0, inspectorOf(screen).x - left), @max(0, band.bottom - band.top));
     }
 
-    /// Under the bar and over the status line, where the panels and canvas stand.
     pub fn bandOf(screen: P) Band {
         return .{ .top = widgets.TOP_H, .bottom = screen.y - STATUS_H };
     }
@@ -920,7 +900,7 @@ const TIP_DX: i32 = 16;
 const TIP_DY: i32 = 20;
 const TIP_MAX_W: i32 = 520;
 
-fn popupLen(ed: *const Editor, w: Which) usize {
+pub fn popupLen(ed: *const Editor, w: Which) usize {
     return switch (w) {
         .algo => std.enums.values(atlas.Algo).len,
         .feature => std.enums.values(atlas.Kind).len,
@@ -939,13 +919,11 @@ fn popupShape(w: Which) PopupShape {
     };
 }
 
-/// Row `k` of `which`'s list in `box`.
 pub fn popupRow(box: rl.Rectangle, which: Which, k: usize) rl.Rectangle {
     const shape = popupShape(which);
     return raster.rect(@intFromFloat(box.x), @as(i32, @intFromFloat(box.y)) + @as(i32, @intCast(k)) * shape.row_h, @intFromFloat(box.width), shape.row_h - shape.inset);
 }
 
-/// Of its rows, how many fit the screen at once; the wheel scrolls the rest.
 pub fn popupShown(ed: *const Editor, w: Which, screen_h: i32) usize {
     const fit = widgets.rowsIn(screen_h - 2 * widgets.PAD, popupShape(w).row_h);
     return @min(popupLen(ed, w), fit);
@@ -959,7 +937,6 @@ pub fn popupRect(ed: *const Editor, p: Popup, screen_h: i32) rl.Rectangle {
     return .{ .x = p.slot.x, .y = if (below + h > sh) @max(0, sh - h) else below, .width = @max(p.slot.width, shape.w), .height = h };
 }
 
-/// Drops `which`'s list below `slot`, its chosen row in view.
 pub fn openPopup(ed: *Editor, slot: rl.Rectangle, which: Which, chosen: usize, screen_h: i32) void {
     ed.drop();
     ed.popup = .{ .slot = slot, .which = which };
@@ -974,21 +951,23 @@ fn drawPopup(ed: *Editor, g: *game.Game) void {
     const x: i32 = @intFromFloat(box.x);
     const w: i32 = @intFromFloat(box.width);
     widgets.framed(x, y, w, @intFromFloat(box.height));
+    const len = popupLen(ed, p.which);
+    const shown = popupShown(ed, p.which, g.screen.y);
+    ed.popup_top = widgets.clampTop(ed.popup_top, len, shown);
+    const top = ed.popup_top;
     switch (p.which) {
         .file => panel.fileRows(ed, g, box),
         .node => {
-            const shown = popupShown(ed, .node, g.screen.y);
-            ed.popup_top = widgets.clampTop(ed.popup_top, ed.map.node_n, shown);
-            for (ed.popup_top..ed.popup_top + shown, 0..) |n, k| {
+            for (top..top + shown, 0..) |n, k| {
                 if (panel.nodeRow(ed, g, popupRow(box, .node, k), n, true)) {
                     ed.popup = null;
                     if (n == ed.node) ed.setView(.map) else ed.goTo(n);
                 }
             }
-            widgets.scrollbarIn(box, ed.popup_top, shown, ed.map.node_n);
         },
-        .algo, .feature => knobs.choiceRows(ed, g, box, p.which),
+        .algo, .feature => knobs.choiceRows(ed, g, box, p.which, top, shown),
     }
+    if (p.which != .file) widgets.scrollbarIn(box, top, shown, len);
 }
 
 fn drawTip(ed: *const Editor, g: *game.Game) void {
@@ -1004,8 +983,8 @@ fn drawTip(ed: *const Editor, g: *game.Game) void {
 const SHOT_ZOOM = zoomOf(32);
 const SHOT_BRUSH = std.mem.indexOfScalar(i32, &BRUSHES, 3).?;
 
-/// DEV ONLY: the posed map's map mid link-pick, its graph, its procgen node's generator and the object viewer at those paths; its other panels, dropdowns, modals and pages beside them.
-pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8, objects_path: [:0]const u8) !void {
+/// DEV ONLY.
+pub fn capture(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8, objects_path: [:0]const u8) !void {
     const ed = try Editor.create(std.heap.c_allocator);
     defer ed.destroy();
     const w = ed.map;
@@ -1129,7 +1108,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     try snapAs(ed, g, target, "{s}/edit-text-browse.png", .{dir});
     ed.words.top = std.math.maxInt(usize);
     try snapAs(ed, g, target, "{s}/edit-text-list-end.png", .{dir});
-    try text_panel.poseContext(ed, "play.items.SPECS.war_bow.name");
+    try text_panel.poseContext(ed, "play.item_bases.SPECS.war_bow.name");
     try snapAs(ed, g, target, "{s}/edit-text-item.png", .{dir});
     try text_panel.pose(ed);
     try snapAs(ed, g, target, "{s}/edit-text.png", .{dir});

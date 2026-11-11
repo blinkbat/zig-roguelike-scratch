@@ -87,13 +87,11 @@ const LineAt = struct { d: u8, l: u8 };
 const StageAt = struct { q: u8, k: u8 };
 const ChoiceAt = struct { d: u8, l: u8, c: u8 };
 const TableAt = struct { t: script.Table, i: u8 };
-/// An action in place: a trigger's, a line's or a choice's.
 const ActAt = union(enum) {
     trigger: struct { t: u8, a: u8 },
     line: struct { d: u8, l: u8, a: u8 },
     choice: struct { d: u8, l: u8, c: u8, a: u8 },
 };
-/// The one piece of words being typed into, written to the map as it is typed.
 const Focus = union(enum) {
     npc: u8,
     dialog: u8,
@@ -117,7 +115,6 @@ pub const State = struct {
     quest: ?u8 = null,
     focus: ?Focus = null,
     field: Field = .{},
-    /// A field took this frame's click.
     claimed: bool = false,
     list: widgets.Scrolled = .{},
     detail: widgets.Scrolled = .{},
@@ -129,7 +126,6 @@ pub const State = struct {
         s.line = 0;
     }
 
-    /// Each pick dropped once the list it indexes has shrunk past it.
     fn fit(s: *State, m: *const Script) void {
         switch (s.pick) {
             .npc => |i| if (i >= m.npc_n) {
@@ -220,7 +216,6 @@ fn typed(ed: *editor.Editor, t: Target) void {
     ed.say("{s}", .{if (t.unique != null) "A name is letters, digits, _ or -, not taken, " ++ std.fmt.comptimePrint("{d}", .{script.NAME_MAX}) ++ " at most" else "That is as long as it can be"});
 }
 
-/// The words a focus types into; a name the map reads back is unique in its list.
 const Target = struct { words: Words, unique: ?Unique = null };
 
 const Words = union(enum) {
@@ -325,7 +320,6 @@ fn actOf(m: *Script, at: ActAt) ?*script.Act {
     return if (a < list.n.*) &list.items[a] else null;
 }
 
-/// One frame of a page; a click no field took leaves the words.
 pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.plot;
     s.claimed = false;
@@ -354,7 +348,6 @@ const Frame = struct {
     }
 };
 
-/// Widths across `w` in proportion to `shares`, each held to its cap, a gap between each.
 fn split(w: i32, comptime shares: []const i32, comptime caps: []const i32) [shares.len]i32 {
     var total: i32 = 0;
     inline for (shares) |s| total += s;
@@ -378,7 +371,6 @@ fn listArea(ed: *editor.Editor, f: Frame) widgets.Scroll {
     return ed.plot.list.at(raster.rect(f.x, f.y, f.listW(), f.bottom - f.y));
 }
 
-/// Ends the list at `y`; the column right of it, past its divider.
 fn rightOf(ed: *editor.Editor, f: Frame, list: widgets.Scroll, y: i32) widgets.Column {
     list.close(&ed.clip, y, 0);
     const x = widgets.besides(f.x, f.listW(), f.y, f.bottom);
@@ -393,27 +385,23 @@ fn frameOf(ed: *editor.Editor, g: *game.Game, p: Page) Frame {
     return .{ .x = col.left(), .y = f.y, .w = col.inner(), .bottom = page.bottom - ROW - GAP };
 }
 
-/// A list's heading with its count, and a "+ New" at its end; whether that was pressed.
 fn listHead(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, comptime title: []const u8, n: usize, most: usize, tip: [:0]const u8) bool {
     countHeading(g, f.x, y, f.listW(), title, n, most);
     return rightButton(ed, g, f.x + f.listW() - GAP, y, NEW_W, "+ New", n < most, tip);
 }
 
-/// A row of the list; picking it scrolls the detail back to its top.
 fn listRow(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, label: []const u8, on: bool, tip: [:0]const u8) bool {
     const hit = button(ed, g, widgets.row(f.x, y, f.listW() - GAP), label, on, true, tip);
     if (hit) ed.plot.detail.top = 0;
     return hit;
 }
 
-/// The picked item's detail, scrolled within the column right of the list.
 fn detailPane(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32, bottom: i32, comptime body: fn (*editor.Editor, *game.Game, u8, i32, i32, i32) i32, i: u8) void {
     const area = ed.plot.detail.at(raster.rect(x, top, w, bottom - top));
     const end = body(ed, g, i, x, area.begin(&ed.clip), w - PAD);
     area.close(&ed.clip, end, 0);
 }
 
-/// A delete button's words: what still names it, or that it can go.
 fn dropLabel(buf: []u8, users: usize, comptime noun: []const u8) [:0]const u8 {
     if (users > 0) return std.fmt.bufPrintZ(buf, "Used {d} times", .{users}) catch "";
     return "Delete " ++ noun;
@@ -423,7 +411,6 @@ fn beforeDrop(w: i32) i32 {
     return w - LABEL_W - DROP_W - GAP;
 }
 
-/// A condition that may be absent: its row and a drop, or a button that adds one.
 fn optCond(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *?script.Cond, drop_tip: [:0]const u8, add_tip: [:0]const u8) void {
     if (c.*) |*cond| {
         condRow(ed, g, x + LABEL_W, y, beforeDrop(w), cond);
@@ -454,7 +441,6 @@ fn dropRow(ed: *editor.Editor, g: *game.Game, right: i32, y: i32, tip: [:0]const
     return true;
 }
 
-/// A name's row: its label, its words, and a button at its end; whether that was pressed.
 fn nameRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: []const u8, f: Focus, act: [:0]const u8, live: bool, tip: [:0]const u8) bool {
     caption(g, x, y, LABEL_W, label, look.TEXT);
     words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W - NAME_BTN_W - NAME_BTN_GAP), f, "");
@@ -516,14 +502,12 @@ fn indexStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: []const 
     ed.bank();
 }
 
-/// `v` stepped `by` round none, first, then each of the `n` it may name.
 fn optionalStep(v: *?u8, by: i32, n: usize) void {
     const at: usize = if (v.*) |i| @as(usize, i) + 1 else 0;
     const to = mathx.wrap(at, by, n + 1);
     v.* = if (to == 0) null else @intCast(to - 1);
 }
 
-/// A box of words that becomes the field when clicked.
 fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []const u8) void {
     const s = &ed.plot;
     const on = if (s.focus) |now| std.meta.eql(now, f) else false;
@@ -668,7 +652,6 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     }
 }
 
-/// What an NPC may stand beside.
 const PROPS = blk: {
     var out: []const grid.Tile = &.{};
     for (std.enums.values(grid.Tile)) |t| {
@@ -690,7 +673,6 @@ fn spotWords(s: script.Spot, buf: []u8) []const u8 {
     };
 }
 
-/// NPC `i`'s spot stepped `by` round its kinds: a painted cell only on a painted node, and only where it now stands free.
 fn stepSpot(ed: *editor.Editor, i: u8, by: i32) void {
     const npc = &ed.map.script.npc[i];
     const SpotKind = std.meta.Tag(script.Spot);
@@ -709,7 +691,6 @@ fn stepSpot(ed: *editor.Editor, i: u8, by: i32) void {
     ed.changed();
 }
 
-/// Where NPC `i` stands now, when that is a painted node's open cell no other NPC is painted on.
 fn paintedCell(ed: *editor.Editor, i: u8) ?mathx.P {
     const npc = &ed.map.script.npc[i];
     if (npc.node != ed.node or ed.map.node[npc.node].unrolled()) return null;
@@ -723,7 +704,6 @@ pub fn talksTo(m: *const Script, f: *const script.Npc) []const u8 {
     return if (f.dialog) |d| m.dialog[d].name.text() else "nothing to say";
 }
 
-/// A dialog name from an NPC's: its words lowered and joined by `_`, where it reads back.
 fn stemOf(buf: *[script.NAME_MAX]u8, name: []const u8) []const u8 {
     var n: usize = 0;
     for (name) |c| {
@@ -791,7 +771,6 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     detailPane(ed, g, dx, top + STEP + GAP, x + w - dx, bottom, drawLine, di);
 }
 
-/// The picked line of dialog `di`.
 fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32) i32 {
     const m = &ed.map.script;
     const d = &m.dialog[di];
@@ -848,7 +827,6 @@ fn targetStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, d: *const scri
     ed.bank();
 }
 
-/// The actions at `first` and those after it in the same list, with a header that adds one.
 fn actRows(ed: *editor.Editor, g: *game.Game, x: i32, title_x: i32, top: i32, w: i32, title: []const u8, first: ActAt) i32 {
     const m = &ed.map.script;
     var buf: [widgets.LINE]u8 = undefined;
@@ -883,13 +861,11 @@ fn withAct(at: ActAt, i: u8) ActAt {
     };
 }
 
-/// A kind the act can be given here: a conversation's lines only say and set; one naming what the map lacks is passed over.
 fn actKindOk(m: *const Script, k: script.ActKind, spoken: bool) bool {
     if (spoken and !k.spoken()) return false;
     return refOk(m, script.actRef(k));
 }
 
-/// Its slot in range, naming the table its kind reads: coined when the table is empty.
 fn fitAct(m: *Script, a: *script.Act, spoken: bool) void {
     while (!actKindOk(m, a.kind, spoken)) a.kind = cycle(script.ActKind, a.kind, 1);
     if (script.actRef(a.kind)) |r| fitRef(m, r, &a.slot) else a.slot = 0;
@@ -897,7 +873,6 @@ fn fitAct(m: *Script, a: *script.Act, spoken: bool) void {
     if (a.kind == .quest and a.questop == .stage) a.n = stagesOf(m, a.slot, 1).clamp(a.n);
 }
 
-/// The map has something for `r` to name; a table always does, as one is coined.
 fn refOk(m: *const Script, r: ?script.Ref) bool {
     const ref = r orelse return true;
     return ref == .table or m.refLen(ref) > 0;
@@ -910,7 +885,6 @@ fn fitRef(m: *Script, r: script.Ref, slot: *u8) void {
     }
 }
 
-/// `slot` held to table `t`, its first name coined when the table is empty.
 fn fitSlot(m: *Script, t: script.Table, slot: *u8) void {
     if (m.names(t).len == 0) slot.* = m.coin(t) orelse 0 else slot.* = @min(slot.*, @as(u8, @intCast(m.names(t).len - 1)));
 }
@@ -919,7 +893,6 @@ fn kindW(w: i32) i32 {
     return widgets.share(w, KIND_PARTS, KIND_MIN_W, KIND_MAX_W);
 }
 
-/// The kind heading an action's or a condition's row: a new kind starts afresh, fitted to the map by `rule`.
 fn kindStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, v: anytype, names: anytype, tip: [:0]const u8, rule: anytype) void {
     const K = @TypeOf(v.kind);
     const by = stepper(ed, g, r, names.get(v.kind), true, tip, false);
@@ -1015,7 +988,6 @@ fn questStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, slot: *u8) void
     indexStep(ed, g, r, m.quest[slot.*].titled(), slot, m.quest_n, "Which quest; they are kept in the Quests page");
 }
 
-/// The stages quest `q` has, from `lo`.
 fn stagesOf(m: *const Script, q: u8, lo: i32) script.Span {
     return m.quest[q].reach(lo);
 }
@@ -1025,7 +997,6 @@ fn dialogStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, slot: *u8) voi
     indexStep(ed, g, r, m.dialog[slot.*].name.text(), slot, m.dialog_n, "Which dialog");
 }
 
-/// A name from table `t`, with `+` coining a new one.
 fn tableStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, t: script.Table, slot: *u8) void {
     const m = &ed.map.script;
     const all = m.names(t);
@@ -1326,7 +1297,6 @@ test "typed words refuse what the map's words refuse" {
     try std.testing.expect(!f.insert("a" ** (script.NAME_MAX + 1)));
     try std.testing.expect(f.insert("a" ** script.NAME_MAX));
     try std.testing.expect(script.Name.of(f.text()).eql(f.text()));
-    std.debug.print("typed words: 3 refusals (control markers, tab, one past the name limit) and a full name accepted\n", .{});
 }
 
 test "changing a quest action fits its stage to the new quest's objectives" {
@@ -1349,5 +1319,4 @@ test "changing a quest action fits its stage to the new quest's objectives" {
     a.questop = .stage;
     fitAct(&m, &a, true);
     try std.testing.expectEqual(@as(i32, 1), a.n);
-    std.debug.print("quest actions: changing quest and resuming stage mode both retain a real objective\n", .{});
 }

@@ -5,27 +5,27 @@ contract. The simulation is authoritative; the picture follows resolved facts at
 their scheduled impact. Saved field classification lives in `src/save_data.zig`; portable parsing and
 conversion live in `save_format.zig` and `save_values.zig`. See [save compatibility](SAVE_FORMAT.md).
 
-| Contract | Owner and enforcement | Representative verification |
+| Contract | Owner | Tests |
 | --- | --- | --- |
-| Actor and barrel impacts differ; misses cannot destroy barrels | `gfx/effect_state.zig`: tagged impacts, distinct actor IDs and slots from `play/actor.zig`; `gfx/impact_queue.zig` owns pending impacts | [Hero tests](../src/game/tests/hero.zig): missed reaction timing and phantom barrels; [picture tests](../src/game/tests/picture.zig): barrel removal |
-| Chosen attacks and reactions have distinct attribution | `play/chronicle.zig`: attack origin carried through combat and obituary handling | [Hero tests](../src/game/tests/hero.zig): missed reactions retain the chosen deed; [epitaph tests](../src/game/tests/hero.zig) |
-| Attack rules cannot update graphics or input | `game/attacks.zig`: rolls and hit/status resolution accept only Simulation and return a typed outcome; `game/sim.zig` owns HP loss; Game applies input consequences, Presentation defers resources | [Hero tests](../src/game/tests/hero.zig): isolated damage/attack resolution and seeded attack/reaction/status outcomes from revision `c989855`; [skill tests](../src/game/tests/skills.zig): staggered shielding; [terrain tests](../src/game/tests/terrain.zig): resistances |
-| Each resolution is pictured at its own impact | `game/presentation.zig`: recording operations and ordered scheduling stages; `gfx/impact_queue.zig`: bounded delivery, landed snapshots, flashes, death fades and mana release | [Queue tests](../src/gfx/impact_queue.zig): overdue ordering, one-time mana release and capacity; [picture tests](../src/game/tests/picture.zig): multiple blows and split births; [tactics tests](../src/game/tactics.zig): reaction recovery |
-| Sprite selection, GPU resources and appearance have separate owners | `gfx/sprite_assets.zig` selects required art; `gfx/sprites.zig` owns loading, drawing and release; `gfx/sprite_materials.zig` owns shader programs; `gfx/look.zig` owns appearance | Asset selection and export-contract tests stay with their owners; headless captures cover resource reuse and rendered output |
-| Turn stages preserve causality and clean up on death | `game/combat.zig`: named stages; Simulation owns consumed ticks inherited by split children | [Skill tests](../src/game/tests/skills.zig): inherited ticks, skipped actions, movement bleed and free actions; [hero tests](../src/game/tests/hero.zig): death prevents later stages and clears transients |
-| Targeting is valid only while active | `game.zig`, `game/skills.zig`: cohesive mode payload and begin/end operations | [Skill tests](../src/game/tests/skills.zig): opening input, cancellation, two-point barrier; [picture tests](../src/game/tests/picture.zig): queued actions |
-| Transients reset at their declared lifetime | Game coordinates new run, travel and resume; Presentation owns picture resets | [World tests](../src/game/tests/world.zig): travel; [loot tests](../src/game/tests/loot.zig): carried interactions; [save tests](../src/save.zig): in-memory round trips, legacy migration and rejected corruption |
-| A skill declares a checked integration contract | `play/skill_contract.zig`: one compile-time capability interpretation shared by dispatch and metadata through `skillbar` | [Contract diagnostics](../src/play/skill_contract.zig); [skill tests](../src/game/tests/skills.zig): legality, previews and scaling |
-| Death and loot rules cannot update the picture or menus | `game/rewards.zig`: accepts Simulation; death returns dropped gold and newly frightened witnesses, coin collection returns the removed pile, and chest opening distinguishes capacity failure | [Reward tests](../src/game/rewards.zig): seeded loot, unchanged combat RNG/picture and fright refresh; [loot tests](../src/game/tests/loot.zig): reserved ground capacity and delayed drops |
-| A gesture owns one history transaction | `edit/history.zig`: transaction snapshot, change, commit and cancel; Editor owns cache invalidation; text editing retains its separate persistence | [Editor tests](../src/edit/tests.zig): gesture, cancelled graph drag, no-op, undo and redo preservation |
-| Editor input routing does not need the game or drawing resources | `edit/interaction.zig`: routes Desk snapshots through modal, command, viewport and panel stages using explicit canvas bounds and screen height | [Editor tests](../src/edit/tests.zig): modal/view changes consume their canvas clicks; strokes, graph drags and cancellation retain history semantics |
-| Cosmetic visibility has one owner | `gfx/light_visibility.zig`: owns eased sight, memory, ground weights, blur scratch and cached fade sampling; Light reads it for terrain, bodies and effects | [Lighting tests](../src/gfx/light_tests.zig): memory edges, ground continuity, wall occlusion and sampled/baked agreement |
-| Editor drawing cannot mutate maps or game state through widgets | `edit/widgets.zig`: font/screen inputs and `Controls`; Editor supplies input gating and the tooltip destination | [Editor tests](../src/edit/tests.zig): clipping, modal/popup layers, opening-frame and pending-action click suppression; [widget tests](../src/edit/widgets.zig): scrollbar bounds |
-| Placement and cursor previews share geometry and legality | `edit/placement.zig`: brushes, placement, clipboard and paste preview; `edit/canvas.zig` owns cursor drawing | [Editor tests](../src/edit/tests.zig): shapes, paste clipping, blocked objects, cache invalidation and history |
-| Derived editor data cannot mutate the authored map | `edit/preview.zig`: Scene owns generated terrain, preview foes, arrival, reachability and issue caches; accepts only a const Atlas | [Preview tests](../src/edit/preview.zig): node selection, reuse, reroll, reset and map immutability |
-| Graph textures have one owner and explicit invalidation | `edit/thumbnails.zig`: owns generation scratch, texture lifetime and validity; canvas requests only visible images | [Thumbnail tests](../src/edit/thumbnails.zig): selective invalidation and changed node identities; [canvas tests](../src/edit/canvas.zig): offscreen clipping |
-| A map's script never names past its own tables | `map/script.zig`: removals renumber or retire references, in-use names and dialogs refuse removal, `Script.valid` guards parsing and loads; `play/trigger.zig` owns the runtime, quests' progress and where rolled NPCs stood, `game/talking.zig` opens conversations once a turn is drawn and restamps NPCs as the plot changes | [Script tests](../src/map/script.zig), [text tests](../src/map/script_text.zig), [trigger tests](../src/play/trigger.zig), [talking tests](../src/game/talking.zig), [editor tests](../src/edit/tests.zig): NPCs placement and typed words |
-| Gameplay does not depend on UI or rendering modules | `tools/source_rules.zig`, called by every build step; wording and bounded text live in core, event history in `play/log.zig` | Boundary-checker tests reject forbidden imports and allow integration-test imports; [save tests](../src/save.zig) retain the legacy fingerprint and portable field identities |
+| Actor and barrel impacts differ; misses cannot destroy barrels | `gfx/effect_state.zig`, `gfx/impact_queue.zig` | [hero](../src/game/tests/hero.zig), [picture](../src/game/tests/picture.zig) |
+| Chosen attacks and reactions have distinct attribution | `play/chronicle.zig` | [hero](../src/game/tests/hero.zig) |
+| Attack rules cannot update graphics or input | `game/attacks.zig`, `game/sim.zig` | [hero](../src/game/tests/hero.zig), [skills](../src/game/tests/skills.zig), [terrain](../src/game/tests/terrain.zig) |
+| Each resolution is pictured at its own impact | `game/presentation.zig`, `gfx/impact_queue.zig` | [impact_queue](../src/gfx/impact_queue.zig), [picture](../src/game/tests/picture.zig), [tactics_exec](../src/game/tactics_exec.zig) |
+| Sprite selection, GPU resources and appearance have separate owners | `gfx/sprite_assets.zig`, `gfx/sprites.zig`, `gfx/sprite_materials.zig`, `gfx/look.zig` | [sprite_assets](../src/gfx/sprite_assets.zig), [sprites](../src/gfx/sprites.zig) |
+| Turn stages preserve causality and clean up on death | `game/combat.zig`, `game/sim.zig` | [skills](../src/game/tests/skills.zig), [hero](../src/game/tests/hero.zig) |
+| Targeting is valid only while active | `game.zig`, `game/skills.zig`, `game/targeting.zig` | [skills](../src/game/tests/skills.zig), [picture](../src/game/tests/picture.zig) |
+| Transients reset at their declared lifetime | `game.zig`, `game/presentation.zig` | [world](../src/game/tests/world.zig), [loot](../src/game/tests/loot.zig), [save](../src/save.zig) |
+| A skill declares a checked integration contract | `play/skill_contract.zig`, `play/skillbar.zig` | [skill_contract](../src/play/skill_contract.zig), [skills](../src/game/tests/skills.zig) |
+| Death and loot rules cannot update the picture or menus | `game/rewards.zig` | [rewards](../src/game/rewards.zig), [loot](../src/game/tests/loot.zig) |
+| A gesture owns one history transaction | `edit/history.zig` | [edit](../src/edit/tests.zig) |
+| Editor input routing needs neither the game nor drawing resources | `edit/interaction.zig` | [edit](../src/edit/tests.zig) |
+| Cosmetic visibility has one owner | `gfx/light_visibility.zig` | [light_tests](../src/gfx/light_tests.zig) |
+| Editor drawing cannot mutate maps or game state through widgets | `edit/widgets.zig` | [edit](../src/edit/tests.zig), [widgets](../src/edit/widgets.zig) |
+| Placement and cursor previews share geometry and legality | `edit/placement.zig`, `edit/canvas.zig` | [edit](../src/edit/tests.zig) |
+| Derived editor data cannot mutate the authored map | `edit/preview.zig` | [preview](../src/edit/preview.zig) |
+| Graph textures have one owner and explicit invalidation | `edit/thumbnails.zig` | [thumbnails](../src/edit/thumbnails.zig), [canvas](../src/edit/canvas.zig) |
+| A map's script never names past its own tables | `map/script.zig`, `play/trigger.zig`, `game/talking.zig` | [script](../src/map/script.zig), [script_text](../src/map/script_text.zig), [trigger](../src/play/trigger.zig), [talking](../src/game/talking.zig), [edit](../src/edit/tests.zig) |
+| Gameplay does not depend on UI or rendering modules | `tools/source_rules.zig` | [source_rules](../tools/source_rules.zig), [save](../src/save.zig) |
 
 ## Dependency boundaries
 
@@ -51,60 +51,50 @@ These helpers also cannot import Game, Presentation or the application.
 
 ## Lifetimes
 
-Simulation owns run data, including the seeded RNG and consumed turn ticks.
-The saved integer actor references remain stable; typed transient adapters do not
-change the legacy reader fingerprint and portable save identities. Pool replacement must retain the initialized
-`var` copy of a carried actor required by Zig 0.14.1.
+`game/sim.zig` (Simulation)
+- Owns run data, the seeded RNG and consumed turn ticks.
+- Free actions and idle frames do not age it.
+- Saved integer actor references stay stable; typed adapters change neither the legacy fingerprint nor portable save identities.
+- Pool replacement keeps the initialized `var` copy of a carried actor (Zig 0.14.1).
+- `resetTransientTurn` owns its scene reset.
 
-Presentation snapshots must be captured immediately after a resolution, before a
-later blow changes that body. A missed reaction still owns animation time. New runs
-discard pending presentation; travel preserves only explicitly carried state; resume
-settles the loaded picture without replaying effects. Free actions and idle frames
-do not age simulation state.
+`game/presentation.zig` (Presentation)
+- Snapshot a resolution immediately, before a later blow changes that body.
+- A missed reaction still owns animation time.
+- New runs discard pending presentation; travel keeps only explicitly carried state; resume settles the loaded picture without replaying effects.
+- Mutation APIs take `ActorId` for identity or `ActorSlot` for storage; callers convert integer identities at their boundary.
+- `freshTurn` owns its scene reset.
+- `stepGlide` owns a local `TurnTiming`, including the hero's pictured cell after each knockback.
+- Each body's schedule runs motion/projectile timing, blows and mending, reactions, knockback, then status harm.
+- `BodyTiming.impact_in` and `finishes_in` are seconds from the current frame; `starts_at` and `TurnTiming.next_at` keep the turn origin; `late` converts.
+- New effects record their resolved snapshot once and join a stage; gameplay never writes the queue's landed state or timers.
 
-Presentation mutation APIs take `ActorId` for identity or `ActorSlot` for indexed
-storage. Convert legacy integer identities at the caller's boundary; impact
-payloads, split reveals and queue queries keep those types throughout delivery.
+`gfx/fx.zig`, `gfx/impact_queue.zig`
+- `Fx.step` ages existing visuals before delivering ready events.
+- The queue keeps swap-removal delivery order and picks body snapshots by simulation sequence, even when several deadlines pass in one frame.
+- Every event releases its mana debt once, a superseded snapshot included.
+- `Fx` renders delivered events and owns cosmetic RNG; the queue does not.
 
-`stepGlide` owns a local `TurnTiming`, including the hero's pictured cell after
-each knockback. Each body's schedule runs motion/projectile timing, blows and
-mending, reactions, knockback, then status harm. `BodyTiming.impact_in` and
-`finishes_in` are seconds from the current frame; `starts_at` and
-`TurnTiming.next_at` retain the turn origin, with `late` converting between them.
-New effects should record their resolved snapshot once and join the appropriate
-stage; gameplay callers do not write the queue's landed state or timers.
+`game/attacks.zig`
+- `resolve` returns null for an absent target, otherwise `.miss` or `.hit` carrying damage, statuses, culling and recovery.
+- Combat consumes the outcome once: damage consequences, log, snapshot/split, death rewards, then impact and recovery.
+- Hero rolls and weapon status resolution stay here; animation, input and death transitions stay in their adapters.
 
-`Fx.step` ages existing visuals before delivering ready events. `impact_queue`
-preserves the previous swap-removal delivery order and selects body snapshots by
-simulation sequence, even when several deadlines pass in one frame. Every event
-releases its mana debt once, including an older snapshot superseded by a newer
-one. `Fx` renders each delivered event and owns cosmetic RNG; the queue does not.
+`game/rewards.zig`
+- `defeat` resolves XP, drops, flask refills, gas, steam and witness fright from Simulation alone; Presentation holds dropped gold and schedules speech from its `Death`.
+- Already frightened witnesses refresh their timer without another speech.
+- Chest capacity failure leaves the chest and RNG untouched; the game adapter supplies the message.
 
-`attacks.resolve` returns null for an absent target, otherwise a miss or a hit carrying
-damage, applied statuses, culling and recovery. Combat consumes that outcome once:
-apply Game's damage consequences, record the log, snapshot/split, handle death rewards,
-then schedule the impact and recovery. Hero damage rolls and weapon status resolution stay in attacks;
-animation, input and death transitions stay in their owning adapters.
+`game.zig`, `game/targeting.zig`
+- `Game.mode.aim` owns an `Aim`: opening creates all its fields together, `skills.closeAim` discards them, switching mode drops it.
+- Barrier targeting distinguishes choosing its start from its end.
+- Confirmation copies the target before closing and passes that value to execution.
+- `TravelCarry` keeps queued commands (Interact included), the mouse skill set, facing and the level-up effect across node replacement.
 
-`rewards.defeat` resolves XP, drops, flask refills, gas, steam and witness fright using
-Simulation alone. Presentation consumes its `Death` result to hold dropped gold
-and schedule speech against the fallen actor's impact. Already frightened witnesses
-refresh their simulation timer without scheduling another speech. Chest capacity
-failure leaves the chest and RNG untouched; the game adapter supplies the menu message.
-
-`Game.mode.aim` owns an `Aim` from `game/targeting.zig`. Opening creates all of its
-fields together; `skills.closeAim` discards them. Barrier targeting distinguishes
-choosing its start from choosing its end. Confirmation copies the target before
-closing it and passes that value to execution. Switching to another mode also drops
-the payload. `TravelCarry` explicitly preserves queued commands (including Interact),
-the mouse skill set, facing and the ongoing level-up effect across node replacement.
-`Simulation.resetTransientTurn` and `Presentation.freshTurn` own their scene resets.
-
-Turn order is recovery/cooldowns, hero post-action harm, gas spread, foe clocks,
-ordered foe action then its harm, waiting newborn harm, and final ward/sight handling.
-Consumed ticks and displacement are cleared even when hero death interrupts this
-sequence. Split children inherit consumed ticks so they cannot repeat their parent's
-harm in the same turn.
+`game/combat.zig`
+- Turn order: recovery/cooldowns, hero post-action harm, gas spread, foe clocks, each foe's action then its harm, waiting newborn harm, final ward/sight.
+- Consumed ticks and displacement clear even when hero death interrupts the turn.
+- Split children inherit consumed ticks, so they cannot repeat their parent's harm that turn.
 
 ## Adding a skill
 
@@ -117,18 +107,18 @@ module type; ordinary capability queries read the checked contract table.
 
 Start with [pinning](../src/play/pinning.zig) for a simple projectile,
 [nova](../src/play/nova.zig) for an area skill, or `Overwatch` in
-[tactics](../src/play/tactics.zig) plus its [execution](../src/game/tactics.zig)
+[tactics](../src/play/tactics.zig) plus its [execution](../src/game/tactics_exec.zig)
 for a reaction. Add the action and registry definition in
 [skillbar](../src/play/skillbar.zig), declaring attack delivery explicitly.
 [skill_contract](../src/play/skill_contract.zig) interprets the module once and
 validates its targeting, damage, status and special execution requirements. Registry
 errors identify the skill; the `invalid` diagnostic path is also tested with incomplete
-sample modules. Specialized tactical execution stays explicit in `game/tactics.zig`.
+sample modules. Specialized tactical execution stays explicit in `game/tactics_exec.zig`.
 
 Wire the class kit and defaults in skillbar, ranks/costs in
 [progress](../src/play/progress.zig), the icon in
 [line_icons](../src/gfx/line_icons.zig), and a behavior test in
-[skills tests](../src/game/tests/skills.zig) or `game/tactics.zig`. Preview and
+[skills tests](../src/game/tests/skills.zig) or `game/tactics_exec.zig`. Preview and
 execution both use `Act` accessors backed by the same contract. Keep area geometry
 in the skill module and capture targets before damage so splits are not hit twice.
 

@@ -13,7 +13,6 @@ pub const VERB = "shoots a burning arrow into";
 pub const TAKES = "catches fire";
 pub const ELEMENT: damage.Element = .fire;
 pub const KINDLE = fire.Kindle{ .chance = 15 };
-/// Its chance to burn, as every fire skill's description says it.
 pub const BURN_NOTE = std.fmt.comptimePrint("{d}% burn chance", .{CHANCE});
 pub const STATUS = std.fmt.comptimePrint("Take {d} fire damage per turn, reduced by fire resistance.", .{PER_TURN});
 pub const DESCRIPTION = std.fmt.comptimePrint("Add fire damage to an arrow. {s}.", .{BURN_NOTE});
@@ -47,5 +46,4 @@ test "burning begins next turn, lasts three ticks and refreshes without stacking
         if (procs(&rng, 0)) hits += 1;
     }
     try std.testing.expect(hits > 400 and hits < 600);
-    std.debug.print("burning: {d}/1000 ignites, {d} ticks, {d} damage at 50% fire resistance\n", .{ hits, TURNS, total });
 }

@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Path of Exile's topology graphs; the layouts are Grim Tangle, Red Vale, Keth, Manor Ramparts, the Crossroads, Mawdun Quarry, Jungle Ruins and Dried Lake.
-
 const CLEARING_SCALE: f32 = 4;
 const P = mathx.P;
 
@@ -20,7 +18,6 @@ const SIDE_REACH: i32 = 14;
 const SIDE_CLEARING: f32 = 0.6;
 /// A grid layout's paths left out, so it is no lattice.
 const GRID_GAP: f32 = 0.3;
-/// Cells between a clearing's rim and the map's edge.
 const RIM_GAP: i32 = 2;
 /// Of the box's shorter side, a bowl's and the lakebed's half-width.
 const BOWL_OF: f32 = 0.22;
@@ -144,7 +141,6 @@ test "every layout joins its spots" {
         var rng = mathx.Rng.init(0x70B0);
         shape(&lv, &rng, 1, .{ .layout = l, .sides = 0 });
         const parts = st.label(&lv);
-        std.debug.print("{s}: {d} open cells in {d} stretches\n", .{ @tagName(l), carve.count(&lv, .grass), parts });
         if (l != .grid) try std.testing.expectEqual(@as(usize, 1), parts);
     }
 }

@@ -17,9 +17,7 @@ pub const Stepper = struct {
     /// How long before this frame's end the last step was due.
     late: f32 = 0,
     owed: ?mathx.Dir = null,
-    /// A way pressed down that has not stepped yet.
     press: bool = false,
-    /// This frame's step is that press's, not a held way repeating or turning.
     fresh: bool = false,
 
     pub fn tick(self: *Stepper, dt: f32, deflection: f32, heading: f32, settle: f32) ?mathx.Dir {
@@ -60,12 +58,10 @@ pub const Stepper = struct {
 
     pub const HELD = std.math.inf(f32);
 
-    /// A way first pressed after the screen changed was not held over, unless one was already latched.
     pub fn pressed(self: *Stepper) void {
         if (self.carried() and self.latched == null) self.* = .{};
     }
 
-    /// A way held over from another screen, still down.
     pub fn carried(self: Stepper) bool {
         return self.due == HELD;
     }
@@ -137,7 +133,6 @@ test "the walk fires once, waits DAS, then repeats at ARR" {
             n += 1;
         }
     }
-    std.debug.print("first repeat {d:.3} s, then {d:.3} {d:.3} {d:.3} s\n", .{ gaps[0], gaps[1], gaps[2], gaps[3] });
     try std.testing.expect(@abs(gaps[0] - Stepper.DAS) <= dt * 2);
     for (gaps[1..]) |g| try std.testing.expect(@abs(g - Stepper.ARR) <= dt * 2);
 }
@@ -154,7 +149,6 @@ test "only a pressed way steps fresh, not a held one repeating or letting a diag
             if (s.fresh) fresh += 1;
         }
     }
-    std.debug.print("held north-east then east: {d} steps, {d} fresh\n", .{ steps, fresh });
     try std.testing.expect(steps > 3 and fresh == 1);
 }
 
@@ -168,7 +162,6 @@ test "a stalled frame does not bank repeats" {
     for (0..4) |_| {
         if (s.tick(dt, 1, north, 0) != null) steps += 1;
     }
-    std.debug.print("a 1 s stall, then 4 frames: {d} step(s)\n", .{steps});
     try std.testing.expectEqual(@as(usize, 1), steps);
 }
 

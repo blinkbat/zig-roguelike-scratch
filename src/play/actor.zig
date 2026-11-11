@@ -125,7 +125,6 @@ const FAMILY = blk: {
     break :blk t;
 };
 
-/// The hero a map's start is drawn as.
 pub const HERO: Kind = .archer;
 
 comptime {
@@ -165,7 +164,6 @@ pub const Strike = struct {
     chills: u32 = 0,
     /// Its damage is this element's, resisted as such instead of by armour.
     element: ?damage.Element = null,
-    /// A landed blow pushes the struck body a cell straight away.
     knocks: bool = false,
 
     pub fn roll(s: Strike, rng: *mathx.Rng) i32 {
@@ -180,7 +178,6 @@ pub const Blow = union(enum) {
     /// It dies instead (Brogue's kamikaze), and bursts however it dies.
     burst: Burst,
 
-    /// A pyre: its death lights, boils and melts what lies round it.
     pub fn pyre(b: Blow) bool {
         return switch (b) {
             .burst => |kind| kind == .fire,
@@ -189,13 +186,11 @@ pub const Blow = union(enum) {
     }
 };
 
-/// Swimming bodies keep to deep water and shallows.
 pub const Movement = enum {
     ground,
     flying,
     swimming,
 
-    /// Its body touches the ground or the water under it.
     pub fn grounded(m: Movement) bool {
         return m != .flying;
     }
@@ -219,11 +214,9 @@ pub const Row = struct {
     foe_type: ?FoeType,
     /// A fresh body's; one split off a slime has half what that slime had left.
     hp: i32,
-    /// Cells its eyes reach, where there is light to see by.
     sight: i32 = SIGHT,
     blow: Blow,
     ranged: ?Ranged = null,
-    /// Cells round it the light it carries reaches.
     light: i32 = 0,
     /// Brogue's `MONST_FLITS`: a third of its moves go a random way.
     flits: bool = false,
@@ -244,7 +237,6 @@ pub const Row = struct {
     keeps: i32 = 0,
     net: ?Net = null,
     mends: ?Mend = null,
-    /// Fights at the hero's side.
     allied: bool = false,
     /// An ally that holds its ground, shooting the foes it sees, and stays behind at doors.
     posted: bool = false,
@@ -306,7 +298,6 @@ pub fn row(k: Kind) Row {
     };
 }
 
-/// The ground a `k` stands on: a swimmer's water, a mimic's where a chest could stand, the rest's any open ground.
 pub fn groundFits(k: Kind, t: grid.Tile) bool {
     const r = row(k);
     if (r.movement == .swimming) return t.wet();
@@ -314,7 +305,6 @@ pub fn groundFits(k: Kind, t: grid.Tile) bool {
     return !t.solid();
 }
 
-/// Where a `k` may be set down: its ground with no body, barrel, NPC or barrier on it, and a mimic's off any door.
 pub fn dwells(k: Kind, lv: *const grid.Level, p: P) bool {
     if (!grid.Level.inside(p) or !groundFits(k, lv.at(p)) or lv.taken(p) or lv.npcAt(p) != null or lv.hasBarrier(p)) return false;
     return !row(k).disguised or lv.doorAt(p) == null;
@@ -324,7 +314,6 @@ pub fn standsOffDoor(k: Kind, lv: *const grid.Level, p: P) bool {
     return dwells(k, lv, p) and lv.doorAt(p) == null;
 }
 
-/// Where a `k` may be pushed or pulled to: wherever its feet, or its fins, can go.
 pub fn holds(k: Kind, lv: *const grid.Level, p: P) bool {
     if (row(k).movement == .swimming) return dwells(k, lv, p);
     return lv.vacant(p);
@@ -378,15 +367,11 @@ pub const Actor = struct {
     maim: maim.Maim = .{},
     ward: ward.Ward = .{},
     tactics: @import("tactics.zig").State = .{},
-    /// Its turns left running from the hero.
     fright: u8 = 0,
-    /// Its turns until it can sweep again.
     sweep_in: u8 = 0,
     /// Its turns until it can throw a net or mend again.
     ready_in: u8 = 0,
-    /// Lurking out of the hero's reach.
     submerged: bool = false,
-    /// Standing as a closed chest.
     disguised: bool = false,
     /// Came in a night raid: its death gives no experience, loot, flask charges or mana.
     raider: bool = false,
@@ -405,7 +390,6 @@ pub const Actor = struct {
         return self.alive and self.foe();
     }
 
-    /// Not seen as a body even where lit.
     pub fn veiled(self: Actor) bool {
         return self.submerged or self.disguised;
     }
@@ -414,12 +398,10 @@ pub const Actor = struct {
         return lv.isLit(self.at) and !self.veiled();
     }
 
-    /// A living foe the hero sees.
     pub fn seenFoe(self: Actor, lv: *const grid.Level) bool {
         return self.livingFoe() and self.seenIn(lv);
     }
 
-    /// Up to `n` hp back, never past its most: what it got.
     pub fn heal(self: *Actor, n: i32) i32 {
         const got = std.math.clamp(n, 0, @max(0, self.max - self.hp));
         self.hp += got;
@@ -433,7 +415,6 @@ pub const Actor = struct {
         return fresh;
     }
 
-    /// Its chest flung open: the ground comes back and it wakes.
     pub fn unmask(self: *Actor, lv: *grid.Level) void {
         if (!self.disguised) return;
         lv.set(self.at, self.under);
@@ -457,12 +438,10 @@ pub const Actor = struct {
         return self.afflictions().count() > 0;
     }
 
-    /// Something its own turns wear: an affliction, a pin or a chill.
     pub fn wearsAny(self: Actor) bool {
         return self.pin.holding() or self.chill.turns > 0 or self.afflicted();
     }
 
-    /// The `AFFLICTIONS` running on it now.
     pub fn afflictions(self: Actor) Afflicted {
         var out = Afflicted.initEmpty();
         inline for (AFFLICTIONS) |k| {
@@ -471,14 +450,12 @@ pub const Actor = struct {
         return out;
     }
 
-    /// One of its turns spent under each of `AFFLICTIONS`, in order.
     pub fn wearAfflictions(self: *Actor) Afflicted {
         const out = self.afflictions();
         inline for (AFFLICTIONS) |k| _ = @field(self, @tagName(k)).wear();
         return out;
     }
 
-    /// Its steps take more than a move: pinned, confused or maimed.
     pub fn hampered(self: Actor) bool {
         return self.pin.holding() or self.confusion.turns > 0 or self.maim.turns > 0;
     }
@@ -494,7 +471,6 @@ pub const Actor = struct {
         return true;
     }
 
-    /// The turn is over: what started or split off in it is no longer fresh.
     pub fn settle(self: *Actor) void {
         self.waits = false;
         inline for (std.meta.fields(Actor)) |f| {
@@ -503,7 +479,6 @@ pub const Actor = struct {
     }
 };
 
-/// What a turn worn under them was.
 pub const Afflicted = std.EnumSet(resilience.Kind);
 
 /// The statuses worn on a body's own turn, each kept in the `Actor` field its kind names.
@@ -520,7 +495,6 @@ pub const AFFLICTIONS = blk: {
 
 pub const MAX: usize = 64;
 
-/// The last way a body stepped, struck or aimed across.
 pub const Facing = enum { right, left };
 
 test "heroes and foes share independent status buildup with innate beefy pib stun resistance" {
@@ -536,7 +510,6 @@ test "heroes and foes share independent status buildup with innate beefy pib stu
         for (0..resilience.EXPIRY + 1) |_| a.settle();
         try std.testing.expectEqual(@as(u8, 0), a.resilience.peak().percent);
     }
-    std.debug.print("status buildup: {d} bodies, all {d} ailments; beefy pib has {d}% innate stun and {d}% fright resistance\n", .{ kinds.len, std.enums.values(resilience.Kind).len, row(.beefy_pib).stun_resist, row(.beefy_pib).fright_resist });
 }
 
 pub const Tally = struct { left: usize = 0, total: usize = 0 };
@@ -576,7 +549,6 @@ pub const Pool = struct {
         return !a.alive and (a.kind.ally() or a.raider);
     }
 
-    /// The first spent slot at or after `start`.
     pub fn spentFrom(self: *const Pool, start: usize) ?usize {
         for (start..self.n) |i| if (self.spent(i)) return i;
         return null;
@@ -593,7 +565,6 @@ pub const Pool = struct {
         return id;
     }
 
-    /// Lurkers out of reach of the hero at `hero` sink; those within it rise.
     pub fn surface(self: *Pool, hero: P) void {
         for (self.slice()) |*a| a.submerged = row(a.kind).lurks and mathx.dist(a.at, hero) > LURK_REACH;
     }
@@ -704,7 +675,6 @@ fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
     return lv.burning(to) and !lv.burning(from);
 }
 
-/// The water step that most closes on `toward`, by steps then by the straighter line; none that gains.
 pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
     const Fins = struct {
         lv: *const grid.Level,
@@ -718,7 +688,6 @@ pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
     return closest(lv, from, toward, Fins{ .lv = lv, .from = from, .k = k }, Fins.wet);
 }
 
-/// The free step that most closes on `toward`, by steps then by the straighter line; none that gains.
 pub fn approach(lv: *const grid.Level, from: P, id: u16, toward: P) ?mathx.Dir {
     return closest(lv, from, toward, Step{ .lv = lv, .from = from, .id = id }, Step.free);
 }
@@ -737,12 +706,10 @@ fn closest(lv: *const grid.Level, from: P, toward: P, ctx: anytype, comptime ok:
     return best;
 }
 
-/// Downhill on `flow`, a walked-distance map from the hero.
 pub fn chase(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32) ?mathx.Dir {
     return climb(lv, from, id, flow, -1);
 }
 
-/// Uphill on `flow`: the step furthest a walk from the hero, or none when no step gains on it.
 pub fn flee(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32) ?mathx.Dir {
     return climb(lv, from, id, flow, 1);
 }
@@ -762,12 +729,10 @@ fn climb(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32, 
     return best;
 }
 
-/// A confused step: any free cell, gas or not.
 pub fn stumble(lv: *const grid.Level, from: P, id: u16, rng: *mathx.Rng) ?mathx.Dir {
     return rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, Step{ .lv = lv, .from = from, .id = id }, Step.free);
 }
 
-/// Brogue's `randValidDirectionFrom`: any step it may take and does not shun, or one onto `prey`.
 pub fn flit(lv: *const grid.Level, from: P, id: u16, prey: u16, rng: *mathx.Rng) ?mathx.Dir {
     return rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, Step{ .lv = lv, .from = from, .id = id, .prey = prey }, Step.flits);
 }
@@ -798,7 +763,6 @@ test "a slime a blow leaves under half its hp splits in two of the next kind, ea
     const other = pool.split(&lv, id, &rng) orelse return error.NoSplit;
     const a = pool.get(id).?.*;
     const b = pool.get(other).?.*;
-    std.debug.print("a slime of {d} hp left on {d}: two half slimes of {d}/{d} hp, a cell apart\n", .{ full, left, a.hp, a.max });
     for ([_]Actor{ a, b }) |s| {
         try std.testing.expectEqual(Kind.slime_half, s.kind);
         try std.testing.expectEqual(@divTrunc(left, 2), s.hp);
@@ -857,7 +821,6 @@ test "a sweep reaches every cell round it a step could, and none through a wall"
     lv.set(.{ .x = 21, .y = 20 }, .wall);
     const s = sweep(&lv, from);
     try std.testing.expect(!s.has(.{ .x = 21, .y = 20 }) and !s.has(from));
-    std.debug.print("sweep: {d} cells in the open, {d} beside a wall\n", .{ mathx.ALL_DIRS.len, s.n });
     try std.testing.expectEqual(mathx.ALL_DIRS.len - 1, s.n);
 }
 
@@ -875,7 +838,6 @@ test "chase walks round a wall toward the hero" {
         const d = chase(&lv, at, 1, &flow) orelse return error.Stuck;
         at = at.add(d.delta());
     }
-    std.debug.print("round a wall: {d} steps to reach a hero 4 cells away\n", .{steps});
     try std.testing.expect(mathx.dist(at, hero) <= 1);
 }
 
@@ -890,7 +852,6 @@ test "flee gains a step on the hero every turn, and stops in a dead end" {
         const d = flee(&lv, at, 1, &flow) orelse return error.Stuck;
         at = at.add(d.delta());
     }
-    std.debug.print("{d} turns fleeing: {d} walked steps from the hero, from {d}\n", .{ FLEE_TURNS, flow[grid.Level.idx(at)], start });
     try std.testing.expectEqual(start + FLEE_TURNS, flow[grid.Level.idx(at)]);
     var pit = grid.openFloor();
     for (mathx.ALL_DIRS) |d| pit.set((P{ .x = 20, .y = 20 }).add(d.delta()), .wall);
@@ -924,9 +885,6 @@ test "a flit goes every open way about evenly, onto its prey too, and never into
     const TRIES: usize = 6000;
     var counts = std.EnumArray(mathx.Dir, usize).initFill(0);
     for (0..TRIES) |_| counts.getPtr(flit(&lv, from, 2, 1, &rng) orelse return error.Stuck).* += 1;
-    std.debug.print("{d} flits beside a barrel west and gas north:", .{TRIES});
-    for (mathx.ALL_DIRS) |d| std.debug.print(" {s} {d}", .{ @tagName(d), counts.get(d) });
-    std.debug.print("\n", .{});
     try std.testing.expectEqual(@as(usize, 0), counts.get(.w));
     try std.testing.expectEqual(@as(usize, 0), counts.get(.n));
     for ([_]mathx.Dir{ .ne, .e, .se, .s, .sw, .nw }) |d| {
@@ -948,7 +906,6 @@ test "a leech swims only through water toward the hero and surfaces only beside 
         at = pool.get(id).?.at;
         try std.testing.expect(lv.at(at).wet());
     }
-    std.debug.print("bog leech: {d} strokes to the last water cell, {d} from a hero on dry ground\n", .{ steps, mathx.dist(at, hero) });
     try std.testing.expectEqual(P{ .x = 15, .y = 10 }, at);
     pool.surface(hero);
     lv.lit = @splat(true);

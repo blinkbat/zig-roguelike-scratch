@@ -231,7 +231,6 @@ pub const Tail = blk: {
     break :blk Struct(fs);
 };
 pub const LegacyTail = Replaced(Tail, "lv", LegacyLevel);
-/// The legacy tail's bytes, field after field.
 pub const TAIL = blk: {
     var n: usize = 0;
     for (std.meta.fields(LegacyTail)) |f| n += @sizeOf(f.type);
@@ -255,7 +254,6 @@ pub fn fieldOf(comptime name: [:0]const u8, comptime T: type, comptime default: 
     return .{ .name = name, .type = T, .default_value_ptr = default, .is_comptime = false, .alignment = @alignOf(T) };
 }
 
-/// `T` without its field `name`.
 fn Without(comptime T: type, comptime name: []const u8) type {
     const all = std.meta.fields(T);
     var fs: [all.len - 1]std.builtin.Type.StructField = undefined;
@@ -269,7 +267,6 @@ fn Without(comptime T: type, comptime name: []const u8) type {
     return Struct(fs);
 }
 
-/// `T` with its field `name` of type `U` instead.
 fn Replaced(comptime T: type, comptime name: []const u8, comptime U: type) type {
     const all = std.meta.fields(T);
     var fs: [all.len]std.builtin.Type.StructField = undefined;
@@ -316,7 +313,6 @@ test "the legacy shapes keep every byte older raw saves wrote and convert both w
     convert(now, raw);
     try std.testing.expectEqual(grid.Tile.lava, now.lv.tile[7]);
     try std.testing.expectEqual(@as(?usize, null), now.lv.npcAt(.{ .x = 3, .y = 4 }));
-    std.debug.print("legacy shapes: map and level read without their added fields; a visit converts both ways and the added NPCs default\n", .{});
 }
 
 pub const Summary = struct {

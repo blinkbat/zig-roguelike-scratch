@@ -6,7 +6,6 @@ pub const TURN: i32 = 100;
 const STUN: i32 = TURN;
 pub const STUNNED = "is stunned";
 
-/// A stunning skill's chance, as its description says it.
 pub fn stunNote(comptime pc: u32) []const u8 {
     return std.fmt.comptimePrint("{d}% chance to stun", .{pc});
 }
@@ -14,14 +13,12 @@ pub fn stunNote(comptime pc: u32) []const u8 {
 /// Brogue's `ticksUntilTurn`: each turn pays `TURN`; a body still owing ticks loses its action.
 pub const Clock = struct {
     ticks: i32 = 0,
-    /// This turn found it still owing, so it does not act.
     stalled: bool = false,
 
     pub fn delay(self: *Clock, ticks: i32) void {
         self.ticks += @max(0, ticks);
     }
 
-    /// The one stun, whatever deals it: the body loses its next turn.
     pub fn stun(self: *Clock) void {
         self.delay(STUN);
     }
@@ -45,7 +42,6 @@ pub const Clock = struct {
     }
 };
 
-/// A skill's `afflict` that stuns.
 pub fn stuns(a: anytype, _: *mathx.Rng) void {
     a.clock.stun();
 }
@@ -75,7 +71,6 @@ test "a stun costs the next turn, delay costs a turn for each whole turn of tick
     try std.testing.expectEqual(@as(usize, 3), lost(&c, TURN, 10));
     var slow = Clock{};
     try std.testing.expectEqual(@as(usize, 5), lost(&slow, TURN * 2, 10));
-    std.debug.print("clock: a stun loses the next turn; two half-turn delays 1, three turns' 3; a body of pace {d} loses 5 of 10\n", .{TURN * 2});
 }
 
 test "stunning a pending action cancels its prepaid pace without double-paying an existing stall" {
@@ -99,5 +94,4 @@ test "stunning a pending action cancels its prepaid pace without double-paying a
         c.pass(pace);
         try std.testing.expect(!c.stalled);
     }
-    std.debug.print("pending-action stun: 3 paces cancel one action each; existing stalls retain their remaining debt\n", .{});
 }

@@ -13,7 +13,7 @@ pub const TYPES = [_]Registration{
     .{ .name = "game.debug.Row", .casing = .title, .except = &.{ "vsync", "frame_limit" } },
     .{ .name = "play.hero.Class" },
     .{ .name = "play.skillbar.Act", .casing = .title, .except = &.{"secondary"} },
-    .{ .name = "play.items.Kind" },
+    .{ .name = "play.item_bases.Kind", .saved_name = "play.items.Kind" },
     .{ .name = "play.attrs.Attr" },
     .{ .name = "play.damage.Element" },
     .{ .name = "play.resilience.Kind" },
@@ -111,7 +111,6 @@ fn titled(comptime text: [:0]const u8) [:0]const u8 {
 }
 
 const Recase = enum { title, lower };
-/// Words a title leaves lower case past its first.
 const MINOR_WORDS = [_][]const u8{ "of", "the", "and", "a", "an" };
 
 /// Recases `text` in place when it lies in `buf`; a fallback literal is returned as it is.
@@ -191,7 +190,6 @@ test "wording aliases share record replacement lookup and display casing" {
     try std.testing.expect(allowed("game.PauseRow", "quit"));
     try std.testing.expect(!allowed("game.PauseRow", "resume"));
     try std.testing.expect(!allowed("internal.Kind", "any"));
-    std.debug.print("wording aliases: shared CRLF codec, duplicate replacement, casing and display registration checked\n", .{});
 }
 
 test "a tag is titled word by word" {

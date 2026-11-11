@@ -17,7 +17,6 @@ pub const VERB = "frosts";
 pub const TAKES = "is chilled";
 pub const ELEMENT: damage.Element = .cold;
 pub const STATUS = std.fmt.comptimePrint("Lose 1 action in every {d}.", .{CYCLE});
-/// Its chance to chill, as every cold skill's description says it.
 pub const CHILL_NOTE = std.fmt.comptimePrint("{d}% chill chance", .{CHANCE});
 pub const DESCRIPTION = std.fmt.comptimePrint("An arrow bursts into a {d}-tile cone of cold. {s}.", .{ RANGE, CHILL_NOTE });
 
@@ -69,7 +68,6 @@ pub fn cone(lv: *const grid.Level, from: P, impact: P) areas.Burst {
     return areas.spread(lv, impact, RANGE, Ahead{ .impact = impact, .heading = impact.sub(from) }, Ahead.holds);
 }
 
-/// What its arrow bursts into where it strikes.
 pub const burst = cone;
 
 test "chill skips one action in three and refreshing never postpones the skipped action" {
@@ -90,7 +88,6 @@ test "chill skips one action in three and refreshing never postpones the skipped
         if (chill.skip()) skipped += 1;
     }
     try std.testing.expectEqual(@as(usize, 10), skipped);
-    std.debug.print("chill: {d}/30 actions skipped under repeated refreshes; expires after {d} turns\n", .{ skipped, TURNS });
 }
 
 test "cold resistance reduces chill probability independently of rounded cold damage" {
@@ -110,7 +107,6 @@ test "cold resistance reduces chill probability independently of rounded cold da
     try std.testing.expect(counts[0] > 400 and counts[0] < 600);
     try std.testing.expect(counts[1] > 175 and counts[1] < 325);
     try std.testing.expectEqual(@as(usize, 0), counts[2]);
-    std.debug.print("chill procs per 1000 at 0/50/100% cold resistance: {d}/{d}/{d}\n", .{ counts[0], counts[1], counts[2] });
 }
 
 test "glacial cone follows cardinal diagonal and oblique shots and stops at walls without revealing cells" {
@@ -135,5 +131,4 @@ test "glacial cone follows cardinal diagonal and oblique shots and stops at wall
     try std.testing.expect(!area.has(.{ .x = 22, .y = 20 }));
     try std.testing.expect(area.has(.{ .x = 21, .y = 21 }));
     for (lv.lit) |lit| try std.testing.expect(!lit);
-    std.debug.print("glacial cone: {d} directions plus oblique aim, {d}-tile reach, wall occlusion, no sight changes\n", .{ mathx.ALL_DIRS.len, RANGE });
 }

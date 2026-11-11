@@ -15,7 +15,8 @@ const stage = @import("ui/stage.zig");
 const look = @import("gfx/look.zig");
 const font = @import("gfx/font.zig");
 const shaders = @import("gfx/shaders.zig");
-const shots = @import("game/shots.zig");
+const capture = @import("game/shots/capture.zig");
+const bench = @import("game/shots/bench.zig");
 const raster = @import("gfx/raster.zig");
 const prompt_icon = @import("gfx/prompt_icon.zig");
 const hero = @import("play/hero.zig");
@@ -88,7 +89,7 @@ const App = struct {
     title: menu.Menu = .{},
     maps: menu.Menu = .{},
     listing: listing.Listing = .{},
-    /// The map picked in Maps; null plays `atlas.START`.
+    /// null plays `atlas.START`.
     chosen: ?[]const u8 = null,
     chosen_buf: [listing.PATH_MAX]u8 = undefined,
     classes: stage.Lineup = .{},
@@ -99,7 +100,7 @@ const App = struct {
     entry: naming.Entry = .{},
     list: [save.SLOTS]save.Slot = @splat(.empty),
     armed: ?usize = null,
-    /// The run being played in a slot; null for a play-test.
+    /// null for a play-test.
     autosave: ?save.Autosave = null,
     undeleted: ?anyerror = null,
     hall: ossuary.Hall = .{},
@@ -296,7 +297,6 @@ const App = struct {
         app.scene = .play;
     }
 
-    /// A write that fails waits for the return to title to try again, and to say so.
     fn bury(app: *App) void {
         if (!app.hall.dirty or app.unburied != null) return;
         ossuary.write(&app.hall) catch |e| {
@@ -628,10 +628,10 @@ fn slotDetails(s: *const save.Slot, buf: *[LINE]u8) ?[:0]const u8 {
 
 /// About half the spotlight's way from one hero to the next.
 const HEROES_MID_DT: f32 = 0.08;
-const HEROES_DIR = shots.SHOTS_DIR ++ "/heroes";
-const MOUSE_DIR = shots.MOUSE_DIR;
+const HEROES_DIR = capture.SHOTS_DIR ++ "/heroes";
+const MOUSE_DIR = capture.MOUSE_DIR;
 
-pub fn shootHeroes(g: *game.Game) !void {
+pub fn captureHeroes(g: *game.Game) !void {
     try std.fs.cwd().makePath(HEROES_DIR);
     const alloc = std.heap.c_allocator;
     const map = try alloc.create(atlas.Atlas);
@@ -648,20 +648,20 @@ pub fn shootHeroes(g: *game.Game) !void {
         const at = std.fmt.comptimePrint("-{d}p.png", .{size.y});
         app.page = .class;
         app.classes = .on(0);
-        try shootPage(&app, target, HEROES_DIR ++ "/class" ++ at);
+        try capturePage(&app, target, HEROES_DIR ++ "/class" ++ at);
         _ = app.classes.step(&.{ .walk = .e }, size);
         app.classes.tick(HEROES_MID_DT);
-        try shootPage(&app, target, HEROES_DIR ++ "/class-moving" ++ at);
+        try capturePage(&app, target, HEROES_DIR ++ "/class-moving" ++ at);
         app.page = .name;
-        try shootPage(&app, target, HEROES_DIR ++ "/name" ++ at);
+        try capturePage(&app, target, HEROES_DIR ++ "/name" ++ at);
     }
 }
 
-fn shootPage(app: *App, target: rl.RenderTexture2D, path: [:0]const u8) !void {
+fn capturePage(app: *App, target: rl.RenderTexture2D, path: [:0]const u8) !void {
     rl.beginTextureMode(target);
     _ = app.titleStep();
     rl.endTextureMode();
-    try game.shots.exportTarget(target, path);
+    try capture.exportTarget(target, path);
 }
 
 var start_edit: ?[]const u8 = null;
@@ -671,7 +671,7 @@ test "every type whose words the player may rename is registered under its own n
     const types = .{
         MainRow,                               OptionRow,                           game.PauseRow,
         debug.Page,                            debug.Row,                           hero.Class,
-        @import("play/skillbar.zig").Act,      @import("play/items.zig").Kind,      @import("play/attrs.zig").Attr,
+        @import("play/skillbar.zig").Act,      @import("play/item_bases.zig").Kind, @import("play/attrs.zig").Attr,
         @import("play/damage.zig").Element,    @import("play/resilience.zig").Kind, @import("play/flask.zig").Kind,
         @import("play/consumable.zig").Kind,   actor.FoeType,                       actor.Movement,
         @import("ui/character_view.zig").Page, @import("ui/trees.zig").SkillState,  editor.View,
@@ -679,15 +679,12 @@ test "every type whose words the player may rename is registered under its own n
     };
     const wording = @import("core/wording.zig");
     try std.testing.expectEqual(wording.TYPES.len, types.len);
-    var tags: usize = 0;
     inline for (types, wording.TYPES) |T, row| {
         try std.testing.expectEqualStrings(@typeName(T), row.name);
         for ([_][]const []const u8{ row.except, row.only orelse &.{} }) |list| for (list) |tag| {
             try std.testing.expect(std.meta.stringToEnum(T, tag) != null);
-            tags += 1;
         };
     }
-    std.debug.print("wording registrations: {d} types, {d} excepted or only-listed tags name real tags\n", .{ types.len, tags });
 }
 
 test "mouse save deletion stays tied to its row through intermediate movement and needs two presses" {
@@ -697,7 +694,6 @@ test "mouse save deletion stays tied to its row through intermediate movement an
     const map = try alloc.create(atlas.Atlas);
     defer alloc.destroy(map);
     var app = App{ .alloc = alloc, .g = g, .map = map, .edit_path = atlas.MAIN, .list = @splat(.{ .unreadable = .damaged }) };
-    var checked: usize = 0;
     for ([_]mathx.P{ game.SCREEN_720, game.SCREEN_1440 }) |screen| {
         for (0..save.SLOTS) |target| {
             for (0..save.SLOTS) |crossed| {
@@ -714,7 +710,6 @@ test "mouse save deletion stays tied to its row through intermediate movement an
             try std.testing.expectEqual(target, second.remove);
             try std.testing.expect(app.confirmDelete(second.remove));
             app.armed = null;
-            checked += 1;
         }
         app.loads.at = 0;
         const remove = app.saveStep(&.{ .pressed = .initOne(DELETE) }, screen).?;
@@ -729,7 +724,6 @@ test "mouse save deletion stays tied to its row through intermediate movement an
         try std.testing.expectEqual(@as(usize, 2), load.load);
         app.list[2] = .{ .unreadable = .damaged };
     }
-    std.debug.print("mouse save actions: {d} row-specific confirmations, keyboard deletion, disarming and empty rows; no save I/O\n", .{checked});
 }
 
 fn fixtureHall() ossuary.Hall {
@@ -749,7 +743,7 @@ fn fixtureHall() ossuary.Hall {
     return hall;
 }
 
-pub fn shootMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
+pub fn captureMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
     const alloc = std.heap.c_allocator;
     const map = try alloc.create(atlas.Atlas);
     defer alloc.destroy(map);
@@ -764,7 +758,7 @@ pub fn shootMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
     g.st = .{ .device = .keys };
     inline for (comptime std.enums.values(Page)) |page| {
         app.page = page;
-        try shootPage(&app, target, MOUSE_DIR ++ "/title-" ++ @tagName(page) ++ ".png");
+        try capturePage(&app, target, MOUSE_DIR ++ "/title-" ++ @tagName(page) ++ ".png");
     }
     const screen = g.screen;
     inline for (game.SCREENS) |size| {
@@ -773,19 +767,19 @@ pub fn shootMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
         defer rl.unloadRenderTexture(sized);
         inline for (.{ Page.main, Page.load, Page.ossuary, Page.bones }) |page| {
             app.page = page;
-            try shootPage(&app, sized, std.fmt.comptimePrint(MOUSE_DIR ++ "/title-{s}-{d}p.png", .{ @tagName(page), size.y }));
+            try capturePage(&app, sized, std.fmt.comptimePrint(MOUSE_DIR ++ "/title-{s}-{d}p.png", .{ @tagName(page), size.y }));
         }
     }
     g.screen = screen;
     var empty = App{ .alloc = alloc, .g = g, .map = map, .edit_path = atlas.MAIN, .page = .ossuary };
-    try shootPage(&empty, target, MOUSE_DIR ++ "/title-ossuary-empty.png");
+    try capturePage(&empty, target, MOUSE_DIR ++ "/title-ossuary-empty.png");
     var longest: [listing.STEM_MAX + 1]u8 = @splat('W');
     longest[listing.STEM_MAX] = 0;
     rl.beginTextureMode(target);
     rl.clearBackground(look.BG);
     menu.draw(g.face, &g.sprites, g.screen, CHOOSE_MAP, &.{longest[0..listing.STEM_MAX :0]}, 0, null);
     rl.endTextureMode();
-    try game.shots.exportTarget(target, MOUSE_DIR ++ "/title-long-row.png");
+    try capture.exportTarget(target, MOUSE_DIR ++ "/title-long-row.png");
 }
 
 test "an editor arena uses a separate map and never opens a save slot" {
@@ -811,7 +805,6 @@ test "an editor arena uses a separate map and never opens a save slot" {
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
     try std.testing.expectEqual(actor.Kind.slime, g.sim.pool.items[1].kind);
     try std.testing.expect(g.sim.lv.isLit(spar.FOE));
-    std.debug.print("arena launch: selected slime visible, no save slot, edited tiles and undo position unchanged\n", .{});
 }
 
 test "the playground opens as a wizard on its own map with no save slot, and a play-test after it is plain" {
@@ -832,7 +825,6 @@ test "the playground opens as a wizard on its own map with no save slot, and a p
     app.playTest(ed.map.start);
     try std.testing.expect(!g.sim.playground and g.sim.map == ed.map);
     try std.testing.expectEqual(hero.DEFAULT.kind(), g.sim.heroActor().?.kind);
-    std.debug.print("playground launch: wizard at its start, no save slot; the next play-test is the default archer\n", .{});
 }
 
 /// `edit` opens the editor on that map first; null opens the title.
@@ -857,21 +849,21 @@ fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime inner: fn (*gam
     g.face = font.Face.load(look.TILE_CODEPOINTS);
     defer g.face.unload();
     g.sprites.loadBorder();
-    if (startup_shown) std.debug.print("startup: {d:.3} ms, {d} map textures\n", .{ shots.ms(startup.read()), g.sprites.count() });
+    if (startup_shown) std.debug.print("startup: {d:.3} ms, {d} map textures\n", .{ bench.ms(startup.read()), g.sprites.count() });
     try inner(g);
 }
 
 const Headless = struct { flag: [:0]const u8, body: fn (*game.Game) anyerror!void, startup_shown: bool = false };
 
 pub const HEADLESS = [_]Headless{
-    .{ .flag = "--shot", .body = shots.shoot },
-    .{ .flag = "--shot-ui", .body = shots.shootUi },
-    .{ .flag = "--shot-editor", .body = shots.shootEditor },
-    .{ .flag = "--shot-debug", .body = shots.shootDebug },
-    .{ .flag = "--shot-cinema", .body = shots.shootCinema },
-    .{ .flag = "--shot-trees", .body = shots.shootTrees },
-    .{ .flag = "--shot-water-cliffs", .body = shots.shootWaterCliffs },
-    .{ .flag = "--bench", .body = shots.benchWalk, .startup_shown = true },
+    .{ .flag = "--shot", .body = @import("game/shots/poses.zig").captureGeneral },
+    .{ .flag = "--shot-ui", .body = @import("game/shots/ui.zig").captureUi },
+    .{ .flag = "--shot-editor", .body = @import("game/shots/ui.zig").captureEditor },
+    .{ .flag = "--shot-debug", .body = @import("game/shots/debug.zig").captureDebug },
+    .{ .flag = "--shot-cinema", .body = @import("game/shots/cinema.zig").captureCinema },
+    .{ .flag = "--shot-trees", .body = @import("game/shots/trees.zig").captureTrees },
+    .{ .flag = "--shot-water-cliffs", .body = @import("game/shots/water_cliffs.zig").captureWaterCliffs },
+    .{ .flag = "--bench", .body = bench.benchWalk, .startup_shown = true },
 };
 
 pub fn headless(comptime h: Headless) !void {

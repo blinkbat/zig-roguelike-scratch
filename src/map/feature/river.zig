@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// ADOM's rivers, Diablo II's river and Dry Hills cliff, the River of Flame, a rift.
-
 pub const WIDTH_MAX: u8 = 9;
 pub const COUNT_MAX: u8 = 3;
 pub const FORDS_MAX: u8 = 6;
@@ -97,7 +95,6 @@ test "a ford crosses a river's rock bank as it does a walkable one" {
     const tenth = grid.CELLS / 10;
     const rock = cutOff(RIVERS, .{ .bank = .rock, .course = .across, .fords = 1 }, tenth);
     const shallows = cutOff(RIVERS, .{ .bank = .shallows, .course = .across, .fords = 1 }, tenth);
-    std.debug.print("{d} rivers, a ford each, still cut off a tenth of the map: {d} banked with rock, {d} with shallows\n", .{ RIVERS, rock, shallows });
     try std.testing.expectEqual(shallows, rock);
 }
 
@@ -111,7 +108,6 @@ test "a ford through a rock bank cuts the bank, never the rock the river ran thr
         apply(&lv, &rng, 0, pal, .{ .bank = .rock, .width = WIDTH_MAX, .fords = FORDS_MAX });
         cut += carve.count(&lv, pal.path);
     }
-    std.debug.print("50 rivers through solid rock, banked with rock, {d} fords each: {d} rock cells cut to path\n", .{ FORDS_MAX, cut });
     try std.testing.expectEqual(@as(usize, 0), cut);
 }
 
@@ -129,7 +125,6 @@ test "a ford lands off the map's edge whenever its river runs there" {
     for (0..200) |_| {
         if (grid.Level.edgeDist(fordAt(&bed, &rng, 4).?) <= 4) hugging += 1;
     }
-    std.debug.print("a bed along the west rim but one cell: 200 fords, {d} against the rim\n", .{hugging});
     try std.testing.expectEqual(@as(usize, 0), hugging);
 }
 
@@ -142,13 +137,11 @@ test "a cliff band with a gap leaves the map whole, and a river's ford is shallo
     try std.testing.expect(carve.count(&lv, .rock) > grid.W);
     try std.testing.expect(carve.count(&lv, .dirt) > 0);
     apply(&lv, &rng, 0, pal, .{ .course = .down, .fords = 2 });
-    std.debug.print("a cliff across and a river down: {d} rock, {d} water, {d} ford shallows and banks\n", .{ carve.count(&lv, .rock), carve.count(&lv, .water), carve.count(&lv, .shallows) });
     try std.testing.expect(carve.count(&lv, .water) > grid.H);
 }
 
 test "crossing cliffs with banks keep each other's rock" {
     const p = Params{ .fill = .rock, .bank = .shallows, .course = .any, .count = COUNT_MAX };
-    var holed: usize = 0;
     var lost: usize = 0;
     for (0..50) |s| {
         var lv = grid.Level.blank();
@@ -166,9 +159,7 @@ test "crossing cliffs with banks keep each other's rock" {
             if (want == .rock and got != .rock) here += 1;
         }
         lost += here;
-        if (here > 0) holed += 1;
     }
-    std.debug.print("50 maps of {d} banked cliffs: {d} with a cliff holed, {d} rock cells lost\n", .{ COUNT_MAX, holed, lost });
     try std.testing.expectEqual(@as(usize, 0), lost);
 }
 
@@ -184,6 +175,5 @@ test "a cliff with a bank keeps its rock" {
         least = @min(least, rock);
         if (rock <= grid.W) thin += 1;
     }
-    std.debug.print("50 cliffs banked with shallows: {d} under a map's width of rock, the least {d}\n", .{ thin, least });
     try std.testing.expectEqual(@as(usize, 0), thin);
 }

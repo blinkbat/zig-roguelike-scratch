@@ -58,7 +58,6 @@ const StatusGlow = struct {
 };
 const BURN_GLOW = StatusGlow{ .radius = 2, .gain = 0.55 };
 const WARD_GLOW = StatusGlow{ .radius = 1.5, .gain = 0.25 };
-/// A cell of burning ground's light.
 pub const FLAMES_GLOW = StatusGlow{ .radius = 1.6, .gain = 0.45 };
 /// What a body suffers for turns, in the order the hud names them.
 pub const Status = enum {
@@ -108,7 +107,6 @@ pub const Status = enum {
         };
     }
 
-    /// The skill whose stance it shows.
     fn stance(s: Status) ?skillbar.Act {
         return switch (s) {
             .guarding => .guard,
@@ -143,7 +141,6 @@ pub const Status = enum {
         };
     }
 
-    /// What it does to the body, as its tooltip says.
     pub fn about(s: Status) []const u8 {
         return switch (s) {
             .resistant => resilience.ABOUT,
@@ -199,7 +196,6 @@ pub const Body = struct {
     hp: i32,
     max: i32,
     seq: u64,
-    /// Turns left of each.
     status: std.EnumArray(Status, u8) = .initFill(0),
     resilience: resilience.State = .{},
     sunder: sunder.Sunder = .{},
@@ -228,13 +224,11 @@ pub const After = struct { body: Body, reveals: ?actor.ActorSlot = null, mana: i
 
 pub const Drip = struct { at: [2]f32, matter: Matter };
 
-/// Gas curling off a body it eats at or mends, or out of a glowbulb bursting.
 pub const Puff = struct {
     at: [2]f32,
     ink: rl.Color,
     motes: usize = TICK_WISPS,
 
-    /// Over a body seen at `mark`; none for an unseen one.
     pub fn over(mark: ?[2]f32, ink: rl.Color) ?Puff {
         return .{ .at = mark orelse return null, .ink = ink };
     }
@@ -245,7 +239,6 @@ pub const BURST_WISPS: usize = 22;
 
 pub const Sting = struct { slot: actor.ActorSlot, after: ?After = null, fire_at: ?[2]f32 = null, drip: ?Drip = null, puff: ?Puff = null };
 
-/// A body changed by no seen blow, as a chill wearing off or a heal: it catches up unflashed.
 pub const Settle = struct { slot: actor.ActorSlot, after: After, puff: ?Puff = null };
 
 pub const Burst = struct { at: mathx.P, area: areas.Burst, element: damage.Element };

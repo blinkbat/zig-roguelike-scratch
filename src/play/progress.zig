@@ -3,7 +3,7 @@ const attrs = @import("attrs.zig");
 const hero = @import("hero.zig");
 const actor = @import("actor.zig");
 const skillbar = @import("skillbar.zig");
-const items = @import("items.zig");
+const Gear = @import("gear.zig").Gear;
 const damage = @import("damage.zig");
 const mathx = @import("../core/mathx.zig");
 
@@ -21,7 +21,6 @@ const RANK_COST_PERCENT: i32 = 10;
 const XP_BASE: u64 = 40;
 const XP_STEP: u64 = 20;
 const POINTS_PER_LEVEL: u16 = 1;
-/// Points a passive node or a skill rank costs.
 pub const POINT_COST: u16 = 1;
 pub const passives = @import("passives.zig");
 const Node = passives.Node;
@@ -81,7 +80,6 @@ pub fn skills(c: hero.Class) []const Skill {
     };
 }
 
-/// Every hero has it from the start, outside the class's tree.
 fn innate(act: skillbar.Act) bool {
     return act == .wait or act == .secondary or act.carried();
 }
@@ -125,7 +123,6 @@ pub const State = struct {
         return out;
     }
 
-    /// Every class skill at its first rank.
     pub fn versed(c: hero.Class) State {
         var out = of(c);
         for (skills(c)) |s| out.ranks.set(s.act, 1);
@@ -161,7 +158,6 @@ pub const State = struct {
         return false;
     }
 
-    /// Reachable, with a point to spend on it.
     pub fn canAllocate(self: *const State, i: usize) bool {
         return self.passive_points >= POINT_COST and self.available(i);
     }
@@ -180,7 +176,6 @@ pub const State = struct {
         return out;
     }
 
-    /// Origins grant only attributes, so a class's free one adds nothing here.
     pub fn perks(self: *const State) passives.Perks {
         var out = passives.Perks{};
         var it = self.nodes.iterator(.{});
@@ -234,25 +229,24 @@ pub const State = struct {
         return @as(i32, self.extraRanks(act)) * RANK_DAMAGE_PERCENT;
     }
 
-    fn skillAttrs(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) attrs.Attrs {
+    fn skillAttrs(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act) attrs.Attrs {
         var out = if (act.attack()) |attack| gear.forAttack(equipped, attack) else equipped;
         if (act.attack()) |attack| out.damage_bonus.getPtr(gear.scaling(attack)).* += self.damageBonus(act);
         return out;
     }
 
     /// What scales `act`'s blow with `gear`, for previews and live rolls alike.
-    pub fn blowOf(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) ?Blow {
+    pub fn blowOf(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act) ?Blow {
         const attack = act.attack() orelse return null;
         return .{ .by = self.skillAttrs(equipped, gear, act), .style = gear.scaling(attack), .bases = act.equippedBases(gear) };
     }
 
-    /// Its blow's non-critical spans with `gear`, as live damage rolls them.
-    pub fn hit(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) ?Hit {
+    pub fn hit(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act) ?Hit {
         const b = self.blowOf(equipped, gear, act) orelse return null;
         return b.hit(act);
     }
 
-    pub fn preparedBlow(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act, steady: u8) ?Blow {
+    pub fn preparedBlow(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act, steady: u8) ?Blow {
         var out = self.blowOf(equipped, gear, act) orelse return null;
         const t = @import("tactics.zig");
         if (steady > 0 and t.SteadyAim.readies(act)) {
@@ -262,7 +256,7 @@ pub const State = struct {
         return out;
     }
 
-    pub fn preparedHit(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act, steady: u8) ?Hit {
+    pub fn preparedHit(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act, steady: u8) ?Hit {
         return (self.preparedBlow(equipped, gear, act, steady) orelse return null).hit(act);
     }
 
@@ -272,7 +266,6 @@ pub const State = struct {
         return @max(1, mathx.percentCeil(act.cost(), percent));
     }
 
-    /// Its cooldown at its rank, `quicker` turns shorter.
     pub fn cooldown(self: *const State, act: skillbar.Act, quicker: u8) u8 {
         if (act.cooldown() == 0) return 0;
         const ranks = if (act.attack() != null) 0 else self.extraRanks(act);
@@ -281,7 +274,6 @@ pub const State = struct {
         return @max(floor, act.cooldown() -| ranks -| quicker);
     }
 
-    /// What using it costs at its rank: "3 mana, 1 turn, 2-turn cooldown".
     pub fn writeUsage(self: *const State, act: skillbar.Act, quicker: u8, w: anytype) void {
         const c = self.cost(act);
         if (c > 0) w.print("{d} mana, ", .{c}) catch {};
@@ -331,7 +323,6 @@ test "a versed wizard binds every skill of its tree in place of its flasks" {
     const bar = state.flasklessBar(.wizard);
     for (skills(.wizard)) |s| try std.testing.expect(bar.slotOf(s.act) != null);
     try std.testing.expect(bar.slotOf(.life_flask) == null and bar.slotOf(.mana_flask) == null);
-    std.debug.print("versed wizard: {d} tree skills bound, no flasks; wait {s}\n", .{ skills(.wizard).len, if (bar.slotOf(.wait) == null) "given up" else "kept" });
 }
 
 test "experience awards both point pools; passive paths cross class regions; active skills obey class and rank limits" {
@@ -367,7 +358,6 @@ test "experience awards both point pools; passive paths cross class regions; act
     try std.testing.expectEqual(@as(u8, 1), top.cooldown(.juke, 0));
     try std.testing.expectEqual(@as(u8, 2), top.cooldown(.blink, 0));
     try std.testing.expectEqual(@as(i32, 0), top.damageBonus(.blink));
-    std.debug.print("progression: {d} classes traverse all {d} passive nodes; {d} ranks, prerequisites and separate point pools checked; top-rank blink cools {d}, juke {d}, ward {d}\n", .{ std.enums.values(hero.Class).len, NODES.len, RANKS, top.cooldown(.blink, 0), top.cooldown(.juke, 0), top.cooldown(.mana_shield, 0) });
 }
 
 test "small mana costs round discounts up and paid skills stay paid at every rank" {
@@ -379,7 +369,6 @@ test "small mana costs round discounts up and paid skills stay paid at every ran
     try std.testing.expectEqual(@as(i32, 2), state.cost(.spark));
     try std.testing.expectEqual(@as(i32, 6), state.cost(.blink));
     for (0..NODES.len) |i| state.nodes.set(i);
-    var checked: usize = 0;
     for (skillbar.ACTS) |act| {
         for (1..RANKS + 1) |rank| {
             state.ranks.set(act, @intCast(rank));
@@ -390,11 +379,9 @@ test "small mana costs round discounts up and paid skills stay paid at every ran
             } else {
                 try std.testing.expect(n >= 1);
             }
-            checked += 1;
         }
     }
     try std.testing.expectEqual(@as(i32, 1), state.cost(.spark));
-    std.debug.print("small mana costs: {d} action/rank cases, rounded discounts and free actions checked\n", .{checked});
 }
 
 test "passive origins preserve class bases and failed purchases preserve the whole state" {
@@ -433,7 +420,6 @@ test "passive origins preserve class bases and failed purchases preserve the who
             failed += 1;
         }
     }
-    std.debug.print("passive origins: {d} free class starts, {d} paid alternate starts, and {d} failed purchases preserve point pools and state\n", .{ hero.CLASSES.len, paid, failed });
 }
 
 test "passive branch gates advance one layer and apply exact stat interest and capstone packages" {
@@ -504,8 +490,6 @@ test "passive branch gates advance one layer and apply exact stat interest and c
         try std.testing.expectEqual(want.life(), actual.life());
         try std.testing.expectEqual(want.mana(), actual.mana());
     }
-    const branches = std.enums.values(passives.Branch).len;
-    std.debug.print("passive branches: {d} one-point layer gates, {d} blocked skips; exact attribute and perk totals on {d} capstone routes\n", .{ branches * route.len, branches * (route.len - 1), cases.len });
 }
 
 test "passive bridges pay both attributes and cross either way without opening inward prerequisites" {
@@ -553,7 +537,6 @@ test "passive bridges pay both attributes and cross either way without opening i
         }
     }
     try std.testing.expectEqual(passives.BRIDGES * 2, crossings);
-    std.debug.print("passive bridges: all {d} directional crossings apply exact paired stats, open the far anchor and advance outward only\n", .{crossings});
 }
 
 test "experience crosses exact thresholds carries excess and saturates point pools at the level cap" {
@@ -590,18 +573,15 @@ test "experience crosses exact thresholds carries excess and saturates point poo
         try std.testing.expectEqual(std.math.maxInt(u64), state.xp);
         try std.testing.expectEqual(std.math.maxInt(u16), state.level);
     }
-    std.debug.print("experience boundaries: {d} classes check zero gain, just-below/exact/multiple levels, overflow and saturated point pools\n", .{hero.CLASSES.len});
 }
 
 test "failed active skill purchases preserve state for poverty prerequisites foreign skills and rank caps" {
-    var checked: usize = 0;
     for (hero.CLASSES) |class| {
         for (skills(class)) |skill| {
             var state = State.of(class);
             var before = state;
             try std.testing.expect(!state.learn(class, skill.act));
             try std.testing.expectEqualDeep(before, state);
-            checked += 1;
             state.active_points = 5;
             if (skill.parent) |parent| {
                 state.ranks.set(parent, 0);
@@ -609,13 +589,11 @@ test "failed active skill purchases preserve state for poverty prerequisites for
                 try std.testing.expect(!state.canLearn(class, skill.act));
                 try std.testing.expect(!state.learn(class, skill.act));
                 try std.testing.expectEqualDeep(before, state);
-                checked += 1;
             }
             state.ranks.set(skill.act, RANKS);
             before = state;
             try std.testing.expect(!state.learn(class, skill.act));
             try std.testing.expectEqualDeep(before, state);
-            checked += 1;
         }
         var state = State.of(class);
         state.active_points = 5;
@@ -625,9 +603,7 @@ test "failed active skill purchases preserve state for poverty prerequisites for
             for (skills(other)) |skill| {
                 try std.testing.expect(!state.learn(class, skill.act));
                 try std.testing.expectEqualDeep(before, state);
-                checked += 1;
             }
         }
     }
-    std.debug.print("active skill purchases: {d} failed transactions preserve ranks, points, XP and passive allocations\n", .{checked});
 }

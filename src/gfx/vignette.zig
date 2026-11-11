@@ -4,20 +4,16 @@ const mathx = @import("../core/mathx.zig");
 const look = @import("look.zig");
 const raster = @import("raster.zig");
 
-/// Seconds a blow's reddening takes to rise, and to fade.
 const RISE_S: f32 = 0.12;
 const PAIN_S: f32 = 0.9;
 const PAIN_A: f32 = 0.2;
-/// Of full hp, where the low glow starts.
 pub const LOW: f32 = 1.0 / 3.0;
 const LOW_A: f32 = 0.3;
 /// Per second.
 const LOW_EASE: f32 = 4.0;
 const BEAT_HZ: f32 = 1.1;
-/// Of the low glow, the share that throbs with the beat.
 const BEAT: f32 = 0.3;
 const TEX_PX: i32 = 128;
-/// Of the half-diagonal from the middle, where the reddening starts and where it is whole.
 const CLEAR_R: f32 = 0.45;
 const FULL_R: f32 = 1.0;
 
@@ -26,7 +22,6 @@ pub const Vignette = struct {
     rising: bool = false,
     low: f32 = 0,
     t: mathx.Seconds = .{},
-    /// Rising hero flash marks a blow landing.
     was: f32 = 0,
     tex: ?rl.Texture2D = null,
 
@@ -37,13 +32,11 @@ pub const Vignette = struct {
         self.was = 0;
     }
 
-    /// As if long eased toward `hp`.
     pub fn settle(self: *Vignette, hp: i32, max: i32) void {
         self.clear();
         self.low = lowOf(hp, max);
     }
 
-    /// `flash` is the hero's, as `impact_queue.Queue.flashOf` gives it.
     pub fn step(self: *Vignette, dt: f32, flash: f32, hp: i32, max: i32) void {
         if (flash > self.was) self.rising = true;
         self.was = flash;
@@ -72,7 +65,6 @@ pub const Vignette = struct {
         raster.unloadAll(self);
     }
 
-    /// Over the view, `w` by `h` from the screen's top-left.
     pub fn draw(self: Vignette, w: i32, h: i32) void {
         const tex = self.tex orelse return;
         const a = self.alpha();
@@ -108,7 +100,6 @@ test "a blow on the archer starts reddening the edge as it lands, rises, and fad
             peak_at = t + dt;
         }
     }
-    std.debug.print("a blow's vignette: {d:.3} the frame it lands, {d:.2} at its height {d:.3} s on, gone {d:.3} s on\n", .{ first, peak, peak_at, t });
     try std.testing.expect(first > 0 and first < peak * 0.1);
     try std.testing.expectApproxEqAbs(PAIN_A, peak, 1e-3);
     try std.testing.expectApproxEqAbs(RISE_S, peak_at, dt * 2);
@@ -116,17 +107,14 @@ test "a blow on the archer starts reddening the edge as it lands, rises, and fad
 }
 
 test "the low glow is off above a third of full hp and grows as hp falls toward nothing" {
-    std.debug.print("low-hp vignette, settled, by hp of 24:", .{});
     var last: f32 = -1;
     for ([_]i32{ 24, 9, 8, 6, 4, 2, 1 }) |hp| {
         var v = Vignette{};
         for (0..600) |_| v.step(mathx.FRAME_DT, 0, hp, 24);
         v.t = .{ .sum = 0.25 / BEAT_HZ };
         const a = v.alpha();
-        std.debug.print(" {d}:{d:.2}", .{ hp, a });
         if (hp >= 8) try std.testing.expectEqual(@as(f32, 0), a) else try std.testing.expect(a > last);
         last = a;
     }
-    std.debug.print("\n", .{});
     try std.testing.expect(last <= LOW_A);
 }

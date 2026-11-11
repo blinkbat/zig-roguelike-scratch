@@ -16,7 +16,6 @@ pub const Arm = enum {
         };
     }
 
-    /// The class that starts on it.
     pub fn class(a: Arm) hero.Class {
         return switch (a) {
             .warrior => .knight,
@@ -102,7 +101,6 @@ const SEAMS = blk: {
     break :blk out;
 };
 pub const Tier = enum { stat, interest, capstone };
-/// Effects the game reads off the allocated tree rather than off the attributes.
 pub const Perks = struct {
     life_on_hit: i32 = 0,
     life_on_kill: i32 = 0,
@@ -111,7 +109,6 @@ pub const Perks = struct {
     mana_regen: i32 = 0,
     mana_cost: i32 = 0,
 
-    /// A blow that leaves a foe `left` of `max` life kills it instead.
     pub fn culls(p: Perks, left: i32, max: i32) bool {
         return left > 0 and left * mathx.PERCENT <= max * p.cull;
     }
@@ -141,7 +138,6 @@ pub const Kind = enum {
         };
     }
 
-    /// The damage it raises by a percentage, for a damage kind.
     pub fn style(k: Kind) ?attrs.Style {
         return switch (k) {
             inline else => |t| if (comptime std.mem.endsWith(u8, @tagName(t), DAMAGE)) @field(attrs.Style, @tagName(t)[0 .. @tagName(t).len - DAMAGE.len]) else null,
@@ -149,14 +145,12 @@ pub const Kind = enum {
     }
     const DAMAGE = "_damage";
 
-    /// What it adds to, for a kind that is not a damage percentage.
     pub fn bonus(k: Kind) ?attrs.Bonus {
         return switch (k) {
             inline else => |t| if (@hasField(attrs.Bonus, @tagName(t))) @field(attrs.Bonus, @tagName(t)) else null,
         };
     }
 
-    /// The `Attrs` chance it adds straight onto: `crit_bonus` for crit.
     fn rate(comptime k: Kind) ?[]const u8 {
         const name = @tagName(k) ++ "_bonus";
         return if (k.bonus() == null and @hasField(attrs.Attrs, name)) name else null;
@@ -173,14 +167,12 @@ pub const Kind = enum {
         for (std.meta.fields(Perks)) |f| _ = @field(Kind, f.name);
     }
 
-    /// The attribute it raises, for a pure attribute kind.
     pub fn attr(k: Kind) ?attrs.Attr {
         return switch (k) {
             inline else => |t| comptime if (@hasField(attrs.Attr, @tagName(t))) @field(attrs.Attr, @tagName(t)) else null,
         };
     }
 };
-/// The whole modifier, for a kind that is neither a damage style nor an attribute bonus.
 const TEXT = std.EnumArray(Kind, ?[]const u8).init(.{
     .strength = null,
     .dexterity = null,
@@ -200,7 +192,6 @@ const TEXT = std.EnumArray(Kind, ?[]const u8).init(.{
     .mana_regen = std.fmt.comptimePrint("+{{d}} mana recovered per {d} turns", .{hero.MANA_REGEN_TURNS}),
     .mana_cost = "Skills cost {d}% less mana",
 });
-/// What each class origin grants of its arm's attribute.
 pub const ROOT_GRANT: i32 = 2;
 pub const Grant = struct {
     kind: Kind,
@@ -224,7 +215,6 @@ pub const Grant = struct {
         }
     }
 
-    /// The whole modifier: "+4% Heavy weapon damage".
     pub fn write(g: Grant, w: anytype) void {
         const n = g.amount;
         (switch (g.kind) {
@@ -608,5 +598,4 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
         };
     }
     try std.testing.expectEqual(@as(usize, N), seen.count());
-    std.debug.print("passives: {d} nodes, {d} stat / {d} interest / {d} capstone; {d} two-way bridges; all {d} grant kinds and {d} directional targets checked\n", .{ N, tiers.get(.stat), tiers.get(.interest), tiers.get(.capstone), BRIDGES, kinds.count(), seen.count() });
 }

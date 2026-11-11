@@ -1,6 +1,8 @@
 const attacks = @import("../attacks.zig");
 const std = @import("std");
-const items = @import("../../play/items.zig");
+const Gear = @import("../../play/gear.zig").Gear;
+const item_bases = @import("../../play/item_bases.zig");
+const loot = @import("../../play/loot.zig");
 const progress = @import("../../play/progress.zig");
 const mathx = @import("../../core/mathx.zig");
 const input = @import("../../core/input.zig");
@@ -95,7 +97,7 @@ test "equipment base effects reach combat recovery and status resistance" {
     foe.clock = .{};
     foe.kind = .beefy_pib;
     for (0..200) |_| {
-        combat.arrowHit(g, id, .{ .blow = .{ .elements = .initDefault(0, .{ .lightning = 1 }) } }, .spark, .{ .from = from, .wait = 0 });
+        combat.skillHit(g, id, .{ .blow = .{ .elements = .initDefault(0, .{ .lightning = 1 }) } }, .spark, .{ .from = from, .wait = 0 });
         game.settle(g);
     }
     try std.testing.expectEqual(@as(i32, turn_clock.TURN), foe.clock.ticks);
@@ -109,7 +111,6 @@ test "equipment base effects reach combat recovery and status resistance" {
     h.hp = 10;
     combat.wound(g, id, .{ .dmg = foe.hp }, "slays", .{ .from = from, .wait = 0 });
     try std.testing.expectEqual(@as(i32, 11), h.hp);
-    std.debug.print("bases in combat: crossbow pierces 20% armour, great axe bleeds for 2, mace and Spark respect buildup; circlet recovery and totem healing apply\n", .{});
 }
 
 test "skills cannot start a second turn while the first is still being drawn" {
@@ -119,11 +120,9 @@ test "skills cannot start a second turn while the first is still being drawn" {
     const clock = g.sim.clock;
     const hp = g.sim.heroActor().?.hp;
     g.pic.busy = 0.5;
-    var bound: usize = 0;
     for (skillbar.SLOTS) |button| {
         const act = g.bar.at(.{ .set = .primary, .button = button }) orelse continue;
         if (act == .secondary) continue;
-        bound += 1;
         g.st = .{ .pressed = .initOne(button) };
         game.update(g, 0);
         try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
@@ -143,7 +142,6 @@ test "skills cannot start a second turn while the first is still being drawn" {
     skills.confirmAim(g);
     try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
     try std.testing.expect(g.pic.shot != null);
-    std.debug.print("{d} bound skills blocked during animation; shooting resumes when quiet\n", .{bound});
 }
 
 test "glacial shot spends only on confirmation and bursts at the first body with delayed chill and cone damage" {
@@ -194,7 +192,6 @@ test "glacial shot spends only on confirmation and bursts at the first body with
     harness.drawnOut(g);
     try std.testing.expectEqual(direct.chill.turns, g.pic.pictured[harness.foeSlot(0)].status.get(.chilled));
     try std.testing.expectEqual(splash.hp, g.pic.pictured[harness.foeSlot(1)].hp);
-    std.debug.print("Glacial Shot: {d} direct, {d} cone damage; 3 protected targets untouched; mana {d}; chill shown at impact\n", .{ dealt, harness.TEST_HP - splash.hp, g.sim.mana });
 }
 
 test "glacial shot uses an intervening body or barrel and an empty shot has no cone" {
@@ -229,7 +226,6 @@ test "glacial shot uses an intervening body or barrel and an empty shot has no c
     harness.press(g, CONFIRM);
     try std.testing.expect(g.pic.shot.?.flight.struck == null);
     try std.testing.expectEqual(actor.row(.rat).hp, g.sim.pool.get(harness.foeId(0)).?.hp);
-    std.debug.print("Glacial Shot: first body intercepts, barrel bursts for {d} cold splash, empty shot has no explosion\n", .{splash});
 }
 
 test "glacial splash beyond sight does damage without naming the unseen foe in the log" {
@@ -245,7 +241,6 @@ test "glacial splash beyond sight does damage without naming the unseen foe in t
     const lost = harness.TEST_HP - g.sim.pool.get(far).?.hp;
     try harness.expectDamage(g, .glacial_shot, lost, &.{glacial.BASE});
     try std.testing.expect(!harness.logged(g, "caustic bloat"));
-    std.debug.print("unseen glacial splash: {d} damage, 0 log lines naming the hidden caustic bloat\n", .{lost});
 }
 
 test "chill slows movement and attacks while idle frames preserve it and skipped turns still take burn and gas" {
@@ -279,7 +274,6 @@ test "chill slows movement and attacks while idle frames preserve it and skipped
     g.sim.lv.addGas(adjacent.at, harness.TEST_GAS * 10);
     harness.use(g, .wait);
     try std.testing.expectEqual(harness.TEST_HP - 2 * burning.PER_TURN - gas.harm(harness.TEST_HP), adjacent.hp);
-    std.debug.print("chill: 2 moves in 3 turns, attack skipped, idle duration unchanged, burning and gas still tick\n", .{});
 }
 
 test "glacial chill and its cadence follow slime splits without hitting newborn halves twice" {
@@ -300,7 +294,6 @@ test "glacial chill and its cadence follow slime splits without hitting newborn 
     try std.testing.expectEqual(a.chill, half.chill);
     try std.testing.expectEqual(@as(i16, -100), half.resists.get(.cold));
     try std.testing.expect(g.pic.fx.impacts.revealing(.fromIndex(actor.Pool.slot(id + 1))));
-    std.debug.print("Glacial Shot split: 2 equal halves, chill duration {d} and cadence {d} inherited, one damage event each\n", .{ half.chill.turns, half.chill.phase });
 }
 
 test "burning arrow spends mana only on confirmation and shows burning when its hit lands" {
@@ -337,7 +330,6 @@ test "burning arrow spends mana only on confirmation and shows burning when its 
     const after = rat.hp;
     harness.use(g, .wait);
     try std.testing.expectEqual(after, rat.hp);
-    std.debug.print("Burning Arrow: {d} on hit, then {d} over {d} later turns; mana {d}, flames delayed until impact\n", .{ dealt, before - after, burning.TURNS, manaAfter(g, .burning_arrow) });
 }
 
 test "burning arrow honors fire resistance, refuses insufficient mana and uses the first body in its path" {
@@ -356,7 +348,6 @@ test "burning arrow honors fire resistance, refuses insufficient mana and uses t
     try harness.expectDamage(g, .burning_arrow, actor.row(.rat).hp - rat.hp, &.{bow.BASE});
     try std.testing.expectEqual(@as(u8, 0), rat.burn.turns);
     try std.testing.expectEqual(actor.row(.rat).hp, g.sim.pool.get(harness.foeId(1)).?.hp);
-    std.debug.print("100% fire resistance: only physical arrow damage, no ignition; far target untouched\n", .{});
 }
 
 test "burning and gas both land in order, while a burning kill bursts a caustic bloat" {
@@ -382,7 +373,6 @@ test "burning and gas both land in order, while a burning kill bursts a caustic 
     try std.testing.expect(g.sim.pool.get(id) == null);
     try std.testing.expectEqual(@as(usize, 1), g.sim.kills);
     try std.testing.expectEqual(gas.BURST, g.sim.lv.gasAt(at));
-    std.debug.print("burning plus gas: both damage events shown; burning caustic bloat death releases {d} gas\n", .{gas.BURST});
 }
 
 test "burning follows both slime halves without an extra application turn or tick" {
@@ -406,7 +396,6 @@ test "burning follows both slime halves without an extra application turn or tic
     try std.testing.expectEqual(@as(i32, 6), a.hp);
     try std.testing.expectEqual(@as(i32, 6), half.hp);
     try std.testing.expectEqual(burning.TURNS - 1, half.burn.turns);
-    std.debug.print("burning slime split: both halves retain 50% fire resistance and take 2 on the next turn\n", .{});
 }
 
 test "a chill wearing down on a foe's turn shows as that foe's step is drawn" {
@@ -423,7 +412,6 @@ test "a chill wearing down on a foe's turn shows as that foe's step is drawn" {
     try std.testing.expectEqual(glacial.TURNS, g.pic.pictured[harness.foeSlot(0)].status.get(.chilled));
     harness.drawnOut(g);
     try std.testing.expectEqual(glacial.TURNS - 1, g.pic.pictured[harness.foeSlot(0)].status.get(.chilled));
-    std.debug.print("chill on a stepping rat: {d} turns shown until its step is drawn, then {d}\n", .{ glacial.TURNS, g.pic.pictured[harness.foeSlot(0)].status.get(.chilled) });
 }
 
 test "a half split off a burning, chilled slime ticks and skips in step with it on its waiting turn" {
@@ -443,7 +431,6 @@ test "a half split off a burning, chilled slime ticks and skips in step with it 
     g.st = .{};
     game.update(g, 0);
     for (g.pic.owed) |o| try std.testing.expect(!o.any());
-    std.debug.print("split on a burning, chilled slime: both at {d} hp, burn {d} turns, chill {d} turns phase {d}\n", .{ half.hp, half.burn.turns, half.chill.turns, half.chill.phase });
 }
 
 test "a half the gas or a burn splits off on the foes' turn keeps the ticks its slime already took" {
@@ -463,7 +450,6 @@ test "a half the gas or a burn splits off on the foes' turn keeps the ticks its 
         try std.testing.expect(half.alive);
         try std.testing.expectEqual(a.chill, half.chill);
         try std.testing.expectEqual(a.burn, half.burn);
-        std.debug.print("split by {s} on the foes' turn: slime and half chill {d}/{d} phase {d}/{d}, burn {d}/{d}\n", .{ if (gassed) "gas" else "burn", a.chill.turns, half.chill.turns, a.chill.phase, half.chill.phase, a.burn.turns, half.burn.turns });
     }
 }
 
@@ -483,7 +469,6 @@ test "a half a burn splits off a slime in clean air into gas takes the gas on it
         try std.testing.expect(!g.sim.lv.gassy(a.at));
         h.* = g.sim.pool.get(id + 1).?.hp;
     }
-    std.debug.print("a half burned off a slime in clean air: {d} hp, into gas {d}\n", .{ hp[0], hp[1] });
     try std.testing.expect(hp[1] < hp[0]);
 }
 
@@ -524,7 +509,6 @@ test "juke targets across obstacles, lands instantly and spends mana but no turn
     try std.testing.expect(trail > 0);
     harness.use(g, .juke);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
-    std.debug.print("Juke moved {d} tiles instantly: {d} mana left, {d} turns cooldown, no enemy or clock advance\n", .{ mathx.dist(from, to), g.sim.mana, g.sim.cooldown.get(.juke) });
 }
 
 test "juke cancellation and invalid landings cost nothing; recovery requires turns" {
@@ -564,7 +548,6 @@ test "juke cancellation and invalid landings cost nothing; recovery requires tur
     harness.nudge(g, .w);
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(P{ .x = 18, .y = 20 }, g.sim.heroActor().?.at);
-    std.debug.print("Juke: free cancel and invalid targets, {d}-turn recovery, mana capped at {d}, secondary binding checked\n", .{ juke.COOLDOWN, g.sim.manaMax() });
 }
 
 test "a skill fires from whatever button holds it, and the secondary set only with its modifier held" {
@@ -617,7 +600,6 @@ test "every targeted slot uses standard confirmation in both skill sets" {
         try std.testing.expectEqual(clock.minute + day.TURN_MINUTES, g.sim.clock.minute);
         checked += 1;
     }
-    std.debug.print("{d} targeted bindings: opening spends nothing, standard confirm fires once, secondary selection survives modifier release\n", .{checked});
 }
 
 test "standard back controls cancel skills opened with B for every class" {
@@ -643,7 +625,6 @@ test "standard back controls cancel skills opened with B for every class" {
             checked += 1;
         }
     }
-    std.debug.print("{d} B-opened targeting cases cancel without moving, damage, mana, cooldown or turns\n", .{checked});
 }
 
 test "pressing the modifier while a button is already held fires that button's secondary skill" {
@@ -677,7 +658,6 @@ test "binding from Skills assigns the selected skill directly and spends no turn
     harness.press(g, BACK);
     try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(clock, g.sim.clock);
-    std.debug.print("bindings: selected skill to either bar in two actions, direct clear, return to Skills, no turns\n", .{});
 }
 
 test "binding mouse targets follow both sets at different screen sizes" {
@@ -710,7 +690,6 @@ test "binding mouse targets follow both sets at different screen sizes" {
         };
     }
     try std.testing.expectEqual(clock, g.sim.clock);
-    std.debug.print("binding mouse: {d} scaled slot selections and assignments, both sets, zero turns\n", .{checked});
 }
 
 test "a pool longer than the bar wraps into rows the d-pad walks, and the rows shown scroll to hold the cursor" {
@@ -737,7 +716,6 @@ test "a pool longer than the bar wraps into rows the d-pad walks, and the rows s
             try std.testing.expect(cell.height <= @as(f32, @floatFromInt(picker.h)));
         }
     }
-    std.debug.print("binding picker: {d} selections stay in the actual one-row viewport, including the partial last row\n", .{n});
 }
 
 test "X opens aim on the nearest rat and nothing is spent until standard confirmation" {
@@ -792,7 +770,6 @@ test "smart aim retains a moved enemy across skills without spending or firing" 
     try std.testing.expectEqualDeep(rng, g.sim.rng);
     try std.testing.expectEqual(hp, g.sim.pool.get(harness.foeId(1)).?.hp);
     try std.testing.expectEqual(@as(u8, 0), g.sim.cooldown.get(.burning_arrow));
-    std.debug.print("smart aim: a moved enemy retains identity across two skills; selection and cancellation spend no mana, cooldown, turn, RNG or damage\n", .{});
 }
 
 test "smart aim ignores hidden interception until the shot is confirmed" {
@@ -827,7 +804,6 @@ test "smart aim ignores hidden interception until the shot is confirmed" {
         try std.testing.expectEqual(hp, g.sim.pool.get(harness.foeId(0)).?.hp);
         if (id) |rat| try std.testing.expect(g.sim.pool.get(rat).?.hurt()) else try std.testing.expect(!g.sim.lv.hasBarrel(hidden));
     }
-    std.debug.print("smart aim: hidden body and barrel preserve initial and retained targets without spending; confirmed shots still hit each interceptor\n", .{});
 }
 
 test "smart aim replaces dead hidden blocked distant and invalid targets with a legal foe" {
@@ -858,7 +834,6 @@ test "smart aim replaces dead hidden blocked distant and invalid targets with a 
         try std.testing.expectEqual(mana, g.sim.mana);
         try std.testing.expect(!g.sim.pool.get(harness.foeId(1)).?.hurt());
     }
-    std.debug.print("smart aim: {d} invalid target cases choose the nearest legal visible foe and wait for confirmation\n", .{std.enums.values(Invalid).len});
 }
 
 test "free projectile aim moves one cell in eight directions and retains melee and rush targeting" {
@@ -898,7 +873,6 @@ test "free projectile aim moves one cell in eight directions and retains melee a
     skills.openLeap(g, .b, .juke);
     try std.testing.expectEqual(from, g.mode.aim.mark);
     try std.testing.expectEqual(@as(?u16, 2), g.target);
-    std.debug.print("free projectile aim: eight directions without snapping; adjacent melee, adjacent and off-line rushes and free leaps checked\n", .{});
 }
 
 test "smart aim forgets actor identities when a pool is reset or a run resumes" {
@@ -914,7 +888,6 @@ test "smart aim forgets actor identities when a pool is reset or a run resumes" 
     try std.testing.expectEqual(@as(?u16, 3), g.target);
     game.resumeRun(g);
     try std.testing.expectEqual(@as(?u16, null), g.target);
-    std.debug.print("smart aim: reset and resume discard actor IDs instead of selecting unrelated replacement actors\n", .{});
 }
 
 test "the projectile reticle can aim at walls while staying within range" {
@@ -968,7 +941,7 @@ test "X aims at a barrel when no rat is in reach, and the arrow breaks it" {
     harness.press(g, CONFIRM);
     try std.testing.expect(!g.sim.lv.hasBarrel(at));
     try std.testing.expectEqual(@as(i32, 0), g.sim.gold);
-    try std.testing.expect(g.sim.ground.coins[0].amount >= items.BARREL_GOLD.lo);
+    try std.testing.expect(g.sim.ground.coins[0].amount >= loot.BARREL_GOLD.lo);
 }
 
 test "the reticle crosses the archer to the far side of a corridor" {
@@ -1008,7 +981,6 @@ test "charge retreats down an empty line and passive and skill allocations spend
     try std.testing.expectEqual(P{ .x = 17, .y = 20 }, g.sim.heroActor().?.at);
     try std.testing.expectEqual(clock.minute + day.TURN_MINUTES, g.sim.clock.minute);
     try std.testing.expectEqual(manaAfter(g, .charge), g.sim.mana);
-    std.debug.print("charge: empty retreat landing; allocations consume points and no turn\n", .{});
 }
 
 test "attribute damage and critical rolls reach melee, arrows, mixed arrows and resisted spells" {
@@ -1030,7 +1002,7 @@ test "attribute damage and critical rolls reach melee, arrows, mixed arrows and 
             target.resists = .initFill(50);
             g.sim.rng = mathx.Rng.init(seed);
             var expected_rng = g.sim.rng;
-            const raw = attacks.rollRaw(&expected_rng, c[1], attacks.basesFor(&g.sim, c[1]), true);
+            const raw = attacks.rollRaw(&expected_rng, c[1], attacks.basesFor(&g.sim, c[1]));
             const critical = c[0].attrs().crits(&expected_rng);
             criticals += @intFromBool(critical);
             const expected = c[0].attrs().blow(comptime c[1].defaultStyle().?, raw, critical, &expected_rng).total(target.resists);
@@ -1040,7 +1012,6 @@ test "attribute damage and critical rolls reach melee, arrows, mixed arrows and 
             try std.testing.expectEqual(expected, harness.TEST_HP - target.hp);
         }
         try std.testing.expect(criticals > 0 and criticals < seeds);
-        std.debug.print("{s}: {d} exact damage checks, {d} criticals, resistance applied after scaling\n", .{ c[1].name(), seeds, criticals });
     }
 }
 
@@ -1061,18 +1032,17 @@ test "live skill tooltips include equipped damage, ranks and the actual targetin
     try std.testing.expectEqual(@as(i32, 1), skillbar.Act.cleave.reach());
     g.bar.bind(.{ .set = .primary, .button = skillbar.SLOTS[0] }, .secondary);
     try std.testing.expect(std.mem.indexOf(u8, overlay.tipOf(g, .{ .slot = 0 }, &title, &body).?.body, "no turn cost.") != null);
-    std.debug.print("live tooltips: equipment, rank damage, bow/swing ranges and modifier turn cost checked\n", .{});
 }
 
 test "weapon weight controls live damage and its preview independently of attack range" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     inline for (.{
-        .{ items.Kind.crossbow, skillbar.Act.shoot, attrs.Style.heavy },
-        .{ items.Kind.bow, skillbar.Act.shoot, attrs.Style.light },
-        .{ items.Kind.sling, skillbar.Act.shoot, attrs.Style.light },
-        .{ items.Kind.dagger, skillbar.Act.cleave, attrs.Style.light },
-        .{ items.Kind.longsword, skillbar.Act.cleave, attrs.Style.heavy },
+        .{ item_bases.Kind.crossbow, skillbar.Act.shoot, attrs.Style.heavy },
+        .{ item_bases.Kind.bow, skillbar.Act.shoot, attrs.Style.light },
+        .{ item_bases.Kind.sling, skillbar.Act.shoot, attrs.Style.light },
+        .{ item_bases.Kind.dagger, skillbar.Act.cleave, attrs.Style.light },
+        .{ item_bases.Kind.longsword, skillbar.Act.cleave, attrs.Style.heavy },
     }) |case| {
         const act = case[1];
         const style = case[2];
@@ -1112,14 +1082,13 @@ test "weapon weight controls live damage and its preview independently of attack
             if (case[0] == .dagger) try std.testing.expect(scoped_only > 0);
         }
     }
-    for ([_]items.Kind{ .wand, .staff }) |kind| {
-        var gear = items.Gear{};
+    for ([_]item_bases.Kind{ .wand, .staff }) |kind| {
+        var gear = Gear{};
         gear.slots.set(.right_hand, .{ .kind = kind });
         inline for ([_]skillbar.Act{ .shoot, .cleave, .spark }) |act| {
             try std.testing.expectEqualDeep(act.equippedBases(.{}), act.equippedBases(gear));
         }
     }
-    std.debug.print("weapon scaling: 5 ranged/melee skill and tooltip cases, 256 bump attacks including scoped-only crits, 6 zero-innate-damage checks\n", .{});
 }
 
 test "dodging spends the foe turn without damage, bleeding or mana shield loss" {
@@ -1157,7 +1126,6 @@ test "dodging spends the foe turn without damage, bleeding or mana shield loss" 
             }
         }
     }
-    std.debug.print("dodge: {d} class/hit/shield cases, misses still animate and spend the foe turn\n", .{checked});
 }
 
 test "each spark that stuns costs a chasing rat its next turn, and mana is spent on confirmation" {
@@ -1181,7 +1149,6 @@ test "each spark that stuns costs a chasing rat its next turn, and mana is spent
     try std.testing.expectEqual(g.sim.manaMax() - 2 * spark.COST + @divTrunc(2 * heroes.MANA_REGEN, heroes.MANA_REGEN_TURNS), g.sim.mana);
     harness.use(g, .wait);
     try std.testing.expectEqual(@as(i32, 25), rat.at.x);
-    std.debug.print("spark: {d} lightning over 2 stunning hits; the rat lost both turns, then walked on\n", .{dealt});
 }
 
 test "wet melee skills strike surfaced swimmers without opening water to walking" {
@@ -1206,7 +1173,6 @@ test "wet melee skills strike surfaced swimmers without opening water to walking
         try std.testing.expectEqual(at, foe.at);
         try std.testing.expectEqual(from, g.sim.heroActor().?.at);
     }
-    std.debug.print("wet melee: {d} knight skills damage surfaced deep-water leeches; pinned targets and the hero stay put\n", .{acts.len});
 }
 
 test "wet knockback follows swimming and walking landings and preserves obstacles" {
@@ -1251,7 +1217,6 @@ test "wet knockback follows swimming and walking landings and preserves obstacle
             checked += 1;
         }
     }
-    std.debug.print("wet knockback: {d} swimmer, walker and flyer landings cover water, shallows, dry floor, pin, barrier, body, NPC, barrel and wall\n", .{checked});
     for ([_]bool{ false, true }) |pinned| {
         harness.heroArena(g, .knight, from, &.{});
         g.sim.lv.set(at, .water);
@@ -1267,7 +1232,6 @@ test "wet knockback follows swimming and walking landings and preserves obstacle
         try std.testing.expectEqual(if (pinned) at else back, foe.at);
         try std.testing.expectEqual(from, g.sim.heroActor().?.at);
     }
-    std.debug.print("wet charge: confirmation knocks a surfaced leech into deeper water; pin keeps it in place and neither cast moves the hero into water\n", .{});
 }
 
 test "a knight's shield bash knocks a foe back a tile, and its stun keeps the foe from stepping back in" {
@@ -1303,7 +1267,6 @@ test "a knight's shield bash knocks a foe back a tile, and its stun keeps the fo
     g.sim.rng = harness.procRng(g, .shield_bash, 1, true);
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(P{ .x = 21, .y = 20 }, g.sim.pool.get(harness.foeId(0)).?.at);
-    std.debug.print("shield bash: stunned rat ends the turn at x {d}, unstunned steps back to x {d}; against a wall it stays\n", .{ landed[0], landed[1] });
 }
 
 test "a foe knocked back and stepping in again is drawn on its cell until the bash lands, then knocked the whole tile" {
@@ -1328,7 +1291,6 @@ test "a foe knocked back and stepping in again is drawn on its cell until the ba
         if (harness.samePx(glide.cellPx(at), gl.now())) held = t + harness.TEST_DT;
         furthest = @max(furthest, gl.now().x);
     }
-    std.debug.print("knocked rat: still on its cell {d:.3} s in (the bash lands at {d:.3}), knocked to x {d:.1} px of {d}\n", .{ held, game.BUMP_LANDS, furthest, glide.cellPx(at.add(.{ .x = 1, .y = 0 })).x });
     try std.testing.expect(held + harness.TEST_TOL >= game.BUMP_LANDS);
     try std.testing.expect(furthest > glide.cellPx(at.add(.{ .x = 1, .y = 0 })).x - 1);
 }
@@ -1352,7 +1314,6 @@ test "a cleave strikes only the bodies in its arc as it is swung, not a half spl
         try std.testing.expectEqual(actor.Kind.slime_half, a.kind);
         try std.testing.expectEqual(a.max, a.hp);
     }
-    std.debug.print("cleave on a slime that splits into the arc: {d} halves, both whole\n", .{slimes});
     try std.testing.expectEqual(@as(usize, 2), slimes);
 }
 
@@ -1377,7 +1338,6 @@ test "a knight's cleave strikes the three tiles of its arc and nothing outside i
         } else try std.testing.expectEqual(@as(i32, 0), lost);
     }
     try std.testing.expectEqual(manaAfter(g, .cleave), g.sim.mana);
-    std.debug.print("cleave: {d} of {d} rats struck, the {d} outside its arc untouched\n", .{ hit, arc.len + outside.len, outside.len });
 }
 
 test "a wizard's blink lands further than juke and takes a turn" {
@@ -1400,7 +1360,6 @@ test "a wizard's blink lands further than juke and takes a turn" {
     try std.testing.expectEqual(@as(i32, 29), rat.at.x);
     try std.testing.expectEqual(manaAfter(g, .blink), g.sim.mana);
     try std.testing.expectEqual(blink.COOLDOWN - 1, g.sim.cooldown.get(.blink));
-    std.debug.print("blink: {d} tiles in a turn; the rat stepped once\n", .{blink.RANGE});
 }
 
 test "a pinning shot holds a chasing rat to its cell for two to four of its turns, and a pinned rat still bites" {
@@ -1431,7 +1390,6 @@ test "a pinning shot holds a chasing rat to its cell for two to four of its turn
     harness.use(g, .wait);
     try std.testing.expect(g.sim.heroActor().?.hp < hp);
     try std.testing.expectEqual(@as(i32, 21), biter.at.x);
-    std.debug.print("pinning shot: {d} damage, the rat held {d} turns, then walked on; pinned beside the hero it bit for {d}\n", .{ dealt, held, hp - g.sim.heroActor().?.hp });
 }
 
 test "a barbed arrow always opens a bleed on a body it leaves alive" {
@@ -1449,7 +1407,6 @@ test "a barbed arrow always opens a bleed on a body it leaves alive" {
     try std.testing.expectEqual(manaAfter(g, .barbed_arrow), g.sim.mana);
     harness.use(g, .wait);
     try std.testing.expect(harness.TEST_HP - rat.hp > dealt);
-    std.debug.print("barbed arrow: {d} damage, a {d}-turn bleed, which bled {d} the next turn\n", .{ dealt, bleeding.TURNS, harness.TEST_HP - rat.hp - dealt });
 }
 
 test "a frost nova freezes every foe within two tiles, critical and rounded for each apart, and none further" {
@@ -1472,7 +1429,6 @@ test "a frost nova freezes every foe within two tiles, critical and rounded for 
         try std.testing.expectEqual(nova.COOLDOWN - 1, g.sim.cooldown.get(.frost_nova));
     }
     try std.testing.expect(apart > 0);
-    std.debug.print("frost nova: {d} of {d} casts struck the foes 1 and 2 tiles off differently, none to the one 3 off\n", .{ apart, seeds });
 }
 
 test "a half split into the cell of a body the same blow kills slides out once that body is no longer drawn" {
@@ -1497,7 +1453,6 @@ test "a half split into the cell of a body the same blow kills slides out once t
         game.update(g, harness.TEST_DT);
         if (g.pic.standing(&g.sim, dying) and harness.drawn(g, half) and g.pic.glide[half].done() > 0) overlap += harness.TEST_DT;
     }
-    std.debug.print("a half split into a dying rat's cell: {d:.3} s drawn together\n", .{overlap});
     try std.testing.expect(overlap <= harness.TEST_TOL);
     try std.testing.expect(g.pic.glide[half].done() >= 1);
 }
@@ -1532,7 +1487,6 @@ test "a fireball bursts on the first foe it strikes, burning the foes round it, 
     try harness.expectDamage(g, .fireball, harness.TEST_HP - g.sim.pool.get(harness.foeId(1)).?.hp, &.{fireball.BASE});
     try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(harness.foeId(2)).?.hp);
     try std.testing.expectEqual(manaAfter(g, .fireball), g.sim.mana);
-    std.debug.print("fireball: {d} fire to the struck rat, {d} to the one beside it, none to the rat 3 tiles on\n", .{ struck, harness.TEST_HP - g.sim.pool.get(harness.foeId(1)).?.hp });
     try std.testing.expect(std.mem.allEqual(u16, &g.sim.lv.steam, 0));
 }
 
@@ -1554,7 +1508,6 @@ test "a fireball striking a foe at a lake's edge boils the water into steam, whi
         try std.testing.expect(turns < 20);
         harness.use(g, .wait);
     }
-    std.debug.print("a fireball at a lake's edge: its steam gone {d} turns after the blast\n", .{turns});
     try std.testing.expect(turns > 0);
 }
 
@@ -1574,7 +1527,6 @@ test "fire landing on open water with no foe in it still boils it: a fireball's 
         n.* = grid.CELLS - std.mem.count(u16, &g.sim.lv.steam, &.{0});
     }
     try std.testing.expect(boiled[0] > boiled[1] and boiled[1] > 0);
-    std.debug.print("fire on an empty lake, a turn's spread on: a fireball's steam over {d} cells, a burning arrow's over {d}\n", .{ boiled[0], boiled[1] });
 }
 
 test "a fireball aimed into a wall comes down short of it and boils no water behind it" {
@@ -1590,7 +1542,6 @@ test "a fireball aimed into a wall comes down short of it and boils no water beh
     harness.aimAt(g, .fireball, .{ .x = 23, .y = 20 });
     try std.testing.expect(g.mode != .aim and g.sim.mana < g.sim.manaMax());
     const steam = grid.CELLS - std.mem.count(u16, &g.sim.lv.steam, &.{0});
-    std.debug.print("a fireball into a wall with a lake behind it: steam over {d} cells\n", .{steam});
     try std.testing.expectEqual(@as(usize, 0), steam);
 }
 
@@ -1605,7 +1556,6 @@ test "a spark landing on empty water shocks the bodies wading in it" {
     harness.aimAt(g, .spark, .{ .x = 23, .y = 20 });
     try std.testing.expectEqual(actor.row(.rat).hp, g.sim.pool.get(id).?.hp);
     try std.testing.expect(g.sim.pool.get(id).?.shock.turns > 0);
-    std.debug.print("a spark into empty shallows: the rat 2 cells along them shocked, unhurt\n", .{});
 }
 
 test "an arrow or bolt loosed at a closed chest strikes the mimic in it, flinging it open as the blow lands" {
@@ -1627,7 +1577,6 @@ test "an arrow or bolt loosed at a closed chest strikes the mimic in it, flingin
         harness.drawnOut(g);
         try std.testing.expect(!g.pic.mimicAt(&g.sim, at));
         try std.testing.expect(t > 0);
-        std.debug.print("{s} at a mimic's chest: struck for {d}, drawn as its chest, unmoved, until the blow lands {d:.3} s in\n", .{ act.name(), m.max - m.hp, t });
     }
 }
 
@@ -1647,7 +1596,6 @@ test "a shot that would miss from the reeds still lands on a mimic posing as its
     g.sim.rng = mathx.Rng.init(seed);
     combat.wound(g, id, .{ .dmg = 1 }, combat.SHOOT, .{ .from = from, .wait = 0 });
     const m = g.sim.pool.get(id).?;
-    std.debug.print("mimic from the reeds: seed {d} misses an open target, the posing mimic takes {d}\n", .{ seed, m.max - m.hp });
     try std.testing.expect(!m.disguised and m.hp < m.max);
 }
 
@@ -1667,7 +1615,6 @@ test "chain lightning leaps from the struck foe to two more, each within three t
     }
     try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(harness.foeId(3)).?.hp);
     try std.testing.expectEqual(manaAfter(g, .chain_lightning), g.sim.mana);
-    std.debug.print("chain lightning: {d} rats struck, the fourth 4 tiles from each left whole\n", .{hit});
 }
 
 test "resisted chain lightning still holds play until its last jump" {
@@ -1684,7 +1631,6 @@ test "resisted chain lightning still holds play until its last jump" {
     try std.testing.expectEqual(before, g.sim.clock);
     harness.drawnOut(g);
     try std.testing.expectEqual(@as(usize, 0), g.pic.fx.impacts.count());
-    std.debug.print("resisted chain lightning: {d} jumps hold play for {d:.3} s\n", .{ chain.JUMPS, last });
 }
 
 test "a mana shield turns a bite onto mana, the orb dropping as the bite lands, until its turns run out" {
@@ -1714,7 +1660,6 @@ test "a mana shield turns a bite onto mana, the orb dropping as the bite lands, 
     g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = true }});
     harness.use(g, .wait);
     try std.testing.expect(h.hp < hp);
-    std.debug.print("mana shield: a bite of {d} taken from mana, the orb holding till it landed; {d} turns, then the bites drew blood\n", .{ bitten, ward.TURNS });
 }
 
 test "mana shield deductions follow each staggered hit" {
@@ -1733,7 +1678,6 @@ test "mana shield deductions follow each staggered hit" {
     try std.testing.expect(between > g.sim.mana);
     harness.drawnOut(g);
     try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
-    std.debug.print("mana shield: shown mana {d}, {d}, {d} across two hits\n", .{ before, between, g.sim.mana });
 }
 
 test "a mana shield's last turn stays drawn until the foes' moves of that turn are" {
@@ -1754,7 +1698,6 @@ test "a mana shield's last turn stays drawn until the foes' moves of that turn a
     try std.testing.expectEqual(@as(u8, 1), g.pic.pictured[hero].status.get(.warded));
     harness.drawnOut(g);
     try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[hero].status.get(.warded));
-    std.debug.print("mana shield: last turn drawn through the rat's step, gone after\n", .{});
 }
 
 test "a charge runs the knight down a line to the foe, striking it and knocking it back, but a pinned foe stands" {
@@ -1780,7 +1723,6 @@ test "a charge runs the knight down a line to the foe, striking it and knocking 
     }
     try std.testing.expectEqual(@as(i32, 24), stood[0]);
     try std.testing.expectEqual(@as(i32, 23), stood[1]);
-    std.debug.print("charge: 2 tiles run, the rat knocked to x {d}; pinned, it stood at x {d}\n", .{ stood[0], stood[1] });
 }
 
 test "a knocked rat's bleed lands once its knock slide has ended" {
@@ -1800,7 +1742,6 @@ test "a knocked rat's bleed lands once its knock slide has ended" {
     while (g.pic.pictured[i].hp != bled and t < 2) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
     try std.testing.expectEqual(bled, g.pic.pictured[i].hp);
     try std.testing.expect(g.pic.glide[i].left() <= harness.TEST_TOL);
-    std.debug.print("knocked and bleeding: the tick landed {d:.3} s in, the slide done\n", .{t});
 }
 
 test "bleeding doubles after knockback even if the foe loses its action" {
@@ -1830,7 +1771,6 @@ test "bleeding doubles after knockback even if the foe loses its action" {
         try std.testing.expectEqual(if (pinned) bleeding.STILL else bleeding.MOVING, hp[0] - hp[1]);
         checked += 1;
     }
-    std.debug.print("{d} bleeding cases: a stalled knocked foe moves; a pinned foe stays still\n", .{checked});
 }
 
 test "rejected skills preserve simulation across every class and readiness gate" {
@@ -1876,7 +1816,6 @@ test "rejected skills preserve simulation across every class and readiness gate"
         }
     }
     for (counts.values) |count| try std.testing.expect(count > 0);
-    std.debug.print("skill rejection: busy {d}, locked {d}, cooling {d}, mana {d}, empty flask {d}; actors, resources, RNG and progression unchanged\n", .{ counts.get(.busy), counts.get(.locked), counts.get(.cooling), counts.get(.mana), counts.get(.empty) });
 }
 
 test "every targeted skill rechecks readiness and bounds at confirmation without spending" {
@@ -1928,7 +1867,6 @@ test "every targeted skill rechecks readiness and bounds at confirmation without
         }
     }
     try std.testing.expect(checked > 0);
-    std.debug.print("target confirmation: {d} out-of-bounds and changed-readiness cases preserve the reticle and simulation\n", .{checked});
 }
 
 test "rend strikes the foe beside the knight and opens its stronger bleed" {
@@ -1947,7 +1885,6 @@ test "rend strikes the foe beside the knight and opens its stronger bleed" {
     try std.testing.expectEqual(bleeding.TURNS, rat.bleed.turns);
     try std.testing.expectEqual(rend.BLEED, rat.bleed.amount);
     try std.testing.expectEqual(manaAfter(g, .rend), g.sim.mana);
-    std.debug.print("rend: {d} damage, a bleed of {d} per turn for {d} turns\n", .{ harness.TEST_HP - rat.hp, rat.bleed.amount, rat.bleed.turns });
 }
 
 test "piercing shot strikes every foe in its line, each as the arrow reaches it, and a barrel stops it" {
@@ -1975,7 +1912,6 @@ test "piercing shot strikes every foe in its line, each as the arrow reaches it,
     try std.testing.expectEqual(harness.TEST_HP, g.pic.pictured[actor.Pool.slot(far)].hp);
     harness.drawnOut(g);
     try std.testing.expectEqual(g.sim.pool.get(far).?.hp, g.pic.pictured[actor.Pool.slot(far)].hp);
-    std.debug.print("piercing shot: 2 rats struck in a {d}-cell flight, the near one pictured first; the barrel at {d} shields the rat behind it\n", .{ bow.RANGE, bow.RANGE });
 }
 
 test "caltrops and an arcane barrier are drawn as their cast lands, not as it begins" {
@@ -2002,5 +1938,4 @@ test "caltrops and an arcane barrier are drawn as their cast lands, not as it be
     try std.testing.expect(std.mem.allEqual(u8, &g.pic.barrier_shown, 0));
     harness.drawnOut(g);
     try std.testing.expectEqualSlices(u8, &g.sim.lv.barrier, &g.pic.barrier_shown);
-    std.debug.print("tactical ground: {d} caltrops and {d} barrier cells drawn only once the cast lands\n", .{ laid, raised });
 }

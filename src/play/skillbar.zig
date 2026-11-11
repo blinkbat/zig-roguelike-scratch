@@ -6,7 +6,7 @@ const bow = @import("bow.zig");
 const burning = @import("burning.zig");
 const damage = @import("damage.zig");
 const attrs = @import("attrs.zig");
-const items = @import("items.zig");
+const Gear = @import("gear.zig").Gear;
 const glacial = @import("glacial.zig");
 const juke = @import("juke.zig");
 const blink = @import("blink.zig");
@@ -108,7 +108,6 @@ pub const Act = enum {
         };
     }
 
-    /// What it does for a hero drinking `bonus` and reaching `reach_` cells.
     pub fn describe(a: Act, w: anytype, bonus: flask.Bonus, reach_: i32) void {
         switch (a) {
             inline else => |t| if (comptime t.declares("describe"))
@@ -120,12 +119,10 @@ pub const Act = enum {
         }
     }
 
-    /// Its reach with `bounding` cells added, should it move the hero.
     pub fn reachWith(a: Act, bounding: i32) i32 {
         return a.reach() + if (a.moves()) bounding else 0;
     }
 
-    /// What `rank` of it gives, for a skill whose module writes that; nothing for the rest.
     pub fn writeRank(a: Act, rank: u8, w: anytype) void {
         switch (a) {
             inline else => |t| if (comptime module(t)) |m| {
@@ -158,7 +155,6 @@ pub const Act = enum {
         return a.contract().delivery;
     }
 
-    /// Loosed from the bow, with the bow's physical hit.
     pub fn isArrow(a: Act) bool {
         return a.contract().source == .arrow;
     }
@@ -171,22 +167,18 @@ pub const Act = enum {
         return a.contract().free;
     }
 
-    /// Turns using it spends: none for a free action or the set modifier.
     pub fn turns(a: Act) u8 {
         return @intFromBool(a != .secondary and !a.free());
     }
 
-    /// The flask it drinks.
     pub fn flaskOf(a: Act) ?flask.Kind {
         return a.contract().flask_kind;
     }
 
-    /// The consumable it uses up.
     pub fn supplyOf(a: Act) ?consumable.Kind {
         return a.contract().supply;
     }
 
-    /// A flask or a supply, which every class carries.
     pub fn carried(a: Act) bool {
         return a.flaskOf() != null or a.supplyOf() != null;
     }
@@ -202,17 +194,14 @@ pub const Act = enum {
         return a.contract().reach;
     }
 
-    /// A rush's nearest mark.
     pub fn nearest(a: Act) i32 {
         return a.contract().nearest;
     }
 
-    /// A missile's marks, a leap's landings, a swing's or a rush's: what its reticle holds legal.
     pub fn aimable(a: Act, lv: *const grid.Level, from: mathx.P, to: mathx.P) bool {
         return a.aimableIn(lv, from, to, a.reach());
     }
 
-    /// `aimable` with its reach stretched or cut to `reach`; a swing always strikes beside.
     pub fn aimableIn(a: Act, lv: *const grid.Level, from: mathx.P, to: mathx.P, reach_: i32) bool {
         return switch (a) {
             inline else => |t| if (comptime reticle(t)) |r| switch (r) {
@@ -224,22 +213,18 @@ pub const Act = enum {
         };
     }
 
-    /// A leap or a rush: it carries the hero.
     pub fn moves(a: Act) bool {
         return a.reticle() == .leap or a.reticle() == .rush;
     }
 
-    /// Not an arrow: what it is called, and it has no arrow's physical hit nor picture.
     pub fn bolt(a: Act) ?[]const u8 {
         return a.contract().bolt;
     }
 
-    /// It vanishes and reappears rather than jumps.
     pub fn teleports(a: Act) bool {
         return a.declares("TELEPORTS");
     }
 
-    /// Its swing strikes an arc round the tile aimed at.
     pub fn sweeps(a: Act) bool {
         return a.declares("arc");
     }
@@ -248,7 +233,6 @@ pub const Act = enum {
         return a.contract().cost;
     }
 
-    /// An elemental skill's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
     pub fn elemental(comptime a: Act) type {
         if (!a.declares("ELEMENT")) @compileError("no element");
         return module(a).?;
@@ -262,7 +246,6 @@ pub const Act = enum {
         return a.contract().element;
     }
 
-    /// What the log says the hero did, when no blow or barrel says it.
     pub fn done(a: Act) ?[]const u8 {
         return a.contract().done;
     }
@@ -274,7 +257,7 @@ pub const Act = enum {
 
     pub const Bases = contracts.Bases;
 
-    pub fn equippedBases(a: Act, gear: items.Gear) EquippedBases {
+    pub fn equippedBases(a: Act, gear: Gear) EquippedBases {
         const b = a.bases();
         var out = EquippedBases{ .skill = b.physical, .element = b.element };
         const attack_ = a.attack() orelse return out;
@@ -284,59 +267,48 @@ pub const Act = enum {
         return out;
     }
 
-    /// Its missile bursts over an area where it strikes.
     pub fn bursts(a: Act) bool {
         return a.declares("burst");
     }
 
-    /// Its bolt leaps on from what it strikes to other foes.
     pub fn chains(a: Act) bool {
         return a.declares("JUMPS");
     }
 
-    /// What it strikes may be afflicted, by its own roll.
     pub fn afflicts(a: Act) bool {
         return a.declares("afflict");
     }
 
-    /// What it afflicts and how often against no resistance.
     pub fn ailment(a: Act) ?Ailment {
         return a.contract().ailment;
     }
 
     pub const Ailment = contracts.Ailment;
 
-    /// Cast at once, it strikes the cells round the hero.
     pub fn surrounds(a: Act) bool {
         return a.declares("around");
     }
 
-    /// Cast at once, it shields the hero.
     pub fn wards(a: Act) bool {
         return a.declares("Ward");
     }
 
-    /// A body its blow leaves alive is knocked back.
     pub fn knocks(a: Act) bool {
         return a.declares("knocked");
     }
 
-    /// Its arrow flies on through every body in its line.
     pub fn pierces(a: Act) bool {
         return a.declares("PIERCES");
     }
 
-    /// Its reticle takes both ends of a straight line.
     pub fn spans(a: Act) bool {
         return a.declares("length");
     }
 
-    /// It must be cast on a foe suffering what it consumes.
     pub fn consumes(a: Act) bool {
         return a.declares("FUEL_DAMAGE");
     }
 
-    /// Turns after it is used before it can be again.
     pub fn cooldown(a: Act) u8 {
         return a.contract().cooldown;
     }
@@ -399,7 +371,6 @@ const CONTRACTS = blk: {
     break :blk table;
 };
 
-/// What every class carries after its own skills: the flasks and the supplies, in `Act` order.
 const CARRIED = blk: {
     @setEvalBranchQuota(100_000);
     var acts: []const Act = &.{};
@@ -409,7 +380,6 @@ const CARRIED = blk: {
     break :blk acts[0..acts.len].*;
 };
 
-/// A class's basic attack, then waiting and the set modifier, its own skills and what every class carries.
 fn kitOf(comptime basic: Act, comptime own: []const Act) [3 + own.len + CARRIED.len]Act {
     return [_]Act{ basic, .wait, .secondary } ++ own[0..own.len].* ++ CARRIED;
 }
@@ -418,7 +388,6 @@ const ARCHER_KIT = kitOf(.shoot, &.{ .juke, .steady_aim, .burning_arrow, .glacia
 const WIZARD_KIT = kitOf(.spark, &.{ .blink, .fireball, .frost_nova, .mana_shield, .chain_lightning, .combustion, .gravity_well, .arcane_barrier, .shatter, .fire_wall, .raise_skeleton });
 const KNIGHT_KIT = kitOf(.cleave, &.{ .charge, .guard, .shield_bash, .whirlwind, .unyielding, .rend, .war_cry, .imbue, .bide });
 
-/// The skills a class may bind, in the bind picker's order.
 pub fn kit(c: hero.Class) []const Act {
     return switch (c) {
         .archer => &ARCHER_KIT,
@@ -478,7 +447,6 @@ pub const Bar = struct {
     set: std.EnumArray(Set, Row) = setsOf(hero.DEFAULT),
     modifier: ?Button = .lb,
 
-    /// A fresh hero's of the class.
     pub fn of(c: hero.Class) Bar {
         return .{ .set = setsOf(c) };
     }
@@ -513,7 +481,6 @@ pub const Bar = struct {
         self.set.getPtr(s.set).set(s.button, a);
     }
 
-    /// The first slot with nothing bound, primary set first.
     pub fn firstEmpty(self: Bar) ?Slot {
         for (EVERY_SLOT) |s| if (self.at(s) == null) return s;
         return null;
@@ -536,7 +503,6 @@ pub const Bar = struct {
     }
 };
 
-/// The flasks on RB and RT in either set, as PoE2 keeps them out of the skill sets.
 fn flasks() Row {
     var r = Row.initFill(null);
     r.set(.rb, .life_flask);
@@ -602,7 +568,6 @@ test "arrows reach the bow's five tiles; each bolt reaches its own, and aims no 
         n += 1;
     }
     try std.testing.expectEqual(@as(i32, 5), bow.RANGE);
-    std.debug.print("missile reach: {d} acts; arrows {d}, spark {d}, fireball {d}, chain lightning {d}, frost vial {d}\n", .{ n, bow.RANGE, Act.spark.reach(), Act.fireball.reach(), Act.chain_lightning.reach(), Act.frost_vial.reach() });
 }
 
 test "each afflicting skill's stated chance is what its roll lands" {
@@ -616,7 +581,6 @@ test "each afflicting skill's stated chance is what its roll lands" {
         try std.testing.expect(pc + 3 >= ail.chance and pc <= ail.chance + 3);
         n += 1;
     };
-    std.debug.print("ailments: {d} afflicting skills land within 3 points of their stated chance\n", .{n});
 }
 
 test "each class starts with its own skills bound, and only skills of its kit" {
@@ -628,7 +592,6 @@ test "each class starts with its own skills bound, and only skills of its kit" {
             try std.testing.expect(std.mem.indexOfScalar(Act, kit(c), a) != null);
             bound += 1;
         }
-        std.debug.print("{s}: {d} slots bound from a kit of {d}\n", .{ c.title(), bound, kit(c).len });
     }
     try std.testing.expectEqual(@as(?Act, .spark), Bar.of(.wizard).at(.{ .set = .primary, .button = .x }));
     try std.testing.expectEqual(@as(?Act, .charge), Bar.of(.knight).at(.{ .set = .primary, .button = .b }));

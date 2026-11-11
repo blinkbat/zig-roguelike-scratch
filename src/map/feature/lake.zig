@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Dwarf Fortress's pools and cavern lakes, ADOM's ponds; filled with rock, Diablo II's Act 4 mesas.
-
 const SHORE_SCALE: f32 = 4;
 
 pub const COUNT_MAX: u8 = 12;
@@ -70,6 +68,5 @@ test "lakes fill open ground, and an island stays dry" {
     carve.field(&lv, carve.Palette.WILD);
     const pal = carve.Palette.WILD;
     apply(&lv, &rng, 1, pal, .{ .count = 4, .size = 10, .island = 100 });
-    std.debug.print("4 lakes with islands: {d} water, {d} shallows\n", .{ carve.count(&lv, .water), carve.count(&lv, .shallows) });
     try std.testing.expect(carve.count(&lv, .water) > 40);
 }

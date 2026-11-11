@@ -143,7 +143,6 @@ pub const Button = enum {
 
 pub const CONFIRM = Button.a;
 
-/// The slots left to right, as the keyboard numbers them.
 pub const SLOT_ORDER = [_]Button{ .lb, .a, .x, .y, .b, .rb, .rt };
 const DIGIT_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
 pub const SLOT_KEYS = DIGIT_KEYS[0..SLOT_ORDER.len].*;
@@ -186,7 +185,6 @@ pub const CharacterPage = enum {
     }
 };
 
-/// The passive tree's zoom and overview; browsing walks and panning shifts the walk.
 pub const TreeKeys = struct {
     /// The right stick pans past this deflection; the d-pad zooms; Inspect's button shows the whole tree.
     pub const PAN_DEADZONE: f32 = 0.18;
@@ -319,7 +317,6 @@ pub const Desk = struct {
     pub const BARE = [_][]const u8{ "play", "play_here", "graph", "go", "rename", "back", "smaller", "bigger", "zoom_in", "zoom_out", "fit", "help", "objects", "reroll", "delete" };
     pub const WITH_CTRL = [_][]const u8{ "open", "new", "copy", "cut", "paste" };
     pub const SHIFTED = [_][]const u8{ "save", "undo", "redo" };
-    /// Shift turns the first of each pair, a `SHIFTED` command, into the second.
     pub const SHIFT_TWINS = [_][2][]const u8{ .{ "save", "save_as" }, .{ "undo", "redo" } };
 
     pub fn keyOf(comptime field: []const u8) rl.KeyboardKey {

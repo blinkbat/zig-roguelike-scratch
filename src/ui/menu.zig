@@ -28,21 +28,17 @@ pub const NOTE: i32 = font.SMALL;
 const TITLE_DY: i32 = -44;
 const ROWS_DY: i32 = 16;
 const ROW_INSET: i32 = 4;
-/// From under a list's last row to its note.
 pub const NOTE_GAP: i32 = 24;
 const MARK_GAP: i32 = 14;
 const MARK_L = ">";
-/// `draw`'s, from the title's top to the first row, and from under the last row to the note's foot.
 const ABOVE: i32 = TITLE - TITLE_DY + ROWS_DY;
 const BELOW: i32 = NOTE_GAP + NOTE;
 pub const TITLE_LEAD: i32 = ABOVE - ROW_INSET;
-/// The rows sit at the middle, so either side takes the more of the two.
 const CHROME_H: i32 = 2 * @as(i32, @max(ABOVE, BELOW));
 pub const NOTE_MAX: usize = 160;
 pub const SEP = "   ";
 pub const CARET = "_";
 
-/// A surface keeps this far inside the screen; past its own size it grows at `GROWTH` of the room, up to `SCALE_MAX`.
 const SURFACE_MARGIN: i32 = 16;
 const GROWTH: f32 = 0.5;
 const SCALE_MAX: f32 = 1.25;
@@ -56,7 +52,6 @@ pub const Surface = struct {
         return centred(screen, size, if (fit <= 1) fit else @min(SCALE_MAX, 1 + (fit - 1) * GROWTH));
     }
 
-    /// `size` centred at the scale `reference` gets, so a smaller panel's text matches it; shrunk further only to fit.
     pub fn like(screen: mathx.P, size: mathx.P, reference: mathx.P) Surface {
         return centred(screen, size, @min(of(screen, size).scale, of(screen, reference).scale));
     }
@@ -75,7 +70,6 @@ pub const Surface = struct {
         };
     }
 
-    /// The screen pixel over surface point `p`; `point` undoes it.
     pub fn screenOf(self: Surface, p: rl.Vector2) mathx.P {
         return .{ .x = @intFromFloat(self.offset.x + p.x * self.scale), .y = @intFromFloat(self.offset.y + p.y * self.scale) };
     }
@@ -84,7 +78,6 @@ pub const Surface = struct {
         rl.beginMode2D(.{ .target = .{ .x = 0, .y = 0 }, .offset = self.offset, .rotation = 0, .zoom = self.scale });
     }
 
-    /// `begin`, then a panel's card backing across `size`.
     pub fn beginPanel(self: Surface, sprites: *const sprite.Sprites, size: mathx.P) void {
         self.begin();
         sprite.backing(sprites, 0, 0, size.x, size.y);
@@ -110,19 +103,15 @@ test "panel surfaces stay invertible when the window shrinks below its margins" 
             _ = surface.point(.{ .x = 0, .y = 0 });
         }
     }
-    std.debug.print("panel surfaces: {d} narrow or short window sizes remain invertible\n", .{edges.len * 2});
 }
 
-/// A box's edge, doubled in `on_ink` when it is the one chosen.
 pub fn outline(r: rl.Rectangle, on: bool, on_ink: rl.Color, off_ink: rl.Color) void {
     rl.drawRectangleLinesEx(r, if (on) 2 else 1, if (on) on_ink else off_ink);
 }
 
-/// Inside an action box, its edge to the prompt and to the label's far side, and the prompt to the label.
 const ACTION_PAD: i32 = 10;
 pub const PROMPT_GAP: i32 = 8;
 pub const ACTION_BOX = mathx.P{ .x = 164, .y = 36 };
-/// A lone action button under a screen or panel, such as the death screen's.
 pub const ACTION_WIDE = mathx.P{ .x = 220, .y = 40 };
 pub const ACTION_GAP: i32 = 8;
 pub const PANEL_PAD: i32 = 24;
@@ -139,7 +128,6 @@ pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon.Promp
     face.centred(label, text_x + @divTrunc(text_w, 2), raster.middleAt(r).y, font.BODY, look.TEXT);
 }
 
-/// An action box's prompt; returns where its label starts.
 pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon.Prompt, alpha: f32) i32 {
     return prompt.drawFrom(face, @as(i32, @intFromFloat(r.x)) + ACTION_PAD, raster.middleAt(r).y, font.BODY, alpha) + PROMPT_GAP;
 }
@@ -190,7 +178,6 @@ pub const Menu = struct {
         return self.step(st, n);
     }
 
-    /// `step` over every one of `n` rows that `boxOf` lays out: scrolled, pointed at, walked and confirmed.
     pub fn stepOver(self: *Menu, st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
         if (!self.clampTo(n)) return null;
         if (pointAt(&self.at, st, n, ctx, boxOf)) |k| return k;
@@ -198,7 +185,6 @@ pub const Menu = struct {
     }
 };
 
-/// `at` scrolled, then moved to the row under the pointer; a click there picks it.
 pub fn pointAt(at: *usize, st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
     at.* = st.scrolled(at.*, n);
     const k = pointed(st, n, ctx, boxOf) orelse return null;
@@ -239,15 +225,12 @@ pub fn drawBack(face: *const font.Face, screen: mathx.P, st: *const input.State)
     action(face, footerBox(screen), prompt_icon.Prompt.menuOf(st, BACK), "Back");
 }
 
-/// Backed out, or Character pressed to shut what it opened over.
 pub fn closed(st: *const input.State) bool {
     return backed(st) or st.hit(CHARACTER);
 }
 
-/// Sideways distance between boxes costs this much more than distance ahead.
 const ACROSS: f32 = 2;
 
-/// The box in `boxes` a move `dir` from `from` lands on: nearest ahead, sideways distance costing `ACROSS` times as much.
 pub fn nearest(from: rl.Rectangle, boxes: []const rl.Rectangle, dir: mathx.Dir) ?usize {
     var best: ?usize = null;
     var best_score = std.math.floatMax(f32);
@@ -289,7 +272,6 @@ fn window(screen_h: i32, n: usize, at: usize) Window {
     return Window.of(n, at, room);
 }
 
-/// Every single-column list's widest, at any screen size.
 const LIST_W: i32 = 640;
 
 pub fn listWidth(screen: mathx.P) i32 {
@@ -334,17 +316,14 @@ pub fn draw(face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, ti
     if (note) |n| _ = face.paragraph(n, @as(i32, @intFromFloat(first.x)) + inset, noteY(first, rows.len), widest, NOTE, look.DIM);
 }
 
-/// The backing behind a stack of list rows, its border clear of them.
 pub fn listPanel(sprites: *const sprite.Sprites, rows: rl.Rectangle) void {
     sprite.backingIn(sprites, raster.grown(rows, @floatFromInt(sprite.HUD_BORDER_CUT)));
 }
 
-/// A list row's text past its edge and selection mark.
 fn markInset(face: font.Face) i32 {
     return MARK_GAP * 2 + face.width(MARK_L, ROW);
 }
 
-/// A list row's selection band and mark, when `on`; returns where its text starts.
 pub fn pick(face: font.Face, box: rl.Rectangle, on: bool) i32 {
     const x = @as(i32, @intFromFloat(box.x)) + markInset(face);
     band(box, on);
@@ -379,20 +358,19 @@ pub const word = wording.word;
 test "display aliases use actual enum types without renaming identifiers" {
     const Hero = @import("../play/hero.zig").Class;
     const Act = @import("../play/skillbar.zig").Act;
-    const Kind = @import("../play/items.zig").Kind;
+    const Kind = @import("../play/item_bases.zig").Kind;
     try std.testing.expectEqualStrings("play.hero.Class", @typeName(Hero));
     try std.testing.expectEqualStrings("play.skillbar.Act", @typeName(Act));
-    try std.testing.expectEqualStrings("play.items.Kind", @typeName(Kind));
+    try std.testing.expectEqualStrings("play.item_bases.Kind", @typeName(Kind));
     const labels = "play.hero.Class.archer\tWayfarer\nplay.skillbar.Act.shoot\tLoose Arrow\nplay.items.Kind.short_bow\tHunting bow\n";
     try std.testing.expectEqualStrings("Wayfarer", comptime wording.displayAliasIn(labels, @typeName(Hero), "archer").?);
     try std.testing.expectEqualStrings("Loose Arrow", comptime wording.displayAliasIn(labels, @typeName(Act), "shoot").?);
     try std.testing.expectEqualStrings("Hunting bow", comptime wording.displayAliasIn(labels, @typeName(Kind), "short_bow").?);
     try std.testing.expectEqualStrings("archer", @tagName(Hero.archer));
-    std.debug.print("display aliases: class, skill and item type keys verified; 3 display overrides leave enum identity unchanged\n", .{});
 }
 
 test "an enum's label reads as words" {
-    try std.testing.expectEqualStrings("Iron boots", named(@import("../play/items.zig").Kind.iron_boots));
+    try std.testing.expectEqualStrings("Iron boots", named(@import("../play/item_bases.zig").Kind.iron_boots));
 }
 
 pub const TestFace = struct {
@@ -418,10 +396,8 @@ const RULE_REACH: i32 = 56;
 const RULE_GAP: i32 = 9;
 const RULE_PIP: f32 = 3;
 const RULE_A: f32 = 0.7;
-/// Of a heading's size, from its top down to its rule.
 const RULE_DROP: f32 = 1.02;
 
-/// Engraved and centred, over a rule in `accent`.
 pub fn heading(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color, accent: rl.Color) void {
     var buf: [NOTE_MAX + 1]u8 = undefined;
     const t = fitScreen(face, &buf, screen, s, size);
@@ -435,7 +411,6 @@ pub fn pageHeading(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32) vo
     heading(face, screen, s, y, TITLE, look.TEXT, look.UI_GOLD);
 }
 
-/// Hairlines fading out either side of a small diamond.
 fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
     for ([_]bool{ true, false }) |shadow| {
         const by: i32 = @intFromBool(shadow);
@@ -449,7 +424,6 @@ fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
 }
 
 test "mouse menus share drawn rows and scrolling keeps long menus reachable" {
-    var checked: usize = 0;
     for ([_]mathx.P{ display.SCREEN_720, display.SCREEN_1080 }) |screen| {
         var m = Menu{};
         for (0..6) |i| {
@@ -459,7 +433,6 @@ test "mouse menus share drawn rows and scrolling keeps long menus reachable" {
             try std.testing.expectEqual(@as(?usize, i), m.stepAt(&.{ .pointer = p, .click = true }, 6, screen));
             _ = m.stepAt(&.{ .pointer = p, .walk = .s }, 6, screen);
             try std.testing.expectEqual((i + 1) % 6, m.at);
-            checked += 1;
         }
         _ = m.stepAt(&.{ .scroll = -100 }, 40, screen);
         try std.testing.expectEqual(@as(usize, 39), m.at);
@@ -472,12 +445,10 @@ test "mouse menus share drawn rows and scrolling keeps long menus reachable" {
     }
     var empty = Menu{};
     try std.testing.expectEqual(@as(?usize, null), empty.stepAt(&.{ .click = true }, 0, display.SCREEN_720));
-    std.debug.print("mouse menus: {d} hover/click/keyboard handoffs, two long lists, outside and back clicks, empty menu\n", .{checked});
 }
 
 test "a long menu shows the rows that fit, the one it is on among them" {
     const w = window(900, 40, 39);
-    std.debug.print("40 rows on a 900 px screen: {d} shown, from {d}\n", .{ w.len, w.from });
     try std.testing.expect(w.len < 40 and w.from + w.len == 40);
     try std.testing.expectEqual(@as(usize, 0), window(900, 40, 0).from);
     try std.testing.expectEqual(@as(usize, 3), window(900, 3, 2).len);

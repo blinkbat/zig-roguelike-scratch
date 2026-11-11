@@ -241,17 +241,14 @@ fn lastBespoke(self: *atlas.Atlas) Error!*atlas.Bespoke {
     return (try lastNode(self)).plan.bespokeOf() orelse error.BadLine;
 }
 
-/// A procgen node's base lines: each named for, and holding, a field of its floor; its other fields' are `GROUPS`.
 pub fn floorKnobs(comptime a: Algo) []const []const u8 {
     return armKnobs(Floor, a);
 }
 const FLOOR_KNOBS_MAX = mostKnobs(Floor);
-/// Every other line's first word, which no knob may take.
 const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe };
 const ONCE_FILE = std.EnumSet(Word).initOne(.start);
 const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at });
 const ONCE = ONCE_FILE.unionWith(ONCE_NODE);
-/// A feature's lines after its own: each named for, and holding, a field of it.
 pub fn featureKnobs(comptime k: Kind) []const []const u8 {
     return armKnobs(Feature, k);
 }
@@ -279,10 +276,8 @@ const GROUP_KNOBS = blk: {
     for (GROUPS) |grp| all = all ++ grp.knobs;
     break :blk all;
 };
-/// An algorithm's knobs by place, then each group's in turn after `FLOOR_KNOBS_MAX`.
 const KnobSet = std.StaticBitSet(groupBase(GROUPS.len));
 const MAKEUP = @tagName(Word.makeup);
-/// `pack.Spec`'s makeups, which are lines of their own.
 const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
 const COUNTED = @tagName(pack.Draw.count);
 const EXIT = "exit";
@@ -294,7 +289,6 @@ fn takeWord(f: *Tokens, word: []const u8) bool {
     return true;
 }
 
-/// A makeup's lair, named after its count; anywhere is the unnamed default.
 fn takeLair(f: *Tokens) pack.Lair {
     const next = f.peek() orelse return .anywhere;
     const lair = std.meta.stringToEnum(pack.Lair, next) orelse return .anywhere;
@@ -307,7 +301,6 @@ fn says(comptime w: Word) []const u8 {
     return script_text.firstWord(w);
 }
 
-/// Each node's `name` line in map text: the node's index, its name and the line it is on, counted from 1.
 pub const NodeNames = struct {
     lines: std.mem.SplitIterator(u8, .scalar),
     line: usize = 0,
@@ -419,7 +412,6 @@ fn putKnob(w: anytype, comptime name: []const u8, v: anytype) !void {
     try w.writeByte('\n');
 }
 
-/// How many numbers a knob of type `T` holds on its line.
 pub fn knobNumbers(comptime T: type) usize {
     return switch (@typeInfo(T)) {
         .int, .@"enum" => 1,
@@ -476,7 +468,6 @@ test "node names are read with their node and line, blank names skipped" {
         try std.testing.expectEqual(w.line, got.line);
     }
     try std.testing.expect(it.next() == null);
-    std.debug.print("node names: {d} named nodes of 3 read with node index and line\n", .{want.len});
 }
 
 test "a map saves and loads back the same" {
@@ -523,7 +514,6 @@ test "a map saves and loads back the same" {
     var again = std.ArrayList(u8).init(std.testing.allocator);
     defer again.deinit();
     try back.write(again.writer());
-    std.debug.print("a two-node map is {d} bytes of text\n", .{buf.items.len});
     try std.testing.expectEqualStrings(buf.items, again.items);
     try std.testing.expectEqual(@as(?atlas.Link, .{ .node = cave, .door = d1 }), back.node[room].door[d0].to);
     const bpg = &back.node[cave].plan.procgen;
@@ -559,7 +549,6 @@ test "fresh map text refuses opened containers in terrain and generator choices"
     try std.testing.expectEqual(grid.Tile.chest, a.node[0].plan.bespoke.tile[0]);
     try a.parse(head ++ "node procgen open\nfeature scatter\ntile chest\n");
     try std.testing.expectEqual(grid.Tile.chest, a.node[0].plan.procgen.feature[0].scatter.tile);
-    std.debug.print("fresh map text: 6 opened-container inputs refused; closed chests preserved in terrain and scatter\n", .{});
 }
 
 test "a map file with a one-way link, a door linked to itself, a stray word, a far box or a number not written plainly is refused" {
@@ -694,7 +683,6 @@ test "map text round-trips every floor and feature with default and changed knob
         }
     }
     try std.testing.expectEqual(2 * std.enums.values(Algo).len * std.enums.values(Kind).len, checked);
-    std.debug.print("map serialization: {d} floor/feature/default-or-changed cases preserve plans, climate, pack makeup and canonical text\n", .{checked});
 }
 
 test "a map's NPCs and script save with it, and NPCs off open bespoke floor are refused" {
@@ -723,7 +711,6 @@ test "a map's NPCs and script save with it, and NPCs off open bespoke floor are 
         try buf.appendSlice(extra);
         try std.testing.expectError(error.BadLine, back.parse(buf.items));
     }
-    std.debug.print("map script: {d} script bytes round-trip with the map; NPCs on a wall, a foe or each other refused\n", .{script_text.SAMPLE.len});
 }
 
 test "map text accepts exact node feature and door limits and refuses the next entry" {
@@ -754,5 +741,4 @@ test "map text accepts exact node feature and door limits and refuses the next e
     try std.testing.expectEqual(grid.MAX_DOORS, a.node[0].door_n);
     try buf.writer().print("door {d} 5\n", .{grid.MAX_DOORS});
     try std.testing.expectError(error.TooMany, a.parse(buf.items));
-    std.debug.print("map limits: {d} nodes, {d} features and {d} doors accepted exactly; 3 excess entries refused\n", .{ atlas.MAX_NODES, atlas.MAX_FEATURES, grid.MAX_DOORS });
 }

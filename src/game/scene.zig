@@ -9,8 +9,8 @@ const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const skillbar = @import("../play/skillbar.zig");
 const glacial = @import("../play/glacial.zig");
-const rules = @import("../play/tactics.zig");
-const tactics = @import("tactics.zig");
+const tactics = @import("../play/tactics.zig");
+const tactics_exec = @import("tactics_exec.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const line_icons = @import("../gfx/line_icons.zig");
@@ -18,7 +18,7 @@ const dual = @import("../gfx/ground.zig");
 const light = @import("../gfx/light.zig");
 const shadows = @import("../gfx/shadow.zig");
 const fx = @import("../gfx/fx.zig");
-const items = @import("../play/items.zig");
+const ground_items = @import("../play/ground_items.zig");
 const cloud = @import("../gfx/cloud.zig");
 const sky = @import("../gfx/sky.zig");
 const day = @import("../map/day.zig");
@@ -58,7 +58,6 @@ const MINI_FRAME: i32 = sprite.HUD_BORDER_CUT;
 const MINI_HERO_GROW: i32 = 1;
 const DAY_GAP: i32 = 12;
 const DAY_INSET: i32 = 16;
-/// Either side of the glyph's middle, the line stays clear of it.
 const DAY_CLEAR: f32 = DAY_GLYPH_R + 3;
 pub const DAY_DROP: i32 = 1;
 const SUN_R: f32 = 3;
@@ -69,7 +68,6 @@ const MOON_R: f32 = 5;
 const MOON_CUT: f32 = 2.5;
 const MOON_CUT_INSET: f32 = 0.6;
 pub const DAY_GLYPH_R: f32 = @max(SUN_RAY_OUT, MOON_R);
-/// Of a reflection's height from its top, where its fade to nothing ends.
 const MIRROR_FADE: f32 = 0.7;
 const FLAME_PHASE = [2]f32{ 0.73, 0.37 };
 
@@ -106,7 +104,6 @@ pub const Cam = struct {
         return raster.rect(c.sx(p), c.sy(p), game.CELL, game.CELL);
     }
 
-    /// The map's top-left on screen.
     fn origin(c: Cam) [2]f32 {
         return .{ @floatFromInt(-c.x), @floatFromInt(-c.y) };
     }
@@ -130,14 +127,12 @@ fn tileRect(kind: grid.Tile, tex: rl.Texture2D, c: Cam, p: P) rl.Rectangle {
     return look.tileRect(kind, tex, c.box(p));
 }
 
-/// `t` on `p`, catching its shine as the band crosses it.
 fn drawShining(g: *const game.Game, t: rl.Texture2D, c: Cam, p: P) void {
     const rect = spriteRect(t, c.sx(p), c.sy(p));
     raster.stretch(t, rect, look.LIT);
     shineOver(g, t, rect, p, look.LIT);
 }
 
-/// Only what the hero sees shines; remembered loot stays still.
 fn shineOver(g: *const game.Game, t: rl.Texture2D, rect: rl.Rectangle, p: P, col: rl.Color) void {
     if (!g.pic.litShown(&g.sim, p)) return;
     const sweep = look.shineSweep(g.pic.fx.seconds.at(), p) orelse return;
@@ -148,19 +143,17 @@ fn drawGlyph(g: *game.Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void {
     g.face.glyph(ch, sx + game.HALF_CELL, sy + game.HALF_CELL, game.GLYPH, col);
 }
 
-/// A figure with no art: its letter cell-high, doubled a pixel over for weight.
 fn drawFigureGlyph(g: *game.Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void {
     for ([_]i32{ 0, game.authored(1) }) |dx| g.face.glyph(ch, sx + dx + game.HALF_CELL, sy + game.HALF_CELL, game.CELL, col);
 }
 
-/// Bright whatever the light, over a drop shadow, so a stand-in letter reads at a glance.
 fn drawFigureLetter(g: *game.Game, l: look.Look, s: P, flash: f32, opacity: f32) void {
     const off = game.authored(look.GLYPH_SHADOW_PX);
     drawFigureGlyph(g, l.ch, s.x + off, s.y + off, look.fade(look.GLYPH_SHADOW, opacity));
     drawFigureGlyph(g, l.ch, s.x, s.y, look.fade(look.mixed(l.fg, look.LIT, flash), opacity));
 }
 
-fn drawCoins(g: *const game.Game, c: Cam, pile: items.Coins) void {
+fn drawCoins(g: *const game.Game, c: Cam, pile: ground_items.Coins) void {
     const tex = if (pile.large()) g.sprites.large_coins else g.sprites.small_coins;
     if (tex) |t| {
         drawShining(g, t, c, pile.at);
@@ -174,7 +167,6 @@ fn bagged(bags: *const grid.CellSet, p: P) bool {
     return bags.isSet(grid.Level.idx(p));
 }
 
-/// A bag on open ground, drawn as its own sprite; one in an open chest is drawn as the chest's.
 fn looseBag(here: grid.Tile, bags: *const grid.CellSet, p: P) bool {
     return here != .chest_open and bagged(bags, p);
 }
@@ -195,7 +187,6 @@ fn fillLit(g: *const game.Game, c: Cam, cells: []const P, col: rl.Color) void {
     for (cells) |p| if (g.sim.lv.isLit(p)) fillCell(c, p, col);
 }
 
-/// Barrels stay remembered until the hero's visible breaking blow lands, or until it sees them gone.
 pub fn barrelShownAt(g: *game.Game, p: P) bool {
     if (!terrainSeen(g, p)) return false;
     if (g.pic.litShown(&g.sim, p) or !g.sim.lv.isSeen(p)) return g.pic.barrelPresent(&g.sim, p);
@@ -246,7 +237,6 @@ const Prop = struct {
         return .{ .s = c.corner(p), .mid = mid, .shine = if (casting) g.light.onCaster(mid, false) else g.light.onBody(mid, false) };
     }
 
-    /// A standing tile casting from the middle of its whole footprint.
     fn over(g: *game.Game, c: Cam, p: P, kind: grid.Tile) Prop {
         var mid = mathx.centre(p);
         mid[0] += @as(f32, @floatFromInt(kind.wide() - 1)) / 2;
@@ -313,7 +303,6 @@ fn drawGroundPass(g: *game.Game, c: Cam, ground: *const grid.Level, beds: *const
     }
 }
 
-/// The ground a fire just took, drawn whole round it into a target, then laid back over each such cell as it fades.
 fn drawBurntGround(g: *game.Game, c: Cam, old: *const grid.Level, water: ?sprite.WaterView) void {
     var beds: dual.Beds = undefined;
     beds.fill(old, g.pic.burnt_box.lo, g.pic.burnt_box.hi, !g.light.reveal_map);
@@ -330,7 +319,6 @@ fn drawBurntGround(g: *game.Game, c: Cam, old: *const grid.Level, water: ?sprite
     }
 }
 
-/// What a fire just took that stood over its ground, fading: under the light map, or `occluding` among the bodies.
 fn drawBurntStanding(g: *game.Game, c: Cam, old: *const grid.Level, occluding: bool) void {
     var cells = g.pic.burnt_box.cells();
     while (cells.next()) |p| {
@@ -366,7 +354,6 @@ fn tileTexture(g: *const game.Game, ground: *const grid.Level, here: grid.Tile, 
     return g.sprites.tileAt(ground, p);
 }
 
-/// At full light, what stands on the seen cells from `lo` up to `hi`, over the shadows cast on the ground.
 fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P, stood: *const grid.CellSet, bags: *const grid.CellSet) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
@@ -409,7 +396,7 @@ fn inkCell(g: *game.Game, c: Cam, p: P, here: grid.Tile, stood: *const grid.Cell
     look.inkTile(&g.face, here, m.x, m.y, game.GLYPH);
 }
 
-/// Every shadow cast into `view`, multiplied over what `framebuffer` holds; false with no shader for it.
+/// False with no shader for it.
 pub fn shadowPass(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.Box, bags: *const grid.CellSet, framebuffer: u32) bool {
     if (!g.light.beginShadows(g.screen, framebuffer)) return false;
     drawShadows(g, c, ground, view.grown(shadows.sceneryMargin(&g.sprites)), bags);
@@ -476,7 +463,6 @@ const Reflection = struct {
     }
 };
 
-/// Where a glyph figure, with no art to measure, stands within its cell.
 const GLYPH_FOOT: f32 = 0.8;
 
 fn footOf(g: *const game.Game, tex: ?rl.Texture2D, s: P) f32 {
@@ -527,7 +513,6 @@ fn sceneryTint(g: *const game.Game, p: P) rl.Color {
     return g.light.onBody(mathx.centre(p), false).tint(look.LIT);
 }
 
-/// Whether water lies within a cell of where `rect`, standing on `foot`, is mirrored; the mirror shows nowhere else.
 fn mirrorsOnWater(ground: *const grid.Level, c: Cam, rect: rl.Rectangle, foot: f32) bool {
     const lo = c.cellAt(.{ .x = @intFromFloat(@floor(rect.x)), .y = @intFromFloat(@floor(foot)) }).sub(.{ .x = 1, .y = 1 });
     const hi = c.cellAt(.{ .x = @intFromFloat(@ceil(rect.x + rect.width)), .y = @intFromFloat(@ceil(2 * foot - rect.y)) }).add(.{ .x = 2, .y = 2 });
@@ -688,14 +673,14 @@ pub fn drawMap(g: *game.Game) void {
         }
         const act = g.mode.aim.act();
         if (act.spans()) {
-            if (tactics.span(g, act, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark)) |area| {
+            if (tactics_exec.span(g, act, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark)) |area| {
                 for (area.slice()) |p| fillCell(c, p, if (act == .fire_wall) look.aimElement(.fire) else look.AIM_PATH);
             }
         } else switch (act) {
             .overwatch => if (mathx.toward(from, g.mode.aim.mark)) |d| {
-                var covered = grid.Cells.around(from, rules.Overwatch.RANGE);
+                var covered = grid.Cells.around(from, tactics.Overwatch.RANGE);
                 while (covered.next()) |p| {
-                    if (g.sim.lv.isLit(p) and tactics.watches(&g.sim.lv, from, d, p)) fillCell(c, p, look.AIM_PATH);
+                    if (g.sim.lv.isLit(p) and tactics_exec.watches(&g.sim.lv, from, d, p)) fillCell(c, p, look.AIM_PATH);
                 }
             },
             inline else => |a| if (comptime a.sweeps()) {
@@ -779,7 +764,7 @@ pub fn drawMap(g: *game.Game) void {
     }
 
     if (aim_from != null) outline(c, g.mode.aim.mark, if (aim_legal) look.RETICLE else look.RETICLE_BLOCKED);
-    if (game.playShown(g) and g.st.lean) drawLean(g, c, &stood);
+    if (game.playShown(g) and g.st.lean) drawLean(g, c, ground, &stood);
 
     for (bodies) |*b| {
         g.pic.fx.drawSpeech(&g.face, b.slot, b.lifted.x, b.lifted.y, game.CELL_F, b.shine.sight * b.sighted);
@@ -862,10 +847,8 @@ pub fn drawFlight(s: *const game.presentation.Shot, o: [2]f32, cell: f32) void {
     if (s.net) fx.drawNet(at, s.t, o[0], o[1], cell) else fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], cell);
 }
 
-/// Which of a burning cell's neighbours burn too.
 pub const Kin = std.EnumSet(mathx.Dir);
 
-/// A cell of ground flames, its top-left at `x`, `y`, at `alpha` as they fade; the fill fades from the cell's middle to each side and corner that no fire shares.
 pub fn drawFlames(effects: *const fx.Fx, x: f32, y: f32, cell: f32, seed: usize, kin: Kin, alpha: f32) void {
     const h = cell / 2;
     const core = look.fade(look.FLAME_FILL, FLAME_FILL_A * alpha);
@@ -892,7 +875,6 @@ pub fn drawFlames(effects: *const fx.Fx, x: f32, y: f32, cell: f32, seed: usize,
     effects.drawBurning(x, y, cell, seed, alpha);
 }
 
-/// 1 while a cell's flames are drawn, then down to 0 as they fade out.
 fn flameAlpha(g: *const game.Game, i: usize) f32 {
     return if (g.pic.flamesShown(i)) 1 else g.pic.ember(i);
 }
@@ -940,14 +922,12 @@ fn drawTacticalGround(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, h
     }
 }
 
-/// Over a cell's occluding scenery, after it is drawn, and under it otherwise.
 fn drawCellFlames(g: *game.Game, c: Cam, p: P) void {
     const i = grid.Level.idx(p);
     const a = flameAlpha(g, i);
     if (a > 0) drawFlames(&g.pic.fx, @floatFromInt(c.sx(p)), @floatFromInt(c.sy(p)), game.CELL_F, i, kinOf(g, p), a);
 }
 
-/// `n` of `of` equal segments lit, as a foe's chill meter.
 fn pips(x: i32, y: i32, w: i32, n: u8, of: u8, fill: rl.Color, back: rl.Color) void {
     const count: i32 = of;
     const each = @divTrunc(w - (count - 1) * CHILL_PIP_GAP, count);
@@ -1006,30 +986,29 @@ fn drawPlants(g: *game.Game, c: Cam, flames: []const light.Flame) void {
     };
 }
 
-/// Over the light map, so each flame is its own light; a remembered one stays drawn, dim and unlit.
+/// Over the light map, so each flame is its own light.
 fn drawTorches(g: *game.Game, c: Cam, flames: []const light.Flame) void {
     for (flames) |f| if (f.kind == .wall) drawFlame(g, c, f, flameLit(f));
     const o = c.origin();
     g.light.drawGlows(flames, o[0], o[1], game.CELL_F, g.screen, g.framebuffer);
 }
 
-/// Movement hints follow presented occupants, including deaths still being drawn.
-pub fn leanShown(g: *game.Game, stood: *const grid.CellSet, from: P, d: mathx.Dir) game.Move {
-    return game.moveOf(g, from, d, shownAt(g, stood, from.add(d.delta())));
+pub fn leanShown(g: *game.Game, ground: *const grid.Level, stood: *const grid.CellSet, from: P, d: mathx.Dir) game.Move {
+    return game.moveOf(g, ground, from, d, shownAt(g, stood, from.add(d.delta())));
 }
 
-fn drawLean(g: *game.Game, c: Cam, stood: *const grid.CellSet) void {
+fn drawLean(g: *game.Game, c: Cam, ground: *const grid.Level, stood: *const grid.CellSet) void {
     const at = game.cellUnder(g.pic.heroNow(&g.sim) orelse return);
     for (input.DPAD) |button| {
         const d = input.leanOf(button);
         const p = at.add(d.delta());
-        const col = switch (leanShown(g, stood, at, d)) {
+        const col = switch (leanShown(g, ground, stood, at, d)) {
             .kick => look.LEAN_FOE,
             .step, .open, .burst, .loot, .talk, .swap => look.LEAN_OPEN,
             .blocked => look.LEAN_BLOCKED,
         };
         outline(c, p, col);
-        if (g.sim.lv.walkable(p) and !shownAt(g, stood, p)) {
+        if (ground.walkable(p) and !shownAt(g, stood, p)) {
             const m = c.mid(p);
             line_icons.drawDirection(button, m.x, m.y, LEAN_GLYPH, col);
             continue;
@@ -1041,7 +1020,7 @@ fn drawLean(g: *game.Game, c: Cam, stood: *const grid.CellSet) void {
     }
 }
 
-/// One texel per cell, enlarged by `MINI`; requires a live GL context.
+/// Requires a live GL context.
 pub const Minimap = struct {
     tex: ?rl.Texture2D = null,
     px: [grid.CELLS]rl.Color = undefined,

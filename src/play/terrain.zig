@@ -166,7 +166,6 @@ test "terrain resolves signed modifiers after base stats without mutating them" 
     try std.testing.expectEqualDeep(base, base.onRained(.floor, 0));
     base.elements.set(.fire, -100);
     try std.testing.expectEqual(@as(i16, -100), base.onRained(.grass, 0).elements.get(.fire));
-    std.debug.print("terrain: hit/dodge, {d} elements, {d} statuses, caps and neutral ground checked\n", .{ std.enums.values(damage.Element).len, std.enums.values(resilience.Kind).len });
 }
 
 test "rain lends fire and burn resistance in fives, more the harder it falls, and nothing dry" {
@@ -182,8 +181,6 @@ test "rain lends fire and burn resistance in fives, more the harder it falls, an
         fire_was = m.elements.get(.fire);
         burn_was = m.statuses.get(.burn);
     }
-    const drizzle = rained(@import("../map/climate.zig").DRIZZLE);
-    std.debug.print("rain: a drizzle lends +{d}% fire / +{d}% burn resistance, a downpour +{d}% / +{d}%\n", .{ drizzle.elements.get(.fire), drizzle.statuses.get(.burn), fire_was, burn_was });
     try std.testing.expectEqualStrings("Downpour", rainTitle(1).?);
     const soaked = (Stats{}).onRained(.shallows, 1);
     try std.testing.expectEqual(@as(i16, 55), soaked.elements.get(.fire));

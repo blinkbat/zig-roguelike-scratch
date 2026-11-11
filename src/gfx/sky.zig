@@ -30,39 +30,30 @@ const HOURS = day.HOURS;
 const SUNRISE = day.SUNRISE;
 const SUNSET = day.SUNSET;
 const wrapHour = day.wrapHour;
-/// Bearings clockwise from north the sun rises and sets on; it stands in the south at noon.
+/// Bearings clockwise from north.
 const AZ_RISE: f32 = 100;
 const AZ_SET: f32 = 262;
 const SUN_ALT_MAX: f32 = 60;
-/// Clamp casting altitude to keep shadows visible and on screen; leave the true sun altitude unchanged.
 const KEY_ALT_MIN = std.math.degreesToRadians(@as(f32, 35));
 const KEY_ALT_MAX = std.math.degreesToRadians(@as(f32, 42));
-/// Cells the longest shadow the sky throws runs along the ground per cell of height.
 pub const REACH_MAX: f32 = 1 / @tan(KEY_ALT_MIN);
-/// Hours before sunrise the moon hands the casting light to the sun, and after sunset it takes it back.
 const KEY_SWAP_LEAD: f32 = 1.0;
 const KEY_SWAP_LAG: f32 = 0.8;
 const KEY_SWAP_DAWN: f32 = SUNRISE - KEY_SWAP_LEAD;
 const KEY_SWAP_DUSK: f32 = SUNSET + KEY_SWAP_LAG;
-/// Hours from the horizon over which night gives way to dawn's colours, and morning's to full day.
 const GLOW_HOURS: f32 = 2.5;
 const FULL_MORNING: f32 = SUNRISE + GLOW_HOURS;
-/// The afternoon's last full light, and sunset's orange glow.
 const LATE_DAY: f32 = SUNSET - 2.55;
 const DUSK_GLOW: f32 = SUNSET - 0.6;
 const KEY_SWAP_FADE: f32 = 0.45;
-/// A light leaning along the ground less than this stands straight up.
 const OVERHEAD: f32 = 1e-4;
 /// The palette's sky is a hemisphere's; seen from above it lights the ground in shade this many times over.
 const SKY_GAIN: f32 = 1.6;
 /// The palette's key is a 3D scene's; on art drawn flat it is this strong.
 const KEY_GAIN: f32 = 0.85;
 const NIGHT_FILL_MIN: f32 = 0.72;
-/// The share of the night either side of its dead point over which the carried light's fill climbs back to whole.
 const NIGHT_FILL_SPREAD: f32 = 0.4;
-/// The moon's key as if it stood this high, whatever its true altitude.
 const MOON_LIFT: f32 = 0.7;
-/// Of the casting light's lean north or south, the share the map shows, so shadows run mostly across the screen.
 const NORTH_SOUTH: f32 = 0.35;
 
 comptime {
@@ -89,7 +80,6 @@ fn dirFrom(az_deg: f32, alt_deg: f32) [3]f32 {
     return .{ @sin(az) * c, -@cos(az) * c, @sin(alt) };
 }
 
-/// The sun's true path: under the ground at night, the bearing going all the way round once a day.
 fn sunDir(hour: f32) [3]f32 {
     const u = dayU(hour);
     const alt = SUN_ALT_MAX * @sin(std.math.pi * u);
@@ -97,7 +87,6 @@ fn sunDir(hour: f32) [3]f32 {
     return dirFrom(az, alt);
 }
 
-/// Swap sun and moon through the zenith while `keyDim` hides the shadow flip.
 fn keyDir(hour: f32) [3]f32 {
     const s = sunDir(hour);
     const flat = flatOf(s);
@@ -110,7 +99,6 @@ fn keyDir(hour: f32) [3]f32 {
     return .{ h[0] * c, h[1] * c, @sin(elev) };
 }
 
-/// The key's strength through the swap: 1 either side of it, 0 at the crossing.
 fn keyDim(hour: f32) f32 {
     const k = 1 - 2 * moonShare(hour);
     return k * k;
@@ -154,32 +142,24 @@ fn paletteAt(hour: f32) Palette {
 }
 
 pub const Sky = struct {
-    /// Toward the light that casts, a unit vector.
+    /// Toward the light that casts.
     dir: [3]f32,
-    /// That light's colour and strength, dimmed through the swap.
     key: Rgb,
-    /// What reaches ground in shade.
     ambient: Rgb,
-    /// How much of the hero's own light still shows: none by day.
     carry: f32,
-    /// How far the light that casts is the moon's: 0 by day, 1 by night.
     moon: f32,
-    /// `day.daylight`: 1 in full day, 0 in full night.
     daylight: f32,
 
-    /// Lit by a lightning stroke `f` of its brightest.
     pub fn struck(s: Sky, f: f32) Sky {
         var lit_up = s;
         lit_up.ambient += LIGHTNING * splat(std.math.clamp(f, 0, 1));
         return lit_up;
     }
 
-    /// How far the light that casts is the sun's.
     pub fn sun(s: Sky) f32 {
         return 1 - s.moon;
     }
 
-    /// The length of `dir` along the ground.
     pub fn flat(s: Sky) f32 {
         return flatOf(s.dir);
     }
@@ -190,18 +170,15 @@ pub const Sky = struct {
         return if (upright(f)) .{ 0, 1 } else .{ s.dir[0] / f, s.dir[1] / f };
     }
 
-    /// Cells a shadow runs along the ground per cell of height.
     pub fn reach(s: Sky) f32 {
         return s.flat() / @max(s.dir[2], 1e-3);
     }
 
-    /// Cells up per cell along the ground toward it.
     pub fn rise(s: Sky) f32 {
         return s.dir[2] / @max(s.flat(), OVERHEAD);
     }
 };
 
-/// A light whose length along the ground is `flat` stands straight over what it lights, and casts no shadow.
 pub fn upright(flat: f32) bool {
     return flat < OVERHEAD;
 }
@@ -209,9 +186,7 @@ pub fn upright(flat: f32) bool {
 const Look = struct { key: f32 = 1, sky: f32 = 1, grey: f32 = 0, tint: Rgb = splat(1) };
 
 const CLEAR = Look{};
-/// A full overcast: most of the sun's light spread into the sky, so shadows go soft and the day a little dark.
 const OVERCAST = Look{ .key = 0.3, .sky = 1.75, .grey = 0.55, .tint = .{ 0.92, 0.98, 1.06 } };
-/// What a lightning stroke at its brightest adds to the light in shade.
 const LIGHTNING = Rgb{ 0.62, 0.68, 0.85 };
 
 fn lookAt(overcast: f32) Look {
@@ -236,7 +211,6 @@ fn lit(s: Sky) f32 {
     return luma(s.ambient) + luma(s.key) * s.dir[2];
 }
 
-/// Open ground's light under `s`, 1 at a clear noon.
 pub fn brightness(s: Sky) f32 {
     return lit(s) / lit(at(day.NOON));
 }
@@ -245,7 +219,6 @@ pub fn at(hour: f32) Sky {
     return under(hour, 0);
 }
 
-/// At `hour` under `overcast`, 0 a clear sky to 1 a full overcast.
 pub fn under(hour: f32, overcast: f32) Sky {
     const p = paletteAt(hour);
     const l = lookAt(overcast);
@@ -289,7 +262,6 @@ test "a full overcast is a little darker than a clear sky, greyer, and its shado
         const lit_bleak = lit(bleak);
         const share_clear = luma(clear.key) / (luma(clear.key) + luma(clear.ambient));
         const share_bleak = luma(bleak.key) / (luma(bleak.key) + luma(bleak.ambient));
-        std.debug.print("at {d:.2}: open ground {d:.2} clear, {d:.2} bleak ({d:.0}%); the sun's share {d:.2} against {d:.2}\n", .{ h, lit_clear, lit_bleak, lit_bleak / lit_clear * 100, share_clear, share_bleak });
         try std.testing.expect(lit_bleak > lit_clear * 0.6 and lit_bleak < lit_clear * 0.9);
         try std.testing.expect(share_bleak < share_clear * 0.6);
         try std.testing.expect(spread(bleak.key) / luma(bleak.key) < spread(clear.key) / luma(clear.key));
@@ -303,13 +275,11 @@ test "a lightning flash lights the dead of night as bright as a grey day, and no
     const night = at(day.DEAD_OF_NIGHT);
     try std.testing.expectEqual(night, night.struck(0));
     const lit_up = brightness(night.struck(1));
-    std.debug.print("a full flash at the dead of night: {d:.2} of a clear noon, against {d:.3} unlit\n", .{ lit_up, brightness(night) });
     try std.testing.expect(lit_up > 0.5 and lit_up < 1);
 }
 
 test "a noon shadow reaches beyond a cell-tall sprite" {
     const reach = at(day.NOON).reach();
-    std.debug.print("noon shadow reaches {d:.2} sprite heights\n", .{reach});
     try std.testing.expect(reach > 1.05 and reach < 1.3);
 }
 
@@ -332,7 +302,6 @@ test "every overcast is darkest halfway through the night, blue at night and war
         const before = lit(under(middle - 0.01, profile));
         const after = lit(under(middle + 0.01, profile));
         try std.testing.expectApproxEqAbs(before, after, 1e-5);
-        std.debug.print("overcast {d:.1} sky: {d} minutes checked; minimum at {d:.1}h, night blue/red {d:.2}, noon key red/blue {d:.2}\n", .{ profile, day.MINUTES, middle, night.key[2] / night.key[0], noon.key[0] / noon.key[2] });
     }
 }
 
@@ -356,7 +325,6 @@ test "one light always casts, its altitude floored, and it changes hands at the 
         try std.testing.expect(d[2] >= floor_z - 1e-4);
         longest = @max(longest, at(h).reach());
     }
-    std.debug.print("a shadow is at most {d:.2} cells long a cell of height\n", .{longest});
     try std.testing.expect(longest <= REACH_MAX + 1e-3);
     try std.testing.expect(keyDir(KEY_SWAP_DUSK)[2] > 0.9 and keyDim(KEY_SWAP_DUSK) < 1e-4);
     const moon = keyDir(day.DEAD_OF_NIGHT);
@@ -367,7 +335,6 @@ test "one light always casts, its altitude floored, and it changes hands at the 
 test "noon is bright and midnight dark, the day turns in a ramp, and midnight is no seam" {
     const noon = at(day.NOON);
     const night = at(0);
-    std.debug.print("key at noon {d:.2} {d:.2} {d:.2}, at midnight {d:.3} {d:.3} {d:.3}; shade at noon {d:.2}, at midnight {d:.3}\n", .{ noon.key[0], noon.key[1], noon.key[2], night.key[0], night.key[1], night.key[2], noon.ambient[1], night.ambient[1] });
     try std.testing.expect(noon.key[0] > 1.0 and night.key[0] < 0.1);
     try std.testing.expectEqual(@as(f32, 0), noon.carry);
     try std.testing.expect(night.carry >= NIGHT_FILL_MIN and night.carry < 1);

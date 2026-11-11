@@ -39,5 +39,4 @@ test "rend reaches a body beside the knight and opens a bleed stronger than an a
     afflict(&a, &rng);
     try std.testing.expectEqual(bleeding.TURNS, a.bleed.turns);
     try std.testing.expectEqual(BLEED, a.bleed.amount);
-    std.debug.print("rend: reach 1, bleed {d} per turn ({d} moving) for {d} turns\n", .{ BLEED, BLEED * bleeding.MOVE_FACTOR, bleeding.TURNS });
 }

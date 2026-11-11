@@ -4,7 +4,6 @@ const grid = @import("../map/grid.zig");
 const sky = @import("sky.zig");
 const look = @import("look.zig");
 
-/// Shaders `shader` has failed to compile since the process started.
 var shader_failures: u32 = 0;
 
 /// Null when it does not compile: raylib then hands back its default shader rather than an error.
@@ -33,7 +32,6 @@ fn uniforms(comptime T: type, s: rl.Shader) T {
     return u;
 }
 
-/// Shader uniforms and `T`'s fields must match in both directions at compile time.
 pub fn program(comptime T: type, comptime fs: [:0]const u8) ?T {
     comptime {
         @setEvalBranchQuota(100_000);
@@ -49,14 +47,13 @@ pub fn program(comptime T: type, comptime fs: [:0]const u8) ?T {
     return uniforms(T, shader(fs) orelse return null);
 }
 
-/// `value` to the uniform at `loc`, its GLSL type read off its Zig type; a `bool` goes as an `int`.
+/// A `bool` goes as an `int`.
 pub fn setUniform(s: rl.Shader, loc: i32, value: anytype) void {
     if (@TypeOf(value) == bool) {
         setUniform(s, loc, @as(i32, @intFromBool(value)));
     } else rl.setShaderValue(s, loc, &value, comptime uniformType(@TypeOf(value)));
 }
 
-/// The first `n` of `values` to the uniform array at `loc`.
 pub fn setUniforms(s: rl.Shader, loc: i32, values: anytype, n: i32) void {
     rl.setShaderValueV(s, loc, values, comptime uniformType(std.meta.Elem(@TypeOf(values.*))), n);
 }
@@ -89,7 +86,6 @@ fn uniformOf(comptime l: []const u8) ?[]const u8 {
     return head[at + 1 ..];
 }
 
-/// GLSL `const`s named for `values`' fields: floats at full precision, integers, and two- to four-float vectors.
 pub fn glslConsts(comptime values: anytype) [:0]const u8 {
     comptime {
         var out: [:0]const u8 = "";
@@ -123,7 +119,6 @@ fn glslFloat(comptime v: anytype) [:0]const u8 {
     return if (std.mem.indexOfAny(u8, s, ".e") == null) s ++ ".0" else s;
 }
 
-/// What every fragment shader opens with: raylib's inputs and output, `CLEAR_A`, the map's size in cells and `sky.LUMA`.
 pub const FS_HEAD =
     \\#version 330
     \\in vec2 fragTexCoord;
@@ -133,8 +128,6 @@ pub const FS_HEAD =
     \\
 ++ glslConsts(.{ .CLEAR_A = look.CLEAR_A, .CELLS = [2]f32{ grid.W, grid.H }, .LUMA = sky.LUMA });
 
-/// The map's place on screen: `cellAtFrag()` is the map position under the fragment, in cells, `cellAtPixel` under a y-down screen pixel,
-/// `targetPixel` the y-down screen pixel at a render target's uv, and `insideMap` whether a map position lies on the map.
 pub const MAP_VIEW_FS =
     \\uniform vec2 origin;
     \\uniform float cell;
@@ -159,7 +152,6 @@ pub const SIN_HASH_FS =
     \\
 ;
 
-/// `SIN_HASH_FS`'s `hash` without `sin`.
 pub const FRACT_HASH_FS =
     \\float hash(vec2 p) {
     \\    p = fract(p * vec2(123.34, 456.21));
@@ -169,7 +161,7 @@ pub const FRACT_HASH_FS =
     \\
 ;
 
-/// `noise(p)`: value noise over the `float hash(vec2)` declared before it.
+/// Over the `float hash(vec2)` declared before it.
 pub const VALUE_NOISE_FS =
     \\float noise(vec2 p) {
     \\    vec2 i = floor(p);
@@ -180,7 +172,6 @@ pub const VALUE_NOISE_FS =
     \\
 ;
 
-/// `MAP_VIEW_FS`'s uniforms: where the map's top-left corner lands, a cell's pixels, and the target's size.
 pub const MapView = struct {
     origin: [2]f32,
     cell: f32,
@@ -191,7 +182,6 @@ pub const MapView = struct {
     }
 };
 
-/// Sets `MAP_VIEW_FS`'s uniforms on a program with `origin`, `cell` and `screen` locations.
 pub fn setMapView(p: anytype, v: MapView) void {
     setUniform(p.shader, p.origin, v.origin);
     setUniform(p.shader, p.cell, v.cell);

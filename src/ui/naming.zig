@@ -51,7 +51,6 @@ fn contentBox(screen: mathx.P) rl.Rectangle {
     return .{ .x = @round((@as(f32, @floatFromInt(screen.x)) - (right - left)) / 2 - left), .y = @round((@as(f32, @floatFromInt(screen.y)) - (bottom - top)) / 2 - top), .width = column.width, .height = column.height };
 }
 
-/// The letter grid's bounds: its widest rows across, every row down.
 pub fn gridBox(screen: mathx.P) rl.Rectangle {
     const content = contentBox(screen);
     return .{ .x = content.x, .y = content.y + GRID_Y, .width = GRID_W, .height = @as(i32, ROWS) * KEY_H };
@@ -74,7 +73,6 @@ pub const Entry = struct {
         return LAST[self.col];
     }
 
-    /// On `done` the name is `name.done()`.
     pub fn step(self: *Entry, st: *const input.State) ?Outcome {
         for (st.typed.text()) |c| {
             if (self.name.push(c)) self.onDone();
@@ -114,7 +112,6 @@ pub const Entry = struct {
         return self.step(st);
     }
 
-    /// Typed on the keyboard, Enter then means done.
     fn onDone(self: *Entry) void {
         self.pointer_selected = false;
         self.row = AT_DONE.row;
@@ -142,7 +139,6 @@ pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
     return menu.shout(buf, ASK ++ "{s}", .{c.title()});
 }
 
-/// On the keyboard Enter is done, so Done is what is focused.
 pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8, device: input.Device) void {
     const at = if (device == .keys and !e.pointer_selected) AT_DONE else e.*;
     const content = contentBox(screen);
@@ -188,7 +184,6 @@ test "mouse naming types letters spaces deletes and finishes with keyboard hints
         try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .right_click = true }, screen));
         try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .click = true, .pointer = raster.middleAt(menu.footerBox(screen)) }, screen));
     }
-    std.debug.print("mouse naming: five text edits, Done with keyboard prompts and both back controls at {d} resolutions\n", .{screens.len});
 }
 
 test "the grid types a name, the keyboard types into it, and done waits for a name" {

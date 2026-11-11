@@ -23,5 +23,4 @@ test "a barbed arrow always opens a bleed" {
     for (0..tries) |_| try std.testing.expect(procs(&rng, 0));
     afflict(&a, &rng);
     try std.testing.expectEqual(bleeding.TURNS, a.bleed.turns);
-    std.debug.print("barbed arrow: {d} of {d} procs, a bleed of {d} turns\n", .{ tries, tries, bleeding.TURNS });
 }

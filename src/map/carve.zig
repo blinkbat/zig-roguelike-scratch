@@ -4,16 +4,14 @@ const grid = @import("grid.zig");
 
 const P = mathx.P;
 
-/// Of its 3x3, at least this many solid turns a cell solid on a smoothing pass, the cave rule's.
 const CROWD: usize = 5;
-/// A pocket of open ground this small, unless `keptIn` keeps it, is filled; a bigger one gets a trail.
 const POCKET: usize = 16;
 const JOIN_PASSES: usize = 160;
 const NONE = std.math.maxInt(u16);
 const NO_CELL = std.math.maxInt(u32);
-/// A meander's bend changes by up to half this a step, in radians, at full wander.
+/// Radians; a bend changes by up to half this a step.
 const MEANDER: f32 = 0.55;
-/// The most a meander's bend runs off its heading, in radians, at full wander.
+/// Radians, at full wander.
 const BEND_MAX: f32 = 1.1;
 const MEANDER_STEPS: usize = 4 * (grid.W + grid.H);
 
@@ -49,7 +47,6 @@ pub const Salt = enum(u64) {
     }
 };
 
-/// Smooth value noise in 0..1, summed over octaves; a seed is a field.
 pub const Noise = struct {
     seed: u64,
 
@@ -69,7 +66,6 @@ pub const Noise = struct {
         return mathx.valueNoise(self, lattice, x, y);
     }
 
-    /// `scale` is its features' size in cells.
     pub fn at(self: Noise, p: P, scale: f32, octaves: u32) f32 {
         var sum: f32 = 0;
         var weight: f32 = 0;
@@ -104,14 +100,14 @@ fn sow(lv: *grid.Level, rng: *mathx.Rng, pc: u32, solid: grid.Tile, open: grid.T
 
 pub const SMOOTH_MAX: u8 = 8;
 
-/// `sown` percent solid, smoothed `passes` times, then `strays` a thousand lone solids over the open.
+/// `sown` is percent; `strays` per thousand.
 pub fn cellular(lv: *grid.Level, rng: *mathx.Rng, sown: u32, passes: u32, strays: u32, pal: Palette) void {
     sow(lv, rng, sown, pal.solid, pal.open);
     smooth(lv, passes, pal.solid, pal.open);
     scatter(lv, rng, strays, .{ .tile = pal.open }, pal.solid, true);
 }
 
-/// The cave rule, `passes` times: off the map counts as solid; any other tile is left, and counts as open.
+/// Off the map counts as solid.
 pub fn smooth(lv: *grid.Level, passes: u32, solid: grid.Tile, open: grid.Tile) void {
     var next: [grid.CELLS]grid.Tile = undefined;
     var walled: Walled = undefined;
@@ -127,7 +123,6 @@ pub fn smooth(lv: *grid.Level, passes: u32, solid: grid.Tile, open: grid.Tile) v
 }
 
 const PADDED_W: usize = @as(usize, @intCast(grid.W)) + 2;
-/// Solid cells as 1, padded a cell all round with the off-map counted solid.
 const Walled = [PADDED_W * (@as(usize, @intCast(grid.H)) + 2)]u8;
 
 fn padded(i: usize) usize {
@@ -141,7 +136,6 @@ fn crowded(walled: *const Walled, c: usize) bool {
     return n >= CROWD;
 }
 
-/// Open all round, so something solid here closes no way.
 pub fn clearAround(lv: *const grid.Level, p: P) bool {
     for (mathx.ALL_DIRS) |d| {
         if (!lv.walkable(p.add(d.delta()))) return false;
@@ -149,8 +143,6 @@ pub fn clearAround(lv: *const grid.Level, p: P) bool {
     return true;
 }
 
-/// What a scatter lays over: `tile`, and if `decked` the decor standing on it too; with `water_range`, only that near water,
-/// with `water_clear`, none that near it, and with `land_range`, only that near dry ground of another kind.
 pub const Over = struct {
     tile: grid.Tile,
     decked: bool = false,
@@ -200,7 +192,6 @@ fn Is(comptime has: fn (grid.Tile) bool) type {
     };
 }
 
-/// Any cell within `r` of `p`, `p` included, whose tile `which` holds.
 fn near(lv: *const grid.Level, p: P, r: i32, which: anytype) bool {
     var cells = grid.Cells.around(p, r);
     while (cells.next()) |q| {
@@ -209,7 +200,6 @@ fn near(lv: *const grid.Level, p: P, r: i32, which: anytype) bool {
     return false;
 }
 
-/// `lone` puts it only where it closes no way.
 pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool) void {
     scatterIn(lv, rng, per_mille, on, put, lone, grid.Box.inMap(0));
 }
@@ -235,9 +225,7 @@ pub const LANE_MIN: u8 = 2;
 pub const SPAN: grid.Tile = .bridge;
 
 pub const Lane = union(enum) {
-    /// Off the rim, over whatever is there.
     cut,
-    /// To the rim, bridging a liquid with this tile.
     road: grid.Tile,
 
     pub const bridged: Lane = .{ .road = SPAN };
@@ -254,12 +242,10 @@ pub fn lane(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32
     while (m.next(rng)) |c| discOf(lv, c, r, t, how == .road, span, null);
 }
 
-/// The `disc` radius a lane `width` cells wide lays at each step.
 pub fn laneRadius(width: u8) f32 {
     return @as(f32, @floatFromInt(width - 1)) / 2 + 0.5;
 }
 
-/// Within `r` of `c`, as `disc` lays it.
 pub fn inDisc(c: P, q: P, r: f32) bool {
     const dx: f32 = @floatFromInt(q.x - c.x);
     const dy: f32 = @floatFromInt(q.y - c.y);
@@ -268,7 +254,6 @@ pub fn inDisc(c: P, q: P, r: f32) bool {
 
 const DISC_SLACK: f32 = 0.25;
 
-/// The furthest rows or columns from its centre a disc of `r` lays.
 pub fn discReach(r: f32) i32 {
     return @intFromFloat(@floor(@sqrt(r * r + DISC_SLACK)));
 }
@@ -288,12 +273,10 @@ fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, 
 
 pub const CAVE_SCALE: f32 = 3;
 
-/// `t` round `c` off the rim, its edge frayed: in where a cell's distance over `r` is under `lo + span` times the noise.
 pub fn blob(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile) void {
     blobIn(lv, noise, c, r, scale, lo, span, t, blobBox(c, r, lo, span), null);
 }
 
-/// Every cell a blob of radius `r` about `c` may reach.
 pub fn blobBox(c: P, r: f32, lo: f32, span: f32) grid.Box {
     return grid.Box.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span))));
 }
@@ -323,7 +306,6 @@ pub fn box(lv: *grid.Level, b: grid.Box, t: grid.Tile) void {
     while (cells.next()) |q| lv.set(q, t);
 }
 
-/// `box`'s edge alone.
 pub fn outline(lv: *grid.Level, b: grid.Box, t: grid.Tile) void {
     var cells = b.cells();
     while (cells.next()) |q| {
@@ -331,12 +313,10 @@ pub fn outline(lv: *grid.Level, b: grid.Box, t: grid.Tile) void {
     }
 }
 
-/// Top left, top right, bottom left, bottom right.
 pub fn corners(b: grid.Box) [4]P {
     return .{ b.lo, .{ .x = b.hi.x - 1, .y = b.lo.y }, .{ .x = b.lo.x, .y = b.hi.y - 1 }, b.hi.sub(.{ .x = 1, .y = 1 }) };
 }
 
-/// `p`'s part along `side`: its x on the north and south, its y on the west and east.
 pub fn alongOf(side: mathx.Dir, p: P) i32 {
     return switch (side) {
         .n, .s => p.x,
@@ -345,7 +325,6 @@ pub fn alongOf(side: mathx.Dir, p: P) i32 {
     };
 }
 
-/// Cells `p` lies in from the map's edge on `side`.
 pub fn inFrom(side: mathx.Dir, p: P) i32 {
     return switch (side) {
         .w => p.x,
@@ -356,7 +335,6 @@ pub fn inFrom(side: mathx.Dir, p: P) i32 {
     };
 }
 
-/// The cell of `b`'s outermost row on `side` at `along`: an x on the north or south, a y on the west or east.
 pub fn sideAt(b: grid.Box, side: mathx.Dir, along: i32) P {
     return switch (side) {
         .n => .{ .x = along, .y = b.lo.y },
@@ -367,12 +345,10 @@ pub fn sideAt(b: grid.Box, side: mathx.Dir, along: i32) P {
     };
 }
 
-/// `sideAt` level with the map's middle.
 pub fn sideMid(b: grid.Box, side: mathx.Dir) P {
     return sideAt(b, side, alongOf(side, grid.MIDDLE));
 }
 
-/// The cell inside an edge door is opened too.
 pub fn openDoors(lv: *grid.Level, doors: []const P, ground: grid.Tile) void {
     for (doors, 0..) |d, k| {
         lv.putDoor(d, k);
@@ -383,7 +359,6 @@ pub fn openDoors(lv: *grid.Level, doors: []const P, ground: grid.Tile) void {
     }
 }
 
-/// No open ground on the map's edge but its doors: a step there would walk off.
 pub fn seal(lv: *grid.Level, t: grid.Tile) void {
     for (0..grid.CELLS) |i| {
         if (leaky(lv, i)) lv.tile[i] = t;
@@ -394,7 +369,6 @@ fn leaky(lv: *const grid.Level, i: usize) bool {
     return rimAt(i) and !lv.tile[i].solid() and lv.door[i] == grid.NO_DOOR;
 }
 
-/// Walkable cells on the rim that are not doors; none once sealed.
 pub fn leaks(lv: *const grid.Level) usize {
     var n: usize = 0;
     for (0..grid.CELLS) |i| {
@@ -403,7 +377,6 @@ pub fn leaks(lv: *const grid.Level) usize {
     return n;
 }
 
-/// A base's own ground, which its features and the finishing passes draw from.
 pub const Palette = struct {
     open: grid.Tile,
     solid: grid.Tile,
@@ -427,7 +400,6 @@ pub const Palette = struct {
     }
 };
 
-/// Clear a ring to prevent surrounding terrain from sealing or pocket-filling the lot.
 pub fn clearRound(lv: *grid.Level, b: grid.Box, pal: Palette) void {
     var cells = b.grown(1).cells();
     while (cells.next()) |q| {
@@ -435,20 +407,15 @@ pub fn clearRound(lv: *grid.Level, b: grid.Box, pal: Palette) void {
     }
 }
 
-/// The base's own solid, or what stands on ground: what `clearRound` opens.
 pub fn closes(t: grid.Tile, pal: Palette) bool {
     return t == pal.solid or (t.solid() and t.ground() != null);
 }
 
-/// Preserve feature-opened ground and lots during pocket filling.
 pub const Laid = struct {
-    /// What they raised: houses, fields, set pieces.
     lots: []const grid.Box = &.{},
-    /// The base before them, so ground they opened from its solid is theirs.
     before: ?*const [grid.CELLS]grid.Tile = null,
 };
 
-/// Every stretch of open ground joined to the biggest by a bending trail that bridges water, lava and chasms.
 pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void {
     var st: Stretches = .{};
     const region = &st.region;
@@ -480,7 +447,6 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void 
     }
 }
 
-/// Each open cell's stretch of ground, as a step walks it.
 pub const Stretches = struct {
     region: [grid.CELLS]u16 = undefined,
     size: [grid.CELLS]u32 = undefined,
@@ -491,7 +457,6 @@ pub const Stretches = struct {
         return s.labelBy(lv, false);
     }
 
-    /// The first of any tie.
     pub fn biggest(s: *const Stretches) u16 {
         var main: u16 = 0;
         for (s.size[1..s.n], 1..) |n, r| {
@@ -500,7 +465,6 @@ pub const Stretches = struct {
         return main;
     }
 
-    /// Some stretch of `was`, an earlier `region`, now lies in two.
     pub fn parts(s: *const Stretches, was: *const [grid.CELLS]u16) bool {
         var to: [grid.CELLS]u16 = @splat(NONE);
         for (was, &s.region) |a, b| {
@@ -555,7 +519,6 @@ const InStretch = struct {
     }
 };
 
-/// Remove barrels until every open region reconnects, choosing the shortest separating run.
 pub fn unbar(lv: *grid.Level) void {
     if (std.mem.indexOfScalar(bool, &lv.barrel, true) == null) return;
     var st: Stretches = .{};
@@ -577,7 +540,6 @@ test "unbar takes the barrels plugging the doorway, not the ones in the room beh
     lv.barrel[grid.Level.idx(.{ .x = 13, .y = 7 })] = true;
     unbar(&lv);
     var left = lv.barrelCount();
-    std.debug.print("a room barred at its doorway with 2 barrels inside: {d} of 3 kept\n", .{left});
     try std.testing.expect(!lv.barrel[grid.Level.idx(doorway)]);
     try std.testing.expectEqual(@as(usize, 2), left);
     lv.barrel[grid.Level.idx(doorway)] = true;
@@ -587,12 +549,10 @@ test "unbar takes the barrels plugging the doorway, not the ones in the room beh
     lv.set(.{ .x = 16, .y = 13 }, .wall);
     unbar(&lv);
     left = lv.barrelCount();
-    std.debug.print("a room barred two deep with 2 barrels inside: {d} of 4 kept\n", .{left});
     try std.testing.expect(!lv.barrel[grid.Level.idx(doorway)] and !lv.barrel[grid.Level.idx(porch)]);
     try std.testing.expectEqual(@as(usize, 2), left);
 }
 
-/// The barrel beside `main` that begins the shortest run of barrels from it to another stretch.
 fn barBetween(lv: *const grid.Level, st: *Stretches, main: u16) ?usize {
     const region = &st.region;
     const queue = &st.queue;
@@ -649,7 +609,6 @@ fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, l
 
 const Regions = std.StaticBitSet(grid.CELLS);
 
-/// Side steps from `a` to `b` picked at random, never leaving their box; solid becomes `path`, a liquid a bridge.
 pub fn trail(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, path: grid.Tile) void {
     var p = a;
     lay(lv, p, path);
@@ -667,7 +626,6 @@ fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
     if (t.solid()) lv.set(p, paved(t, path, SPAN));
 }
 
-/// `put` laid over `t`: a liquid bridged by `span`, a bridge already there kept.
 fn paved(t: grid.Tile, put: grid.Tile, span: grid.Tile) grid.Tile {
     if (t.spans()) return t;
     return if (t.liquid()) t.spannedBy(span) else put;
@@ -677,14 +635,12 @@ pub fn crossing(t: grid.Tile) bool {
     return t.liquid() or t.spans();
 }
 
-/// A way through a wall at `at`, `half` cells either side of its middle, from `outside` cells out to `inside` cells in along `in`.
 pub fn gateway(lv: *grid.Level, at: P, in: mathx.Dir, outside: i32, inside: i32, half: i32, open: ?grid.Tile) void {
     const side = in.across().scaled(half);
     const step = in.delta();
     bridge(lv, grid.Box.between(at.sub(step.scaled(outside)).sub(side), at.add(step.scaled(inside)).add(side)), open);
 }
 
-/// A liquid in `b` bridged; with `open`, a wall there opened to it.
 pub fn bridge(lv: *grid.Level, b: grid.Box, open: ?grid.Tile) void {
     var cells = b.cells();
 
@@ -694,7 +650,6 @@ pub fn bridge(lv: *grid.Level, b: grid.Box, open: ?grid.Tile) void {
     }
 }
 
-/// A course from `a` that bends at random but always comes round to `b`; `wander` 0 runs straight.
 pub const Meander = struct {
     x: f32,
     y: f32,
@@ -730,7 +685,6 @@ pub const Meander = struct {
         return .{ .m = self, .bounds = bounds };
     }
 
-    /// Each step held to `bounds`.
     pub const Within = struct {
         m: Meander,
         bounds: grid.Box,
@@ -741,7 +695,6 @@ pub const Meander = struct {
     };
 };
 
-/// A river's middle from edge to edge, the rim too.
 pub const Flow = struct {
     cell: [MEANDER_STEPS]P = undefined,
     n: usize = 0,
@@ -757,7 +710,6 @@ pub const Flow = struct {
         return f.cell[0..f.n];
     }
 
-    /// A cell either side of its fill, over what `over` takes, off the rim.
     pub fn bank(f: *const Flow, lv: *grid.Level, width: f32, t: grid.Tile, comptime over: fn (grid.Tile) bool) void {
         for (f.course()) |c| disc(lv, c, bankReach(width), t, over);
     }
@@ -891,7 +843,6 @@ pub fn fitDress(p: anytype) @TypeOf(p) {
     return q;
 }
 
-/// Its own `fit`, if it has one, then its dressing's.
 pub fn fitted(p: anytype) @TypeOf(p) {
     return fitDress(if (comptime @hasDecl(@TypeOf(p), "fit")) p.fit() else p);
 }
@@ -958,7 +909,6 @@ pub const Bank = enum {
     }
 };
 
-/// `put` on the `per_mille` of `on` cells whose noise is highest, so it lies in clumps `scale` cells across.
 pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: Over, put: grid.Tile) void {
     const BUCKETS = 256;
     var hist = [_]u32{0} ** BUCKETS;
@@ -984,7 +934,6 @@ fn bucket(v: f32, n: usize) usize {
     return @min(n - 1, @as(usize, @intFromFloat(@max(0, v) * @as(f32, @floatFromInt(n)))));
 }
 
-/// `share` of `n` cells, rounded toward zero.
 pub fn partOf(n: i32, share: f32) i32 {
     return @intFromFloat(@as(f32, @floatFromInt(n)) * share);
 }
@@ -1001,7 +950,6 @@ test "the cave rule counts each cell's solid neighbours, off the map solid, as c
     var lv = grid.Level.blank();
     var want = grid.Level.blank();
     var rng = mathx.Rng.init(0x5300);
-    var ns: u64 = 0;
     for (0..20) |_| {
         sow(&lv, &rng, 45, .rock, .floor);
         for (0..40) |_| lv.tile[rng.below(grid.CELLS)] = .water;
@@ -1021,12 +969,9 @@ test "the cave rule counts each cell's solid neighbours, off the map solid, as c
             }
             want.tile = next;
         }
-        var timer = std.time.Timer.start() catch unreachable;
         smooth(&lv, 4, .rock, .floor);
-        ns += timer.read();
         try std.testing.expectEqualSlices(grid.Tile, &want.tile, &lv.tile);
     }
-    std.debug.print("cave rule: 20 fields x 4 passes match the cell-by-cell count, {d} us a smooth\n", .{ns / 20 / std.time.ns_per_us});
 }
 
 test "noise is smooth, in range, and a seed is a field" {
@@ -1043,7 +988,6 @@ test "noise is smooth, in range, and a seed is a field" {
         hi = @max(hi, v);
         jump = @max(jump, @abs(v - a.at(p.add(.{ .x = 1, .y = 0 }), 12, 3)));
     }
-    std.debug.print("noise at 12 cells, 3 octaves: {d:.2} to {d:.2}, the most one cell steps it {d:.3}\n", .{ lo, hi, jump });
     try std.testing.expect(lo >= 0 and hi <= 1 and hi - lo > 0.5 and jump < 0.2);
 }
 
@@ -1055,7 +999,6 @@ test "a small island is bridged, not filled as a pocket" {
     disc(&lv, grid.MIDDLE, 4, .water, null);
     disc(&lv, grid.MIDDLE, 1, .grass, null);
     connect(&lv, &rng, pal, .{});
-    std.debug.print("a five-cell island in a pocket-filling base: {d} bridge cells after joining\n", .{count(&lv, .bridge)});
     try std.testing.expect(lv.walkable(grid.MIDDLE));
     try std.testing.expect(count(&lv, .bridge) > 0);
 }
@@ -1069,7 +1012,6 @@ test "an island in lava or a chasm is joined by stone, which no fire burns into 
         disc(&lv, grid.MIDDLE, 4, liquid, null);
         disc(&lv, grid.MIDDLE, 1, .grass, null);
         connect(&lv, &rng, pal, .{});
-        std.debug.print("a five-cell island in {s}: {d} stone, {d} wooden bridge cells\n", .{ @tagName(liquid), count(&lv, .stone_bridge), count(&lv, .bridge) });
         try std.testing.expect(lv.walkable(grid.MIDDLE));
         try std.testing.expect(count(&lv, .stone_bridge) > 0);
         try std.testing.expectEqual(@as(usize, 0), count(&lv, .bridge));
@@ -1087,7 +1029,6 @@ test "a river runs edge to edge and parts the ground, and a join bridges it" {
     const parted = st.label(&lv);
     connect(&lv, &rng, Palette.TRAILED, .{});
     const joined = st.label(&lv);
-    std.debug.print("a river: {d} water cells, the ground in {d} parts, {d} after joining by {d} bridge cells\n", .{ count(&lv, .water), parted, joined, count(&lv, .bridge) });
     try std.testing.expect(parted >= 2);
     try std.testing.expectEqual(@as(usize, 1), joined);
     try std.testing.expect(count(&lv, .bridge) > 0);

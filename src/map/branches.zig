@@ -17,9 +17,7 @@ const MIN_DEPTH = 6;
 const LOOP_REACH = 10;
 const DIG_MAX = 8;
 const PASSES = 64;
-/// Cells from a door no chest or barrel is stocked.
 const DOOR_CLEAR = 6;
-/// Rejoined side paths are trodden whatever the ground they cut through.
 const REJOIN_PATH = carve.Palette.TRAILED.path;
 
 const Branch = struct { root: u16, neck: u16 };
@@ -213,7 +211,6 @@ pub const Reward = enum {
     chest,
     barrel,
 
-    /// One per `area` open cells, up to `total`, each `gap` from the next and against `walls` solid sides at least.
     pub const Rule = struct { area: usize, total: usize, gap: i32, walls: usize };
 
     pub fn rule(kind: Reward) Rule {
@@ -287,7 +284,6 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
     return added;
 }
 
-/// A chest at `p`, standing in for any reward, if the `open` cells less that one all still reach `from`; otherwise `lv` as it was.
 fn keepsRoute(lv: *grid.Level, p: P, from: P, open: usize, joined: bool, dist: *[grid.CELLS]i32, queue: *[grid.CELLS]u32) bool {
     const was = lv.at(p);
     lv.set(p, .chest);
@@ -411,7 +407,6 @@ test "side paths rejoin through forest and true dead ends receive closed chests"
     try std.testing.expectEqual(deep, rewards.chests);
     try grid.expectAllReached(&rewarded, doors[0], &dist, &queue);
     for (doors) |p| try std.testing.expect(rewarded.walkable(p));
-    std.debug.print("two side paths: {d} connection(s) through forest, or {d} closed rewards at their ends; both exits preserved\n", .{ loops.loops, rewards.chests });
 }
 
 test "a chest never takes the floor a torch hangs over" {
@@ -439,7 +434,6 @@ test "scattered rewards leave narrow routes and the approach to existing treasur
     lv.set(at.add(.{ .x = 0, .y = 1 }), .grass);
     lv.putBarrel(at.add(.{ .x = 0, .y = 1 }));
     try std.testing.expect(!rewardAt(&lv, at));
-    std.debug.print("60-cell route: no chest or barrel blocks it; neither can take the sole approach to existing treasure\n", .{});
 }
 
 test "a clearing without dead ends puts chests in sheltered corners and barrels along its edges" {
@@ -466,5 +460,4 @@ test "a clearing without dead ends puts chests in sheltered corners and barrels 
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     try grid.expectAllReached(&blocked, origin, &dist, &queue);
-    std.debug.print("clearing with no dead ends: {d} corner chests and {d} edge barrels, every route open\n", .{ result.chests, result.barrels });
 }

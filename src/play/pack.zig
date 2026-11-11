@@ -80,14 +80,10 @@ pub const Draw = union(enum) {
     }
 };
 
-/// Where a makeup's lead stands, when not by a door.
 pub const Lair = enum {
     anywhere,
-    /// At the end of a narrow dead-end path.
     nook,
-    /// In or within `POND_REACH` of a small body of water.
     pond,
-    /// Within `HEARTH_REACH` of a lone fire, as a camp's.
     hearth,
 };
 
@@ -119,9 +115,7 @@ pub const Makeup = struct {
     kind: [MAKEUP_MAX]actor.Kind = @splat(FIRST),
     n: usize = MAKEUP_MIN,
     draw: Draw = .{ .weight = WEIGHT_MIN },
-    /// The lead stands within `EXIT_REACH` of a door.
     exit: bool = false,
-    /// Where the lead stands otherwise.
     lair: Lair = .anywhere,
 
     pub fn of(ks: []const actor.Kind) Makeup {
@@ -290,7 +284,6 @@ pub const Spec = struct {
 
 const Kinds = std.EnumSet(actor.Kind);
 
-/// The leads no ground could be found for anywhere, those found none by any door, and none in each lair.
 const Homeless = struct {
     anywhere: Kinds = .initEmpty(),
     by_door: Kinds = .initEmpty(),
@@ -315,7 +308,6 @@ const Homeless = struct {
     }
 };
 
-/// The cells each lair a spec's makeups name holds; only those named are found.
 const Lairs = struct {
     cells: std.EnumArray(Lair, grid.CellSet) = .initFill(.initEmpty()),
 
@@ -330,7 +322,6 @@ const Lairs = struct {
     }
 };
 
-/// Open cells at the end of a narrow dead-end path: few open round them, all one way, and a short walk back reaching little.
 fn nooks(lv: *const grid.Level) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     for (0..grid.CELLS) |i| {
@@ -351,7 +342,6 @@ fn nooks(lv: *const grid.Level) grid.CellSet {
 
 const Sides = std.bit_set.IntegerBitSet(NOOK_SIDES);
 
-/// The cells join each other without passing through the middle they surround: nothing walks through it.
 fn oneWay(cells: []const P) bool {
     std.debug.assert(cells.len > 0 and cells.len <= NOOK_SIDES);
     var joined = Sides.initEmpty();
@@ -372,7 +362,6 @@ fn oneWay(cells: []const P) bool {
     return joined.count() == cells.len;
 }
 
-/// No more than `most` cells lie within `steps` steps' walk of `from`.
 fn walkReaches(lv: *const grid.Level, from: P, comptime steps: i32, most: usize) bool {
     const w = 2 * steps + 1;
     var seen = [_]bool{false} ** (w * w);
@@ -433,7 +422,6 @@ fn fires(lv: *const grid.Level) grid.CellSet {
     return out;
 }
 
-/// Every cell within `r` of one of `cells`.
 fn widened(cells: grid.CellSet, r: i32) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     var it = cells.iterator(.{});
@@ -444,8 +432,7 @@ fn widened(cells: grid.CellSet, r: i32) grid.CellSet {
     return out;
 }
 
-/// No more than the pool holds once every slime placed has split down to quarters.
-/// A makeup whose lead finds no ground of its own, as a leech on a dry floor, gives way to the rest.
+/// At most what the pool holds once every slime placed splits to quarters; a makeup whose lead finds no ground of its own gives way to the rest.
 pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, given: *const Spec) void {
     const fitted = given.fit();
     const spec = &fitted;
@@ -508,7 +495,6 @@ fn spawnCounted(lv: *grid.Level, pool: *actor.Pool, k: actor.Kind, at: P, bodies
     bodies.* += actor.most(k);
 }
 
-/// The cells closer than `CAMP_GAP` to a caravan cart.
 fn campOf(lv: *const grid.Level) grid.CellSet {
     return widened(carts(lv), CAMP_GAP - 1);
 }
@@ -521,7 +507,6 @@ fn carts(lv: *const grid.Level) grid.CellSet {
     return out;
 }
 
-/// Where one pack's bodies may stand; `others` bounds the previously placed packs.
 const Ground = struct {
     lv: *const grid.Level,
     pool: *const actor.Pool,
@@ -543,7 +528,6 @@ const Ground = struct {
         return grid.Box.inMap(1).holds(p) and g.clear(p, k);
     }
 
-    /// `by`: the door the lead must stand within `EXIT_REACH` of.
     fn leadSpot(g: Ground, rng: *mathx.Rng, by: ?P, k: actor.Kind) ?P {
         const Lead = struct {
             ground: Ground,
@@ -557,7 +541,6 @@ const Ground = struct {
         return box.rollWhere(rng, SPOT_TRIES, Lead{ .ground = g, .k = k }, Lead.at);
     }
 
-    /// Any clear cell of `lair`, each as likely.
     fn leadIn(g: Ground, rng: *mathx.Rng, lair: *const grid.CellSet, k: actor.Kind) ?P {
         var chosen: ?P = null;
         var seen: u32 = 0;
@@ -626,9 +609,6 @@ test "every floor has a few of each foe it has ground for, each on its own groun
             }
         }
     }
-    std.debug.print("200 floors, {d} packs each, {d} with no water for leeches:\n", .{ PER_FLOOR, dry });
-    for (actor.FOES) |k| std.debug.print("  {s}: {d} total, at least {d} on each floor with ground for it\n", .{ actor.plural(k), counts.get(k), fewest.get(k) });
-    std.debug.print("unguarded: {d} slimes, {d} crossbowmen\n", .{ lone_slimes, lone_bandits });
     try std.testing.expectEqual(@as(usize, 0), counts.get(.archer));
     try std.testing.expectEqual(@as(usize, 0), lone_slimes);
     try std.testing.expectEqual(@as(usize, 0), lone_bandits);
@@ -654,7 +634,6 @@ test "a pack whose lead has no ground of its own gives way without costing the f
     place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &.{}, &spec);
     try std.testing.expect(pool.tally(.bog_leech).total > 0);
     for (pool.slice()) |a| if (a.kind == .bog_leech) try std.testing.expectEqual(grid.Tile.water, lv.at(a.at));
-    std.debug.print("a leech-led makeup weighted {d} to 1: a dry floor still takes 4 rat packs; with a pond, {d} leeches swim in it\n", .{ WEIGHT_MAX, pool.tally(.bog_leech).total });
 }
 
 test "a spec of its own makeups places only them, its packs kept apart and the pool never overfilled" {
@@ -690,7 +669,6 @@ test "a spec of its own makeups places only them, its packs kept apart and the p
     _ = pool.spawn(&lv, actor.Actor.of(.archer, .{ .x = 0, .y = 0 }));
     place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &.{}, &crowd);
     const slimes = pool.tally(.slime).total;
-    std.debug.print("pairs of caustic bloats 10 apart: the closest two of different packs {d} cells; 32 packs of 5 rats: {d} bodies; of 5 slimes, by an archer: {d} slimes\n", .{ closest, rats, slimes });
     try std.testing.expect(closest >= spec.apart);
     try std.testing.expectEqual(actor.MAX, rats);
     try std.testing.expectEqual(actor.MAX, 1 + slimes * actor.most(.slime) + 3);
@@ -711,7 +689,6 @@ test "a kind's quota the pool has no more room for gives way to the next kind's"
     place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &.{}, &spec);
     const slimes = pool.tally(.slime).total;
     const rats = pool.tally(.rat).total;
-    std.debug.print("slimes first, then rats, by an archer: {d} slimes, {d} rats\n", .{ slimes, rats });
     try std.testing.expectEqual(actor.MAX, 1 + slimes * actor.most(.slime) + rats);
     try std.testing.expect(rats > 0);
 }
@@ -728,7 +705,6 @@ test "a quota skips a makeup whose lead the pool has no room for, for one holdin
     for (1..actor.MAX - 2) |i| _ = pool.spawn(&lv, actor.Actor.of(.rat, grid.Level.of(i)));
     var rng = mathx.Rng.init(0x5EED);
     place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &.{}, &spec);
-    std.debug.print("two places left, a slime-led makeup weighted {d} to 1: {d} pibs\n", .{ WEIGHT_MAX, pool.tally(.pib).total });
     try std.testing.expectEqual(@as(usize, 2), pool.tally(.pib).total);
     try std.testing.expectEqual(@as(usize, 0), pool.tally(.slime).total);
 }
@@ -743,7 +719,6 @@ test "a quota whose makeup places its lead but not the kind gives way to the nex
     var rng = mathx.Rng.init(0x5EED);
     place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &.{}, &spec);
     const pibs = pool.tally(.pib).total;
-    std.debug.print("a leech-holding makeup on a dry floor: no leeches, {d} pibs still placed\n", .{pibs});
     try std.testing.expectEqual(@as(usize, 0), pool.tally(.bog_leech).total);
     try std.testing.expect(pibs >= spec.few);
 }
@@ -771,7 +746,6 @@ test "a counted makeup places exactly its packs, an exit one's lead by a door, a
             farthest = @max(farthest, mathx.dist(a.at, door));
         };
     }
-    std.debug.print("50 rolls of 8 packs, one beefy pib by the door and two bloats counted: beefy pib at most {d} cells from the door\n", .{farthest});
     try std.testing.expect(farthest <= EXIT_REACH);
 }
 
@@ -783,14 +757,12 @@ test "an exit pack that no door can hold leaves its lead's other makeups be, and
     spec.makeup[1] = Makeup.of(&.{ .rat, .rat });
     const start = P{ .x = 2, .y = 2 };
     const far = P{ .x = grid.W - 3, .y = grid.H - 3 };
-    var doorless: usize = 0;
     var by_far: usize = 0;
     for (0..50) |i| {
         var lv = grid.openFloor();
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(0xD00E +% i);
         place(&lv, &pool, &rng, start, &.{}, &spec);
-        doorless += pool.tally(.rat).total;
         try std.testing.expectEqual(@as(usize, 2 * spec.packs), pool.tally(.rat).total);
         var counted = spec;
         counted.makeup[0] = Makeup.of(&.{.bloat});
@@ -805,7 +777,6 @@ test "an exit pack that no door can hold leaves its lead's other makeups be, and
         };
     }
     try std.testing.expectEqual(@as(usize, 50), by_far);
-    std.debug.print("exit packs: 50 doorless nodes still laid {d} rats in pairs; a counted exit pack, the arrival door too near, stood by the far door {d} of 50\n", .{ doorless, by_far });
 }
 
 test "lairs: a mimic at a winding trail's end, leeches in the pond and slimes by it, goblins by their camps' fires" {
@@ -826,12 +797,10 @@ test "lairs: a mimic at a winding trail's end, leeches in the pond and slimes by
     const RUNS = 50;
     var placed = std.EnumArray(actor.Kind, usize).initFill(0);
     var astray: usize = 0;
-    var nooks_seen: usize = 0;
     for (0..RUNS) |i| {
         var lv: grid.Level = undefined;
         procgen.roll(&lv, 0x1A12 +% i *% grid.TEST_SEED_STRIDE, &.{door}, .{ .tee = .{ .spurs = 6, .pond = 6, .pond_chests = 2, .camps = 2 } }, &.{});
         const found = Lairs.of(&lv, &spec);
-        nooks_seen += found.cells.getPtrConst(.nook).count();
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(0x1A12 +% i);
         place(&lv, &pool, &rng, door, &.{}, &spec);
@@ -851,7 +820,6 @@ test "lairs: a mimic at a winding trail's end, leeches in the pond and slimes by
             astray += @intFromBool(!home);
         }
     }
-    std.debug.print("{d} caravan tees: {d} nooks a map; {d} mimics, {d} leeches, {d} slimes, {d} goblins placed, {d} astray of their lairs\n", .{ RUNS, nooks_seen / RUNS, placed.get(.mimic), placed.get(.bog_leech), placed.get(.slime), placed.get(.goblin), astray });
     try std.testing.expectEqual(@as(usize, 0), astray);
     try std.testing.expect(placed.get(.mimic) * 10 >= RUNS * 9);
     try std.testing.expect(placed.get(.bog_leech) >= RUNS and placed.get(.slime) >= RUNS and placed.get(.goblin) >= 2 * RUNS);

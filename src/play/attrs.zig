@@ -7,7 +7,6 @@ pub const Attr = enum { strength, dexterity, intelligence };
 pub const ATTRS = std.enums.values(Attr);
 pub const Needs = std.enums.EnumFieldStruct(Attr, i32, 0);
 
-/// What an item modifier adds to; a passive's `Kind` adds to these, a `Style`'s damage, crit, dodge or `Perks`.
 pub const Bonus = enum {
     strength,
     dexterity,
@@ -16,10 +15,8 @@ pub const Bonus = enum {
     mana,
     armour,
 
-    /// How a grant of it reads, with its amount and `label`.
     pub const RAISE_FMT = "+{d} to {s}";
 
-    /// What "+N to" raises.
     pub fn label(b: Bonus) [:0]const u8 {
         return switch (b) {
             inline .strength, .dexterity, .intelligence => |t| wording.named(@field(Attr, @tagName(t))),
@@ -32,14 +29,12 @@ pub const Bonus = enum {
 comptime {
     for (ATTRS) |at| _ = @field(Bonus, @tagName(at));
 }
-/// What `Attrs.reduction` and `Attrs.crit` are called.
 pub const REDUCTION_LABEL = "physical damage reduction";
 pub const CRIT_LABEL = "critical strike chance";
 pub const WEAPON_CRIT_LABEL = "weapon critical chance";
 pub const SPELL_CRIT_LABEL = "spell critical chance";
 pub const PHYSICAL_LABEL = "physical damage";
 pub const SCALES_FMT = "Scales with {s}";
-/// What a blow is, and so which attribute raises it.
 pub const Style = enum {
     heavy,
     light,
@@ -93,12 +88,10 @@ pub const DODGE_MAX: i32 = 75;
 /// Percent of a physical blow armour may take at most.
 pub const ARMOUR_MAX: i32 = 75;
 
-/// The percent of a physical blow `armour` takes.
 pub fn reductionOf(armour: i32) i32 {
     return std.math.clamp(armour, 0, ARMOUR_MAX);
 }
 
-/// A physical blow of `amount` after `armour` takes its share.
 pub fn armoured(armour: i32, amount: i32, rng: *mathx.Rng) i32 {
     return Dealt.of(@as(i64, @max(0, amount)) * (mathx.PERCENT - reductionOf(armour)) * mathx.PERCENT).roll(rng);
 }
@@ -189,7 +182,6 @@ pub const Attrs = struct {
         return Dealt.of(@as(i64, @max(0, amount)) * @max(0, mathx.PERCENT + a.increase(s) + extra) * @as(i64, if (critical) CRIT_MULTI else mathx.PERCENT));
     }
 
-    /// What a `b` roll of `s` deals without a critical strike.
     pub fn span(a: Attrs, s: Style, b: damage.Base) damage.Span {
         return a.spanWith(s, b, a.physical_bonus);
     }
@@ -225,7 +217,6 @@ test "spoils gold rounds fractional coins fairly and preserves baseline rng" {
     try std.testing.expect(total > 12300 and total < 12700);
     try std.testing.expectEqual(@as(i32, 0), a.collectedGold(0, &rng));
     try std.testing.expectEqual(std.math.maxInt(i32), a.collectedGold(std.math.maxInt(i32), &rng));
-    std.debug.print("Spoils gold: {d} from 10000 single coins at +25%; exact larger piles, zero and saturation checked\n", .{total});
 }
 
 /// A scaled amount: `whole`, and one more `part` times in `SHARE`.
@@ -233,7 +224,6 @@ pub const Dealt = struct {
     whole: i32,
     part: u32,
 
-    /// From an amount counted in `SHARE`ths.
     fn of(v: i64) Dealt {
         return .{ .whole = std.math.lossyCast(i32, @divTrunc(v, SHARE)), .part = @intCast(@mod(v, SHARE)) };
     }
@@ -278,7 +268,6 @@ test "attributes raise life, mana, their own style's damage, crits and dodge" {
     const b = a.blow(.light, hit, false, &rng);
     try std.testing.expectEqual(@as(i32, 12), b.physical);
     try std.testing.expectEqual(@as(i32, 24), b.elements.get(.fire));
-    std.debug.print("attributes 20/20/10: life {d}, mana {d}, crit {d}%, dodge {d}%; 2 heavy at +20% averages {d:.3} over {d} rolls\n", .{ a.life(), a.mana(), a.crit(), a.dodge(), mean, ROLLS });
 }
 
 test "physical and elemental base bonuses affect only their damage part and share preview bounds" {
@@ -293,5 +282,4 @@ test "physical and elemental base bonuses affect only their damage part and shar
     try std.testing.expectEqual(@as(i32, 20), hit.elements.get(.cold));
     try std.testing.expectEqual(damage.Span{ .lo = 25, .hi = 25 }, a.elementSpan(.spell, .{ .lo = 20, .hi = 20 }, .fire));
     try std.testing.expectEqual(damage.Span{ .lo = 22, .hi = 22 }, a.span(.spell, .{ .lo = 20, .hi = 20 }));
-    std.debug.print("damage parts: 20 becomes 22 physical, 25 fire, 20 cold/lightning/chaos; previews match\n", .{});
 }

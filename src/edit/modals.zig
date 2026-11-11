@@ -288,7 +288,6 @@ test "editor object viewer facts fit its lines for every object" {
         most = @max(most, f.n);
     }
     try std.testing.expect(most <= FACTS_MAX);
-    std.debug.print("object viewer: {d} objects, at most {d} of {d} fact lines\n", .{ editor.SEEN.len, most, FACTS_MAX });
 }
 
 fn promptBody(ed: *const editor.Editor, prompt: editor.Prompt) i32 {

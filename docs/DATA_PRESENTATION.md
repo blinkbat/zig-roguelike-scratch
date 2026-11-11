@@ -174,7 +174,7 @@ Keep screenshots and research downloads in the temporary directory.
 Implemented in `ui/book.zig`, `ui/item_card.zig`, `ui/character_stats.zig`,
 `ui/trees.zig` and `ui/hud.zig`, with shared geometry in `ui/character_layout.zig` and
 damage inputs in `play/skillbar.zig`/`play/progress.zig`, role names in
-`play/items.zig`, and the global menu palette in `gfx/look.zig`.
+`play/item_bases.zig`, and the global menu palette in `gfx/look.zig`.
 
 ## Direct manipulation and readable scale (2026-10-20)
 

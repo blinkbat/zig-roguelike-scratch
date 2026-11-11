@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// ADOM's forest square, Qud's jungle, Diablo II's Dark Wood.
-
 pub const THICKET_MAX: u8 = 75;
 pub const STRAYS_MAX: u16 = 100;
 pub const Rewards = enum { none, chests };
@@ -12,7 +10,6 @@ pub const Rewards = enum { none, chests };
 pub const Params = struct {
     /// Percent of the ground sown with shrub before it is smoothed.
     thicket: u8 = 42,
-    /// Smoothing passes; more, rounder thickets and wider glades.
     smooth: u8 = 4,
     /// Per thousand cells of open grass, a lone shrub.
     strays: u16 = 20,
@@ -54,6 +51,5 @@ test "lone shrubs stand in the open, none touching another shrub" {
         }
         if (touching == 0) lone += 1;
     }
-    std.debug.print("an open wilds at {d} strays a thousand: {d} lone shrubs\n", .{ STRAYS_MAX, lone });
     try std.testing.expect(lone > 100);
 }

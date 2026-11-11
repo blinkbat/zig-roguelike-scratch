@@ -1,4 +1,6 @@
 const std = @import("std");
+const ground_items = @import("../play/ground_items.zig");
+const inventory = @import("../play/inventory.zig");
 const items = @import("../play/items.zig");
 const progress = @import("../play/progress.zig");
 const rl = @import("raylib");
@@ -14,7 +16,7 @@ const game = @import("../game.zig");
 const rewards = @import("rewards.zig");
 const binds = @import("binds.zig");
 const skills = @import("skills.zig");
-const tactics = @import("tactics.zig");
+const tactics_exec = @import("tactics_exec.zig");
 const skillbar = @import("../play/skillbar.zig");
 const consumable = @import("../play/consumable.zig");
 const quest_log = @import("../ui/quests.zig");
@@ -22,7 +24,6 @@ const script = atlas.script;
 const P = mathx.P;
 const PAUSE = menu.PAUSE;
 
-/// The run's quests under way, at what each stage asks, then those finished.
 pub fn questEntries(g: *const game.Game, out: *[script.MAX_QUESTS]quest_log.Entry) []const quest_log.Entry {
     const w = g.sim.map orelse return out[0..0];
     var n: usize = 0;
@@ -48,7 +49,6 @@ pub fn openInspect(g: *game.Game) void {
     g.pending = null;
 }
 
-/// A pad's View switches a screen over play to the game menu.
 pub fn padToGame(g: *game.Game) bool {
     if (!g.st.device.pad() or !g.st.hit(PAUSE)) return false;
     openPause(g);
@@ -115,7 +115,7 @@ fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
     return out[0..n];
 }
 
-fn goldReached(g: *const game.Game, from: P, at: P) ?items.Coins {
+fn goldReached(g: *const game.Game, from: P, at: P) ?ground_items.Coins {
     if (!withinReach(from, at)) return null;
     for (g.sim.ground.coins[0..g.sim.ground.coin_n]) |pile| {
         if (pile.at.eq(at)) return g.pic.pileShown(&g.sim, pile);
@@ -134,7 +134,6 @@ pub fn chestReached(g: *const game.Game, from: P, p: P) bool {
     return withinReach(from, p) and g.sim.lv.isLit(p) and g.sim.lv.at(p).opened() != null;
 }
 
-/// The hero's own door, or a clear one beside.
 pub fn doorReached(g: *game.Game, from: P, p: P) ?atlas.Link {
     if (!withinReach(from, p) or !g.sim.lv.isLit(p) or !g.sim.lv.walkable(p)) return null;
     const link = g.sim.leadsTo(p) orelse return null;
@@ -224,8 +223,8 @@ fn takeLootGold(g: *game.Game) void {
     if (goldReached(g, h.at, at) != null) game.combat.collectGold(g, at);
 }
 
-fn itemFailed(g: *game.Game, err: items.Failure) void {
-    g.character.message.say("{s}", .{items.caption(err)});
+fn itemFailed(g: *game.Game, err: inventory.Failure) void {
+    g.character.message.say("{s}", .{inventory.caption(err)});
 }
 
 fn takeDrop(g: *game.Game, i: usize) bool {
@@ -242,14 +241,13 @@ fn takeDrop(g: *game.Game, i: usize) bool {
 fn takeSupply(g: *game.Game, i: usize) bool {
     const kind = g.sim.ground.supplies[i].kind;
     if (!g.sim.ground.takeSupply(i, &g.sim.inventory)) {
-        g.character.message.say(items.STACK_FULL, .{});
+        g.character.message.say(inventory.STACK_FULL, .{});
         return false;
     }
     g.sim.log.push(.loot, "Picked up {s}.", .{consumable.phrase(kind)});
     return true;
 }
 
-/// Throwing closes Character for the reticle; anything else is used where it is.
 fn useCarried(g: *game.Game, k: consumable.Kind) void {
     if (!turnFree(g)) return;
     const act = skillbar.Act.ofSupply(k);
@@ -290,7 +288,6 @@ pub fn characterCommand(g: *game.Game, command: book.Command) void {
     }
 }
 
-/// Whether the turn is drawn, so a command acts; says so when not.
 fn drawnFor(g: *game.Game) bool {
     if (!g.pic.quiet()) {
         notYet(g);
@@ -307,7 +304,6 @@ fn turnFree(g: *game.Game) bool {
     return false;
 }
 
-/// Item commands spend the turn, and wait out door travel.
 fn itemCommand(g: *game.Game, command: book.Command) void {
     var name: [items.NAME_MAX]u8 = undefined;
     if (!turnFree(g)) return;
@@ -405,7 +401,6 @@ pub fn settleLoot(g: *game.Game) void {
     endLoot(g);
 }
 
-/// The loot visit's gold, and its one turn, spent now if anything was taken.
 pub fn endLoot(g: *game.Game) void {
     takeLootGold(g);
     if (!g.looted) return;
@@ -414,7 +409,7 @@ pub fn endLoot(g: *game.Game) void {
 }
 
 fn spendTurn(g: *game.Game) void {
-    tactics.beforeAction(&g.sim);
+    tactics_exec.beforeAction(&g.sim);
     game.combat.endTurn(g);
 }
 
@@ -510,5 +505,4 @@ test "the Quests tab scrolls to its last screenful without a turn and reopens at
     game.update(g, 0);
     try std.testing.expectEqual(@as(usize, 0), g.character.top);
     try std.testing.expectEqual(book.Page.quests, g.character.page);
-    std.debug.print("Quests tab: {d} quests scroll to entry {d}, no turn spent, reopened at the first\n", .{ script.MAX_QUESTS, last });
 }

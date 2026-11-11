@@ -3,7 +3,9 @@ const mathx = @import("../core/mathx.zig");
 const actor = @import("../play/actor.zig");
 const attrs = @import("../play/attrs.zig");
 const damage = @import("../play/damage.zig");
-const items = @import("../play/items.zig");
+const affixes = @import("../play/affixes.zig");
+const Gear = @import("../play/gear.zig").Gear;
+const item_bases = @import("../play/item_bases.zig");
 const progress = @import("../play/progress.zig");
 const resilience = @import("../play/resilience.zig");
 const chronicle = @import("../play/chronicle.zig");
@@ -13,7 +15,7 @@ const enfeeble = @import("../play/enfeeble.zig");
 const shock = @import("../play/shock.zig");
 const burning = @import("../play/burning.zig");
 const glacial = @import("../play/glacial.zig");
-const rules = @import("../play/tactics.zig");
+const tactics = @import("../play/tactics.zig");
 const simulation = @import("sim.zig");
 const Simulation = simulation.Simulation;
 
@@ -21,7 +23,7 @@ pub const Roll = struct {
     dmg: i32,
     crit: bool = false,
     physical: i32 = 0,
-    effect: items.WeaponEffect = .{},
+    effect: item_bases.WeaponEffect = .{},
     applied: ?resilience.Kind = null,
     hit_checked: bool = false,
     /// Opportunist's bonus as the target stood before this blow's own ailment.
@@ -39,7 +41,7 @@ pub const Roll = struct {
 pub const Rolled = struct {
     blow: damage.Damage,
     crit: bool = false,
-    effect: items.WeaponEffect = .{},
+    effect: item_bases.WeaponEffect = .{},
 
     pub fn physical(h: Rolled) Roll {
         return .{ .dmg = h.blow.physical, .physical = h.blow.physical, .crit = h.crit, .effect = h.effect, .fire = h.blow.elements.get(.fire) };
@@ -51,8 +53,7 @@ pub const Rolled = struct {
     }
 };
 
-/// A bump's roll before attributes: the melee weapon's, or the body's own blow.
-pub fn kickRaw(rng: *mathx.Rng, gear: *const items.Gear, blow: actor.Strike) i32 {
+pub fn meleeRaw(rng: *mathx.Rng, gear: *const Gear, blow: actor.Strike) i32 {
     return if (gear.weapon(.melee)) |b| b.roll(rng) else blow.roll(rng);
 }
 
@@ -81,7 +82,7 @@ fn imbuedScaled(rng: *mathx.Rng, sim: *const Simulation, attack: attrs.Attack, b
 
 /// Imbue's fire on a melee blow, rolled before the blow scales; none while the weapon is not imbued.
 fn imbuedFire(rng: *mathx.Rng, sim: *const Simulation, attack: attrs.Attack) i32 {
-    return if (alight(sim, attack)) rules.Imbue.FIRE.roll(rng) else 0;
+    return if (alight(sim, attack)) tactics.Imbue.FIRE.roll(rng) else 0;
 }
 
 fn alight(sim: *const Simulation, attack: attrs.Attack) bool {
@@ -89,26 +90,24 @@ fn alight(sim: *const Simulation, attack: attrs.Attack) bool {
     return attack == .melee and h.tactics.imbue > 0;
 }
 
-/// What the hero's `attack` brings on a hit: its gear's, and Imbue's chance to ignite.
-fn onHit(sim: *const Simulation, attack: attrs.Attack) items.WeaponEffect {
+fn onHit(sim: *const Simulation, attack: attrs.Attack) item_bases.WeaponEffect {
     var out = sim.inventory.gear.onHit(attack);
-    if (alight(sim, attack)) out.burn += rules.Imbue.ignites(sim.growth.ranks.get(.imbue));
+    if (alight(sim, attack)) out.burn += tactics.Imbue.ignites(sim.growth.ranks.get(.imbue));
     return out;
 }
 
-pub fn heroKick(sim: *Simulation) Roll {
-    return heroRoll(sim, .melee, kickRaw(&sim.rng, &sim.inventory.gear, sim.class.strike()));
+pub fn heroMelee(sim: *Simulation) Roll {
+    return heroRoll(sim, .melee, meleeRaw(&sim.rng, &sim.inventory.gear, sim.class.strike()));
 }
 
 pub fn heroSkill(sim: *Simulation, comptime act: skillbar.Act) Roll {
-    return heroArrow(sim, act, true).physical();
+    return heroBlow(sim, act).physical();
 }
 
-pub fn heroArrow(sim: *Simulation, comptime act: skillbar.Act, body: bool) Rolled {
-    return heroScaled(sim, act, rawFor(sim, act, body));
+pub fn heroBlow(sim: *Simulation, comptime act: skillbar.Act) Rolled {
+    return heroScaled(sim, act, rawFor(sim, act));
 }
 
-/// A raw `act` roll scaled by the hero's attributes and its rank, with its crit.
 pub fn heroScaled(sim: *Simulation, comptime act: skillbar.Act, raw: damage.Damage) Rolled {
     const b = blowFor(sim, act);
     if (raw.physical > 0) return imbuedScaled(&sim.rng, sim, act.attack().?, b.by, b.style, raw);
@@ -124,18 +123,29 @@ pub fn basesFor(sim: *const Simulation, act: skillbar.Act) skillbar.EquippedBase
     return act.equippedBases(sim.inventory.gear);
 }
 
-/// Physical before elemental, preserving the seeded shot sequence; without `body`, no physical.
-pub fn rollRaw(rng: *mathx.Rng, comptime act: skillbar.Act, bases: skillbar.EquippedBases, body: bool) damage.Damage {
+/// Physical before elemental, preserving the seeded shot sequence.
+pub fn rollRaw(rng: *mathx.Rng, comptime act: skillbar.Act, bases: skillbar.EquippedBases) damage.Damage {
+    var physical: i32 = 0;
+    for (bases.parts()) |maybe| {
+        if (maybe) |b| physical += b.roll(rng);
+    }
+    var raw = rollRawElement(rng, act, bases);
+    raw.physical = physical;
+    return raw;
+}
+
+pub fn rollRawElement(rng: *mathx.Rng, comptime act: skillbar.Act, bases: skillbar.EquippedBases) damage.Damage {
     var raw = damage.Damage{};
-    if (body) for (bases.parts()) |maybe| {
-        if (maybe) |b| raw.physical += b.roll(rng);
-    };
     if (comptime act.element()) |element| raw.elements.set(element, bases.element.?.roll(rng));
     return raw;
 }
 
-pub fn rawFor(sim: *Simulation, comptime act: skillbar.Act, body: bool) damage.Damage {
-    return rollRaw(&sim.rng, act, basesFor(sim, act), body);
+pub fn rawFor(sim: *Simulation, comptime act: skillbar.Act) damage.Damage {
+    return rollRaw(&sim.rng, act, basesFor(sim, act));
+}
+
+pub fn rawElementFor(sim: *Simulation, comptime act: skillbar.Act) damage.Damage {
+    return rollRawElement(&sim.rng, act, basesFor(sim, act));
 }
 
 /// Roll status before nonlethal damage so split halves inherit it.
@@ -148,7 +158,6 @@ pub fn afflicted(sim: *Simulation, a: *actor.Actor, comptime M: type, lands: boo
     return takes;
 }
 
-/// A mimic still posing as its chest cannot dodge.
 pub fn heroLands(sim: *Simulation, a: *const actor.Actor, origin: chronicle.AttackOrigin) bool {
     const h = sim.heroBody() orelse return false;
     if (a.disguised or !sim.combatStats(h).misses(sim.combatStats(a), &sim.rng)) return true;
@@ -157,7 +166,6 @@ pub fn heroLands(sim: *Simulation, a: *const actor.Actor, origin: chronicle.Atta
     return false;
 }
 
-/// `dmg` past armour as it lands on `target`: cut by an enfeebled striker, then raised by the target's shock.
 pub fn landed(weak: bool, target: *actor.Actor, dmg: i32) i32 {
     return shock.spend(&target.shock, enfeeble.weaken(weak, dmg));
 }
@@ -171,7 +179,6 @@ fn blowOn(weak: bool, bonus: i32, s: *shock.Shock, dmg: i32, applied: ?resilienc
     return if (applied == .shock) weakened else shock.spend(s, weakened);
 }
 
-/// The hero's percent more damage against `a`, from Opportunist's.
 pub fn opportune(sim: *const Simulation, a: *const actor.Actor) i32 {
     return if (a.slowed()) @max(0, sim.inventory.gear.sum(.opportunist)) else 0;
 }
@@ -182,7 +189,7 @@ pub fn dealt(sim: *const Simulation, target: *const actor.Actor, dmg: i32, appli
     return blowOn(heroWeak(sim), opportune(sim, target), &s, dmg, applied);
 }
 
-pub fn bite(rng: *mathx.Rng, attacker: terrain.Stats, defender: terrain.Stats, s: actor.Strike) ?i32 {
+pub fn foeRoll(rng: *mathx.Rng, attacker: terrain.Stats, defender: terrain.Stats, s: actor.Strike) ?i32 {
     if (attacker.misses(defender, rng)) return null;
     return s.roll(rng);
 }
@@ -193,10 +200,10 @@ pub const FoeBlow = struct { rolled: i32, dealt: i32 };
 /// A foe's strike `s` on `target`; null when it misses.
 pub fn foeBlow(sim: *Simulation, attacker: *const actor.Actor, target: *actor.Actor, s: actor.Strike, weak: bool) ?FoeBlow {
     const defended = sim.combatStats(target);
-    const rolled = bite(&sim.rng, sim.combatStats(attacker), defended, s) orelse return null;
+    const rolled = foeRoll(&sim.rng, sim.combatStats(attacker), defended, s) orelse return null;
     var dmg = if (s.element) |e| damage.resisted(rolled, defended.elements.get(e)) else attrs.armoured(defended.armour, rolled, &sim.rng);
-    if (s.element == null and target.tactics.guard > 0) dmg = rules.Guard.reduce(target.tactics.guard, dmg);
-    if (target.tactics.bide > 0) dmg = rules.Bide.reduce(sim.growth.ranks.get(.bide), dmg);
+    if (s.element == null and target.tactics.guard > 0) dmg = tactics.Guard.reduce(target.tactics.guard, dmg);
+    if (target.tactics.bide > 0) dmg = tactics.Bide.reduce(sim.growth.ranks.get(.bide), dmg);
     const dealt_ = landed(weak, target, dmg);
     if (target.tactics.bide > 0) target.tactics.bided +|= dealt_;
     return .{ .rolled = rolled, .dealt = dealt_ };
@@ -214,12 +221,11 @@ pub const Hit = struct {
     recovery: i32,
 };
 
-/// The ailments an imbued weapon brings, each by the module that owns it.
 pub const IMBUED = .{ burning, glacial, shock };
 pub const Imbued = std.EnumSet(resilience.Kind);
 
 comptime {
-    for (IMBUED, items.IMBUES) |M, e| std.debug.assert(M.AILMENT == items.imbued(e));
+    for (IMBUED, affixes.IMBUES) |M, e| std.debug.assert(M.AILMENT == affixes.imbued(e));
 }
 
 pub const Outcome = union(enum) { miss, hit: Hit };
@@ -247,7 +253,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
             a.clock.stun();
             stunned = true;
         }
-        inline for (IMBUED, items.IMBUES) |M, e| {
+        inline for (IMBUED, affixes.IMBUES) |M, e| {
             const chance = damage.resistedChance(r.effect.chance(M.AILMENT), sim.combatStats(a).elements.get(e));
             if (r.applied != M.AILMENT and sim.procStatus(a, M.AILMENT, chance)) {
                 M.afflict(a, &sim.rng);

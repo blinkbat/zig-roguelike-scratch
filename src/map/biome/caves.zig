@@ -2,8 +2,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// ADOM's caverns, Diablo II's Den of Evil, Dwarf Fortress's caverns; spires are DF's passage density.
-
 pub const FILL_MAX: u8 = 70;
 pub const SPIRES_MAX: u16 = 80;
 

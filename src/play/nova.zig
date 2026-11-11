@@ -49,5 +49,4 @@ test "a frost nova reaches every open cell within two tiles but the caster's, an
     try std.testing.expect(!area.has(.{ .x = 21, .y = 20 }));
     try std.testing.expect(!area.has(.{ .x = 22, .y = 20 }));
     try std.testing.expect(area.has(.{ .x = 22, .y = 22 }));
-    std.debug.print("frost nova: {d} cells round the caster on open ground, a wall shading the cell behind it\n", .{OPEN_CELLS});
 }

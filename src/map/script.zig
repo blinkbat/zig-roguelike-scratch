@@ -57,7 +57,6 @@ pub fn Words(comptime N: usize) type {
             return self.buf[0..self.n];
         }
 
-        /// Refused, leaving it as it was, when too long or not plain.
         pub fn set(self: *Self, s: []const u8) bool {
             const t = std.mem.trim(u8, s, " ");
             if (t.len > N or !plain(t)) return false;
@@ -95,7 +94,6 @@ fn nameOf(it: anytype) *const Name {
     return if (comptime @TypeOf(it.*) == Name) it else &it.name;
 }
 
-/// Where `name` is among `items`: names, or anything holding its own in `name`.
 pub fn indexOfName(items: anytype, name: []const u8) ?u8 {
     for (items, 0..) |*it, i| {
         if (nameOf(it).eql(name)) return @intCast(i);
@@ -111,7 +109,6 @@ pub fn renameIn(items: anytype, i: u8, name: []const u8) bool {
     return true;
 }
 
-/// No two of `items` go by one name.
 fn distinct(items: anytype) bool {
     for (items, 0..) |*it, i| {
         if (indexOfName(items[0..i], nameOf(it).text()) != null) return false;
@@ -156,7 +153,7 @@ pub const Cmp = enum {
     }
 };
 
-/// The least and most a number may hold, both included.
+/// Both ends included.
 pub const Span = struct {
     lo: i32,
     hi: i32,
@@ -189,7 +186,6 @@ pub const CondKind = enum {
     quest,
     stage,
 
-    /// What its `n` may hold.
     pub fn span(k: CondKind) Span {
         return switch (k) {
             .always, .never, .flag, .counter, .timer, .region, .talked, .quest => SIGNED_SPAN,
@@ -200,7 +196,6 @@ pub const CondKind = enum {
     }
 };
 
-/// Where a quest stands in a run: not yet given, under way at some stage, or finished.
 pub const QuestState = enum { unstarted, active, done };
 
 /// A quest's stage, counted from 1; 0 before it begins.
@@ -236,7 +231,6 @@ pub const ActKind = enum {
     preserve,
     quest,
 
-    /// What a conversation's own lines may do; the rest steer a trigger's list.
     pub fn spoken(k: ActKind) bool {
         return switch (k) {
             .text, .flag, .counter, .timer, .quest => true,
@@ -244,7 +238,6 @@ pub const ActKind = enum {
         };
     }
 
-    /// What its `n` may hold.
     pub fn span(k: ActKind) Span {
         return switch (k) {
             .dialog, .text, .flag, .counter, .preserve => SIGNED_SPAN,
@@ -256,7 +249,6 @@ pub const ActKind = enum {
 
 pub const Setop = enum { off, on, flip };
 pub const Countop = enum { set, add, sub };
-/// Brings a quest to stage `n`, beginning it if it had not begun, or finishes it.
 pub const Questop = enum { stage, done };
 
 pub const Act = struct {
@@ -296,7 +288,6 @@ pub const Choice = struct {
     ask: Ask = .{},
     /// A line of the same dialog; null ends the conversation.
     next: ?u8 = null,
-    /// Hidden while this does not hold.
     gate: ?Cond = null,
     act: [CHOICE_ACTS]Act = @splat(.{}),
     act_n: u8 = 0,
@@ -305,7 +296,6 @@ pub const Choice = struct {
         return self.act[0..self.act_n];
     }
 
-    /// Offered whatever holds.
     pub fn always(self: *const Choice) bool {
         const g = self.gate orelse return true;
         return g.kind == .always;
@@ -330,7 +320,6 @@ pub const Line = struct {
     choice_n: u8 = 0,
     /// Where a line without choices goes on; null ends the conversation.
     then: ?u8 = null,
-    /// Done when the line is shown.
     act: [LINE_ACTS]Act = @splat(.{}),
     act_n: u8 = 0,
 
@@ -342,7 +331,6 @@ pub const Line = struct {
         return self.act[0..self.act_n];
     }
 
-    /// Goes on to `then` when no choice is offered, as every gated one may not be.
     pub fn thenUsed(self: *const Line) bool {
         for (self.choices()) |*c| {
             if (c.always()) return false;
@@ -407,7 +395,6 @@ pub const Dialog = struct {
         return if (at < self.line_n) at else null;
     }
 
-    /// A way to an end is offered whichever gates hold: an ungated choice to one, else `then` and every gated choice.
     fn goesOn(self: *const Dialog, l: *const Line, ending: *const Lines) bool {
         if (!l.thenUsed()) {
             for (l.choices()) |*c| {
@@ -442,7 +429,6 @@ pub const Dialog = struct {
         return self.line_n - 1;
     }
 
-    /// Lines `a` and `b` change places, every way into either following it; the first line is where it opens.
     pub fn swapLines(self: *Dialog, a: u8, b: u8) void {
         std.mem.swap(Line, &self.line[a], &self.line[b]);
         for (self.line[0..self.line_n]) |*ln| {
@@ -451,7 +437,6 @@ pub const Dialog = struct {
         }
     }
 
-    /// Every way into line `l` ends the conversation instead, and the lines after it close up.
     pub fn dropLine(self: *Dialog, l: u8) void {
         cut(Line, &self.line, &self.line_n, l);
         for (self.line[0..self.line_n]) |*ln| {
@@ -461,7 +446,6 @@ pub const Dialog = struct {
     }
 };
 
-/// A stage past `gone` moves down onto the one it became, held to `keep`.
 fn shiftStage(n: *i32, gone: i32, keep: Span) void {
     if (n.* > gone) n.* -= 1;
     n.* = keep.clamp(n.*);
@@ -477,7 +461,6 @@ fn lowered(at: *?u8, gone: u8) void {
     at.* = renumbered(v, gone);
 }
 
-/// Index `at` once the item at `gone` is removed from its list: null for that item, one less past it.
 pub fn renumbered(at: anytype, gone: usize) ?@TypeOf(at) {
     if (at == gone) return null;
     return if (at > gone) at - 1 else at;
@@ -492,28 +475,23 @@ pub const Spot = union(enum) {
     far,
 };
 
-/// A prop an NPC may stand `by`: upright, neither a shaped wall nor an opened chest; a wide prop by its head.
 pub fn besideable(t: grid.Tile) bool {
     return t.upright() and !t.shaped() and !t.isPart() and !t.isOpened();
 }
 
-/// The prop an NPC placed beside `t` stands `by`: a wide prop's head for any of its pieces, null where none may.
 pub fn besideOf(t: grid.Tile) ?grid.Tile {
     const head = t.whole();
     return if (besideable(head)) head else null;
 }
 
-/// Where each NPC placed on its node's roll stands, once it has.
 pub const Stood = [MAX_NPCS]?P;
 
-/// A body that talks: not a foe, it neither fights nor moves.
 pub const Npc = struct {
     node: u8 = 0,
     spot: Spot = .far,
     /// Blank: `STRANGER`.
     name: Who = .{},
     dialog: ?u8 = null,
-    /// Stands only while this holds.
     shows: ?Cond = null,
     /// Drawn as this body's picture; null, as a person.
     looks: ?actor.Kind = null,
@@ -531,7 +509,6 @@ pub const Npc = struct {
 };
 pub const STRANGER = "Stranger";
 
-/// A quest the journal lists: its title, and what each stage asks.
 pub const Quest = struct {
     pub const COUNTED = .{.{ "stage", "stage_n" }};
     name: Name = .{},
@@ -548,7 +525,6 @@ pub const Quest = struct {
         return .{ .lo = lo, .hi = @max(lo, self.stage_n) };
     }
 
-    /// What stage `n` asks; empty past its last stage.
     pub fn asks(self: *const Quest, n: i32) []const u8 {
         if (n < 1 or n > self.stage_n) return "";
         return self.stage[@intCast(n - 1)].text();
@@ -600,7 +576,6 @@ pub const Script = struct {
         };
     }
 
-    /// How many names table `t` holds at most.
     pub fn tableMax(t: Table) usize {
         return switch (t) {
             inline else => |tag| @typeInfo(@FieldType(Script, @tagName(tag))).array.len,
@@ -618,7 +593,6 @@ pub const Script = struct {
         return tb.n.* - 1;
     }
 
-    /// A fresh `flag1`-style name in table `t`.
     pub fn coin(self: *Script, t: Table) ?u8 {
         var nb: [NAME_MAX]u8 = undefined;
         return self.declare(t, freshName(&nb, @tagName(t), InTable{ .script = self, .table = t }, InTable.find));
@@ -633,7 +607,6 @@ pub const Script = struct {
         return self.refUsers(.{ .table = t }, i);
     }
 
-    /// The conditions and actions whose `slot` is `i` of what `r` names.
     fn refUsers(self: *const Script, r: Ref, i: u8) usize {
         var n: usize = 0;
         var conds = self.condIter();
@@ -647,7 +620,6 @@ pub const Script = struct {
         return n;
     }
 
-    /// Every `slot` past `i` of what `r` names moved down one, as `i` goes.
     fn lowerRefs(self: *Script, r: Ref, i: u8) void {
         var conds = self.condIterMut();
         while (conds.next()) |c| {
@@ -659,7 +631,6 @@ pub const Script = struct {
         }
     }
 
-    /// Refused while anything names it.
     pub fn undeclare(self: *Script, t: Table, i: u8) bool {
         if (self.tableUsers(t, i) > 0) return false;
         const tb = self.tableOf(t);
@@ -681,12 +652,11 @@ pub const Script = struct {
         return null;
     }
 
-    /// Where NPC `i` stands: its painted cell, else where `stood` keeps it on this roll.
     pub fn standsAt(self: *const Script, i: usize, stood: *const Stood) ?P {
         return self.npc[i].cell() orelse stood[i];
     }
 
-    /// Drops every NPC `which.drops(npc)` picks, last first so each index still names its NPC; whether any went.
+    /// Last first, so each index still names its NPC; whether any went.
     pub fn dropNpcsWhere(self: *Script, which: anytype) bool {
         var dropped = false;
         var i: usize = self.npc_n;
@@ -705,7 +675,6 @@ pub const Script = struct {
         return self.npc_n - 1;
     }
 
-    /// Every condition it was named in can no longer hold.
     pub fn dropNpc(self: *Script, i: u8) void {
         cut(Npc, &self.npc, &self.npc_n, i);
         var conds = self.condIterMut();
@@ -715,7 +684,6 @@ pub const Script = struct {
         }
     }
 
-    /// Node `n` went: its NPCs with it, and every region drawn on it can no longer hold.
     pub fn dropNode(self: *Script, n: usize) void {
         _ = self.dropNpcsWhere(struct {
             node: usize,
@@ -735,14 +703,12 @@ pub const Script = struct {
         return self.dialog[0..self.dialog_n];
     }
 
-    /// Dialogs with a reachable line no way out of, which never open.
     pub fn endless(self: *const Script) usize {
         var n: usize = 0;
         for (self.dialogs()) |*d| n += @intFromBool(!d.ends());
         return n;
     }
 
-    /// Dialog `d` has a first line, and every line reachable from it has a way to an end.
     pub fn opens(self: *const Script, d: u8) bool {
         return d < self.dialog_n and self.dialog[d].line_n > 0 and self.dialog[d].ends();
     }
@@ -751,7 +717,6 @@ pub const Script = struct {
         return indexOfName(self.dialogs(), name);
     }
 
-    /// A new dialog of one empty line, named after `stem` when it can be.
     pub fn addDialog(self: *Script, stem: []const u8) ?u8 {
         var nb: [NAME_MAX]u8 = undefined;
         const name = if (token(stem) and self.findDialog(stem) == null) stem else freshName(&nb, "dialog", self, Script.findDialog);
@@ -769,7 +734,6 @@ pub const Script = struct {
         return n + self.refUsers(.dialog, d);
     }
 
-    /// Refused while anything names it, so no reference is left pointing past the end.
     pub fn dropDialog(self: *Script, d: u8) bool {
         if (self.dialogUsers(d) > 0) return false;
         cut(Dialog, &self.dialog, &self.dialog_n, d);
@@ -807,7 +771,6 @@ pub const Script = struct {
         return indexOfName(self.quests(), name);
     }
 
-    /// A new quest of one blank stage.
     pub fn addQuest(self: *Script) ?u8 {
         var nb: [NAME_MAX]u8 = undefined;
         var q = Quest{ .name = Name.of(freshName(&nb, "quest", self, Script.findQuest)) };
@@ -820,7 +783,6 @@ pub const Script = struct {
         return self.refUsers(.quest, q);
     }
 
-    /// Refused while anything names it.
     pub fn dropQuest(self: *Script, q: u8) bool {
         if (self.questUsers(q) > 0) return false;
         cut(Quest, &self.quest, &self.quest_n, q);
@@ -828,8 +790,6 @@ pub const Script = struct {
         return true;
     }
 
-    /// Stage `k` (from 0) of quest `q` goes; whatever named a later stage names the one it became,
-    /// and nothing names a stage past the last.
     pub fn dropStage(self: *Script, q: u8, k: u8) void {
         const qs = &self.quest[q];
         cut(Note, &qs.stage, &qs.stage_n, k);
@@ -860,7 +820,6 @@ pub const Script = struct {
         return .{ .s = self };
     }
 
-    /// Every index in range, every name readable back and every text plain; `node_n` nodes on the map.
     pub fn valid(self: *const Script, node_n: usize) bool {
         if (!bounded(self)) return false;
         for (std.enums.values(Table)) |t| {
@@ -910,7 +869,6 @@ pub const Script = struct {
         return distinct(self.triggers());
     }
 
-    /// How many entries the list `r` names holds.
     pub fn refLen(self: *const Script, r: Ref) usize {
         return switch (r) {
             .table => |t| self.names(t).len,
@@ -951,7 +909,6 @@ const InTable = struct {
     }
 };
 
-/// What a condition's or action's `slot` indexes.
 pub const Ref = union(enum) { table: Table, npc, dialog, quest };
 
 pub fn condRef(k: CondKind) ?Ref {
@@ -1045,7 +1002,6 @@ pub fn ActIter(comptime S: type, comptime A: type) type {
         trigger: usize = 0,
         dialog: usize = 0,
         line: usize = 0,
-        /// Into a line: its own actions, then each choice's in turn.
         part: usize = 0,
         act: usize = 0,
 
@@ -1083,7 +1039,6 @@ pub fn ActIter(comptime S: type, comptime A: type) type {
     };
 }
 
-/// `stem` and the first number after it that `taken` finds free.
 fn freshName(buf: *[NAME_MAX]u8, stem: []const u8, owner: anytype, comptime taken: anytype) []const u8 {
     var i: usize = 1;
     while (true) : (i += 1) {
@@ -1138,7 +1093,6 @@ test "dropping an NPC, a node or a line leaves no reference past the end" {
     s.dialog[d].swapLines(0, 1);
     try std.testing.expectEqual(@as(?u8, 0), s.dialog[d].line[1].then);
     try std.testing.expect(s.valid(2));
-    std.debug.print("script references: node, NPC and line removal renumber or retire every reference\n", .{});
 }
 
 test "a quest cannot go while named, and dropping a stage moves later references down onto the one it became" {
@@ -1203,5 +1157,4 @@ test "a named table entry or dialog cannot be dropped while anything names it" {
     try std.testing.expect(!s.rename(.flag, 0, END));
     try std.testing.expect(s.rename(.flag, 0, "gate_open"));
     try std.testing.expect(s.valid(1));
-    std.debug.print("script tables: in-use flag and dialog refused; free flag dropped and later slots renumbered\n", .{});
 }

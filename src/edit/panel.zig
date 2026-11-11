@@ -28,11 +28,9 @@ const ON = widgets.ON;
 const WARN = look.EDIT_WARN;
 const SEP = menu.SEP;
 
-/// Buttons along the top bar: as wide as their words, set apart in groups.
 const BAR_GROUP: i32 = 18;
 const TAB_PIC: f32 = 26;
 
-/// A row of the top bar, laid rightward from its left or leftward from its right.
 const Bar = struct {
     ed: *editor.Editor,
     g: *game.Game,
@@ -170,7 +168,6 @@ pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
 const FILE_LABEL = "File";
 const PLAYGROUND_TIP = "Every terrain, and a " ++ menu.word(playground.CLASS) ++ " casting freely; " ++ menu.named(game.PauseRow.debug) ++ " > " ++ menu.titleOf(game.debugging.Row.restart_map) ++ " resets it";
 
-/// The File button's place, the bar's first.
 pub fn fileSlot(g: *const game.Game) rl.Rectangle {
     return widgets.row(widgets.PAD, widgets.GAP, widgets.labelW(&g.face, FILE_LABEL, DETAIL));
 }
@@ -194,7 +191,6 @@ fn familyFigure(ed: *editor.Editor, g: *game.Game, f: editor.Family, r: rl.Recta
     }
 }
 
-/// The File dropdown's rows in `box`; a row picked closes it and does what it names.
 pub fn fileRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle) void {
     for (FILE_ITEMS, 0..) |f, k| {
         const r = editor.popupRow(box, .file, k);
@@ -241,7 +237,6 @@ pub fn drawSide(ed: *editor.Editor, g: *game.Game) void {
     closePane(ed, .side, y);
 }
 
-/// Select, and once it is chosen the clipboard over its selection.
 fn drawSelect(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
     var buf: [widgets.LINE]u8 = undefined;
     var y = top;
@@ -280,7 +275,6 @@ const TOOL_ROW_H: i32 = 44;
 const TOOL_PIC: f32 = 36;
 const KEY_W: i32 = 30;
 
-/// A tool to pick: its key, its picture and its name.
 fn toolRow(ed: *editor.Editor, g: *game.Game, col: Column, y: *i32, t: editor.Tool, key: [:0]const u8) void {
     defer y.* += TOOL_ROW_H;
     if (clippedH(ed, y.*, TOOL_ROW_H)) return;
@@ -299,7 +293,6 @@ fn toolRow(ed: *editor.Editor, g: *game.Game, col: Column, y: *i32, t: editor.To
 
 const CHIP_GAP: i32 = 4;
 
-/// Chips that narrow the foes listed to one type, wrapping as they fill the row.
 fn drawFoeTypes(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
     var y = top;
     var x = col.left();
@@ -480,7 +473,6 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     }
 }
 
-/// The open node, picked from every node in the dropdown below it.
 fn nodeDropdown(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) bool {
     var buf: [widgets.LINE]u8 = undefined;
     const h = widgets.hot(ed.controls(), r, true, false, "Open another node");
@@ -494,7 +486,6 @@ fn nodeDropdown(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) bool {
 
 const DROP_CARET = "v";
 
-/// A node in the dropdown: its title and what it is; true when picked.
 pub fn nodeRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, n: usize, modal: bool) bool {
     const h = widgets.hot(ed.controls(), r, true, modal, "Open this node");
     widgets.plate(r, n == ed.node, h.hot);
@@ -592,7 +583,6 @@ fn clippedH(ed: *const editor.Editor, y: i32, h: i32) bool {
     return top + @as(f32, @floatFromInt(h)) <= c.y or top >= c.y + c.height;
 }
 
-/// Formatted only when it shows.
 fn thingRow(ed: *editor.Editor, g: *game.Game, col: Column, y: *i32, comptime fmt: []const u8, args: anytype, ink: rl.Color, at: ?P) void {
     if (clipped(ed, y.*)) {
         y.* += widgets.ROW_H;
@@ -617,7 +607,6 @@ pub fn toolFigure(g: *game.Game, t: editor.Tool, r: rl.Rectangle) void {
     widgets.figure(&g.face, toolPicture(g, t), t.look_(), r);
 }
 
-/// An NPC as it looks: the body it is drawn as, else the NPC tool's figure.
 pub fn npcFigure(g: *game.Game, f: *const atlas.script.Npc, r: rl.Rectangle) void {
     const k = f.looks orelse return toolFigure(g, .npc, r);
     bodyFigure(g, k, r);
@@ -647,12 +636,10 @@ pub fn drawNodeTitle(ed: *editor.Editor, g: *const game.Game, n: usize, r: rl.Re
     widgets.drawFit(&g.face, ed.nodeTitle(n, &buf), widgets.TEXT, widgets.insetW(r), typing, widgets.textX(r), y, if (typing) look.UI_FOCUS else look.TEXT);
 }
 
-/// Clips to `box`, a pane's scrolled area, so nothing outside it is hot; the content's first row.
 pub fn beginPane(ed: *editor.Editor, p: editor.Pane, box: rl.Rectangle) i32 {
     return ed.paneScroll(p, box).begin(&ed.clip);
 }
 
-/// The pane's content ran to `end`: stops clipping, then how far it scrolls, and its bar.
 pub fn closePane(ed: *editor.Editor, p: editor.Pane, end: i32) void {
     ed.paneScroll(p, ed.pane.get(p).box).close(&ed.clip, end, widgets.PAD);
 }

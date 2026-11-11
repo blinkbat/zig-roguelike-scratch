@@ -136,5 +136,4 @@ test "storage fingerprints distinguish field identity order lengths and optional
     try std.testing.expect(fingerprint(.{[2]u8}) != fingerprint(.{[3]u8}));
     try std.testing.expect(fingerprint(.{u16}) != fingerprint(.{?u16}));
     try std.testing.expect(fingerprint(.{ u16, u32 }) != fingerprint(.{ u32, u16 }));
-    std.debug.print("storage fingerprints: equivalent schemas agree; 5 schema changes disagree\n", .{});
 }

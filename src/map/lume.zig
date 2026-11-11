@@ -23,7 +23,6 @@ pub fn torchOver(floor: grid.Box, x: i32) P {
     return torchWall(.{ .x = x, .y = floor.lo.y });
 }
 
-/// The cells a torch lights from `from`, added to `out`.
 pub fn torchPool(lv: *const grid.Level, from: P, out: *[grid.CELLS]bool) void {
     fov.castInto(lv, from, TORCH_REACH, out);
 }
@@ -36,7 +35,6 @@ pub fn skyReach(outdoors: bool, hour: f32, sight: i32) f32 {
     return day.daylight(hour) * @as(f32, @floatFromInt(sight));
 }
 
-/// Only light pools overlapping the viewer's sight can affect visibility.
 fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, out: *[grid.CELLS]bool) void {
     @memset(out, false);
     const near = sight + TORCH_REACH;
@@ -87,7 +85,6 @@ test "the dark shows only what a light reaches, the day all the eyes do, and dus
     const dusk = count(&lv.lit);
     see(&lv, at, sight, skyReach(true, 0, sight), &lamp);
     const midnight = count(&lv.lit);
-    std.debug.print("cells seen of {d} in line of sight: {d} underground, {d} at noon, {d} half an hour before sunset, {d} at midnight\n", .{ reached, dark, noon, dusk, midnight });
     try std.testing.expectEqual(reached, noon);
     try std.testing.expectEqual(dark, midnight);
     try std.testing.expect(dark < dusk and dusk < noon);
@@ -123,9 +120,6 @@ test "a glowing plant lights its own pool at night, out to the hero's sight and 
     try std.testing.expect(!lv.isLit(behind));
     lv.set(plant, .glow_plant);
     see(&lv, at, 10, 0, &lamp);
-    var shown: usize = 0;
-    for (lv.lit, 0..) |l, i| shown += @intFromBool(l and mathx.dist(grid.Level.of(i), at) > 5);
-    std.debug.print("a glowbulb 9 cells off at midnight: {d} cells seen past the lantern's 5\n", .{shown});
     try std.testing.expect(lv.isLit(plant) and lv.isLit(behind));
     try std.testing.expect(!lv.isLit(past) and lv.inLos(.{ .x = 50, .y = 30 }));
 }

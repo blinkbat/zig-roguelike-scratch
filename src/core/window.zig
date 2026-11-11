@@ -4,7 +4,6 @@ const P = @import("mathx.zig").P;
 pub const WINDOW_W: i32 = 1600;
 pub const WINDOW_H: i32 = 900;
 pub const WINDOW = P{ .x = WINDOW_W, .y = WINDOW_H };
-/// Screens the shots and layout tests cover besides the window's.
 pub const SCREEN_720 = P{ .x = 1280, .y = 720 };
 pub const SCREEN_1080 = P{ .x = 1920, .y = 1080 };
 pub const SCREEN_1440 = P{ .x = 2560, .y = 1440 };

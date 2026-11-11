@@ -4,8 +4,6 @@ const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 const buildings = @import("buildings.zig");
 
-// Dwarf Fortress's hamlet fields, Path of Exile's Ogham Farmlands, Diablo II's corrals, Qud's watervine farms (crop: reeds, furrows: shallows).
-
 pub const COUNT_MAX: u8 = 16;
 pub const SIZE_MIN: u8 = 6;
 pub const SIZE_MAX: u8 = 24;
@@ -46,6 +44,5 @@ test "fields are fenced, in furrows of crop" {
     carve.field(&lv, carve.Palette.WILD);
     var lots: buildings.Lots = .{};
     apply(&lv, &rng, 0, carve.Palette.TRAILED, &lots, .{});
-    std.debug.print("5 fields: {d} fence, {d} crop, {d} furrow\n", .{ carve.count(&lv, .fence), carve.count(&lv, .crop), carve.count(&lv, .dirt) });
     try std.testing.expect(carve.count(&lv, .crop) > 50 and carve.count(&lv, .fence) > 50);
 }

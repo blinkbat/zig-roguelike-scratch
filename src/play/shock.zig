@@ -21,7 +21,6 @@ pub const STATUS = std.fmt.comptimePrint("The next hit taken deals {d}% more dam
 /// Its turns left waiting for a hit; the first that deals damage spends it.
 pub const Shock = resilience.Turns(TURNS);
 
-/// `dmg` as the hit `s` is spent on deals it; a hit dealing nothing leaves it waiting.
 pub fn spend(s: *Shock, dmg: i32) i32 {
     if (s.turns == 0 or dmg <= 0) return dmg;
     s.turns = 0;
@@ -59,7 +58,6 @@ test "lightning runs through the water joined to where it lands, out to its reac
     lv.set(.{ .x = 21, .y = 20 }, .floor);
     try std.testing.expectEqual(@as(usize, CONDUCT + 1), conducted(&lv, at).n);
     try std.testing.expectEqual(@as(usize, 0), conducted(&lv, .{ .x = 30, .y = 30 }).n);
-    std.debug.print("conduction: {d} cells along a channel within {d}; a dry gap cuts it to {d}; dry ground none\n", .{ wet.n, CONDUCT, conducted(&lv, at).n });
 }
 
 test "a shock adds half again to the next damaging hit, rounded up, then is gone" {
@@ -79,5 +77,4 @@ test "a shock adds half again to the next damaging hit, rounded up, then is gone
     try std.testing.expectEqual(@as(i32, 4), spend(&s, 4));
     s.start();
     try std.testing.expectEqual(std.math.maxInt(i32), spend(&s, std.math.maxInt(i32)));
-    std.debug.print("shock: {d} hits each amplified once ({d}% rounded up); a 0-damage hit keeps it; {d} unhit turns end it\n", .{ cases.len, MORE, TURNS });
 }

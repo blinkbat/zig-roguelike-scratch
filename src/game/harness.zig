@@ -1,6 +1,9 @@
 const attacks = @import("attacks.zig");
 const std = @import("std");
+const affixes = @import("../play/affixes.zig");
+const item_bases = @import("../play/item_bases.zig");
 const items = @import("../play/items.zig");
+const loot = @import("../play/loot.zig");
 const progress = @import("../play/progress.zig");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -46,7 +49,6 @@ fn rngWhere(want: anytype) mathx.Rng {
     }
 }
 
-/// An RNG matching `confirmAim` under which the first `procs` body hits, the direct one first, afflict or not as `want` says.
 pub fn procRng(g: *const game.Game, comptime act: skillbar.Act, procs: usize, want: bool) mathx.Rng {
     const Procs = struct {
         by: attrs.Attrs,
@@ -55,7 +57,7 @@ pub fn procRng(g: *const game.Game, comptime act: skillbar.Act, procs: usize, wa
         n: usize,
         want: bool,
         fn holds(p: @This(), rng: *mathx.Rng) bool {
-            var raw = attacks.rollRaw(rng, act, p.bases, true);
+            var raw = attacks.rollRaw(rng, act, p.bases);
             for (0..p.n) |_| {
                 _ = attacks.scaled(rng, p.by, p.style, raw);
                 if (skillbar.Act.skill(act).procs(rng, 0) != p.want) return false;
@@ -72,7 +74,6 @@ pub fn foes(g: *game.Game) []actor.Actor {
     return g.sim.pool.slice()[1..];
 }
 
-/// The `i`th body spawned after the hero, as an arena's rats are.
 pub fn foeId(i: usize) u16 {
     return actor.Pool.idOf(foeSlot(i));
 }
@@ -172,7 +173,6 @@ pub fn useAct(g: *game.Game, act: skillbar.Act) void {
     skills.useSkill(g, .{ .act = act, .by = null });
 }
 
-/// `act` opened, bound or not, its reticle put on `at` and confirmed.
 pub fn aimAt(g: *game.Game, act: skillbar.Act, at: P) void {
     useAct(g, act);
     if (g.mode != .aim) return;
@@ -230,19 +230,19 @@ pub fn expectDamage(g: *const game.Game, comptime act: skillbar.Act, dealt: i32,
     try expectWithin(dealt, lo, hi);
 }
 
-pub const Bite = struct { id: u16, lands: bool };
+pub const FoeAttack = struct { id: u16, lands: bool };
 
 fn combatant(g: *const game.Game, id: u16) *const actor.Actor {
     return g.sim.pool.getConst(id).?;
 }
 
-fn bitesHold(g: *const game.Game, hero_at: P, bites: []const Bite, rng: *mathx.Rng) bool {
+fn bitesHold(g: *const game.Game, hero_at: P, bites: []const FoeAttack, rng: *mathx.Rng) bool {
     const hero = g.sim.heroBody().?;
     const defender = g.sim.combatStatsOn(hero, g.sim.lv.at(hero_at), hero.resilience, hero.sunder);
     for (bites, 0..) |b, i| {
         const a = combatant(g, b.id);
         const strike = actor.row(a.kind).blow.strike;
-        const hit = attacks.bite(rng, g.sim.combatStats(a), defender, strike);
+        const hit = attacks.foeRoll(rng, g.sim.combatStats(a), defender, strike);
         if ((hit != null) != b.lands) return false;
         if (i + 1 < bites.len) armourBefore(g, strike, defender.armour, hit, rng);
     }
@@ -254,15 +254,15 @@ fn armourBefore(g: *const game.Game, strike: actor.Strike, armour: i32, hit: ?i3
     if (hit) |dmg| _ = attrs.armoured(armour, dmg, rng);
 }
 
-pub fn bitesRng(g: *const game.Game, bites: []const Bite) mathx.Rng {
+pub fn bitesRng(g: *const game.Game, bites: []const FoeAttack) mathx.Rng {
     return bitesRngAt(g, g.sim.heroAt().?, bites);
 }
 
-pub fn bitesRngAt(g: *const game.Game, hero_at: P, bites: []const Bite) mathx.Rng {
+pub fn bitesRngAt(g: *const game.Game, hero_at: P, bites: []const FoeAttack) mathx.Rng {
     const Bites = struct {
         g: *const game.Game,
         hero_at: P,
-        bites: []const Bite,
+        bites: []const FoeAttack,
 
         fn holds(b: @This(), rng: *mathx.Rng) bool {
             return bitesHold(b.g, b.hero_at, b.bites, rng);
@@ -282,14 +282,14 @@ pub fn sweepStunRng(g: *const game.Game, sweeper: u16, victim: u16, after_bite: 
             if (s.after_bite) {
                 const a = combatant(s.g, s.victim);
                 const hero = s.g.sim.combatStats(s.g.sim.heroBody().?);
-                if (attacks.bite(rng, s.g.sim.combatStats(a), hero, actor.row(a.kind).blow.strike)) |dmg| _ = attrs.armoured(hero.armour, dmg, rng);
+                if (attacks.foeRoll(rng, s.g.sim.combatStats(a), hero, actor.row(a.kind).blow.strike)) |dmg| _ = attrs.armoured(hero.armour, dmg, rng);
             }
             const attacker = combatant(s.g, s.sweeper);
             const target = combatant(s.g, s.victim);
             const defender = s.g.sim.combatStats(target);
             std.debug.assert(defender.statuses.get(.stun) == 0);
             const strike = actor.row(attacker.kind).blow.strike;
-            const hit = attacks.bite(rng, s.g.sim.combatStats(attacker), defender, strike) orelse return false;
+            const hit = attacks.foeRoll(rng, s.g.sim.combatStats(attacker), defender, strike) orelse return false;
             const dmg = attrs.armoured(defender.armour, hit, rng);
             if (dmg <= 0 or dmg >= target.hp) return false;
             return damage.procs(rng, strike.stuns);
@@ -303,7 +303,7 @@ pub fn lootRng(magic: ?bool) mathx.Rng {
         magic: ?bool,
 
         fn holds(l: @This(), rng: *mathx.Rng) bool {
-            const reward = items.foeLoot(rng, 0);
+            const reward = loot.foeLoot(rng, 0);
             if (reward.gold <= 0) return false;
             const m = l.magic orelse return true;
             const it = reward.item orelse return false;
@@ -313,13 +313,12 @@ pub fn lootRng(magic: ?bool) mathx.Rng {
     return rngWhere(Loot{ .magic = magic });
 }
 
-/// A loot RNG under which a broken barrel leaves a white item, or leaves none.
 pub fn barrelRng(item: bool) mathx.Rng {
     const Barrel = struct {
         item: bool,
 
         fn holds(b: @This(), rng: *mathx.Rng) bool {
-            return (items.barrelLoot(rng, true).item != null) == b.item;
+            return (loot.barrelLoot(rng, true).item != null) == b.item;
         }
     };
     return rngWhere(Barrel{ .item = item });
@@ -329,7 +328,6 @@ pub fn slay(g: *game.Game, id: u16, from: P) void {
     combat.wound(g, id, .{ .dmg = 1000 }, combat.SHOOT, .{ .from = from, .wait = 0.2 });
 }
 
-/// As `slay`, past any dodge, landing `wait` seconds on.
 pub fn kill(g: *game.Game, id: u16, from: P, wait: f32) void {
     combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = wait });
 }
@@ -343,7 +341,7 @@ pub fn meleeThenBites(g: *const game.Game, target: u16, attackers: []const u16) 
             const gear = &s.g.sim.inventory.gear;
             const effect = gear.onHit(.melee);
             std.debug.assert(effect.bleed == 0 and effect.stun == 0);
-            const hit = attacks.heroRollWith(rng, &s.g.sim, .melee, attacks.kickRaw(rng, gear, s.g.sim.class.strike()));
+            const hit = attacks.heroRollWith(rng, &s.g.sim, .melee, attacks.meleeRaw(rng, gear, s.g.sim.class.strike()));
             const hero = s.g.sim.heroBody().?;
             const target_actor = combatant(s.g, s.target);
             if (s.g.sim.combatStats(hero).misses(s.g.sim.combatStats(target_actor), rng)) return false;
@@ -351,7 +349,7 @@ pub fn meleeThenBites(g: *const game.Game, target: u16, attackers: []const u16) 
             for (s.attackers, 0..) |id, i| {
                 const a = combatant(s.g, id);
                 const strike = actor.row(a.kind).blow.strike;
-                const dmg = attacks.bite(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(hero), strike) orelse return false;
+                const dmg = attacks.foeRoll(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(hero), strike) orelse return false;
                 if (i + 1 < s.attackers.len) armourBefore(s.g, strike, s.g.sim.combatStats(hero).armour, dmg, rng);
             }
             return true;
@@ -387,7 +385,6 @@ pub const TEST_TOL: f32 = TEST_DT * 1.5;
 pub const FADING_S: f32 = 0.04;
 pub const FADE_FRAMES = 120;
 
-/// Seconds of idle frames until `done(g, slot)`, a second at most.
 pub fn framesUntil(g: *game.Game, slot: usize, comptime done: fn (*game.Game, usize) bool) f32 {
     g.st = .{};
     var t: f32 = 0;
@@ -395,7 +392,6 @@ pub fn framesUntil(g: *game.Game, slot: usize, comptime done: fn (*game.Game, us
     return t;
 }
 
-/// Seconds of idle frames until every one of `slots` is pictured as it is, a second at most.
 pub fn untilCaughtUp(g: *game.Game, slots: []const usize) f32 {
     g.st = .{};
     var t: f32 = 0;
@@ -408,7 +404,6 @@ fn allCaughtUp(g: *game.Game, slots: []const usize) bool {
     return true;
 }
 
-/// `secs` of idle frames.
 pub fn idleFor(g: *game.Game, secs: f32) void {
     var t: f32 = 0;
     while (t < secs) : (t += TEST_DT) game.update(g, TEST_DT);
@@ -442,7 +437,7 @@ pub fn toughen(a: *actor.Actor) void {
     setLife(a, TEST_HP, TEST_HP);
 }
 
-pub fn affixed(kind: items.Kind, affix: items.Affix) items.Item {
+pub fn affixed(kind: item_bases.Kind, affix: affixes.Affix) items.Item {
     var it = items.Item{ .kind = kind };
     it.mods[0] = affix;
     return it;
@@ -493,7 +488,6 @@ pub fn spawnAt(g: *game.Game, k: actor.Kind, at: P, awake: bool) u16 {
     return id;
 }
 
-/// An awake mimic at `at`, already out of its chest.
 pub fn openMimic(g: *game.Game, at: P) u16 {
     const id = spawnAt(g, .mimic, at, true);
     g.sim.pool.get(id).?.unmask(&g.sim.lv);
@@ -510,7 +504,6 @@ pub fn corridor(b: *atlas.Bespoke) void {
     while (x <= 12) : (x += 1) b.tile[grid.Level.idx(.{ .x = x, .y = 5 })] = .floor;
 }
 
-/// Two corridors joined by a door at each one's end, starting a step from the first's; the second's node.
 pub fn twoRooms(w: *atlas.Atlas) usize {
     w.* = .{};
     const a = w.add(.{ .bespoke = .{} }).?;
@@ -550,7 +543,6 @@ test "predicted foe strikes follow terrain and ordered armour rolls in real turn
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 20, .y = 20 };
-    var checked: usize = 0;
     for (heroes.CLASSES) |class| for ([_]grid.Tile{ .floor, .reeds }) |tile| {
         for ([_]bool{ false, true }) |first| for ([_]bool{ false, true }) |second| {
             heroArena(g, class, at, &.{});
@@ -563,28 +555,23 @@ test "predicted foe strikes follow terrain and ordered armour rolls in real turn
             g.sim.rng = bitesRng(g, &.{ .{ .id = near, .lands = first }, .{ .id = far, .lands = second } });
             combat.endTurn(g);
             for ([_]u16{ near, far }, [_]bool{ first, second }) |id, landed| {
-                const hit = g.pic.owed[actor.Pool.slot(id)].bit.?;
+                const hit = g.pic.owed[actor.Pool.slot(id)].foe_hit.?;
                 try std.testing.expectEqual(!landed, hit == .miss);
-                checked += 1;
             }
         };
     };
-    std.debug.print("strike prediction: {d} real attacks across {d} classes, 2 hero terrains, distinct foe terrains and ordered armour rolls\n", .{ checked, heroes.CLASSES.len });
 }
 
 test "a strike with zero dodge draws only terrain hit chance and damage" {
     const terrain = @import("../play/terrain.zig");
     const strike = actor.row(.rat).blow.strike;
-    var checked: usize = 0;
     for ([_]grid.Tile{ .floor, .reeds }) |tile| for (0..256) |seed| {
         var rng = mathx.Rng.init(seed);
         var expected = rng;
         const attacker = (terrain.Stats{}).onRained(tile, 0);
         const lands = attacker.hit == mathx.PERCENT or expected.percent(attacker.hit);
         const want: ?i32 = if (lands) strike.roll(&expected) else null;
-        try std.testing.expectEqual(want, attacks.bite(&rng, attacker, .{}, strike));
+        try std.testing.expectEqual(want, attacks.foeRoll(&rng, attacker, .{}, strike));
         try std.testing.expectEqualDeep(expected, rng);
-        checked += 1;
     };
-    std.debug.print("zero-dodge strikes: {d} terrain/seed cases preserve hit outcome, damage and RNG position\n", .{checked});
 }

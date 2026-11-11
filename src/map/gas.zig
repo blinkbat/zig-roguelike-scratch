@@ -11,7 +11,6 @@ pub const NAME = "caustic gas";
 pub const HEALING_NAME = "healing gas";
 pub const STEAM_NAME = "steam";
 pub const HISSES = "The water hisses into a cloud of " ++ STEAM_NAME ++ "!";
-/// What a fire's burst gives off where it bursts.
 pub const SMOKE_BURST: u16 = 1200;
 /// Brogue's `DF_BLOAT_DEATH`.
 pub const BURST: u16 = 2000;
@@ -19,17 +18,13 @@ pub const BURST: u16 = 2000;
 pub const HEALING_BURST: u16 = 350;
 /// Brogue updates gas twice a hundred ticks, which is one turn.
 pub const PASSES: usize = 2;
-/// A cell holding less keeps its gas: it takes from a gassed-up neighbour and gives none on.
 pub const GASSED_UP: u16 = 20;
 /// The share of passes a cell that held gas loses a unit; Brogue's healing gas dissipates as quickly.
 pub const DISSIPATE: f32 = 0.5;
 /// Brogue's `T_CAUSES_DAMAGE` and `T_CAUSES_HEALING` alike: a fifteenth of the body's full hp a turn.
 const HARM_PART: i32 = 15;
-/// What a wet cell gives off where fire lands on it.
 pub const BOIL: u16 = 60;
-/// Steam also loses this part of each cell's volume a pass, rounded up, so it clears in a few turns.
 pub const CONDENSE: u32 = 3;
-/// Smoke likewise thins by this part of each cell a pass, slower than steam condenses.
 pub const THIN: u32 = 12;
 pub const SCALD: i32 = 2;
 const SCALD_ELEMENT: damage.Element = .fire;
@@ -46,7 +41,6 @@ pub fn scald(resists: damage.Resists) i32 {
     return damage.resisted(SCALD, resists.get(SCALD_ELEMENT));
 }
 
-/// Steam over each deep water or shallows cell of `cells`; how many boiled.
 pub fn boil(lv: *grid.Level, cells: []const P) usize {
     var n: usize = 0;
     for (cells) |p| {
@@ -68,7 +62,6 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng) void {
     }
 }
 
-/// The ground it grew on, under a cloud of healing gas.
 pub fn burst(lv: *grid.Level, p: P) bool {
     const t = lv.at(p);
     if (!t.bursts()) return false;
@@ -77,7 +70,6 @@ pub fn burst(lv: *grid.Level, p: P) bool {
     return true;
 }
 
-/// Randomly distribute remainders so spreading conserves gas.
 fn spread(lv: *grid.Level, kind: grid.Gas, rng: *mathx.Rng) void {
     const vol = lv.volumes(kind);
     const box = reach(vol) orelse return;
@@ -119,7 +111,7 @@ fn thinning(kind: grid.Gas) ?u32 {
     };
 }
 
-/// A cell wider than the gas all round; the high corner exclusive.
+/// The high corner exclusive.
 fn reach(vol: *const [grid.CELLS]u16) ?grid.Box {
     if (!any(vol)) return null;
     var lo = grid.SIZE;
@@ -185,7 +177,6 @@ test "a burst shut in a room lingers, and on open floor clears sooner and spread
     shut.addGas(room.centre(), BURST);
     const a = try lasts(&shut, .caustic, &rng);
     const b = try onOpenFloor(&rng);
-    std.debug.print("a caustic bloat's burst: shut in a 9x6 room it lasts {d} turns over at most {d} cells, on open floor {d} turns over at most {d}\n", .{ a.turns, a.most, b.turns, b.most });
     try std.testing.expectEqual(@as(usize, @intCast(room.width() * room.height())), a.most);
     try std.testing.expect(a.turns > b.turns);
     try std.testing.expect(b.most < BURST / GASSED_UP * 2);
@@ -209,7 +200,6 @@ test "a burst in a room of a real floor leaks out of its doorways: sooner gone t
         sealed += (try lasts(&shut, .caustic, &rng)).turns;
     }
     const open = (try onOpenFloor(&rng)).turns;
-    std.debug.print("{d} floors, a burst in a room's middle: gone in {d} turns on average, {d} with the same rooms shut, {d} on open floor\n", .{ FLOORS, real / FLOORS, sealed / FLOORS, open });
     try std.testing.expect(real < sealed);
     try std.testing.expect(real > open * FLOORS);
 }
@@ -226,7 +216,6 @@ test "gas drifts over a river to the bank across it" {
     const across = P{ .x = 25, .y = 20 };
     var turns: usize = 0;
     while (!lv.gassy(across) and any(&lv.gas)) : (turns += 1) turn(&lv, &rng);
-    std.debug.print("a burst two cells from a 3-wide river reaches the far bank in {d} turns\n", .{turns});
     try std.testing.expect(lv.gassy(across));
 }
 
@@ -255,7 +244,6 @@ test "a glowbulb bursts into healing gas over its grass, which spreads and clear
         try std.testing.expect(!any(&lv.gas));
         most = @max(most, grid.CELLS - std.mem.count(u16, &lv.healing, &.{0}));
     }
-    std.debug.print("a glowbulb's healing gas on open floor: gone in {d} turns, over at most {d} cells\n", .{ turns, most });
     try std.testing.expect(turns > 5 and most > 9);
 }
 
@@ -288,7 +276,6 @@ test "steam boiled off a lake clears in a few turns, far sooner than as much hea
     var same = grid.openFloor();
     for (blast) |p| same.release(.healing, p, BOIL);
     const healing = try lasts(&same, .healing, &rng);
-    std.debug.print("steam: a 3x3 blast on a lake gone in {d} turns over at most {d} cells, one boiled cell in {d}; as much healing gas lasts {d}\n", .{ steam.turns, steam.most, lone.turns, healing.turns });
     try std.testing.expect(steam.turns * 3 < healing.turns);
     try std.testing.expect(lone.turns < steam.turns);
 }
@@ -309,7 +296,6 @@ test "a burst of smoke hides what lies past it for a few turns, then thins to wi
         most = @max(most, thick);
         try std.testing.expect(!lv.harmful(OPEN_AT));
     }
-    std.debug.print("a smoke burst: hides sight for {d} turns over at most {d} cells, gone in {d}\n", .{ hiding, most, turns });
     try std.testing.expect(hiding >= 4 and hiding < turns and most >= 9);
 }
 

@@ -17,7 +17,6 @@ const TEXT = widgets.TEXT;
 const DETAIL = widgets.DETAIL;
 const ROW_PAD: i32 = 20;
 const ENTRY_H = TEXT + 2 * DETAIL + ROW_PAD;
-/// Of a passage, the most a list row's one fitted line could show.
 const SNIPPET_MAX: usize = 160;
 const LEAD: i32 = 8;
 const LINE_H: i32 = TEXT + LEAD;
@@ -35,11 +34,9 @@ const LIST_MIN_W: i32 = 240;
 const LIST_MAX_W: i32 = 360;
 const SAVE_W: i32 = 160;
 const DISCARD_W: i32 = 100;
-/// Of the page's width, the navigation's and the list's parts.
 const NAV_PARTS: i32 = 5;
 const LIST_PARTS: i32 = 4;
 const WHEEL_ROWS: i32 = 3;
-/// Above the passage's hint, under its source lines.
 const HINT_GAP: i32 = 4;
 const PAGE_LINE: usize = 1024;
 
@@ -145,7 +142,6 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
             f.layout_valid = false;
         }
 
-        /// Where line `line` ends, short of its break.
         fn lineEnd(f: *const Self, line: usize) usize {
             const end = @min(f.n, f.starts[line + 1]);
             return if (end > f.starts[line] and f.buf[end - 1] == '\n') end - 1 else end;
@@ -871,7 +867,6 @@ test "text field replaces selections, preserves drafts on invalid paste, and ins
     f.anchor = 0;
     try std.testing.expect(f.insert("Look!\r\n"));
     try std.testing.expectEqualStrings("Look!\nA slime bites.", f.text());
-    std.debug.print("3 text edits checked: selected replacement, rejected non-ASCII, insertion with normalized newlines\n", .{});
 }
 
 test "text browser groups semantic owners and protects a dirty passage during navigation" {
@@ -909,7 +904,6 @@ test "text browser groups semantic owners and protects a dirty passage during na
     s.scope("Skills", "Mana shield");
     try std.testing.expectEqualStrings("Fireball", s.owner.?);
     try std.testing.expectEqualStrings("A fiery burst.!", s.draft.text());
-    std.debug.print("text browser: semantic grouping, exact-context search, owner filtering and dirty navigation/scroll protection checked\n", .{});
 }
 
 test "text field on one line refuses the breaks and tabs a display alias cannot save" {
@@ -922,7 +916,6 @@ test "text field on one line refuses the breaks and tabs a display alias cannot 
     try std.testing.expect(catalog.oneLine(f.text()));
     try std.testing.expect(f.feed(&.{ .paste_text = "\tbow" }, true));
     try std.testing.expectEqualStrings("Bow\tbow", f.text());
-    std.debug.print("one-line field: tab and line-break pastes refused, Enter ignored; several lines still take a tab\n", .{});
 }
 
 test "text field selection survives select all, shift arrows and idle frames" {
@@ -937,7 +930,6 @@ test "text field selection survives select all, shift arrows and idle frames" {
     try std.testing.expect(f.feed(&.{ .shift = true, .text_left = true }, true));
     try std.testing.expectEqual(f.n - 1, f.cursor);
     try std.testing.expectEqualStrings("A rat bites.", f.text());
-    std.debug.print("3 selection cases retain text: select all, idle frame, shifted arrow\n", .{});
 }
 
 test "text field walks wrapped lines and pastes protected control markers" {
@@ -969,7 +961,6 @@ test "text field walks wrapped lines and pastes protected control markers" {
     f.set("Use ");
     try std.testing.expect(f.insert("\x1eEnter\x1f"));
     try std.testing.expectEqualStrings("Use \x1eEnter\x1f", f.text());
-    std.debug.print("text navigation: 3 wrapped-line moves, shifted selection and protected-marker paste\n", .{});
 }
 
 test "text field undo and redo retain edits and replace an abandoned redo" {
@@ -989,7 +980,6 @@ test "text field undo and redo retain edits and replace an abandoned redo" {
     try std.testing.expect(f.feed(&d, true));
     try std.testing.expect(f.feed(&.{ .redo = true }, true));
     try std.testing.expectEqualStrings("Bow?", f.text());
-    std.debug.print("text history: undo, redo and abandoned redo replacement checked\n", .{});
 }
 
 test "text field wrap cache retains idle measurements and invalidates edits width and fonts" {
@@ -1040,5 +1030,4 @@ test "text field wrap cache retains idle measurements and invalidates edits widt
     const long_calls = measure.calls;
     for (0..60) |_| try std.testing.expect(!f.layout(60, key, &measure));
     try std.testing.expectEqual(long_calls, measure.calls);
-    std.debug.print("text wrapping: 120 idle frames avoid measurements; edits, resize, font changes, undo/redo and unchanged glyph bytes checked\n", .{});
 }

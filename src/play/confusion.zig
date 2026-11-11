@@ -10,7 +10,6 @@ pub const TAKES = "is confused";
 pub const STUMBLES = "stumbles";
 pub const STATUS = std.fmt.comptimePrint("{d}% of moves go a random way.", .{CHANCE});
 
-/// Its turns left moving unsteadily.
 pub const Confusion = resilience.Turns(TURNS);
 
 /// Whether a move goes astray; a body not confused draws nothing.
@@ -33,5 +32,4 @@ test "confusion sends about half of moves astray for three turns and draws nothi
     const before = rng;
     try std.testing.expect(!strays(false, &rng));
     try std.testing.expectEqualDeep(before, rng);
-    std.debug.print("confusion: {d}/1000 moves astray, {d} turns, no draw when clear\n", .{ astray, confused });
 }

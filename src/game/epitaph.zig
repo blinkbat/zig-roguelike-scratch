@@ -10,14 +10,12 @@ const skillbar = @import("../play/skillbar.zig");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
 
-/// Why a bound `act` could not be used now, `.unbound` when it is not on the bar.
 fn readiness(g: *const game.Game, act: skillbar.Act) enum { ready, mana, other, unbound } {
     if (g.bar.slotOf(act) == null) return .unbound;
     const why = skills.blockedNow(g, act) orelse return .ready;
     return if (why == .mana) .mana else .other;
 }
 
-/// The hero as a turn begins, for the chronicle; a stunned turn readies nothing.
 pub fn turnStart(g: *const game.Game) chronicle.Start {
     const h = g.sim.heroBody().?;
     const s = chronicle.Start{ .hp = h.hp, .max = h.max };
@@ -32,7 +30,6 @@ pub fn turnStart(g: *const game.Game) chronicle.Start {
 
 const IN = "in ";
 
-/// "in the Warrens": a map's node title, its leading article lowered.
 fn placeOf(g: *const game.Game, out: *[IN.len + atlas.TITLE_MAX]u8) []const u8 {
     const w = g.sim.map orelse return "on a nameless floor";
     var title: [atlas.TITLE_MAX]u8 = undefined;
@@ -42,7 +39,6 @@ fn placeOf(g: *const game.Game, out: *[IN.len + atlas.TITLE_MAX]u8) []const u8 {
     return s;
 }
 
-/// The dead hero's bones and summary, said as the chronicle saw the death.
 pub fn of(g: *const game.Game) ossuary.Entry {
     const s = &g.sim;
     const h = s.heroBody().?;
@@ -92,7 +88,6 @@ pub fn of(g: *const game.Game) ossuary.Entry {
     return e;
 }
 
-/// Writes the dead hero's epitaph, and entombs it if the hall has room for its renown.
 pub fn inscribe(g: *game.Game) void {
     var e = of(g);
     if (g.hall) |hall| if (hall.qualifies(e.renown)) {

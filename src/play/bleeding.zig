@@ -52,7 +52,6 @@ test "bleeding begins next turn, lasts five ticks, doubles on a turn moved and r
     b.fresh = false;
     var moving: i32 = 0;
     for (0..TURNS) |_| moving += b.tick(true).?;
-    std.debug.print("bleeding: {d} damage over {d} turns standing, {d} moving every turn\n", .{ still, TURNS, moving });
     try std.testing.expectEqual(STILL * TURNS, still);
     try std.testing.expectEqual(MOVING * TURNS, moving);
 }
@@ -67,5 +66,4 @@ test "strong weapon bleed survives weaker refresh without postponing a tick" {
     b.start();
     b.settle();
     try std.testing.expectEqual(@as(?i32, STILL), b.tick(false));
-    std.debug.print("weapon bleed: strong refresh retains 2/4 damage; expiry restores normal 1/2\n", .{});
 }

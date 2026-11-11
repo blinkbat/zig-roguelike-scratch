@@ -21,7 +21,6 @@ pub const MAP_H: i32 = grid.H * SUB;
 pub const NONE_BAKED = [2]i32{ MAP_H, 0 };
 pub const TEXELS: usize = @intCast(MAP_W * MAP_H);
 pub const Layer = enum { map, glints, fog };
-/// Each layer's texel where nothing is remembered.
 pub const UNSEEN = std.EnumArray(Layer, rl.Color).init(.{ .map = rl.Color.blank, .glints = rl.Color.blank, .fog = rl.Color.white });
 /// DST_COLOR/SRC_COLOR blending doubles the stored light.
 pub const OVERBRIGHT: f32 = 2.0;
@@ -71,7 +70,6 @@ const PLANT_LIGHT: Rgb = .{ 0.52, 0.68, 0.92 };
 /// Of its light, what a plant still casts in full day; all of it at night.
 const PLANT_DAY: f32 = 0.2;
 
-/// A plant's light at `daylight` (`day.daylight`).
 pub fn plantShare(daylight: f32) f32 {
     return mathx.lerpF(1, PLANT_DAY, daylight);
 }
@@ -100,18 +98,16 @@ pub const BODY_LIGHTS: usize = 4;
 const FLASH_RGB = Rgb{ 0.88, 0.38, 0.30 };
 /// Texels toward the viewer, for the side-lighting of a body.
 pub const BODY_LIGHT_Z: f32 = 40.0;
-/// The body shader's wrap round the normal, least rise toward the viewer per texel out, rim strength, rim reach in texels and sheen.
+/// The rise is per texel out; the rim reach is in texels.
 pub const BODY_WRAP: f32 = 0.4;
 pub const BODY_RISE: f32 = 0.7;
 pub const BODY_RIM: f32 = 0.8;
 pub const BODY_RIM_REACH: f32 = 2.0;
 pub const BODY_SHEEN: f32 = 0.12;
-/// Darkest ground tint; overlapping shadows take the channelwise minimum.
+/// Overlapping shadows take the channelwise minimum.
 pub const SHADE_RGB = Rgb{ 0.42, 0.45, 0.54 };
-/// Darkens whatever lights the ground, the hero's own light too.
 const MOON_SHADE_RGB = Rgb{ 0.34, 0.40, 0.62 };
 pub const SHADOW_MAX: f32 = 0.85;
-/// A light with this share of all that reaches a body casts its darkest shadow; under it the shadow eases out to none.
 const SHADOW_FULL: f32 = 0.5;
 pub const SHADOW_TAPS: i32 = 3;
 pub const GLOW_CORE: f32 = 0.45;
@@ -120,15 +116,13 @@ pub const GLOW_CORE_A: f32 = 0.85;
 pub const GLOW_HALO_A: f32 = 0.2;
 const GLOW_TINT: Rgb = .{ 1.0, 0.52, 0.22 };
 const PLANT_TINT: Rgb = rgbOf(look.tile(.glow_plant).fg);
-/// Cells between ray samples; softness is a fraction of caster height and a cell distance from round edges.
+/// Cells between ray samples.
 const SUN_STEP: f32 = 0.1;
 pub const SUN_SOFT: f32 = 0.7;
 pub const SUN_EDGE: f32 = 0.2;
-/// Of the sky's light, how much a sun shadow takes away at its darkest, and how dark a body's sun shadow is.
 const SUN_SHADE: f32 = 0.45;
 const SUN_SHADOW_A: f32 = 0.4;
 const SKY_SHADOW = SHADOW_MAX * SUN_SHADOW_A;
-/// Cells to the side the sun lights a body from, as the body shader takes a lamp.
 pub const SUN_LAMP_D: f32 = 3;
 
 /// Height and optional circular radius in cells; null radius fills a square cell.
@@ -156,7 +150,6 @@ const CAST_TALLEST: f32 = blk: {
     break :blk most;
 };
 
-/// 1 where the light the sky casts reaches a point `z` cells up, eased to 0 under anything between it and the light.
 pub fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
     if (sky.upright(ray.flat)) return 1;
     const ux = ray.u[0];
@@ -180,7 +173,6 @@ pub fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
     return lit;
 }
 
-/// Of the light at a bank's foot, the most its contact shading takes, eased out over this many sprite pixels south.
 const BANK_FOOT_SHADE: f32 = 0.35;
 const BANK_FOOT_PX: f32 = 3;
 
@@ -220,9 +212,7 @@ pub fn bankSunlit(lv: *const grid.Level, banks: anytype, ray: SunRay, x: f32, y:
     return lit;
 }
 
-/// Low-sun ground light floor relative to a high sun.
 const GROUND_WRAP: f32 = 0.5;
-/// Cloud shadows: cells across, cells a second drifting, share of sky covered, edge softness, share of the sun taken.
 const CLOUD_SCALE: f32 = 14;
 const CLOUD_DRIFT = [2]f32{ 0.35, 0.12 };
 const CLOUD_COVER: f32 = 0.52;
@@ -231,7 +221,6 @@ const CLOUD_DEPTH: f32 = 0.18;
 const CLOUD_OCTAVES = [2]f32{ 0.65, 0.35 };
 const CLOUD_LACUNARITY: f32 = 2.3;
 
-/// What of the sun a cloud's shadow drifting over a point at `t` seconds leaves it.
 pub fn clouded(x: f32, y: f32, t: f32) f32 {
     const u = x / CLOUD_SCALE + t * CLOUD_DRIFT[0] / CLOUD_SCALE;
     const v = y / CLOUD_SCALE + t * CLOUD_DRIFT[1] / CLOUD_SCALE;
@@ -265,9 +254,7 @@ pub const SunRay = struct {
     k: sky.Sky,
     flat: f32,
     u: [2]f32,
-    /// Cells up per cell along the ground toward the light.
     rise: f32,
-    /// How deep the moon's shadows darken the ground, whatever lights it, and in what.
     night: f32,
     shade: Rgb,
     glint: f32,
@@ -289,7 +276,6 @@ pub const SunRay = struct {
         return mix(splat(1), ray.shade, (1 - sun) * cloud * ray.night);
     }
 
-    /// Cells along the ground from a point `z` up to where the ray has risen over everything that casts.
     pub fn far(ray: SunRay, z: f32) f32 {
         return @max(0, CAST_TALLEST - z) / ray.rise;
     }
@@ -365,7 +351,6 @@ pub const TorchIx = std.math.IntFittingRange(0, LIGHTS - 1);
 
 const Kind = enum { wall, plant };
 
-/// A torch hangs on its wall's south face; a glowing plant is its own torch.
 pub const Mount = union(Kind) {
     wall: P,
     plant: P,
@@ -373,9 +358,8 @@ pub const Mount = union(Kind) {
 
 pub const Torch = struct {
     mount: Mount,
-    /// 1 where the flame's light gets to, over the box of cells centred on the floor below the flame.
+    /// Centred on the floor below the flame.
     reach: [grid.Cells.square(REACH)]f32,
-    /// Sight-blocking mask for interpolation; prevents walls passing light onward.
     open: [grid.Cells.square(REACH)]f32,
     seed: u32,
     colour: Rgb = FLAME,
@@ -403,8 +387,6 @@ pub const Torch = struct {
         };
     }
 
-    /// The flame's flicker, or the plant's slow breath, at `s` seconds.
-    /// `plant` is the share of a plant's light the sky leaves showing, `plantShare`.
     pub fn fan(t: *Torch, s: f32, plant: f32) void {
         switch (t.mount) {
             .wall => {
@@ -437,7 +419,6 @@ pub const Torch = struct {
         return visibility.occluded(&t.reach, &t.open, SPAN, SPAN, uv[0], uv[1]);
     }
 
-    /// The flame's offset from a point and how much of it reaches there, fallen off and occluded; null out of reach.
     pub fn toward(t: *const Torch, x: f32, y: f32, z: f32) ?struct { d: [3]f32, d2: f32, k: f32 } {
         const f = t.flame();
         const d = offset(f, x, y, z);
@@ -488,10 +469,8 @@ pub fn remembered(floor: Rgb, view: Rgb, sight: f32, memory: f32) Rgb {
     return mix(floor, view, sight) * splat(memory);
 }
 
-/// Of `MEMORY`, the share left under the moon.
 const NIGHT_MEMORY: f32 = 0.65;
 
-/// `MEMORY` under a sky whose casting light is the moon's by `moon`.
 pub fn memoryUnder(moon: f32) Rgb {
     return MEMORY * splat(mathx.lerpF(1, NIGHT_MEMORY, moon));
 }
@@ -560,10 +539,8 @@ test "light rolls off past the knee and never reaches the ceiling, however much 
         try std.testing.expect(k > was and k <= CEILING);
         was = k;
     }
-    std.debug.print("tone: 16x stacked light shows at {d:.3}x the art, ceiling {d}x\n", .{ was, CEILING });
 }
 
-/// `knee` and `flashed` for a fragment shader.
 pub const TONE_FS = shaders.glslConsts(.{ .KNEE = KNEE, .ROLL = ROLL, .FLASH = FLASH_RGB }) ++
     \\vec3 knee(vec3 c) {
     \\    return mix(c, KNEE + ROLL * (1.0 - exp(-(c - KNEE) / ROLL)), step(KNEE, c));
@@ -576,7 +553,6 @@ pub const TONE_FS = shaders.glslConsts(.{ .KNEE = KNEE, .ROLL = ROLL, .FLASH = F
 
 const smooth = mathx.smooth;
 
-/// The cosine a light `dy` south of a south face and `flat` from it along the ground strikes it at.
 pub fn faceCos(dy: f32, flat: f32) f32 {
     return dy / @max(flat, FACE_EPS);
 }
@@ -599,12 +575,10 @@ const Lamp = struct {
     drawn: [2]f32,
     ground: [2]f32,
     colour: Rgb,
-    /// The carried light casts no body's shadow, as it casts none of its carrier's.
     casts: bool,
     sky: ?SkyCast = null,
 };
 
-/// Distant sky shadow: `reach` body heights, `depth` intensity in `shade`.
 const SkyCast = struct { reach: f32, depth: f32, shade: Rgb };
 
 pub fn skyDepth(k: sky.Sky, lit: f32) f32 {
@@ -623,9 +597,7 @@ fn skyShade(k: sky.Sky) Rgb {
 pub const Shine = struct {
     ambient: Rgb = @splat(0),
     emission: Rgb = @splat(0),
-    /// Of `ambient`, what memory's floor lifts it by: no light reaches with it.
     floor: Rgb = @splat(0),
-    /// How far in sight times how far remembered the ground under the body is.
     sight: f32 = 1,
     n: usize = 0,
     lamp: [BODY_LIGHTS]Lamp = undefined,
@@ -663,7 +635,6 @@ pub const Shine = struct {
         return recolour(c, rgbOf(c) * knee(self.ambient + self.total() * splat(TINT_DIRECT)));
     }
 
-    /// As the body shader would draw `c`, for what is drawn without it.
     pub fn drawn(self: *const Shine, c: rl.Color, flash: f32) rl.Color {
         return flashed(recolour(c, rgbOf(self.tint(c)) + self.emission * splat(self.sight)), flash);
     }
@@ -673,7 +644,6 @@ fn recolour(c: rl.Color, rgb: Rgb) rl.Color {
     return colourOf(rgb, look.alphaOf(c));
 }
 
-/// `lit` combines sight and memory; `memory` retains only exploration visibility.
 pub const Flame = struct {
     kind: Kind,
     at: [2]f32,
@@ -682,7 +652,6 @@ pub const Flame = struct {
     lit: f32,
     memory: f32,
 
-    /// Seen enough to glow and bloom.
     pub fn live(f: Flame) bool {
         return f.lit > FAINT;
     }
@@ -695,10 +664,8 @@ pub const Flame = struct {
     }
 };
 
-/// Composed daylight warms the sun and cools the shade.
 pub const COMPOSED_KEY: Rgb = .{ 1.035, 1.005, 0.96 };
 pub const COMPOSED_AMBIENT: Rgb = .{ 0.94, 0.98, 1.04 };
-/// Composed sun through cloud: lifted in the open, deeper under cloud, dappled under crowns.
 pub const PATCH_LIFT: f32 = 1.045;
 pub const PATCH_CLOUD: f32 = 1.6;
 pub const DAPPLE_WAVE = [3]f32{ 2.1, 1.6, 1.2 };
@@ -714,12 +681,10 @@ pub const Emission = struct {
     radius: f32,
     gain: f32,
 
-    /// A light at a body's height over `at`.
     pub fn onBody(at: [2]f32, col: rl.Color, radius: f32, gain: f32) Emission {
         return .{ .at = .{ at[0], at[1], BODY_Z }, .col = col, .radius = radius, .gain = gain };
     }
 
-    /// Where the source shows on the map, lifted by its height.
     pub fn drawn(e: Emission) [2]f32 {
         return .{ e.at[0], e.at[1] - e.at[2] };
     }
@@ -761,7 +726,6 @@ pub const Options = struct {
     water_glints: bool = true,
 };
 
-/// The body shader's flash, for what is drawn without it.
 fn flashed(c: rl.Color, k: f32) rl.Color {
     const from = rgbOf(c);
     return recolour(c, mix(from, FLASH_RGB, k));

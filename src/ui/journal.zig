@@ -27,11 +27,8 @@ const MARGIN: i32 = hud.EDGE;
 const BOX_H: i32 = 360;
 const MIN_W: i32 = 120;
 const MAX_W: i32 = 330;
-/// Kept clear between the box and the hud's assembly.
 const HUD_GAP: i32 = 24;
-/// Text's inset from every edge of the box; a row that would cross it is not drawn.
 const PAD: i32 = 14;
-/// The last row's glyphs end `PAD` above the foot; its trailing leading falls below them.
 const ROWS_BOTTOM: i32 = BOX_H - PAD + font.LEADING;
 const LINE_H = font.SMALL_LINE;
 const ENTRY_GAP: i32 = 4;

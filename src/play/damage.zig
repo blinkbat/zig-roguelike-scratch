@@ -14,7 +14,6 @@ pub fn chance(comptime pc: u32) fn (*mathx.Rng, i16) bool {
     }.procs;
 }
 
-/// A skill's `chance` to afflict: `pc` percent whatever the resistance, as `chance(pc)` rolls it.
 pub fn flat(comptime pc: u32) fn (i16) u32 {
     return struct {
         fn of(_: i16) u32 {
@@ -23,7 +22,6 @@ pub fn flat(comptime pc: u32) fn (i16) u32 {
     }.of;
 }
 
-/// `pc` percent cut by `resist` as its element's damage is, held to 0..100.
 pub fn resistedChance(pc: u32, resist: i16) u32 {
     return @intCast(@min(mathx.PERCENT, resisted(std.math.lossyCast(i32, pc), resist)));
 }
@@ -33,7 +31,6 @@ pub fn procs(rng: *mathx.Rng, pc: u32) bool {
     return pc > 0 and rng.percent(pc);
 }
 
-/// A skill's `procs` landing every time, drawing nothing.
 pub fn always(_: *mathx.Rng, _: i16) bool {
     return true;
 }
@@ -50,7 +47,6 @@ pub const Base = struct {
     }
 };
 
-/// The least and most a scaled roll deals.
 pub const Span = struct { lo: i32, hi: i32 };
 pub const PHYSICAL_FMT = "Physical damage: {d}-{d}";
 pub const ELEMENT_FMT = "{s} damage: {d}-{d}";
@@ -85,7 +81,6 @@ pub fn Lasting(comptime TURNS: u8, comptime Arg: type, comptime amount: fn (Arg)
             return if (due(self)) amount(arg) else null;
         }
 
-        /// The turn it started in is over, whether or not its tick ran.
         pub fn settle(self: *@This()) void {
             self.fresh = false;
         }
@@ -136,7 +131,6 @@ test "each elemental resistance reduces only its own damage and leaves physical 
     try std.testing.expectEqual(@as(i32, 30), resisted(20, -50));
     try std.testing.expectEqual(@as(i32, 0), resisted(20, 150));
     try std.testing.expectEqual(@as(i32, 0), resisted(-1, 0));
-    std.debug.print("{d} elemental resistances checked: 50% of 20 = 10, physical damage unchanged\n", .{std.enums.values(Element).len});
 }
 
 test "damage floors each element separately clamps resistance and saturates large totals" {
@@ -156,5 +150,4 @@ test "damage floors each element separately clamps resistance and saturates larg
     try std.testing.expectEqual(@as(i32, 0), tiny.total(.initFill(50)));
     const large = Damage{ .physical = std.math.maxInt(i32), .elements = .initFill(std.math.maxInt(i32)) };
     try std.testing.expectEqual(std.math.maxInt(i32), large.total(.initFill(-100)));
-    std.debug.print("damage boundaries: {d} explicit cases, per-element rounding and saturated mixed totals checked\n", .{cases.len});
 }

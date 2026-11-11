@@ -45,7 +45,6 @@ test "a bandage stops bleeding for a turn and one from the stack, and none left 
     try std.testing.expectEqual(next, g.sim.clock);
     try std.testing.expect(h.bleed.turns > 0);
     try std.testing.expect(harness.logged(g, "none carried"));
-    std.debug.print("bandage: bleed stopped in one turn with no bleed tick; an empty stack refuses and spends no turn\n", .{});
 }
 
 test "smelling salts keep every stun off through the turn they are used and the five after" {
@@ -63,7 +62,6 @@ test "smelling salts keep every stun off through the turn they are used and the 
         harness.use(g, .wait);
     }
     try std.testing.expect(g.sim.takeStatus(h, .stun));
-    std.debug.print("smelling salts: {d} turns after use with no stun landing and no roll drawn, then a stun lands\n", .{consumable.SmellingSalts.TURNS});
 }
 
 test "a frost vial thrown from the bag splashes cold on every foe round its mark and none past it" {
@@ -87,7 +85,6 @@ test "a frost vial thrown from the bag splashes cold on every foe round its mark
     try harness.expectDamage(g, .frost_vial, struck, &.{consumable.FrostVial.BASE});
     try harness.expectDamage(g, .frost_vial, harness.TEST_HP - g.sim.pool.get(harness.foeId(1)).?.hp, &.{consumable.FrostVial.BASE});
     try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(harness.foeId(2)).?.hp);
-    std.debug.print("frost vial: {d} cold to the struck rat, {d} beside it, none 3 tiles on; one vial used\n", .{ struck, harness.TEST_HP - g.sim.pool.get(harness.foeId(1)).?.hp });
 }
 
 test "attack resolution returns harm and statuses without advancing the picture" {
@@ -115,7 +112,6 @@ test "attack resolution returns harm and statuses without advancing the picture"
     try std.testing.expect(attacks.resolve(&g.sim, .fromInt(harness.foeId(1)), raw, .chosen) == null);
     try std.testing.expectEqualDeep(rng, g.sim.rng);
     try std.testing.expectEqualDeep(log, g.sim.log);
-    std.debug.print("attack boundary: damage, bleed and stun resolved before picture changes; missing target leaves RNG and log untouched\n", .{});
 }
 
 test "chosen attacks reactions and status ticks retain recorded seeded outcomes" {
@@ -140,7 +136,6 @@ test "chosen attacks reactions and status ticks retain recorded seeded outcomes"
         try std.testing.expectEqual(case[1], target.hp);
         try std.testing.expectEqualDeep(case[2], g.sim.rng.impl.s);
     }
-    std.debug.print("seeded combat: 3 chosen/reaction/burn sequences retain original HP and final RNG state\n", .{});
 }
 
 test "hero post-action death prevents gas spread and foe actions while clearing turn tracking" {
@@ -167,7 +162,6 @@ test "hero post-action death prevents gas spread and foe actions while clearing 
     try std.testing.expect(!g.sim.stepped);
     try std.testing.expectEqual(@as(usize, 0), g.sim.displaced.count());
     for (g.sim.ran) |ran| try std.testing.expectEqual(@as(usize, 0), ran.count());
-    std.debug.print("turn stages: lethal hero gas precedes spread and foe clocks; all consumed ticks and displacement cleared\n", .{});
 }
 
 test "damage resolution changes only simulation and preserves random streams" {
@@ -194,7 +188,6 @@ test "damage resolution changes only simulation and preserves random streams" {
         try std.testing.expectEqualDeep(rng, g.sim.rng);
         try std.testing.expectEqualDeep(loot_rng, g.sim.loot_rng);
     }
-    std.debug.print("damage resolver: shield absorption, lethal and protected harm, unchanged picture and both RNG streams\n", .{});
 }
 
 fn firstLifeTick(max: i32) i32 {
@@ -221,7 +214,6 @@ test "a hero bitten to death gets an epitaph naming the rat, entombed only while
     harness.bittenToDeath(g);
     try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     const said = g.epitaph.?.text();
-    std.debug.print("epitaph: {s}\n", .{said});
     try std.testing.expect(std.mem.startsWith(u8, said, "Archer was bitten to death by a rat on a nameless floor."));
     try std.testing.expect(std.mem.endsWith(u8, said, " " ++ game.ossuary.ENTOMBED));
     try std.testing.expectEqual(@as(usize, 1), hall.n);
@@ -272,7 +264,6 @@ test "missed reactions preserve the chosen last deed while chosen attacks still 
         const deed = if (reacting) "Knight waited." else "Knight's last arrow missed.";
         try std.testing.expect(std.mem.indexOf(u8, report.text(), deed) != null);
     }
-    std.debug.print("missed blows: chosen attack reported, automatic reaction preserves Wait in the epitaph\n", .{});
 }
 
 test "missed reactions preserve projectile timing without phantom barrels or impact effects" {
@@ -295,7 +286,6 @@ test "missed reactions preserve projectile timing without phantom barrels or imp
         harness.drawnOut(g);
         try std.testing.expect(!g.pic.fx.impacts.breaking(at));
     }
-    std.debug.print("missed reactions: melee and projectile misses schedule no barrel or hit effects; arrow timing retained\n", .{});
 }
 
 test "life and mana fill and drain at XP speed after their presented impact" {
@@ -336,7 +326,6 @@ test "life and mana fill and drain at XP speed after their presented impact" {
     for (0..300) |_| game.update(g, harness.TEST_DT);
     try std.testing.expectEqual(@as(f32, 1), g.pic.life_fill);
     try std.testing.expectEqual(@as(f32, 1), g.pic.mana_fill);
-    std.debug.print("resource fills: held until impact, exact XP easing in both directions, settle without overshoot\n", .{});
 }
 
 test "the experience bar holds a turn's experience until the turn is drawn, then fills toward it" {
@@ -352,7 +341,6 @@ test "the experience bar holds a turn's experience until the turn is drawn, then
     try std.testing.expect(g.pic.xp_shown > 0 and g.pic.xp_shown < aim);
     var t: f32 = 0;
     while (g.pic.xp_shown != aim and t < 1) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
-    std.debug.print("experience bar: {d:.3} of a level drawn {d:.2} s after the turn\n", .{ g.pic.xp_shown, t });
     try std.testing.expect(t > 0 and t < 1);
     try std.testing.expectEqual(aim, g.pic.xp_shown);
 }
@@ -374,7 +362,6 @@ test "a level reached exactly empties the bar, and the book shows it only once t
     try std.testing.expectEqual(@as(f32, 1), g.pic.xp_shown);
     try std.testing.expectEqual(@as(u16, 2), character.bookView(g, &nearby).growth.level);
     try std.testing.expectEqual(@as(i32, 7), character.bookView(g, &nearby).gold);
-    std.debug.print("exact level-up: bar fill {d} after {d:.2} s\n", .{ g.pic.xp_shown - @floor(g.pic.xp_shown), t });
 }
 
 test "level-up celebrates presented progression once without holding play or replaying on load" {
@@ -417,7 +404,6 @@ test "level-up celebrates presented progression once without holding play or rep
     try std.testing.expectEqual(clock, g.sim.clock);
     try std.testing.expectEqualDeep(rng, g.sim.rng);
     try std.testing.expectEqualDeep(seen, g.sim.lv.seen);
-    std.debug.print("level-up: delayed, one-shot, nonblocking; gold body glow and local light fade and expire together; load suppressed and reset; clock/RNG/exploration unchanged\n", .{});
 }
 
 test "the log says the blow and the experience it awards, a juke as itself, and never a bare skill use" {
@@ -437,7 +423,6 @@ test "the log says the blow and the experience it awards, a juke as itself, and 
     g.mode.aim.mark = .{ .x = 20 + juke.RANGE, .y = 20 };
     skills.confirmAim(g);
     try std.testing.expectEqualStrings("Archer jukes away.", g.sim.log.line(0).?);
-    std.debug.print("log: \"{s}\" then \"{s}\"\n", .{ gained, g.sim.log.line(0).? });
 }
 
 test "a flask drink spends a turn, recovers on it and the next two, and kills refill only a worn flask" {
@@ -479,7 +464,6 @@ test "a flask drink spends a turn, recovers on it and the next two, and kills re
     combat.fell(g, harness.foeId(0));
     try std.testing.expectEqual(charges, g.sim.flasks.get(.life).charges);
     try std.testing.expectEqual(mana_charges + flask.PER_KILL, g.sim.flasks.get(.mana).charges);
-    std.debug.print("life flask: {d} hp over {d} turns on a knight of {d}; empty after {d} drinks; {d} kills refill one; unworn it neither drinks nor refills\n", .{ flask.lifeOf(h.max, 0), flask.TURNS, h.max, flask.CHARGES / flask.USE, flask.USE / flask.PER_KILL });
 }
 
 test "each flask drink is a whole turn: foes, ailments, cooldowns, regeneration and the other flask all advance" {
@@ -529,7 +513,6 @@ test "each flask drink is a whole turn: foes, ailments, cooldowns, regeneration 
         try std.testing.expectEqual(mana, g.sim.mana);
         try std.testing.expectEqual(next, g.sim.clock);
     }
-    std.debug.print("2 flask types: one turn each, foes roll, burn, cooldown, regeneration and the other flask advance; no idle recovery\n", .{});
 }
 
 test "mana recovery carries partial progress over spent turns and resets on a new run" {
@@ -554,7 +537,6 @@ test "mana recovery carries partial progress over spent turns and resets on a ne
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     try std.testing.expectEqual(@as(i32, 0), g.sim.mana_recovery);
     try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
-    std.debug.print("mana: 1 per 5 spent turns, Slow Tide 2 per 5 with carried remainder, fresh runs reset recovery\n", .{});
 }
 
 test "a flask's first heal shows on its own turn and later recovery precedes the next bite" {
@@ -584,7 +566,6 @@ test "a flask's first heal shows on its own turn and later recovery precedes the
         game.update(g, harness.TEST_DT);
         if (first == null and g.pic.pictured[hero].hp != first_tick) first = g.pic.pictured[hero].hp;
     }
-    std.debug.print("flask heal: immediate {d} -> {d}, next turn {?d} before bite -> {d}\n", .{ 10, first_tick, first, g.pic.pictured[hero].hp });
     try std.testing.expectEqual(@as(?i32, healed), first);
     try std.testing.expectEqual(h.hp, g.pic.pictured[hero].hp);
 }
@@ -605,7 +586,6 @@ test "passive leech and kill healing land on the drawn hero with the arrow" {
     const hero = g.sim.heroSlot().?;
     try std.testing.expectEqual(@as(i32, 5), g.pic.pictured[hero].hp);
     const t = harness.framesUntil(g, hero, harness.caughtUp);
-    std.debug.print("leech 1 + kill heal 2: drawn hero 5 -> 8 at {d:.3} s, as the arrow lands at {d:.3} s\n", .{ t, harness.SHOT_LANDS });
     try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
 }
 
@@ -621,7 +601,6 @@ test "passive cull finishes a foe left at its threshold and spares one above it"
     combat.wound(g, harness.foeId(1), .{ .dmg = 17 }, combat.SHOOT, .{ .from = from, .wait = 0 });
     try std.testing.expect(g.sim.pool.get(harness.foeId(0)) == null);
     try std.testing.expectEqual(@as(i32, 3), g.sim.pool.get(harness.foeId(1)).?.hp);
-    std.debug.print("cull 10%: a 20-life foe left at 2 is cut down, one left at 3 survives\n", .{});
 }
 
 test "a blow that does no damage culls nothing" {
@@ -640,7 +619,7 @@ test "a culled foe is not said to take the arrow's status" {
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
     takeCull(g);
     harness.setLife(g.sim.pool.get(harness.foeId(0)).?, 3, 20);
-    combat.arrowHit(g, harness.foeId(0), .{ .blow = .{ .physical = 1 } }, .pinning_shot, .{ .from = g.sim.heroActor().?.at, .wait = 0 });
+    combat.skillHit(g, harness.foeId(0), .{ .blow = .{ .physical = 1 } }, .pinning_shot, .{ .from = g.sim.heroActor().?.at, .wait = 0 });
     try std.testing.expect(g.sim.pool.get(harness.foeId(0)) == null);
     try std.testing.expect(!harness.logged(g, pinning.TAKES));
 }
@@ -659,7 +638,6 @@ test "passive leech waits for the arrow while a life flask recovers" {
     harness.confirmUse(g, .shoot);
     try std.testing.expect(g.sim.pool.get(harness.foeId(0)) != null);
     const t = harness.framesUntil(g, hero, harness.caughtUp);
-    std.debug.print("leech under a ticking flask: drawn hero reaches {d} at {d:.3} s, as the arrow lands at {d:.3} s\n", .{ h.hp, t, harness.SHOT_LANDS });
     try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
 }
 
@@ -667,7 +645,6 @@ test "passive mana recovery, skill cost and flask recovery reach the live number
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{.{ .x = 30, .y = 20 }});
-    const cost = g.sim.growth.cost(.charge);
     takeNode(g, "Slow Tide");
     takeNode(g, "Attuned");
     takeNode(g, "Scar Tissue");
@@ -683,7 +660,6 @@ test "passive mana recovery, skill cost and flask recovery reach the live number
     try std.testing.expectEqual(1 + healed, h.hp);
     var desc: [256]u8 = undefined;
     try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .life_flask, &desc), "Recover 60% of life") != null);
-    std.debug.print("passives: mana {d}/{d} turns, charge {d} -> {d} mana, life flask {d} -> {d} on {d} life\n", .{ g.sim.manaRegen(), heroes.MANA_REGEN_TURNS, cost, g.sim.growth.cost(.charge), flask.lifeOf(h.max, 0), healed, h.max });
 }
 
 test "a kill's flask refill shows as the kill is drawn, not as the arrow leaves" {
@@ -703,6 +679,5 @@ test "a kill's flask refill shows as the kill is drawn, not as the arrow leaves"
         }
     };
     const t = harness.framesUntil(g, 0, Refilled.f);
-    std.debug.print("a kill 5 cells out refills the drawn flask {d:.3} s in, as the arrow lands at {d:.3} s\n", .{ t, harness.SHOT_LANDS });
     try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
 }

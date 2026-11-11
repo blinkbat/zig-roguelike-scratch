@@ -7,8 +7,6 @@ const raster = @import("raster.zig");
 const shaders = @import("shaders.zig");
 const sky = @import("sky.zig");
 
-// After Brogue's `getCellAppearance`.
-
 const P = mathx.P;
 
 /// Texels per cell side: a cell is flat, and the step to the next blends over half a cell.
@@ -20,7 +18,6 @@ const TINT_LO: f32 = 0.30;
 const TINT_PER: f32 = 0.01;
 const TINT_HI: f32 = 0.90;
 const FIGURE_SHARE: f32 = 0.5;
-/// Per second.
 const EASE: f32 = 8.0;
 
 fn tintOf(volume: u16) f32 {
@@ -37,7 +34,6 @@ pub const Cloud = struct {
     px: [TEXELS]rl.Color,
     stale: bool = true,
     baked: grid.Box = .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 0, .y = 0 } },
-    /// Seconds, for the drift.
     t: mathx.Seconds = .{},
     /// Seconds until the burst the newest gas came from lands; till then the cloud stays as drawn.
     held: f32 = 0,
@@ -64,7 +60,6 @@ pub const Cloud = struct {
         self.visible = false;
     }
 
-    /// As if long eased: the gas in sight, and nothing remembered.
     pub fn settle(self: *Cloud, lv: *const grid.Level) void {
         for (std.enums.values(grid.Gas)) |kind| {
             for (self.tint.getPtr(kind), &lv.lit, lv.volumes(kind)) |*t, lit, v| t.* = if (lit) tintOf(v) else 0;
@@ -132,7 +127,6 @@ pub const Cloud = struct {
         rl.gl.rlDrawRenderBatchActive();
     }
 
-    /// `lit` is the light on what it veils.
     pub fn beginVeil(self: *const Cloud, lit: rl.Color, focus: look.Focused) bool {
         return self.beginOccludedVeil(lit, focus, .{});
     }
@@ -158,7 +152,6 @@ pub const Cloud = struct {
         rl.endShaderMode();
     }
 
-    /// Whether a veil over the cells of `box` could show any gas.
     pub fn veils(self: *const Cloud, box: grid.Box) bool {
         return self.visible and self.tinted(box.grown(1));
     }
@@ -249,7 +242,6 @@ comptime {
     std.debug.assert(WARP + SOFT < 0.5 / @as(f32, SUB));
 }
 const OCTAVES: u32 = 3;
-/// Each of `fbm`'s octaves weighs this much of the last, the first this much of one.
 const FBM_GAIN: f32 = 0.5;
 const FBM_MAX: f32 = FBM_GAIN * (1 - mathx.powi(FBM_GAIN, OCTAVES)) / (1 - FBM_GAIN);
 
@@ -331,7 +323,6 @@ test "the drawn cloud eases to the gas in sight, and out of sight keeps what was
     var t: f32 = 0;
     while (shown[i] < tintOf(40) * 0.95) : (t += dt) c.step(&lv, dt);
     for (0..240) |_| c.step(&lv, dt);
-    std.debug.print("gas cloud: 95% of the way to its tint in {d:.0} ms\n", .{t * 1000});
     try std.testing.expect(t > 0.2 and t < 0.6);
     try std.testing.expectEqual(tintOf(40), shown[i]);
     lv.lit[i] = false;
@@ -374,7 +365,6 @@ test "a texel mixes the gases by their shares, premultiplied, and holds no colou
     try std.testing.expectEqual(@as(u8, @intFromFloat(@round(@as(f32, look.HEALING_GAS.b) * 0.5))), healing.b);
     c.tint.getPtr(.caustic)[i] = 0.5;
     const both = c.mixed(&lv, at.x * SUB, at.y * SUB);
-    std.debug.print("a texel of healing gas {any}, with as much caustic gas {any}\n", .{ healing, both });
     try std.testing.expectEqual(@as(u8, @intFromFloat(@round(TINT_HI * 255))), both.a);
     for ([_]u8{ both.r, both.g, both.b }, [_]u8{ look.GAS.r, look.GAS.g, look.GAS.b }, [_]u8{ look.HEALING_GAS.r, look.HEALING_GAS.g, look.HEALING_GAS.b }) |got, a, b| {
         try std.testing.expectApproxEqAbs((@as(f32, @floatFromInt(a)) + @as(f32, @floatFromInt(b))) / 2, @as(f32, @floatFromInt(got)) / look.alphaOf(both), 1.5);

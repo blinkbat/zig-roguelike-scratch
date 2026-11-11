@@ -4,8 +4,6 @@ const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 const lume = @import("../lume.zig");
 
-// Diablo II's DrlgMaze: each room drawn by the mask of sides it opens on, as the game picks its presets.
-
 const P = mathx.P;
 
 pub const SIZE_MIN: u8 = 8;
@@ -27,7 +25,6 @@ pub const Style = enum {
 };
 
 const CAVE_WANDER: f32 = 0.6;
-/// A cave room's blob: its edge's least and spread.
 const CAVE_LO: f32 = 0.55;
 const CAVE_SPAN: f32 = 0.6;
 /// The least inner size a tomb room takes its pillars in.
@@ -47,7 +44,6 @@ const SNOW_PER: f32 = 5;
 pub const Params = struct {
     style: Style = .caves,
     rooms: u8 = 14,
-    /// Cells a side.
     size: u8 = 12,
     /// A thousand: how often a room set beside another already there is joined to it too.
     merge: u16 = 500,
@@ -204,7 +200,6 @@ fn pool(lv: *grid.Level, c: P) void {
 test "a lava maze's pools never part ground its ways join" {
     var lv = grid.Level.blank();
     var st: carve.Stretches = .{};
-    var mazes: usize = 0;
     var parted: usize = 0;
     for ([_]u8{ SIZE_MIN, (Params{}).size, SIZE_MAX }) |size| {
         for (0..100) |i| {
@@ -214,11 +209,9 @@ test "a lava maze's pools never part ground its ways join" {
             for (&lv.tile) |*t| {
                 if (t.* == .lava) t.* = .floor;
             }
-            mazes += 1;
             if (with > st.label(&lv)) parted += 1;
         }
     }
-    std.debug.print("{d} lava mazes: {d} with ground a pool parts\n", .{ mazes, parted });
     try std.testing.expectEqual(@as(usize, 0), parted);
 }
 
@@ -229,6 +222,5 @@ test "a maze sets the rooms asked, joined, and merging adds loops" {
     const tree = carve.count(&lv, .floor);
     rng = mathx.Rng.init(0xD2);
     shape(&lv, &rng, 1, .{ .style = .tombs, .merge = 1000 });
-    std.debug.print("a 14-room tomb maze: {d} floor as a tree, {d} merged\n", .{ tree, carve.count(&lv, .floor) });
     try std.testing.expect(tree > 14 * 50);
 }

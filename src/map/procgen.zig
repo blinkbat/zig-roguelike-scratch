@@ -34,7 +34,6 @@ const P = mathx.P;
 pub const MAX_FEATURES: usize = 10;
 const FEATURE_STRIDE: u64 = @intFromEnum(carve.Salt.features);
 
-/// A base biome: `gen.around`'s rooms, or a module with `Params`, `shape` and `palette`.
 pub const Algo = std.meta.Tag(Floor);
 
 const BASES = .{
@@ -108,7 +107,6 @@ pub const Floor = union(enum) {
     }
 };
 
-/// Laid over a base, in order.
 pub const Kind = std.meta.Tag(Feature);
 
 const FEATURES = .{
@@ -289,7 +287,6 @@ test "every base, bare and under every feature, joins its ground, reaches its do
             least = @min(least, open_n);
             most = @max(most, open_n);
         }
-        std.debug.print("{s}: open ground {d}% to {d}% of the map\n", .{ @tagName(a), least * 100 / grid.CELLS, most * 100 / grid.CELLS });
         try std.testing.expect(least * 10 > grid.CELLS);
     }
 }
@@ -308,7 +305,6 @@ test "a torch a border buries frees its slot for the houses raised after it" {
         least = @min(least, lv.torch.n);
         sum += lv.torch.n;
     }
-    std.debug.print("rooms all torched, a wide border, then houses all torched: {d} to {d} torches, {d} average of {d}\n", .{ least, grid.MAX_TORCHES, sum / COUNT_RUNS, grid.MAX_TORCHES });
     try std.testing.expect(sum / COUNT_RUNS * 2 > grid.MAX_TORCHES);
 }
 
@@ -342,7 +338,6 @@ test "a set piece in a thicket opens onto the ground round it, so no join fills 
             } else false;
             if (!out) shut += 1;
         }
-        std.debug.print("{s} in the wilds: {d} of {d} shut in\n", .{ @tagName(pc), shut, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), shut);
     }
 }
@@ -371,7 +366,6 @@ test "a set piece in a thicket or in rock keeps its ground through the joins" {
                 }
                 if (gone) lost += 1;
             }
-            std.debug.print("{s} in {s}: {d} of {d} maps lost ground to the joins\n", .{ @tagName(pc), @typeName(base), lost, COUNT_RUNS });
             try std.testing.expectEqual(@as(usize, 0), lost);
         }
     }
@@ -391,7 +385,6 @@ test "a house in a thicket or in rock keeps its floor through the joins" {
             buildings.apply(&lv, &rng, seed, pal, &lots, (buildings.Params{}).fit());
             if (joinsLose(&lv, &rng, pal, .{}, .floor)) lost += 1;
         }
-        std.debug.print("houses in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
@@ -414,7 +407,6 @@ test "a small house or shrine walled in by an earlier feature keeps its floor th
             setpiece.apply(&lv, &rng, seed, pal, &lots, PACKED_SHRINES);
             if (joinsLose(&lv, &rng, pal, .{}, .floor)) lost += 1;
         }
-        std.debug.print("small houses and shrines after a feature in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
@@ -434,7 +426,6 @@ test "a small house a later thicket shuts in keeps its floor through the joins" 
             scatter.apply(&lv, &rng, seed, pal, thicket.fit());
             if (joinsLose(&lv, &rng, pal, .{}, .floor)) lost += 1;
         }
-        std.debug.print("small houses under a thicket of {d} a thousand, clumps {d}: {d} of {d} maps lost floor to the joins\n", .{ thicket.amount, thicket.clump, lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
@@ -464,7 +455,6 @@ test "a house floored as the base's own ground keeps it through the joins, a bor
             carve.connect(&lv, &rng, pal, .{ .lots = lots.slice() });
             if (filled(&lv, &laid)) lost += 1;
         }
-        std.debug.print("houses then a border in {s}: {d} of {d} maps lost house floor to the joins\n", .{ @typeName(b[0]), lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
@@ -483,7 +473,6 @@ test "a field in a thicket keeps its fence through the joins" {
             farms.apply(&lv, &rng, seed, pal, &lots, (farms.Params{}).fit());
             if (joinsLose(&lv, &rng, pal, .{ .lots = lots.slice() }, .fence)) broken += 1;
         }
-        std.debug.print("fields in {s}: {d} of {d} maps had a join break a fence\n", .{ @typeName(base), broken, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), broken);
     }
 }
@@ -508,7 +497,6 @@ test "a cliff's fords keep their crossing through the joins" {
             carve.connect(&lv, &rng, pal, .{ .before = &base });
             if (filled(&lv, &opened)) lost += 1;
         }
-        std.debug.print("rock cliffs with {d} fords in {s}: {d} of {d} maps filled a ford\n", .{ cliff.fords, @typeName(b), lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
@@ -539,7 +527,6 @@ test "a house or set piece is raised clear of what an earlier feature laid" {
             over = over or laidOver(&lv, &was, &base, pal);
             if (over) hit += 1;
         }
-        std.debug.print("houses after fields, shrines after both, in {s}: {d} of {d} maps laid over them\n", .{ @typeName(b[0]), hit, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), hit);
     }
 }
@@ -574,7 +561,6 @@ test "a scatter over grass takes the decor standing on it too" {
     var decor: usize = 0;
     var plants = grid.LITTER_TILES.iterator();
     while (plants.next()) |t| decor += carve.count(&lv, t);
-    std.debug.print("open ground but frozen: {d} decor left, {d} snow\n", .{ decor, carve.count(&lv, .snow) });
     try std.testing.expectEqual(@as(usize, 0), decor);
 }
 

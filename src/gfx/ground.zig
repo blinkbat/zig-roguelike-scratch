@@ -79,7 +79,6 @@ const BY_RANK = blk: {
     break :blk by;
 };
 
-/// Every ground, lowest first, as they draw.
 pub const LAYERS: []const Ground = BY_RANK[NONE + 1 ..];
 
 pub fn of(t: grid.Tile) ?Ground {
@@ -97,8 +96,7 @@ comptime {
     }
 }
 
-/// Under standing tiles, choose the neighbours' majority ground, lowest rank on ties; otherwise `look.under`.
-/// `seen_only` lets only seen neighbours vote, as play draws.
+/// Under standing tiles, the neighbours' majority ground (only seen ones vote with `seen_only`), lowest rank on ties; otherwise `look.under`.
 pub fn bedAt(lv: *const grid.Level, p: P, seen_only: bool) ?Ground {
     const t = lv.at(p);
     if (of(t)) |g| return g;
@@ -128,7 +126,6 @@ fn isGround(r: u8) bool {
     return r != NONE and r != OVER;
 }
 
-/// Cache visible ground ranks and corner points for all layers in a frame.
 pub const Beds = struct {
     lo: P,
     hi: P,
@@ -156,7 +153,6 @@ pub const Beds = struct {
 
     pub const Point = struct {
         corners: Corners,
-        /// A bit for each rank among them.
         holds: Ranks,
 
         pub fn has(self: Point, g: Ground) bool {
@@ -211,12 +207,10 @@ pub const Beds = struct {
         return if (isGround(r)) Ground.ofRank(r) else null;
     }
 
-    /// Every point from `lo` to `hi`, both included, row by row as `point` holds them.
     pub fn points(self: *const Beds) grid.Cells {
         return grid.Cells.of(self.lo, self.hi.add(.{ .x = 1, .y = 1 }));
     }
 
-    /// Point `c`, from `lo` to `hi`.
     pub fn pointAt(self: *const Beds, c: P) Point {
         const i = @as(usize, @intCast(c.y - self.lo.y)) * self.across + @as(usize, @intCast(c.x - self.lo.x));
         return self.point[i];
@@ -239,7 +233,6 @@ const MASKS: usize = @as(usize, FULL) + 1;
 pub const COLS: usize = 4;
 pub const ROWS: usize = MASKS / COLS;
 
-/// Where each mask's piece lies in its sheet, cells across and down.
 pub const CELL_OF = blk: {
     var at: [MASKS]P = undefined;
     var seen = [_]bool{false} ** MASKS;
@@ -272,7 +265,6 @@ pub const AROUND = [4]struct { d: P, bit: u4 }{
     .{ .d = .{ .x = 0, .y = 0 }, .bit = SE },
 };
 
-/// What the cells round a point hold, as `Beds` ranks them.
 const Corners = struct {
     rank: [4]u8,
 
@@ -314,7 +306,6 @@ const Corners = struct {
         return std.mem.indexOfScalar(u8, &self.rank, g.rank()) != null;
     }
 
-    /// `g`'s piece here: the corners holding it or anything over it, so it runs under them; 0 where `g` is not here.
     pub fn mask(self: Corners, g: Ground) u4 {
         if (!self.holds(g)) return 0;
         var m: u4 = 0;
@@ -324,7 +315,6 @@ const Corners = struct {
         return m;
     }
 
-    /// Unsheeted `g` fills beneath higher sheeted corners; zero if `g` is absent.
     pub fn under(self: Corners, g: Ground, sheets: Grounds) u4 {
         if (!self.holds(g)) return 0;
         var m: u4 = 0;
@@ -369,7 +359,6 @@ pub const BankPiece = enum(u8) {
 
     pub const COUNT = std.enums.values(BankPiece).len;
 
-    /// By whether the bank runs on west and east of the point.
     pub fn of(west: bool, east: bool) ?BankPiece {
         return if (west) (if (east) .repeat else .right) else if (east) .left else null;
     }
@@ -378,7 +367,6 @@ pub const BankPiece = enum(u8) {
         return @intFromEnum(self);
     }
 
-    /// The step across from the point to the water below `side`'s half.
     fn wetSide(self: BankPiece, side: usize) i32 {
         return switch (self) {
             .left => 0,
@@ -391,7 +379,6 @@ pub const BankPiece = enum(u8) {
         return p.add(.{ .x = self.wetSide(side), .y = 0 });
     }
 
-    /// `side`'s half lies past the bank's end, beside it rather than above it.
     pub fn outside(self: BankPiece, side: usize) bool {
         return (self == .left and side == 0) or (self == .right and side == 1);
     }
@@ -427,7 +414,6 @@ pub fn bankAbove(north: grid.Tile, south: grid.Tile) bool {
 pub const BANK_LIFT_PX: f32 = 8;
 pub const BANK_LIFT: f32 = BANK_LIFT_PX / look.SPRITE_PX;
 
-/// Per pixel column across every `BankPiece`.
 const Profile = [BankPiece.COUNT * look.SPRITE_PX]u8;
 const Heights = fn (*const BankDepth) *const Profile;
 
@@ -472,7 +458,6 @@ fn bankProfile(lv: *const grid.Level, q: [2]f32, comptime heights: Heights) ?f32
     return (BankShape.of(lv, c) orelse return null).profile(c, q, heights);
 }
 
-/// A bank cell's water ground and the piece of its bank at the points on its west and east edges.
 const BankShape = struct {
     water: Ground,
     pieces: [2]BankPiece,
@@ -508,7 +493,6 @@ fn pieceAt(lv: *const grid.Level, bank: Bank, p: P) BankPiece {
     return BankPiece.of(west, east) orelse .left;
 }
 
-/// Bank shading's terrain reads, straight off a level.
 pub const LiveBanks = struct {
     lv: *const grid.Level,
 
@@ -525,7 +509,6 @@ pub const LiveBanks = struct {
     }
 };
 
-/// The same reads, kept per cell for the terrain last synced.
 pub const Banks = struct {
     beds: [grid.CELLS]?Ground = undefined,
     shapes: [grid.CELLS]?BankShape = undefined,
@@ -611,7 +594,6 @@ test "a corner's pieces stack: each ground covers its own corners and those of e
     try std.testing.expectEqual(@as(u4, 0), fogged.mask(.grass));
     const edge = bedsOf(&lv, .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 4 }, true).pointAt(.{ .x = 0, .y = 0 }).corners;
     try std.testing.expectEqual(SE, edge.mask(.grass));
-    std.debug.print("cobble, water, dirt and grass round one point: masks {d} {d} {d} {d}\n", .{ c.mask(.cobble), c.mask(.water), c.mask(.dirt), c.mask(.grass) });
 }
 
 test "what stands takes the ground its neighbours bear" {
@@ -646,7 +628,6 @@ test "ground sheet cells and corner bits match the art templates independently o
     try expectLuaList(u4, &ORDER, "tools/tile_art/ground_corners.lua", "return {");
     try expectLuaList(u4, &.{ NW, NE, SW, SE }, "tools/tile_art/ground_sheet.lua", "local NW,NE,SW,SE=");
     try std.testing.expectEqual(P{ .x = 1, .y = 1 }, CELL_OF[FULL]);
-    std.debug.print("ground art contract: {d} sheet masks and {d} corner bits checked without artwork-dependent skips\n", .{ ORDER.len, AROUND.len });
 }
 
 test "a ground with no sheet lies under the edges round it of a higher one that has a sheet" {
@@ -691,7 +672,6 @@ test "water edge edits select all mixed pair masks and exclude unseen or differe
             }
         }
     }
-    std.debug.print("water edge masks: 48 pair layouts, 144 unseen/upright/grass exclusions\n", .{});
 }
 
 test "stepped water banks end each depth independently and route all three material corners" {
@@ -718,7 +698,6 @@ test "stepped water banks end each depth independently and route all three mater
         }
     }
     try std.testing.expectEqual(@as(usize, 36), mixed_n);
-    std.debug.print("stepped banks: separate shallow/deep ends and 36 three-material layouts, 144 quarter routes\n", .{});
 }
 
 test "water cliff faces dry north banks with joined middles and separate ends" {
@@ -791,7 +770,6 @@ test "water cliff faces dry north banks with joined middles and separate ends" {
     lv.set(.{ .x = 11, .y = 0 }, .water);
     try std.testing.expectEqual(@as(?f32, null), bankFoot(&lv, .{ 10.75, 0 }));
     try std.testing.expectEqual(@as(?f32, null), bankLip(&lv, .{ 10.75, 0 }));
-    std.debug.print("water cliffs: joined banks and ends, 5 excluded surfaces, fog/editor, 16 land/depth combinations across 3 bank selectors, shallow-to-deep lip/foot, separate mixed ends and no bank off the top row\n", .{});
 }
 
 /// The values in a tile-art script after `after`, to its `}` when it opens a table or else to the line's end, are `want`.

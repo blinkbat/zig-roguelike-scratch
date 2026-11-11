@@ -7,15 +7,12 @@ const P = mathx.P;
 /// Turns frozen shallows stay ice.
 pub const THAWS: u8 = 10;
 pub const FREEZES = "The water freezes over.";
-/// What freezes, and what ice that thaws or melts goes back to.
 pub const WATER: grid.Tile = .shallows;
 
-/// `was` froze into `now`, or thawed or melted out of it.
 pub fn turned(was: grid.Tile, now: grid.Tile) bool {
     return (was == WATER and now == .ice) or (was == .ice and now == WATER);
 }
 
-/// Each shallows cell of `cells` freezes for `THAWS` turns, and frozen ice there freezes afresh; how many froze.
 pub fn freeze(lv: *grid.Level, cells: []const P) usize {
     var n: usize = 0;
     for (cells) |p| {
@@ -30,7 +27,6 @@ pub fn freeze(lv: *grid.Level, cells: []const P) usize {
     return n;
 }
 
-/// Each frozen cell of `cells` melts back to shallows; how many did.
 pub fn melt(lv: *grid.Level, cells: []const P) usize {
     var n: usize = 0;
     for (cells) |p| {
@@ -43,7 +39,7 @@ pub fn melt(lv: *grid.Level, cells: []const P) usize {
     return n;
 }
 
-/// A turn of thaw: frozen cells count down, and those at an end turn back to shallows; true when any did.
+/// True when any frozen cell thawed back to shallows.
 pub fn turn(lv: *grid.Level) bool {
     var thawed = false;
     for (&lv.thaw, &lv.tile) |*left, *t| {
@@ -78,7 +74,6 @@ test "cold freezes only shallows, for its turns, and refreezing starts them afre
     try std.testing.expect(turn(&lv));
     try std.testing.expectEqual(grid.Tile.shallows, lv.at(AT));
     try std.testing.expectEqual(@as(u8, 0), lv.thaw[grid.Level.idx(AT)]);
-    std.debug.print("frozen shallows: ice for {d} turns, refreezing restarts the count\n", .{THAWS});
 }
 
 test "melting and thawing take back only frozen shallows, never lasting ice or a tile laid over the frozen cell" {

@@ -3,7 +3,6 @@ const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const upper = @import("text.zig").upper;
 
-/// Last active device; selects maker-specific button captions.
 pub const Device = enum {
     xbox,
     ps4,
@@ -50,7 +49,6 @@ pub const GLYPH_OPEN = '\x1e';
 pub const GLYPH_CLOSE = '\x1f';
 pub const WHEEL = "wheel";
 pub const ARROWS = "arrows";
-/// Key captions a prompt draws as an arrow.
 pub const ARROW_KEYS = [_]struct { caption: [:0]const u8, d: mathx.Dir }{
     .{ .caption = keyName(.up), .d = .n },
     .{ .caption = keyName(.down), .d = .s },

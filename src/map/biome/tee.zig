@@ -4,9 +4,6 @@ const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 const setpiece = @import("../feature/setpiece.zig");
 
-// An upside-down T of open ground cut from forest: woods to the west, a caravan camp where a path climbs the stem, a river bridged to the east.
-// Winding trails may lead off it into the forest, a crescent pond hold chests waded out to, and small goblin camps keep away from the carts.
-
 const P = mathx.P;
 
 pub const BAR_MIN: u8 = 10;
@@ -34,7 +31,6 @@ pub const CAMPS_MAX: u8 = 3;
 
 /// Forest kept below the bar.
 const FOOT: i32 = 2;
-/// The first row of the foot, just below the bar.
 const BAR_FLOOR: i32 = grid.H - 1 - FOOT;
 const SHIFT: i32 = 3;
 const FRAY_SCALE: f32 = 5;
@@ -71,7 +67,6 @@ const WATER_APART: f32 = 2;
 const POND_TRIES: usize = 400;
 const SITE_TRIES: usize = 400;
 const CHEST_APART: i32 = 3;
-/// Cells from the caravan camp's edge to a pond's or a goblin camp's, at least.
 const CLEAR_OF_CARTS: i32 = 12;
 const CAMP_ART = setpiece.rows(.camp);
 
@@ -80,11 +75,8 @@ comptime {
 }
 
 pub const Params = struct {
-    /// Rows the crossbar is tall.
     bar: u8 = 24,
-    /// Cells the stem is wide.
     stem: u8 = 26,
-    /// Cells the edge wanders in or out.
     fray: u8 = 3,
     /// Cells of the crossbar, from the west, that are woods.
     forest: u8 = 24,
@@ -98,17 +90,13 @@ pub const Params = struct {
     chests: u8 = 1,
     /// Cells the river is wide; 0 for none.
     river: u8 = 22,
-    /// Cells of land east of the river.
     bank: u8 = 6,
     bridge: u8 = 5,
     path: u8 = 3,
-    /// Winding trails off the T into the forest, each ending narrow or in a small glade.
     spurs: u8 = 0,
     /// The crescent pond's radius; 0 for none.
     pond: u8 = 0,
-    /// Chests standing out in the pond, each with shallows to wade out by.
     pond_chests: u8 = 0,
-    /// Small goblin camps, off the roads and away from the carts.
     camps: u8 = 0,
     litter: carve.Litter = .{},
     decor: carve.Decor = .{},
@@ -145,7 +133,6 @@ const PAL = carve.Palette.TRAILED.pocketed();
 const TRAIL = PAL.path;
 const SOLID = PAL.solid;
 const OPEN = PAL.open;
-/// Where a pond or goblin camp may lie, or a trail lead: off the rim and above the foot.
 const ABOVE_FOOT = grid.Box{ .lo = .{ .x = 1, .y = 1 }, .hi = .{ .x = grid.W - 1, .y = BAR_FLOOR - 1 } };
 /// The camp's river crossing, which no fire takes down.
 const CROSSING: grid.Tile = .stone_bridge;
@@ -266,7 +253,6 @@ fn roads(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params, kept: *grid.Ce
     road(lv, rng, far, .{ .x = grid.W - 1, .y = c.y }, p.path, 0, lowest, kept);
 }
 
-/// The first and last wet cells east of `from` on its row.
 fn wetSpan(lv: *const grid.Level, from: P) ?[2]i32 {
     var x = from.x;
     while (x < grid.W - 1 and !lv.at(.{ .x = x, .y = from.y }).wet()) x += 1;
@@ -275,7 +261,6 @@ fn wetSpan(lv: *const grid.Level, from: P) ?[2]i32 {
     return if (x < last) .{ x, last } else null;
 }
 
-/// The lowest row a lane of `width` can run along without paving the foot.
 fn lowestFor(width: u8) i32 {
     return BAR_FLOOR - 1 - carve.discReach(carve.laneRadius(width));
 }
@@ -302,7 +287,6 @@ const Spot = struct {
     lv: *const grid.Level,
     kept: *const grid.CellSet,
 
-    /// Camp ground off the roads, open all round.
     fn free(s: Spot, q: P) bool {
         if (grid.Level.onRim(q)) return false;
         const i = grid.Level.idx(q);
@@ -361,7 +345,6 @@ fn forest(t: grid.Tile) bool {
     return t == SOLID;
 }
 
-/// A disc of radius `r` about `c` with a hollow cut from one side, leaving a crescent.
 const Crescent = struct {
     c: P,
     r: f32,
@@ -379,17 +362,14 @@ const Crescent = struct {
         return @min(s.inDisc(q), s.inHollow(q) - s.r * HOLLOW);
     }
 
-    /// Cells in from the disc's edge.
     fn inDisc(s: Crescent, q: P) f32 {
         return s.r - mathx.distEuclid(q, s.c);
     }
 
-    /// Cells from the hollow's middle.
     fn inHollow(s: Crescent, q: P) f32 {
         return mathx.len(@as(f32, @floatFromInt(q.x)) - s.hollow_x, @as(f32, @floatFromInt(q.y)) - s.hollow_y);
     }
 
-    /// The water, the hollow it curls round, and a cell of shore beyond.
     fn reaches(s: Crescent, q: P) bool {
         return s.inDisc(q) >= -1;
     }
@@ -403,12 +383,10 @@ const Crescent = struct {
     }
 };
 
-/// Grass, forest or a lone tree: ground a pond or a goblin camp may be laid over.
 fn layable(t: grid.Tile) bool {
     return t == OPEN or t == SOLID or t == .large_tree;
 }
 
-/// Ground a pond or a goblin camp may be laid over, at least `clear` from the caravan camp's middle.
 const Site = struct {
     spot: Spot,
     caravan: P,
@@ -418,14 +396,12 @@ const Site = struct {
         return mathx.dist(c, s.caravan) < s.clear;
     }
 
-    /// Above the foot, off the roads, the bridge and anything standing, over grass, forest or a lone tree.
     fn layableAt(s: Site, q: P) bool {
         if (!ABOVE_FOOT.holds(q)) return false;
         const i = grid.Level.idx(q);
         return s.spot.unheld(i) and layable(s.spot.lv.tile[i]);
     }
 
-    /// A goblin camp's art with its corner at `lo`, and a cell round it.
     fn campFits(s: Site, lo: P) bool {
         const b = grid.Box.sizedP(lo, setpiece.size(CAMP_ART));
         if (s.nearCarts(b.centre())) return false;
@@ -437,8 +413,7 @@ const Site = struct {
     }
 };
 
-/// Where the pond may lie: on `Site` ground, apart from other water so it stays a pond of its own,
-/// and with some of its shore on the T's grass so nothing need be cut to it.
+/// Apart from other water so it stays its own pond, with some shore on the T's grass so nothing need be cut to it.
 const PondSite = struct {
     site: Site,
     r: f32,
@@ -461,7 +436,6 @@ const PondSite = struct {
     }
 };
 
-/// A crescent of water in a clearing of its own, deep in from its edge, with chests out in it.
 fn pond(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *grid.CellSet) void {
     const r: f32 = @floatFromInt(p.pond);
     const angle = rng.angle();
@@ -488,7 +462,6 @@ const ChestSite = struct {
     lv: *const grid.Level,
     chests: []const P,
 
-    /// Deep water with water all round it, apart from the other chests.
     fn fits(s: ChestSite, q: P) bool {
         if (s.lv.at(q) != .water) return false;
         for (s.chests) |c| if (mathx.dist(c, q) < CHEST_APART) return false;
@@ -498,7 +471,6 @@ const ChestSite = struct {
     }
 };
 
-/// Shallows round `at` and on to dry ground toward `shore`, so it is waded out to.
 fn wade(lv: *grid.Level, at: P, shore: P) void {
     var cells = grid.Cells.around(at, 1);
     while (cells.next()) |q| {
@@ -527,7 +499,6 @@ fn goblinCamps(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *g
     }
 }
 
-/// Forest along `d` from `q`, far enough for a trail to wind into.
 fn leadsInto(lv: *const grid.Level, q: P, d: mathx.Dir) bool {
     const ahead = q.add(d.delta().scaled(SPUR_INTO));
     return ABOVE_FOOT.holds(ahead) and forest(lv.at(q.add(d.delta()))) and forest(lv.at(ahead));
@@ -539,7 +510,6 @@ fn spurStart(lv: *const grid.Level, q: P) bool {
     return false;
 }
 
-/// A winding trail from the T's edge into the forest, ending narrow or in a small glade.
 fn spur(lv: *grid.Level, rng: *mathx.Rng) void {
     const start = SPUR_BOX.rollWhere(rng, SITE_TRIES, @as(*const grid.Level, lv), spurStart) orelse return;
     var ways = grid.Bounded(mathx.Dir, carve.SIDES.len){};
@@ -570,7 +540,6 @@ fn bridgeAt(lv: *const grid.Level) !P {
     return grid.Level.of(std.mem.indexOfScalar(grid.Tile, &lv.tile, CROSSING) orelse return error.NoBridge);
 }
 
-/// Dry cells east of the bridge on its middle row, up to the rim.
 fn farBank(lv: *const grid.Level) i32 {
     var lo: ?P = null;
     var hi: ?P = null;
@@ -627,8 +596,6 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
         trees += carve.count(&lv, .large_tree);
         barrels += lv.barrelCount();
     }
-    std.debug.print("{d} tees: {d} open cells in the upper corners and under the bar, {d} of {d} carts, {d} bridged in stone, {d} wooden bridge cells, {d} large trees and {d} barrels a map, a far bank {d} cells at the least of {d}, {d} of {d} at the narrowest\n", .{ RUNS, corner_open, carts, RUNS * p.carts, bridged, flammable, trees / RUNS, barrels / RUNS, bank, p.bank, narrow, BANK_MIN });
-    std.debug.print("{d} low tees with the widest paths: {d} open cells under the bar\n", .{ RUNS, low_foot_open });
     try std.testing.expectEqual(@as(usize, 0), corner_open);
     try std.testing.expectEqual(@as(usize, 0), low_foot_open);
     try std.testing.expect(bank * 2 >= p.bank and narrow >= BANK_MIN);
@@ -664,7 +631,6 @@ test "a tee's carts stand whole and its roads reach the west, north and east edg
             }
         }
     }
-    std.debug.print("{d} tees: the bridge walks to the west edge {d}, the north {d}, the east {d} times\n", .{ RUNS, reached[0], reached[1], reached[2] });
     for (reached) |got| try std.testing.expectEqual(RUNS, got);
 }
 
@@ -701,7 +667,6 @@ test "a tee's crescent pond, its chests and its goblin camps' fires are all walk
             };
         }
     }
-    std.debug.print("{d} tees with spurs, a pond and camps: {d} ponds, {d} chests out in water ({d} reached), {d} camp fires ({d} reached)\n", .{ RUNS, ponds, chests[0], chests[1], fires[0], fires[1] });
     try std.testing.expectEqual(RUNS, ponds);
     try std.testing.expect(chests[0] * 100 >= RUNS * p.pond_chests * 95);
     try std.testing.expectEqual(chests[0], chests[1]);
@@ -717,6 +682,5 @@ test "the biggest camp frays as far as its blob reaches, past a box of its radiu
         camp(&lv, carve.Noise.init(0xCA4 +% i *% grid.TEST_SEED_STRIDE, .tee), c, CAMP_MAX);
         for (lv.tile, 0..) |t, k| past += @intFromBool(t == TRAIL and mathx.dist(grid.Level.of(k), c) > CAMP_MAX + 1);
     }
-    std.debug.print("{d} camps of radius {d}: {d} trail cells beyond {d} of the middle\n", .{ RUNS, CAMP_MAX, past, CAMP_MAX + 1 });
     try std.testing.expect(past > 0);
 }

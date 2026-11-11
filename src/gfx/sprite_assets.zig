@@ -27,7 +27,6 @@ pub const PICTURE_CASTERS = blk: {
     break :blk out;
 };
 
-/// Every sprite that throws a shadow from its feet: bodies, barrel, picture casters, forest shapes, item bags, a mimic's chest and `shrub2.png`.
 pub const FIGURES: usize = LIT_FIGURES + PICTURE_CASTERS.len + WALL_MASKS.len + PROP_FIGURES.len;
 pub const PROP_FIGURES = [_][:0]const u8{ "item_bag", "chest_item_bag", "mimic_closed", "shrub2" };
 /// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
@@ -82,7 +81,6 @@ pub const Assets = struct {
         return need;
     }
 
-    /// The ground `t` left at `p` once a mimic's chest is flung open, a glowbulb bursts or fire burns it down.
     pub fn beneath(need: *Assets, t: grid.Tile, p: mathx.P) void {
         need.decor(t, p);
         if (look.standsOver(t)) if (cutOf(t, null)) |c| need.add(c);
@@ -128,7 +126,6 @@ pub const Assets = struct {
         need.bodies.setUnion(actor.descent(k).intersectWith(PICTURED));
     }
 
-    /// Preload every editor asset so painting does not decode sheets mid-stroke.
     pub fn everything() Assets {
         var all = Assets{ .grounds = GROUND_SHEETS, .bodies = PICTURED, .wall = .initFull(), .forest = .initFull() };
         inline for (std.meta.fields(Assets)) |f| {
@@ -158,7 +155,7 @@ pub const Assets = struct {
     }
 };
 
-/// Each water edge atlas, by its `Sprites`/`SOURCES` field, and the grounds whose meeting it draws, in drawing order.
+/// In drawing order.
 pub const WATER_EDGES = [_]struct { upper: ground.Ground, lower: ground.Ground, name: [:0]const u8 }{
     .{ .upper = .shallows, .lower = .water, .name = "shallows_water_edges" },
     .{ .upper = .dirt, .lower = .shallows, .name = "dirt_shallows_edges" },
@@ -238,7 +235,6 @@ const PICTURED = blk: {
     break :blk s;
 };
 
-/// A wall's are cut from `WALLS_PNG` by its shape instead, and a forest's shrubs from `FOREST_PNG`.
 const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const u8, null), .{
     .floor = @embedFile("floor.png"),
     .grass = @embedFile("grass.png"),
@@ -313,20 +309,16 @@ comptime {
     std.debug.assert(std.meta.eql(pngSize(WALLS_PNG), pngSize(FOREST_PNG)));
 }
 
-/// One lone shrub in this many is a forest clump, the rest `shrub.png`; which ones by a hash of the cell.
 const LONE_CLUMP_IN: u64 = 3;
 const LONE_CLUMP_SEED: u64 = 0xF02E57;
-/// One lone shrub in this many that is no clump draws `shrub2.png`.
 const SHRUB2_IN: u64 = 2;
 const SHRUB2_SEED: u64 = 0x5B2;
-/// Of every `in` whole pieces of a ground, by a hash of the cell, the first draw its `fields` in turn instead.
 const Alternates = struct { seed: u64, in: u64, fields: []const []const u8 };
 pub const GROUND_ALTERNATES = std.EnumArray(ground.Ground, ?Alternates).initDefault(@as(?Alternates, null), .{
     .grass = .{ .seed = 0x62A552, .in = 3, .fields = &.{"grass2"} },
     .dirt = .{ .seed = 0xD127, .in = 3, .fields = &.{"dirt2"} },
     .shallows = .{ .seed = 0x5A110, .in = 16, .fields = &.{ "shallows2", "shallows3" } },
 });
-/// Of `DECOR_IN` grass cells, `BRUSH_IN` take brush and one flowers.
 const DECOR_IN: u64 = 60;
 const BRUSH_IN: u64 = 3;
 const DECOR_SEED: u64 = 0xB2754;
@@ -440,7 +432,6 @@ test "map assets include unseen shapes, ground under props and future slime form
     try std.testing.expect(Assets.of(&lv).barrel);
     lv.barrel_seen[cell] = false;
     try std.testing.expect(!Assets.of(&lv).barrel);
-    std.debug.print("map assets: hidden walls and forest, 2 underlays, slime descendants, remembered barrels and map replacement checked\n", .{});
 }
 
 test "map assets hold the fallback ground a prop stands on when only unbearing neighbours are seen" {
@@ -459,7 +450,6 @@ test "map assets hold the fallback ground a prop stands on when only unbearing n
     try std.testing.expect(shown != ground.bedAt(&lv, p, false).?);
     const need = Assets.of(&lv);
     try std.testing.expect(if (GROUND_SHEETS.contains(shown)) need.grounds.contains(shown) else need.tiles.contains(shown.tile()));
-    std.debug.print("prop seen over water only: drawn on {s}, loaded\n", .{@tagName(shown)});
 }
 
 test "map assets retain the water artwork beneath temporary ice" {
@@ -471,7 +461,6 @@ test "map assets retain the water artwork beneath temporary ice" {
     lv.thaw[grid.Level.idx(at)] = 2;
     const frozen = Assets.of(&lv);
     try std.testing.expectEqualDeep(frozen, frozen.merge(thawed));
-    std.debug.print("frozen map assets: all {d} thawed artwork requirements remain resident\n", .{thawed.count()});
 }
 
 test "map assets hold the grass decor a glowbulb leaves when it bursts" {
@@ -490,11 +479,10 @@ test "map assets hold the grass decor a glowbulb leaves when it bursts" {
         if (checked == 8) break;
     }
     try std.testing.expectEqual(@as(usize, 8), checked);
-    std.debug.print("glowbulb decor: {d} lone plants on floor load the grass decor they burst into\n", .{checked});
 }
 
 test "every wall and forest cell lies inside its PNG, and one past its end is refused" {
-    for ([_][]const u8{ WALLS_PNG, FOREST_PNG }, [_][]const u8{ "walls", "forest" }) |png, name| {
+    for ([_][]const u8{ WALLS_PNG, FOREST_PNG }) |png| {
         const w = pngSize(png).x;
         const h = pngSize(png).y;
         const sheet = rl.genImageColor(w, h, rl.Color.white);
@@ -502,7 +490,6 @@ test "every wall and forest cell lies inside its PNG, and one past its end is re
         try std.testing.expectEqual(@as(i32, look.SPRITE_PX * WALL_COLS), w);
         try std.testing.expectEqual(@as(i32, look.SPRITE_PX * ((WALL_MASKS.len + WALL_COLS - 1) / WALL_COLS)), h);
         for (0..WALL_MASKS.len) |i| rl.unloadImage(wallCell(sheet, i) orelse return error.CellOffSheet);
-        std.debug.print("{s}.png {d}x{d}: {d} shapes cut from it\n", .{ name, w, h, WALL_MASKS.len });
         try std.testing.expect(wallCell(sheet, @intCast(@divTrunc(w, look.SPRITE_PX) * @divTrunc(h, look.SPRITE_PX))) == null);
     }
 }
@@ -512,7 +499,6 @@ test "a caravan's picture spans its two cells and rises a cell above them, at na
     const tex = rl.Texture2D{ .id = 1, .width = size.x, .height = size.y, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
     for ([_]f32{ look.SPRITE_PX, 2 * look.SPRITE_PX }) |cell| {
         const r = look.tileRect(.caravan, tex, .{ .x = 10 * cell, .y = 5 * cell, .width = cell, .height = cell });
-        std.debug.print("caravan at a {d}px cell: {d}x{d} from ({d},{d})\n", .{ cell, r.width, r.height, r.x, r.y });
         try std.testing.expectEqual(rl.Rectangle{ .x = 10 * cell, .y = 4 * cell, .width = 2 * cell, .height = 2 * cell }, r);
     }
     try std.testing.expect(look.tall(.caravan) and !look.stands(.caravan_part) and !look.castsPicture(.caravan_part));
@@ -561,7 +547,6 @@ test "forest sprites follow connections and isolated trees mix with clumps witho
         try std.testing.expect(t.solid() and t.blind());
         if (id == tree.id) trees += 1 else if (id == alt.id) alts += 1 else if (id == sprites.forest[WALL_CELL[0]].?.id) clumps += 1 else return error.NotAnIsolatedSprite;
     }
-    std.debug.print("100 isolated blockers: {d} lone trees, {d} alternates, {d} forest clumps; 2 connected tiles keep their shapes\n", .{ trees, alts, clumps });
     try std.testing.expect(trees > 20 and alts > 20 and clumps > 15 and clumps < trees + alts);
 }
 

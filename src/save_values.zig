@@ -39,7 +39,6 @@ test "save values retain passive identities refund retired nodes and preserve th
     var after = try Policy.decode(mathx.Rng, try Policy.encode(before));
     for (0..100) |_| try std.testing.expectEqual(before.below(100000), after.below(100000));
     try std.testing.expectError(error.Damaged, Policy.decode(mathx.Rng, .{ .xoshiro256 = @splat(0) }));
-    std.debug.print("save identities: passive allocations retained, removed node refunded, duplicate refused; 100 RNG draws identical\n", .{});
 }
 const ALLOCATION_MAX: usize = 512;
 const SavedProgress = struct {
@@ -54,7 +53,7 @@ const SavedProgress = struct {
     pub const COUNTED = .{.{ "allocations", "n" }};
 };
 
-/// A `progress.State` field `SavedProgress` keeps as it is; `nodes` is kept by identity in `allocations`.
+/// `nodes` is kept by identity in `allocations`.
 fn carried(comptime name: []const u8) bool {
     return !std.mem.eql(u8, name, "nodes");
 }

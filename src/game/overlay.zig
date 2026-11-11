@@ -76,7 +76,6 @@ pub const BIND_ACTIONS = [_]BindAction{
 const BIND_ACTION = menu.ACTION_BOX;
 const BIND_ACTION_STEP: i32 = BIND_ACTION.x + menu.ACTION_GAP;
 const BIND_ACTIONS_W: i32 = BIND_ACTIONS.len * BIND_ACTION_STEP - menu.ACTION_GAP;
-/// As wide as the bar or the actions, whichever is wider; descriptions wrap to it.
 const BIND_DESC_W: i32 = @max(game.SKILLS_W, BIND_ACTIONS_W);
 const BIND_W: i32 = BIND_DESC_W + 2 * menu.PANEL_PAD;
 const BIND_ACTION_GAP: i32 = 16;
@@ -85,7 +84,6 @@ fn bindInfoY() i32 {
     return bindRowY(skillbar.SETS.len) + BIND_INFO_DY;
 }
 
-/// Descriptions wrap the same however the panel scales.
 fn bindFace(g: *const game.Game) font.Face {
     return g.face.mipmapped();
 }
@@ -267,7 +265,6 @@ pub fn drawBinds(g: *game.Game) void {
     }
 }
 
-/// Its description, then its mana, turn and cooldown at the hero's rank.
 pub fn describe(g: *const game.Game, act: skillbar.Act, buf: []u8) [:0]const u8 {
     var s = std.io.fixedBufferStream(buf[0 .. buf.len - 1]);
     writeDescription(g, act, s.writer());
@@ -432,7 +429,6 @@ pub const TIP_TITLE_MAX: usize = 64;
 pub const TIP_BODY_MAX: usize = 2048;
 const ORB_TIP = hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" } });
 
-/// The log is its own tooltip: scrolled, never titled.
 pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8) ?Tip {
     return switch (s) {
         .actor => |id| actorTip(g, id, title_buf, body_buf),

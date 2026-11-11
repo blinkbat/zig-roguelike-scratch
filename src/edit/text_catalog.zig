@@ -11,7 +11,6 @@ const FILE_CAP = atlas_text.TEXT_CAP;
 const TAG_FILE = "text-tags.json";
 const LABEL_FILE = wording.FILE;
 const SRC = "src/";
-/// A map file's header before its version.
 const MAP_WORD = atlas_text.HEADER[0..std.mem.indexOfScalar(u8, atlas_text.HEADER, ' ').?];
 const ZIG = ".zig";
 pub const Author = enum { unknown, you, ai, mixed };
@@ -381,7 +380,7 @@ pub const Catalog = struct {
 
 fn included(path: []const u8) bool {
     if (!std.mem.endsWith(u8, path, ZIG)) return false;
-    for ([_][]const u8{"tests/"} ++ EXCLUDED_SOURCES) |part| {
+    for (EXCLUDED_DIRS ++ EXCLUDED_SOURCES) |part| {
         if (std.mem.indexOf(u8, path, part) != null) return false;
     }
     if (std.mem.endsWith(u8, path, "tests.zig")) return false;
@@ -393,16 +392,15 @@ const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig"
 const EFFECT_SOURCES = [_][]const u8{ "gfx/fx.zig", "gfx/effect_state.zig", "gfx/impact_queue.zig" };
 const LOOK_SOURCES = [_][]const u8{ "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig" };
 const LONE_SOURCES = [_][]const u8{ "app.zig", "game.zig", "save.zig", SAVE_SOURCE, "gfx/look.zig" } ++ EFFECT_SOURCES ++ LOOK_SOURCES;
-const EXCLUDED_SOURCES = [_][]const u8{ "game/shots.zig", "game/harness.zig", "map/atlas_text.zig", "map/script_text.zig", "edit/text_catalog.zig", "edit/text_panel.zig" };
+const EXCLUDED_DIRS = [_][]const u8{ "tests/", "game/shots/" };
+const EXCLUDED_SOURCES = [_][]const u8{ "game/harness.zig", "map/atlas_text.zig", "map/script_text.zig", "edit/text_catalog.zig", "edit/text_panel.zig" };
 const SKILLBAR_SOURCE = "play/skillbar.zig";
-const ITEMS_SOURCE = "play/items.zig";
+const ITEMS_SOURCES = [_][]const u8{ "play/items.zig", "play/item_bases.zig", "play/affixes.zig", "play/loot.zig", "play/gear.zig", "play/inventory.zig", "play/ground_items.zig" };
 const SAVE_SOURCE = "save_data.zig";
 const KEYBOARD_SOURCE = "ui/naming.zig";
 const KEYBOARD_DECL = "LETTERS";
-/// Declarations `spoken` judges by name: never prose, then always prose.
 const TECHNICAL_DECLS = [_][]const u8{ "SYMBOLS", "TTF", "DATA_TTF" };
 const SPOKEN_DECLS = [_][]const u8{ "NAME", "NUMBERS", FRIGHT_WORDS };
-/// A source declaring each of those names.
 const DECL_SOURCES = [_][2][]const u8{
     .{ KEYBOARD_SOURCE, KEYBOARD_DECL },
     .{ "map/biome/site.zig", "SYMBOLS" },
@@ -420,7 +418,7 @@ const DECL_SOURCES = [_][2][]const u8{
 
 comptime {
     @setEvalBranchQuota(100_000);
-    for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES ++ [_][]const u8{ SKILLBAR_SOURCE, ITEMS_SOURCE }) |p| _ = @embedFile("../" ++ p);
+    for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES ++ [_][]const u8{SKILLBAR_SOURCE} ++ ITEMS_SOURCES) |p| _ = @embedFile("../" ++ p);
     for (DECL_SOURCES) |d| {
         if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "const " ++ d[1] ++ " ") == null) @compileError(d[0] ++ " no longer declares " ++ d[1]);
     }
@@ -439,7 +437,6 @@ fn isMap(path: []const u8) bool {
     return std.mem.endsWith(u8, path, atlas.EXT);
 }
 
-/// Every file under `dir` that `keep` takes, '/' between its folders, in order.
 fn sortedFiles(a: std.mem.Allocator, dir: std.fs.Dir, comptime keep: fn ([]const u8) bool) ![]const []const u8 {
     var walker = try dir.walk(a);
     defer walker.deinit();
@@ -535,7 +532,7 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (std.mem.startsWith(u8, rel, "edit/")) return "Editor";
         if (std.mem.startsWith(u8, rel, "map/")) return "Maps";
         if (std.mem.startsWith(u8, rel, "ui/")) return "Interface";
-        if (std.mem.eql(u8, rel, ITEMS_SOURCE)) return "Items";
+        if (contains(&ITEMS_SOURCES, rel)) return "Items";
         if (std.mem.eql(u8, rel, SKILLBAR_SOURCE)) return "Skills";
         if (contains(&EFFECT_SOURCES, rel)) return "Effects";
         if (contains(&LOOK_SOURCES, rel)) return "Look";
@@ -748,7 +745,7 @@ fn forbiddenBuiltin(name: []const u8) bool {
 
 fn technicalCall(bytes: []const u8, ts: []const Token, i: usize) bool {
     const name = slice(bytes, ts[i]);
-    if (contains(&.{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "loadShaderFromMemory", "capture", "snap", "shootPage", "has", "declares" }, name)) return true;
+    if (contains(&.{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "loadShaderFromMemory", "capture", "snap", "capturePage", "has", "declares" }, name)) return true;
     if (std.mem.eql(u8, name, "print") and i >= 2 and std.mem.eql(u8, slice(bytes, ts[i - 2]), "debug")) return true;
     return false;
 }
@@ -877,7 +874,6 @@ test "text catalog excludes tests technical calls and imports while retaining pr
     try std.testing.expectEqualStrings("Inventory", c.entries()[1].text);
     try std.testing.expect(!c.entries()[2].editable);
     try std.testing.expectEqualStrings("Short bow", c.entries()[2].text);
-    std.debug.print("text catalog: 2 editable strings, 2 generated labels, imports/test bodies/technical calls excluded\n", .{});
 }
 
 test "text catalog semantic context separates table rows skill containers calls and enum identities" {
@@ -935,7 +931,6 @@ test "text catalog semantic context separates table rows skill containers calls 
     try std.testing.expectEqualStrings("Title", c.entries()[10].role);
     try std.testing.expectEqualStrings("ui.example.NAME", c.entries()[11].context);
     for (c.entries()) |e| try std.testing.expect(e.category.len > 0 and e.owner.len > 0 and e.role.len > 0 and e.context.len > 0);
-    std.debug.print("text catalog: table rows, skill module/container names, exact call context, typed fields and enum alias identity checked across 12 entries\n", .{});
 }
 
 test "text catalog skill registry context follows named rows with module in any member order" {
@@ -959,7 +954,6 @@ test "text catalog skill registry context follows named rows with module in any 
     try std.testing.expectEqualStrings("play.tactics.ArcaneBarrier.DESCRIPTION", c.entries()[0].context);
     try std.testing.expectEqualStrings("Guard", c.entries()[1].owner);
     try std.testing.expectEqualStrings("Mana shield", c.entries()[2].owner);
-    std.debug.print("text skill registry: reticle-first, nested reticle expression, module-first and null module keep 3 correct skill owners\n", .{});
 }
 
 test "text catalog finds all fright speech and gives maps nonempty semantic provenance" {
@@ -979,13 +973,12 @@ test "text catalog finds all fright speech and gives maps nonempty semantic prov
     try std.testing.expectEqualStrings("Maps", c.entries()[5].category);
     try std.testing.expectEqualStrings("Name", c.entries()[5].role);
     try std.testing.expectEqualStrings("maps/test.map.node[1].name", c.entries()[5].context);
-    std.debug.print("text catalog: 4 fright utterances including lowercase bracketed speech, 2 named map nodes checked\n", .{});
 }
 
 test "text catalog indexes live item skill and speech sources with complete metadata" {
     var c = Catalog.init(std.testing.allocator);
     defer c.deinit();
-    try c.scan("src/play/items.zig", @embedFile("../play/items.zig"));
+    try c.scan("src/play/item_bases.zig", @embedFile("../play/item_bases.zig"));
     try c.scan("src/play/tactics.zig", @embedFile("../play/tactics.zig"));
     try c.scan("src/gfx/fx.zig", @embedFile("../gfx/fx.zig"));
     for (EFFECT_SOURCES ++ LOOK_SOURCES) |source| {
@@ -998,7 +991,7 @@ test "text catalog indexes live item skill and speech sources with complete meta
     var resistance = false;
     for (c.entries()) |e| {
         try std.testing.expect(e.category.len > 0 and e.owner.len > 0 and e.role.len > 0 and e.context.len > 0);
-        if (std.mem.eql(u8, e.context, "play.items.SPECS.war_bow.name")) {
+        if (std.mem.eql(u8, e.context, "play.item_bases.SPECS.war_bow.name")) {
             bow = true;
             try std.testing.expectEqualStrings("War bow", e.owner);
             try std.testing.expectEqualStrings("Name", e.role);
@@ -1019,7 +1012,6 @@ test "text catalog indexes live item skill and speech sources with complete meta
     try std.testing.expect(bow and barrier);
     try std.testing.expect(resistance);
     try std.testing.expectEqual(@import("../gfx/fx.zig").FRIGHT_WORDS.len, speech);
-    std.debug.print("text catalog: {d} live entries have nonempty metadata; item/skill context and all {d} fright utterances found\n", .{ c.entries().len, speech });
 }
 
 test "text catalog retains moved input captions and save wording under their original categories" {
@@ -1041,7 +1033,6 @@ test "text catalog retains moved input captions and save wording under their ori
     for (catalog.entries()[3..]) |entry| {
         try std.testing.expect(!std.mem.eql(u8, entry.text, "n") and !std.mem.eql(u8, entry.text, "summary_n"));
     }
-    std.debug.print("text catalog: 3 moved sources retain categories and input caption protections\n", .{});
 }
 
 test "character page aliases retain their saved keys after moving the view type" {
@@ -1061,7 +1052,6 @@ test "character page aliases retain their saved keys after moving the view type"
     }
     try std.testing.expectEqual(std.enums.values(Page).len, pages);
     try std.testing.expectEqualStrings("Outfitting", comptime wording.displayAliasIn(labels, @typeName(Page), "equipment").?);
-    std.debug.print("character wording: all {d} page aliases remain editable and the moved runtime type reads the original saved key\n", .{pages});
 }
 
 test "text edits preserve escapes format arguments control glyphs and source bytes" {
@@ -1087,7 +1077,6 @@ test "text edits preserve escapes format arguments control glyphs and source byt
     try std.testing.expectEqualStrings("\xef\xbb\xbfconst name = \"Longbow\";\r\n", changed);
     try std.testing.expect(!unchanged(source, changed));
     try std.testing.expect(unchanged(source, source));
-    std.debug.print("text edits: escaped literal round trip, 4 invalid changes refused, BOM/CRLF preserved and full-file conflict detected\n", .{});
 }
 
 test "text attribution requires matching source literal position and content" {
@@ -1102,7 +1091,6 @@ test "text attribution requires matching source literal position and content" {
     tag.hash = hash(e.text);
     tag.path = "src/ui/book.zig";
     try std.testing.expect(!matches(tag, e));
-    std.debug.print("text tags: exact attribution restored; changed position, content and source remain unknown\n", .{});
 }
 
 test "text catalog repeated snapshot replacements keep live memory bounded without file writes" {
@@ -1141,7 +1129,6 @@ test "text catalog repeated snapshot replacements keep live memory bounded witho
         }
     }
     try std.testing.expectEqual(@as(usize, 0), memory.total_requested_bytes);
-    std.debug.print("text catalog: 128 source/text/tag/label replacements stay at {d}-{d} live bytes, rejected tags release preparation, teardown frees all\n", .{ live[0], live[1] });
 }
 
 test "text catalog display entries keep independent text when label snapshots are replaced" {
@@ -1154,7 +1141,6 @@ test "text catalog display entries keep independent text when label snapshots ar
     try std.testing.expectEqualStrings("Brace", c.entries()[0].text);
     try std.testing.expectEqualStrings("Alternate", c.entries()[1].text);
     try std.testing.expect(c.entries()[0].editable and !c.entries()[1].editable);
-    std.debug.print("text catalog: editable and read-only display entries retain independent text across label replacement\n", .{});
 }
 
 test "text tag preparation shares source and alias upserts without mutating loaded attribution" {
@@ -1181,7 +1167,6 @@ test "text tag preparation shares source and alias upserts without mutating load
     try std.testing.expectEqual(SaveResult.tags_not_saved, c.saveTags(&update));
     try std.testing.expectEqualStrings("unchanged snapshot", c.tag_bytes);
     try std.testing.expectEqual(Author.ai, c.tags[0].author);
-    std.debug.print("text tags: shared upsert prepared independently; malformed file blocks tag commit and preserves loaded attribution\n", .{});
 }
 
 test "text catalog protects reflection controls while finding short verbs" {
@@ -1199,5 +1184,4 @@ test "text catalog protects reflection controls while finding short verbs" {
     try std.testing.expect(!entry.editable);
     try std.testing.expectEqualStrings("The Strand", entry.text);
     try std.testing.expectEqual(@as(usize, 3), entry.line);
-    std.debug.print("text catalog: 2 protected keyboard rows, 2 short verbs, reflection exclusions, tag-only aliases and map-name provenance checked\n", .{});
 }

@@ -55,7 +55,6 @@ test "a shock adds half again to the next hit on either side, then is spent" {
         try std.testing.expectEqual(@as(u8, 0), g.sim.heroActor().?.shock.turns);
     }
     try std.testing.expectEqual(@divTrunc(lost[0] * 3 + 1, 2), lost[1]);
-    std.debug.print("shock: a 4-damage blow on a foe deals 6 then 4; a rat bite of {d} on the hero deals {d} shocked\n", .{ lost[0], lost[1] });
 }
 
 test "sunder takes armour off in the shared resolver, three stacks at most, letting more of a physical blow through" {
@@ -82,7 +81,6 @@ test "sunder takes armour off in the shared resolver, three stacks at most, lett
     g.pic.catchUp(&g.sim);
     var nearby: game.NearbyBuf = undefined;
     try std.testing.expectEqual(armour - sunder.PER_STACK, character.bookView(g, &nearby).stats().reduction());
-    std.debug.print("sunder: a 10-damage blow on a beefy pib deals {any} at 0-{d} stacks; the knight's {d}% reduction shows {d}%\n", .{ dealt, sunder.MOST + 1, armour, armour - sunder.PER_STACK });
 }
 
 test "a blinded foe neither notices nor hunts the hero past the next cell until three of its turns pass" {
@@ -101,7 +99,6 @@ test "a blinded foe neither notices nor hunts the hero past the next cell until 
     combat.endTurn(g);
     try std.testing.expect(g.sim.pool.get(asleep).?.awake);
     try std.testing.expectEqual(@as(i32, 3), mathx.dist(g.sim.pool.get(hunting).?.at, FROM));
-    std.debug.print("blind foes: asleep 3 cells off and hunting 4 off, both idle {d} turns, then notice and close in\n", .{blind.TURNS});
 }
 
 test "a blinded hero sees only the cells beside it for three of its turns" {
@@ -119,7 +116,6 @@ test "a blinded hero sees only the cells beside it for three of its turns" {
         combat.endTurn(g);
     }
     try std.testing.expectEqual(@as(usize, blind.TURNS), blinded);
-    std.debug.print("blind hero: {d} turns seeing {d} cell, then a cell 4 off is lit again\n", .{ blinded, blind.SIGHT });
 }
 
 test "hero blindness does not hide it from unblinded foes beyond adjacent cells" {
@@ -142,7 +138,6 @@ test "hero blindness does not hide it from unblinded foes beyond adjacent cells"
         try std.testing.expectEqual(obstacle == 0, g.sim.pool.get(id).?.awake);
         try std.testing.expect(!g.sim.lv.isLit(ahead));
     }
-    std.debug.print("blind hero: an unblinded rat notices across open floor; walls and thick smoke still hide the hero\n", .{});
 }
 
 test "a confused hero's moves stray about as often as its chance, only onto moves that spend a turn" {
@@ -166,7 +161,6 @@ test "a confused hero's moves stray about as often as its chance, only onto move
         game.heroStep(g, .e, 0);
         try std.testing.expect(g.sim.heroActor().?.at.eq(EAST));
     }
-    std.debug.print("confused hero: {d}/{d} steps strayed (~{d}% expected); walled in but for one way, {d}/{d} took it\n", .{ strayed, TRIES, STRAY_PERCENT, WALLED, WALLED });
 }
 
 test "a confused foe's steps stray about as often as its chance" {
@@ -188,7 +182,6 @@ test "a confused foe's steps stray about as often as its chance" {
         strayed += @intFromBool(!g.sim.pool.get(id).?.at.eq(chased));
     }
     try std.testing.expect(strayedAbout(strayed));
-    std.debug.print("confused rat: {d}/{d} steps strayed from its chase (~{d}% expected)\n", .{ strayed, TRIES, STRAY_PERCENT });
 }
 
 test "every affliction shows on the pictured hero and the HUD, worn down by the turns it spends" {
@@ -219,7 +212,6 @@ test "every affliction shows on the pictured hero and the HUD, worn down by the 
         try std.testing.expect(s.about().len > 0);
     }
     try std.testing.expectEqual(@as(u8, 1), shown.sunder.stacks);
-    std.debug.print("afflictions: {d} statuses shown in HUD order, each a turn down once the turn is drawn\n", .{statuses.len});
 }
 
 test "afflictions survive a save and load, and an impossible sunder is refused" {
@@ -260,7 +252,6 @@ test "afflictions survive a save and load, and an impossible sunder is refused" 
     bytes.clearRetainingCapacity();
     try sealed(g, &bytes);
     try std.testing.expectError(error.Damaged, format.read(bytes.items, back, map));
-    std.debug.print("afflictions: shock, sunder, blind, confusion, enfeeble and maim round-trip; {d} sunder stacks and a limp with no maim refused before load\n", .{sunder.MOST + 1});
 }
 
 test "an enfeebled body's blows deal 30% less, rounded up, on either side" {
@@ -284,7 +275,6 @@ test "an enfeebled body's blows deal 30% less, rounded up, on either side" {
     }
     try std.testing.expect(lost[0] > 0);
     try std.testing.expectEqual(enfeeble.weaken(true, lost[0]), lost[1]);
-    std.debug.print("enfeeble: the archer's 10-damage blow deals 7; a mimic's bite of {d} deals {d} enfeebled\n", .{ lost[0], lost[1] });
 }
 
 test "a blow's ailment check sees it as the enfeebled hero and the target's shock will deal it, spending nothing" {
@@ -298,7 +288,6 @@ test "a blow's ailment check sees it as the enfeebled hero and the target's shoc
     target.shock.start();
     const shocked = attacks.dealt(&g.sim, target, 10, .bleed);
     const shocking = attacks.dealt(&g.sim, target, 10, .shock);
-    std.debug.print("ailment check on a 10 hp foe: an enfeebled 10 deals {d}; shocked {d}; a shocking blow {d}\n", .{ weak, shocked, shocking });
     try std.testing.expectEqual(enfeeble.weaken(true, 10), weak);
     try std.testing.expectEqual(mathx.percentCeil(weak, mathx.PERCENT + shock.MORE), shocked);
     try std.testing.expectEqual(weak, shocking);
@@ -323,7 +312,6 @@ test "a maimed foe loses a turn to every second step, closing on the hero a step
     }
     try std.testing.expectEqualSlices(i32, &.{ 6, 5, 4, 3 }, &gap[0]);
     try std.testing.expectEqualSlices(i32, &.{ 6, 5, 5, 4 }, &gap[1]);
-    std.debug.print("maimed rat: {any} cells off over {d} turns against {any} unmaimed\n", .{ gap[1], maim.TURNS, gap[0] });
 }
 
 test "a maimed hero's second step costs its next turn, which passes on its own" {
@@ -344,7 +332,6 @@ test "a maimed hero's second step costs its next turn, which passes on its own" 
     try std.testing.expect(!g.sim.heroActor().?.clock.owes());
     try std.testing.expect(!std.meta.eql(minutes, g.sim.clock));
     try std.testing.expectEqual(FROM.add(.{ .x = 2, .y = 0 }), g.sim.heroAt().?);
-    std.debug.print("maimed hero: 2 steps, the second costing the turn after it, which passed unbidden\n", .{});
 }
 
 test "lightning striking a body in water shocks every body wading in the water joined to it within reach, the hero too" {
@@ -374,7 +361,6 @@ test "lightning striking a body in water shocks every body wading in the water j
         for (ids, shocked) |id, want| try std.testing.expectEqual(want, g.sim.pool.get(id).?.shock.turns > 0);
         try std.testing.expectEqual(wading, g.sim.heroActor().?.shock.turns > 0);
     }
-    std.debug.print("conducted spark: the struck rat and one 2 cells along the water shocked; one 3 along and one in other water spared; the hero shocked only wading in it\n", .{});
 }
 
 test "a slime half split off by a conducting blow carries the shock its parent takes" {
@@ -389,13 +375,12 @@ test "a slime half split off by a conducting blow carries the shock its parent t
     const born = g.sim.pool.n;
     var blow = attacks.Rolled{ .blow = .{} };
     blow.blow.elements.set(.lightning, 12);
-    combat.arrowHit(g, id, blow, .spark, .{ .from = FROM, .wait = 0.2 });
+    combat.skillHit(g, id, blow, .spark, .{ .from = FROM, .wait = 0.2 });
     try std.testing.expectEqual(born + 1, g.sim.pool.n);
     const parent = g.sim.pool.get(id).?;
     const half = &g.sim.pool.items[born];
     try std.testing.expect(parent.shock.turns > 0);
     try std.testing.expectEqual(parent.shock, half.shock);
-    std.debug.print("conducted split: a 20 hp slime struck for 12 in shallows splits; parent and half both shocked for {d} turns\n", .{half.shock.turns});
 }
 
 fn sealed(g: *game.Game, out: *std.ArrayList(u8)) !void {

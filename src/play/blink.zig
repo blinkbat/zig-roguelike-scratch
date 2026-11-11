@@ -29,5 +29,4 @@ test "blink lands further than juke, across obstacles, only on visible empty gro
     try std.testing.expect(!aimable(&lv, from, .{ .x = 21, .y = 20 }, RANGE));
     lv.lightless();
     try std.testing.expect(!aimable(&lv, from, far, RANGE));
-    std.debug.print("Blink range: {d} tiles against Juke's {d}; {d} mana against {d}\n", .{ RANGE, juke.RANGE, COST, juke.COST });
 }

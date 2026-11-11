@@ -7,7 +7,6 @@ const lume = @import("lume.zig");
 const P = mathx.P;
 
 const MARGIN: i32 = 2;
-/// Wall cells between two rooms, so no outline cell belongs to both.
 const ROOM_GAP: i32 = 2;
 pub const MAX_ROOMS: usize = 24;
 const ROOM_TRIES: usize = 300;
@@ -29,7 +28,6 @@ pub const Params = struct {
     /// Lowest and highest, both inclusive.
     room_w: [2]i32 = .{ 5, 13 },
     room_h: [2]i32 = .{ 4, 9 },
-    /// Percent of rooms that hang a torch.
     torches: u8 = 70,
     barrels: u32 = 2,
 
@@ -69,7 +67,6 @@ pub fn keepTorches(lv: *grid.Level) void {
     lv.torch.keep(@as(*const grid.Level, lv), bearsTorch);
 }
 
-/// Every open cell connected, each of `doors` too; reproducible from the seed, the doors and `params`.
 pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floor {
     std.debug.assert(doors.len <= grid.MAX_DOORS);
     const pm = params.fit();
@@ -88,7 +85,6 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
     }
     var i: usize = 1;
     while (i < f.room_n) : (i += 1) tunnel(lv, f.rooms[i - 1].centre(), f.rooms[i].centre(), &rng);
-    // A pure tree puts every fight in a corridor with no way round.
     for (0..f.room_n / ROOMS_PER_LOOP) |_| {
         const a = rng.below(@intCast(f.room_n));
         const b = rng.below(@intCast(f.room_n));
@@ -113,7 +109,6 @@ fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
     if (rng.pickWhere(P, top[0..n], @as(*const grid.Level, lv), bearsTorch)) |p| lv.addTorch(p);
 }
 
-/// Against the room's own walls and nowhere beside a way in, so no barrel can seal a path.
 fn stackBarrels(lv: *grid.Level, r: Room, rng: *mathx.Rng, most: u32) void {
     var spots: [2 * (ROOM_W_MAX + ROOM_H_MAX)]P = undefined;
     var n: usize = 0;
@@ -195,13 +190,11 @@ fn wallShape(lv: *const grid.Level, p: P) grid.WallShape {
     return s.joined();
 }
 
-/// Off the map counts, so a wall runs on over the edge.
 fn joins(lv: *const grid.Level, p: P, d: mathx.Dir) bool {
     const q = p.add(d.delta());
     return !grid.Level.inside(q) or lv.at(q) == lv.at(p);
 }
 
-/// A wall whose brick face looks onto floor.
 pub fn bearsTorch(lv: *const grid.Level, p: P) bool {
     return grid.Level.inside(p) and lv.at(p) == .wall and lv.walkable(lume.torchFloor(p));
 }
@@ -225,7 +218,6 @@ test "torch pruning follows terrain changes before wall masks are rebuilt" {
     try std.testing.expectEqual(@as(usize, 0), lv.torches().len);
     lv.set(.{ .x = wall.x, .y = 0 }, .floor);
     try std.testing.expect(!bearsTorch(&lv, .{ .x = wall.x, .y = -1 }));
-    std.debug.print("torch pruning: unshaped brick retained, blocked floor/non-brick removed despite stale masks; off-map wall refused\n", .{});
 }
 
 test "forest shapes join their own material, continue over the rim and never hold torches" {
@@ -250,7 +242,6 @@ test "forest shapes join their own material, continue over the rim and never hol
     restoreShapes(&lv);
     try std.testing.expectEqual(@as(u8, 19), lv.tileShape(p).?.mask());
     try std.testing.expectEqual(@as(u8, 0), lv.wallShape(wall).?.mask());
-    std.debug.print("forest masks: corner {d}, rim {d}, brick wall beside {d}, restored {d}\n", .{ 3, lv.tileShape(.{ .x = 0, .y = 0 }).?.mask(), lv.wallShape(wall).?.mask(), lv.tileShape(p).?.mask() });
 }
 
 test "every floor connects" {
@@ -264,12 +255,10 @@ test "every floor connects" {
         const open = lv.openCount();
         const reached = grid.distances(&lv, f.start, &dist, &queue);
         if (reached != open) {
-            std.debug.print("seed {d}: {d} open cells, flood reached {d}\n", .{ seed, open, reached });
             return error.FloorNotConnected;
         }
         worst = @min(worst, open);
     }
-    std.debug.print("200 floors connected; smallest has {d} open cells\n", .{worst});
     try std.testing.expect(worst > 400);
 }
 
@@ -364,7 +353,6 @@ test "build stamps a joined shape on every wall and on nothing else" {
             used.set(w.mask());
         }
     }
-    std.debug.print("40 floors use {d} of the 47 wall shapes\n", .{used.count()});
     try std.testing.expect(used.count() > 20);
 }
 
@@ -378,7 +366,6 @@ test "every torch hangs on a room's wall with its face onto floor" {
         total += lv.torch.n;
         for (lv.torches()) |t| try std.testing.expect(bearsTorch(&lv, t));
     }
-    std.debug.print("40 floors: {d} torches over {d} rooms\n", .{ total, rooms });
     try std.testing.expect(total * 2 > rooms);
 }
 
@@ -401,7 +388,6 @@ test "barrels stand on room floor and never cut one open cell off from the start
         blocked.wallBarrels();
         try grid.expectAllReached(&blocked, f.start, &dist, &queue);
     }
-    std.debug.print("200 floors: {d} barrels over {d} rooms, every open cell still reached\n", .{ barrels, rooms });
     try std.testing.expect(barrels > rooms / 2);
 }
 
@@ -410,7 +396,6 @@ test "a floor generated around doors reaches every door, and no barrel stands on
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var rng = mathx.Rng.init(0xD00);
-    var longest: i32 = 0;
     for (0..100) |i| {
         var doors: [4]P = undefined;
         const band: i32 = @divTrunc(grid.H, @as(i32, doors.len));
@@ -425,10 +410,8 @@ test "a floor generated around doors reaches every door, and no barrel stands on
             try std.testing.expect(!lv.hasBarrel(d));
             const walked = dist[grid.Level.idx(d)];
             try std.testing.expect(walked >= 0);
-            longest = @max(longest, walked);
         }
     }
-    std.debug.print("100 floors round 4 doors each: every door reached, the farthest {d} steps from the start\n", .{longest});
 }
 
 test "a door on the map's edge is the only floor on the edge" {
@@ -449,7 +432,6 @@ test "a door on the map's edge is the only floor on the edge" {
         for (doors) |d| try std.testing.expect(dist[grid.Level.idx(d)] >= 0);
         rim += carve.leaks(&lv);
     }
-    std.debug.print("200 floors with a door on each edge: {d} edge cells of floor that are not doors\n", .{rim});
     try std.testing.expectEqual(@as(usize, 0), rim);
 }
 
@@ -472,7 +454,6 @@ test "a floor rolled in a small box keeps its rooms in it, to their count and si
         _ = grid.distances(&lv, f.start, &dist, &queue);
         try std.testing.expect(dist[grid.Level.idx(.{ .x = 2, .y = 2 })] >= 0);
     }
-    std.debug.print("50 floors in a 40x30 box, at most 6 rooms: {d} rooms\n", .{rooms});
     const squeezed = (Params{ .size = .{ .x = 1, .y = 500 }, .room_w = .{ 20, 2 } }).fit();
     try std.testing.expectEqual(SIZE_MIN.x, squeezed.size.x);
     try std.testing.expectEqual([2]i32{ ROOM_MIN, ROOM_MIN }, squeezed.room_w);

@@ -4,8 +4,6 @@ const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 const buildings = @import("buildings.zig");
 
-// Diablo II's outdoor presets and Burial Grounds, Path of Exile's Cemetery.
-
 const P = mathx.P;
 
 pub const COUNT_MAX: u8 = 8;
@@ -95,7 +93,6 @@ pub fn rows(p: Piece) []const []const u8 {
 pub const Params = struct {
     piece: Piece = .circle,
     count: u8 = 2,
-    /// Cells of margin round each, clear of the others.
     apart: u8 = 6,
 
     pub fn fit(p: Params) Params {
@@ -162,7 +159,6 @@ fn stampOver(lv: *grid.Level, at: P, art: []const []const u8, open: ?carve.Palet
     }
 }
 
-/// Each cell of `art` laid with its top left at `at`, and its letter.
 pub const Spots = struct {
     at: P,
     art: []const []const u8,
@@ -198,13 +194,11 @@ test "pieces land apart on open ground" {
     carve.field(&lv, carve.Palette.WILD);
     var lots: buildings.Lots = .{};
     apply(&lv, &rng, 0, carve.Palette.WILD, &lots, .{ .piece = .graveyard, .count = 3 });
-    std.debug.print("3 graveyards: {d} graves\n", .{carve.count(&lv, .grave)});
     try std.testing.expectEqual(@as(usize, 3 * 12), carve.count(&lv, .grave));
 }
 
 test "shrines set wide apart land no closer than at the default margin" {
     var default: i32 = 0;
-    std.debug.print("the nearest two of 3 shrines in 50 maps by apart:", .{});
     for ([_]u8{ 0, 6, 20, APART_MAX }) |apart| {
         var nearest: i32 = std.math.maxInt(i32);
         for (0..50) |seed| {
@@ -224,9 +218,7 @@ test "shrines set wide apart land no closer than at the default margin" {
                 for (at[i + 1 .. n]) |b| nearest = @min(nearest, mathx.dist(a, b));
             }
         }
-        std.debug.print(" {d}:{d}", .{ apart, nearest });
         if (apart == (Params{}).apart) default = nearest;
         if (apart > (Params{}).apart) try std.testing.expect(nearest >= default);
     }
-    std.debug.print("\n", .{});
 }

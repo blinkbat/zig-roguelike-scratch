@@ -2,7 +2,7 @@ const sprite_assets = @import("gfx/sprite_assets.zig");
 const sprite = @import("gfx/sprites.zig");
 const attacks = @import("game/attacks.zig");
 const std = @import("std");
-const items = @import("play/items.zig");
+const ground_items = @import("play/ground_items.zig");
 const progress = @import("play/progress.zig");
 const journal = @import("ui/journal.zig");
 pub const ossuary = @import("play/ossuary.zig");
@@ -39,7 +39,7 @@ const vignette = @import("gfx/vignette.zig");
 const sky = @import("gfx/sky.zig");
 const weather = @import("gfx/weather.zig");
 const climate = @import("map/climate.zig");
-pub const shots = @import("game/shots.zig");
+pub const shots = @import("game/shots/capture.zig");
 pub const scene = @import("game/scene.zig");
 pub const overlay = @import("game/overlay.zig");
 pub const character = @import("game/character.zig");
@@ -50,7 +50,7 @@ pub const mouseControls = @import("game/mouse.zig");
 const window = @import("core/window.zig");
 const binds = @import("game/binds.zig");
 const skills = @import("game/skills.zig");
-const tactics = @import("game/tactics.zig");
+const tactics_exec = @import("game/tactics_exec.zig");
 pub const presentation = @import("game/presentation.zig");
 pub const simulation = @import("game/sim.zig");
 pub const epitaph = @import("game/epitaph.zig");
@@ -90,14 +90,11 @@ pub const SLOT_XS = blk: {
 };
 pub const SKILLS_W: i32 = SLOT_XS[SLOT_XS.len - 1] + SLOT_PX;
 pub const SLOT_COLUMN_H: i32 = SLOT_PX + KEY_GAP + PROMPT_PX;
-/// Cells past the view a prop's shadow can reach into it from.
 pub const CAST_MARGIN: i32 = @intFromFloat(@ceil(shadow.CAST_REACH));
 const CAM_EASE: f32 = 12.0;
 /// One walk repeat, so the hops of a walk, held or routed, join end to end.
 pub const GLIDE_S: f32 = input.Stepper.ARR;
-/// What slides, staggers and bumps are paced by, apart from the walk.
 const BEAT_S: f32 = 0.13;
-/// Pixels, at the top of each glide's hop.
 pub const HOP_PX: f32 = @floatFromInt(authored(10));
 pub const SLIDE_S: f32 = BEAT_S * 2;
 pub const STAGGER_S: f32 = BEAT_S * 0.5;
@@ -105,9 +102,7 @@ pub const BUMP_S: f32 = BEAT_S;
 /// Of the bump, the share out to the blow.
 pub const BUMP_HIT: f32 = 0.5;
 pub const BUMP_LANDS: f32 = BUMP_S * BUMP_HIT;
-/// From a spell cast round the hero to its blows landing.
 pub const CAST_S: f32 = BUMP_LANDS;
-/// From one body a bolt leaps on from to the next.
 pub const ZAP_S: f32 = 0.08;
 pub const BUMP_PX: f32 = CELL_F * 0.35;
 /// Ease-out-back's overshoot constant: 1.165 carries a slide 5% past its cell (1.70158, the usual one, 10%).
@@ -116,9 +111,8 @@ pub const SLIDE_BACK: f32 = 1.165;
 const PLAY_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
 /// Loot rolls on its own stream, so a drop does not shift the fight's rolls.
 const LOOT_SALT: u64 = 0x10_07_A11;
-/// Reach of Interact: underfoot and the cells beside the hero.
 pub const INTERACT_REACH: i32 = 1;
-const NEARBY_MAX = 2 * items.GROUND_MAX + grid.Cells.square(INTERACT_REACH);
+const NEARBY_MAX = 2 * ground_items.GROUND_MAX + grid.Cells.square(INTERACT_REACH);
 pub const NearbyBuf = [NEARBY_MAX]book.Nearby;
 
 const CONFIRM = menu.CONFIRM;
@@ -142,7 +136,6 @@ pub const Spot = union(enum) {
     life,
     mana,
     log,
-    /// Of `skillbar.SLOTS`.
     slot: usize,
     status: fx.Status,
 };
@@ -163,7 +156,6 @@ pub fn rowAt(row: anytype) usize {
 
 pub const Log = journal.Log;
 
-/// Coordinates input, the simulation, its picture and the graphics that draw it.
 pub const Game = struct {
     sim: simulation.Simulation,
     pic: presentation.Presentation = .{},
@@ -176,19 +168,16 @@ pub const Game = struct {
     character: book.Book = .{},
     /// Something was taken from the open loot menu; closing it spends the one turn.
     looted: bool = false,
-    /// The open loot's gold, taken as it closes.
     loot_gold: ?P = null,
-    /// What Character's Nearby page lists, filled afresh each step and draw; too big for the stack each frame.
+    /// Too big for the stack each frame.
     nearby: NearbyBuf = undefined,
-    /// What Character's Quests page lists, filled afresh each step and draw.
     journal: [atlas.script.MAX_QUESTS]quest_log.Entry = undefined,
     back: Back = .title,
     exit: ?Exit = null,
     /// Saved runs return to their caller on death instead of restarting.
     permadeath: bool = false,
-    /// Where a saved run's hero is entombed if renowned enough; the app owns and writes it.
+    /// The app owns and writes it.
     hall: ?*ossuary.Hall = null,
-    /// How the hero died, written as it happened.
     epitaph: ?ossuary.Entry = null,
     perf: debugging.Perf = .{},
     st: input.State = .{},
@@ -196,7 +185,6 @@ pub const Game = struct {
     bar: skillbar.Bar = .{},
     binds: binds.Binds = .{},
     target: ?u16 = null,
-    /// Kept between inspections, so the next opens where the last left off.
     inspecting: Spot = .{ .slot = 0 },
     inspect_scroll: usize = 0,
     /// Map pixels, eased toward the hero. Nothing in the simulation reads it.
@@ -204,7 +192,6 @@ pub const Game = struct {
     screen: P = WINDOW,
     /// The framebuffer a frame draws into: the window's, or a texture's. Asking GL stalls it.
     framebuffer: u32 = 0,
-    /// The latest walk, skill or interaction asked for while `Presentation.busy`.
     pending: ?Queued = null,
     vignette: vignette.Vignette = .{},
     cinema: cinema.Cinema = .{},
@@ -269,21 +256,16 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
     alloc.destroy(g);
 }
 
-/// When each unsaved `Game` field is reset, every one in exactly one list; `save_data.zig` checks it.
+/// Every unsaved `Game` field is in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
-    /// A loot visit's unsaved state, reset with every run.
     pub const loot = [_][]const u8{ "character", "looted", "loot_gold" };
-    /// Reset with every run as it starts or resumes.
     pub const run = [_][]const u8{ "mode", "epitaph" };
     /// Reset as a saved run resumes, besides `run` and `loot`.
     pub const resumed = [_][]const u8{"exit"};
-    /// Reset as a turn starts afresh.
     pub const turn = [_][]const u8{ "pending", "target", "inspecting", "inspect_scroll" };
-    /// Loaded and unloaded together.
     pub const graphics = [_][]const u8{ "light", "cloud", "vignette", "mini", "cinema" };
     /// Given their values by hand.
     pub const set = [_][]const u8{ "died_in", "pause_menu", "pause_page", "debug", "back", "permadeath", "hall", "perf", "st", "mouse", "binds", "cam", "screen", "framebuffer", "rain", "sprites", "graphics_ready", "art", "face" };
-    /// Written before each read.
     pub const scratch = [_][]const u8{ "nearby", "journal" };
 };
 const SimFields = simulation.Fields;
@@ -328,8 +310,7 @@ pub fn beginMapAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64)
     _ = enter(g, from.node, from.at, &.{});
 }
 
-/// The hero occupies the first pool slot on every node, preserving its id; its `followers` stand round it,
-/// as many as there is room for, in order; returns how many.
+/// The hero takes the first pool slot, keeping its id; returns how many `followers` fit.
 fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
     const w = g.sim.map.?;
     var carried = actor.Actor.of(g.sim.class.kind(), at);
@@ -385,21 +366,18 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
 }
 
 const Followers = grid.Bounded(actor.Actor, actor.MAX);
-/// Cells from the hero a follower may come through a door to.
 pub const FOLLOWER_REACH: i32 = 3;
 
 fn follows(a: *const actor.Actor) bool {
     return a.livingAlly() and !actor.row(a.kind).posted;
 }
 
-/// Every living ally not posted, in slot order, to follow the hero to the next node.
 fn gatherFollowers(g: *const Game) Followers {
     var out = Followers{};
     for (g.sim.pool.constSlice()) |*a| if (follows(a)) out.push(a.*);
     return out;
 }
 
-/// The first `n` followers `gatherFollowers` took from visit `v` went with the hero; the rest stay.
 fn followersLeft(v: *simulation.Visit, n: usize) void {
     var left = n;
     for (v.pool.slice(), 0..) |*a, i| {
@@ -410,18 +388,17 @@ fn followersLeft(v: *simulation.Visit, n: usize) void {
     }
 }
 
-/// The open ground nearest `hero` in its sight where a follower may stand, else the nearest by foot anywhere.
 fn followerCell(lv: *const grid.Level, kind: actor.Kind, hero: P) ?P {
     var near = grid.Nearest{ .from = hero };
     var cells = grid.Cells.around(hero, FOLLOWER_REACH);
     while (cells.next()) |p| {
-        if (tactics.fits(kind, lv, p) and grid.sightLine(lv, hero, p)) near.offer(p);
+        if (tactics_exec.fits(kind, lv, p) and grid.sightLine(lv, hero, p)) near.offer(p);
     }
     if (near.best) |p| return p;
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var flood = grid.Flood.init(lv, hero, &dist, &queue);
-    while (flood.next()) |q| if (tactics.fits(kind, lv, q)) return q;
+    while (flood.next()) |q| if (tactics_exec.fits(kind, lv, q)) return q;
     return null;
 }
 
@@ -464,7 +441,6 @@ const TravelCarry = struct {
     }
 };
 
-/// Finish a loot visit's turn, pending facing changes and door travel before leaving a run.
 pub fn leave(g: *Game) void {
     character.endLoot(g);
     g.pic.turnNow();
@@ -575,17 +551,16 @@ pub const Move = enum { kick, open, burst, loot, step, talk, swap, blocked };
 
 pub fn heroMove(g: *Game, d: mathx.Dir) Move {
     const h = g.sim.heroActor() orelse return .blocked;
-    return moveOf(g, h.at, d, g.sim.lv.taken(h.at.add(d.delta())));
+    return moveOf(g, &g.sim.lv, h.at, d, g.sim.lv.taken(h.at.add(d.delta())));
 }
 
-/// A step from `from` toward `d`, `occupied` saying whether a body or barrel stands where it lands.
-pub fn moveOf(g: *const Game, from: P, d: mathx.Dir, occupied: bool) Move {
+pub fn moveOf(g: *const Game, lv: *const grid.Level, from: P, d: mathx.Dir, occupied: bool) Move {
     const to = from.add(d.delta());
-    const there = g.sim.lv.at(to);
+    const there = lv.at(to);
     if (there.opened() != null) return .open;
     if (there.bursts()) return .burst;
-    if (!g.sim.lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
-    if (g.sim.lv.npcAt(to) != null) return .talk;
+    if (!lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
+    if (lv.npcAt(to) != null) return .talk;
     if (occupied) return if (g.sim.allyAt(to)) .swap else .kick;
     return if (character.lootReached(g, from, to)) .loot else .step;
 }
@@ -601,7 +576,6 @@ fn spendsMove(g: *Game, d: mathx.Dir) bool {
     return spends(heroMove(g, d));
 }
 
-/// A confused hero's move that spends a turn may go any way that also would.
 fn astray(g: *Game, chosen: mathx.Dir) mathx.Dir {
     const h = g.sim.heroActor() orelse return chosen;
     if (!spends(heroMove(g, chosen)) or !confusion.strays(h.afflictions().contains(.confusion), &g.sim.rng)) return chosen;
@@ -616,7 +590,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
     const d = astray(g, chosen);
     const to = h.at.add(d.delta());
     const move = heroMove(g, d);
-    if (spends(move)) tactics.beforeAction(&g.sim);
+    if (spends(move)) tactics_exec.beforeAction(&g.sim);
     switch (move) {
         .kick => {
             const w = g.sim.lv.who(to);
@@ -624,7 +598,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
             switch (g.sim.class) {
                 inline else => |c| {
                     const verb = comptime c.strike().verb;
-                    if (w != grid.NO_ONE) combat.wound(g, w, attacks.heroKick(&g.sim), verb, s) else combat.smash(g, to, verb, s);
+                    if (w != grid.NO_ONE) combat.wound(g, w, attacks.heroMelee(&g.sim), verb, s) else combat.smash(g, to, verb, s);
                 },
             }
             g.pic.lead = s.wait;
@@ -650,7 +624,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
             if (ally != grid.NO_ONE) {
                 g.sim.pool.items[actor.Pool.slot(ally)].at = from;
                 g.sim.lv.stand(from, ally);
-                tactics.shoved(g, ally);
+                tactics_exec.shoved(g, ally);
             }
             if (h.limp(h.afflictions())) g.sim.log.say("{s} " ++ maim.LIMPS ++ ".", .{g.sim.name.text()});
             if (loot) character.openLoot(g, to);
@@ -661,7 +635,6 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
     combat.endTurn(g);
 }
 
-/// A pinned hero's move, spent in place.
 pub fn struggle(g: *Game) void {
     const h = g.sim.heroActor() orelse return;
     if (h.pin.struggle(&g.sim.rng))
@@ -697,7 +670,6 @@ pub fn characterShown(g: *const Game) bool {
     return g.mode == .pause and g.pause_page == .character;
 }
 
-/// Character is open with its tabs, not as the Nearby list.
 fn bookOpen(g: *const Game) bool {
     return characterShown(g) and !g.character.direct();
 }
@@ -719,7 +691,6 @@ pub fn camWant(g: *const Game) rl.Vector2 {
 const Walk = struct { d: mathx.Dir, late: f32 };
 pub const Queued = union(enum) { walk: mathx.Dir, skill: skills.Use, interact };
 
-/// A held walk repeating does not displace a queued action.
 fn queueWalk(g: *Game, d: mathx.Dir) void {
     if (g.pending) |q| {
         if (q != .walk and g.st.repeating()) return;
@@ -727,14 +698,12 @@ fn queueWalk(g: *Game, d: mathx.Dir) void {
     g.pending = .{ .walk = d };
 }
 
-/// With anything near, the press is Interact's, not its button's skill, and waits for quiet like one.
 fn queueInteract(g: *Game) bool {
     if (!g.st.interact or !(character.anyNearby(g) or talking.beside(g) != null)) return false;
     g.pending = .interact;
     return true;
 }
 
-/// A frame that cannot take a turn queues its press for the next, as while busy.
 fn queuePress(g: *Game) void {
     if (queueInteract(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
         character.openInspect(g);
@@ -777,7 +746,6 @@ fn takeQueued(g: *Game, comptime tag: std.meta.Tag(Queued)) ?std.meta.TagPayload
     return @field(q, @tagName(tag));
 }
 
-/// A stunned hero's next turn passes once the stunning one is drawn, wherever a turn could be spent.
 fn stunnedTurn(g: *Game) bool {
     if (!g.pic.quiet() or g.sim.travel != null) return false;
     if (g.mode != .play and !characterShown(g)) return false;
@@ -872,7 +840,6 @@ pub fn update(g: *Game, dt: f32) void {
     if (g.debug.visuals.weather) g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, CELL_F);
 }
 
-/// The wheel scrolls the event log while the pointer rests on it, and nothing else.
 pub fn overLog(g: *const Game) bool {
     const p = g.st.pointer orelse return false;
     return raster.holds(journal.box(g.screen), p);
@@ -884,7 +851,7 @@ fn skyNow(g: *const Game) ?sky.Sky {
     return sky.under(g.pic.hour_shown, g.pic.weather_shown.get(.overcast)).struck(flash);
 }
 
-/// The weather as drawn; null under a roof.
+/// null under a roof.
 pub fn weatherNow(g: *const Game) ?climate.Now {
     return if (g.sim.outdoors) g.pic.weather_shown else null;
 }
@@ -896,12 +863,11 @@ fn drawnTurn(g: *Game) void {
     g.pic.showProgress(&g.sim);
 }
 
-/// Whichever screen takes the way: a walk held across a change of it moves nothing on the new one.
-const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, binds: std.meta.Tag(binds.Binds.Menu), talk: ?[2]u8 };
+const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, tabbing: bool, binds: std.meta.Tag(binds.Binds.Menu), talk: ?[2]u8 };
 
 fn screenOf(g: *const Game) Screen {
     const talk: ?[2]u8 = if (g.sim.plot.talk) |t| .{ t.dialog, t.line } else null;
-    return .{ .mode = std.meta.activeTag(g.mode), .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .binds = std.meta.activeTag(g.binds.menu), .talk = talk };
+    return .{ .mode = std.meta.activeTag(g.mode), .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .tabbing = g.character.tabbing, .binds = std.meta.activeTag(g.binds.menu), .talk = talk };
 }
 
 pub fn holdWalk(g: *Game) void {
@@ -949,7 +915,6 @@ pub fn middle(v: rl.Vector2) [2]f32 {
     return .{ v.x / CELL_F + 0.5, v.y / CELL_F + 0.5 };
 }
 
-/// The cell a body drawn with its corner at `v` stands in.
 pub fn cellUnder(v: rl.Vector2) P {
     return mathx.cellOf(middle(v));
 }
@@ -969,7 +934,6 @@ fn drawDead(g: *Game) void {
     menu.action(&g.face, deadBox(g.screen), prompt_icon.Prompt.menuOf(&g.st, CONFIRM), if (g.permadeath) "Title" else "Restart");
 }
 
-/// Centred in its rows above the score, cut short past `DEAD_STORY_LINES`.
 fn drawEpitaph(g: *Game, story: []const u8, top: i32) void {
     var wrapped: font.Wrapped = undefined;
     var rows: [font.WRAP_LINES_MAX][:0]const u8 = undefined;

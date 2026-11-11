@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Biome fields and classification follow Dwarf Fortress's getBiomeType.
-
 const GRAIN_SCALE: f32 = 5;
 const P = mathx.P;
 
@@ -65,20 +63,15 @@ fn lerp(r: [2]u8, t: f32) f32 {
 const SHORE: f32 = 26;
 const SOURCE_TRIES: usize = 400;
 const SOURCE_MARGIN: i32 = 2;
-/// Below this height is ocean.
 pub const SEA = 20;
-/// From this height up is mountain.
 pub const MOUNTAIN = 90;
-/// At this heat and under is tundra or glacier.
 pub const FROST = 10;
 const COAST = 23;
 const FOOTHILLS = 84;
 const GLACIAL_DRAIN = 75;
 const ARID = 10;
 const DRY = 20;
-/// Rain or drainage under this is low.
 const LOW = 33;
-/// Rain or drainage over this is high.
 const HIGH = 65;
 const TAIGA_HEAT = 25;
 
@@ -211,7 +204,6 @@ test "a narrowed field gives one biome's ground, and a wide one many" {
     for (std.enums.values(grid.Tile)) |t| {
         if (carve.count(&lv, t) > 0) kinds += 1;
     }
-    std.debug.print("a taiga: {d} of {d} cells snow or conifer; a wide region: {d} kinds of ground, {d} water\n", .{ taiga, grid.CELLS, kinds, carve.count(&lv, .water) });
     try std.testing.expect(taiga * 10 > grid.CELLS * 8);
     try std.testing.expect(kinds >= 6);
 }

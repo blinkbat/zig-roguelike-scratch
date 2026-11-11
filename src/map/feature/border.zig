@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Path of Exile's outer buffer, Diablo II's border blocks.
-
 const ROUGH_SCALE: f32 = 6;
 pub const WIDTH_MAX: u8 = 24;
 pub const ROUGH_MAX: u8 = 12;
@@ -12,7 +10,6 @@ pub const ROUGH_MAX: u8 = 12;
 pub const Params = struct {
     tile: grid.Tile = .rock,
     width: u8 = 3,
-    /// Cells it frays inward by, at most.
     rough: u8 = 3,
 
     pub fn fit(p: Params) Params {
@@ -35,7 +32,6 @@ pub fn apply(lv: *grid.Level, _: *mathx.Rng, seed: u64, _: carve.Palette, p: Par
 
 test "a border's every rough frays: rough 1 is not a solid row deeper" {
     var same: usize = 0;
-    var frayed: usize = 0;
     var rng = mathx.Rng.init(1);
     for (0..50) |s| {
         var a = grid.Level.blank();
@@ -45,9 +41,7 @@ test "a border's every rough frays: rough 1 is not a solid row deeper" {
         apply(&a, &rng, s, carve.Palette.WILD, .{ .width = 3, .rough = 1 });
         apply(&b, &rng, s, carve.Palette.WILD, .{ .width = 4, .rough = 0 });
         if (std.mem.eql(grid.Tile, &a.tile, &b.tile)) same += 1;
-        frayed += carve.count(&b, .rock) - carve.count(&a, .rock);
     }
-    std.debug.print("border width 3 rough 1 against width 4 rough 0, 50 seeds: {d} identical, {d} cells frayed open\n", .{ same, frayed });
     try std.testing.expectEqual(@as(usize, 0), same);
 }
 
@@ -59,5 +53,4 @@ test "a border is at least its width deep everywhere" {
     for (0..grid.CELLS) |i| {
         if (grid.Level.edgeDist(grid.Level.of(i)) < 4) try std.testing.expectEqual(grid.Tile.water, lv.tile[i]);
     }
-    std.debug.print("a water border 4 deep, frayed by 6: {d} of {d} cells\n", .{ carve.count(&lv, .water), grid.CELLS });
 }

@@ -1,7 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
-const items = @import("../play/items.zig");
+const item_bases = @import("../play/item_bases.zig");
 const skillbar = @import("../play/skillbar.zig");
 const raster = @import("../gfx/raster.zig");
 const font = @import("../gfx/font.zig");
@@ -18,36 +18,27 @@ pub const DIVIDER_X = DETAIL_X - 18;
 pub const ROW_HEIGHT = 28;
 pub const VISIBLE_ROWS = 14;
 pub const DIRECT_VISIBLE_ROWS = 8;
-/// A list's rows, then its glyph's middle, text and second column within a row.
 pub const LIST_X = menu.PANEL_PAD;
 pub const LIST_Y = 30;
 pub const LIST_W = 510;
 pub const GLYPH_X = 20;
 pub const TEXT_X = 40;
 pub const SECOND_X = 336;
-/// Between a row's text, cut short, and its second column.
 pub const COLUMN_GAP = 12;
-/// Down from a list's header to "Empty" when it has no rows.
 pub const EMPTY_DY = 46;
-/// The area under the tabs a page lays out in.
 pub const AREA = raster.rect(LIST_X, CONTENT_TOP, WIDTH - 2 * LIST_X, AREA_H);
 const AREA_H = 458;
 pub const CARD_W = 246;
 pub const CARD_GAP = 16;
 pub const CARD_H = 334;
-/// Two cards side by side; one card alone or a note under them spans it.
 pub const DETAIL_W = CARD_W * 2 + CARD_GAP;
 pub const CLOSE_W = 108;
 pub const CLOSE_H = 32;
 pub const CLOSE_Y = 18;
-/// The header row's middle: name, level and the close button.
 pub const HEADER_MID = CLOSE_Y + CLOSE_H / 2;
-/// Footer text's top, and where the divider stops.
 pub const FOOT_Y = HEIGHT - 32;
 pub const DIVIDER_FOOT = HEIGHT - 30;
-/// Equipment cells this tall show the full-size glyph with the item's name under it; shorter ones the glyph alone.
 pub const NAMED_CELL_H = 96;
-/// Up from a held two-hander's name to "Both hands".
 pub const PAIR_DY = 22;
 const TAB_Y = 78;
 const TAB_W = 148;
@@ -56,7 +47,6 @@ const TAB_GAP = 8;
 pub const TAB_TEXT = font.SMALL;
 pub const OFF_TAB_A: f32 = 0.7;
 const TABS_X: i32 = @divExact(WIDTH - @as(i32, PAGES.len) * TAB_W - (@as(i32, PAGES.len) - 1) * TAB_GAP, 2);
-/// Room each side of the tabs for the shoulder buttons' icons.
 const SHOULDER_W = 40;
 comptime {
     std.debug.assert(LIST_X + SHOULDER_W < TABS_X);
@@ -68,7 +58,6 @@ pub fn tabBox(i: usize) rl.Rectangle {
     return raster.rect(TABS_X + @as(i32, @intCast(i)) * (TAB_W + TAB_GAP), TAB_Y, TAB_W, TAB_H);
 }
 
-/// A shoulder button's box beside the tabs: the previous page's on the left, the next page's on the right.
 pub fn shoulderBox(next: bool) rl.Rectangle {
     const x: i32 = if (next) WIDTH - LIST_X - SHOULDER_W else LIST_X;
     return raster.rect(x, TAB_Y, SHOULDER_W, TAB_H);
@@ -77,22 +66,16 @@ pub fn shoulderBox(next: bool) rl.Rectangle {
 pub const ACTION_W = menu.ACTION_BOX.x;
 pub const ACTION_H = menu.ACTION_BOX.y;
 pub const ACTION_Y = HEIGHT - 82;
-/// Nearby: header, list, a note line and the actions, only as tall as its list.
 pub const DIRECT_W = 2 * LIST_X + LIST_W;
 pub const DIRECT_GAP = 14;
-/// Under the header, loot's inventory and gold line.
 pub const HOLDING_Y = CLOSE_Y + CLOSE_H + 4;
-/// Loot: list left, the chosen item's card right, fixed at the tallest card whatever is listed.
 pub const LOOT_TOP = HOLDING_Y + font.SMALL + DIRECT_GAP;
 pub const LOOT_ROWS = CARD_H / ROW_HEIGHT;
 pub const LOOT_FOOT_Y = LOOT_TOP + CARD_H + DIRECT_GAP;
 pub const LOOT_SIZE = P{ .x = WIDTH, .y = LOOT_FOOT_Y + ACTION_H + menu.PANEL_PAD };
 pub const REQUIREMENT_GAP = 10;
-/// Under "Both hands in use", its explanation's top.
 pub const HELD_NOTE_DY = 42;
-/// The most cells any page lays out by box.
-pub const CELLS_MAX = @max(skillbar.ACTS.len, items.SLOTS.len);
-/// The paperdoll: big and small cells in five columns, a gutter between every two.
+pub const CELLS_MAX = @max(skillbar.ACTS.len, item_bases.SLOTS.len);
 const SLOT_BIG = 96;
 const SLOT_SMALL = 54;
 const SLOT_GUTTER = 12;
@@ -112,7 +95,7 @@ const SLOT_X = blk: {
 const CHEST_Y = SLOT_TOP + SLOT_BIG + SLOT_GUTTER;
 const FLASK_Y = LOW_Y + SLOT_SMALL + SLOT_GUTTER;
 const FLASK_W = @divExact(SLOT_X[3] + SLOT_SMALL - SLOT_X[1] - SLOT_GUTTER, 2);
-pub const SLOT_BOX = std.EnumArray(items.Slot, struct { at: P, w: i32, h: i32 }).init(.{
+pub const SLOT_BOX = std.EnumArray(item_bases.Slot, struct { at: P, w: i32, h: i32 }).init(.{
     .right_hand = .{ .at = .{ .x = SLOT_X[0], .y = HANDS_Y }, .w = SLOT_BIG, .h = LOW_Y - SLOT_GUTTER - HANDS_Y },
     .left_hand = .{ .at = .{ .x = SLOT_X[4], .y = HANDS_Y }, .w = SLOT_BIG, .h = LOW_Y - SLOT_GUTTER - HANDS_Y },
     .helm = .{ .at = .{ .x = SLOT_X[2], .y = SLOT_TOP }, .w = SLOT_BIG, .h = SLOT_BIG },

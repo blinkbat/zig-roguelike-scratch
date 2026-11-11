@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Qud's salt dunes and Diablo II's Rocky Waste.
-
 pub const RIDGES_MAX: u8 = 30;
 pub const MESAS_MAX: u8 = 30;
 pub const SCALE_MIN: u8 = 6;

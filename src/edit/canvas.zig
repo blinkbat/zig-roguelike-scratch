@@ -315,7 +315,6 @@ test "offscreen graph thumbnails defer generation and uploads until their image 
     edge.x -= 1;
     try std.testing.expect(thumb(ed, 0, picture, edge) != null);
     try std.testing.expect(thumb(ed, 0, picture, c) != null);
-    std.debug.print("graph thumbnails: {d} offscreen dirty nodes skip generation and uploads; header-only and exact-edge clips skip, one visible pixel retains the image\n", .{ed.map.node_n});
 }
 
 const Ghost = struct {
@@ -334,7 +333,6 @@ const Ghost = struct {
         h.cells.set(grid.Level.idx(p));
     }
 
-    /// Each cell inked once, and the rest of a wider prop it cuts back to its ground, as `placement.layTile` lays it.
     pub fn draw(h: *const Ghost) void {
         const board = h.ed.painted();
         var each = h.cells.iterator(.{});

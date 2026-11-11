@@ -53,11 +53,9 @@ pub const Sprites = struct {
     /// In the sheet's order, `WALL_MASKS`.
     wall: [sprite_assets.WALL_MASKS.len]?rl.Texture2D = @splat(null),
     forest: [sprite_assets.WALL_MASKS.len]?rl.Texture2D = @splat(null),
-    /// Each ground's whole sheet, drawn a piece at a time so a ground's pieces batch.
     grounds: std.EnumArray(ground.Ground, ?rl.Texture2D) = .initFill(null),
-    /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
+    /// In `skillbar.Act`'s order.
     skills: ?rl.Texture2D = null,
-    /// Every item kind's icon at each `line_icons.ItemSize`, a strip per size.
     item_icons: ?rl.Texture2D = null,
     hud_border: ?rl.Texture2D = null,
     log_fade: ?sprite_materials.FadeShader = null,
@@ -68,7 +66,6 @@ pub const Sprites = struct {
     scenery: ?sprite_materials.SceneryShader = null,
     mirror: ?rl.RenderTexture2D = null,
     mirror_memory: ?rl.RenderTexture2D = null,
-    /// The ground a fire just took, laid back cell by cell as it fades.
     burnt_ground: ?rl.RenderTexture2D = null,
 
     pub fn loadCommon(self: *Sprites) void {
@@ -105,7 +102,6 @@ pub const Sprites = struct {
         return true;
     }
 
-    /// `t` again over itself at `dest`, as the band at `sweep` crosses it.
     pub fn drawShine(self: *const Sprites, t: rl.Texture2D, dest: rl.Rectangle, sweep: f32, col: rl.Color) void {
         const s = self.shine orelse return;
         rl.beginShaderMode(s.shader);
@@ -148,14 +144,13 @@ pub const Sprites = struct {
         return null;
     }
 
-    /// The grounds with a sheet loaded.
     pub fn sheets(self: *const Sprites) ground.Grounds {
         var s = ground.Grounds.initEmpty();
         for (std.enums.values(ground.Ground)) |g| s.setPresent(g, self.grounds.getPtrConst(g).* != null);
         return s;
     }
 
-    /// Draw lowest layers first; `origin` is cell (0, 0)'s top-left and `px` is pixels per cell.
+    /// `origin` is cell (0, 0)'s top-left and `px` is pixels per cell.
     pub fn drawGround(self: *const Sprites, tiles: *const grid.Level, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
         const sheeted = self.sheets();
         for (ground.LAYERS) |gr| {
@@ -268,7 +263,6 @@ pub const Sprites = struct {
         if (bound != null) rl.endShaderMode();
     }
 
-    /// `side`'s half of `piece`'s face or cap cell, and where it stands over the point at `at`.
     fn bankHalf(piece: ground.BankPiece, side: usize, at: [2]f32, px: f32) struct { src: rl.Rectangle, dst: rl.Rectangle } {
         const shift = sideShift(side);
         var src = sprite_assets.sheetCell(piece.col(), 0);
@@ -337,17 +331,14 @@ pub const Sprites = struct {
         }
     }
 
-    /// Land drawn into a bank's cap: a sheet's full cell, set on the dual grid, or a whole tile picture, set on its own cell.
     const BankFill = struct {
         piece: Piece,
         sheet: bool,
 
-        /// Where its picture continues in the lower quarter of the cell north-west (side 0) or north-east (side 1) of a point.
         fn lowerQuarter(self: BankFill, side: usize) rl.Rectangle {
             return quarterOf(self.piece.src, if (self.sheet) side else 3 - side);
         }
 
-        /// The cap shader's shift from the cap cell, `BANK_LIFT` above the point's row, into this picture's frame.
         fn offset(self: BankFill) [2]f32 {
             return if (self.sheet) .{ 0, 0.5 - ground.BANK_LIFT } else .{ 0.5, 1 - ground.BANK_LIFT };
         }
@@ -429,12 +420,10 @@ pub const Sprites = struct {
         return .{ origin[0] + @as(f32, @floatFromInt(p.x)) * px, origin[1] + @as(f32, @floatFromInt(p.y)) * px };
     }
 
-    /// A cell's square centred on the dual-grid point at `at`.
     fn pointRect(at: [2]f32, px: f32) rl.Rectangle {
         return .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px };
     }
 
-    /// The part of a ground's square from `uv` across `span`, fractions of the cell: its picture, else its colour.
     fn squarePart(self: *const Sprites, t: grid.Tile, cell: [2]f32, px: f32, uv: [2]f32, span: f32) void {
         const dest = rl.Rectangle{ .x = cell[0] + uv[0] * px, .y = cell[1] + uv[1] * px, .width = span * px, .height = span * px };
         if (self.tiles.getPtrConst(t).*) |tex| {
@@ -534,7 +523,6 @@ pub fn hudPanelIn(sprites: *const Sprites, r: rl.Rectangle, fill: rl.Color, tint
     hudPanel(sprites, @intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height), fill, tint);
 }
 
-/// A ui panel's backing and border.
 pub fn backing(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32) void {
     hudPanel(sprites, x, y, width, height, look.BACKING, look.LIT);
 }
@@ -575,7 +563,6 @@ fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, t
     }
 }
 
-/// A ground with neither a sheet nor a picture, which shows its glyph.
 pub fn glyphGround(t: grid.Tile, sprites: *const Sprites) bool {
     const g = ground.of(t) orelse return false;
     return sprites.grounds.getPtrConst(g).* == null and sprites.tiles.getPtrConst(t).* == null;
@@ -650,7 +637,6 @@ test "water material bands and cap sampling match the tile-art exporter" {
         }
     }
     try std.testing.expect(covered > 0);
-    std.debug.print("water export: {d} named material bands, {d} cap pixels aligned at bank lift {d}\n", .{ std.enums.values(WaterBand).len, covered, lift });
 }
 
 test "the deep water sheet is the shallows' at WATER_DEEP_PERCENT, as deepen_water.lua rounds it" {

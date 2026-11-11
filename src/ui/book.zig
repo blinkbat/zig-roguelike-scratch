@@ -11,7 +11,6 @@ pub const Command = character_view.Command;
 pub const SIZE = layout.SIZE;
 pub const QUESTS_BOX = layout.AREA;
 
-/// The journal measured with the face the quests page draws in on `screen`.
 pub fn journalOn(screen: P, face: font.Face, entries: []const quest_log.Entry) quest_log.Journal {
     const drawn = menu.Surface.of(screen, layout.SIZE).faceFor(face);
     return quest_log.Journal.of(&drawn, entries, QUESTS_BOX);
@@ -21,7 +20,6 @@ pub const verifyStats = character_stats.verify;
 const BOTH_HANDS = "Both hands";
 const BOTH_IN_USE = BOTH_HANDS ++ " in use";
 const EMPTY = "Empty";
-/// Between loot's gold and its position count.
 const LOOT_GOLD_GAP: i32 = 80;
 const std = @import("std");
 const rl = @import("raylib");
@@ -29,6 +27,9 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const attr = @import("../play/attrs.zig");
 const hero = @import("../play/hero.zig");
+const Gear = @import("../play/gear.zig").Gear;
+const inventory = @import("../play/inventory.zig");
+const item_bases = @import("../play/item_bases.zig");
 const items = @import("../play/items.zig");
 const consumable = @import("../play/consumable.zig");
 const progress = @import("../play/progress.zig");
@@ -46,7 +47,6 @@ const P = mathx.P;
 pub const Book = struct {
     page: Page = .equipment,
     cursor: usize = 0,
-    /// The first list row shown.
     top: usize = 0,
     last_page: Page = .equipment,
     last_cursor: usize = 0,
@@ -56,7 +56,6 @@ pub const Book = struct {
     destination_index: usize = 0,
     mouse_panning: bool = false,
     message: menu.Note(80) = .{},
-    /// Stats shows its advanced sheet, as D2's Advanced Stats.
     advanced: bool = false,
     tabbing: bool = false,
 
@@ -93,12 +92,10 @@ pub const Book = struct {
     fn recentre(self: *Book) void {
         self.pan = .{ .x = 0, .y = 0 };
     }
-    /// Selects cell `i`; the passive tree recentres on it.
     fn browse(self: *Book, i: usize) void {
         self.cursor = i;
         if (self.page == .passives) self.recentre();
     }
-    /// Browses toward a bearing; with no node there, the cursor and the pan stay.
     fn walkTree(self: *Book, dx: f32, dy: f32) void {
         const next = progress.passives.step(self.cursor, dx, dy);
         if (next != self.cursor) self.browse(next);
@@ -108,7 +105,7 @@ pub const Book = struct {
     }
     fn count(self: *const Book, view: View) usize {
         return switch (self.page) {
-            .equipment => items.SLOTS.len,
+            .equipment => item_bases.SLOTS.len,
             .inventory => stocked(view) + view.inventory.n,
             .stats, .quests => 0,
             .passives => progress.NODES.len,
@@ -121,7 +118,6 @@ pub const Book = struct {
         const visible = self.visibleRows();
         return @min(mathx.reveal(self.top, self.cursor, visible), self.count(view) -| visible);
     }
-    /// A scrolling list rather than laid-out cells.
     fn listed(self: *const Book) bool {
         return self.page == .inventory or self.direct();
     }
@@ -173,13 +169,13 @@ pub const Book = struct {
     }
     fn selected(self: *const Book, view: View) ?items.Item {
         return switch (self.page) {
-            .equipment => view.inventory.gear.slots.get(items.SLOTS[self.cursor]),
+            .equipment => view.inventory.gear.slots.get(item_bases.SLOTS[self.cursor]),
             .inventory => if (self.bagIndex(view)) |b| view.inventory.bag[b] else null,
             .nearby, .loot => if (self.cursor < view.nearby.len) view.nearby[self.cursor].item() else null,
             .stats, .passives, .skills, .quests => null,
         };
     }
-    fn destination(self: *const Book, view: View) items.Slot {
+    fn destination(self: *const Book, view: View) item_bases.Slot {
         const it = self.selected(view).?;
         const slots = it.kind.slots();
         return slots[@min(self.destination_index, slots.len - 1)];
@@ -187,7 +183,7 @@ pub const Book = struct {
     fn select(self: *Book, view: View) ?Command {
         if (self.cursor >= self.count(view)) return null;
         return switch (self.page) {
-            .equipment => if (self.selected(view) != null) .{ .unequip = items.SLOTS[self.cursor] } else blk: {
+            .equipment => if (self.selected(view) != null) .{ .unequip = item_bases.SLOTS[self.cursor] } else blk: {
                 self.choose(.inventory);
                 break :blk null;
             },
@@ -335,7 +331,6 @@ pub const Book = struct {
         if (st.hit(menu.CONFIRM)) self.tabbing = false;
         return null;
     }
-    /// The button whose box is under `p`, so a click there is that button's press.
     fn buttonAt(self: *const Book, p: P, view: View) ?input.Button {
         if (!self.direct()) {
             if (raster.holds(layout.shoulderBox(false), p)) return menu.PAGE_PREV;
@@ -345,11 +340,9 @@ pub const Book = struct {
         for (shown.all[0..shown.n]) |c| if ((self.labelled(c) or c.shown != .label) and raster.holds(c.box, p)) return c.button;
         return null;
     }
-    /// Whether the book draws `c`'s label and prompt; on the tabs only the close button's.
     fn labelled(self: *const Book, c: Control) bool {
         return !self.tabbing or c.button == menu.BACK;
     }
-    /// Every button the page has, the close button first.
     fn controls(self: *const Book, view: View) Controls {
         var c: Controls = .{};
         c.add(self.closeBox(view), menu.BACK, .{ .label = character_view.verbOf(.close) });
@@ -402,7 +395,7 @@ pub const Book = struct {
         const y = layout.CONTENT_TOP;
         return switch (self.page) {
             .equipment => blk: {
-                const s = layout.SLOT_BOX.get(items.SLOTS[i]);
+                const s = layout.SLOT_BOX.get(item_bases.SLOTS[i]);
                 break :blk raster.rect(s.at.x, y + s.at.y, s.w, s.h);
             },
             .inventory, .nearby, .loot => raster.rect(layout.LIST_X, (if (self.direct()) self.directTop() else y + layout.LIST_Y) + (@as(i32, @intCast(i)) - @as(i32, @intCast(self.top))) * layout.ROW_HEIGHT, layout.LIST_W, layout.ROW_HEIGHT),
@@ -468,7 +461,7 @@ pub const Book = struct {
         header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else "ITEM BAG");
         if (self.page == .loot) {
             var holding: menu.Note(100) = .{};
-            holding.say(comptime menu.named(Page.inventory) ++ "  {d} / {d}     Gold  {d}", .{ view.inventory.n, items.BAG_MAX, view.gold });
+            holding.say(comptime menu.named(Page.inventory) ++ "  {d} / {d}     Gold  {d}", .{ view.inventory.n, inventory.BAG_MAX, view.gold });
             face.draw(holding.text(), layout.LIST_X, layout.HOLDING_Y, font.SMALL, look.DIM);
             divider(layout.LOOT_TOP, layout.LOOT_TOP + layout.CARD_H);
         }
@@ -522,7 +515,7 @@ pub const Book = struct {
             menu.outline(r, chosen, look.UI_FOCUS, look.EDGE);
             switch (self.page) {
                 .equipment => {
-                    const slot = items.SLOTS[i];
+                    const slot = item_bases.SLOTS[i];
                     const inner = @as(i32, @intFromFloat(r.width)) - 2 * layout.SLOT_INSET;
                     var fitted: [items.NAME_MAX]u8 = undefined;
                     face.draw(face.fit(&fitted, slotLabel(slot), layout.SLOT_LABEL, inner, false), x + layout.SLOT_INSET, y + layout.SLOT_INSET, layout.SLOT_LABEL, look.DIM);
@@ -551,7 +544,7 @@ pub const Book = struct {
                     const it = view.inventory.bag[at];
                     const slots = it.kind.slots();
                     line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
-                    listRow(face, x, y, it.name(&name_buf), inkOf(it), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name());
+                    listRow(face, x, y, it.name(&name_buf), inkOf(it), if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name());
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];
@@ -564,7 +557,7 @@ pub const Book = struct {
             }
         }
     }
-    fn requirementAttrs(self: *const Book, view: View, slot: items.Slot) attr.Attrs {
+    fn requirementAttrs(self: *const Book, view: View, slot: item_bases.Slot) attr.Attrs {
         return switch (self.page) {
             .inventory => (view.inventory.swapped(self.bagIndex(view).?, slot) catch view.inventory.gear).statsWithout(slot, view.base),
             .nearby, .loot => neededAttrs(view, self.selected(view).?, slot),
@@ -578,7 +571,7 @@ pub const Book = struct {
         if (self.count(view) == 0) return;
         const it = self.selected(view) orelse {
             if (self.carriedRow(view)) |k| return item_card.drawSupply(face, x, y, layout.DETAIL_W, k, view.inventory.stacks.get(k), null);
-            if (self.page == .equipment) if (offhandWeapon(view.inventory.gear, items.SLOTS[self.cursor])) |weapon| {
+            if (self.page == .equipment) if (offhandWeapon(view.inventory.gear, item_bases.SLOTS[self.cursor])) |weapon| {
                 face.draw(BOTH_IN_USE, x, y, font.HEAD, look.TEXT);
                 _ = face.paragraph(weapon.name(&name_buf), x, y + layout.HELD_NOTE_DY, layout.DETAIL_W, font.SMALL, look.DIM);
                 return;
@@ -586,7 +579,7 @@ pub const Book = struct {
             face.draw(item_card.EMPTY_SLOT, x, y, font.HEAD, look.TEXT);
             return;
         };
-        const slot = if (self.page == .equipment) items.SLOTS[self.cursor] else self.destination(view);
+        const slot = if (self.page == .equipment) item_bases.SLOTS[self.cursor] else self.destination(view);
         const comparing = self.page == .inventory;
         item_card.draw(face, x, y, if (comparing) layout.CARD_W else layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), if (comparing) "SELECTED" else null);
         if (comparing) item_card.draw(face, x + layout.CARD_W + layout.CARD_GAP, y, layout.CARD_W, view.inventory.gear.slots.get(slot), slot, view.inventory.gear.statsWithout(slot, view.base), "EQUIPPED");
@@ -596,7 +589,7 @@ pub const Book = struct {
             _ = view.inventory.preview(bagged, slot, view.base) catch |err| {
                 var reason: menu.Note(140) = .{};
                 if (err != error.Requirements) {
-                    reason.say("{s}", .{items.caption(err)});
+                    reason.say("{s}", .{inventory.caption(err)});
                 } else if (dependent(view, bagged, slot)) |other| {
                     reason.say("Would leave {s} without its required attributes.", .{other.name(&name_buf)});
                 } else return;
@@ -607,9 +600,7 @@ pub const Book = struct {
     }
 };
 
-/// A page shows each button at most once.
 const CONTROLS_MAX = std.enums.values(input.Button).len;
-/// A labelled button; a prompt over a button the tree panel draws, at this alpha; or drawn there whole.
 const Shown = union(enum) { label: [:0]const u8, prompt: f32, drawn };
 const Control = struct { box: rl.Rectangle, button: input.Button, shown: Shown };
 const Controls = struct {
@@ -641,22 +632,18 @@ fn listRow(face: *const font.Face, x: i32, y: i32, text: [:0]const u8, ink: rl.C
     face.drawMiddle(face.fit(&fitted, text, font.BODY, layout.SECOND_X - layout.TEXT_X - layout.COLUMN_GAP, false), x + layout.TEXT_X, mid, font.BODY, ink);
     face.drawMiddle(second, x + layout.SECOND_X, mid, font.SMALL, look.DIM);
 }
-/// The detail panel's buttons, left to right.
 const ACTIONS = [_]input.Button{ menu.CONFIRM, menu.CHANGE, menu.REMOVE };
-/// What wearing ground item `it` in `slot` leaves to meet its requirements.
-fn neededAttrs(view: View, it: items.Item, slot: items.Slot) attr.Attrs {
+fn neededAttrs(view: View, it: items.Item, slot: item_bases.Slot) attr.Attrs {
     return view.inventory.gear.wearing(it, slot).statsWithout(slot, view.base);
 }
-/// Short enough for a ring's small box.
-fn slotLabel(s: items.Slot) [:0]const u8 {
+fn slotLabel(s: item_bases.Slot) [:0]const u8 {
     return switch (s) {
         .left_ring => "L ring",
         .right_ring => "R ring",
         .left_hand, .right_hand, .helm, .chest, .belt, .gloves, .boots, .amulet, .life_flask, .mana_flask => s.name(),
     };
 }
-/// The kind an empty slot shows faintly.
-fn slotGlyph(s: items.Slot) items.Kind {
+fn slotGlyph(s: item_bases.Slot) item_bases.Kind {
     return switch (s) {
         .right_hand => .sword,
         .left_hand => .shield,
@@ -684,14 +671,12 @@ fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: in
         face.drawMiddle(text, after + menu.PROMPT_GAP, m.y, size, ink);
     } else face.centred(text, m.x, m.y, size, ink);
 }
-/// A keyboard tab's shortcut and name, the widest it draws.
 fn tabWidth(face: *const font.Face, page: Page) i32 {
     return tabPrompt(page).width(face, layout.TAB_TEXT) + menu.PROMPT_GAP + face.width(menu.named(page), layout.TAB_TEXT);
 }
 fn tabPrompt(page: Page) prompt_icon.Prompt {
     return .{ .key = page.shortcut().?.caption() };
 }
-/// Every tab's shortcut and name fit inside it, in the loaded font.
 pub fn verifyTabs(face: *const font.Face) !void {
     const room: i32 = @as(i32, @intFromFloat(layout.tabBox(0).width)) - 2 * layout.TAB_PAD;
     var widest: i32 = 0;
@@ -699,21 +684,19 @@ pub fn verifyTabs(face: *const font.Face) !void {
     if (widest > room) return error.TabOverflow;
     std.debug.print("character tabs: widest label {d}px of {d}px\n", .{ widest, room });
 }
-fn offhandWeapon(gear: items.Gear, slot: items.Slot) ?items.Item {
+fn offhandWeapon(gear: Gear, slot: item_bases.Slot) ?items.Item {
     return if (slot == .left_hand) gear.twoHander() else null;
 }
 
-/// Something else worn that equipping bag item `at` in `slot` would leave unmet.
-fn dependent(view: View, at: usize, slot: items.Slot) ?items.Item {
+fn dependent(view: View, at: usize, slot: item_bases.Slot) ?items.Item {
     const after = view.inventory.swapped(at, slot) catch return null;
-    for (items.SLOTS) |s| {
+    for (item_bases.SLOTS) |s| {
         if (s == slot) continue;
         if (after.slots.get(s)) |other| if (!after.wornMeets(s, view.base)) return other;
     }
     return null;
 }
 
-/// Kinds carried, which head the Inventory list.
 fn stocked(view: View) usize {
     return view.inventory.carriedCount();
 }
@@ -726,12 +709,12 @@ fn inkOf(it: ?items.Item) rl.Color {
     return look.itemInk(if (it) |i| i.rarity() else .normal);
 }
 
-fn testView(inv: *const items.Inventory, growth: *const progress.State) View {
+fn testView(inv: *const inventory.Inventory, growth: *const progress.State) View {
     return .{ .class = .archer, .name = "Test", .inventory = inv, .growth = growth, .base = growth.attributes(.archer) };
 }
 
 test "character actions need one press and tabs are directly reachable" {
-    var inv = items.Inventory{};
+    var inv = inventory.Inventory{};
     try std.testing.expect(inv.add(.{ .kind = .cap }));
     var growth = progress.State.of(.archer);
     const view = testView(&inv, &growth);
@@ -760,11 +743,10 @@ test "character actions need one press and tabs are directly reachable" {
     book.zoom = trees.ZOOM_MIN;
     book.open();
     try std.testing.expectEqual(trees.ZOOM_START, book.zoom);
-    std.debug.print("character actions: direct equip/drop, shoulder tabs, one-step close, scaled mouse hit; commands leave inventory untouched\n", .{});
 }
 
 test "stats change between main and advanced by button and by click, and back still closes" {
-    const inv = items.Inventory{};
+    const inv = inventory.Inventory{};
     const growth = progress.State.of(.wizard);
     const view = testView(&inv, &growth);
     var book = Book{ .page = .stats };
@@ -779,11 +761,10 @@ test "stats change between main and advanced by button and by click, and back st
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
     try std.testing.expect(book.tabbing);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
-    std.debug.print("stats: change and a click on its button toggle the advanced sheet; back leaves it for the tabs, then closes\n", .{});
 }
 
 test "the book opens on its tabs: left and right choose one, confirm enters it, back returns to the tabs" {
-    var inv = items.Inventory{};
+    var inv = inventory.Inventory{};
     try std.testing.expect(inv.add(.{ .kind = .cap }));
     var growth = progress.State.of(.archer);
     const view = testView(&inv, &growth);
@@ -810,7 +791,7 @@ test "the book opens on its tabs: left and right choose one, confirm enters it, 
 }
 
 test "the quests tab is chosen from the tabs, scrolls once entered, and backs out to the tabs" {
-    const inv = items.Inventory{};
+    const inv = inventory.Inventory{};
     const growth = progress.State.of(.archer);
     var view = testView(&inv, &growth);
     const long = quest_log.Entry{ .title = "Quest", .asks = "a word " ** 40, .done = false };
@@ -834,11 +815,10 @@ test "the quests tab is chosen from the tabs, scrolls once entered, and backs ou
     try std.testing.expect(book.tabbing and book.page == .quests);
     _ = book.step(&.{ .walk = .w }, screen, view);
     try std.testing.expectEqual(Page.skills, book.page);
-    std.debug.print("quests tab: chosen from the tabs, scrolled to entry {d} once entered, back to the tabs\n", .{view.quests.last_top});
 }
 
 test "the passives tab reads menu input until entered, and a click on its drawn zoom enters and zooms" {
-    var inv = items.Inventory{};
+    var inv = inventory.Inventory{};
     var growth = progress.State.of(.archer);
     const view = testView(&inv, &growth);
     const screen = display.WINDOW;
@@ -864,7 +844,7 @@ test "the passives tab reads menu input until entered, and a click on its drawn 
 }
 
 test "loot exposes single pickup and take all through controller and mouse controls" {
-    const inv = items.Inventory{};
+    const inv = inventory.Inventory{};
     const growth = progress.State.of(.archer);
     var view = testView(&inv, &growth);
     view.nearby = &.{.{ .loot = .{ .index = 7, .item = .{ .kind = .cap } } }};
@@ -887,17 +867,15 @@ test "loot exposes single pickup and take all through controller and mouse contr
     var crowded = view;
     crowded.nearby = &many;
     try std.testing.expectEqual(panel, book.size(crowded));
-    std.debug.print("loot panel: fixed {d}x{d}, list {d} rows left, card {d}px right, Book {d}x{d}\n", .{ panel.x, panel.y, layout.LOOT_ROWS, card, layout.SIZE.x, layout.SIZE.y });
     _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, view);
     try std.testing.expectEqual(Page.loot, book.page);
     view.loot_gold = 37;
     try std.testing.expectEqual(@as(usize, 1), book.count(view));
     try std.testing.expectEqual(@as(usize, 7), book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).?.pickup);
-    std.debug.print("loot controls: item pickup, take-all press and scaled mouse hit; gold shown beside, never a row; no character tabs\n", .{});
 }
 
 test "the inventory list scrolls back when the bag shrinks" {
-    var inv = items.Inventory{};
+    var inv = inventory.Inventory{};
     for (0..layout.VISIBLE_ROWS + 6) |_| try std.testing.expect(inv.add(.{ .kind = .cap }));
     var growth = progress.State.of(.archer);
     const view = testView(&inv, &growth);
@@ -917,11 +895,10 @@ test "the inventory list scrolls back when the bag shrinks" {
     const p = surface.screenOf(.{ .x = box.x + 20, .y = box.y + 10 });
     _ = book.step(&.{ .click = true, .pointer = p }, screen, view);
     try std.testing.expectEqual(@as(usize, 0), book.cursor);
-    std.debug.print("inventory scroll: top 6 of {d}, back to {d} once {d} remain\n", .{ layout.VISIBLE_ROWS + 6, book.top, inv.n });
 }
 
 test "item card requirements exclude the item itself and every displaced hand" {
-    var inv = items.Inventory{};
+    var inv = inventory.Inventory{};
     var growth = progress.State.of(.archer);
     const base = attr.Attrs.of(.{ .strength = 10, .dexterity = 12, .intelligence = 10 });
     var view = testView(&inv, &growth);
@@ -945,11 +922,10 @@ test "item card requirements exclude the item itself and every displaced hand" {
     ground.nearby = &.{.{ .loot = .{ .index = 0, .item = .{ .kind = .axe, .mods = .{ null, null, null, null } } } }};
     book.choose(.loot);
     try std.testing.expectEqual(@as(i32, 20), book.requirementAttrs(ground, .right_hand).get(.strength));
-    std.debug.print("item cards: 2-hand displacement, self-funding, both ring destinations and ground items; inventory unchanged\n", .{});
 }
 
 test "tree browsing is free and point actions issue one command" {
-    var inv = items.Inventory{};
+    var inv = inventory.Inventory{};
     var growth = progress.State.of(.archer);
     growth.passive_points = 2;
     growth.active_points = 2;
@@ -991,16 +967,14 @@ test "tree browsing is free and point actions issue one command" {
     const surface = menu.Surface.of(screen, layout.SIZE);
     _ = book.step(&.{ .pointer = surface.screenOf(.{ .x = canvas.x, .y = canvas.y }), .scroll = -1 }, screen, view);
     try std.testing.expect(book.treeActive() and book.zoom < trees.ZOOM_START);
-    std.debug.print("tree book: spatial browsing and zoom spend no points; passive and skill selection return one command\n", .{});
 }
 
 test "mouse character browsing and passive dragging preserve points and scaled hit targets" {
-    var inv = items.Inventory{};
+    var inv = inventory.Inventory{};
     var growth = progress.State.of(.archer);
     growth.active_points = 2;
     growth.passive_points = 2;
     const view = testView(&inv, &growth);
-    var checked: usize = 0;
     for ([_]P{ display.SCREEN_720, display.SCREEN_1440 }) |screen| {
         var book = Book{ .page = .skills };
         const surface = book.surface(screen, view);
@@ -1029,13 +1003,11 @@ test "mouse character browsing and passive dragging preserve points and scaled h
         try std.testing.expectEqual(@as(u16, 2), growth.passive_points);
         try std.testing.expect(book.step(&.{ .right_click = true }, screen, view) == null);
         try std.testing.expect(book.step(&.{ .right_click = true }, screen, view).? == .close);
-        checked += 1;
     }
-    std.debug.print("mouse character: {d} scales, skill selection/controller return, captured drag/release, zoom, overview, no point spend\n", .{checked});
 }
 
 test "mouse item and skill selections survive movement across other targets toward actions" {
-    var inv = items.Inventory{};
+    var inv = inventory.Inventory{};
     for (0..8) |_| try std.testing.expect(inv.add(.{ .kind = .cap }));
     const growth = progress.State.of(.archer);
     var view = testView(&inv, &growth);
@@ -1044,7 +1016,6 @@ test "mouse item and skill selections survive movement across other targets towa
         .{ .loot = .{ .index = 8, .item = .{ .kind = .cap } } },
         .{ .loot = .{ .index = 9, .item = .{ .kind = .cap } } },
     };
-    var journeys: usize = 0;
     for ([_]P{ display.SCREEN_720, display.SCREEN_1440 }) |screen| {
         for ([_]Page{ .inventory, .loot, .skills }) |page| {
             view.nearby = if (page == .loot) &nearby else &.{};
@@ -1070,14 +1041,12 @@ test "mouse item and skill selections survive movement across other targets towa
                 .skills => try std.testing.expectEqual(progress.skills(view.class)[0].act, command.bindings),
                 else => unreachable,
             }
-            journeys += 1;
         }
     }
-    std.debug.print("mouse action journeys: {d} scaled inventory, loot and skill targets survive intermediate motion\n", .{journeys});
 }
 
 test "a stick pushed where no passive lies keeps the pan, as the keys do" {
-    var inv = items.Inventory{};
+    var inv = inventory.Inventory{};
     var growth = progress.State.of(.archer);
     const view = testView(&inv, &growth);
     const screen = display.SCREEN_720;
@@ -1094,5 +1063,4 @@ test "a stick pushed where no passive lies keeps the pan, as the keys do" {
     _ = book.step(&.{ .tree = .{ .move = move } }, screen, view);
     try std.testing.expectEqual(dead_end[0], book.cursor);
     try std.testing.expectEqual(pan, book.pan);
-    std.debug.print("dead-end stick on node {d}: pan kept at {d:.1},{d:.1}\n", .{ dead_end[0], pan.x, pan.y });
 }

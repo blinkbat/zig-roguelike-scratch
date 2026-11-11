@@ -6,9 +6,7 @@ const prompt_icon = @import("prompt_icon.zig");
 const input = @import("../core/input.zig");
 const OPEN = input.GLYPH_OPEN;
 const CLOSE = input.GLYPH_CLOSE;
-/// The longest run of plain text laid out at once.
 const RUN_MAX: usize = 256;
-/// Beside an inline glyph's own width, the room it takes.
 const GLYPH_PAD: i32 = 4;
 
 const Part = struct {
@@ -114,5 +112,4 @@ test "input glyph markup keeps chords and ordinary text separate" {
     try std.testing.expect(icon(input.mouseName(.left)) == .mouse);
     try std.testing.expect(icon(input.ARROWS) == .arrows);
     try std.testing.expect(icon("Enter") == .key);
-    std.debug.print("input glyph text: 2 chord glyphs, 3 text runs, incomplete token and mouse/keyboard dispatch checked\n", .{});
 }

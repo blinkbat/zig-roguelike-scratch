@@ -10,7 +10,6 @@ const Source = chronicle.Source;
 const Turn = chronicle.Turn;
 const Hurt = chronicle.Hurt;
 
-/// The run as it stood when the hero died.
 pub const Context = struct {
     name: []const u8,
     class: heroes.Class,
@@ -34,7 +33,6 @@ pub const Context = struct {
         return &self.turns[self.turns.len - 1];
     }
 
-    /// Turns from `turn` to the death.
     fn since(self: *const Context, turn: u32) u32 {
         return self.last().number - turn;
     }
@@ -86,12 +84,9 @@ pub const Tag = enum {
 };
 pub const Tags = std.EnumSet(Tag);
 
-/// Every foe kind, and every other source.
 const SOURCES_MAX = std.enums.values(actor.Kind).len + std.meta.fields(Source).len - 1;
-/// A damage contributor per source, and at most one of each other kind of contributor.
 const CONTRIBUTORS_MAX = SOURCES_MAX + std.meta.fields(What).len - 1;
 
-/// Most contributors a report weighs.
 pub const TOP: usize = 3;
 pub const Top = grid.Bounded(Contributor, TOP);
 
@@ -232,7 +227,6 @@ fn hurtIn(turn: *const Turn) bool {
     return false;
 }
 
-/// What kind of death it was.
 pub fn tags(ctx: *const Context, top: *const Top) Tags {
     var out = Tags.initEmpty();
     const k = ctx.killer;
@@ -324,7 +318,6 @@ fn article(word: []const u8, capital: bool) []const u8 {
     return if (vowel) "an" else "a";
 }
 
-/// "a rat", or "An ox" when `capital`.
 const Indefinite = struct {
     word: []const u8,
     capital: bool = false,
@@ -378,7 +371,6 @@ fn sourceName(by: Source) []const u8 {
     };
 }
 
-/// What the hero did with its own last action, in the turn it died.
 const Deed = struct {
     with: ?skillbar.Act,
     what: union(enum) { felled: actor.Kind, struck: actor.Kind, missed, used: skillbar.Act },
@@ -536,7 +528,6 @@ test "a death by many small bites, a flask left full, reads as plain sentences" 
     const t = tags(&ctx, &top);
     try std.testing.expect(t.contains(.chip) and t.contains(.by_trash) and t.contains(.flask_unused) and !t.contains(.one_shot));
     const r = write(&ctx);
-    std.debug.print("chip death: {s}\n", .{r.text()});
     try std.testing.expectEqualStrings("Arwen the archer was bitten to death by a mere rat in the Warrens. Arwen took one small wound after another. Arwen had a life flask ready but did not drink it.", r.text());
 }
 
@@ -552,7 +543,6 @@ test "an arrow answered by a bolt past the last of life names the hero's last sh
     ctx.night = true;
     ctx.points = 2;
     const r = write(&ctx);
-    std.debug.print("overkill: {s}\n", .{r.text()});
     try std.testing.expectEqualStrings("Arwen the archer was shot dead by a bandit crossbowman in the Warrens after dark. Arwen's last arrow hit a bandit crossbowman without killing it. The last blow would have killed Arwen twice over. Arwen died with unspent points.", r.text());
     const top = contributors(&ctx);
     try std.testing.expectEqual(@as(usize, TOP), top.n);
@@ -570,7 +560,6 @@ test "gas from a caustic bloat the hero burst is the hero's own doing, and the f
     var ctx = testContext(&turns);
     ctx.milestone = .{ .turn = 3, .what = .{ .cleared = .bloat } };
     const r = write(&ctx);
-    std.debug.print("own goal: {s}\n", .{r.text()});
     try std.testing.expectEqualStrings("Arwen the archer burst a caustic bloat in the Warrens, then died in its gas. The pib had already wounded Arwen. Arwen had recently killed the last caustic bloat.", r.text());
 }
 
@@ -581,7 +570,6 @@ test "the hero's own last act in the turn it died is its last gasp" {
     };
     const flask_ctx = testContext(&late);
     const drank = write(&flask_ctx);
-    std.debug.print("last gasp: {s}\n", .{drank.text()});
     try std.testing.expectEqualStrings("Arwen the archer was bitten to death by a rat in the Warrens. Arwen drank a life flask on the final turn.", drank.text());
     const fought = [_]Turn{
         turnOf(7, 6, &.{rat(3, 6)}),
@@ -590,7 +578,6 @@ test "the hero's own last act in the turn it died is its last gasp" {
     var ctx = testContext(&fought);
     ctx.name = "Arwen the Bold";
     const felled = write(&ctx);
-    std.debug.print("last gasp: {s}\n", .{felled.text()});
     try std.testing.expectEqualStrings("Arwen the Bold was bitten to death by a rat in the Warrens. Arwen the Bold's last blow killed a rat.", felled.text());
 }
 
@@ -615,7 +602,6 @@ test "reactions preserve the chosen last deed and still attribute a burst causti
     const report = write(&ctx);
     try std.testing.expect(std.mem.indexOf(u8, report.text(), "burst a caustic bloat") != null);
     try std.testing.expect(std.mem.indexOf(u8, report.text(), "Arwen waited.") != null);
-    std.debug.print("reaction reports: nonlethal and lethal reactions preserve the shot; reactive caustic bloat kill retains gas attribution and Wait\n", .{});
 }
 
 test "bites a shield took whole wore nobody down, and a shield cast in time was not starved" {
@@ -629,7 +615,6 @@ test "bites a shield took whole wore nobody down, and a shield cast in time was 
     const top = contributors(&ctx);
     try std.testing.expectEqual(@as(usize, 1), top.n);
     const r = write(&ctx);
-    std.debug.print("shielded: {s}\n", .{r.text()});
     try std.testing.expectEqualStrings("Arwen the archer was stabbed to death by a pib in the Warrens. Arwen cast " ++ WARD_NAME ++ " on the final turn.", r.text());
 }
 

@@ -20,19 +20,16 @@ pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
 
 pub const knocked = bash.knocked;
 
-/// The way from `from` to `to` along a row, a column or a diagonal; null off them.
 pub fn wayTo(from: P, to: P) ?mathx.Dir {
     const d = to.sub(from);
     if (d.x != 0 and d.y != 0 and @abs(d.x) != @abs(d.y)) return null;
     return mathx.toward(from, to);
 }
 
-/// Where the hero stops: the cell before the body it charges.
 pub fn stop(from: P, to: P) P {
     return to.sub(wayTo(from, to).?.delta());
 }
 
-/// A lit body within `range`, or an empty landing short of it, in a straight line; every intervening cell must be lit and vacant.
 pub fn aimable(lv: *const grid.Level, from: P, to: P, range: i32) bool {
     const d = wayTo(from, to) orelse return false;
     const n = mathx.dist(from, to);
@@ -58,7 +55,6 @@ test "a charge strikes a lit body one to four tiles off, the tile past its longe
     try std.testing.expect(aimable(&lv, from, far, RANGE));
     try std.testing.expectEqual(P{ .x = 20, .y = 20 + RANGE - 1 }, stop(from, far));
     try std.testing.expect(!aimable(&lv, from, .{ .x = 20, .y = 21 + RANGE }, RANGE + 1));
-    std.debug.print("charge: rush up to {d} tiles, strike up to {d}\n", .{ RANGE - 1, RANGE });
 }
 
 test "a charge runs a straight open line to a lit body in range, and stops beside it" {
@@ -85,5 +81,4 @@ test "a charge runs a straight open line to a lit body in range, and stops besid
     lv.stand(.{ .x = 24, .y = 20 }, 6);
     lv.lit[grid.Level.idx(.{ .x = 23, .y = 20 })] = false;
     try std.testing.expect(!aimable(&lv, from, .{ .x = 23, .y = 20 }, RANGE));
-    std.debug.print("charge: {d} to {d} tiles in {d} lines, blocked by a barrel, water, a body or darkness\n", .{ MIN_RANGE, RANGE, mathx.ALL_DIRS.len });
 }

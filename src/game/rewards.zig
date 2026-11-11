@@ -7,7 +7,9 @@ const ice = @import("../map/ice.zig");
 const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
 const areas = @import("../play/area.zig");
+const ground_items = @import("../play/ground_items.zig");
 const items = @import("../play/items.zig");
+const loot = @import("../play/loot.zig");
 const progress = @import("../play/progress.zig");
 const raid = @import("../play/raid.zig");
 const flask = @import("../play/flask.zig");
@@ -18,13 +20,11 @@ const P = mathx.P;
 const FOE_DROPS = actor.MAX;
 
 comptime {
-    std.debug.assert(items.GROUND_MAX > FOE_DROPS);
+    std.debug.assert(ground_items.GROUND_MAX > FOE_DROPS);
 }
 
 pub const Frightened = std.StaticBitSet(actor.MAX);
-/// The bodies a pyre's burst catches: set alight, or standing on the water it boils.
 pub const Caught = std.StaticBitSet(actor.MAX);
-/// `unmasked`: it died in its chest, which then fell open.
 pub const Death = struct { gold: i32, frightened: Frightened, caught: Caught = .initEmpty(), unmasked: bool = false, mana: i32 = 0 };
 pub const Chest = enum { opened, not_closed, ground_full };
 
@@ -34,12 +34,12 @@ pub fn groundRoom(sim: *Simulation) bool {
     return false;
 }
 
-pub fn dropItem(sim: *Simulation, drop: items.Drop) void {
+pub fn dropItem(sim: *Simulation, drop: ground_items.Drop) void {
     const added = sim.ground.add(drop);
     std.debug.assert(added);
 }
 
-fn dropSupply(sim: *Simulation, supply: items.Supply) ?consumable.Kind {
+fn dropSupply(sim: *Simulation, supply: ground_items.Supply) ?consumable.Kind {
     return if (sim.ground.addSupply(supply)) supply.kind else null;
 }
 
@@ -48,24 +48,23 @@ fn dropGold(sim: *Simulation, at: P, amount: i32) void {
     std.debug.assert(added);
 }
 
-/// A broken barrel's gold, and now and then a white item; the gold.
 pub fn barrelLoot(sim: *Simulation, at: P) ?i32 {
     if (!sim.lv.breakBarrel(at)) return null;
-    const loot = items.barrelLoot(&sim.loot_rng, sim.ground.room(FOE_DROPS));
-    dropGold(sim, at, loot.gold);
-    if (loot.item) |item| dropItem(sim, .{ .item = item, .at = at });
-    return loot.gold;
+    const rolled = loot.barrelLoot(&sim.loot_rng, sim.ground.room(FOE_DROPS));
+    dropGold(sim, at, rolled.gold);
+    if (rolled.item) |item| dropItem(sim, .{ .item = item, .at = at });
+    return rolled.gold;
 }
 
 pub fn openChest(sim: *Simulation, at: P) Chest {
     const opened = sim.lv.at(at).opened() orelse return .not_closed;
     if (!groundRoom(sim)) return .ground_full;
     sim.lv.set(at, opened);
-    const loot = items.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
-    dropItem(sim, .{ .item = loot.item.?, .at = at });
-    const gold = loot.gold;
+    const rolled = loot.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
+    dropItem(sim, .{ .item = rolled.item.?, .at = at });
+    const gold = rolled.gold;
     dropGold(sim, at, gold);
-    const supply = if (loot.supply) |k| dropSupply(sim, .{ .kind = k, .at = at }) else null;
+    const supply = if (rolled.supply) |k| dropSupply(sim, .{ .kind = k, .at = at }) else null;
     if (supply) |k| {
         sim.log.push(.loot, "{s} opens the chest: {d} gold, an item and {s}.", .{ sim.name.text(), gold, consumable.phrase(k) });
     } else sim.log.push(.loot, "{s} opens the chest: {d} gold and an item.", .{ sim.name.text(), gold });
@@ -73,12 +72,11 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
     return .opened;
 }
 
-/// Gold lying with no chest or item bag at `at`, taken as the hero steps there.
 pub fn coinDrop(sim: *const Simulation, at: P) bool {
     return !sim.lv.at(at).isChest() and !sim.ground.bagged(at);
 }
 
-pub fn collectGold(sim: *Simulation, at: P) ?items.Coins {
+pub fn collectGold(sim: *Simulation, at: P) ?ground_items.Coins {
     const coins = sim.ground.collect(at);
     if (coins == 0) return null;
     const amount = sim.heroAttrs().collectedGold(coins, &sim.loot_rng);
@@ -112,7 +110,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     const spoils = !fallen.raider;
     const xp = progress.xpOf(fallen.kind);
     gainExperience(sim, if (spoils) xp else raid.xpOf(xp));
-    const reward: items.Loot = if (spoils) lootOf(sim, fallen) else .{};
+    const reward: loot.Loot = if (spoils) lootOf(sim, fallen) else .{};
     if (reward.gold > 0) dropGold(sim, fallen.at, reward.gold);
     if (reward.item) |item| dropItem(sim, .{ .item = item, .at = fallen.at, .source = target.value });
     if (reward.supply) |k| _ = dropSupply(sim, .{ .kind = k, .at = fallen.at, .source = target.value });
@@ -150,12 +148,11 @@ fn nativeLeft(sim: *const Simulation, family: actor.Kind) bool {
     return false;
 }
 
-/// A mimic leaves a chest's loot with a rare item; nothing is left where no one could walk to fetch it.
-fn lootOf(sim: *Simulation, fallen: actor.Actor) items.Loot {
+fn lootOf(sim: *Simulation, fallen: actor.Actor) loot.Loot {
     if (!sim.lv.walkable(fallen.at)) return .{};
     const rarity = sim.heroAttrs().item_rarity;
-    if (actor.row(fallen.kind).disguised) return items.mimicLoot(&sim.loot_rng, rarity);
-    return items.foeLoot(&sim.loot_rng, rarity);
+    if (actor.row(fallen.kind).disguised) return loot.mimicLoot(&sim.loot_rng, rarity);
+    return loot.foeLoot(&sim.loot_rng, rarity);
 }
 
 pub const PYRE_REACH: i32 = 1;
@@ -164,12 +161,10 @@ comptime {
     std.debug.assert(PYRE_REACH <= areas.BURST_MAX);
 }
 
-/// Where a pyre bursting at `at` sets bodies alight.
 pub fn pyre(lv: *const grid.Level, at: P) areas.Burst {
     return areas.patch(lv, at, PYRE_REACH);
 }
 
-/// Every body in the burst catches fire, as far as its fire and burn resistance allow; the slots of those that did.
 fn ignite(sim: *Simulation, at: P, name: []const u8) Caught {
     var out = Caught.initEmpty();
     sim.sayAt(at, "The {s} bursts into flame!", .{name});
@@ -181,7 +176,7 @@ fn ignite(sim: *Simulation, at: P, name: []const u8) Caught {
     return out;
 }
 
-/// Fire within `reach` of `at` melts the frozen shallows and boils the water it reaches into steam; the bodies standing on it, or null when none boiled.
+/// The bodies standing on water it boiled, or null when none boiled.
 pub fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
     _ = ice.melt(&sim.lv, areas.patch(&sim.lv, at, reach).slice());
     const wet = areas.wetIn(&sim.lv, at, reach);
@@ -194,16 +189,13 @@ pub fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
     return out;
 }
 
-/// `steeped`: the bodies in the water it boiled, if any; `caught`: some of what burns there caught.
 pub const Fired = struct { steeped: ?Caught, caught: bool };
 
-/// Fire landing within `reach` of `at`: it melts and boils what it reaches, then may set what burns there alight.
 pub fn fireRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) Fired {
     const steeped = boilRound(sim, at, reach);
     return .{ .steeped = steeped, .caught = kindleRound(sim, at, reach, k) };
 }
 
-/// Fire within `reach` of `at` may set what burns there alight, the less the harder it rains; true when any caught.
 pub fn kindleRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) bool {
     const area = areas.patch(&sim.lv, at, reach);
     if (fire.kindle(&sim.lv, area.slice(), k, sim.rainNow(), &sim.rng) == 0) return false;
@@ -211,7 +203,6 @@ pub fn kindleRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) bool {
     return true;
 }
 
-/// Cold over `area` may put out the flames there and the burning of every body standing in it; the bodies it quenched.
 pub fn douseRound(sim: *Simulation, area: *const areas.Burst) Caught {
     const seen = litFlames(sim, area);
     var out = Caught.initEmpty();
@@ -227,7 +218,6 @@ pub fn douseRound(sim: *Simulation, area: *const areas.Burst) Caught {
     return out;
 }
 
-/// Cold over `area` freezes its shallows, but not where a swimmer keeps its water open; true when any froze.
 pub fn freezeRound(sim: *Simulation, area: *const areas.Burst) bool {
     var open = areas.Burst{};
     var seen = false;
@@ -289,7 +279,7 @@ test "death rewards resolve without presentation and return only newly frightene
     const pictured = run.pic.pictured[fallen.slot().index];
     const rng = run.sim.rng;
     var loot_rng = run.sim.loot_rng;
-    const expected = items.foeLoot(&loot_rng, run.sim.heroAttrs().item_rarity);
+    const expected = loot.foeLoot(&loot_rng, run.sim.heroAttrs().item_rarity);
     const hp = run.sim.pool.get(fallen.value).?.hp;
     try std.testing.expect(run.sim.resolveDamage(fallen, hp).lethal);
     const result = defeat(&run.sim, fallen);
@@ -309,5 +299,4 @@ test "death rewards resolve without presentation and return only newly frightene
     try std.testing.expectEqual(actor.FLEE_TURNS, pib.fright);
     run.pic.recordDeath(&run.sim, fallen, result);
     try std.testing.expectEqual(expected.gold, run.pic.dropped_gold[fallen.slot().index]);
-    std.debug.print("death rewards: seeded loot, gas, refreshed fright and unchanged combat RNG/picture; presentation consumes the result separately\n", .{});
 }

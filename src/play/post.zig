@@ -9,7 +9,6 @@ pub const GUARD: actor.Kind = .caravan_guard;
 pub const GUARDS_MAX: u8 = 8;
 pub const POST: grid.Tile = .caravan;
 
-/// The guards a procgen node posts beside its carts.
 pub const Post = struct {
     guards: u8 = 0,
 
@@ -38,7 +37,6 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, post: Post) void {
     }
 }
 
-/// Free dry ground a guard may stand on.
 fn stands(lv: *const grid.Level, q: P) bool {
     return !grid.Level.onRim(q) and actor.standsOffDoor(GUARD, lv, q) and !lv.at(q).wet();
 }
@@ -59,7 +57,6 @@ test "guards stand beside the carts, a cart at a time, and none without a cart" 
     var bare = grid.openFloor();
     var none = actor.Pool{};
     place(&bare, &none, .{ .guards = GUARDS_MAX });
-    std.debug.print("3 guards by 2 carts: {d} and {d} beside each; {d} with no cart\n", .{ by[0], by[1], none.n });
     try std.testing.expectEqual(@as(usize, 3), pool.n);
     try std.testing.expectEqual([_]usize{ 2, 1 }, by);
     try std.testing.expectEqual(@as(usize, 0), none.n);

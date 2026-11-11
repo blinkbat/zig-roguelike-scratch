@@ -5,7 +5,6 @@ pub const Kind = enum { life, mana };
 /// Percent more each flask's drink recovers.
 pub const Bonus = std.enums.EnumFieldStruct(Kind, i32, 0);
 
-/// After PoE2's flasks: charges spent a drink at a time, and refilled by kills.
 pub const CHARGES: u8 = 60;
 pub const USE: u8 = 20;
 pub const PER_KILL: u8 = 5;
@@ -53,7 +52,6 @@ pub fn effect(k: Kind) [:0]const u8 {
 
 pub const Flask = struct {
     charges: u8 = CHARGES,
-    /// What its last drink has still to recover, and over how many turns.
     left: i32 = 0,
     turns: u8 = 0,
 
@@ -81,13 +79,12 @@ pub const Flask = struct {
         self.charges = @min(CHARGES, self.charges +| n);
     }
 
-    /// Drinks its charges hold.
     pub fn uses(self: Flask) u8 {
         return self.charges / USE;
     }
 };
 
-/// The share of life a drink recovers with `bonus` percent more recovery, in hundredths of a percent.
+/// The share of life a drink recovers, in hundredths of a percent.
 fn lifeShare(bonus: i32) i32 {
     return LIFE_PCT * (mathx.PERCENT + bonus);
 }
@@ -100,7 +97,6 @@ pub fn lifeOf(max: i32, bonus: i32) i32 {
     return @divTrunc(max * lifeShare(bonus), mathx.BASIS_POINTS);
 }
 
-/// What a drink of `k` recovers in all.
 pub fn recovers(k: Kind, max_life: i32, bonus: Bonus) i32 {
     return switch (k) {
         .life => lifeOf(max_life, bonus.life),
@@ -131,5 +127,4 @@ test "a flask holds three drinks, each recovering its amount whole over three ti
     try std.testing.expect(f.full());
     for (0..100) |_| f.fill(PER_KILL);
     try std.testing.expectEqual(CHARGES, f.charges);
-    std.debug.print("flask: {d} drinks from full, {d}% of 24 hp is {d} over {d} ticks, {d} kills refill a drink\n", .{ CHARGES / USE, LIFE_PCT, total, TURNS, USE / PER_KILL });
 }

@@ -3,7 +3,6 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 
 pub const RANGE: i32 = 2;
-/// The one leap that spends no turn.
 pub const FREE = true;
 pub const DONE = "jukes away";
 pub const COOLDOWN: u8 = 3;
@@ -41,5 +40,4 @@ test "juke lands up to two tiles away across obstacles but only on visible empty
     lv.clear(to);
     lv.lightless();
     try std.testing.expect(!aimable(&lv, from, to, RANGE));
-    std.debug.print("Juke range: {d} tiles, diagonal and obstacle crossings checked\n", .{RANGE});
 }

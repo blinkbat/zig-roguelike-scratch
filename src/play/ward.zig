@@ -16,12 +16,10 @@ pub const Ward = struct {
         self.turns = TURNS;
     }
 
-    /// A turn of it is spent.
     pub fn wear(self: *Ward) void {
         _ = resilience.wearTurn(&self.turns);
     }
 
-    /// Of `dmg`, what `mana` takes while it holds.
     pub fn takes(self: Ward, mana: i32, dmg: i32) i32 {
         return if (self.turns == 0) 0 else std.math.clamp(dmg, 0, @max(0, mana));
     }
@@ -36,5 +34,4 @@ test "a mana shield takes harm from mana first, until the mana or its turns run 
     try std.testing.expectEqual(@as(i32, 0), w.takes(0, 6));
     for (0..TURNS) |_| w.wear();
     try std.testing.expectEqual(@as(i32, 0), w.takes(50, 6));
-    std.debug.print("mana shield: {d} turns, a point of mana a point of harm\n", .{TURNS});
 }

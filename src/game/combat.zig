@@ -21,14 +21,14 @@ const confusion = @import("../play/confusion.zig");
 const shock = @import("../play/shock.zig");
 const resilience = @import("../play/resilience.zig");
 const skillbar = @import("../play/skillbar.zig");
-const rules = @import("../play/tactics.zig");
+const tactics = @import("../play/tactics.zig");
 const fx = @import("../gfx/fx.zig");
 const look = @import("../gfx/look.zig");
 const game = @import("../game.zig");
 const attacks = @import("attacks.zig");
 const rewards = @import("rewards.zig");
 const skills = @import("skills.zig");
-const tactics = @import("tactics.zig");
+const tactics_exec = @import("tactics_exec.zig");
 const P = mathx.P;
 const Stroke = game.presentation.Stroke;
 
@@ -49,7 +49,7 @@ pub fn chainHit(g: *game.Game, comptime act: skillbar.Act, first: u16, s: Stroke
             g.pic.fx.zap(wait, .{ .from = mathx.centre(from), .to = mathx.centre(at) });
             wait += game.ZAP_S;
         }
-        arrowHit(g, id, attacks.heroArrow(&g.sim, act, true), act, .{ .from = from, .wait = wait });
+        skillHit(g, id, attacks.heroBlow(&g.sim, act), act, .{ .from = from, .wait = wait });
         from = at;
     }
     g.pic.leadUntil(wait);
@@ -78,7 +78,7 @@ fn sweep(g: *game.Game, comptime act: skillbar.Act, mark: P, s: Stroke) void {
     const M = skillbar.Act.skill(act);
     const arc = M.arc(&g.sim.lv, s.from, mark);
     const struck = occupants(M.WIDTH, &g.sim.lv, &arc);
-    const raw = attacks.rawFor(&g.sim, act, true);
+    const raw = attacks.rawFor(&g.sim, act);
     for (arc.slice(), struck[0..arc.n]) |p, w| {
         if (w != grid.NO_ONE) wound(g, w, attacks.heroScaled(&g.sim, act, raw).physical(), M.VERB, s) else smash(g, p, M.VERB, s);
     }
@@ -90,10 +90,8 @@ fn occupants(comptime N: usize, lv: *const grid.Level, area: *const grid.Bounded
     return out;
 }
 
-/// A single swing's blow on the cell `d` of the hero; the body it leaves alive, and whether its ailment took.
 const Struck = struct { id: u16, takes: bool };
 
-/// The blow wounds `a` without killing it, as `attacks.resolve` will deal it with its ailment.
 fn survives(sim: *const game.simulation.Simulation, a: *const actor.Actor, dmg: i32, ailment: resilience.Kind) bool {
     const d = attacks.dealt(sim, a, dmg, ailment);
     return d > 0 and d < a.hp;
@@ -144,7 +142,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
     const name = actor.row(a.kind).name;
     const back = if (a.pin.holding()) null else M.knocked(&g.sim.lv, a.at, d, id);
     if (back) |b| if (actor.holds(a.kind, &g.sim.lv, b)) {
-        tactics.displace(g, id, b);
+        tactics_exec.displace(g, id, b);
         _ = g.pic.glideToHeld(.fromIndex(actor.Pool.slot(id)), b, -s.wait);
         g.sim.sayAt(b, "The {s} is knocked back.", .{name});
     };
@@ -159,7 +157,7 @@ fn deathNote(h: Hurt) []const u8 {
     return if (h.lethal) IT_DIES else "";
 }
 
-pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skillbar.Act, s: Stroke) void {
+pub fn skillHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skillbar.Act, s: Stroke) void {
     const M = skillbar.Act.skill(act);
     const el = comptime act.element();
     const a = g.sim.pool.get(id) orelse return;
@@ -175,12 +173,10 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     if (blow.takes) if (g.sim.pool.get(id)) |b| g.sim.sayFoeTakes(b, M.TAKES);
 }
 
-/// Lightning landing in water runs through it: every body wading or swimming in the water it reaches is shocked as it lands.
 pub fn conduct(g: *game.Game, at: P, s: Stroke) void {
     conductTo(g, at, if (wading(&g.sim, at)) |bodies| .{ .bodies = bodies } else null, s);
 }
 
-/// The bodies wading before a blow, and the body it struck, whose halves born from `born` on share the shock it takes.
 const Wet = struct { bodies: rewards.Caught, struck: ?usize = null, born: usize = 0 };
 
 /// The grounded bodies in the water joined to `at`, taken before a blow so a half it splits off is not shocked apart from its parent.
@@ -219,7 +215,7 @@ fn conductTo(g: *game.Game, at: P, wet: ?Wet, s: Stroke) void {
 /// Rolled once and scaled per body, as an area blow; each is struck as the arrow reaches its cell.
 pub fn pierceHit(g: *game.Game, comptime act: skillbar.Act, pierced: bow.Pierced, s: Stroke) void {
     const M = skillbar.Act.skill(act);
-    const raw = attacks.rawFor(&g.sim, act, true);
+    const raw = attacks.rawFor(&g.sim, act);
     const cells: f32 = @floatFromInt(pierced.flight.len);
     for (pierced.body[0..pierced.n], pierced.step[0..pierced.n]) |id, step| {
         const wait = s.wait * @as(f32, @floatFromInt(step + 1)) / cells;
@@ -242,14 +238,12 @@ pub fn burstHit(g: *game.Game, comptime act: skillbar.Act, hit: bow.Hit, impact:
     boilUnder(g, act, impact, s.wait);
 }
 
-/// A fire missile come down at `at` boils the water its blast reaches, or its own cell's, and may set what burns there alight.
 pub fn boilUnder(g: *game.Game, comptime act: skillbar.Act, at: P, wait: f32) void {
     if (comptime act.element() != .fire) return;
     const M = skillbar.Act.elemental(act);
     fireLands(g, at, if (comptime act.bursts()) M.BLAST else 0, M.KINDLE, wait);
 }
 
-/// Fire within `range` of `at`: its steam and the flames it kindles are drawn as the blow lands.
 pub fn fireLands(g: *game.Game, at: P, range: i32, kindle: fire.Kindle, wait: f32) void {
     g.pic.holdFlames(&g.sim.lv, wait);
     const fired = rewards.fireRound(&g.sim, at, range, kindle);
@@ -261,17 +255,16 @@ pub fn areaHit(g: *game.Game, comptime act: skillbar.Act, at: P, area: areas.Bur
     var struck = skills.foesIn(g, area);
     if (direct) |id| if (!struck.has(id)) struck.push(id);
     g.pic.fx.burst(s.wait, .{ .at = at, .area = area, .element = act.element().? });
-    const raw = attacks.rawFor(&g.sim, act, direct != null);
+    const raw = if (direct != null) attacks.rawFor(&g.sim, act) else attacks.rawElementFor(&g.sim, act);
     if (prop) smash(g, at, barrelVerb(act), s);
     for (struck.slice()) |id| {
         var hit = raw;
         if (direct != id) hit.physical = 0;
-        arrowHit(g, id, attacks.heroScaled(&g.sim, act, hit), act, s);
+        skillHit(g, id, attacks.heroScaled(&g.sim, act, hit), act, s);
     }
     if (comptime act.element() == .cold) coldLands(g, &area, s.wait);
 }
 
-/// Cold over `area`: the flames it puts out and the burning it quenches are drawn as the blow lands.
 pub fn coldLands(g: *game.Game, area: *const areas.Burst, wait: f32) void {
     g.pic.holdFlames(&g.sim.lv, wait);
     const doused = rewards.douseRound(&g.sim, area);
@@ -279,7 +272,6 @@ pub fn coldLands(g: *game.Game, area: *const areas.Burst, wait: f32) void {
     var each = doused.iterator(.{});
     while (each.next()) |slot| g.pic.settleSlot(&g.sim, wait, .fromIndex(slot));
 }
-/// A barrel broken or a glowbulb burst at `p`, if one stands there.
 pub fn smash(g: *game.Game, p: P, comptime verb: []const u8, s: Stroke) void {
     if (g.sim.lv.at(p).bursts()) return burstPlant(g, p, s);
     const gold = rewards.barrelLoot(&g.sim, p) orelse return;
@@ -350,7 +342,6 @@ fn reveal(g: *game.Game, target: actor.ActorId, s: Stroke) void {
 
 const CHEST_IS = "The chest is a {s}!";
 
-/// Out of its chest, shimmering as `wait` runs out.
 fn unmaskMimic(g: *game.Game, a: *actor.Actor, wait: f32) void {
     a.unmask(&g.sim.lv);
     g.pic.shimmerBody(wait, a);
@@ -386,7 +377,6 @@ fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime ver
     g.pic.recordAttack(&g.sim, g.cloud, origin, s, flight, .{ .hit = impact }, recovery);
 }
 
-/// Shown on the hero as the blow that earned it lands.
 pub fn heal(g: *game.Game, n: i32, wait: f32) void {
     const after = recoverLife(g, n) orelse return;
     g.pic.recordRecovery(&g.sim, wait, after);
@@ -397,7 +387,6 @@ fn recoverLife(g: *game.Game, n: i32) ?fx.After {
     return g.pic.heroAfter(&g.sim);
 }
 
-/// A kill no chosen blow made: gear's life on kill only, and nothing for an ally's.
 fn slain(g: *game.Game, id: u16) ?fx.After {
     const killed = g.sim.pool.items[actor.Pool.slot(id)].kind;
     fell(g, id);
@@ -429,7 +418,7 @@ fn split(g: *game.Game, id: u16) ?actor.ActorId {
     g.sim.ran[o] = g.sim.ran[i];
     g.pic.recordSplit(&g.sim, .fromInt(id), .fromInt(other));
     g.sim.sayAt(g.sim.pool.items[i].at, "The {s} splits in two!", .{name});
-    tactics.landed(g, other);
+    tactics_exec.landed(g, other);
     return .fromInt(other);
 }
 
@@ -468,8 +457,8 @@ pub fn endTurn(g: *game.Game) void {
 fn beginTurn(g: *game.Game, from: P) void {
     g.sim.unsaved = true;
     if (g.sim.clock.turn()) g.sim.days +|= 1;
-    tactics.startTurn(&g.sim);
-    tactics.bideTurn(g);
+    tactics_exec.startTurn(&g.sim);
+    tactics_exec.bideTurn(g);
     const lying = g.sim.ground.lying();
     _ = fire.turn(&g.sim.lv, &g.sim.rng, g.sim.rainNow(), &lying);
     _ = ice.turn(&g.sim.lv);
@@ -481,7 +470,6 @@ fn beginTurn(g: *game.Game, from: P) void {
     orderFoes(g, from);
 }
 
-/// The raiders due this turn come in by the node's raid door, acting from the next turn.
 fn raiders(g: *game.Game) void {
     const w = g.sim.map orelse return;
     const nd = &w.node[g.sim.node];
@@ -489,13 +477,13 @@ fn raiders(g: *game.Game) void {
     const r = nd.plan.procgen.raid;
     const now = g.sim.clock.since(g.sim.days);
     for (0..atlas.raid.arriving(r, game.rollOf(g.sim.seed, g.sim.node), now -| day.TURN_MINUTES, now)) |_| {
-        if (!tactics.canRise(g, atlas.raid.RAIDER)) return;
+        if (!tactics_exec.canRise(g, atlas.raid.RAIDER)) return;
         const at = atlas.landing(&g.sim.lv, door, &.{}) orelse return;
         var body = actor.Actor.of(atlas.raid.RAIDER, at);
         body.raider = true;
-        const id = tactics.rise(g, body, tactics.spentSlot(g), g.pic.lead orelse 0);
+        const id = tactics_exec.rise(g, body, tactics_exec.spentSlot(g), g.pic.lead orelse 0);
         g.sim.sayAt(at, "A {s} raider comes in from the dark.", .{actor.row(atlas.raid.RAIDER).name});
-        tactics.landed(g, id);
+        tactics_exec.landed(g, id);
     }
 }
 
@@ -556,7 +544,6 @@ fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
     bleedHarm(g, id, moved or g.sim.displaced.isSet(actor.Pool.slot(id)));
 }
 
-/// The caustic gas or steam the body stands in eats at it, once a turn.
 fn gasTick(g: *game.Game, id: u16, comptime tick: game.simulation.Tick, comptime said: Said) void {
     const a = g.sim.pool.get(id) orelse return;
     const kind = comptime tick.gas().?;
@@ -567,14 +554,12 @@ fn gasTick(g: *game.Game, id: u16, comptime tick: game.simulation.Tick, comptime
     _ = harmTick(g, id, dmg, tick, said);
 }
 
-/// The hero's mask takes its share of a gas's harm, the remainder rounded up as often as its fraction.
 fn masked(g: *game.Game, id: u16, dmg: i32) i32 {
     const share = if (id == g.sim.hero) std.math.clamp(g.sim.inventory.gear.sum(.masked), 0, mathx.PERCENT) else 0;
     if (share == 0 or dmg <= 0) return dmg;
     return @intCast(mathx.percentRound(@as(i64, dmg) * (mathx.PERCENT - share), &g.sim.rng));
 }
 
-/// Brogue's `T_CAUSES_HEALING`: every hurt body in it, foe or hero.
 fn gasHeal(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     if (g.sim.lv.volumeAt(comptime game.simulation.Tick.healed.gas().?, a.at) == 0 or ranAlready(g, id, .healed) or !a.hurt()) return;
@@ -583,7 +568,6 @@ fn gasHeal(g: *game.Game, id: u16) void {
     g.pic.owe(.fromInt(id), .healed, g.pic.afterOf(&g.sim, .fromIndex(actor.Pool.slot(id))));
 }
 
-/// The flames a body stands in scorch it and may set it burning, once a turn.
 fn scorch(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     if (!g.sim.lv.burning(a.at) or ranAlready(g, id, .scorched)) return;
@@ -622,7 +606,6 @@ fn bleedHarm(g: *game.Game, id: u16, moved: bool) void {
     if (id == g.sim.hero and stopped and !h.lethal) g.sim.log.say("{s} stops bleeding.", .{g.sim.name.text()});
 }
 
-/// Each takes the name and the damage; a foe with no line of its own is said only to die.
 const Said = struct { hero: []const u8, foe: ?[]const u8 = null, torn: bool = false };
 
 fn harmTick(g: *game.Game, id: u16, dmg: i32, comptime owed: game.simulation.Tick, comptime said: Said) Hurt {
@@ -738,7 +721,6 @@ fn foeTurn(g: *game.Game, id: u16) void {
     reach(g, id, row, d.delta().x, null, af);
 }
 
-/// Strikes a foe beside it; otherwise closes on the nearest foe the hero sees near it, or keeps near the hero.
 fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted, sight: i32) void {
     const r = g.sim.pool.get(id).?;
     if (actor.row(r.kind).posted) return guardTurn(g, id, af, sight);
@@ -748,14 +730,13 @@ fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted, sight: i32)
     if (quarry(g, r.at, hero, sight)) |at| {
         if (actor.approach(&g.sim.lv, r.at, id, at)) |d| return foeStep(g, id, r.at, d, af);
     }
-    if (mathx.dist(r.at, hero) <= rules.RaiseSkeleton.FOLLOW) return;
+    if (mathx.dist(r.at, hero) <= tactics.RaiseSkeleton.FOLLOW) return;
     const d = actor.chase(&g.sim.lv, r.at, id, flowTo(g, hero)) orelse return;
     foeStep(g, id, r.at, d, af);
 }
 
 const Side = enum { foe, ally };
 
-/// The most hurt body of `side` a blow from `at` reaches; none disguised or underwater.
 fn besideOf(g: *game.Game, at: P, side: Side) ?u16 {
     var best: ?u16 = null;
     for (mathx.ALL_DIRS) |d| {
@@ -773,18 +754,16 @@ fn besideOf(g: *game.Game, at: P, side: Side) ?u16 {
     return best;
 }
 
-/// The nearest foe the hero sees within the leash of `hero`, as `from` sees it.
 fn quarry(g: *game.Game, from: P, hero: P, sight: i32) ?P {
     var near = grid.Nearest{ .from = from };
     for (g.sim.pool.constSlice()) |a| {
-        if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, hero) > rules.RaiseSkeleton.LEASH) continue;
+        if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, hero) > tactics.RaiseSkeleton.LEASH) continue;
         if (!fov.sees(&g.sim.lv, from, a.at, sight)) continue;
         near.offer(a.at);
     }
     return near.best;
 }
 
-/// Holds its ground, shooting the nearest foe it sees within reach along a flight that strikes that foe first.
 fn guardTurn(g: *game.Game, id: u16, af: actor.Afflicted, sight: i32) void {
     const r = g.sim.pool.get(id).?;
     var near = grid.Nearest{ .from = r.at, .reach = @min(sight, actor.row(r.kind).ranged.?.range) };
@@ -801,7 +780,6 @@ fn guardTurn(g: *game.Game, id: u16, af: actor.Afflicted, sight: i32) void {
     bodyStrike(g, id, g.sim.lv.who(at), af, shot);
 }
 
-/// One body's blow on another neither of which is the hero: an ally's on a foe, or a foe's on an ally; shot along `flight` when it has one.
 fn bodyStrike(g: *game.Game, id: u16, target: u16, af: actor.Afflicted, flight: ?bow.Flight) void {
     const r = g.sim.pool.get(id).?;
     const s = actor.row(r.kind).blow.strike;
@@ -833,7 +811,6 @@ fn bodyBlow(g: *game.Game, by: u16, target: u16, s: actor.Strike, verb: []const 
     return landedImpact(g, target, at, h);
 }
 
-/// Bites from the water beside the hero; otherwise swims closer, never ashore.
 fn swimTurn(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflicted) void {
     const r = g.sim.pool.get(id).?;
     const h = g.sim.heroActor().?;
@@ -846,7 +823,6 @@ fn swimTurn(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflic
     foeStep(g, id, r.at, d, af.intersectWith(.initOne(.maim)));
 }
 
-/// Mends or nets when it can; otherwise holds `keeps` cells off, striking only when the hero corners it.
 fn keepAway(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflicted, sight: i32) void {
     if (row.mends) |m| if (mend(g, id, m, sight)) return;
     if (row.net) |n| if (throwNet(g, id, n)) return;
@@ -856,7 +832,6 @@ fn keepAway(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflic
     if (!held) closeIn(g, id, row.keeps, af);
 }
 
-/// Steps away from a hero within `keep` cells; true when it did.
 fn backOff(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) bool {
     const r = g.sim.pool.get(id).?;
     const hero = g.sim.heroAt().?;
@@ -866,7 +841,6 @@ fn backOff(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) bool {
     return true;
 }
 
-/// Steps closer, but never to within `keep` cells of the hero.
 fn closeIn(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) void {
     const r = g.sim.pool.get(id).?;
     const hero = g.sim.heroAt().?;
@@ -875,7 +849,6 @@ fn closeIn(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) void {
     foeStep(g, id, r.at, d, af);
 }
 
-/// Of `m.kin`, alive and in its sight of the mender at `from`.
 fn kinInReach(lv: *const grid.Level, m: actor.Mend, a: *const actor.Actor, from: P, within: i32) bool {
     if (!a.alive or std.mem.indexOfScalar(actor.Kind, m.kin, a.kind) == null) return false;
     return mathx.dist(a.at, from) <= within and grid.sightLine(lv, from, a.at);
@@ -902,7 +875,6 @@ fn throwNet(g: *game.Game, id: u16, n: actor.Net) bool {
     return true;
 }
 
-/// Heals the most hurt kin in reach and sight of it, or else rouses the sleeping ones.
 fn mend(g: *game.Game, id: u16, m: actor.Mend, sight: i32) bool {
     const r = g.sim.pool.get(id).?;
     if (r.ready_in > 0) return false;
@@ -941,7 +913,7 @@ fn foeStep(g: *game.Game, id: u16, from: P, chosen: mathx.Dir, af: actor.Afflict
     g.pic.turnLater(.fromInt(id), d.delta().x);
     g.sim.pool.move(&g.sim.lv, id, from.add(d.delta()));
     _ = g.sim.pool.get(id).?.limp(af);
-    tactics.entered(g, id);
+    tactics_exec.entered(g, id);
 }
 
 fn foeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
@@ -981,7 +953,7 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
             const blow = attacks.foeBlow(&g.sim, attacker, hero, s, weak) orelse {
                 g.sim.log.say("{s} dodges the {s}.", .{ g.sim.name.text(), row.name });
                 g.pic.recordFoeAttack(.fromInt(id), .miss, flight);
-                if (row.ranged == null) tactics.counter(g, id);
+                if (row.ranged == null) tactics_exec.counter(g, id);
                 return;
             };
             const before = hero.hp;
@@ -1008,7 +980,7 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
             const after = afterBlow(g, g.sim.hero, h);
             g.pic.recordFoeAttack(.fromInt(id), if (lethal) .{ .kill = after } else .{ .hurt = after }, flight);
             if (row.ranged == null) returnThorns(g, id, hero.at);
-            if (lethal) heroDies(g) else if (row.ranged == null) tactics.counter(g, id);
+            if (lethal) heroDies(g) else if (row.ranged == null) tactics_exec.counter(g, id);
             if (!lethal and s.knocks) knockHero(g, id);
         },
         .burst => |b| {
@@ -1020,7 +992,6 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
     }
 }
 
-/// Shoved a cell straight back from the striker, onto open ground short of a door, unless pinned.
 fn knockHero(g: *game.Game, by: u16) void {
     const slot = actor.Pool.slot(by);
     const striker = g.sim.pool.items[slot].at;

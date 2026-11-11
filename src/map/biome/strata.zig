@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Qud's NoiseMap: sector seeds blurred by the 1-3-1 / 3-6-3 kernel, opened where the blur stands over 2.
-
 pub const SECTORS_MAX: u8 = 6;
 pub const SEEDS_MAX: u8 = 4;
 pub const BLUR_MAX: u8 = 10;
@@ -20,7 +18,6 @@ const KERNEL_SUM: f32 = blk: {
     }
     break :blk s;
 };
-/// Cells of rock kept round the map, Qud's border.
 const BORDER: i32 = 3;
 
 pub const Params = struct {
@@ -94,6 +91,5 @@ test "strata open round their deep points, and more seeds open more" {
         shape(&lv, &rng, 0, .{ .seeds = 4 });
         many += carve.count(&lv, .dirt);
     }
-    std.debug.print("10 strata: {d} open cells a map at 1 seed a sector, {d} at 4\n", .{ few / 10, many / 10 });
     try std.testing.expect(many > few);
 }

@@ -3,7 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const script = @import("../map/script.zig");
 const trigger = @import("../play/trigger.zig");
-const items = @import("../play/items.zig");
+const ground_items = @import("../play/ground_items.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
 const menu = @import("../ui/menu.zig");
 const panel = @import("../ui/talk.zig");
@@ -15,7 +15,6 @@ fn scriptOf(g: *const game.Game) ?*const script.Script {
     return &w.script;
 }
 
-/// After a spent turn: timers and waits count down, then the map's triggers are looked at.
 pub fn afterTurn(g: *game.Game) void {
     const s = scriptOf(g) orelse return;
     if (g.mode == .dead) return;
@@ -31,12 +30,11 @@ pub fn arrived(g: *game.Game) void {
     g.pic.showPlot(&g.sim);
 }
 
-/// The NPCs the plot lets stand, and the node's ground drops a new spot keeps off.
 const Standing = struct {
     rt: *const trigger.Runtime,
     s: *const script.Script,
     w: trigger.World,
-    ground: *const items.Ground,
+    ground: *const ground_items.Ground,
 
     pub fn shows(self: Standing, i: usize) bool {
         return self.rt.shows(self.s, i, self.w);
@@ -47,7 +45,6 @@ const Standing = struct {
     }
 };
 
-/// Node `n`'s NPCs onto `lv`, those whose condition holds where they stand this run.
 pub fn stampNpcs(g: *game.Game, n: usize, lv: *grid.Level) void {
     stampIn(g, n, lv, g.sim.world());
 }
@@ -67,12 +64,10 @@ fn stampIn(g: *game.Game, n: usize, lv: *grid.Level, world: trigger.World) void 
     w.stampNpcs(n, lv, &g.sim.plot.spots, Standing{ .rt = &g.sim.plot, .s = &w.script, .w = world, .ground = ground });
 }
 
-/// The hero's node's NPCs again, as what the plot says may have changed who stands.
 pub fn restand(g: *game.Game) void {
     stampNpcs(g, g.sim.node, &g.sim.lv);
 }
 
-/// An NPC with something to say the hero sees drawn beside it.
 pub fn beside(g: *game.Game) ?usize {
     const s = scriptOf(g) orelse return null;
     const at = g.sim.heroAt() orelse return null;
@@ -85,7 +80,6 @@ pub fn beside(g: *game.Game) ?usize {
     return null;
 }
 
-/// Opens the NPC's conversation; speaking spends no turn.
 pub fn speak(g: *game.Game, npc: usize) void {
     const s = scriptOf(g) orelse return;
     if (npc >= s.npc_n) return;
@@ -103,7 +97,6 @@ fn opened(g: *game.Game) void {
     restand(g);
 }
 
-/// A conversation up, or one a trigger asked for once the turn is drawn: it takes the screen.
 pub fn due(g: *game.Game) bool {
     if (g.sim.plot.talk != null) {
         g.mode = .talk;
@@ -136,7 +129,6 @@ fn shownOf(g: *game.Game, s: *const script.Script, out: *Shown) bool {
     return true;
 }
 
-/// No way out but one of its own endings; the cursor walks what is offered.
 pub fn step(g: *game.Game) void {
     const s = scriptOf(g) orelse return finished(g);
     var shown: Shown = .{ .view = undefined };
@@ -237,7 +229,6 @@ test "bumping an NPC opens its conversation without a turn; it closes only throu
     game.heroStep(g, .s, 0);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqualStrings("Stranger has nothing to say.", g.sim.log.line(0).?);
-    std.debug.print("NPCs: bump opens a conversation on turn {d}; back refused, two lines walked and an ending closes it\n", .{turns});
 }
 
 test "a choice clicked while confirm is pressed is one pick" {
@@ -305,7 +296,6 @@ test "a dialog no way through ends never opens, while one whose way out is gated
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     game.heroStep(g, .s, 0);
     try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
-    std.debug.print("dialogs: {d} endless refused, a gated way out still opens\n", .{w.script.endless()});
 }
 
 test "a dialog with a reachable line no way out of never opens, though its first line can end" {
@@ -354,7 +344,6 @@ test "a dialog whose only way out is gated beside an ungated loop never opens, n
     try std.testing.expect(!w.script.dialog[0].ends());
     try std.testing.expect(!w.script.dialog[1].ends());
     try std.testing.expectEqual(@as(usize, 2), w.script.endless());
-    std.debug.print("dialogs: {d} with a way out only some gates offer refused\n", .{w.script.endless()});
 }
 
 test "a way out that never shows ends nothing: its NPC has nothing to say and a trigger asking for it goes on" {
@@ -456,7 +445,6 @@ test "NPCs stand by a prop and far off; a quest given, carried and finished take
     game.update(g, 0);
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);
     try std.testing.expect(game.character.bookView(g, &g.nearby).quests.entries[0].done);
-    std.debug.print("NPCs: merchant beside the chest, baby pib {d} cells off the first open ground; carried away at stage 2, a second pib home at {d},{d} once done\n", .{ mathx.dist(far, .{ .x = 2, .y = 2 }), home.x, home.y });
 }
 
 test "an NPC's found spot keeps off the node's painted foes and what lies on the ground" {
@@ -510,7 +498,6 @@ test "an NPC's found spot keeps off a painted NPC listed after it" {
     w.node[0].sketch(&lv);
     w.stampNpcs(0, &lv, &stood, atlas.EVERY_NPC);
     const hermit = stood[0] orelse return error.NoPlace;
-    std.debug.print("far spot {d},{d} painted over: hermit moved to {d},{d}\n", .{ far.x, far.y, hermit.x, hermit.y });
     try std.testing.expect(!hermit.eq(far));
     try std.testing.expectEqual(@as(?usize, 1), lv.npcAt(far));
     try std.testing.expectEqual(@as(?usize, 0), lv.npcAt(hermit));

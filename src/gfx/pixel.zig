@@ -22,7 +22,6 @@ const Filler = struct {
     }
 };
 
-/// Boxes that touch end to end in one row or column, put as one.
 fn Run(comptime Sink: type) type {
     return struct {
         sink: Sink,
@@ -56,7 +55,6 @@ pub fn rect(at: rl.Vector2, w: f32, h: f32, scale: f32, col: rl.Color) void {
     fill(boxOf(at, w, h, scale), col);
 }
 
-/// A plus, `arm` long across and down, a pixel thick.
 pub fn cross(at: rl.Vector2, arm: f32, scale: f32, col: rl.Color) void {
     rect(at, arm, 1, scale, col);
     rect(at, 1, arm, scale, col);
@@ -96,7 +94,6 @@ fn hazeEach(at: rl.Vector2, r: f32, scale: f32, turn: f32, sink: anytype) void {
     }
 }
 
-/// A soft clump of vapour: offset lumps stacked from faint layers, so it thins toward its edge; `turn` varies the clump.
 pub fn haze(at: rl.Vector2, r: f32, scale: f32, turn: f32, col: rl.Color) void {
     if (col.a == 0) return;
     const a = look.alphaOf(col);
@@ -132,14 +129,12 @@ const Stamps = struct {
         return boxOf(.{ .x = s.a.x + s.d.x * t, .y = s.a.y + s.d.y * t }, s.width, s.width, s.scale);
     }
 
-    /// The `i`th stamp in order along the major axis, as its major then minor corner.
     fn corner(s: Stamps, i: usize) [2]i32 {
         const b = s.box(if (s.back) s.steps - i else i);
         return if (s.tall) .{ b.y, b.x } else .{ b.x, b.y };
     }
 };
 
-/// The pixels the line's square stamps cover, each column (row, if tall) put once as the span of the stamps over it.
 fn trace(a: rl.Vector2, b: rl.Vector2, width: f32, scale: f32, sink: anytype) void {
     const s = Stamps.of(a, b, width, scale);
     const size = s.box(0).w;
@@ -178,7 +173,6 @@ pub fn bend(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, width: f32, scale: f32,
     line(b, c, width, scale, col);
 }
 
-/// The art pixels, `scale` screen pixels a side from `origin`, a pixel-wide line from `a` to `b` passes through, each once.
 fn gridCells(a: rl.Vector2, b: rl.Vector2, origin: [2]f32, scale: f32, out: [][2]i32) [][2]i32 {
     var x, var y = artCell(a, origin, scale);
     const x1, const y1 = artCell(b, origin, scale);
@@ -205,7 +199,6 @@ fn gridCells(a: rl.Vector2, b: rl.Vector2, origin: [2]f32, scale: f32, out: [][2
     return out[0..n];
 }
 
-/// A pixel-wide line snapped to the art-pixel grid `scale` screen pixels a side from `origin`; `from_second` leaves out its first pixel, so joined segments put each pixel once.
 pub fn gridLine(a: rl.Vector2, b: rl.Vector2, origin: [2]f32, scale: f32, col: rl.Color, from_second: bool) void {
     if (col.a == 0) return;
     var buf: [512][2]i32 = undefined;
@@ -248,7 +241,6 @@ const Canvas = struct {
 };
 
 test "a fleck covers each of its pixels once" {
-    var drawn: usize = 0;
     for ([_]f32{ 2, 2.5, 3, 4.5 }) |r| {
         for ([_]f32{ 1, 2 }) |scale| {
             var canvas = Canvas{};
@@ -261,10 +253,8 @@ test "a fleck covers each of its pixels once" {
                 cells += c;
             };
             try std.testing.expectEqual(size * size - 4 * corner, cells);
-            drawn += cells;
         }
     }
-    std.debug.print("flecks: {d} pixels over 8 sizes and scales, none drawn twice, corners cut\n", .{drawn});
 }
 
 test "a haze is densest at its core, one faint layer at its edge, and clumps differently by turn" {
@@ -283,13 +273,11 @@ test "a haze is densest at its core, one faint layer at its edge, and clumps dif
         differ += @intFromBool((c > 0) != (d > 0));
     };
     try std.testing.expect(core >= HAZE_LAYERS and edge > 0 and differ > 0);
-    std.debug.print("haze: {d} pixels, {d} at one layer, {d} layers deep at the core, {d} pixels differ by turn\n", .{ covered, edge, core, differ });
 }
 
 test "a line of any width and scale covers its stamps' pixels once each, in fewer rects than pixels" {
     var pixels: usize = 0;
     var rects: usize = 0;
-    var overlapped: usize = 0;
     for ([_]f32{ 1, 2, 3 }) |width| for ([_]f32{ 1, 2 }) |scale| {
         for ([_][2]rl.Vector2{
             .{ .{ .x = 5.4, .y = 8.2 }, .{ .x = 50.1, .y = 12.7 } },
@@ -308,18 +296,15 @@ test "a line of any width and scale covers its stamps' pixels once each, in fewe
                 try std.testing.expect(c <= 1);
                 try std.testing.expectEqual(@intFromBool(w > 0), c);
                 pixels += c;
-                overlapped += @intFromBool(w > 1);
             };
             rects += canvas.rects;
         }
     };
     try std.testing.expect(rects < pixels);
-    std.debug.print("lines: {d} pixels, each once, in {d} rects; {d} of them stamped more than once\n", .{ pixels, rects, overlapped });
 }
 
 test "a grid line steps one art pixel at a time from the cell under one end to the cell under the other" {
     var buf: [128][2]i32 = undefined;
-    var total: usize = 0;
     for ([_][2]f32{ .{ 0, 0 }, .{ 0.4, 0.7 } }) |origin| for ([_]f32{ 1, 2 }) |scale| {
         for ([_][2]rl.Vector2{
             .{ .{ .x = 5.4, .y = 8.2 }, .{ .x = 50.1, .y = 12.7 } },
@@ -336,8 +321,6 @@ test "a grid line steps one art pixel at a time from the cell under one end to t
             const span = artCell(ends[1], origin, scale);
             const start = artCell(ends[0], origin, scale);
             try std.testing.expectEqual(@max(@abs(span[0] - start[0]), @abs(span[1] - start[1])) + 1, @as(u32, @intCast(cells.len)));
-            total += cells.len;
         }
     };
-    std.debug.print("grid lines: {d} art pixels, one step apart, the fewest that join each pair of ends\n", .{total});
 }

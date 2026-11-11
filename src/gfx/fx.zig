@@ -136,7 +136,6 @@ const ARCS: usize = 12;
 pub const PULSES: usize = 32;
 const RIPPLES: usize = 24;
 
-/// `ring`'s slot at `head`, the oldest, with `head` moved on past it.
 fn claim(comptime T: type, ring: []T, head: *usize) *T {
     const at = &ring[head.*];
     head.* = (head.* + 1) % ring.len;
@@ -177,7 +176,6 @@ const Ripple = struct {
 
     const Ring = struct { r: f32, a: f32 };
 
-    /// Its outermost ring.
     fn ring(self: Ripple) ?Ring {
         if (self.t >= RIPPLE_S) return null;
         const k = self.t / RIPPLE_S;
@@ -227,7 +225,6 @@ const TORCH_FLAMES = 7;
 const FLAME_HZ: f32 = 1.7;
 const TORCH_RISE_PX: f32 = 16;
 const TORCH_FLECK_PX: f32 = 3.5;
-/// Sprite pixels above its foot the tallest flame reaches.
 pub const TORCH_TOP_PX = 20;
 
 comptime {
@@ -235,7 +232,6 @@ comptime {
 }
 const WARD_DOTS = 48;
 const SHOCK_SPARKS = 4;
-/// Flickers a second of shock's sparks.
 const SHOCK_HZ: f32 = 9;
 const CONFUSION_DOTS = 3;
 /// Cells under a body's top its blindness and confusion marks sit, and how wide confusion circles.
@@ -255,7 +251,6 @@ const PIN_H: f32 = 0.16;
 const PIN_FOOT: f32 = 0.92;
 /// A ward's ring, out from the body's middle in cells.
 const WARD_R: f32 = 0.46;
-/// Its breathing.
 const WARD_RAD_S: f32 = 2.4;
 /// Where across a body's cell chill's flakes and burn's flames begin, and how far they spread.
 const MARKS_FROM: f32 = 0.22;
@@ -268,7 +263,6 @@ fn ringDir(rng: *mathx.Rng, i: usize, n: usize, jitter: f32) [2]f32 {
 
 pub const FRIGHT_WORDS = [_][:0]const u8{ "Eek!", "Ah!", "[snorts]", "[squeals]" };
 pub const SPEECH_S: f32 = 1.1;
-/// Its last seconds, fading out.
 pub const SPEECH_FADE_S: f32 = 0.4;
 /// Cells over the body's head it starts, and how far it rises by its end.
 const SPEECH_LIFT: f32 = 0.04;
@@ -285,10 +279,8 @@ const LEVEL_UP_TEXT = "Level up!";
 /// Seconds the effect, and each glint, takes to show; and the effect, and the shaft, to fade.
 const LEVEL_IN_S: f32 = 0.12;
 const LEVEL_OUT_S: f32 = 0.65;
-/// Seconds after the gain the shaft is gone.
 const SHAFT_S: f32 = 1.55;
 const LEVEL_GLOW = Glow{ .radius = 2.5, .gain = 0.65, .life = LEVEL_UP_S };
-/// The body's added light at its peak.
 const LEVEL_BODY_GAIN: f32 = 0.18;
 const LEVEL_GLINTS = 18;
 /// Spreads the glints evenly: the golden ratio's fraction, and the golden angle.
@@ -481,7 +473,6 @@ pub const Fx = struct {
         }
         self.impacts.land(what, late);
     }
-    /// A status glow's gain, wavering out of step with others by `phase`.
     pub fn statusFlicker(self: *const Fx, phase: f32) f32 {
         return 1 - STATUS_FLICKER + STATUS_FLICKER * @sin(self.seconds.at() * STATUS_FLICKER_RAD_S + phase);
     }
@@ -578,7 +569,6 @@ pub const Fx = struct {
         }
     }
 
-    /// Slow, soft and swelling as they rise; a bigger puff spreads wider.
     fn wisps(self: *Fx, p: Puff) void {
         const ink = look.fade(p.ink, WISP_A);
         const wide = @sqrt(@as(f32, @floatFromInt(p.motes)) / @as(f32, @floatFromInt(TICK_WISPS)));
@@ -609,7 +599,6 @@ pub const Fx = struct {
         return markOf(s) != null;
     }
 
-    /// Null for a status shown only on the hud.
     fn markOf(s: Status) ?*const fn (*const Fx, Mark) void {
         return switch (s) {
             .bleeding => &drawBleeding,
@@ -632,7 +621,6 @@ pub const Fx = struct {
         self.drawBurning(m.x, m.y, m.cell, m.seed, m.alpha);
     }
 
-    /// Each glow pulse's light as it stands, faded by its age.
     pub fn pulseLights(self: *const Fx, buf: *[PULSES]light.Emission) []const light.Emission {
         var n: usize = 0;
         for (&self.pulses) |*p| {
@@ -720,7 +708,6 @@ pub const Fx = struct {
         }
     }
 
-    /// Stakes driven in round its feet.
     fn drawPinned(_: *const Fx, m: Mark) void {
         for (PIN_STAKES) |s| {
             const foot = rl.Vector2{ .x = m.x + m.cell * s[0], .y = m.y + m.cell * PIN_FOOT };
@@ -729,7 +716,6 @@ pub const Fx = struct {
         }
     }
 
-    /// A ring round it, breathing.
     fn drawWarded(self: *const Fx, m: Mark) void {
         const breath = @sin(self.seconds.at() * WARD_RAD_S);
         const r = m.cell * (WARD_R + breath * 0.02);
@@ -740,7 +726,6 @@ pub const Fx = struct {
         }
     }
 
-    /// Sparks flickering across it.
     fn drawShocked(self: *const Fx, m: Mark) void {
         const t = self.seconds.at() * SHOCK_HZ + @as(f32, @floatFromInt(m.seed)) * 0.37;
         const k = pxScale(m.cell);
@@ -754,7 +739,6 @@ pub const Fx = struct {
         }
     }
 
-    /// A crack across its middle for each stack.
     fn drawSundered(_: *const Fx, m: Mark) void {
         const k = pxScale(m.cell);
         for (0..m.stacks) |i| {
@@ -765,7 +749,6 @@ pub const Fx = struct {
         }
     }
 
-    /// A shut eye over its head.
     fn drawBlinded(_: *const Fx, m: Mark) void {
         const k = pxScale(m.cell);
         const lid = m.y + m.cell * HALO_Y;
@@ -773,7 +756,6 @@ pub const Fx = struct {
         for ([_]f32{ 0.42, 0.5, 0.58 }) |across| pixel.line(.{ .x = m.x + m.cell * across, .y = lid }, .{ .x = m.x + m.cell * across, .y = lid + m.cell * 0.04 }, 1, k, m.ink);
     }
 
-    /// Dots circling over its head.
     fn drawConfused(self: *const Fx, m: Mark) void {
         const t = self.seconds.at() * 3 + @as(f32, @floatFromInt(m.seed));
         for (0..CONFUSION_DOTS) |i| {
@@ -783,7 +765,6 @@ pub const Fx = struct {
         }
     }
 
-    /// A chevron sinking beside its head.
     fn drawEnfeebled(self: *const Fx, m: Mark) void {
         const k = pxScale(m.cell);
         const sink = @mod(self.seconds.at() * ENFEEBLE_HZ + @as(f32, @floatFromInt(m.seed)) * 0.31, 1);
@@ -793,7 +774,6 @@ pub const Fx = struct {
         pixel.bend(.{ .x = tip.x - arm, .y = tip.y - arm }, tip, .{ .x = tip.x + arm, .y = tip.y - arm }, 1, k, col);
     }
 
-    /// A bent bar at its feet, the leg it favours.
     fn drawMaimed(_: *const Fx, m: Mark) void {
         const k = pxScale(m.cell);
         const foot = m.y + m.cell * PIN_FOOT;
@@ -801,7 +781,6 @@ pub const Fx = struct {
         pixel.bend(.{ .x = m.x + m.cell * 0.24, .y = foot }, knee, .{ .x = m.x + m.cell * 0.38, .y = foot - m.cell * 0.04 }, 2, k, m.ink);
     }
 
-    /// A trembling mark beside its head.
     fn drawFrightened(self: *const Fx, m: Mark) void {
         const k = pxScale(m.cell);
         const shake = @sin(self.seconds.at() * FRIGHT_RAD_S + @as(f32, @floatFromInt(m.seed))) * FRIGHT_SHAKE;
@@ -841,7 +820,6 @@ pub const Fx = struct {
         return @intCast(self.rng.range(@intCast(bounds[0]), @intCast(bounds[1])));
     }
 
-    /// Somewhere on a footfall's ring, at least `near` of the way out, and the way out to it.
     fn footSpot(self: *Fx, at: [2]f32, near: f32) struct { dir: [2]f32, p: [3]f32 } {
         const dir = heading(self.rng.unit() * mathx.TAU);
         const out = self.rng.between(near, 1);
@@ -881,7 +859,6 @@ pub const Fx = struct {
         }
     }
 
-    /// A sweep's swing: streaks turning round the sweeper, the first gone first, and dust kicked off the ground.
     fn whirl(self: *Fx, at: [2]f32) void {
         for (0..WHIRL_MOTES) |i| {
             const k = @as(f32, @floatFromInt(i)) / WHIRL_MOTES;
@@ -900,7 +877,6 @@ pub const Fx = struct {
         self.dustRing(at, .{ .r = WHIRL_R, .flat = WHIRL_FLAT, .speed = .{ 0.6, 1.8 }, .rise = .{ 0.2, 0.7 }, .life = .{ WHIRL_S * 0.6, WHIRL_S * 1.2 } });
     }
 
-    /// Dust kicked out round `at`, from `r` cells out, its ring `flat` as tall as wide.
     fn dustRing(self: *Fx, at: [2]f32, ring: struct { r: f32, flat: f32 = 1, speed: [2]f32, rise: [2]f32, life: [2]f32 }) void {
         for (0..DUST_MOTES) |i| {
             const d = ringDir(&self.rng, i, DUST_MOTES, 1);
@@ -1014,7 +990,6 @@ fn ringDotsMax() usize {
     return ringSteps(RIPPLE_R[1]);
 }
 
-/// Angles round a ring of radius `r` sampled for its pixels, a few past one a pixel of its rim.
 fn ringSteps(r: f32) usize {
     return @as(usize, @intFromFloat(@ceil(mathx.TAU * r))) + 4;
 }
@@ -1037,7 +1012,6 @@ fn ringTrig(steps: usize) []const [2]f32 {
     return ring_trig[steps - RING_STEPS_MIN][0..steps];
 }
 
-/// The sprite pixels a ring of radius `r` passes through, each once.
 fn ringDots(r: f32, out: *[ringDotsMax()][2]i32) []const [2]i32 {
     const steps = @min(out.len, ringSteps(r));
     var n: usize = 0;
@@ -1071,7 +1045,6 @@ fn rippleAt(g: *RippleGrid, x: i32, y: i32) *bool {
     return &g[@intCast(y + RIPPLE_HALF_H)][@intCast(x + RIPPLE_HALF_W)];
 }
 
-/// A ripple's rings, outermost `outer` sprite pixels across; an inner ring drops any pixel touching one outside it.
 fn rippleDots(outer: f32, out: *[RIPPLE_RINGS * ringDotsMax()]Dot) []const Dot {
     var taken: RippleGrid = @splat(@splat(false));
     var n: usize = 0;
@@ -1095,7 +1068,6 @@ fn rippleDots(outer: f32, out: *[RIPPLE_RINGS * ringDotsMax()]Dot) []const Dot {
 
 test "a ring's dots from the cached angles are the dots its own trig gives" {
     var buf: [ringDotsMax()][2]i32 = undefined;
-    var radii: usize = 0;
     var r: f32 = RIPPLE_R[0];
     while (r <= RIPPLE_R[1]) : (r += 0.01) {
         const steps = @min(buf.len, ringSteps(r));
@@ -1109,16 +1081,13 @@ test "a ring's dots from the cached angles are the dots its own trig gives" {
             n += 1;
         }
         try std.testing.expectEqualSlices([2]i32, want[0..n], ringDots(r, &buf));
-        radii += 1;
     }
-    std.debug.print("ripple rings: {d} radii from cached angles match direct trig\n", .{radii});
 }
 
 fn projected(at: [2]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {
     return screen(.{ at[0], at[1], STRIKE_Z }, ox, oy, cell);
 }
 
-/// The ground point under a spot drawn at strike height, `projected`'s inverse.
 fn unprojected(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
     return .{ (v.x - ox) / cell, (v.y - oy) / cell + STRIKE_Z };
 }
@@ -1129,8 +1098,7 @@ fn flameAge(t: f32, phase: f32, seed: f32) f32 {
     return @mod(t * FLAME_HZ + phase + seed, 1);
 }
 
-/// By element: a trailed missile's light, how long the motes it sheds live and how fast they rise, the glow its
-/// burst flashes, and whether its motes add light.
+/// By element: a trailed missile's light, its motes' life and rise, its burst's glow, and whether its motes add light.
 const Flare = struct { radius: f32, gain: f32, trail_s: f32, rise: f32, burst: Glow, add: bool };
 
 const Missile = struct { trail_r: [2]f32 = .{ 0.7, 1.7 }, reach: ?f32 = null, ball: bool = false };
@@ -1179,7 +1147,6 @@ pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, 
 const NET_SPIN: f32 = 14;
 const NET_R: f32 = 8;
 
-/// A thrown net: a square mesh tumbling as it flies.
 pub fn drawNet(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32) void {
     const p = projected(at, ox, oy, cell);
     const k = pxScale(cell);
@@ -1278,7 +1245,6 @@ const TEST_BLOW = Blow{ .impact = .{ .actor = .{ .slot = .fromIndex(3), .at = .{
 
 test "an arc kinks, strays and lights at the same spacing whatever its length" {
     var widest_gap: [2]f32 = .{ 1, 0 };
-    var widest_stray: f32 = 0;
     for ([_][2]f32{ .{ 21.5, 20.5 }, .{ 24.5, 23.5 }, .{ 28.5, 28.5 }, .{ 20.5, 31.5 } }) |to| {
         var effects = Fx{};
         const z = Zap{ .from = .{ 20.5, 20.5 }, .to = to };
@@ -1292,14 +1258,12 @@ test "an arc kinks, strays and lights at the same spacing whatever its length" {
         for (a.points[0..a.n]) |p| {
             const stray = @abs((p[0] - z.from[0]) * (to[1] - z.from[1]) - (p[1] - z.from[1]) * (to[0] - z.from[0])) / span;
             try std.testing.expect(stray <= ARC_JITTER / 2 + 0.0001);
-            widest_stray = @max(widest_stray, stray);
         }
         widest_gap = .{ @min(widest_gap[0], step), @max(widest_gap[1], step) };
         var lights: usize = 0;
         for (effects.pulses) |p| lights += @intFromBool(p.life > 0);
         try std.testing.expectEqual(@as(usize, @intFromFloat(@max(1, @round(span / ARC_GLOW_EVERY)))), lights);
     }
-    std.debug.print("arcs from 1 to 11 cells: kinks {d:.3} to {d:.3} cells apart, straying at most {d:.3} cells, a light every ~{d} cells\n", .{ widest_gap[0], widest_gap[1], widest_stray, ARC_GLOW_EVERY });
 }
 
 test "a delayed effect starts its particles and light together after a long frame" {
@@ -1318,7 +1282,6 @@ test "a delayed effect starts its particles and light together after a long fram
     for (effects.motes) |m| try std.testing.expect(m.life <= 0);
     try std.testing.expectEqual(@as(f32, 0), effects.arcs[0].life);
     try std.testing.expectEqual(@as(f32, 0), effects.pulses[0].life);
-    std.debug.print("delayed effect: {d} particles start with arc and light after a 400 ms frame; all expire\n", .{particles});
 }
 
 test "electrical particles move between tiles and delayed arcs and light expire together" {
@@ -1338,7 +1301,6 @@ test "electrical particles move between tiles and delayed arcs and light expire 
     for (effects.arcs) |a| try std.testing.expect(a.life <= 0);
     for (effects.pulses) |p| try std.testing.expect(p.life <= 0);
     for (effects.motes) |m| try std.testing.expect(m.life <= 0);
-    std.debug.print("electric arc: delayed onset, sub-tile particle motion, all light and particles expired\n", .{});
 }
 
 fn footfallCounts(comptime emit_one: fn (*Fx) void, comptime bounds: [2]u32) !void {
@@ -1366,7 +1328,6 @@ test "water footsteps throw a varying few small drops that vanish without stains
         lv.set(.{ .x = 20, .y = 20 }, water);
         var effects = Fx{};
         effects.splash(.{ 20.5, 20.5 });
-        const n = live(&effects).flying;
         var peak: f32 = 0;
         var wide: f32 = 0;
         for (0..120) |_| {
@@ -1382,7 +1343,6 @@ test "water footsteps throw a varying few small drops that vanish without stains
         try std.testing.expect(peak < 0.2 and wide < 0.55);
         try std.testing.expectEqual(@as(usize, 0), live(&effects).flying + live(&effects).stains);
         for (effects.impacts.flash) |f| try std.testing.expectEqual(@as(f32, 0), f);
-        std.debug.print("water footsteps on {s}: {d} drops, peak {d:.3} cells up, {d:.3} cells out, no stains or flashes\n", .{ @tagName(water), n, peak, wide });
     }
 }
 
@@ -1416,7 +1376,6 @@ test "water footsteps leave thin concentric rings a pixel apart that widen and f
     }
     try std.testing.expect(first != null and most == RIPPLE_RINGS);
     for (effects.ripples) |r| try std.testing.expect(r.ring() == null);
-    std.debug.print("water ripples: up to {d} rings, outermost {d:.1} to {d:.1} sprite px across {d:.2} s, alpha {d:.2} to {d:.2}, {d} pixels at widest, none touching another ring\n", .{ most, first.?.r, last_r, RIPPLE_S, first.?.a, last_a, rippleDots(RIPPLE_R[1], &dots).len });
 }
 
 test "dust footsteps puff a varying few low motes, then vanish without stains" {
@@ -1428,7 +1387,6 @@ test "dust footsteps puff a varying few low motes, then vanish without stains" {
     var lv = grid.openFloor();
     var effects = Fx{};
     effects.dust(.{ 20.5, 20.5 }, look.DIRT_DUST);
-    const n = live(&effects).flying;
     var peak: f32 = 0;
     var wide: f32 = 0;
     var biggest: f32 = 0;
@@ -1444,7 +1402,6 @@ test "dust footsteps puff a varying few low motes, then vanish without stains" {
     }
     try std.testing.expect(peak < 0.12 and wide < 0.5 and biggest <= 4.9);
     try std.testing.expectEqual(@as(usize, 0), live(&effects).flying + live(&effects).stains);
-    std.debug.print("dust footsteps: {d} motes, peak {d:.3} cells up, {d:.3} cells out, widest {d:.1} sprite px\n", .{ n, peak, wide, biggest });
 }
 
 test "glacial frost waits for impact then fills only its cone and clears without stains" {
@@ -1466,7 +1423,6 @@ test "glacial frost waits for impact then fills only its cone and clears without
     }
     fx.step(&lv, 1);
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying + live(&fx).stains);
-    std.debug.print("glacial frost: {d} motes delayed to impact, contained in the cone, gone without stains\n", .{n});
 }
 
 test "juke leaves a fading trail and landing dust without stains or damage flashes" {
@@ -1491,7 +1447,6 @@ test "juke leaves a fading trail and landing dust without stains or damage flash
     fx.step(&lv, 1);
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying + live(&fx).stains);
     for (fx.impacts.flash) |f| try std.testing.expectEqual(@as(f32, 0), f);
-    std.debug.print("Juke effects: {d} trail motes, {d} landing dust motes, all gone after 1.1 s\n", .{ trail, dust });
 }
 
 test "a blow flashes its body for a beat and sprays blood a fraction of a cell, which lies a moment and is gone" {
@@ -1520,7 +1475,6 @@ test "a blow flashes its body for a beat and sprays blood a fraction of a cell, 
             try std.testing.expectEqual(@as(usize, sprayOf(.blood).hit), live(&fx).stains);
         }
     }
-    std.debug.print("blood: flash gone at {d:.3} s, spray reaches {d:.2} cells, {d} of {d} stains ahead of the blow, all gone by 3 s\n", .{ flash_gone.?, reach, ahead, sprayOf(.blood).hit });
     try std.testing.expectApproxEqAbs(FLASH_S, flash_gone.?, dt * 1.5);
     try std.testing.expect(reach > 0.15 and reach < 1.0);
     try std.testing.expect(ahead * 2 > sprayOf(.blood).hit);
@@ -1573,7 +1527,6 @@ test "a drop flies on over water and leaves no stain where it falls in" {
         tick(&m, &lv, mathx.TEST_DT);
         if (m.life > 0 and m.p[2] > 0 and m.p[0] >= 21) over_water = true;
     }
-    std.debug.print("a drop thrown off the bank flies to x {d:.2} and falls in\n", .{m.p[0]});
     try std.testing.expect(over_water);
     try std.testing.expect(!m.landed and m.life <= 0 and m.p[0] >= 21 and m.p[0] < 23);
 }
@@ -1599,7 +1552,6 @@ test "a blow from nowhere sprays all round, not in one heap" {
         n += 1;
     }
     const drift = mathx.len(sum[0], sum[1]) / n;
-    std.debug.print("a spray from nowhere: {d} stains out to {d:.2} cells, their middle {d:.2} cells off the blow\n", .{ n, reach, drift });
     try std.testing.expectEqual(@as(f32, @floatFromInt(sprayOf(.blood).kill)), n);
     try std.testing.expect(reach > 0.15);
     try std.testing.expect(drift < reach * 0.5);
@@ -1628,7 +1580,6 @@ test "overdue flashes keep the latest impact time regardless of queue order" {
     try std.testing.expect(!fx.impacts.holds(.fromIndex(3)));
     fx.strike(-FLASH_S, TEST_BLOW);
     try std.testing.expect(!fx.impacts.holds(.fromIndex(3)));
-    std.debug.print("flash timing: 3 unordered impacts and an overdue immediate blow checked\n", .{});
 }
 
 test "a sting flashes its body when the picture gets there and sprays nothing" {
@@ -1672,7 +1623,6 @@ test "a killed foe darkens as its death lands, then fades out; a hurt one and a 
         try std.testing.expectEqual(impact_queue.Dying{}, fx.impacts.dyingOf(.fromIndex(4)));
         try std.testing.expectEqual(impact_queue.Dying{}, fx.impacts.dyingOf(.fromIndex(0)));
     }
-    std.debug.print("death fade: wholly dark {d:.3} s after landing, gone at {d:.3} s\n", .{ dark_at.?, gone_at.? });
     try std.testing.expectApproxEqAbs(impact_queue.DEATH_S * impact_queue.DEATH_DARKEN, dark_at.?, dt * 1.5);
     try std.testing.expectApproxEqAbs(impact_queue.DEATH_S, gone_at.?, dt * 1.5);
 }

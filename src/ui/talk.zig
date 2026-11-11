@@ -20,7 +20,6 @@ const TALK_VEIL = look.fade(look.BG, 0.45);
 const CHOICES_RULE_A: f32 = 0.8;
 const LINE_MAX: usize = @max(script.SAY_MAX, script.ASK_MAX) + 8;
 
-/// What the conversation panel shows; `choices` are only those offered.
 pub const View = struct {
     who: []const u8,
     say: []const u8,
@@ -29,7 +28,6 @@ pub const View = struct {
     prompt: prompt_icon.Prompt,
 };
 
-/// Sized to what it holds, growing up off a fixed bottom edge.
 pub const Layout = struct {
     panel: rl.Rectangle,
     text_x: i32,
@@ -107,14 +105,11 @@ test "the conversation panel keeps every choice and its action inside the window
     var l: Layout = .{ .panel = undefined, .text_x = 0, .text_w = 0, .action = undefined };
     const longest = "a word " ** (script.SAY_MAX / 7);
     const asks = [_][]const u8{"y" ** script.ASK_MAX} ** script.MAX_CHOICES;
-    var checked: usize = 0;
     const display = @import("../core/window.zig");
     for ([_]P{ display.SCREEN_720, display.SCREEN_1080, .{ .x = 800, .y = 600 } }) |screen| {
         l.of(&face, screen, .{ .who = "w" ** script.WHO_MAX, .say = longest, .choices = &asks, .cursor = 0, .prompt = .{ .key = "Enter" } });
         try std.testing.expect(l.panel.y >= 0 and l.panel.y + l.panel.height <= @as(f32, @floatFromInt(screen.y)));
         try std.testing.expect(l.action.y + l.action.height <= l.panel.y + l.panel.height);
         try std.testing.expect(l.rows[l.row_n - 1].y + l.rows[l.row_n - 1].height <= l.action.y);
-        checked += 1;
     }
-    std.debug.print("conversation panel: {d} window sizes hold {d} wrapped prose lines, {d} choices and the action\n", .{ checked, l.line_n, script.MAX_CHOICES });
 }

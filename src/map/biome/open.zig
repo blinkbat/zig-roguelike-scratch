@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// ADOM's plains square, Diablo II's Blood Moor before its fills.
-
 pub const Params = struct {
     ground: carve.Ground = .grass,
     edge: carve.Solid = .shrub,
@@ -38,7 +36,6 @@ test "a field strews lone boulders, open ground all round each" {
         boulders += 1;
         try std.testing.expect(carve.clearAround(&lv, grid.Level.of(k)));
     }
-    std.debug.print("a field at {d} a thousand: {d} boulders\n", .{ carve.LITTER_MAX, boulders });
     try std.testing.expect(boulders > 100);
 }
 
@@ -72,7 +69,6 @@ test "a field strews tiny shrubs, tall grass in patches with reeds at their hear
             }
         }
     }
-    std.debug.print("a field's decor: {d} tiny shrubs, {d} tall grass, {d} of it beside more, {d} reeds at patch hearts, {d} shrooms\n", .{ shrubs, tall, patched, reeds, shrooms });
     try std.testing.expect(shrubs > 10 and tall > 150 and patched * 10 > tall * 9 and reeds > 0 and reeds < tall and shrooms > 10);
     var litter = grid.LITTER_TILES.iterator();
     while (litter.next()) |t| try std.testing.expect(!t.solid() and !t.blind());

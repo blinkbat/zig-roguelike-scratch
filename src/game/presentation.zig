@@ -8,7 +8,7 @@ const fire = @import("../map/fire.zig");
 const ice = @import("../map/ice.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
-const items = @import("../play/items.zig");
+const ground_items = @import("../play/ground_items.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const chronicle = @import("../play/chronicle.zig");
@@ -35,12 +35,10 @@ pub const Shot = struct {
     flight: bow.Flight,
     from: P,
     act: skillbar.Act = .shoot,
-    /// A thrown net rather than an arrow.
     net: bool = false,
     t: f32 = 0,
     trail_t: f32 = 0,
 
-    /// When the missile reaches its last cell, as its hit is presented.
     pub fn lands(self: *const Shot) f32 {
         return flown(self.flight.len -| 1);
     }
@@ -64,7 +62,7 @@ pub const Shot = struct {
         return .{ (b[0] - a[0]) / len, (b[1] - a[1]) / len };
     }
 
-    /// Moves on `dt`, shedding its trail into `effects`; false once it has ended.
+    /// false once it has ended.
     pub fn fly(self: *Shot, effects: *fx.Fx, lv: *const grid.Level, dt: f32) bool {
         self.t += dt;
         const end = @min(self.t, self.lands());
@@ -74,7 +72,6 @@ pub const Shot = struct {
         return self.t < self.ends();
     }
 
-    /// A lightning missile's arc into `effects`, struck as it lands.
     pub fn zapInto(self: *const Shot, effects: *fx.Fx) void {
         if (self.act.element() != .lightning) return;
         const to = self.flight.end() orelse return;
@@ -85,7 +82,6 @@ pub const Shot = struct {
 test "missiles move continuously to the existing impact time in every direction" {
     const lv = grid.openFloor();
     const from = P{ .x = 20, .y = 20 };
-    var checked: usize = 0;
     for (mathx.ALL_DIRS) |d| {
         const delta = d.delta();
         const to = P{ .x = from.x + delta.x * 6, .y = from.y + delta.y * 6 };
@@ -97,21 +93,16 @@ test "missiles move continuously to the existing impact time in every direction"
         const b = shot_.position(lands * 0.41);
         const moved = mathx.len(b[0] - a[0], b[1] - a[1]);
         try std.testing.expect(moved > 0 and moved < 0.1);
-        checked += 1;
     }
-    std.debug.print("smooth missiles: {d} directions, sub-tile motion, exact arrival at presented impact\n", .{checked});
 }
 
 /// `snare`: a net, holding the hero as it lands, or dodged (null).
-pub const Bite = union(enum) { hurt: fx.After, kill: fx.After, burst: fx.After, snare: ?fx.After, miss };
+pub const FoeHit = union(enum) { hurt: fx.After, kill: fx.After, burst: fx.After, snare: ?fx.After, miss };
 
-/// The hero shoved from one cell to the next as the blow lands.
 pub const Knock = struct { from: P, to: P };
 
-/// A body healed as the mending lands; none when the mending only woke its kin.
 pub const Mended = struct { slot: ?actor.ActorSlot = null, after: ?fx.After = null };
 
-/// What a death did to another body, shown as that death lands.
 pub const Befallen = struct { by: usize, after: fx.After };
 
 /// `was` stands at `at` for `left` seconds more.
@@ -130,7 +121,6 @@ pub fn Held(comptime T: type) type {
             return self.left > 0;
         }
 
-        /// Takes `now`, unless a hold running or due keeps an older one.
         fn snap(self: *Self, now: *const T) void {
             if (self.on() or self.due) return;
             self.before = now.*;
@@ -153,7 +143,7 @@ pub const Pictured = struct { masked: std.StaticBitSet(actor.MAX) = .initEmpty()
 
 /// Presentation debts land at the body's stagger, or after the hero when it has no stagger.
 pub const Owed = struct {
-    bit: ?Bite = null,
+    foe_hit: ?FoeHit = null,
     arrow: ?bow.Flight = null,
     gassed: ?Harm = null,
     scalded: ?Harm = null,
@@ -177,13 +167,12 @@ pub const Owed = struct {
     }
 };
 
-/// A blow one body lands on another, neither the hero, bumped or shot along an owed arrow: what it lands on, or a miss.
+/// A blow one body lands on another, neither the hero; `impact` null is a miss.
 pub const Struck = struct { at: P, impact: ?fx.Impact = null };
 
 pub const ReactionOutcome = union(enum) { miss, hit: fx.ActorImpact };
 pub const Reaction = struct { from: P, flight: ?bow.Flight, outcome: ReactionOutcome, recovery: ?fx.After = null };
 
-/// A foe's sweep, drawn round it, and what it struck besides the hero, landing with its blow on the hero.
 pub const Swept = struct {
     hit: [actor.SWEEP_CELLS]fx.Impact = undefined,
     n: usize = 0,
@@ -202,13 +191,9 @@ pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
 pub const Fields = struct {
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
     pub const turn = [_][]const u8{ "shot", "foe_shots", "knocked_from", "bursting", "lit", "tiles", "embers", "burnt", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
-    /// Defaulted as a run starts.
     pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
-    /// Defaulted as the hero is spawned.
     pub const facing = [_][]const u8{"facing"};
-    /// Snapped to the simulation as the game settles, then moved or eased on toward it.
     pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown" };
-    /// Rebuilt from the simulation each time it is read.
     pub const scratch = [_][]const u8{ "ground_shown", "burnt_ground", "burnt_box" };
     /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
     pub const kept = [_][]const u8{ "seq", "fx", "occluder" };
@@ -219,14 +204,11 @@ pub const Presentation = struct {
     occlusion: [grid.CELLS]f32 = @splat(0),
     /// The middle of the body each occluding cell last fades around, cells.
     occluder: [grid.CELLS][2]f32 = @splat(.{ 0, 0 }),
-    /// Indexed by pool slot.
     glide: [actor.MAX]glide.Glide = undefined,
-    /// Indexed by pool slot.
     facing: [actor.MAX]actor.Facing = @splat(.right),
     turning: [actor.MAX]?Turning = @splat(null),
-    /// Indexed by pool slot: how far into sight each body has faded, as its ground does; 0 while unseen.
+    /// How far into sight each body has faded; 0 while unseen.
     sighted: [actor.MAX]f32 = @splat(1),
-    /// Pool-indexed presentation state, updated when each blow lands.
     pictured: [actor.MAX]fx.Body = undefined,
     /// The blows dealt so far, so the picture takes them in the order they were dealt.
     seq: u64 = 0,
@@ -234,62 +216,44 @@ pub const Presentation = struct {
     split_from: [actor.MAX]?usize = @splat(null),
     /// Indexed by pool slot: gold kept out of its drop until that death is drawn.
     dropped_gold: [actor.MAX]i32 = @splat(0),
-    /// Pool slots of mimics struck or killed in their chests, each drawn as its chest until that blow or death is.
     masked: std.StaticBitSet(actor.MAX) = .initEmpty(),
-    /// Pool slots drawn underwater; each takes the simulation's depth once its `dives` runs out.
     under: std.StaticBitSet(actor.MAX) = .initEmpty(),
     /// Indexed by pool slot: seconds until a body that surfaced or dived this turn is drawn so.
     dives: [actor.MAX]?f32 = @splat(null),
-    /// Indexed by pool slot: caught or frightened by a death not yet staggered.
     befallen: [actor.MAX]?Befallen = @splat(null),
     owed: [actor.MAX]Owed = @splat(.{}),
     shot: ?Shot = null,
     foe_shots: [actor.MAX]?Shot = @splat(null),
     /// Where the hero stood before the turn's first knockback: its own move ends there.
     knocked_from: ?P = null,
-    /// A glowbulb burst by a bump, an arrow or a blow: drawn, and lit, until that lands.
     bursting: ?Bursting = null,
-    /// Sight before a glowbulb's burst darkened it or a pyre's smoke hid what lies past it, drawn until that lands.
     lit: Held([grid.CELLS]bool) = .{ .before = @splat(false) },
     /// The ground's flames, barrier and caltrops as drawn: the simulation's, but kept as they were while `tiles` holds.
     flames_shown: [grid.CELLS]u8 = @splat(0),
-    /// The ground as last drawn, to tell what a fire just took.
     tiles_drawn: [grid.CELLS]grid.Tile = @splat(.floor),
-    /// Seconds each cell's flames, and the tile they burnt away, have left to fade since they went out.
     embers: [grid.CELLS]f32 = @splat(0),
-    /// What each fading cell burnt away, drawn over what it left as it fades.
     burnt: [grid.CELLS]?grid.Tile = @splat(null),
     barrier_shown: [grid.CELLS]u8 = @splat(0),
     caltrops_shown: @FieldType(grid.Level, "caltrops") = @splat(.{}),
-    /// The ground till the fire or cold not yet landed: what burns down, freezes or melts meanwhile is drawn as it was.
     tiles: Held([grid.CELLS]grid.Tile) = .{ .before = @splat(.floor) },
-    /// The level with `tileShown` laid over it, rebuilt by `groundShown` while any tile is drawn as it was.
     ground_shown: grid.Level = undefined,
-    /// The level as drawn with what is still fading from a fire laid back over what it left, rebuilt by `burntShown`.
     burnt_ground: grid.Level = undefined,
-    /// The cells round those `burnt_ground` lays back, set with it.
     burnt_box: grid.Box = undefined,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
     lead: ?f32 = null,
     fx: fx.Fx = .{},
-    gold_taken: ?items.Coins = null,
-    /// Spent shield mana held for blows not yet presented.
+    gold_taken: ?ground_items.Coins = null,
     mana_held: i32 = 0,
-    /// Kill refills appear only when the killing blow lands.
     flasks_shown: simulation.Flasks = .initFill(.{}),
-    /// Each death's mana on kill, shown once that death is drawn.
     mana_killed: [actor.MAX]i32 = @splat(0),
-    /// `xpLevels` as of the last drawn turn, and the bar easing toward it.
     xp_aim: f32 = 0,
     xp_shown: f32 = 0,
     life_fill: f32 = 1,
     mana_fill: f32 = 1,
-    /// `growth` and `gold` as of the last drawn turn, for the character book.
     growth_shown: progress.State = .{},
     gold_shown: i32 = 0,
-    /// Who stands where and how far each quest has come, as of the last drawn turn.
     npc_shown: @FieldType(grid.Level, "npc") = @splat(grid.NO_NPC),
     quests_shown: @FieldType(@FieldType(Simulation, "plot"), "quests") = @splat(.{}),
     hour_shown: f32 = day.Clock.hour(.{}),
@@ -299,7 +263,6 @@ pub const Presentation = struct {
         return self.busy <= PACE_SLACK;
     }
 
-    /// Seconds since the last turn was drawn out.
     pub fn sinceQuiet(self: *const Presentation) f32 {
         return @max(0, -self.busy);
     }
@@ -363,7 +326,6 @@ pub const Presentation = struct {
         self.facing[i] = facing;
     }
 
-    /// A body come into being this turn, drawn standing where it rose once `wait` has passed.
     pub fn recordBirth(self: *Presentation, sim: *const Simulation, born: actor.ActorId, wait: f32) void {
         const i = born.slot().index;
         const body = &sim.pool.items[i];
@@ -401,7 +363,6 @@ pub const Presentation = struct {
         while (each.next()) |slot| self.befallen[slot] = .{ .by = by, .after = self.afterOf(sim, .fromIndex(slot)) };
     }
 
-    /// The bodies the death in `fallen` caught or frightened catch up as it lands.
     fn landBefallen(self: *Presentation, fallen: usize, wait: f32) void {
         for (&self.befallen, 0..) |*b, slot| {
             const was = b.* orelse continue;
@@ -411,9 +372,9 @@ pub const Presentation = struct {
         }
     }
 
-    pub fn recordFoeAttack(self: *Presentation, by: actor.ActorId, outcome: Bite, flight: ?bow.Flight) void {
+    pub fn recordFoeAttack(self: *Presentation, by: actor.ActorId, outcome: FoeHit, flight: ?bow.Flight) void {
         const owed = &self.owed[by.slot().index];
-        owed.bit = outcome;
+        owed.foe_hit = outcome;
         owed.arrow = flight;
     }
 
@@ -470,7 +431,6 @@ pub const Presentation = struct {
         self.turning[target.slot().index] = .{ .to = facingOf(dx) orelse return };
     }
 
-    /// Every pending turn taken at once.
     pub fn turnNow(self: *Presentation) void {
         for (self.turning, &self.facing) |t, *f| {
             if (t) |u| f.* = u.to;
@@ -490,7 +450,6 @@ pub const Presentation = struct {
         }
     }
 
-    /// The body as a blow dealt now leaves it, numbered after every blow before.
     pub fn snap(self: *Presentation, a: actor.Actor) fx.Body {
         self.seq += 1;
         return fx.Body.of(a, self.seq);
@@ -508,7 +467,6 @@ pub const Presentation = struct {
         self.settleSlot(sim, wait, .fromIndex(sim.heroSlot().?));
     }
 
-    /// The target's body as it is now, shown `wait` seconds on.
     pub fn settleSlot(self: *Presentation, sim: *const Simulation, wait: f32, target: actor.ActorSlot) void {
         self.fx.settle(wait, .{ .slot = target, .after = self.afterOf(sim, target) });
     }
@@ -519,13 +477,11 @@ pub const Presentation = struct {
         for (pool.constSlice(), 0..) |*a, i| self.glide[i] = glide.Glide.rest(a);
     }
 
-    /// Dead bodies remain until their killing blow, flash and glide finish.
     pub fn standing(self: *const Presentation, sim: *const Simulation, i: usize) bool {
         if (self.split_from[i] != null or self.fx.impacts.revealing(.fromIndex(i))) return false;
         return sim.pool.items[i].alive or self.fx.impacts.holds(.fromIndex(i)) or self.glide[i].done() < 1;
     }
 
-    /// Dead, and no longer drawn standing or fading.
     pub fn gone(self: *const Presentation, sim: *const Simulation, i: usize) bool {
         return !self.standing(sim, i) and !self.fx.impacts.isDying(.fromIndex(i));
     }
@@ -544,7 +500,6 @@ pub const Presentation = struct {
         return (self.heroGlide(sim) orelse return null).now();
     }
 
-    /// The hero's middle as drawn, cells: the carried light glides with the body.
     pub fn carrierAt(self: *const Presentation, sim: *const Simulation) ?[2]f32 {
         return game.middle(self.heroNow(sim) orelse return null);
     }
@@ -563,7 +518,6 @@ pub const Presentation = struct {
         return game.cellUnder(self.drawnAt(sim, i) orelse return null);
     }
 
-    /// Where its body is drawn: as `drawnAt`, or fading out once its death is.
     pub fn bodyAt(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
         if (!self.fading(sim, i)) return self.drawnAt(sim, i);
         return self.litNow(sim, i);
@@ -583,13 +537,10 @@ pub const Presentation = struct {
         return if (area.holds(game.cellUnder(at))) at else null;
     }
 
-    /// Standing as a body, not underwater or in its chest.
     fn figured(self: *const Presentation, sim: *const Simulation, i: usize) bool {
         return self.standing(sim, i) and !sim.pool.items[i].disguised and !self.boxedOrSunk(i);
     }
 
-    /// What is drawn at `p`: a mimic's chest until its death is, a glowbulb until the bump, arrow or blow that bursts it lands,
-    /// and what burnt down, froze or melted while `tiles` holds as it was.
     pub fn tileShown(self: *const Presentation, sim: *const Simulation, p: P) grid.Tile {
         const t = sim.lv.at(p);
         if (!self.reshapes()) return t;
@@ -599,12 +550,10 @@ pub const Presentation = struct {
         return heldBack(grid.cellOr(grid.Tile, &self.tiles.before, p, t), t);
     }
 
-    /// Some tile is drawn otherwise than the simulation has it.
     fn reshapes(self: *const Presentation) bool {
         return self.tiles.on() or self.bursting != null or self.masked.count() > 0;
     }
 
-    /// The level as drawn: the simulation's, or while a tile or light is drawn as it was, `ground_shown`.
     pub fn groundShown(self: *Presentation, sim: *const Simulation) *const grid.Level {
         const reshaped = self.reshapes();
         const held = self.lit.on();
@@ -631,7 +580,6 @@ pub const Presentation = struct {
         return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.lit.on(), .tiles_held = self.tiles.on() };
     }
 
-    /// The chest drawn at `p` is a mimic's: one still disguised, or one killed in it until its death is drawn.
     pub fn mimicAt(self: *const Presentation, sim: *const Simulation, p: P) bool {
         var each = self.masked.iterator(.{});
         while (each.next()) |i| if (sim.pool.items[i].at.eq(p)) return true;
@@ -645,7 +593,6 @@ pub const Presentation = struct {
         self.lit.hold(&lv.lit, wait);
     }
 
-    /// The flames and ground drawn stay as they are for `wait` seconds, till the fire or cold that changed the newest lands.
     pub fn holdFlames(self: *Presentation, lv: *const grid.Level, wait: f32) void {
         self.tiles.hold(&lv.tile, wait);
     }
@@ -654,17 +601,15 @@ pub const Presentation = struct {
         return self.flames_shown[i] > 0;
     }
 
-    /// How far through fading out the flames gone from `i` are, 1 just out to 0 gone.
     pub fn ember(self: *const Presentation, i: usize) f32 {
         return self.embers[i] / EMBER_S;
     }
 
-    /// What fire burnt away at `i` while it still fades.
     pub fn fadingBurnt(self: *const Presentation, i: usize) ?grid.Tile {
         return if (self.embers[i] > 0) self.burnt[i] else null;
     }
 
-    /// `ground` with each tile still fading from a fire laid back, and `burnt_box` round them; null while none is.
+    /// Null while no tile is still fading from a fire.
     pub fn burntShown(self: *Presentation, ground: *const grid.Level) ?*const grid.Level {
         var lo = P{ .x = grid.W, .y = grid.H };
         var hi = P{ .x = 0, .y = 0 };
@@ -684,7 +629,6 @@ pub const Presentation = struct {
         return &self.burnt_ground;
     }
 
-    /// Flames gone out since the last drawn begin fading, with whatever they burnt away.
     fn goneOut(self: *Presentation, lv: *const grid.Level) void {
         for (self.flames_shown, lv.flames, self.tiles_drawn, lv.tile, 0..) |was, now, before, after, i| {
             if (was == 0 or now > 0) continue;
@@ -714,12 +658,12 @@ pub const Presentation = struct {
         return sim.lv.hasBarrel(p) or self.fx.impacts.breaking(p);
     }
 
-    pub fn pileShown(self: *const Presentation, sim: *const Simulation, pile: items.Coins) ?items.Coins {
+    pub fn pileShown(self: *const Presentation, sim: *const Simulation, pile: ground_items.Coins) ?ground_items.Coins {
         if (!self.litShown(sim, pile.at) or self.barrelPresent(sim, pile.at)) return null;
         return self.pileLanded(sim, pile);
     }
 
-    pub fn pileLanded(self: *const Presentation, sim: *const Simulation, pile: items.Coins) ?items.Coins {
+    pub fn pileLanded(self: *const Presentation, sim: *const Simulation, pile: ground_items.Coins) ?ground_items.Coins {
         var shown = pile;
         for (sim.pool.constSlice(), 0..) |a, i| {
             if (!a.alive and a.at.eq(pile.at) and !self.pictured[i].down()) shown.amount -= self.dropped_gold[i];
@@ -727,18 +671,16 @@ pub const Presentation = struct {
         return if (shown.amount > 0) shown else null;
     }
 
-    /// `laid` is an `items.Drop` or `items.Supply`: lying lit where its foe's death has been drawn.
+    /// `laid` is an `ground_items.Drop` or `ground_items.Supply`.
     pub fn laidShown(self: *const Presentation, sim: *const Simulation, laid: anytype) bool {
         return self.litShown(sim, laid.at) and self.laidDown(laid) and !self.barrelPresent(sim, laid.at);
     }
 
-    /// Laid, or its foe's death drawn; seen or not.
     pub fn laidDown(self: *const Presentation, laid: anytype) bool {
         if (laid.source == grid.NO_ONE) return true;
         return self.pictured[actor.Pool.slot(laid.source)].down();
     }
 
-    /// The plant whose burst has now landed, once.
     pub fn uprooted(self: *Presentation) ?P {
         const b = self.bursting orelse return null;
         if (b.left > 0) return null;
@@ -759,7 +701,6 @@ pub const Presentation = struct {
         return .{ .hp = h.hp, .max = h.max };
     }
 
-    /// Where the orbs' fills are easing to.
     pub fn lifeFill(self: *const Presentation, sim: *const Simulation) f32 {
         const life = self.lifeShown(sim);
         return mathx.fillOf(life.hp, life.max);
@@ -796,12 +737,10 @@ pub const Presentation = struct {
         self.xp_shown = self.xp_aim;
     }
 
-    /// The sky, experience bar and orbs ease toward what the drawn turns show.
     pub fn ease(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.easeOver(sim, self.groundShown(sim), dt);
     }
 
-    /// `ease`, over the ground as `groundShown` gave it this frame.
     pub fn easeOver(self: *Presentation, sim: *const Simulation, ground: *const grid.Level, dt: f32) void {
         self.stepOcclusion(sim, &ground.tile, dt);
         self.stepSighted(sim, dt);
@@ -813,7 +752,6 @@ pub const Presentation = struct {
         self.mana_fill = mathx.ease(self.mana_fill, self.manaFill(sim), resource_ease, resource_ease);
     }
 
-    /// Births, surfacings and unmaskings appear at once; only a body coming into sight fades in.
     fn stepSighted(self: *Presentation, sim: *const Simulation, dt: f32) void {
         const k = mathx.easing(dt, visibility.REVEAL);
         for (self.sighted[0..sim.pool.n], 0..) |*s, i| {
@@ -855,7 +793,6 @@ pub const Presentation = struct {
         }
     }
 
-    /// Time passes on the picture, then it takes whatever blows have landed.
     pub fn advance(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.busy -= dt;
         if (self.bursting) |*b| b.left -= dt;
@@ -878,7 +815,6 @@ pub const Presentation = struct {
         self.catchUp(sim);
     }
 
-    /// Footfalls, missiles and pending turns move on.
     pub fn stepMotion(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.footfalls(sim);
         if (self.shot) |*s| {
@@ -906,7 +842,6 @@ pub const Presentation = struct {
         }
     }
 
-    /// Reveal split halves at impact, after their parent becomes visible.
     pub fn catchUp(self: *Presentation, sim: *const Simulation) void {
         var dying = false;
         for (sim.pool.constSlice(), 0..) |a, i| {
@@ -932,7 +867,7 @@ pub const Presentation = struct {
         self.fx.react(self.pictured[0..sim.pool.n]);
     }
 
-    /// `late` is seconds since the glides started; visible foes follow the hero in acting order.
+    /// `late` is seconds since the glides started.
     pub fn stepGlide(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, late: f32) void {
         var turn = TurnTiming{
             .late = late,
@@ -962,7 +897,7 @@ pub const Presentation = struct {
 
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, target: actor.ActorId, start: f32, turn: *TurnTiming) f32 {
         comptime for (std.enums.values(std.meta.FieldEnum(Owed))) |t| switch (t) {
-            .bit, .arrow, .gassed, .scalded, .scorched, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended, .struck => {},
+            .foe_hit, .arrow, .gassed, .scalded, .scorched, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended, .struck => {},
         };
         const owed = self.owed[target.slot().index];
         self.owed[target.slot().index] = .{};
@@ -985,7 +920,7 @@ pub const Presentation = struct {
             }
             return null;
         }
-        const attack = owed.bit;
+        const attack = owed.foe_hit;
         const at = if (target.value == sim.hero) destination else body.at;
         const hidden = body.disguised or (body.submerged and self.under.isSet(slot) and attack == null);
         const shown = self.litShown(sim, at) and !hidden;
@@ -1035,7 +970,7 @@ pub const Presentation = struct {
     }
 
     fn scheduleBlows(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming) void {
-        if (owed.bit) |b| switch (b) {
+        if (owed.foe_hit) |b| switch (b) {
             .hurt, .kill => |after| self.strikeBody(sim, gas, .fromIndex(sim.heroSlot().?), timing.hero_at, b == .kill, after, .{ .from = timing.body.at, .wait = timing.impact_in }),
             .burst => |after| self.strikeBody(sim, gas, timing.slot, timing.body.at, true, after, .{ .from = timing.hero_at, .wait = timing.impact_in }),
             .snare => |held| if (held) |after| self.recordRecovery(sim, timing.impact_in, after),
@@ -1132,7 +1067,6 @@ pub const Presentation = struct {
         return timing.finishes_in;
     }
 
-    /// Wait for deaths at the destination and witnessed deaths that caused flight.
     fn clearIn(self: *const Presentation, sim: *const Simulation, slot: usize, to: P) f32 {
         var t: f32 = if (self.fx.speech[slot].after) |fallen| self.fx.impacts.landsIn(.fromIndex(fallen)) else 0;
         if (!self.litShown(sim, to)) return t;
@@ -1154,7 +1088,6 @@ pub const Presentation = struct {
         } else self.fx.settle(lands, .{ .slot = s.slot, .after = h.after });
     }
 
-    /// A blow drawn landing on `at`, or only settled when the hero cannot see it; a bursting kill holds its gas back as long.
     pub fn strike(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, impact: fx.Impact, s: Stroke) void {
         const at = impact.at();
         const len = mathx.distEuclid(at, s.from);
@@ -1194,7 +1127,6 @@ pub const Presentation = struct {
         self.strike(sim, gas, .{ .actor = .{ .slot = slot, .at = at, .lethal = lethal, .after = after } }, s);
     }
 
-    /// `a` shimmering in its own colour as `wait` runs out.
     pub fn shimmerBody(self: *Presentation, wait: f32, a: *const actor.Actor) void {
         self.fx.shimmerIn(wait, .{ .at = mathx.centre(a.at), .col = look.body(a.kind).fg });
     }
@@ -1218,16 +1150,11 @@ pub const Life = struct { hp: i32, max: i32 };
 const PACE_SLACK: f32 = 1e-4;
 /// How far through a step its splash or dust is drawn: the foot coming down.
 pub const STEP_AT: f32 = 0.85;
-/// Per second, how fast the sky drawn catches the hour a turn moved on.
 const HOUR_EASE: f32 = 4;
-/// Per second, how fast the weather drawn catches the weather a turn moved on.
 const WEATHER_EASE: f32 = 1.5;
 const OCCLUSION_EASE: f32 = 12;
-/// Seconds flames, and what they burnt away, take to fade once out.
 pub const EMBER_S: f32 = 0.45;
-/// Per second, how fast the experience bar fills toward a drawn turn's experience.
 const XP_EASE: f32 = 8;
-/// Per second, how fast the life and mana orbs fill toward what is shown.
 pub const RESOURCE_EASE = XP_EASE;
 
 /// Cell-widths a drawn figure stops short of its cell's sides, and of its top and bottom, as scenery hides it.

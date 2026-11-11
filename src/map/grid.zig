@@ -6,11 +6,9 @@ const P = mathx.P;
 pub const W: i32 = 96;
 pub const H: i32 = 64;
 pub const CELLS: usize = @intCast(W * H);
-/// One bit a cell, by `Level.idx`.
 pub const CellSet = std.StaticBitSet(CELLS);
 pub const COLS: usize = @intCast(W);
 pub const ROWS: usize = @intCast(H);
-/// The points where cells meet, the map's edges included.
 pub const CORNERS_W: usize = COLS + 1;
 pub const CORNERS_H: usize = ROWS + 1;
 pub const SIZE = P{ .x = W, .y = H };
@@ -26,12 +24,10 @@ pub const NO_DOOR: u8 = 0;
 pub const NO_NPC: u8 = 0;
 
 pub const Tile = enum(u8) {
-    /// Built, and shaped by `gen.shapeWalls`.
     wall,
     floor,
     grass,
     shrub,
-    /// Natural stone: a cave's walls, a cliff, a crag.
     rock,
     dirt,
     sand,
@@ -57,7 +53,6 @@ pub const Tile = enum(u8) {
     swamp_tree,
     large_tree,
     glow_plant,
-    /// Stands on its cell and the `.caravan_part` right of it, its picture rising into the row above.
     caravan,
     caravan_part,
     stone_bridge,
@@ -70,23 +65,20 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).blind;
     }
 
-    /// What lies under it: drawn first, beneath its own picture.
     pub fn ground(t: Tile) ?Tile {
         return TERRAIN.getPtrConst(t).ground;
     }
 
-    /// Water, lava or a chasm, which a trail crosses by a bridge.
     pub fn liquid(t: Tile) bool {
         return TERRAIN.getPtrConst(t).liquid;
     }
 
-    /// The bridge over liquid `t`: `span` over water, stone over lava or a chasm, which a burnt bridge must not leave as water.
+    /// Stone over lava or a chasm, which a burnt bridge must not leave as water.
     pub fn spannedBy(t: Tile, span: Tile) Tile {
         std.debug.assert(t.liquid() and span.spans());
         return if (t.wet()) span else .stone_bridge;
     }
 
-    /// Deep water or shallows.
     pub fn wet(t: Tile) bool {
         return TERRAIN.getPtrConst(t).wet;
     }
@@ -95,12 +87,10 @@ pub const Tile = enum(u8) {
         return t.solid() and !t.liquid();
     }
 
-    /// Seen past, but stops a missile.
     pub fn halts(t: Tile) bool {
         return TERRAIN.getPtrConst(t).halts;
     }
 
-    /// Plain dry ground a chest or barrel may be placed on.
     pub fn rewards(t: Tile) bool {
         return TERRAIN.getPtrConst(t).rewards;
     }
@@ -109,27 +99,22 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).opens;
     }
 
-    /// Lights the cells round it as a torch does.
     pub fn glows(t: Tile) bool {
         return TERRAIN.getPtrConst(t).glows;
     }
 
-    /// Bursts into healing gas when stepped into or struck, leaving its ground.
     pub fn bursts(t: Tile) bool {
         return TERRAIN.getPtrConst(t).bursts;
     }
 
-    /// Catches fire, and burns down to its `fire.ashOf`.
     pub fn burns(t: Tile) bool {
         return TERRAIN.getPtrConst(t).burns;
     }
 
-    /// Catches from any fire beside it, without cooling that fire.
     pub fn tinder(t: Tile) bool {
         return TERRAIN.getPtrConst(t).tinder;
     }
 
-    /// A bridge: walked over a liquid.
     pub fn spans(t: Tile) bool {
         return TERRAIN.getPtrConst(t).spans;
     }
@@ -138,22 +123,18 @@ pub const Tile = enum(u8) {
         return t == .chest or t == .chest_open;
     }
 
-    /// What another tile becomes when opened, never placed as it is.
     pub fn isOpened(t: Tile) bool {
         return OPENED.contains(t);
     }
 
-    /// Given a `WallShape` by `gen.shapeWalls`, joining its own kind.
     pub fn shaped(t: Tile) bool {
         return TERRAIN.getPtrConst(t).shaped;
     }
 
-    /// Cells from its own rightward that it stands on.
     pub fn wide(t: Tile) i32 {
         return TERRAIN.getPtrConst(t).wide;
     }
 
-    /// The rest of a wider prop's footprint, drawn by the prop.
     pub fn isPart(t: Tile) bool {
         return TERRAIN.getPtrConst(t).part;
     }
@@ -162,32 +143,26 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).piece;
     }
 
-    /// The prop it stands for: a part's head, any other tile itself.
     pub fn whole(t: Tile) Tile {
         return WHOLES.get(t);
     }
 
-    /// A wider prop or a part of one.
     pub fn pieced(t: Tile) bool {
         return t.wide() > 1 or t.isPart();
     }
 
-    /// What is left when it goes: its ground, or bare floor.
     pub fn bare(t: Tile) Tile {
         return t.ground() orelse .floor;
     }
 
-    /// Upright and pictured for itself, not as the rest of a wider prop.
     pub fn uprightWhole(t: Tile) bool {
         return t.upright() and !t.isPart();
     }
 
-    /// The cells it stands on from `p`.
     pub fn footprint(t: Tile, p: P) Box {
         return Box.sized(p, t.wide(), 1);
     }
 
-    /// Chosen for a cell on its own: by the palette or a generator; never one opened or a piece of a wider prop.
     pub fn single(t: Tile) bool {
         return !t.isOpened() and !t.pieced();
     }
@@ -245,7 +220,6 @@ pub fn groundOf(c: u8) ?Tile {
     return if (c == BARREL_LETTER) BARREL_GROUND else Tile.ofLetter(c);
 }
 
-/// Every wider prop has its parts beside it, and every part its prop.
 pub fn propsWhole(tile: *const [CELLS]Tile) bool {
     for (0..CELLS) |i| {
         if (!propWhole(tile, i)) return false;
@@ -263,7 +237,6 @@ fn propWhole(tile: *const [CELLS]Tile, i: usize) bool {
     return true;
 }
 
-/// The wider prop whose footprint holds `i`: `i` itself, or the prop the parts left of it lead back to.
 pub fn headOf(tile: *const [CELLS]Tile, i: usize) ?usize {
     var lo = i;
     while (tile[lo].isPart() and Level.of(lo).x > 0) lo -= 1;
@@ -271,14 +244,12 @@ pub fn headOf(tile: *const [CELLS]Tile, i: usize) ?usize {
     return if (wide > 1 and lo + wide > i) lo else null;
 }
 
-/// Every wider prop cut short and every part without its prop, back to its ground.
 pub fn mendProps(tile: *[CELLS]Tile) void {
     for (0..CELLS) |i| {
         if (!propWhole(tile, i)) tile[i] = tile[i].bare();
     }
 }
 
-/// The cells of the wider prop covering `i`, its head to the end of its parts.
 pub fn propSpan(tile: *const [CELLS]Tile, i: usize) ?struct { head: usize, end: usize } {
     const head = headOf(tile, i) orelse return null;
     var end = head + 1;
@@ -294,7 +265,6 @@ pub fn layProp(tile: *[CELLS]Tile, p: P, t: Tile) void {
     }
 }
 
-/// The whole wider prop covering `i`, if one does, back to its ground.
 pub fn unprop(tile: *[CELLS]Tile, i: usize) void {
     const span = propSpan(tile, i) orelse return;
     for (tile[span.head..span.end]) |*t| t.* = t.bare();
@@ -392,7 +362,6 @@ const WHOLES = blk: {
     break :blk out;
 };
 
-/// The most cells any prop stands on.
 pub const WIDEST: i32 = blk: {
     var most: i32 = 1;
     for (TERRAIN.values) |r| most = @max(most, r.wide);
@@ -415,14 +384,12 @@ const OPENED = tilesWhere(struct {
     }
 }.of);
 
-/// Small plants strewn over grass, stepped through.
 pub const LITTER_TILES = tilesWhere(struct {
     fn of(t: Tile) bool {
         return TERRAIN.getPtrConst(t).litter;
     }
 }.of);
 
-/// Every `single` tile, in order: the palette's choices.
 pub const SINGLES = blk: {
     var out: []const Tile = &.{};
     for (std.enums.values(Tile)) |t| {
@@ -431,7 +398,6 @@ pub const SINGLES = blk: {
     break :blk out;
 };
 
-/// A generator knob of type `T` may hold `v`: any value but a tile that is not `single`.
 pub fn knobbable(comptime T: type, v: T) bool {
     if (T != Tile) return true;
     return v.single();
@@ -462,7 +428,6 @@ pub const WallShape = packed struct(u8) {
         return @bitCast(shape);
     }
 
-    /// No wall below it, so its brick face shows.
     pub fn faced(shape: WallShape) bool {
         return !shape.s;
     }
@@ -531,7 +496,6 @@ pub const Gas = enum {
     }
 };
 
-/// Smoke at least this thick hides what lies beyond its cell; thinner wisps are seen through.
 pub const SMOKE_THICK: u16 = 20;
 
 pub const Level = struct {
@@ -545,7 +509,6 @@ pub const Level = struct {
     seen: [CELLS]bool,
     /// In the hero's sight: in its line of sight and light enough to see.
     lit: [CELLS]bool,
-    /// In the hero's line of sight, light or dark.
     los: [CELLS]bool,
     /// 1-based into the actor pool; `NO_ONE` is empty.
     occupant: [CELLS]u16,
@@ -554,16 +517,13 @@ pub const Level = struct {
     barrel_seen: [CELLS]bool,
     /// 1-based into the map's doors; `NO_DOOR` is none.
     door: [CELLS]u8,
-    /// Caustic gas, Brogue's volume.
+    /// Caustic gas volume.
     gas: [CELLS]u16,
     torch: Torches,
     /// 1-based into the map's NPCs; `NO_NPC` is none. The legacy save reader takes the fields before it.
     npc: [CELLS]u8 = @splat(NO_NPC),
-    /// Healing gas, Brogue's volume.
     healing: [CELLS]u16 = @splat(0),
-    /// Steam boiled off water by fire, Qud's.
     steam: [CELLS]u16 = @splat(0),
-    /// Smoke, Brogue's: it hides what lies past it.
     smoke: [CELLS]u16 = @splat(0),
     /// How many more cells a burning cell's fire may leap on.
     heat: [CELLS]u8 = @splat(0),
@@ -625,7 +585,6 @@ pub const Level = struct {
         return cellOr(?WallShape, &self.shape, p, null);
     }
 
-    /// Its shape's mask, 0 for a cell with none.
     pub fn tileMask(self: *const Level, p: P) u8 {
         return (self.tileShape(p) orelse WallShape{}).mask();
     }
@@ -638,12 +597,10 @@ pub const Level = struct {
         return Box.inMap(0).clamp(p);
     }
 
-    /// The nearest cell off the map's edge.
     pub fn inset(p: P) P {
         return Box.inMap(1).clamp(p);
     }
 
-    /// Cells in from the nearest edge: 0 on the rim.
     pub fn edgeDist(p: P) i32 {
         return Box.inMap(0).edgeDist(p);
     }
@@ -736,7 +693,6 @@ pub const Level = struct {
         self.door[k] = @intCast(i + 1);
     }
 
-    /// Mutable through a mutable level.
     pub fn volumes(self: anytype, kind: Gas) @TypeOf(&self.gas) {
         return switch (kind) {
             .caustic => &self.gas,
@@ -746,7 +702,6 @@ pub const Level = struct {
         };
     }
 
-    /// Nothing past `p` is seen through it: an opaque tile, or smoke thick enough.
     pub fn hidesBeyond(self: *const Level, p: P) bool {
         return self.at(p).blind() or self.volumeAt(.smoke, p) >= SMOKE_THICK;
     }
@@ -773,7 +728,6 @@ pub const Level = struct {
         } else false;
     }
 
-    /// Nothing stands up from it: open ground or a liquid, which gas drifts and a drop flies over.
     pub fn flat(self: *const Level, p: P) bool {
         return inside(p) and !self.at(p).upright();
     }
@@ -805,7 +759,6 @@ pub const Level = struct {
         return self.who(p) != NO_ONE or self.hasBarrel(p);
     }
 
-    /// A body, barrel or NPC stands there.
     pub fn held(self: *const Level, p: P) bool {
         return self.taken(p) or self.npcAt(p) != null;
     }
@@ -831,7 +784,6 @@ pub const Level = struct {
         return !t.solid() or (t.wet() and self.who(p) != NO_ONE);
     }
 
-    /// The cells one step from `from` along `dirs` that a melee blow could reach, in their order.
     pub fn reachable(self: *const Level, comptime N: usize, from: P, dirs: [N]mathx.Dir) Bounded(P, N) {
         var out = Bounded(P, N){};
         for (dirs) |d| {
@@ -878,7 +830,6 @@ pub const Level = struct {
         return cellOr(u8, &self.flames, p, 0) > 0;
     }
 
-    /// Shallows frozen to ice that will thaw back.
     pub fn frozen(self: *const Level, p: P) bool {
         return self.at(p) == .ice and cellOr(u8, &self.thaw, p, 0) > 0;
     }
@@ -888,7 +839,6 @@ pub const Level = struct {
         return self.walkable(from.add(d.delta()));
     }
 
-    /// `ignore` is the mover's own id.
     pub fn stepOk(self: *const Level, from: P, d: mathx.Dir, ignore: u16) bool {
         if (!self.passOk(from, d)) return false;
         return self.clearFor(from.add(d.delta()), ignore);
@@ -901,7 +851,6 @@ pub const Level = struct {
     }
 };
 
-/// Of the cells `set.has` takes, the nearest `from`, the first of any tie.
 pub fn nearest(from: P, set: anytype) ?P {
     const far: i32 = @intCast(@max(@abs(from.x), @abs(W - 1 - from.x), @abs(from.y), @abs(H - 1 - from.y)));
     var r: i32 = 0;
@@ -947,7 +896,6 @@ pub const Nearest = struct {
     }
 };
 
-/// Up to `N` of `T`.
 pub fn Bounded(comptime T: type, comptime N: usize) type {
     return struct {
         items: [N]T = undefined,
@@ -983,7 +931,6 @@ pub const Box = struct {
         return sized(lo, size.x, size.y);
     }
 
-    /// The cells from `a` to `b`, both included, whichever corners they are.
     pub fn between(a: P, b: P) Box {
         return .{ .lo = a.min(b), .hi = a.max(b).add(.{ .x = 1, .y = 1 }) };
     }
@@ -1076,7 +1023,6 @@ pub const Box = struct {
         return b.holds(p) and (p.x == b.lo.x or p.y == b.lo.y or p.x == b.hi.x - 1 or p.y == b.hi.y - 1);
     }
 
-    /// Its cell nearest `p`.
     pub fn clamp(b: Box, p: P) P {
         return .{ .x = std.math.clamp(p.x, b.lo.x, b.hi.x - 1), .y = std.math.clamp(p.y, b.lo.y, b.hi.y - 1) };
     }
@@ -1100,7 +1046,6 @@ pub const Cells = struct {
         return r * 2 + 1;
     }
 
-    /// How many cells `around` a cell `r` out walks.
     pub fn square(r: i32) i32 {
         return span(r) * span(r);
     }
@@ -1137,7 +1082,6 @@ pub fn expectAllReached(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CE
     try std.testing.expectEqual(lv.openCount(), distances(lv, from, out, queue));
 }
 
-/// `dist` fills as it goes.
 pub const Flood = struct {
     lv: *const Level,
     dist: *[CELLS]i32,
@@ -1152,7 +1096,6 @@ pub const Flood = struct {
         return f;
     }
 
-    /// Another cell the flood starts from, unless it already reached it.
     pub fn seed(self: *Flood, from: P) void {
         const s = Level.idx(from);
         if (self.dist[s] >= 0) return;
@@ -1186,7 +1129,7 @@ pub const STEPS = blk: {
     break :blk out;
 };
 
-/// Breadth first from its seeds over the cells `steps` join that `ok` takes; a cell's neighbours are looked at only once `next` has given it.
+/// A cell's neighbours are looked at only once `next` has given it.
 pub fn Spread(comptime Ctx: type, comptime ok: fn (Ctx, P) bool) type {
     return struct {
         ctx: Ctx,
@@ -1339,7 +1282,6 @@ test "a caravan stands whole on its cell and the part beside it, blocking both" 
 test "breaking or cutting a caravan short leaves its ground, never half a cart" {
     var tile: [CELLS]Tile = @splat(.dirt);
     const head = Level.idx(.{ .x = 4, .y = 3 });
-    var broken: usize = 0;
     for ([_]usize{ head, head + 1 }) |i| {
         tile[head] = .caravan;
         tile[head + 1] = .caravan_part;
@@ -1347,7 +1289,6 @@ test "breaking or cutting a caravan short leaves its ground, never half a cart" 
         try std.testing.expectEqual(Tile.grass, tile[head]);
         try std.testing.expectEqual(Tile.grass, tile[head + 1]);
         try std.testing.expectEqual(Tile.dirt, tile[head + 2]);
-        broken += 1;
     }
     unprop(&tile, head + 2);
     try std.testing.expectEqual(Tile.dirt, tile[head + 2]);
@@ -1359,7 +1300,6 @@ test "breaking or cutting a caravan short leaves its ground, never half a cart" 
     try std.testing.expect(propsWhole(&tile));
     try std.testing.expectEqual(Tile.caravan, tile[head]);
     try std.testing.expectEqual(Tile.grass, tile[Level.idx(.{ .x = W - 1, .y = 8 })]);
-    std.debug.print("caravan footprint: broken from either cell {d} times to grass; a cart cut off at the rim and a part at the left edge mended\n", .{broken});
 }
 
 test "outside the map reads as wall" {
@@ -1445,6 +1385,5 @@ test "distances walk round a wall rather than through it" {
     var queue: [CELLS]u32 = undefined;
     _ = distances(&lv, .{ .x = 9, .y = 5 }, &out, &queue);
     const across = out[Level.idx(.{ .x = 11, .y = 5 })];
-    std.debug.print("two cells apart through a wall: {d} steps walked\n", .{across});
     try std.testing.expect(across > 20);
 }

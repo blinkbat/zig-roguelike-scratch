@@ -48,10 +48,14 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
     const view = ed.view;
     const node = ed.node;
     shortcuts(ed, bounds, over_canvas);
-    if (desk.erase_hit and (ed.drag != null or ed.linking != null)) return ed.drop();
+    if (desk.erase_hit and (ed.drag != null or ed.linking != null)) {
+        ed.drop();
+        ed.fresh = true;
+        return;
+    }
     if (ed.modal != .none or ed.renaming) return;
     if (ed.popup) |pp| {
-        if (pp.which == .node and desk.wheel != 0) ed.popup_top = widgets.scrollTop(ed.popup_top, desk.notch(), ed.map.node_n, editor.popupShown(ed, pp.which, screen_height));
+        if (pp.which != .file and desk.wheel != 0) ed.popup_top = widgets.scrollTop(ed.popup_top, desk.notch(), editor.popupLen(ed, pp.which), editor.popupShown(ed, pp.which, screen_height));
         if (desk.clicked() and !ed.mouseIn(editor.popupRect(ed, pp, screen_height))) {
             ed.popup = null;
             ed.fresh = true;
@@ -176,7 +180,6 @@ pub fn modalKeys(ed: *Editor) void {
     }
 }
 
-/// A page or modal is backed out of by Back or the second button.
 pub fn backed(d: *const Desk) bool {
     return d.back or d.erase_hit;
 }
@@ -222,7 +225,7 @@ pub fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (ed.cell_action) |action| {
         if (d.erase_hit or (d.paint_hit and !over)) {
             ed.cell_action = null;
-            if (d.paint_hit) ed.fresh = true;
+            ed.fresh = true;
         } else if (d.paint_hit and over) {
             ed.cell_action = null;
             switch (action) {
@@ -326,7 +329,6 @@ pub fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     ed.keepDrag();
 }
 
-/// The graph's place under the screen point `m`.
 fn graphAt(ed: *const Editor, c: rl.Rectangle, m: P) P {
     return m.sub(.{ .x = @intFromFloat(c.x), .y = @intFromFloat(c.y) }).add(.{ .x = @intFromFloat(ed.gcam[0]), .y = @intFromFloat(ed.gcam[1]) });
 }

@@ -67,5 +67,4 @@ test "a note's writer appends what fits and stays terminated" {
     note.clear();
     note.writer().writeAll("ab") catch {};
     try std.testing.expectEqualStrings("ab", note.text());
-    std.debug.print("note writer: {d}-byte note truncates and re-terminates after clear\n", .{8});
 }

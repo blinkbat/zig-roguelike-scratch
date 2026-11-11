@@ -41,7 +41,6 @@ test "editor input gives modal and view changes priority over canvas gestures" {
     try std.testing.expect(ed.view == .graph);
     try std.testing.expect(ed.drag == null and ed.linking == null);
     try std.testing.expectEqual(history_at, ed.history.at);
-    std.debug.print("editor input: modal opening, modal dismissal and view switching consume their canvas clicks\n", .{});
 }
 
 test "editor panels leave a useful map between them and shape hit targets do not overlap" {
@@ -61,7 +60,6 @@ test "editor panels leave a useful map between them and shape hit targets do not
         try std.testing.expect(r.width >= 100 and r.height >= widgets.TEXT + 8);
         for (0..i) |j| try std.testing.expect(!rl.checkCollisionRecs(r, panel.shapeSlot(side, widgets.TOP_H, j)));
     }
-    std.debug.print("editor layout: the map fits whole at zoom 8 from the default window up; {d} readable shape targets stay separate\n", .{panel.PAINT_SHAPES.len});
 }
 
 test "disabled editor controls expose their tooltip without accepting a click" {
@@ -91,7 +89,6 @@ test "disabled editor controls expose their tooltip without accepting a click" {
     ed.popup = .{ .slot = r, .which = .algo };
     try std.testing.expect(!widgets.hot(ed.controls(), r, true, false, null).hit);
     try std.testing.expect(widgets.hot(ed.controls(), r, true, true, null).hit);
-    std.debug.print("editor hover: disabled tooltip, clipping, modal/popup layers, opening-frame and pending-action click suppression checked\n", .{});
 }
 
 fn testEditor() !*editor.Editor {
@@ -119,7 +116,6 @@ test "the object viewer fights only foes without changing the edited map" {
     }
     try std.testing.expect(!ed.history.dirty);
     try std.testing.expectEqualSlices(grid.Tile, &before, &ed.map.node[0].plan.bespoke.tile);
-    std.debug.print("object viewer: {d} foe forms can launch a fight; terrain and hero entries cannot\n", .{fights});
 }
 
 fn testBespoke() !*editor.Editor {
@@ -177,7 +173,6 @@ test "the erasing cursor marks a cell legal exactly when erasing it there remove
         if (want) removed += 1;
     };
     try std.testing.expectEqual(@as(usize, 4), removed);
-    std.debug.print("erase cursor: {d} tool/cell pairs agree with erasing, {d} removed\n", .{ tools.len * cells.len, removed });
 }
 
 test "painting a bespoke node: a door opens its wall and no wall paints over it" {
@@ -252,7 +247,6 @@ test "a gesture is one undo however much it paints, and redo puts it back" {
     placement.laySpan(ed, .{ .from = .{ .x = 20, .y = 20 }, .erase = false, .shape = .rect }, .{ .x = 20, .y = 20 });
     try std.testing.expectEqual(ed.history.at, ed.history.len);
     try std.testing.expectEqual(@as(usize, 51), count(ed, .floor));
-    std.debug.print("two strokes over 52 cells, then one after an undo: {d} undo steps\n", .{ed.history.at});
 }
 
 test "undo keeps no more than its cap, dropping the oldest" {
@@ -316,7 +310,6 @@ test "a fast stroke paints every cell it passes, and Esc mid-rectangle lets the 
     ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = 8, .y = 6 }) };
     interaction.mapMouse(ed, c, true);
     const stray = tileAt(ed, .{ .x = 8, .y = 6 });
-    std.debug.print("a stroke dragged 10 cells in one frame: {d} cells painted\n", .{row_n});
     try std.testing.expectEqual(@as(usize, 11), row_n);
     try std.testing.expectEqual(grid.Tile.wall, stray);
     try std.testing.expect(ed.standable(.{ .node = 0, .at = .{ .x = 30, .y = 30 } }));
@@ -341,7 +334,6 @@ test "a stroke leaving the map paints up to its edge, and it ends with the butto
     interaction.mapMouse(ed, c, true);
     ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = 4, .y = 10 }) };
     interaction.mapMouse(ed, c, true);
-    std.debug.print("a stroke from x 5 to x -3 in one frame: {d} cells painted to the edge\n", .{row_n});
     try std.testing.expectEqual(@as(usize, 6), row_n);
     try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 4, .y = 10 }));
     click(ed, .torch, .{ .x = 3, .y = 9 });
@@ -386,7 +378,6 @@ test "a rectangle begun off the map fills from its edge" {
     ed.desk = .{ .mouse = mouseOn(ed, c, .{ .x = 4, .y = 4 }) };
     interaction.mapMouse(ed, c, true);
     const n = count(ed, .floor);
-    std.debug.print("a rectangle from -2,-2 to 4,4: {d} cells of floor\n", .{n});
     try std.testing.expectEqual(@as(usize, 25), n);
 }
 
@@ -430,7 +421,9 @@ test "the other button pressed mid graph drag puts the box back, and leaves no u
     const was = dragFirstBox(ed);
     try std.testing.expect(!ed.map.node[0].pos.eq(was));
     ed.desk = .{ .paint = true, .erase = true, .erase_hit = true, .mouse = .{ .x = 300, .y = 100 } };
-    ed.drop();
+    interaction.step(ed, c, 720, 0);
+    try std.testing.expect(ed.drag == null and !ed.controls().accepting);
+    ed.fresh = false;
     ed.desk = .{ .paint = true, .erase = true, .mouse = .{ .x = 400, .y = 100 } };
     interaction.graphMouse(ed, c, true);
     ed.desk = .{ .mouse = .{ .x = 400, .y = 100 } };
@@ -472,7 +465,6 @@ test "leaving or closing mid graph drag keeps the move and asks before discardin
         try std.testing.expectEqual(was, ed.map.node[0].pos);
         try std.testing.expect(!ed.history.dirty);
     }
-    std.debug.print("2 departure paths preserve an active graph move, prompt, and undo to the saved state\n", .{});
 }
 
 test "Save As, a play-test or a rename mid graph drag keeps the move as its own undo" {
@@ -544,7 +536,6 @@ test "undo and redo disarm deletion when a node index changes owners" {
     try std.testing.expect(ed.delete_armed == null);
     try std.testing.expectEqual(editor.Action.none, ed.action);
     try std.testing.expectEqual(editor.Modal.none, ed.modal);
-    std.debug.print("2 history swaps changed the selected node and cleared its deletion confirmation\n", .{});
 }
 
 test "a modal, rename, view or tool change disarms a node deletion" {
@@ -651,7 +642,6 @@ test "a line, a box and a fill lay the inks, each one undo, and the eyedropper p
     ed.gesture();
     placement.fill(ed, .{ .x = 21, .y = 20 }, true);
     try std.testing.expectEqual(grid.Tile.wall, tileAt(ed, .{ .x = 21, .y = 20 }));
-    std.debug.print("a line 2,2 to 12,7: {d} cells; a 10x6 box: {d}; filled inside it: {d} cells of water\n", .{ line, boxed, filled });
     try std.testing.expectEqual(@as(usize, 11), line);
     try std.testing.expectEqual(@as(usize, 28), boxed);
     try std.testing.expectEqual(@as(usize, 32), filled);
@@ -787,7 +777,6 @@ test "paste previews reuse unchanged content and follow cells clipboard terrain 
     try std.testing.expectEqualSlices(bool, &trial.barrel, &applied.barrel);
     try std.testing.expectEqualDeep(trial.torches(), applied.torches());
     try std.testing.expectEqualDeep(trial.foes(), applied.foes());
-    std.debug.print("paste previews: 256 unchanged frames, moved cell, terrain and foe clipboard edits, terrain undo/redo, door, node and apply parity checked\n", .{});
 }
 
 test "a selection copied pastes with what stood on it, and cut leaves the second ink" {
@@ -820,7 +809,6 @@ test "a selection copied pastes with what stood on it, and cut leaves the second
     try std.testing.expectEqual(pasted + 1, ed.history.at);
     try std.testing.expectEqual(grid.Tile.wall, tileAt(ed, .{ .x = 6, .y = 6 }));
     try std.testing.expectEqual(@as(?usize, null), b.foeAt(.{ .x = 6, .y = 6 }));
-    std.debug.print("6x6 copied and pasted at 30,20 with its rat, barrel and torch; cut leaves {d} foe(s)\n", .{b.foe_n});
     try std.testing.expectEqual(@as(usize, 1), b.foe_n);
 }
 
@@ -903,8 +891,10 @@ test "mouse editor cell actions choose play starts and linked doors without pain
     try std.testing.expectEqual(@as(usize, 0), ed.history.at);
     interaction.armCellAction(ed, .play);
     ed.desk = .{ .erase_hit = true };
+    ed.fresh = false;
     interaction.mapMouse(ed, TEST_CANVAS, true);
-    try std.testing.expect(ed.cell_action == null and ed.action == .none);
+    try std.testing.expect(ed.cell_action == null and ed.action == .none and !ed.controls().accepting);
+    ed.fresh = false;
     interaction.armCellAction(ed, .play);
     interaction.escape(ed);
     try std.testing.expect(ed.cell_action == null and ed.action == .none);
@@ -913,7 +903,6 @@ test "mouse editor cell actions choose play starts and linked doors without pain
     interaction.mapMouse(ed, TEST_CANVAS, false);
     try std.testing.expect(ed.cell_action == null and ed.action == .none and !ed.controls().accepting);
     try std.testing.expectEqualSlices(grid.Tile, &before, &ed.map.node[0].plan.bespoke.tile);
-    std.debug.print("mouse editor: chosen play cell, linked-door travel, intermediate motion, held click and three cancellations preserve map and undo\n", .{});
 }
 
 test "a full procgen preview keeps the hero's place in the pool, as play does" {
@@ -953,7 +942,6 @@ test "a procgen node shows a roll of it with its packs, and a bespoke one counts
     click(ed, .{ .foe = .bog_leech }, .{ .x = 9, .y = 4 });
     try std.testing.expect(ed.here().plan.bespoke.foeAt(.{ .x = 9, .y = 4 }) != null);
     ed.preview();
-    std.debug.print("a wilds roll: {d} open cells, {d} foes placed; two rooms apart: {d} cells and {d} foe cut off\n", .{ open, foes, ed.scene.issues.cut_off, ed.scene.issues.foes_cut_off });
     try std.testing.expect(open > 0 and foes > 0);
     try std.testing.expectEqual(@as(usize, 9), ed.scene.issues.cut_off);
     try std.testing.expectEqual(@as(usize, 1), ed.scene.issues.foes_cut_off);
@@ -1200,7 +1188,6 @@ test "editor history preserves exact contents through rollover undo and redo aft
     }
     try std.testing.expectEqual(editor.UNDO_CAP, ed.history.at);
     try std.testing.expectEqual(total, count(ed, .floor));
-    std.debug.print("editor history: {d} gestures, all {d} retained states checked cell-by-cell, full redo and both no-op boundaries; evicted save stays dirty\n", .{ total, editor.UNDO_CAP + 1 });
 }
 
 test "branching before a saved redo state cannot become clean by reusing its history index" {
@@ -1230,7 +1217,6 @@ test "branching before a saved redo state cannot become clean by reusing its his
         ed.redo();
         try std.testing.expect(ed.history.dirty);
     }
-    std.debug.print("editor branching: saved future discarded, equal history index stays dirty through all 3 undo/redo steps\n", .{});
 }
 
 fn typeInto(ed: *editor.Editor, s: []const u8) void {
@@ -1285,5 +1271,4 @@ test "NPC: placing one opens its words, typing is one undo step, and nothing els
     ed.modal = .none;
     paintClick(ed, .wall, at);
     try std.testing.expectEqual(@as(u8, 0), ed.map.script.npc_n);
-    std.debug.print("editor NPCs: placement opens its words, foe and barrel refused on it, typing undone in one step, a wall takes it away\n", .{});
 }

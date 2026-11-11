@@ -6,8 +6,6 @@ const lume = @import("../lume.zig");
 const buildings = @import("../feature/buildings.zig");
 const setpiece = @import("../feature/setpiece.zig");
 
-// Dwarf Fortress's keeps, Diablo II's Monastery and Barracks, Qud's snapjaw forts.
-
 const P = mathx.P;
 
 pub const TOWER_MAX: u8 = 6;
@@ -15,7 +13,6 @@ pub const MOAT_MAX: u8 = 4;
 pub const SIZE_MIN = [2]u8{ 24, 18 };
 pub const SIZE_MAX = [2]u8{ @intCast(grid.W - 2 * reachOf(TOWER_MAX, MOAT_MAX)), @intCast(grid.H - 2 * reachOf(TOWER_MAX, MOAT_MAX)) };
 pub const BARRELS_MAX: u8 = 24;
-/// Cells between the spots along the keep's top wall a torch may hang.
 const TORCH_EVERY: i32 = 3;
 const TORCHES_MOST = grid.MAX_TORCHES / 2;
 const CURTAIN: i32 = 2;
@@ -25,7 +22,6 @@ const KEEP_OF: f32 = 0.5;
 const ROOM_LEAST: i32 = 4;
 const BERM: i32 = 2;
 const TOWER_WALL: i32 = 1;
-/// Cells between the well and the courtyard's walls or the keep.
 const WELL_GAP: i32 = 2;
 
 pub const Params = struct {
@@ -129,12 +125,10 @@ fn yardOf(p: Params) grid.Box {
     return curtainOf(p).shrunk(CURTAIN);
 }
 
-/// Cells from the curtain out to the moat: the berm runs round the towers' outside.
 fn bermOf(p: Params) i32 {
     return BERM + towerReach(p.towers);
 }
 
-/// Cells from the curtain out to the moat's far side.
 fn reachOf(towers: u8, moat: u8) i32 {
     return BERM + towerReach(towers) + moat;
 }
@@ -166,7 +160,6 @@ test "every room of the keep opens onto the yard" {
         } else true;
         if (!whole) sealed += 1;
     }
-    std.debug.print("{d} keeps: {d} with a room sealed off\n", .{ KEEPS, sealed });
     try std.testing.expectEqual(@as(usize, 0), sealed);
 }
 
@@ -187,7 +180,6 @@ test "every corner tower opens onto the yard, however wide" {
             if (st.of(c) != yard) sealed += 1;
         }
     }
-    std.debug.print("{d} corner towers: {d} shut off from the yard\n", .{ towers, sealed });
     try std.testing.expectEqual(@as(usize, 0), sealed);
 }
 
@@ -213,7 +205,6 @@ test "the well never stands in a corner tower" {
             if (hit) broken += 1;
         }
     }
-    std.debug.print("{d} keeps: {d} with the well in a tower\n", .{ keeps, broken });
     try std.testing.expectEqual(@as(usize, 0), broken);
 }
 
@@ -233,7 +224,6 @@ test "a keep's ground is one stretch before joining, its berm running round the 
             }
         }
     }
-    std.debug.print("{d} keeps: {d} cut into more than one stretch\n", .{ keeps, cut });
     try std.testing.expectEqual(@as(usize, 0), cut);
 }
 
@@ -242,8 +232,7 @@ test "a keep stands walled, its gates open through the curtain and over the moat
     var rng = mathx.Rng.init(0xCA57);
     shape(&lv, &rng, 0, (Params{}).fit());
     var st: carve.Stretches = .{};
-    const parts = st.label(&lv);
-    std.debug.print("a keep: {d} wall, {d} moat, {d} bridge, {d} stretches of ground before joining\n", .{ carve.count(&lv, .wall), carve.count(&lv, .water), carve.count(&lv, .bridge), parts });
+    _ = st.label(&lv);
     try std.testing.expect(carve.count(&lv, .bridge) >= 2 * 3);
     try std.testing.expect(carve.count(&lv, .wall) > 300);
 }

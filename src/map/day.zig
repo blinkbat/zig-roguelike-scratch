@@ -20,17 +20,14 @@ comptime {
     std.debug.assert(MINUTES % TURN_MINUTES == 0 and START_MINUTE < MINUTES);
 }
 
-/// Whole minutes into the day, so no turn's worth is ever lost to rounding.
 pub const Clock = struct {
     minute: u16 = START_MINUTE,
 
-    /// Whether the turn began a new day.
     pub fn turn(c: *Clock) bool {
         c.minute = (c.minute + TURN_MINUTES) % MINUTES;
         return c.minute < TURN_MINUTES;
     }
 
-    /// Minutes since the first day began, `days` whole days on.
     pub fn since(c: Clock, days: u32) u64 {
         return @as(u64, days) * MINUTES + c.minute;
     }
@@ -58,22 +55,18 @@ pub fn toward(from: f32, to: f32) f32 {
 
 pub const Arc = struct { day: bool, u: f32 };
 
-/// Whose half of the clock it is, and how far from rising (0) to setting (1).
 pub fn arc(hour: f32) Arc {
     const h = wrapHour(hour);
     if (h >= SUNRISE and h < SUNSET) return .{ .day = true, .u = (h - SUNRISE) / DAY_SPAN };
     return .{ .day = false, .u = wrapHour(h - SUNSET) / NIGHT_SPAN };
 }
 
-/// None from `TWILIGHT` past sunset to as long before sunrise, so the dead of night is as dark as underground.
 pub fn daylight(hour: f32) f32 {
     return mathx.smoothstep(-TWILIGHT, TWILIGHT, sunUp(hour));
 }
 
-/// Hours either side of the horizon over which the sky's light to see by comes and goes.
 const TWILIGHT: f32 = 1.5;
 
-/// Hours since sunrise or until sunset, whichever is nearer; negative at night.
 fn sunUp(hour: f32) f32 {
     const h = wrapHour(hour);
     return if (h < SUNRISE) h - SUNRISE else if (h > SUNSET) SUNSET - h else @min(h - SUNRISE, SUNSET - h);
@@ -84,7 +77,6 @@ test "a turn moves the clock on, a day is 240 turns, and it comes round to where
     const turns = MINUTES / TURN_MINUTES;
     var dawns: usize = 0;
     for (0..turns) |_| dawns += @intFromBool(c.turn());
-    std.debug.print("a day is {d} turns\n", .{turns});
     try std.testing.expectEqual(START_MINUTE, c.minute);
     try std.testing.expectEqual(@as(usize, 1), dawns);
     c = Clock.at(23.99);
@@ -96,7 +88,6 @@ test "a turn moves the clock on, a day is 240 turns, and it comes round to where
 test "the sun rides the arc by day and the moon by night, each highest midway" {
     const noon = arc(SOLAR_NOON);
     const night = arc(DEAD_OF_NIGHT);
-    std.debug.print("solar noon {d:.3} of the day arc, dead of night {d:.3} of the night arc\n", .{ noon.u, night.u });
     try std.testing.expect(noon.day and !night.day);
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), noon.u, 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), night.u, 1e-4);

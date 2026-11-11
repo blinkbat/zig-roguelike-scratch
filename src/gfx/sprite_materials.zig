@@ -68,19 +68,14 @@ const WATER_SATURATION: f32 = 0.8;
 const MIRROR_DEEP: f32 = 0.42;
 const MIRROR_SHALLOW: f32 = 0.28;
 const MIRROR_TINT = [3]f32{ 0.8, 0.9, 1.0 };
-/// Art this bright, over its depth, swells and fades with the surface; by up to this share.
 const WATER_HIGHLIGHT = [2]f32{ 0.62, 0.82 };
 const WATER_SHIMMER: f32 = 0.32;
-/// Cells a second each of the two crossing noise layers drifts.
 const SHIMMER_DRIFT = [2][2]f32{ .{ 0.26, -0.16 }, .{ -0.21, 0.30 } };
-/// Each layer's noise cells a map cell and share of the swell, the second layer's offset, and the noise span stretched to a full swell.
 const SHIMMER_SCALE = [2]f32{ 1.9, 3.7 };
 const SHIMMER_WEIGHT = [2]f32{ 0.55, 0.45 };
 const SHIMMER_OFFSET: f32 = 19.7;
 const SHIMMER_SPAN = [2]f32{ 0.25, 0.75 };
-/// Water's brightness at the screen's top and bottom edges, eased between.
 const WATER_SCREEN_FADE = [2]f32{ 1.1, 0.45 };
-/// Deep water's brightness at the screen's bottom edge.
 const WATER_SCREEN_FADE_DEEP: f32 = 0.05;
 const WATER_FADE_FS = shaders.glslConsts(.{
     .SCREEN_FADE = WATER_SCREEN_FADE,

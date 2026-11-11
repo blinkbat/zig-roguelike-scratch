@@ -13,13 +13,10 @@ const actor = @import("../play/actor.zig");
 const N = hero.CLASSES.len;
 const N_I: i32 = N;
 
-/// Screen height per whole step of sprite scale.
 const SCALE_STEP: i32 = 240;
 const INFO_W: i32 = 340;
 const COLUMN_GAP: i32 = 48;
-/// From the heading's top to the sprites' tops, where the beam shows.
 const HEAD_ROOM: i32 = menu.TITLE + 56;
-/// From the heading's top to where the beam starts, under its rule.
 const BEAM_DROP: i32 = menu.TITLE + 16;
 const BEAM_ABOVE: i32 = HEAD_ROOM - BEAM_DROP;
 const PITCH_SPRITES: i32 = 2;
@@ -35,13 +32,11 @@ const BEAM_A: f32 = 0.2;
 const BEAM_SLICES = 24;
 const BEAM_TOP_W: f32 = 0.16;
 const BEAM_FOOT_W: f32 = 0.56;
-/// Of the beam's half-width, the edge over which it fades out.
 const BEAM_SOFT: f32 = 0.6;
 const POOL_A: f32 = 0.34;
 const POOL_RX: f32 = 0.62;
 const POOL_RY: f32 = 0.15;
 const POOL_SEGMENTS = 40;
-/// Of the pitch between heroes, how far from the beam a hero falls fully into shadow.
 const LIGHT_REACH: f32 = 0.5;
 
 const SPOT_RATE: f32 = 9;
@@ -72,7 +67,6 @@ pub fn figure(sprites: *const sprite.Sprites, k: actor.Kind, feet: mathx.P, scal
     raster.stretch(tex, raster.rect(feet.x - @divTrunc(size, 2), feet.y - size, size, size), look.mixed(SHADE, look.LIT, light));
 }
 
-/// A soft beam from `top` down onto a pool at `feet`, sized for a figure `size` pixels tall.
 fn spotlight(cx: f32, top: f32, feet: f32, size: f32) void {
     rl.gl.rlSetTexture(rl.gl.rlGetTextureIdDefault());
     defer rl.gl.rlSetTexture(0);
@@ -125,7 +119,6 @@ fn vertex(x: f32, y: f32, c: rl.Color) void {
     rl.gl.rlVertex2f(x, y);
 }
 
-/// `k` spotlit, standing left of `box` with its feet level with `box`'s foot.
 pub fn beside(sprites: *const sprite.Sprites, k: actor.Kind, box: rl.Rectangle, screen: mathx.P) void {
     const at = Beside.of(box, screen);
     spotlight(@floatFromInt(at.feet.x), at.top(), @floatFromInt(at.feet.y), @floatFromInt(at.size));
@@ -139,7 +132,6 @@ pub fn besideBounds(box: rl.Rectangle, screen: mathx.P) rl.Rectangle {
     return .{ .x = cx - size * POOL_RX, .y = at.top(), .width = size * POOL_RX * 2, .height = size * (1 + POOL_RY) + @as(f32, @floatFromInt(BEAM_ABOVE)) };
 }
 
-/// Where `beside` stands its figure for `box`, and how large.
 const Beside = struct {
     feet: mathx.P,
     scale: i32,
@@ -151,7 +143,6 @@ const Beside = struct {
         return .{ .scale = scale, .size = size, .feet = .{ .x = @as(i32, @intFromFloat(box.x)) - BESIDE_GAP - @divTrunc(size, 2), .y = @intFromFloat(box.y + box.height) } };
     }
 
-    /// The beam's top, over the figure's head.
     fn top(self: Beside) f32 {
         return @floatFromInt(self.feet.y - self.size - BEAM_ABOVE);
     }
@@ -196,7 +187,6 @@ const Layout = struct {
     }
 };
 
-/// The heroes side by side, a spotlight easing onto the chosen one and its words fading in beneath it.
 pub const Lineup = struct {
     at: usize = 0,
     spot: f32 = 0,
@@ -281,7 +271,6 @@ test "the spotlight eases onto the chosen hero and only its words stay shown" {
     _ = l.step(&.{ .walk = .w }, SCREENS[0]);
     _ = l.step(&.{ .walk = .w }, SCREENS[0]);
     try std.testing.expectEqual(@as(usize, N - 1), l.at);
-    std.debug.print("lineup: spotlight and words settle on the next hero in {d} frames at 60 fps\n", .{frames});
 }
 
 test "pointing at a hero picks it, and the lineup keeps inside the screen at 720p, 1080p and 1440p" {
@@ -297,6 +286,5 @@ test "pointing at a hero picks it, and the lineup keeps inside the screen at 720
             try std.testing.expectEqual(i, l.at);
             try std.testing.expectEqual(@as(?usize, i), l.step(&.{ .pointer = p, .click = true }, screen));
         }
-        std.debug.print("lineup at {d}x{d}: {d}x sprites, {d} px apart\n", .{ screen.x, screen.y, lay.scale, lay.pitch });
     }
 }

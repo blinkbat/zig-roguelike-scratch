@@ -30,7 +30,7 @@ pub const Face = struct {
     symbol_n: usize = 0,
     ordered: bool = false,
 
-    /// Printable ASCII and `symbols`. Needs a live GL context.
+    /// Needs a live GL context.
     pub fn load(comptime symbols: []const i32) Face {
         comptime std.debug.assert(symbols.len <= SYMBOLS_MAX);
         const all = comptime blk: {
@@ -150,12 +150,10 @@ pub const Face = struct {
         }
     }
 
-    /// `s` wrapped to `w`, a line every `size + LEADING` from `y`; returns the y below it.
     pub fn paragraph(self: *const Face, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
         return self.paragraphWith(draw, s, x, y, w, size, col);
     }
 
-    /// `paragraph`, each line drawn by `line` at `x`.
     pub fn paragraphWith(self: *const Face, comptime line: fn (*const Face, [:0]const u8, i32, i32, i32, rl.Color) void, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
         const step = size + LEADING;
         var buf: Wrapped = undefined;
@@ -165,7 +163,6 @@ pub const Face = struct {
         return y + @as(i32, @intCast(n)) * step;
     }
 
-    /// `draw`, its left on `x` and its middle on `cy`.
     pub fn drawMiddle(self: *const Face, s: [:0]const u8, x: i32, cy: i32, size: i32, col: rl.Color) void {
         self.draw(s, x, topFor(cy, size), size, col);
     }
@@ -174,28 +171,23 @@ pub const Face = struct {
         return cx - @divTrunc(self.width(s, size), 2);
     }
 
-    /// `draw`, its middle on `cx`.
     pub fn drawMid(self: *const Face, s: [:0]const u8, cx: i32, y: i32, size: i32, col: rl.Color) void {
         self.draw(s, self.leftFor(s, cx, size), y, size, col);
     }
 
-    /// `text`, its middle on `cx`.
     pub fn textMid(self: *const Face, s: [:0]const u8, cx: i32, y: i32, size: i32, col: rl.Color) void {
         self.text(s, self.leftFor(s, cx, size), y, size, col);
     }
 
-    /// One character, its middle on `cx`, `cy`.
     pub fn glyph(self: *const Face, ch: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         const s = [_:0]u8{ch};
         self.centred(&s, cx, cy, size, col);
     }
 
-    /// `draw`, its middle on `cx`, `cy`.
     pub fn centred(self: *const Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         self.drawMid(s, cx, topFor(cy, size), size, col);
     }
 
-    /// `text`, its middle on `cx`, `cy`.
     pub fn textCentred(self: *const Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         self.textMid(s, cx, topFor(cy, size), size, col);
     }
@@ -214,14 +206,12 @@ pub const Face = struct {
         put(f, i, x, @floatFromInt(topFor(cy, size)), scale, col);
     }
 
-    /// Over a drop shadow, for text on the hud.
     pub fn text(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
         const off = shadowDrop(size);
         self.draw(s, x + off, y + off, size, shadowOf(col));
         self.draw(s, x, y, size, col);
     }
 
-    /// `text` lit from above like struck metal: brighter over the top, `col` through the middle, deeper at the foot.
     pub fn engraved(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
         const f = self.walkable(s, size) orelse return self.text(s, x, y, size, col);
         const off = shadowDrop(size) + ENGRAVE_DROP;
@@ -240,7 +230,6 @@ pub const Face = struct {
         }
     }
 
-    /// `engraved`, its middle on `cx`.
     pub fn engravedMid(self: *const Face, s: [:0]const u8, cx: i32, y: i32, size: i32, col: rl.Color) void {
         self.engraved(s, self.leftFor(s, cx, size), y, size, col);
     }
@@ -263,7 +252,6 @@ fn shadowOf(col: rl.Color) rl.Color {
     return look.fade(look.GLYPH_SHADOW, look.alphaOf(col));
 }
 
-/// Extra pixels an engraved line's shadow drops past `text`'s.
 const ENGRAVE_DROP: i32 = 1;
 /// Of the line's height, where the lit top gives way to the ink itself.
 const ENGRAVE_MID: f32 = 0.45;
@@ -332,13 +320,11 @@ test "an engraved line is lit at its top, its own ink through the middle and dee
     const top = ink.at(100);
     const mid = ink.at(ink.split());
     const foot = ink.at(154);
-    std.debug.print("engraved ink, red channel: top {d}, middle {d}, foot {d}\n", .{ top.r, mid.r, foot.r });
     try std.testing.expect(top.r > mid.r and mid.r > foot.r);
     try std.testing.expectEqual(col, mid);
     try std.testing.expectEqual(col.a, foot.a);
 }
 
-/// `kept` in `buf` with "..." where the rest was cut: before it when `keep_end`, else after.
 pub fn elided(buf: []u8, kept: []const u8, keep_end: bool) std.fmt.BufPrintError![:0]u8 {
     return if (keep_end) std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{kept}) else std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{kept});
 }
@@ -369,7 +355,6 @@ test "font fitting preserves linear results for native fallback and long ASCII t
     for (&text, 0..) |*c, i| c.* = @intCast(ASCII_LO + (i * 37) % ASCII_N);
     var actual: [max_text + 1]u8 = undefined;
     var expected: [max_text + 1]u8 = undefined;
-    var checked: usize = 0;
     for ([_]bool{ true, false }) |ordered| {
         face.ordered = ordered;
         for ([_]usize{ 0, 1, 16, 64, 128 }) |len| {
@@ -378,7 +363,6 @@ test "font fitting preserves linear results for native fallback and long ASCII t
                     for ([_]i32{ -1, 0, 27, 280, 10000 }) |max| {
                         for ([_]bool{ false, true }) |tail| {
                             try std.testing.expectEqualStrings(Reference.fit(&face, expected[0..cap], text[0..len], size, max, tail), face.fit(actual[0..cap], text[0..len], size, max, tail));
-                            checked += 1;
                         }
                     }
                 }
@@ -390,11 +374,9 @@ test "font fitting preserves linear results for native fallback and long ASCII t
         for ([_]i32{ 0, 280 }) |max| {
             for ([_]bool{ false, true }) |tail| {
                 try std.testing.expectEqualStrings(Reference.fit(&face, &expected, body, 20, max, tail), face.fit(&actual, body, 20, max, tail));
-                checked += 1;
             }
         }
     }
-    std.debug.print("font fit: {d} native/mipmapped/fallback, short-buffer, keep-end and 4096-byte comparisons match linear reference\n", .{checked});
 }
 
 /// Between wrapped lines of text, past the text's size.
@@ -404,10 +386,9 @@ pub const HEAD_LINE: i32 = HEAD + LEADING;
 pub const BODY_LINE: i32 = BODY + LEADING;
 pub const WRAP_LINES_MAX: usize = 18;
 pub const WRAP_COLS_MAX: usize = 96;
-/// `wrap`'s lines, each nul-terminated.
 pub const Wrapped = [WRAP_LINES_MAX][WRAP_COLS_MAX + 1]u8;
 
-/// Each line is nul-terminated; words wider than a line split across it.
+/// Words wider than a line split across it.
 pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, lines: *[WRAP_LINES_MAX][:0]const u8) usize {
     var n: usize = 0;
     var words = std.mem.tokenizeScalar(u8, body, ' ');
@@ -451,7 +432,6 @@ pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, l
     return if (len > 0) @min(n + 1, WRAP_LINES_MAX) else n;
 }
 
-/// How many lines `wrap` makes of `body`.
 pub fn lineCount(face: anytype, body: []const u8, size: i32, w: i32) usize {
     var buf: Wrapped = undefined;
     var lines: [WRAP_LINES_MAX][:0]const u8 = undefined;
@@ -484,7 +464,6 @@ test "wrapping retains long words and bounds their lines by pixels and storage" 
     try std.testing.expectEqual(@as(usize, 0), wrap(Fixed{}, "   ", BODY, 70, &buf, &lines));
     try std.testing.expectEqual(WRAP_LINES_MAX, wrap(Fixed{}, word, BODY, 0, &buf, &lines));
     for (lines) |line| try std.testing.expectEqual(@as(usize, 1), line.len);
-    std.debug.print("wrapping: 120-character token retained at 3 widths; word boundaries, empty input and line capacity checked\n", .{});
 }
 
 fn orderedGlyphs(f: rl.Font, cps: []const i32) bool {

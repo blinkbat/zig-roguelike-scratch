@@ -9,19 +9,14 @@ const fx = @import("../gfx/fx.zig");
 
 pub const WIDTH: i32 = 640;
 const HEIGHT: i32 = 160;
-/// Every corner piece of the hud, the minimap and the event log keep this far from the screen's edges.
 pub const EDGE: i32 = 12;
 const BOTTOM: i32 = EDGE;
-/// How far up from the screen's foot the hud covers the map.
 pub const COVER: i32 = BOTTOM + HEIGHT;
 const ORB_R: i32 = 48;
-/// The template's opening sits this far inside the orb's rim.
 const FILL_INSET: i32 = 8;
 const FILL_R: i32 = ORB_R - FILL_INSET;
-/// The orbs' centres, in from the assembly's sides and down from its top.
 const ORB_INSET: i32 = 60;
 const ORB_Y: i32 = 101;
-/// Clear space between an orb's rim and the skill strip.
 const ORB_GAP: i32 = 12;
 pub const SKILLS_MAX_W: i32 = WIDTH - 2 * (ORB_INSET + ORB_R + ORB_GAP);
 const PLATE_Y: i32 = 54;
@@ -29,24 +24,19 @@ pub const PLATE_PAD: i32 = 8;
 pub const PLATE_H: i32 = 94;
 const SHADOW_DROP: i32 = 3;
 const PLATE_SHADOW_GROW: i32 = 2;
-/// How far an orb's shadow falls below it, and how much wider it is.
 const ORB_SHADOW_DY: i32 = 4;
 const ORB_SHADOW_GROW: i32 = 2;
 const STATUS_Y: i32 = 4;
 const PLATE_SHADOW_A: f32 = 0.25;
 const ORB_SHADOW_A: f32 = 0.6;
-/// Insets of the orb's bright rim and the dark ring inside it, and the well's rim past the fill.
 const ORB_RIM: i32 = 2;
 const ORB_RING: i32 = 5;
 const WELL_RIM_W: i32 = 2;
 const SURFACE_A: f32 = 0.8;
-/// The glint on an orb's glass: up and left of its middle, its radii and alpha.
 const GLINT_AT = mathx.P{ .x = -20, .y = -24 };
 const GLINT_R = [2]f32{ 3, 6 };
 const GLINT_A: f32 = 0.16;
-/// Above an orb's rim, its label's top.
 const LABEL_RISE: i32 = font.SMALL + 3;
-/// A status icon's middle in its square; a status or slot count's inset from its box's corner.
 const ICON_AT = mathx.P{ .x = 14, .y = 15 };
 const COUNT_INSET = mathx.P{ .x = 7, .y = 6 };
 
@@ -93,7 +83,6 @@ pub const Layout = struct {
     }
 };
 
-/// The assembly's left edge, centred on the screen.
 pub fn leftOf(screen: mathx.P) i32 {
     return @divTrunc(screen.x - WIDTH, 2);
 }
@@ -149,7 +138,6 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, ma
     face.textMid(label, x, y - ORB_R - LABEL_RISE, font.SMALL, look.TEXT);
 }
 
-/// The experience bar, between the statuses and the plate, as wide as the skills.
 const XP_SEGMENTS = 10;
 const XP_H: i32 = 3;
 const XP_PLATE_GAP: i32 = 4;
@@ -164,7 +152,6 @@ comptime {
     std.debug.assert(STATUS_Y + STATUS_PX < XP_Y - 1);
 }
 
-/// `fill` of the way through the current level, in `XP_SEGMENTS` parts.
 pub fn experience(layout: Layout, fill: f32) void {
     const seg_w = @divTrunc(layout.skills_w - (XP_SEGMENTS - 1) * XP_GAP, XP_SEGMENTS);
     const x0 = layout.skills.x + @divTrunc(layout.skills_w - (XP_SEGMENTS * seg_w + (XP_SEGMENTS - 1) * XP_GAP), 2);
@@ -179,10 +166,8 @@ pub fn experience(layout: Layout, fill: f32) void {
     }
 }
 
-/// Room for every status shown at once.
 pub const Shown = [std.enums.values(fx.Status).len]fx.Status;
 
-/// The statuses shown, in the order they are drawn.
 pub fn shownStatuses(status: std.EnumArray(fx.Status, u8), out: *Shown) []const fx.Status {
     var n: usize = 0;
     for (std.enums.values(fx.Status)) |s| {
@@ -193,7 +178,6 @@ pub fn shownStatuses(status: std.EnumArray(fx.Status, u8), out: *Shown) []const 
     return out[0..n];
 }
 
-/// The square of the `k`th of `count` statuses shown.
 pub fn statusBox(layout: Layout, count: usize, k: usize) rl.Rectangle {
     const n: i32 = @intCast(count);
     const x = layout.left + @divTrunc(WIDTH - n * (STATUS_PX + STATUS_GAP) + STATUS_GAP, 2) + @as(i32, @intCast(k)) * (STATUS_PX + STATUS_GAP);
@@ -221,7 +205,6 @@ pub fn statuses(layout: Layout, sprites: *const sprite.Sprites, face: *const fon
     }
 }
 
-/// `n` in the bottom right corner of `box`, inside its frame.
 pub fn counter(face: *const font.Face, box: rl.Rectangle, n: u32) void {
     var buf: [12]u8 = undefined;
     const label = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch "";
@@ -230,19 +213,16 @@ pub fn counter(face: *const font.Face, box: rl.Rectangle, n: u32) void {
     face.text(label, right - face.width(label, font.SMALL) - COUNT_INSET.x, bottom - font.SMALL - COUNT_INSET.y, font.SMALL, look.TEXT);
 }
 
-/// Out from what is inspected, the mark round it.
 const FOCUS_GROW: f32 = 4;
 const FOCUS_W: f32 = 2;
 const TIP_W: i32 = 380;
 const TIP_PAD: i32 = 12;
 const TIP_GAP: i32 = 8;
 const TIP_LINE = font.SMALL_LINE;
-/// Below the tooltip's top, where its body starts under the title.
 const TIP_BODY_Y = TIP_PAD + font.BODY + TIP_GAP;
 const TIP_MARGIN: i32 = 8;
 pub const TIP_LINES_MAX: usize = 96;
 
-/// The mark round what is inspected: a ring round an orb, a frame round anything else.
 pub fn focus(box: rl.Rectangle, round: bool) void {
     if (round) {
         const r = box.width / 2 + FOCUS_GROW;
@@ -252,11 +232,9 @@ pub fn focus(box: rl.Rectangle, round: bool) void {
     rl.drawRectangleLinesEx(raster.grown(box, FOCUS_GROW), FOCUS_W, look.UI_FOCUS);
 }
 
-/// A body with this splits into "label|value" rows, drawn as a table.
 const TIP_SEP = '|';
 pub const TIP_RULE = "---";
 
-/// A tooltip body of `.{ label, value }` rows, the values `std.fmt` patterns.
 pub fn table(comptime rows: anytype) []const u8 {
     comptime var out: []const u8 = "";
     inline for (rows, 0..) |r, i| out = out ++ (if (i > 0) "\n" else "") ++ r[0] ++ [_]u8{TIP_SEP} ++ r[1];
@@ -265,7 +243,7 @@ pub fn table(comptime rows: anytype) []const u8 {
 const TIP_VALUE_DX = 24;
 const TIP_VALUE_X = @divTrunc(TIP_W, 2) + TIP_VALUE_DX;
 
-/// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does; returns the first line shown.
+/// Returns the first line shown.
 pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize) usize {
     var buf: [TIP_LINES_MAX][font.WRAP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
@@ -320,7 +298,6 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
     return first;
 }
 
-/// A question put to the player in a tooltip's plate, one line above `over`.
 pub fn prompt(face: *const font.Face, sprites: *const sprite.Sprites, screen: mathx.P, over: rl.Rectangle, text: [:0]const u8) void {
     const w = face.width(text, font.BODY) + 2 * TIP_PAD;
     const h = font.BODY + 2 * TIP_PAD;
@@ -365,7 +342,6 @@ test "a tooltip's body breaks at spaces into lines that each fit" {
     }
     try std.testing.expectEqual(font.WRAP_COLS_MAX + 4, retained);
     try std.testing.expect(std.mem.endsWith(u8, lines[long_n - 1], "y"));
-    std.debug.print("tooltip: a {d}-word description in {d} lines of {d} px at most\n", .{ words, n, w });
 }
 
 const SWIRL_STEPS = 14;
@@ -482,7 +458,6 @@ test "the HUD stays centered at a fixed width with room between orbs and skills"
         try std.testing.expect(layout.skills.x + layout.skills_w + ORB_GAP <= layout.mana.x - ORB_R);
         try std.testing.expect(layout.top > 0 and layout.life.y + ORB_R < screen.y);
     }
-    std.debug.print("HUD: {d}px centered assembly verified at {d} resolutions\n", .{ WIDTH, widths.len });
 }
 
 test "orb fill clamps values and gives full half and empty reservoirs" {
@@ -495,5 +470,4 @@ test "orb fill clamps values and gives full half and empty reservoirs" {
         .{ .value = std.math.maxInt(i32), .max = std.math.maxInt(i32), .want = FILL_R * 2 },
     };
     for (cases) |c| try std.testing.expectEqual(c.want, fillHeight(mathx.fillOf(c.value, c.max)));
-    std.debug.print("orbs: {d} resource fill cases verified\n", .{cases.len});
 }

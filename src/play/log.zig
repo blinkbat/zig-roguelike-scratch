@@ -67,7 +67,6 @@ test "event history keeps chronological rows and colors through wrap; new events
     try std.testing.expectEqual(@as(usize, 0), log.scroll);
     try std.testing.expectEqual(Kind.recovery, log.kinds[log.index(0)]);
     try std.testing.expectEqual(Log.LINES - 1, log.shown());
-    std.debug.print("event log: {d}-entry ring, colors, scrolling, bottom-follow and held lines checked\n", .{Log.LINES});
 }
 
 test "held log entries never enter the scroll range and overflow retains exact text and kinds" {
@@ -105,5 +104,4 @@ test "held log entries never enter the scroll range and overflow retains exact t
     try std.testing.expect(log.line(Log.LINES) == null);
     log.move(1000);
     try std.testing.expectEqual(Log.LINES - 1, log.scroll);
-    std.debug.print("log visibility: mixed visible/held scrolling, full hidden rollover, idempotent release and all {d} retained text/color pairs checked\n", .{Log.LINES});
 }

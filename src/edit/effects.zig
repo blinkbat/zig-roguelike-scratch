@@ -94,7 +94,6 @@ pub const Sample = union(enum) {
         };
     }
 
-    /// The ground the stage is drawn as.
     fn ground(s: Sample) grid.Tile {
         return switch (s) {
             .splash => .shallows,
@@ -103,7 +102,7 @@ pub const Sample = union(enum) {
         };
     }
 
-    /// Seconds between one showing and the next, a missile's after its landing; null for one that never stops.
+    /// Seconds between showings, a missile's from its landing; null for one that never stops.
     fn period(s: Sample) ?f32 {
         return switch (s) {
             .mark, .torch, .fire_wall => null,
@@ -153,19 +152,16 @@ const REST_S: f32 = 0.6;
 const MISSILE_REST_S: f32 = 0.9;
 const COLS: i32 = 9;
 const ROWS: i32 = 5;
-/// The stage's top-left on its level, clear of the rim.
 const ORIGIN = P{ .x = 40, .y = 30 };
 const MIDDLE = ORIGIN.add(.{ .x = @divTrunc(COLS, 2), .y = @divTrunc(ROWS, 2) });
 const SLOT = actor.ActorSlot.fromIndex(0);
 const JUKE_SPAN: i32 = 2;
 const ARC_SPAN: i32 = 3;
 const WALL_CELLS: i32 = @intCast(tactics.FireWall.length(1));
-/// Each light's pool, drawn as a soft disc: how bright its middle is for each unit of gain.
 const POOL_A: f32 = 0.35;
 const SHADE = look.fade(look.BG, 0.35);
 const ZOOMS = [_]f32{ 2, 1 };
 
-/// Straight across, then up a slant, by turns; both come down where a blast still fits the stage.
 fn shotOf(lv: *const grid.Level, act: skillbar.Act, net: bool, round: u32) Shot {
     const from = P{ .x = ORIGIN.x, .y = MIDDLE.y + if (round % 2 == 0) 0 else @divTrunc(ROWS, 2) };
     return .{ .flight = bow.fly(lv, from, LANDING), .from = from, .act = act, .net = net };
@@ -184,7 +180,7 @@ pub const Viewer = struct {
     shot: ?Shot = null,
     at: usize = 0,
     speed: usize = 0,
-    /// Seconds into this showing, and how long it lasts; null for one that never stops.
+    /// Seconds into this showing.
     t: f32 = 0,
     span: ?f32 = null,
     round: u32 = 0,
@@ -251,7 +247,6 @@ pub const Viewer = struct {
         }
     }
 
-    /// As `Presentation.recordProjectile` and its landing show it, with nothing struck.
     fn loose(v: *Viewer, act: skillbar.Act, net: bool) void {
         const sh = shotOf(&v.lv, act, net, v.round);
         v.shot = sh;
@@ -274,7 +269,6 @@ fn create(alloc: std.mem.Allocator) !*Viewer {
     return v;
 }
 
-/// Made the first time it is wanted; started again from its first moment.
 fn viewer(ed: *editor.Editor) !*Viewer {
     if (ed.effects == null) ed.effects = try create(ed.alloc);
     const v = ed.effects.?;
@@ -327,7 +321,6 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     modals.backButton(ed, g, f, page.bottom - widgets.ROW_H, "Close");
 }
 
-/// The largest whole multiple of a game cell the stage fits at.
 fn stageCell(room: P) f32 {
     for (ZOOMS) |z| {
         const cell = game.CELL_F * z;
@@ -354,14 +347,12 @@ fn drawList(ed: *editor.Editor, g: *game.Game, v: *Viewer, box: rl.Rectangle) vo
     scroll.close(&ed.clip, top + rowTop(SAMPLES.len - 1) + widgets.ROW_H, 0);
 }
 
-/// Whether `s` heads a group of its own, after `last`'s.
 fn opens(last: *?Group, s: Sample) bool {
     if (last.* == s.group()) return false;
     last.* = s.group();
     return true;
 }
 
-/// Where row `i` stands from the list's top, headers and all.
 fn rowTop(i: usize) i32 {
     var y: i32 = 0;
     var last: ?Group = null;
@@ -412,7 +403,6 @@ fn drawStage(g: *game.Game, v: *Viewer, stage: rl.Rectangle, cell: f32) void {
     }
 }
 
-/// The light each source would lay, as a soft disc: the stage has no light map.
 fn drawPools(v: *const Viewer, s: Sample, o: [2]f32, cell: f32) void {
     var buf: [game.scene.EFFECT_SOURCES + 1]light.Emission = undefined;
     const mid = mathx.centre(MIDDLE);
@@ -430,7 +420,7 @@ fn drawPools(v: *const Viewer, s: Sample, o: [2]f32, cell: f32) void {
     }
 }
 
-/// DEV ONLY: the sample named `want`, played `seconds` in.
+/// DEV ONLY.
 pub fn pose(ed: *editor.Editor, want: Sample, seconds: f32) !void {
     const v = try viewer(ed);
     v.at = mathx.indexOfEql(Sample, &SAMPLES, want).?;
@@ -448,14 +438,12 @@ test "every effect sample plays for two showings without leaving the stage's lev
     const v = try create(std.testing.allocator);
     defer std.testing.allocator.destroy(v);
     const before = v.lv.tile;
-    var shown: usize = 0;
     for (SAMPLES, 0..) |s, i| {
         v.pick(i);
         if (i == 0) v.reset();
         var steps: usize = 0;
         while (steps < POSE_MOST and (s.period() == null or v.round < 2)) : (steps += 1) v.step(POSE_STEP);
         try std.testing.expect(s.period() == null or v.round == 2);
-        shown += 1;
     }
     try std.testing.expectEqualSlices(grid.Tile, &before, &v.lv.tile);
     var groups: usize = 0;
@@ -465,7 +453,6 @@ test "every effect sample plays for two showings without leaving the stage's lev
         last = s.group();
     }
     try std.testing.expectEqual(std.enums.values(Group).len, groups);
-    std.debug.print("effects viewer: {d} samples in {d} groups each replayed twice on an unchanged stage\n", .{ shown, groups });
 }
 
 test "a missile sample lands its burst where its flight ends, as play does" {
@@ -487,5 +474,4 @@ test "a missile sample lands its burst where its flight ends, as play does" {
         }
     }
     try std.testing.expect(bursting > 0);
-    std.debug.print("effects viewer: {d} bursting missiles queue their blast at landing\n", .{bursting});
 }

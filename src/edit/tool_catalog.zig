@@ -23,7 +23,6 @@ pub fn kindName(k: actor.Kind) [:0]const u8 {
     };
 }
 
-/// The tabs the brush panel is filed under.
 pub const Family = enum {
     terrain,
     props,
@@ -41,7 +40,6 @@ pub const Family = enum {
         };
     }
 
-    /// The first tool filed under it.
     pub fn first(f: Family) Tool {
         for (TOOLS) |t| {
             if (t.family() == f) return t;
@@ -238,7 +236,6 @@ const HelpSection = struct {
     column: usize = 0,
     lines: []const [:0]const u8,
 
-    /// Its head, its lines and the gap after them.
     pub fn rows(s: HelpSection) i32 {
         return @intCast(s.lines.len + 2);
     }

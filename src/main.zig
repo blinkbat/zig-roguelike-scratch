@@ -119,6 +119,12 @@ test {
     _ = @import("play/damage.zig");
     _ = @import("play/attrs.zig");
     _ = @import("play/items.zig");
+    _ = @import("play/item_bases.zig");
+    _ = @import("play/affixes.zig");
+    _ = @import("play/loot.zig");
+    _ = @import("play/gear.zig");
+    _ = @import("play/inventory.zig");
+    _ = @import("play/ground_items.zig");
     _ = @import("play/progress.zig");
     _ = @import("play/passives.zig");
     _ = @import("play/bleeding.zig");
@@ -148,7 +154,7 @@ test {
     _ = @import("play/skillbar.zig");
     _ = @import("play/skill_contract.zig");
     _ = @import("play/tactics.zig");
-    _ = @import("game/tactics.zig");
+    _ = @import("game/tactics_exec.zig");
     _ = @import("play/hero.zig");
     _ = @import("gfx/look.zig");
     _ = @import("gfx/raster.zig");
@@ -180,7 +186,14 @@ test {
     _ = @import("ui/naming.zig");
     _ = @import("ui/stage.zig");
     _ = @import("game.zig");
-    _ = @import("game/shots.zig");
+    _ = @import("game/shots/capture.zig");
+    _ = @import("game/shots/poses.zig");
+    _ = @import("game/shots/water_cliffs.zig");
+    _ = @import("game/shots/ui.zig");
+    _ = @import("game/shots/trees.zig");
+    _ = @import("game/shots/cinema.zig");
+    _ = @import("game/shots/debug.zig");
+    _ = @import("game/shots/bench.zig");
     _ = @import("game/scene.zig");
     _ = @import("game/overlay.zig");
     _ = @import("game/character.zig");

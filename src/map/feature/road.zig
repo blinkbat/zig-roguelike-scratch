@@ -3,8 +3,6 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Path of Exile's main path, ADOM's roads, Dwarf Fortress's hamlet roads.
-
 pub const WIDTH_MIN: u8 = carve.LANE_MIN;
 pub const WIDTH_MAX: u8 = 5;
 pub const COUNT_MAX: u8 = 3;
@@ -54,7 +52,6 @@ test "a road crosses the map whole and bridges a river" {
     apply(&lv, &rng, 0, carve.Palette.WILD, .{ .course = .across, .wander = 0 });
     var st: carve.Stretches = .{};
     const parts = st.label(&lv);
-    std.debug.print("a straight road through a forest and over a river: {d} road, {d} bridge, {d} stretch of ground\n", .{ carve.count(&lv, .dirt), carve.count(&lv, .bridge), parts });
     try std.testing.expectEqual(@as(usize, 1), parts);
     try std.testing.expect(carve.count(&lv, .bridge) > 0);
 }

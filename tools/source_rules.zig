@@ -86,9 +86,7 @@ pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) 
 
 test "source boundaries reject rendering and application imports in domain code" {
     const alloc = std.testing.allocator;
-    var rejected: usize = 0;
-    var kept: usize = 0;
-    for (GAME_RULES ++ [_][]const u8{ "play/items.zig", "map/atlas.zig", "edit/preview.zig" }) |owner| {
+    for (GAME_RULES ++ [_][]const u8{ "play/items.zig", "play/item_bases.zig", "play/affixes.zig", "play/loot.zig", "play/gear.zig", "play/inventory.zig", "play/ground_items.zig", "map/atlas.zig", "edit/preview.zig" }) |owner| {
         for ([_][:0]const u8{
             "const bad = @import(\"../ui/menu.zig\");",
             "const bad = @import(\"../gfx/look.zig\");",
@@ -97,22 +95,16 @@ test "source boundaries reject rendering and application imports in domain code"
             "const bad = @import(\"raylib\");",
         }) |source| {
             try std.testing.expect((try check(alloc, owner, source)) != null);
-            rejected += 1;
         }
         try std.testing.expect((try check(alloc, owner, "const ok = @import(\"../core/wording.zig\");")) == null);
-        kept += 1;
     }
     try std.testing.expect((try check(alloc, "game/attacks.zig", "const sim = @import(\"sim.zig\");")) == null);
-    kept += 1;
     for (SPLIT_FROM) |split| for (split.owners) |owner| {
         const source = try std.fmt.allocPrintZ(alloc, "const parent = @import(\"{s}\");", .{std.fs.path.basenamePosix(split.parent)});
         defer alloc.free(source);
         try std.testing.expect((try check(alloc, owner, source)) != null);
-        rejected += 1;
     };
     try std.testing.expect((try check(alloc, "play/items.zig", "const bad = @import(\"../core/../ui/menu.zig\");")) != null);
-    rejected += 1;
-    std.debug.print("source boundaries: {d} forbidden imports rejected, {d} allowed imports retained\n", .{ rejected, kept });
 }
 
 test "source boundaries recognize real imports and permit integration tests" {
@@ -140,5 +132,4 @@ test "source boundaries recognize real imports and permit integration tests" {
     const found = (try check(alloc, "play/items.zig", "const ok = 0;\nconst bad = @import(\"../ui/menu.zig\");")).?;
     try std.testing.expectEqual(@as(usize, 2), found.line);
     try std.testing.expectEqualStrings("\"../ui/menu.zig\"", found.imported);
-    std.debug.print("source boundaries: comments, strings, nested tests, editor independence and diagnostics checked\n", .{});
 }

@@ -22,7 +22,6 @@ pub const Glide = struct {
     from_lift: f32 = 0,
     /// Pixels toward what a melee blow strikes, at the bump's height; null for a step.
     bump: ?rl.Vector2 = null,
-    /// The glides still drawn while this one waits its turn, newest first.
     priors: [PRIORS]?Prior = @splat(null),
 
     const PRIORS = 3;
@@ -198,5 +197,4 @@ test "two knocks queued behind a walk keep drawing the walk first" {
     }
     second.t = -0.41;
     try std.testing.expectApproxEqAbs(cellPx(a).x, second.now().x, 0.01);
-    std.debug.print("glide: a walk then two queued knocks draw in order from the walk's start\n", .{});
 }

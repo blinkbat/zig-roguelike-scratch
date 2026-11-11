@@ -11,7 +11,6 @@ const P = mathx.P;
 
 fn Reduces(comptime reduction: fn (u8) i32) type {
     return struct {
-        /// `dmg` as `reduction` at `rank` lets it through, rounded up.
         pub fn reduce(rank: u8, dmg: i32) i32 {
             return mathx.lessCeil(dmg, reduction(rank));
         }
@@ -26,7 +25,6 @@ pub const Caltrops = struct {
     pub fn duration(rank: u8) u8 {
         return 4 + rank;
     }
-    /// What a patch's cells are laid with.
     pub fn laid(rank: u8) u8 {
         return laidFor(duration(rank));
     }
@@ -101,7 +99,6 @@ pub const ArcaneBarrier = struct {
     pub fn duration(rank: u8) u8 {
         return 3 + ranked(rank);
     }
-    /// What a wall's cells are laid with.
     pub fn laid(rank: u8) u8 {
         return laidFor(duration(rank));
     }
@@ -122,7 +119,6 @@ pub const FireWall = struct {
     pub const DESCRIPTION = "Choose two endpoints to set a straight line of ground ablaze. Foes shun the flames; any that enter them, or stand there as they rise, catch fire. Cannot cover water, props or doors.";
     pub const length = ArcaneBarrier.length;
     pub const duration = ArcaneBarrier.duration;
-    /// What its flames are laid with.
     pub const laid = ArcaneBarrier.laid;
     /// The cells its flames may leap on through what burns beside them.
     pub const HEAT: u8 = 1;
@@ -190,7 +186,6 @@ pub const Imbue = struct {
     pub fn ignites(rank: u8) u32 {
         return 15 + 15 * @as(u32, ranked(rank));
     }
-    /// What the hero's tactics are laid with.
     pub fn laid() u8 {
         return laidFor(TURNS);
     }
@@ -245,16 +240,13 @@ pub const State = struct {
     guard: u8 = 0,
     unyielding: bool = false,
     overwatch: ?mathx.Dir = null,
-    /// Turns left of Imbue's fire.
     imbue: u8 = 0,
-    /// Turns left of Bide, and the damage taken through it.
     bide: u8 = 0,
     bided: i32 = 0,
     /// A raised skeleton's place in rising order, its slot being reused.
     risen: u32 = 0,
 };
 
-/// The reach of a patch on a cell and its neighbours.
 const ADJACENT: i32 = 1;
 
 /// The turns a cell is laid with to last `turns`: the turn it is laid on wears one.
@@ -262,14 +254,12 @@ fn laidFor(turns: u8) u8 {
     return turns + 1;
 }
 
-/// A rank counted as at least the first.
 fn ranked(rank: u8) u8 {
     return @max(1, rank);
 }
 
 const DETONATION_FUEL: i32 = 2;
 
-/// Combustion and Shatter: a visible foe's `Words.FUEL` spent in a blast of `Words.ELEMENT` round it.
 fn Detonation(comptime Words: type) type {
     return struct {
         pub const COST: i32 = 5;
@@ -294,7 +284,6 @@ pub const Wall = grid.Bounded(P, @max(ArcaneBarrier.length(TOP_RANK), FireWall.l
 pub fn wall(lv: *const grid.Level, hero: P, start: P, end: P, rank: u8) ?Wall {
     return line(lv, hero, start, end, ArcaneBarrier.length(rank), ArcaneBarrier.RANGE, raisable);
 }
-/// Fire Wall's cells: open dry ground, bodies or not.
 pub fn blaze(lv: *const grid.Level, hero: P, start: P, end: P, rank: u8) ?Wall {
     return line(lv, hero, start, end, FireWall.length(rank), FireWall.RANGE, flammable);
 }
@@ -327,7 +316,6 @@ test "tactical wall follows arbitrary bearings and validates every cell before p
     lv.putBarrel(.{ .x = 23, .y = 21 });
     try std.testing.expect(wall(&lv, hero, a, b, 1) == null);
     try std.testing.expect(wall(&lv, hero, a, .{ .x = 26, .y = 20 }, 1) == null);
-    std.debug.print("tactical geometry: angled wall, occupied interior and rank length caps checked\n", .{});
 }
 
 test "a fire line may cover bodies but not barrels or water, and stretches with rank" {
@@ -348,5 +336,4 @@ test "a fire line may cover bodies but not barrels or water, and stretches with 
     lv.set(.{ .x = 22, .y = 21 }, .floor);
     lv.putBarrel(.{ .x = 22, .y = 19 });
     try std.testing.expect(blaze(&lv, hero, a, b, 3) == null);
-    std.debug.print("fire line: {d}-{d} cells by rank over bodies; water and barrels refused\n", .{ FireWall.length(1), FireWall.length(TOP_RANK) });
 }

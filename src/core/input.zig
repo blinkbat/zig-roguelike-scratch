@@ -276,7 +276,6 @@ pub const State = struct {
     held_into_typing: bool = false,
     typed: Typed = .{},
     rub: bool = false,
-    /// Play uses numbered slots; menus and targeting use standard confirm/back keys.
     context: Context = .menu,
     /// Set before each `update`: Ctrl holds the modifier though the number keys press no slot.
     sets: bool = false,
@@ -343,7 +342,6 @@ pub const State = struct {
         return SLOT_CAPTIONS[numberOf(self.modifier, b).?];
     }
 
-    /// A way held over from a screen that used it walks nobody.
     /// Takes the triggers and stick as they lie now, for a screen entered from one that did not poll.
     pub fn resync(self: *State) void {
         for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
@@ -373,12 +371,10 @@ pub const State = struct {
         return if (self.walk != null) self.step.late else 0;
     }
 
-    /// This frame's walk comes from a held way, repeating or turning, not a new press.
     pub fn repeating(self: State) bool {
         return self.walk != null and !self.step.fresh;
     }
 
-    /// The aimed slot's number key, which confirms its reticle; pads have no such repeat.
     fn againKey(self: State) ?rl.KeyboardKey {
         if (self.context != .target) return null;
         const b = self.aimed orelse return null;
@@ -392,7 +388,6 @@ pub const State = struct {
         return SLOT_KEYS[numberOf(self.modifier, b).?..][0..1];
     }
 
-    /// Outside play the modifier's menu keys still press it, but only Ctrl holds its set.
     fn holdsByKeys(self: State, b: Button) bool {
         return self.context == .play or b != self.modifier;
     }
@@ -619,7 +614,6 @@ fn mouseAt() mathx.P {
     return .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
 }
 
-/// The editor's mouse and keys, captioned with keyboard and mouse glyphs.
 pub const Desk = struct {
     pub const TOOL_KEYS = bindings.Desk.TOOL_KEYS;
     pub const TOOL_CAPTIONS = bindings.Desk.TOOL_CAPTIONS;
@@ -754,7 +748,6 @@ pub const Desk = struct {
         return if (self.wheel > 0) -1 else if (self.wheel < 0) 1 else 0;
     }
 
-    /// Only the caret, selection, list and copy keys: what reading text that cannot change may still use.
     pub fn navigationOnly(self: *const Desk) Desk {
         return .{ .text_all = self.text_all, .text_left = self.text_left, .text_right = self.text_right, .text_home = self.text_home, .text_end = self.text_end, .shift = self.shift, .nav = self.nav, .copy = self.copy };
     }
@@ -916,7 +909,6 @@ test "tree stick follows the bearing with hysteresis, turn edges and repeat" {
     try std.testing.expect(state.radial.tick(1, -0.6, 0.8) == null);
     state.focus(false);
     try std.testing.expect(state.tree.move == null and state.tree.zoom == 0 and state.tree.pan.x == 0);
-    std.debug.print("tree input: raw bearing, deadzone, repeat, turning, release, held navigation and focus loss checked\n", .{});
 }
 
 test "a held stick cannot move the tree when opening it from another screen" {
@@ -934,7 +926,6 @@ test "a held stick cannot move the tree when opening it from another screen" {
         state.treeWalk(0.01, -0.6, 0.8);
         try std.testing.expect(state.tree.move != null);
     }
-    std.debug.print("3 tree entry contexts suppress held movement and rearm on turn or release\n", .{});
 }
 
 test "mouse motion buttons and fractional wheel select keyboard hints without a stationary pointer taking over" {
@@ -966,7 +957,6 @@ test "mouse motion buttons and fractional wheel select keyboard hints without a 
     st.mouse_moved = true;
     st.focus(false);
     try std.testing.expect(!st.mouseUsed(0) and !st.dragging and st.pointer == null);
-    std.debug.print("mouse devices: motion, three buttons, fractional wheel, cursor entry, stationary cursor, controller return and focus loss\n", .{});
 }
 
 test "a smooth wheel's fractions add up to whole notches, in the game and the editor alike" {
@@ -974,7 +964,6 @@ test "a smooth wheel's fractions add up to whole notches, in the game and the ed
     var notches: i32 = 0;
     for (0..25) |_| notches += wheel.notches(0.1);
     for (0..10) |_| notches += wheel.notches(-0.1);
-    std.debug.print("smooth wheel: 25 tenths up then 10 down make {d} notches\n", .{notches});
     try std.testing.expectEqual(@as(i32, 2), notches);
     try std.testing.expectEqual(@as(i32, -2), wheel.notches(-2));
 }
@@ -997,7 +986,6 @@ test "losing focus cancels unsettled movement and held actions without forgettin
     try std.testing.expect(st.triggers[1].get(.left));
     st.focus(true);
     try std.testing.expect(st.focused and st.walk == null);
-    std.debug.print("focus loss: pending tap and held action cancelled; controller and trigger latch retained\n", .{});
 }
 
 test "a d-pad zoom or Shift pan held on the tree does not walk after the tree closes" {
@@ -1147,7 +1135,6 @@ test "a trigger presses past most of its travel and lets go under less, so a res
         if (now and !was) presses += 1;
         was = now;
     }
-    std.debug.print("a trigger hovering at raylib's 55% then pulled once, wavering, and let go: {d} press\n", .{presses});
     try std.testing.expectEqual(@as(usize, 1), presses);
     try std.testing.expect(!latch(0.5, false));
     const off = Triggers.initFill(false);
@@ -1178,9 +1165,6 @@ test "every pad button has a name on each maker's pad, a PlayStation's by its ow
 
 test "the keyboard numbers the slots past the modifier, which Ctrl holds" {
     var s = State{ .device = .keys, .modifier = .lb };
-    std.debug.print("slots, LB the modifier:", .{});
-    for (SLOT_ORDER) |b| std.debug.print(" {s}={s}", .{ @tagName(b), s.slotCaption(b) });
-    std.debug.print("\n", .{});
     try std.testing.expectEqualStrings(SECOND_CAPTION, s.slotCaption(.lb));
     try std.testing.expectEqualStrings("1", s.slotCaption(.a));
     try std.testing.expectEqualStrings("6", s.slotCaption(.rt));
@@ -1234,7 +1218,6 @@ test "targeting uses confirm and back keys instead of numbered skills for every 
         s.typing = true;
         for (SLOT_ORDER) |b| try std.testing.expectEqual(@as(usize, 0), s.keysFor(b).len);
     }
-    std.debug.print("{d} modifier bindings: targeting confirms/backs out with menu keys or the aimed slot's own number, play uses numbered slots, typing fires none\n", .{SLOT_ORDER.len});
 }
 
 test "the lean layer puts each d-pad button on its own diagonal" {

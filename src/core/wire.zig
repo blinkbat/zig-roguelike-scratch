@@ -15,7 +15,6 @@ const Defaults = struct {
     }
 };
 
-/// The field counting `field` as `T` declares it in its `COUNTED` pairs.
 pub fn counted(comptime T: type, comptime field: []const u8) ?[]const u8 {
     if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "COUNTED")) {
         inline for (T.COUNTED) |entry| {
@@ -26,7 +25,6 @@ pub fn counted(comptime T: type, comptime field: []const u8) ?[]const u8 {
     return null;
 }
 
-/// The name `field` of `T` was once written under, as `T` declares in its `WAS` pairs.
 pub fn formerly(comptime T: type, comptime field: []const u8) ?[]const u8 {
     if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "WAS")) {
         inline for (T.WAS) |entry| {
@@ -359,7 +357,6 @@ test "wire encoding survives field order integer widths enum values and added de
     defer scalar.deinit();
     try C.write(&scalar, @as(u16, 513));
     try std.testing.expectEqualSlices(u8, &.{ 0, 1, 2, 0, 0, 0, 0, 0, 0 }, scalar.items);
-    std.debug.print("portable wire: fixed little-endian integer fixture; reordered fields/enums, widened integer and added default retained\n", .{});
 }
 
 test "wire reads reject truncation duplicates invalid tags overflow and trailing bytes" {
@@ -383,7 +380,6 @@ test "wire reads reject truncation duplicates invalid tags overflow and trailing
     try std.testing.expectError(error.Damaged, C.read(&.{ 0, 0, 1, 0, 0, 0, 0, 0, 0 }, &small));
     var tag: enum { known } = .known;
     try std.testing.expectError(error.Damaged, C.read(&.{ 1, 0, 'x' }, &tag));
-    std.debug.print("portable wire: every truncated prefix, duplicate fields, invalid bool/enum, overflow and trailing data rejected\n", .{});
 }
 
 test "wire conversion skips retired fields and preserves signedness and named enum array keys" {
@@ -413,7 +409,6 @@ test "wire conversion skips retired fields and preserves signedness and named en
     try std.testing.expectEqual(@as(u16, 7), elements.get(.fire));
     try std.testing.expectEqual(@as(u16, 13), elements.get(.cold));
     try std.testing.expectEqual(@as(u16, 0), elements.get(.poison));
-    std.debug.print("wire conversion: retired field skipped, unsafe signed casts refused, reordered enum keys retained and new key defaulted\n", .{});
 }
 
 test "a renamed field reads what was written under its former name" {
@@ -464,5 +459,4 @@ test "wire max size is exactly what the largest value writes" {
     const Listed = Codec(Policy);
     try Listed.write(&bytes, Counted{ .items = .{ 4, 5, 6 }, .n = 3 });
     try std.testing.expectEqual(comptime Listed.maxSize(Counted), bytes.items.len);
-    std.debug.print("wire max size: plain and counted largest values encode to exactly their bound\n", .{});
 }

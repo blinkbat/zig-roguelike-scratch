@@ -23,7 +23,6 @@ const DONE = [2][]const u8{ "running", "done" };
 /// Earlier spellings of a word, still read.
 const FORMER_WORDS = .{.{ "folk", Word.npc }};
 
-/// The script word `text` spells, or spelled once.
 pub fn wordOf(text: []const u8) ?Word {
     if (std.meta.stringToEnum(Word, text)) |w| return w;
     inline for (FORMER_WORDS) |was| if (std.mem.eql(u8, text, was[0])) return was[1];
@@ -47,7 +46,7 @@ pub const Lines = struct {
     }
 };
 
-/// A map-text line's first word as written, its space included.
+/// Its space included.
 pub fn firstWord(comptime w: anytype) []const u8 {
     return @tagName(w) ++ " ";
 }
@@ -147,7 +146,7 @@ fn putAct(w: anytype, s: *const Script, comptime lead: Word, a: *const script.Ac
     try w.writeByte('\n');
 }
 
-/// The dialogs and lines a file declares, read ahead so a reference may come before what it names.
+/// Read ahead so a reference may come before what it names.
 const Index = struct {
     dialog: [script.MAX_DIALOGS]script.Name = @splat(.{}),
     dialog_n: usize = 0,
@@ -201,7 +200,6 @@ pub const Reader = struct {
         return .{ .index = try Index.of(text) };
     }
 
-    /// Reads the rest of `f`, the line `word` began.
     pub fn take(r: *Reader, s: *Script, word: Word, f: *Tokens) Error!void {
         switch (word) {
             inline .flag, .counter, .timer => |t| {
@@ -425,7 +423,6 @@ fn questOf(s: *const Script, f: *Tokens) Error!u8 {
     return s.findQuest(f.next() orelse return error.BadLine) orelse error.BadLink;
 }
 
-/// A painted cell, `by` a prop, or `far`.
 fn spotOf(f: *Tokens) Error!script.Spot {
     const first = f.peek() orelse return error.BadLine;
     if (std.mem.eql(u8, first, BY)) {
@@ -450,7 +447,6 @@ fn nameOf(f: *Tokens) Error![]const u8 {
     return if (script.token(name)) name else error.BadLine;
 }
 
-/// The rest of the line, read as it is written, leaving nothing after it.
 fn rest(f: *Tokens) []const u8 {
     const all = f.rest();
     f.index = f.buffer.len;
@@ -499,7 +495,6 @@ pub fn point(f: *Tokens) Error!P {
     return .{ .x = try int(i32, f), .y = try int(i32, f) };
 }
 
-/// A `point` on the map.
 pub fn cell(f: *Tokens) Error!P {
     const p = try point(f);
     return if (grid.Level.inside(p)) p else error.BadLine;
@@ -562,7 +557,6 @@ pub const SAMPLE =
     \\
 ;
 
-/// A script's lines with no map round them, for `node_n` nodes; every line must be a script line.
 pub fn readAlone(text: []const u8, s: *Script, node_n: usize) Error!void {
     s.* = .{};
     var r = try Reader.of(text);
@@ -613,7 +607,6 @@ test "a script reads back to the same text, every condition and action kind with
     }
     try std.testing.expectEqual(std.enums.values(script.CondKind).len, conds.count());
     try std.testing.expectEqual(std.enums.values(script.ActKind).len, acts.count());
-    std.debug.print("script text: {d} bytes, {d} condition and {d} action kinds round-trip canonically\n", .{ SAMPLE.len, std.enums.values(script.CondKind).len, std.enums.values(script.ActKind).len });
 }
 
 test "a script with a dangling name, a misplaced line or a trigger's action in a conversation is refused" {
@@ -675,5 +668,4 @@ test "a script with a dangling name, a misplaced line or a trigger's action in a
     try std.testing.expectEqualStrings("Hi -> there", s.dialog[0].line[0].choice[0].ask.text());
     try testRead("dialog d\nline a\nask  -> end\n", s);
     try std.testing.expectEqualStrings("", s.dialog[0].line[0].choice[0].ask.text());
-    std.debug.print("script text: {d} malformed scripts refused; an arrow inside a choice's words kept, a wordless choice read back\n", .{bad.len});
 }

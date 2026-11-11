@@ -24,7 +24,6 @@ pub const chance = spark.chance;
 pub const afflict = spark.afflict;
 pub const AILMENT = spark.AILMENT;
 
-/// The bodies it strikes, the first first: each after it the nearest lit foe to the one before, in a clear line.
 pub const Chain = grid.Bounded(u16, JUMPS + 1);
 
 pub fn chain(lv: *const grid.Level, pool: *actor.Pool, first: u16) Chain {
@@ -62,5 +61,4 @@ test "chain lightning leaps to the nearest lit foe in a clear line, never twice 
     lv.set(.{ .x = 17, .y = 11 }, .wall);
     c = chain(&lv, &pool, first);
     try std.testing.expectEqualSlices(u16, &.{ first, near }, c.slice());
-    std.debug.print("chain lightning: up to {d} bodies, leaps of {d} tiles at most; a wall ends the chain\n", .{ JUMPS + 1, JUMP_RANGE });
 }

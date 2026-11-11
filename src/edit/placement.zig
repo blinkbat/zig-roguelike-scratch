@@ -227,14 +227,12 @@ fn takeNpc(ed: *Editor, p: P) void {
     ed.changed();
 }
 
-/// The NPC standing at `p` on the node shown: painted there, or found there on this roll.
 pub fn npcAt(ed: *Editor, p: P) ?u8 {
     if (ed.map.script.npcAt(ed.node, p)) |npc| return npc;
     ed.preview();
     return if (ed.scene.lv.npcAt(p)) |npc| @intCast(npc) else null;
 }
 
-/// A new NPC's spot at `p`: that cell on a painted node; on a rolled one, beside the prop there, else far from the doors.
 fn spotAt(ed: *Editor, p: P) ?script.Spot {
     if (!ed.here().unrolled()) return if (ed.map.npcFits(ed.node, p)) .{ .at = p } else null;
     ed.preview();
@@ -394,7 +392,6 @@ pub fn layAside(ed: *Editor, at: P) Pasted {
     return result;
 }
 
-/// The copy's tile at `q`, or its ground where a wider prop it belongs to would leave the map or meet a door.
 fn pastedTile(nd: *const atlas.Node, bd: *const Board, at: P, q: P) grid.Tile {
     const k = grid.Level.idx(q);
     const t = bd.cells.tile[k];
@@ -407,7 +404,6 @@ fn pastedTile(nd: *const atlas.Node, bd: *const Board, at: P, q: P) grid.Tile {
     return t;
 }
 
-/// The copy laid into `b` with its corner at `at`; the paste's ghost lays it aside the same way.
 fn layInto(map: *const atlas.Atlas, n: usize, b: *atlas.Bespoke, bd: *const Board, at: P) Pasted {
     const nd = &map.node[n];
     var laid: Pasted = .{};
@@ -465,7 +461,6 @@ pub fn removable(ed: *Editor, p: P) bool {
     return ed.tool.fits(ed.here()) and holds(ed, ed.tool, p);
 }
 
-/// The tool for what stands at `p`, the first of `PICKS` that holds something there.
 fn pickedAt(ed: *Editor, p: P) ?editor.Tool {
     for (PICKS) |t| {
         if (!t.fits(ed.here()) or !holds(ed, t, p)) continue;

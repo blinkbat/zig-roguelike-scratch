@@ -4,13 +4,11 @@ const obituary = @import("obituary.zig");
 const store = @import("../core/store.zig");
 const wire = @import("../core/wire.zig");
 
-/// Said at the end of a death report whose hero is entombed.
 pub const ENTOMBED = "The hero's remains were entombed in the Revered Ossuary.";
 const BURIED = " " ++ ENTOMBED;
 pub const MAX: usize = 20;
 pub const SUMMARY_MAX: usize = obituary.REPORT_MAX + BURIED.len;
 
-/// One hero's bones: who they were and how they died.
 pub const Entry = struct {
     pub const COUNTED = .{.{ "summary", "summary_n" }};
     name: heroes.Name,
@@ -46,7 +44,6 @@ pub const Entry = struct {
     }
 };
 
-/// What a run did that history counts.
 pub const Deeds = struct { kills: usize, level: u16, gold: i32, places: usize };
 
 const RENOWN_PER_KILL: u32 = 10;
@@ -70,7 +67,6 @@ test "renown counts kills, levels past the first, places and gold" {
 pub const Hall = struct {
     entries: [MAX]Entry = undefined,
     n: usize = 0,
-    /// Changed since it was last written.
     dirty: bool = false,
 
     pub fn slice(self: *const Hall) []const Entry {
@@ -213,7 +209,6 @@ test "legacy ossuary converts records and marks them for a portable rewrite" {
     const portable = encode(&recovered, &bytes);
     try std.testing.expect(std.mem.startsWith(u8, portable, MAGIC));
     try std.testing.expectEqual(entry.renown, (try decode(portable)).entries[0].renown);
-    std.debug.print("legacy ossuary: name, report and renown survive conversion and canonical rewrite\n", .{});
 }
 test "the ossuary keeps the most renowned deaths, earlier first on a tie, and refuses the rest once full" {
     var h = Hall{};
@@ -230,7 +225,6 @@ test "the ossuary keeps the most renowned deaths, earlier first on a tie, and re
     e.say("A long story.");
     try std.testing.expectEqual(@as(?usize, 0), h.entomb(e));
     try std.testing.expectEqualStrings("A long story.", h.entries[0].text());
-    std.debug.print("ossuary: {d} kept, lowest renown {d}, a tie entombed below its elders\n", .{ h.n, h.entries[MAX - 1].renown });
 }
 
 test "the ossuary file round-trips, and a damaged, cut, foreign or reordered one is refused" {
@@ -276,5 +270,4 @@ test "the ossuary file round-trips, and a damaged, cut, foreign or reordered one
     var odd = h;
     odd.entries[0].name.buf[0] = '!';
     try std.testing.expectError(error.Damaged, decode(encode(&odd, &buf)));
-    std.debug.print("ossuary file: {d} bones in {d} bytes round-trip; 6 bad files refused\n", .{ h.n, bytes.len });
 }

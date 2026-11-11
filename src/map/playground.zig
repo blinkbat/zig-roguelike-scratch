@@ -10,11 +10,9 @@ const Tile = grid.Tile;
 
 pub const CLASS: hero.Class = .wizard;
 
-/// One terrain to try things on, apart from its neighbours.
 pub const Patch = union(enum) {
     tile: Tile,
     barrels,
-    /// Shallows round deep water, for the bank between them.
     pond,
 };
 
@@ -31,7 +29,6 @@ pub const PATCHES = blk: {
 };
 
 const SIZE = P{ .x = 5, .y = 3 };
-/// Floor between columns of patches; one row of it runs above and below each.
 const LANE: i32 = 2;
 const COLS: usize = 6;
 const ROWS: usize = std.math.divCeil(usize, PATCHES.len, COLS) catch unreachable;
@@ -150,5 +147,4 @@ test "the playground lays every placeable terrain, barrels and a bank, all reach
         if (!touched) unreached += 1;
     }
     try std.testing.expectEqual(@as(usize, 0), unreached);
-    std.debug.print("playground: {d} patches in {d}x{d}, {d} kinds of tile, {d} barrels, {d} torches, every patch beside a reached lane\n", .{ PATCHES.len, ROOM.width(), ROOM.height(), present.count(), barrels, room.torch.n });
 }

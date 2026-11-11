@@ -14,7 +14,6 @@ comptime {
     std.debug.assert(RAIDER.stocked() and DUSK + NIGHT > day.MINUTES and NIGHT < day.MINUTES);
 }
 
-/// The raiders that come in through one of a procgen node's doors each night, each at its own time between dusk and dawn.
 pub const Raid = struct {
     raiders: u8 = 0,
     raid_door: u8 = 0,
@@ -24,7 +23,6 @@ pub const Raid = struct {
     }
 };
 
-/// What a raider's death gives of the `xp` its kind would.
 pub fn xpOf(xp: u32) u32 {
     return std.math.divCeil(u32, xp, XP_DIVISOR) catch unreachable;
 }
@@ -65,7 +63,6 @@ test "each night's raiders all come between dusk and dawn, at times of their own
         if (hour > day.SUNRISE and hour <= day.SUNSET) by_day += came;
     }
     const whole = arriving(r, 0x5EED, 0, end);
-    std.debug.print("{d} nights of 3 raiders: {d} came a turn at a time over {d} turns, {d} counted whole, {d} by day\n", .{ NIGHTS, by_turn, turns_with, whole, by_day });
     try std.testing.expectEqual(@as(usize, 3 * NIGHTS), whole);
     try std.testing.expectEqual(whole, by_turn);
     try std.testing.expectEqual(@as(usize, 0), by_day);

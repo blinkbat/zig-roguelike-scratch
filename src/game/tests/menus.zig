@@ -58,7 +58,6 @@ test "a way held through closing inspect, a reticle or pause walks nobody until 
         }
         try std.testing.expect(!g.sim.heroActor().?.at.eq(start));
     }
-    std.debug.print("held walk: {d} screens closed with the way held, none walked till it was let go\n", .{cases.len});
 }
 
 test "a way held from play into pause or inspect moves nothing there until let go or turned" {
@@ -116,7 +115,28 @@ test "a way held into or out of Character moves nothing until let go" {
     const at = g.sim.heroActor().?.at;
     harness.walkFor(g, 1, .s);
     try std.testing.expectEqual(at, g.sim.heroActor().?.at);
-    std.debug.print("held walk: direct Character entry and exit suppress carried movement\n", .{});
+}
+
+test "a way held between a Character page and its tabs turns no page and moves no cursor until let go" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.st = .{};
+    character.openCharacter(g);
+    try std.testing.expect(g.character.tabbing);
+    for (0..10) |_| harness.walkFrame(g, harness.TEST_DT, .s);
+    harness.pressWalking(g, CONFIRM, .s);
+    try std.testing.expect(!g.character.tabbing);
+    const cursor = g.character.cursor;
+    harness.walkFor(g, 1, .s);
+    try std.testing.expectEqual(cursor, g.character.cursor);
+    harness.walkFrame(g, harness.TEST_DT, null);
+    for (0..10) |_| harness.walkFrame(g, harness.TEST_DT, .e);
+    const page = g.character.page;
+    harness.pressWalking(g, BACK, .e);
+    try std.testing.expect(g.character.tabbing);
+    harness.walkFor(g, 1, .e);
+    try std.testing.expectEqual(page, g.character.page);
 }
 
 test "a way held into or out of the skill picker moves neither cursor until let go" {
@@ -137,7 +157,6 @@ test "a way held into or out of the skill picker moves neither cursor until let 
     try std.testing.expect(g.binds.menu == .browse);
     harness.walkFor(g, 1, .e);
     try std.testing.expectEqual(slot, g.binds.slot());
-    std.debug.print("held walk: the skill picker and the slot it returns to stayed put with the way held\n", .{});
 }
 
 test "the dead archer's floor restarts only once the death is shown" {
@@ -163,10 +182,9 @@ test "the hud's tooltip stays up until the lethal bite is drawn" {
     const spot = overlay.spotsOf(g, &buf)[0];
     g.st.pointer = raster.middleAt(spot.box);
     try std.testing.expectEqual(spot.spot, overlay.hovered(g).?.spot);
-    const t = harness.framesUntil(g, 0, harness.deathDrawn);
+    _ = harness.framesUntil(g, 0, harness.deathDrawn);
     g.st.pointer = raster.middleAt(spot.box);
     try std.testing.expectEqual(@as(?overlay.Part, null), overlay.hovered(g));
-    std.debug.print("dying: tooltip held {d:.3} s until the death is drawn\n", .{t});
 }
 
 test "Character stays drawn over a lethal item turn until the bite is drawn" {
@@ -186,9 +204,8 @@ test "Character stays drawn over a lethal item turn until the bite is drawn" {
     g.st = .{};
     game.update(g, 0);
     try std.testing.expectEqual(game.Mode.pause, game.modeShown(g));
-    const t = harness.framesUntil(g, 0, harness.deathDrawn);
+    _ = harness.framesUntil(g, 0, harness.deathDrawn);
     try std.testing.expectEqual(game.Mode.dead, game.modeShown(g));
-    std.debug.print("dying in Character: book held {d:.3} s until the death is drawn\n", .{t});
 }
 
 test "the Nearby list keeps its entries over a lethal pickup until the bite is drawn" {
@@ -213,7 +230,6 @@ test "the Nearby list keeps its entries over a lethal pickup until the bite is d
     var buf: game.NearbyBuf = undefined;
     const shown = character.nearbyOf(g, &buf).len;
     try std.testing.expect(shown > 0);
-    std.debug.print("dying in Nearby: {d} entries still listed while the bite is drawn\n", .{shown});
 }
 
 test "the ring slid under the cursor after an equip starts on the left ring again" {
@@ -281,7 +297,6 @@ test "Character and Game have separate shortcuts and never spend a turn" {
     harness.press(g, BACK);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(clock, g.sim.clock);
-    std.debug.print("Character: direct toggle, retained page, one-step back; Game: separate menu; zero turns\n", .{});
 }
 
 test "Character page shortcuts open switch and close without acting or carrying movement" {
@@ -291,7 +306,6 @@ test "Character page shortcuts open switch and close without acting or carrying 
     const at = g.sim.heroActor().?.at;
     const clock = g.sim.clock;
     const mana = g.sim.mana;
-    var checked: usize = 0;
     inline for (.{ game.Mode.play, .aim, .inspect, .bind, .pause }) |mode| {
         if (mode == .aim) skills.aiming(g, .x, .shoot) else g.mode = mode;
         g.pause_page = .main;
@@ -304,7 +318,6 @@ test "Character page shortcuts open switch and close without acting or carrying 
             try std.testing.expect(g.st.walk == null and g.pending == null);
             if (page == .passives) try std.testing.expectEqual(progress.start(g.sim.class), g.character.cursor);
             try std.testing.expectEqual(at, g.sim.heroActor().?.at);
-            checked += 1;
         }
         const pages = comptime std.enums.values(input.CharacterPage);
         g.st = .{ .device = .keys, .character_page = pages[pages.len - 1] };
@@ -317,7 +330,7 @@ test "Character page shortcuts open switch and close without acting or carrying 
     try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(clock, g.sim.clock);
     try std.testing.expectEqual(mana, g.sim.mana);
-    std.debug.print("Character shortcuts: {d} page openings, 5 toggles, death guarded; no turns or mana spent\n", .{checked});}
+}
 
 test "an arena restart restores its selected opponent and hero" {
     const g = try game.boot(std.testing.allocator);
@@ -336,7 +349,6 @@ test "an arena restart restores its selected opponent and hero" {
     try std.testing.expectEqual(actor.row(HERO).hp, g.sim.heroActor().?.hp);
     try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     try std.testing.expectEqual(spar.HERO, g.sim.heroActor().?.at);
-    std.debug.print("arena retry: caustic bloat and hero restored at their starting positions with full resources\n", .{});
 }
 
 test "the playground's wizard casts freely and cannot die, and a restart lays its terrain afresh" {
@@ -369,7 +381,6 @@ test "the playground's wizard casts freely and cannot die, and a restart lays it
     try std.testing.expectEqual(playground.HERO, g.sim.heroActor().?.at);
     try std.testing.expectEqual(actor.Kind.wizard, g.sim.heroActor().?.kind);
     for (progress.skills(playground.CLASS)) |s| try std.testing.expect(g.sim.growth.unlocked(s.act));
-    std.debug.print("playground: 3 fireballs at full mana and no cooldown, a 1000-point blow survived, restart relays every tile\n", .{});
 }
 
 test "Debug graphics toggles are independent and spend no simulation" {
@@ -403,7 +414,6 @@ test "Debug graphics toggles are independent and spend no simulation" {
             }
         }
     }
-    std.debug.print("Debug graphics: {d} independent toggles preserve terrain, visibility, clock, RNG and life\n", .{toggles});
 }
 
 test "Debug reveal toggles map terrain without spending turns or changing explored cells" {
@@ -441,7 +451,6 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
     try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     harness.press(g, PAUSE);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
-    std.debug.print("Debug reveal: on/off restores fog, all {d} exploration cells unchanged; back exits one menu at a time\n", .{grid.CELLS});
 }
 
 test "Debug restart begins the map anew and clears visited nodes" {
@@ -466,7 +475,6 @@ test "Debug restart begins the map anew and clears visited nodes" {
     try std.testing.expectEqual(@as(i32, 0), g.sim.gold);
     try std.testing.expectEqual(g.sim.heroRow().hp, g.sim.heroActor().?.hp);
     try std.testing.expect(g.sim.seed != 12);
-    std.debug.print("Debug restart: returns to map start, rerolls seed, restores hero and clears visited nodes and gold\n", .{});
 }
 
 test "inspect walks the orbs, the slots and the statuses, spends no turn, and backs out by any way back or its own button" {
@@ -498,7 +506,6 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
     harness.press(g, skillbar.INSPECT);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expect(std.meta.eql(clock, g.sim.clock));
-    std.debug.print("inspect: life to mana in {d} steps across {d} slots, then a visible character; status navigation, 3 ways out and no turn spent\n", .{ walked, skillbar.SLOTS.len });
 }
 
 test "inspect forgets the body it was on once the hero enters a node" {
@@ -511,7 +518,6 @@ test "inspect forgets the body it was on once the hero enters a node" {
     game.reset(g, .{ .x = 20, .y = 20 });
     try std.testing.expectEqual(game.Spot{ .slot = 0 }, g.inspecting);
     try std.testing.expectEqual(@as(usize, 0), g.inspect_scroll);
-    std.debug.print("inspect focus: a foe's pool slot and the card scroll reset on entering a node\n", .{});
 }
 
 test "the mouse over an orb, a slot or a status shows its tooltip while playing, and nothing off the hud" {
@@ -536,5 +542,4 @@ test "the mouse over an orb, a slot or a status shows its tooltip while playing,
     g.st.pointer = raster.middleAt(spots[1].box);
     g.mode = .pause;
     try std.testing.expectEqual(@as(?overlay.Part, null), overlay.hovered(g));
-    std.debug.print("hover: {d} hud parts each found at their centre; the orb's corner, the screen's, no mouse and pause show none\n", .{spots.len});
 }

@@ -7,11 +7,9 @@ const actor = @import("../play/actor.zig");
 
 const ROOM = grid.Box.centred(19, 9);
 const MIDDLE = ROOM.centre();
-/// How far either side of the middle the hero and foe begin.
 const APART = mathx.P{ .x = 3, .y = 0 };
 pub const HERO = MIDDLE.sub(APART);
 pub const FOE = MIDDLE.add(APART);
-/// Between torches along the top wall.
 const TORCH_STEP: i32 = 6;
 
 pub fn author(map: *atlas.Atlas, kind: actor.Kind) void {
@@ -35,7 +33,6 @@ comptime {
 test "the arena contains one selected foe, a sealed room and an open start" {
     const map = try std.testing.allocator.create(atlas.Atlas);
     defer std.testing.allocator.destroy(map);
-    var checked: usize = 0;
     for (std.enums.values(actor.Kind)) |kind| {
         if (!kind.foe()) continue;
         author(map, kind);
@@ -54,7 +51,5 @@ test "the arena contains one selected foe, a sealed room and an open start" {
             try std.testing.expectEqual(pond, tile == .water);
         }
         for (room.torches()) |torch| try std.testing.expect(map.node[0].torchFits(room, torch));
-        checked += 1;
     }
-    std.debug.print("{d} arena opponents: one foe, reserved split capacity, sealed floor and valid torches\n", .{checked});
 }

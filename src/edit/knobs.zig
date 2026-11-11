@@ -25,7 +25,6 @@ const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const Desk = input.Desk;
 
-/// In the node's panel, scrolled within `box`.
 pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *atlas.Procgen) void {
     const was = pg.*;
     const fo = &pg.foes;
@@ -70,21 +69,22 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
     refit(ed, pg, was);
 }
 
-pub fn choiceRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, which: editor.Which) void {
+pub fn choiceRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, which: editor.Which, top: usize, shown: usize) void {
     const pg = ed.rolled() orelse {
         ed.popup = null;
         return;
     };
     const was = pg.*;
     switch (which) {
-        .feature => |i| if (i < pg.feature_n) popupRows(ed, g, atlas.Feature, &pg.feature[i], box, which),
-        .algo, .node, .file => popupRows(ed, g, atlas.Floor, &pg.floor, box, which),
+        .feature => |i| if (i < pg.feature_n) popupRows(ed, g, atlas.Feature, &pg.feature[i], box, which, top, shown),
+        .algo, .node, .file => popupRows(ed, g, atlas.Floor, &pg.floor, box, which, top, shown),
     }
     if (ed.popup == null) refit(ed, pg, was);
 }
 
-fn popupRows(ed: *editor.Editor, g: *game.Game, comptime U: type, v: *U, box: rl.Rectangle, which: editor.Which) void {
-    for (std.enums.values(std.meta.Tag(U)), 0..) |t, k| {
+fn popupRows(ed: *editor.Editor, g: *game.Game, comptime U: type, v: *U, box: rl.Rectangle, which: editor.Which, top: usize, shown: usize) void {
+    const tags = std.enums.values(std.meta.Tag(U));
+    for (tags[top..@min(tags.len, top + shown)], 0..) |t, k| {
         if (editor.modalButton(ed, g, editor.popupRow(box, which, k), @tagName(t), t == std.meta.activeTag(v.*), true, null)) {
             retag(U, v, t);
             ed.popup = null;
@@ -101,7 +101,6 @@ fn refit(ed: *editor.Editor, pg: *atlas.Procgen, was: atlas.Procgen) void {
     if (!std.meta.eql(was, pg.*)) ed.changed();
 }
 
-/// The generator's rows stand in the node's panel.
 fn column(g: *const game.Game) widgets.Column {
     return editor.Editor.inspector(g);
 }
@@ -208,7 +207,6 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
     return dropped;
 }
 
-/// Where a makeup's lead stands: by a door, or in one of `pack.Lair`.
 const Where = enum {
     anywhere,
     exit,
@@ -653,7 +651,6 @@ test "structured generator tips follow fields independently of wording and decla
     try std.testing.expectEqualStrings("Long blades", decor.tips[1]);
     try std.testing.expectEqualStrings("Fungi", decor.tips[2]);
     try std.testing.expectEqualStrings("Loose stones", litter.tips[0]);
-    std.debug.print("generator tips: 4 rewritten passages retain their field mapping, including reordered declarations\n", .{});
 }
 
 pub fn rowNamed(comptime rows: []const Knob, comptime field: []const u8) ?Knob {
@@ -728,14 +725,12 @@ fn cycle(comptime T: type, v: T, by: i32) T {
 }
 
 test "generator tile choices skip opened containers and wide props in both directions" {
-    var checked: usize = 0;
     for (std.enums.values(grid.Tile)) |tile| {
         try std.testing.expectEqual(tile, cycle(grid.Tile, tile, 0));
         for ([_]i32{ -1, 1 }) |by| {
             const next = cycle(grid.Tile, tile, by);
             try std.testing.expect(next.single());
             if (tile.single()) try std.testing.expectEqual(tile, cycle(grid.Tile, next, -by));
-            checked += 1;
         }
     }
     try std.testing.expectEqual(grid.Tile.swamp_tree, cycle(grid.Tile, .chest, 1));
@@ -745,7 +740,6 @@ test "generator tile choices skip opened containers and wide props in both direc
         if (t.single()) last = t;
     }
     try std.testing.expectEqual(grid.Tile.wall, cycle(grid.Tile, last, 1));
-    std.debug.print("generator tile choices: {d} forward/back steps exclude opened containers and wide props; idle choices preserved\n", .{checked});
 }
 
 pub fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, steps: [2]widgets.Step) i32 {

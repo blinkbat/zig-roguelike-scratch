@@ -20,7 +20,6 @@ pub const procs = damage.chance(CHANCE);
 pub const chance = damage.flat(CHANCE);
 pub const afflict = clock.stuns;
 
-/// A body or barrel beside `from`.
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     _ = mathx.dirTo(from, to) orelse return false;
     return lv.strikeable(to) and lv.taken(to);
@@ -49,13 +48,11 @@ test "a bash reaches a body or barrel beside the knight, and knocks a body back 
     lv.set(.{ .x = 22, .y = 22 }, .floor);
     lv.stand(.{ .x = 22, .y = 22 }, 3);
     try std.testing.expectEqual(@as(?P, null), knocked(&lv, foe, .se, 2));
-    std.debug.print("shield bash: reach 1, knockback 1 onto open ground; {d}% stun\n", .{CHANCE});
 }
 
 test "wet melee reach allows occupied water through diagonal gaps but never barriers or walls" {
     var lv = grid.openFloor();
     const from = P{ .x = 20, .y = 20 };
-    var checked: usize = 0;
     for ([_]mathx.Dir{ .ne, .se, .sw, .nw }) |d| {
         lv = grid.openFloor();
         const delta = d.delta();
@@ -72,7 +69,5 @@ test "wet melee reach allows occupied water through diagonal gaps but never barr
         lv.barrier[grid.Level.idx(to)] = 0;
         lv.set(to, .wall);
         try std.testing.expect(!aimable(&lv, from, to));
-        checked += 1;
     }
-    std.debug.print("wet melee geometry: {d} tight diagonal gaps accept swimming bodies; empty water, walls and barriers stay excluded\n", .{checked});
 }

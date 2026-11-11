@@ -6,14 +6,12 @@ const state = @import("effect_state.zig");
 
 pub const FLASH_S: f32 = 0.16;
 pub const FLASH_GAIN: f32 = 0.75;
-/// A killed foe's body, from its death landing until it is gone.
 pub const DEATH_S: f32 = 0.22;
 /// Of `DEATH_S`, the first part, over which it darkens wholly before it fades.
 pub const DEATH_DARKEN: f32 = 0.35;
 /// The light left on a wholly darkened body, per channel.
 pub const DEATH_RGB = [3]f32{ 0.65, 0.35, 0.32 };
 
-/// How far a dying body has darkened and how much of it is left.
 pub const Dying = struct { dark: f32 = 0, alpha: f32 = 1 };
 
 /// The kinds of turn effect a body can owe: `presentation.Owed`'s fields.
@@ -31,7 +29,6 @@ pub const Event = union(enum) {
     zap: state.Zap,
     puff: state.Puff,
     shimmer: state.Shimmer,
-    /// A sweep round the cell centred here.
     whirl: [2]f32,
 
     pub fn on(d: *const Event) ?actor.ActorSlot {
@@ -79,9 +76,7 @@ pub const Queue = struct {
     dying: [actor.MAX]f32 = @splat(0),
     due: [DUE]struct { t: f32, what: Event } = undefined,
     due_n: usize = 0,
-    /// Of `due`, the blows on a barrel.
     barrels_due: usize = 0,
-    /// Of `due`, those that reveal a body.
     reveals_due: usize = 0,
     /// Indexed by pool slot: the body as the latest-dealt of the blows landed on it left it.
     landed: [actor.MAX]?state.Body = @splat(null),
@@ -92,7 +87,6 @@ pub const Queue = struct {
         return .{ .dark = @min(1, (1 - k) / DEATH_DARKEN), .alpha = @min(1, k / (1 - DEATH_DARKEN)) };
     }
 
-    /// A blow, sting or settle is still to land on the slot.
     pub fn pending(self: *const Queue, slot: actor.ActorSlot) bool {
         return self.landsIn(slot) > 0;
     }
@@ -101,7 +95,6 @@ pub const Queue = struct {
         return self.landed[slot.index];
     }
 
-    /// The blow that split the body in `slot` off another is still to land.
     pub fn revealing(self: *const Queue, slot: actor.ActorSlot) bool {
         return self.revealsIn(slot) > 0;
     }
@@ -116,7 +109,6 @@ pub const Queue = struct {
         return (e.after() orelse return null).reveals;
     }
 
-    /// `barrels_due` and `reveals_due` as `what` is queued (`up`) or taken off.
     fn tally(self: *Queue, what: *const Event, comptime up: bool) void {
         stepCount(&self.barrels_due, what.onBarrel(), up);
         stepCount(&self.reveals_due, revealed(what) != null, up);
@@ -140,12 +132,10 @@ pub const Queue = struct {
         return self.flash[slot.index] > 0 or self.pending(slot);
     }
 
-    /// Seconds until the last blow, sting or settle due on the slot lands.
     pub fn landsIn(self: *const Queue, slot: actor.ActorSlot) f32 {
         return self.lastDue(slot, Event.on);
     }
 
-    /// Seconds until the slot is held no longer: its last due landed and flashed.
     pub fn heldIn(self: *const Queue, slot: actor.ActorSlot) f32 {
         const lands = self.landsIn(slot);
         const due = if (lands > 0) lands + FLASH_S else 0;
@@ -160,7 +150,6 @@ pub const Queue = struct {
         return false;
     }
 
-    /// Eased out, so it holds near full before it fades.
     pub fn flashOf(self: *const Queue, slot: actor.ActorSlot) f32 {
         const k = std.math.clamp(self.flash[slot.index] / FLASH_S, 0, 1);
         return FLASH_GAIN * k * (2 - k);
@@ -277,7 +266,6 @@ test "overdue impacts retain simulation order and release each mana debt once" {
     try std.testing.expectEqual(@as(i32, 6), queue.takeMana());
     try std.testing.expectEqual(@as(i32, 0), queue.takeMana());
     try std.testing.expect(!queue.pending(target) and !queue.revealing(child));
-    std.debug.print("impact queue: 3 overdue snapshots retain the newest sequence; split reveal clears and 6 mana release once\n", .{});
 }
 
 test "a full impact queue preserves pending barrels and returns overflow for immediate delivery" {
@@ -303,5 +291,4 @@ test "a full impact queue preserves pending barrels and returns overflow for imm
     queue.clear();
     try std.testing.expectEqual(@as(usize, 0), queue.count());
     try std.testing.expect(!queue.hasBarrels());
-    std.debug.print("impact queue: {d} pending barrels survive overflow and drain at their deadline; reset clears accounting\n", .{count});
 }

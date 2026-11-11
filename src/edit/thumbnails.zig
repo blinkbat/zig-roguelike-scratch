@@ -86,5 +86,4 @@ test "thumbnail invalidation follows changed nodes and discards identities after
     try std.testing.expect(thumbnails.valid.isSet(0) and !thumbnails.valid.isSet(2));
     thumbnails.invalidateAll();
     try std.testing.expectEqual(@as(usize, 0), thumbnails.valid.count());
-    std.debug.print("thumbnail owner: local edit preserves other nodes; removal and reroll invalidate every cached identity\n", .{});
 }

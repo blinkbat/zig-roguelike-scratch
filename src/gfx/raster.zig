@@ -16,7 +16,6 @@ pub fn sizeOf(t: rl.Texture2D) [2]f32 {
     return .{ @floatFromInt(t.width), @floatFromInt(t.height) };
 }
 
-/// `r` of `t` as fractions of its size: x, y, width, height.
 pub fn uvOf(t: rl.Texture2D, r: rl.Rectangle) [4]f32 {
     const w, const h = sizeOf(t);
     return .{ r.x / w, r.y / h, r.width / w, r.height / h };
@@ -38,7 +37,6 @@ pub fn middle(r: rl.Rectangle) rl.Vector2 {
     return .{ .x = r.x + r.width / 2, .y = r.y + r.height / 2 };
 }
 
-/// The pixel at `r`'s middle.
 pub fn middleAt(r: rl.Rectangle) mathx.P {
     const m = middle(r);
     return .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
@@ -48,18 +46,15 @@ pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
     blit(t, whole(t), dest, tint);
 }
 
-/// `back` across `w`, then `fill` over `v` of `max` of it.
 pub fn meter(x: i32, y: i32, w: i32, h: i32, v: i32, max: i32, back: rl.Color, fill: rl.Color) void {
     rl.drawRectangle(x, y, w, h, back);
     rl.drawRectangle(x, y, mathx.filled(v, max, w), h, fill);
 }
 
-/// `r` grown `by` pixels on every side.
 pub fn grown(r: rl.Rectangle, by: f32) rl.Rectangle {
     return .{ .x = r.x - by, .y = r.y - by, .width = r.width + 2 * by, .height = r.height + 2 * by };
 }
 
-/// `src` of `t` drawn over `dest`, unturned.
 pub fn blit(t: rl.Texture2D, src: rl.Rectangle, dest: rl.Rectangle, tint: rl.Color) void {
     rl.drawTexturePro(t, src, dest, .{ .x = 0, .y = 0 }, 0, tint);
 }
@@ -68,7 +63,6 @@ pub fn overFloor(t: rl.Texture2D, ox: i32, oy: i32, cell: i32) void {
     stretch(t, floorRect(ox, oy, cell), look.LIT);
 }
 
-/// The whole floor on screen, its top-left at `ox, oy`.
 pub fn floorRect(ox: i32, oy: i32, cell: i32) rl.Rectangle {
     return rect(ox, oy, grid.W * cell, grid.H * cell);
 }
@@ -86,7 +80,7 @@ pub fn clamped(img: rl.Image, filter: rl.TextureFilter) ?rl.Texture2D {
     return t;
 }
 
-/// Filled with `c`, for pixels uploaded every frame. Needs a live GL context.
+/// Needs a live GL context.
 pub fn canvas(w: i32, h: i32, c: rl.Color, filter: rl.TextureFilter) ?rl.Texture2D {
     const img = rl.genImageColor(w, h, c);
     defer rl.unloadImage(img);
@@ -110,13 +104,11 @@ pub fn beginTarget(target: *?rl.RenderTexture2D, screen: mathx.P, outer: u32, cl
     return true;
 }
 
-/// Back to `outer` after `beginTarget`, with what was drawn flushed into the target.
 pub fn endTarget(outer: u32) void {
     rl.gl.rlDrawRenderBatchActive();
     rl.gl.rlEnableFramebuffer(outer);
 }
 
-/// Blending by GL factors and equation, until `rl.endBlendMode`.
 pub fn beginBlend(src: i32, dst: i32, equation: i32) void {
     rl.gl.rlSetBlendFactors(src, dst, equation);
     rl.beginBlendMode(.custom);
@@ -131,18 +123,16 @@ pub fn drawTarget(t: rl.Texture2D) void {
     drawTargetPart(t, whole(t), rl.Color.white);
 }
 
-/// `r` of a render texture over the whole frame, drawn where it was rendered, flipped the right way up.
 pub fn drawTargetPart(t: rl.Texture2D, r: rl.Rectangle, tint: rl.Color) void {
     const h: f32 = @floatFromInt(t.height);
     rl.drawTextureRec(t, .{ .x = r.x, .y = h - r.y - r.height, .width = r.width, .height = -r.height }, .{ .x = r.x, .y = r.y }, tint);
 }
 
-/// White, its alpha `alphaAt(r)` at `r` from the middle, 1 at the middle of each edge. Needs a live GL context.
+/// Needs a live GL context.
 pub fn radial(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
     return fieldOf(px, px, roundOf(alphaAt), false);
 }
 
-/// `radial` premultiplied: its colour falls off with its alpha, for blending that ignores alpha.
 pub fn radialPremultiplied(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
     return fieldOf(px, px, roundOf(alphaAt), true);
 }
@@ -155,7 +145,7 @@ fn roundOf(comptime alphaAt: fn (f32) f32) fn (f32, f32) f32 {
     }.at;
 }
 
-/// White, its alpha `alphaAt(u, v)` at each texel's middle, `u` and `v` 0 to 1 across and down. Needs a live GL context.
+/// Needs a live GL context.
 pub fn field(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f32) ?rl.Texture2D {
     return fieldOf(w, h, alphaAt, false);
 }

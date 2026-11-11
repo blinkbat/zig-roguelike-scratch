@@ -3,15 +3,12 @@ const resilience = @import("resilience.zig");
 
 pub const AILMENT = resilience.Kind.blind;
 pub const TURNS: u8 = 3;
-/// Cells a blinded body sees.
 pub const SIGHT: i32 = 1;
 pub const TAKES = "is blinded";
 pub const STATUS = "Sees only adjacent cells.";
 
-/// Its turns left unable to see past the cells beside it.
 pub const Blind = resilience.Turns(TURNS);
 
-/// The cells a body whose eyes reach `normal` sees.
 pub fn sight(blinded: bool, normal: i32) i32 {
     return if (blinded) @min(normal, SIGHT) else normal;
 }
@@ -30,5 +27,4 @@ test "blindness narrows sight to the next cell for three turns, and a second nev
     b.turns = 9;
     b.start();
     try std.testing.expectEqual(@as(u8, 9), b.turns);
-    std.debug.print("blind: {d} turns seeing {d} cell, sight 10 restored after\n", .{ blinded, SIGHT });
 }

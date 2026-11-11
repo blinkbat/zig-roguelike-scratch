@@ -7,7 +7,6 @@ pub const TAKES = "is maimed";
 pub const LIMPS = "limps";
 pub const STATUS = "Every second step costs an extra turn.";
 
-/// Its turns left limping, and whether its next step is the one that costs a turn.
 pub const Maim = struct {
     turns: u8 = 0,
     limp: bool = false,
@@ -27,7 +26,6 @@ pub const Maim = struct {
         return resilience.wearTurn(&self.turns);
     }
 
-    /// The turn is over: a limp outlives no maim.
     pub fn settle(self: *Maim) void {
         if (self.turns == 0) self.limp = false;
     }
@@ -61,5 +59,4 @@ test "a maimed body loses a turn to every second step, and walks freely once it 
     m.turns = 9;
     m.start();
     try std.testing.expectEqual(@as(u8, 9), m.turns);
-    std.debug.print("maim: {d} of {d} steps cost a turn; none once worn off\n", .{ lost, TURNS });
 }

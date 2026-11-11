@@ -2,7 +2,6 @@ const std = @import("std");
 const actor = @import("actor.zig");
 const skillbar = @import("skillbar.zig");
 
-/// What took life off the hero.
 pub const Source = union(enum) {
     foe: actor.Kind,
     gas,
@@ -14,11 +13,8 @@ pub const Source = union(enum) {
 pub const Hurt = struct {
     by: Source,
     dmg: i32,
-    /// Life before it.
     before: i32,
-    /// The blow rolled its highest.
     best: bool = false,
-    /// A bleed torn wider by moving.
     torn: bool = false,
 };
 
@@ -32,20 +28,16 @@ pub const Event = union(enum) {
     dealt: Dealt,
     missed: struct { origin: AttackOrigin = .chosen },
     used: skillbar.Act,
-    /// A caustic bloat burst beside the hero.
     burst,
 };
 
 pub const FLASK: skillbar.Act = .life_flask;
 pub const WARD: skillbar.Act = .mana_shield;
 
-/// The hero as a turn began.
 pub const Start = struct {
     hp: i32,
     max: i32,
-    /// A bound `FLASK` could be drunk.
     flask: bool = false,
-    /// A bound `WARD` could be cast.
     ward: bool = false,
     /// A bound `WARD` was ready but for the mana.
     starved: bool = false,
@@ -78,7 +70,6 @@ pub const Milestone = struct {
     what: union(enum) { level, cleared: actor.Kind, chest },
 };
 
-/// Turns kept, all of which a report reads.
 pub const KEPT: usize = 5;
 
 /// The hero's last few turns as they happened, for the death report; not saved.
@@ -155,5 +146,4 @@ test "the chronicle keeps the last turns in order and a quiet turn can be restar
     try std.testing.expectEqual(EVENTS, c.current().?.n);
     c.note(.{ .hurt = .{ .by = .gas, .dmg = 7, .before = 7 } });
     try std.testing.expectEqual(@as(i32, 7), c.current().?.events[EVENTS - 1].hurt.dmg);
-    std.debug.print("chronicle: {d} turns begun, last {d} read back in order, {d} events a turn at most\n", .{ c.count, last.len, EVENTS });
 }

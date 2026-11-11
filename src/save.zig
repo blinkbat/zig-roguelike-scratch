@@ -415,14 +415,12 @@ test "an unfinished autosave defers the next snapshot without consuming dirty st
     try std.testing.expectEqual(@as(?anyerror, null), a.failed);
     try std.testing.expectEqual(@as(usize, 0), a.bytes.items.len);
     try std.testing.expectEqual(GAP_S * 2, a.since);
-    const deferred = a.since;
 
     a.finished.store(true, .release);
     a.step(g, 0);
     try std.testing.expectEqual(@as(?anyerror, error.OutOfMemory), a.failed);
     a.step(g, 0);
     try std.testing.expect(g.sim.unsaved);
-    std.debug.print("autosave deferred {d:.1} s; completion resumes capture and failure rearms it\n", .{deferred});
 }
 
 test "autosave waits out an open loot visit, whose pickups are paid for as it closes" {
@@ -453,7 +451,6 @@ test "a failed autosave marks an idle run dirty again without another turn" {
     try std.testing.expect(g.sim.unsaved);
     try std.testing.expectEqual(@as(?anyerror, error.AccessDenied), a.failed);
     try std.testing.expectEqual(@as(usize, 0), a.bytes.items.len);
-    std.debug.print("failed autosave rearmed with no turn taken; retry remains throttled\n", .{});
 }
 
 test "a save that keeps failing is said once, not once a retry" {
@@ -466,7 +463,6 @@ test "a save that keeps failing is said once, not once a retry" {
     const RETRIES = 6;
     for (0..RETRIES) |_| a.step(g, GAP_S);
     try std.testing.expectEqual(said + 1, g.sim.log.n);
-    std.debug.print("a save failing {d} retries in a row: {d} log line\n", .{ RETRIES, g.sim.log.n - said });
 }
 
 fn testMap() !*Map {
@@ -528,7 +524,6 @@ test "save terrain refuses unvisited bespoke torches outside the map before muta
             try std.testing.expectEqualSlices(u8, before.items, after.items);
         }
     }
-    std.debug.print("saved terrain: {d} invalid unvisited torch positions rejected in portable and legacy saves; listing/loading preserve the live run and map\n", .{invalid.len});
 }
 
 test "a run reads back as it was written, and a short or foreign file leaves the game alone" {
@@ -581,7 +576,6 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     defer buf.deinit();
     try write(g, &buf);
     seal(&buf);
-    std.debug.print("a run of two nodes, one left behind: {d} KB saved\n", .{buf.items.len / 1024});
 
     const back = try game.boot(alloc);
     defer game.shut(alloc, back);
@@ -621,14 +615,10 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqual(g.sim.pool.n, back.sim.pool.n);
     try std.testing.expectEqualSlices(grid.Tile, &g.sim.lv.tile, &back.sim.lv.tile);
     try std.testing.expectEqualSlices(grid.Tile, &g.sim.visits[0].lv.tile, &back.sim.visits[0].lv.tile);
-    var restored: usize = 0;
     for ([_]*const grid.Level{ &back.sim.lv, &back.sim.visits[0].lv }) |lv| {
         try std.testing.expectEqual(@as(u8, 2), lv.shape[forest].?.mask());
         try std.testing.expectEqual(@as(u8, 8), lv.shape[forest + 1].?.mask());
-        restored += 2;
     }
-    std.debug.print("save reload restored {d} absent forest shapes across the active and visited nodes\n", .{restored});
-    std.debug.print("closed and opened chests preserved on both active and visited nodes\n", .{});
     try std.testing.expectEqualStrings("A line to keep.", back.sim.log.line(0).?);
     const s = try peek(buf.items);
     const menu = @import("ui/menu.zig");
@@ -676,12 +666,8 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     defer first.deinit();
     const snapshot = try alloc.create(format.Snapshot);
     defer alloc.destroy(snapshot);
-    var timer = try std.time.Timer.start();
     try format.capture(g, snapshot);
-    const capture_ns = timer.read();
-    timer.reset();
     try write(g, &first);
-    const encode_ns = timer.read();
     seal(&first);
 
     const back = try game.boot(alloc);
@@ -689,9 +675,7 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     const into = try alloc.create(Map);
     defer alloc.destroy(into);
     game.begin(back, 1);
-    timer.reset();
     try read(first.items, back, into);
-    const parse_ns = timer.read();
     try std.testing.expectEqualDeep(g.sim.inventory.gear, back.sim.inventory.gear);
     try std.testing.expectEqualDeep(g.sim.inventory.bag[1], back.sim.inventory.bag[1]);
     try std.testing.expectEqualDeep(g.sim.ground.drops[0].item, back.sim.ground.drops[0].item);
@@ -710,15 +694,12 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     for ([_]*const grid.Level{ &g.sim.lv, &g.sim.visits[0].lv }, [_]*const grid.Level{ &back.sim.lv, &back.sim.visits[0].lv }) |before, after| {
         for (std.enums.values(grid.Gas)) |kind| try std.testing.expectEqualSlices(u16, before.volumes(kind), after.volumes(kind));
     }
-    std.debug.print("saved clouds: all {d} gas fields, including steam, retained independently on current and visited floors\n", .{std.enums.values(grid.Gas).len});
     var again = std.ArrayList(u8).init(alloc);
     defer again.deinit();
     try write(back, &again);
     seal(&again);
     try std.testing.expectEqualDeep(try peek(first.items), try peek(again.items));
     try std.testing.expectEqualSlices(u8, first.items, again.items);
-    std.debug.print("portable save version {d}: {d} bytes, canonical rewrite and all equipment/status fields retained\n", .{ format.VERSION, first.items.len });
-    std.debug.print("portable save timing: {d:.2} ms capture, {d:.2} ms encoding off-frame, {d:.2} ms validated load (two-node fixture)\n", .{ @as(f64, @floatFromInt(capture_ns)) / std.time.ns_per_ms, @as(f64, @floatFromInt(encode_ns)) / std.time.ns_per_ms, @as(f64, @floatFromInt(parse_ns)) / std.time.ns_per_ms });
     try std.testing.expectEqual(RECORDED_FINGERPRINT, FINGERPRINT);
 }
 
@@ -763,7 +744,6 @@ test "legacy saves convert on load and reject invalid native tags before changin
         try std.testing.expectEqualStrings(source.sim.name.text(), target.sim.name.text());
         old.items[offset] = previous;
     }
-    std.debug.print("legacy conversion: visited map, progress and RNG retained; native enum/bool corruption rejected without mutation\n", .{});
 }
 
 test "save readers reject an all-zero combat or loot random stream before applying it" {
@@ -785,7 +765,6 @@ test "save readers reject an all-zero combat or loot random stream before applyi
     defer changed.deinit();
     var after = std.ArrayList(u8).init(alloc);
     defer after.deinit();
-    var checked: usize = 0;
     inline for (.{ "rng", "loot_rng" }) |field| {
         const saved = @field(source.sim, field);
         @field(source.sim, field).impl.s = @splat(0);
@@ -799,11 +778,9 @@ test "save readers reject an all-zero combat or loot random stream before applyi
             try write(target, &after);
             try std.testing.expectEqualSlices(u8, before.items, after.items);
             try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
-            checked += 1;
         }
         @field(source.sim, field) = saved;
     }
-    std.debug.print("save RNG validation: {d} zero combat/loot streams rejected in portable and legacy saves without mutation\n", .{checked});
 }
 
 test "a listed save must have the complete run that loading requires" {
@@ -835,7 +812,6 @@ test "a listed save must have the complete run that loading requires" {
     seal(&buf);
     try std.testing.expectError(error.Damaged, peek(buf.items));
     try std.testing.expectError(error.Damaged, read(buf.items, g, map));
-    std.debug.print("{d} checksummed incomplete saves and an invalid map flag refused before loading\n", .{cuts.len});
 }
 
 test "autosave gates retain dirty state until the interval turn and door are complete" {
@@ -865,7 +841,6 @@ test "autosave gates retain dirty state until the interval turn and door are com
         a.step(g, 0);
         try std.testing.expect(g.sim.unsaved);
     }
-    std.debug.print("autosave: {d} independent gates preserve dirty state; each released gate attempts capture without filesystem writes\n", .{std.enums.values(Gate).len});
 }
 
 test "checksummed save structure failures preserve both the live run and destination map" {
@@ -955,7 +930,6 @@ test "checksummed save structure failures preserve both the live run and destina
         try std.testing.expectEqualSlices(u8, before.items, after.items);
         try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
     }
-    std.debug.print("save validation: {d} length and {d} navigation failures preserve the complete run and destination map\n", .{ cuts.len, std.enums.values(Navigation).len });
 }
 
 test "a generated run reloads every class without retaining the previous run's transient state" {
@@ -1007,5 +981,4 @@ test "a generated run reloads every class without retaining the previous run's t
         try std.testing.expectEqualDeep(back.sim.growth, back.pic.growth_shown);
         try std.testing.expectEqual(@as(f32, 0), back.pic.fx.level_up.life);
     }
-    std.debug.print("save reload: {d} generated class runs restore resources, RNG and HUD; clear pending aim, travel and effects without touching the destination map\n", .{hero.CLASSES.len});
 }

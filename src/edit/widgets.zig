@@ -10,14 +10,11 @@ const listing = @import("../map/listing.zig");
 pub const SHIFT_STEP: i32 = 5;
 const P = mathx.P;
 
-/// The brush panel down the left.
 pub const SIDE_W: i32 = 360;
-/// The node's panel down the right; the generator's rows are laid to it.
 pub const INSPECT_W: i32 = 420;
 pub const PAD: i32 = 12;
 pub const ROW_H: i32 = 34;
 pub const GAP: i32 = 6;
-/// The two rows of the bar along the top.
 pub const TOP_H: i32 = GAP + 2 * (ROW_H + GAP);
 pub const SECTION_GAP: i32 = GAP * 3;
 pub const BLOCK_GAP: i32 = GAP * 2;
@@ -90,7 +87,6 @@ fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: 
     return buttonSized(controls, face, r, label, TEXT, on, live, modal, tip);
 }
 
-/// Its label `size` pixels high.
 pub fn buttonSized(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, size: i32, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     const h = hot(controls, r, live, modal, tip);
     buttonBack(r, live);
@@ -108,7 +104,6 @@ pub fn buttonBackEdged(r: rl.Rectangle, live: bool, edge: rl.Color) void {
     rl.drawRectangleLinesEx(r, 1, edge);
 }
 
-/// A row of `r`, with no frame of its own, its label `ink`.
 pub fn flatButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, ink: rl.Color, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     const h = hot(controls, r, live, modal, tip);
     plate(r, on, h.hot);
@@ -116,7 +111,6 @@ pub fn flatButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, l
     return h.hit;
 }
 
-/// Where text `size` high stands centred in `h` from `top`.
 pub fn midIn(top: i32, h: i32, size: i32) i32 {
     return top + @divTrunc(h - size, 2);
 }
@@ -125,7 +119,6 @@ pub fn midY(r: rl.Rectangle, size: i32) i32 {
     return midIn(@intFromFloat(r.y), @intFromFloat(r.height), size);
 }
 
-/// `s` fitted to `w`, centred down a row standing at `y`.
 pub fn rowText(face: *const font.Face, s: []const u8, size: i32, x: i32, y: i32, w: i32, col: rl.Color) void {
     drawFit(face, s, size, w, false, x, midIn(y, ROW_H, size), col);
 }
@@ -136,14 +129,12 @@ pub fn rightX(r: rl.Rectangle) i32 {
 
 const LABEL_PAD: i32 = 10;
 
-/// A button just wide enough for `label` at `size`.
 pub fn labelW(face: *const font.Face, label: [:0]const u8, size: i32) i32 {
     return textFace(face).width(label, size) + 2 * LABEL_PAD;
 }
 
 pub const Step = struct { tip: ?[:0]const u8, live: bool = true };
 
-/// How a stepper looks: its two arrows, its value's size, and whether it sits on a modal page over a filled well.
 const Arrows = struct { glyphs: [2][:0]const u8, size: i32, modal: bool, well: bool };
 pub const KNOB_ARROWS = Arrows{ .glyphs = .{ "-", "+" }, .size = TEXT, .modal = false, .well = false };
 pub const PAGE_ARROWS = Arrows{ .glyphs = .{ "<", ">" }, .size = DETAIL, .modal = true, .well = true };
@@ -163,7 +154,6 @@ pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, valu
     return if (shift) by * SHIFT_STEP else by;
 }
 
-/// A stepper whose value shows `value_w` wide between its arrows.
 pub fn stepperW(value_w: i32) i32 {
     return 2 * STEP_W + value_w;
 }
@@ -181,7 +171,6 @@ pub fn textX(r: rl.Rectangle) i32 {
     return @as(i32, @intFromFloat(r.x)) + GAP;
 }
 
-/// `s` fitted ahead of `suffix`, which is kept whole.
 pub fn fitBefore(face: *const font.Face, buf: []u8, fit_buf: []u8, s: []const u8, suffix: [:0]const u8, max: i32) [:0]const u8 {
     const head = textFace(face).fit(fit_buf, s, TEXT, max - textFace(face).width(suffix, TEXT), false);
     return std.fmt.bufPrintZ(buf, "{s}{s}", .{ head, suffix }) catch "";
@@ -218,7 +207,6 @@ pub fn slotOf(x0: i32, span: i32, y: i32, k: usize, n: usize) rl.Rectangle {
     return row(x0 + @as(i32, @intCast(k)) * (w + GAP), y, w);
 }
 
-/// A panel down one side of the editor, `w` wide from `x`.
 pub const Column = struct {
     x: i32,
     w: i32,
@@ -235,7 +223,6 @@ pub const Column = struct {
         return raster.rect(c.x, top, c.w, @max(0, bottom - top));
     }
 
-    /// The `k`th of `n` equal slots across row `y`.
     pub fn cell(c: Column, y: i32, k: usize, n: usize) rl.Rectangle {
         return slotOf(c.left(), c.inner(), y, k, n);
     }
@@ -286,7 +273,6 @@ pub fn scrollbarIn(box: rl.Rectangle, offset: usize, shown: usize, total: usize)
     scrollbar(.{ .x = box.x + box.width - w, .y = box.y, .width = w, .height = box.height }, offset, shown, total);
 }
 
-/// The scissor of `r` held within `clip`, the scrolled area it is drawn in.
 pub fn scissorIn(clip: ?rl.Rectangle, r: rl.Rectangle) void {
     scissor(if (clip) |c| rl.getCollisionRec(c, r) else r);
 }
@@ -295,7 +281,6 @@ pub fn reclip(clip: ?rl.Rectangle) void {
     if (clip) |c| scissor(c) else rl.endScissorMode();
 }
 
-/// The first of `rows` shown of `n`, moved `by` and held where the last still fills the view.
 pub fn scrollTop(top: usize, by: i32, n: usize, rows: usize) usize {
     return mathx.nudge(top, by, (n -| rows) + 1);
 }
@@ -313,7 +298,6 @@ pub const Scroll = struct {
     top: *i32,
     most: *i32,
 
-    /// Clips to the box, held in `clip` so nothing outside it is hot; the content's first row.
     pub fn begin(s: Scroll, clip: *?rl.Rectangle) i32 {
         clip.* = s.box;
         scissor(s.box);
@@ -329,7 +313,6 @@ pub const Scroll = struct {
         s.most.* = @max(0, bottom + margin + s.top.* - @as(i32, @intFromFloat(s.box.y)) - s.shown());
     }
 
-    /// Scrolls the least that shows `h` pixels from `at`, the content's own offset.
     pub fn reveal(s: Scroll, at: i32, h: i32) void {
         const shown_at = at - s.top.*;
         if (shown_at < 0) s.top.* += shown_at;
@@ -341,7 +324,6 @@ pub const Scroll = struct {
         if (s.most.* > 0) scrollbarIn(s.box, @intCast(s.top.*), @intCast(s.shown()), @intCast(s.shown() + s.most.*));
     }
 
-    /// The content ran to `bottom`, wanting `margin` below it: how far it scrolls, and its bar.
     pub fn end(s: Scroll, bottom: i32, margin: i32) void {
         s.fit(bottom, margin);
         s.bar();
@@ -385,7 +367,6 @@ test "editor scrollbar thumb remains inside its track for large catalogs and sho
         try std.testing.expect(scrollThumb(track, 0, 4, 4) == null);
         try std.testing.expect(scrollThumb(track, 0, 0, 4) == null);
     }
-    std.debug.print("editor scrollbars: 6 large-catalog/short-view bounds and 4 non-scrollable cases checked\n", .{});
 }
 
 pub const Across = struct {
@@ -435,24 +416,20 @@ pub fn vrule(x: i32, top: i32, bottom: i32) void {
     rl.drawRectangle(x, top, 1, bottom - top, look.EDGE);
 }
 
-/// A one-pixel frame just outside `r`.
 pub fn outline(r: rl.Rectangle) void {
     rl.drawRectangleLinesEx(raster.grown(r, 1), 1, look.EDGE);
 }
 
-/// `s` drawn ending `GAP` short of `right`; its width.
 pub fn drawRight(face: *const font.Face, s: [:0]const u8, size: i32, right: i32, y: i32, col: rl.Color) i32 {
     const w = textFace(face).width(s, size);
     textFace(face).draw(s, right - GAP - w, y, size, col);
     return w;
 }
 
-/// The rule between two columns, in the gutter left of `x`.
 pub fn divider(x: i32, top: i32, bottom: i32) void {
     vrule(x - @divTrunc(PAD, 2), top, bottom);
 }
 
-/// The column after one `w` wide from `x`, with the rule between them.
 pub fn besides(x: i32, w: i32, top: i32, bottom: i32) i32 {
     const next = x + w + PAD;
     divider(next, top, bottom);
@@ -510,7 +487,6 @@ pub fn modalFrame(face: *const font.Face, screen: P, want_w: i32, h: i32, title:
     return .{ .x = x, .w = w, .top = top, .y = y + MODAL_HEAD };
 }
 
-/// `hint` after the frame's `title`, on its line.
 pub fn titleHint(face: *const font.Face, f: Frame, title: [:0]const u8, hint: []const u8) void {
     const x = f.x + 2 * PAD + textFace(face).width(title, TITLE);
     drawFit(face, hint, DETAIL, f.x + f.w - PAD - x, false, x, midIn(f.top, TITLE, DETAIL), look.DIM);
@@ -525,7 +501,6 @@ const Page = struct {
     }
 };
 
-/// A page over the whole editor; `bottom` is the inside of its padding.
 pub fn pageFrame(face: *const font.Face, screen: P, title: [:0]const u8) Page {
     const h = @min(PAGE_H, screen.y - 2 * PAD);
     const f = modalFrame(face, screen, PAGE_W, h, title, false);
@@ -536,12 +511,10 @@ pub fn keyed(comptime what: []const u8, comptime key: []const u8) [:0]const u8 {
     return what ++ " (" ++ key ++ ")";
 }
 
-/// A square picture `size` across, centred in a button `top` below its edge.
 pub fn pictureIn(r: rl.Rectangle, size: f32, top: f32) rl.Rectangle {
     return .{ .x = r.x + (r.width - size) / 2, .y = r.y + top, .width = size, .height = size };
 }
 
-/// A square picture `size` across, `dx` in from a row's left and centred down it.
 pub fn pictureAt(r: rl.Rectangle, dx: f32, size: f32) rl.Rectangle {
     return .{ .x = r.x + dx, .y = r.y + (r.height - size) / 2, .width = size, .height = size };
 }

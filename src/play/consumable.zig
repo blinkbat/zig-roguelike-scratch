@@ -10,17 +10,14 @@ const P = mathx.P;
 
 pub const Kind = enum { bandage, smelling_salts, frost_vial };
 pub const KINDS = std.enums.values(Kind);
-/// The most of one kind the bag carries.
 pub const STACK_MAX: u8 = 20;
 pub const FOE_PERCENT = 8;
 pub const CHEST_PERCENT = 50;
 
-/// One of any kind, `percent` of the time.
 pub fn roll(rng: *mathx.Rng, percent: u32) ?Kind {
     return if (rng.percent(percent)) rng.pick(Kind, KINDS) else null;
 }
 
-/// As the log names one lying somewhere.
 pub fn phrase(k: Kind) []const u8 {
     return switch (k) {
         .bandage => "a bandage",
@@ -78,7 +75,6 @@ test "smelling salts hold stun resistance full until their turns run out, and le
     try std.testing.expectEqual(@as(u32, 0), r.resistance(.stun, 0));
     try std.testing.expect(r.take(.stun, 0, &rng));
     try std.testing.expectEqual(@as(u8, 0), r.meters.get(.bleed).turns);
-    std.debug.print("smelling salts: {d} turns of full stun resistance after the turn they are used, then stuns land again\n", .{SmellingSalts.TURNS});
 }
 
 test "a frost vial's splash takes the cell it strikes and the eight round it, but not past a wall" {
@@ -88,5 +84,4 @@ test "a frost vial's splash takes the cell it strikes and the eight round it, bu
     try std.testing.expectEqual(open, FrostVial.burst(&lv, .{ .x = 14, .y = 20 }, at).n);
     lv.set(.{ .x = 21, .y = 20 }, .wall);
     try std.testing.expect(!FrostVial.burst(&lv, .{ .x = 14, .y = 20 }, at).has(.{ .x = 21, .y = 20 }));
-    std.debug.print("frost vial: a {d}-cell splash on open ground, walls excluded\n", .{open});
 }

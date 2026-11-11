@@ -19,7 +19,7 @@ Run from the repository root; wrappers select and verify Zig 0.14.1. Setup: [REA
 - Tests must not write saves/maps. Full procgen tests take minutes; check CPU before declaring a stall. Keep the direct test runner in `build.zig`: raylib stdout deadlocks Zig's `--listen=-` test protocol.
 - Every `src/**/*.zig` except `main.zig` must appear in its `test {}` imports and be at least 512 bytes. Builds enforce this and dependency boundaries through `tools/source_rules.zig`.
 - For visual changes, inspect actual headless PNGs. Build into `zig-out-dev`; copy `maps/` and the executable (with a distinct basename) into a fresh `%TEMP%` directory, then run there. Captures write `shots/` under the working directory; do not run `shot.cmd` from the repo.
-- Capture flags: `--shot` (general/maps), `--shot-ui`, `--shot-editor`, `--shot-debug`, `--shot-trees`, `--shot-water-cliffs`, `--shot-cinema`; `--bench` measures CPU/draw/resource costs. Coverage lives in `src/game/shots.zig`, dispatch in `src/app.zig`.
+- Capture flags: `--shot` (general/maps), `--shot-ui`, `--shot-editor`, `--shot-debug`, `--shot-trees`, `--shot-water-cliffs`, `--shot-cinema`; `--bench` measures CPU/draw/resource costs. Coverage lives in `src/game/shots/` (one file per flag, shared helpers in `capture.zig`), dispatch in `src/app.zig`.
 
 ## Task routing
 
@@ -29,7 +29,7 @@ Read the relevant references before editing and keep them aligned with changes. 
 | --- | --- |
 | App, turns, travel, lifecycle | `app.zig`, `game.zig`, `game/sim.zig`, `game/presentation.zig`; ARCHITECTURE |
 | Combat, skills, foes, statuses | `game/combat.zig`, `game/attacks.zig`, `game/skills.zig`, `game/rewards.zig`; `play/actor.zig`, `play/skillbar.zig`, `play/skill_contract.zig`, individual `play/` skill/status modules; ARCHITECTURE |
-| Items, loot, stats, progression | [PROGRESSION.md](docs/PROGRESSION.md); `play/items.zig`, `play/attrs.zig`, `play/progress.zig`, `game/character.zig` |
+| Items, loot, stats, progression | [PROGRESSION.md](docs/PROGRESSION.md); `play/items.zig`, `play/item_bases.zig`, `play/affixes.zig`, `play/loot.zig`, `play/gear.zig`, `play/inventory.zig`, `play/ground_items.zig`, `play/attrs.zig`, `play/progress.zig`, `game/character.zig` |
 | Skill/passive trees | [DIABLO2_SKILL_TREE.md](docs/DIABLO2_SKILL_TREE.md), [POE2_PASSIVE_TREE.md](docs/POE2_PASSIVE_TREE.md); `ui/trees.zig`, `play/passives.zig`, `play/progress.zig` |
 | Controls, aiming, mouse | [CONTROLLER.md](docs/CONTROLLER.md); `core/input.zig`, `input_bindings.zig`, `input_names.zig`, `input_repeat.zig` (all in `core/`); `game/targeting.zig`, `game/mouse.zig` |
 | HUD, menus, cards, wording | [HUD_LAYOUT.md](docs/HUD_LAYOUT.md), [DATA_PRESENTATION.md](docs/DATA_PRESENTATION.md); `ui/hud.zig`, `ui/book.zig`, `ui/character_*.zig`, `ui/item_card.zig`, `game/overlay.zig`, `core/wording.zig` |

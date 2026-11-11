@@ -26,5 +26,4 @@ test "a spark stuns about half the time" {
         if (procs(&rng, 0)) hits += 1;
     }
     try std.testing.expect(hits > 400 and hits < 600);
-    std.debug.print("spark: {d}/1000 stun\n", .{hits});
 }

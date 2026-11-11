@@ -8,5 +8,5 @@ pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage to every foe in a li
 
 test "a piercing arrow names its full reach" {
     try std.testing.expect(std.mem.indexOf(u8, DESCRIPTION, std.fmt.comptimePrint("{d} tiles", .{bow.RANGE})) != null);
-    std.debug.print("piercing shot: {d}-tile reach, {d} mana\n", .{ bow.RANGE, COST });
+    try std.testing.expectEqual(@as(usize, @intCast(bow.RANGE)), (bow.Pierced{}).flight.most);
 }

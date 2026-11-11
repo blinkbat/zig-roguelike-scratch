@@ -284,7 +284,6 @@ pub const Gpu = struct {
     glow: ?rl.Texture2D = null,
     /// `glow` premultiplied, for halos meeting by maximum.
     halo: ?rl.Texture2D = null,
-    /// The screen's halos, sized to the screen when drawn.
     halos: ?rl.RenderTexture2D = null,
     streak: ?rl.Texture2D = null,
     body: ?BodyShader = null,

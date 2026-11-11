@@ -16,7 +16,6 @@ pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const Arc = grid.Bounded(P, WIDTH);
 
-/// The cell toward `to` and the two either side of it round `from`, those a melee blow could reach.
 pub fn arc(lv: *const grid.Level, from: P, to: P) Arc {
     const d = mathx.dirTo(from, to) orelse return .{};
     var dirs: [WIDTH]mathx.Dir = undefined;
@@ -24,7 +23,6 @@ pub fn arc(lv: *const grid.Level, from: P, to: P) Arc {
     return lv.reachable(WIDTH, from, dirs);
 }
 
-/// An arc with a body or barrel in it.
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     const a = arc(lv, from, to);
     for (a.slice()) |p| {
@@ -48,5 +46,4 @@ test "a cleave sweeps the three tiles round the one aimed at, cardinal or diagon
     lv.set(.{ .x = 21, .y = 20 }, .wall);
     try std.testing.expectEqual(@as(usize, 2), arc(&lv, from, .{ .x = 21, .y = 21 }).n);
     try std.testing.expectEqual(@as(usize, 0), arc(&lv, from, .{ .x = 22, .y = 22 }).n);
-    std.debug.print("cleave: {d}-tile arc, cardinal and diagonal, walls excluded\n", .{WIDTH});
 }

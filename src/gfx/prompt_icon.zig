@@ -8,7 +8,6 @@ const raster = @import("raster.zig");
 
 pub const MouseIcon = enum { left, right, middle, wheel };
 
-/// Device-specific input icons: PlayStation shapes, Xbox letters, or keyboard caps.
 pub const Prompt = union(enum) {
     face: struct { button: FaceButton, sony: bool },
     pill: [:0]const u8,
@@ -24,7 +23,6 @@ pub const Prompt = union(enum) {
         return if (st.device.pad()) of(st, b) else .{ .key = st.caption(b) };
     }
 
-    /// A menu button as `device` shows it, outside any live input state.
     pub fn menuOn(device: input.Device, b: input.Button) Prompt {
         return menuOf(&.{ .device = device }, b);
     }
@@ -39,7 +37,6 @@ pub const Prompt = union(enum) {
         };
     }
 
-    /// Across, at `h` tall.
     pub fn width(p: Prompt, face: *const font.Face, h: i32) i32 {
         return switch (p) {
             .face, .stick, .dpad, .arrows, .mouse => h,
@@ -49,14 +46,12 @@ pub const Prompt = union(enum) {
         };
     }
 
-    /// `draw`, its left on `x`; returns the x past it.
     pub fn drawFrom(p: Prompt, face: *const font.Face, x: i32, cy: i32, h: i32, alpha: f32) i32 {
         const w = p.width(face, h);
         p.draw(face, x + @divTrunc(w, 2), cy, h, alpha);
         return x + w;
     }
 
-    /// Its middle on `cx`, `cy`, `h` tall, faded to `alpha`.
     pub fn draw(p: Prompt, face: *const font.Face, cx: i32, cy: i32, h: i32, alpha: f32) void {
         const w = p.width(face, h);
         const box = raster.rect(cx - @divTrunc(w, 2), cy - @divTrunc(h, 2), w, h);
@@ -115,13 +110,11 @@ pub const Prompt = union(enum) {
     }
 };
 
-/// The small arrows of an input icon `h` tall.
 fn arrowPx(h: i32) i32 {
     return @max(6, @divTrunc(h, 3));
 }
 
 const STROKE_PX: f32 = 1.2;
-/// A mark's heavier stroke, the wheel's width, a stick's rim, and how far in a face button's body and ring sit.
 const MARK_PX: f32 = 1.5;
 const WHEEL_PX: f32 = 3;
 const STICK_RIM_PX: f32 = 1.5;
@@ -140,7 +133,6 @@ fn promptArrow(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) void {
     for ([_]f32{ -1, 1 }) |side| rl.drawLineEx(.{ .x = x - dy * radius * side, .y = y + dx * radius * side }, tip, STROKE_PX, col);
 }
 
-/// An input icon `h` tall: its caption's text size.
 pub fn labelPx(h: i32) i32 {
     return @divTrunc(h * 11, 16);
 }

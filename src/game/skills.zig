@@ -16,8 +16,8 @@ const look = @import("../gfx/look.zig");
 const fx = @import("../gfx/fx.zig");
 const combat = @import("combat.zig");
 const glide = @import("glide.zig");
-const tactics = @import("tactics.zig");
-const rules = @import("../play/tactics.zig");
+const tactics_exec = @import("tactics_exec.zig");
+const tactics = @import("../play/tactics.zig");
 const game = @import("../game.zig");
 const menu = @import("../ui/menu.zig");
 const P = mathx.P;
@@ -37,7 +37,7 @@ pub fn openAim(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
 
 fn targetAt(run: *game.Game, act: skillbar.Act, from: P, id: u16) ?P {
     const a = run.sim.pool.get(id) orelse return null;
-    if (!a.seenFoe(&run.sim.lv) or !tactics.validAct(run, act, from, a.at)) return null;
+    if (!a.seenFoe(&run.sim.lv) or !tactics_exec.validAct(run, act, from, a.at)) return null;
     if (act.reticle() == .bow) {
         const flight = bow.previewAmong(&run.sim.lv, &run.sim.pool, from, a.at);
         if (!flight.hits(id)) return null;
@@ -73,7 +73,7 @@ fn openSwing(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     var mark: ?P = null;
     for (mathx.ALL_DIRS) |d| {
         const p = hero.at.add(d.delta());
-        if (!tactics.validAct(run, act, hero.at, p)) continue;
+        if (!tactics_exec.validAct(run, act, hero.at, p)) continue;
         const foe = if (run.sim.pool.get(run.sim.lv.who(p))) |a| a.seenFoe(&run.sim.lv) else false;
         if (foe or (mark == null and !run.sim.allyAt(p))) mark = p;
         if (foe) break;
@@ -133,10 +133,9 @@ pub fn blockedNow(run: *const game.Game, act: skillbar.Act) ?Blocked {
     return blocked(run, act, &run.sim.flasks, run.sim.mana, heroPinned(run));
 }
 
-/// A stance's first upkeep falls due on the turn it is raised.
 fn needs(run: *const game.Game, act: skillbar.Act) i32 {
     if (run.sim.playground) return 0;
-    const upkeep: i32 = if (act == .unyielding) rules.Unyielding.DRAIN else 0;
+    const upkeep: i32 = if (act == .unyielding) tactics.Unyielding.DRAIN else 0;
     return run.sim.growth.cost(act) + upkeep;
 }
 
@@ -157,9 +156,8 @@ fn ready(run: *game.Game, act: skillbar.Act) bool {
     return false;
 }
 
-/// The hero acts: what it held up ends, and the turn's report notes what it did.
 fn acted(run: *game.Game, used: skillbar.Act) void {
-    tactics.beforeAction(&run.sim);
+    tactics_exec.beforeAction(&run.sim);
     run.sim.chronicle.note(.{ .used = used });
 }
 
@@ -176,9 +174,9 @@ const plural = mathx.plural;
 
 pub fn aimable(run: *const game.Game, from: P, to: P) bool {
     const act = run.mode.aim.act();
-    if (act.reticle() == .ground) return tactics.valid(run, from, to);
+    if (act.reticle() == .ground) return tactics_exec.valid(run, from, to);
     if (act.reticle() == .bow and !run.sim.lv.inLos(to)) return false;
-    return act.aimableIn(&run.sim.lv, from, to, run.sim.reachOf(act)) and !tactics.strikesHidden(run, act, from, to);
+    return act.aimableIn(&run.sim.lv, from, to, run.sim.reachOf(act)) and !tactics_exec.strikesHidden(run, act, from, to);
 }
 
 fn leap(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
@@ -329,7 +327,7 @@ fn castSpell(run: *game.Game, comptime act: skillbar.Act) void {
         run.pic.fx.shimmer(mathx.centre(hero.at), look.WARD);
         run.pic.settleHero(&run.sim, 0);
         run.pic.lead = 0;
-    } else tactics.instant(run, act);
+    } else tactics_exec.instant(run, act);
     combat.endTurn(run);
 }
 
@@ -351,7 +349,7 @@ fn openRush(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     var empty = grid.Nearest{ .from = hero.at };
     var cells = grid.Cells.around(hero.at, run.sim.reachOf(act));
     while (cells.next()) |p| {
-        if (tactics.validAct(run, act, hero.at, p)) {
+        if (tactics_exec.validAct(run, act, hero.at, p)) {
             const who = run.sim.lv.who(p);
             if (who == grid.NO_ONE) {
                 empty.offer(p);
@@ -447,7 +445,7 @@ pub fn confirmAim(run: *game.Game) void {
         .leap => leap(run, from, act, aim.mark),
         .swing => combat.swing(run, from, act, aim.mark),
         .rush => rush(run, from, act, aim.mark),
-        .ground => tactics.cast(run, aim, from),
+        .ground => tactics_exec.cast(run, aim, from),
     }
 }
 
@@ -477,13 +475,12 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
         run.sim.chronicle.note(.{ .missed = .{} });
         comeDown(run, act, flight, stroke);
     }
-    if (rules.SteadyAim.readies(act)) if (run.sim.heroActor()) |hero| {
+    if (tactics.SteadyAim.readies(act)) if (run.sim.heroActor()) |hero| {
         hero.tactics.steady = 0;
     };
     combat.endTurn(run);
 }
 
-/// A missile that struck nothing bursts on no one, but still comes down: fire boils the water its blast would reach, cold douses the flames, lightning runs through it.
 fn comeDown(run: *game.Game, act: skillbar.Act, flight: bow.Flight, stroke: game.presentation.Stroke) void {
     const at = flight.grounded(&run.sim.lv) orelse return;
     switch (act) {
@@ -511,7 +508,7 @@ fn hitProjectileActor(run: *game.Game, comptime action: skillbar.Act, id: u16, s
     if (comptime action.chains()) {
         combat.chainHit(run, action, id, stroke);
     } else if (comptime action.afflicts()) {
-        combat.arrowHit(run, id, attacks.heroArrow(&run.sim, action, true), action, stroke);
+        combat.skillHit(run, id, attacks.heroBlow(&run.sim, action), action, stroke);
     } else {
         comptime std.debug.assert(action.element() == null);
         combat.wound(run, id, attacks.heroSkill(&run.sim, action), combat.SHOOT, stroke);

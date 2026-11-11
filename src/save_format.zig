@@ -6,6 +6,9 @@ const game = @import("game.zig");
 const grid = @import("map/grid.zig");
 const atlas = @import("map/atlas.zig");
 const actor = @import("play/actor.zig");
+const ground_items = @import("play/ground_items.zig");
+const inventory = @import("play/inventory.zig");
+const item_bases = @import("play/item_bases.zig");
 const items = @import("play/items.zig");
 const hero = @import("play/hero.zig");
 const progress = @import("play/progress.zig");
@@ -48,7 +51,6 @@ fn references(comptime T: type) type {
     return data.Struct(fields);
 }
 
-/// `Snapshot` as the file holds it, each field by reference.
 const Encoded = struct {
     summary: *const data.Summary,
     seed: u64,
@@ -144,12 +146,10 @@ test "portable autosave snapshots own every byte while the live run changes" {
     defer frozen.deinit();
     try writeSnapshot(snapshot, &frozen);
     try std.testing.expectEqualSlices(u8, before.items, frozen.items);
-    std.debug.print("portable autosave: current run, map, visited actors and terrain frozen independently for worker encoding\n", .{});
 }
 
 pub const OpenError = error{ NotASave, OtherBuild, Short, Damaged };
 
-/// `store.open`, a file of another kind being no save.
 pub fn open(bytes: []const u8, magic: []const u8, print: u64) OpenError![]const u8 {
     return store.open(bytes, magic, print) catch |err| switch (err) {
         error.Foreign => error.NotASave,
@@ -245,7 +245,7 @@ pub fn validate(snapshot: *Snapshot) !void {
         if (bottle.turns == 0) bottle.left = 0;
     }
     for (&run.inventory.stacks.values) |*carried| carried.* = @min(carried.*, consumable.STACK_MAX);
-    if (run.inventory.n > items.BAG_MAX) return error.Damaged;
+    if (run.inventory.n > inventory.BAG_MAX) return error.Damaged;
     run.inventory.mend();
     run.log.scroll = @min(run.log.scroll, run.log.n -| 1);
     try validateLevel(&run.lv, &run.pool, &run.ground);
@@ -292,7 +292,6 @@ pub fn validate(snapshot: *Snapshot) !void {
     if (snapshot.summary.hp != body.hp or snapshot.summary.max != body.max or snapshot.summary.gold != run.gold) return error.Damaged;
 }
 
-/// The conversation it was in and the one it was waiting on name lines the map still has; NPCs stood on the map, quests at stages there are.
 fn validatePlot(plot: *const @FieldType(data.Portable, "plot"), s: *const atlas.script.Script) !void {
     if (plot.asked) |d| if (d >= s.dialog_n) return error.Damaged;
     for (plot.spots) |spot| if (spot) |p| if (!grid.Level.inside(p)) return error.Damaged;
@@ -315,7 +314,6 @@ fn heroIn(pool: *const actor.Pool, id: u16, kind: actor.Kind) ?*const actor.Acto
     return if (body.kind == kind) body else null;
 }
 
-/// Every death still to come, of a body standing or one yet to split off, drops on the ground with room for it.
 fn deathsToCome(pool: *const actor.Pool) usize {
     var alive: usize = 0;
     for (pool.items[0..pool.n]) |a| alive += @intFromBool(a.alive and a.foe());
@@ -325,9 +323,9 @@ fn deathsToCome(pool: *const actor.Pool) usize {
 /// Beyond this a turn's arithmetic on a body's clock, bleed or life overflows.
 const BODY_MOST: i32 = std.math.maxInt(i32) / 2;
 
-fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *items.Ground) !void {
-    if (pool.n > actor.MAX or ground.n > items.GROUND_MAX or ground.coin_n > grid.CELLS or level.torch.n > grid.MAX_TORCHES) return error.Damaged;
-    if (ground.n + deathsToCome(pool) > items.GROUND_MAX) return error.Damaged;
+fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *ground_items.Ground) !void {
+    if (pool.n > actor.MAX or ground.n > ground_items.GROUND_MAX or ground.coin_n > grid.CELLS or level.torch.n > grid.MAX_TORCHES) return error.Damaged;
+    if (ground.n + deathsToCome(pool) > ground_items.GROUND_MAX) return error.Damaged;
     for (pool.slice(), 0..) |body, slot| {
         if (!grid.Level.inside(body.at) or body.max <= 0 or body.hp < 0 or body.hp > body.max) return error.Damaged;
         if (body.alive and (body.hp == 0 or level.who(body.at) != actor.Pool.idOf(slot))) return error.Damaged;
@@ -421,7 +419,7 @@ test "portable save parsing defaults optional fields for every class and retains
         try std.testing.expectEqualDeep(source.sim.growth, target.sim.growth);
         try std.testing.expectEqualDeep(source.sim.rng, target.sim.rng);
         try std.testing.expectEqual(@as(i32, 73), target.sim.gold);
-        try std.testing.expectEqual(items.Kind.sword, target.sim.inventory.bag[0].kind);
+        try std.testing.expectEqual(item_bases.Kind.sword, target.sim.inventory.bag[0].kind);
         try std.testing.expectEqualDeep(source.sim.growth.bar(class), target.bar);
         try std.testing.expectEqual(@as(i32, 0), target.sim.mana);
         try std.testing.expectEqual(@as(usize, 0), target.sim.log.n);
@@ -430,7 +428,6 @@ test "portable save parsing defaults optional fields for every class and retains
         for (target.sim.cooldown.values) |turns| try std.testing.expectEqual(@as(u8, 0), turns);
         try std.testing.expect(target.sim.unsaved);
     }
-    std.debug.print("portable saves: {d} absent run fields and initial skill ranks default across {d} classes; name, gold, gear, progress and RNG retained\n", .{ omitted.len, hero.CLASSES.len });
 }
 
 test "runs saved before flasks were items gain both, while a current run keeps a flask taken off" {
@@ -451,7 +448,7 @@ test "runs saved before flasks were items gain both, while a current run keeps a
     try TestRecord.seal(&bytes);
     try read(bytes.items, target, map);
     try std.testing.expect(!target.sim.inventory.gear.holds(.life) and target.sim.inventory.gear.holds(.mana));
-    try std.testing.expectEqual(items.Kind.life_flask, target.sim.inventory.bag[0].kind);
+    try std.testing.expectEqual(item_bases.Kind.life_flask, target.sim.inventory.bag[0].kind);
     source.sim.inventory = .{};
     bytes.clearRetainingCapacity();
     try write(source, &bytes);
@@ -464,7 +461,6 @@ test "runs saved before flasks were items gain both, while a current run keeps a
     std.mem.writeInt(u64, bytes.items[MAGIC.len..][0..@sizeOf(u64)], VERSION, .little);
     try read(bytes.items, target, map);
     for (std.enums.values(flask.Kind)) |k| try std.testing.expect(!target.sim.inventory.gear.holds(k));
-    std.debug.print("flask saves: version {d} runs gain both flasks; version {d} keeps an unequipped flask in the bag\n", .{ FLASKLESS, VERSION });
 }
 
 test "a body whose clock, bleed or life would overflow a turn's arithmetic is damaged" {
@@ -562,5 +558,4 @@ test "portable save corruption and missing required state leave the live game an
         try TestRecord.seal(&after);
         try std.testing.expectEqualSlices(u8, original.items, after.items);
     }
-    std.debug.print("portable saves: {d} checksummed semantic corruptions refused by listing and loading; complete run and map unchanged\n", .{std.enums.values(Case).len});
 }

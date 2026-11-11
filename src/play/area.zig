@@ -5,7 +5,6 @@ const fov = @import("../map/fov.zig");
 
 const P = mathx.P;
 
-/// The widest any burst, patch or spread reaches; `Burst` holds the cells of one.
 pub const BURST_MAX: i32 = 2;
 pub const Burst = grid.Bounded(P, grid.Cells.square(BURST_MAX));
 
@@ -17,12 +16,10 @@ comptime {
     for (1..BURST_MAX + 1) |r| std.debug.assert(mathx.reaches(.{ .x = 0, .y = 0 }, .{ .x = r, .y = r }, castR(r)));
 }
 
-/// The walkable cells within `range` of `at` that a burst there reaches past the terrain, those `keep` takes.
 pub fn spread(lv: *const grid.Level, at: P, range: i32, ctx: anytype, comptime keep: fn (@TypeOf(ctx), P) bool) Burst {
     return reached(lv, at, range, grid.Level.walkable, ctx, keep);
 }
 
-/// The deep water and shallows within `range` of `at` that a burst there reaches, though no body could stand in the deep.
 pub fn wetIn(lv: *const grid.Level, at: P, range: i32) Burst {
     return reached(lv, at, range, grid.Level.wetAt, {}, every);
 }
@@ -41,7 +38,6 @@ fn reached(lv: *const grid.Level, at: P, range: i32, comptime ground: fn (*const
     return out;
 }
 
-/// Every cell `spread` reaches within `range` of `at`.
 pub fn patch(lv: *const grid.Level, at: P, range: i32) Burst {
     return spread(lv, at, range, {}, every);
 }

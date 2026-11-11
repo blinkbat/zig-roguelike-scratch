@@ -14,7 +14,7 @@ const fx = @import("../../gfx/fx.zig");
 const look = @import("../../gfx/look.zig");
 const climate = @import("../../map/climate.zig");
 const day = @import("../../map/day.zig");
-const shots = @import("../shots.zig");
+const poses = @import("../shots/poses.zig");
 const harness = @import("../harness.zig");
 const menu = @import("../../ui/menu.zig");
 const game = @import("../../game.zig");
@@ -56,7 +56,6 @@ test "a step moves the hour on a turn's minutes, a bump into a wall does not, an
     g.st = .{};
     var t: f32 = 0;
     while (day.toward(g.pic.hour_shown, g.sim.clock.hour()) > behind / 100 and t < 2) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
-    std.debug.print("a step: {d:.3} h ahead of the sky drawn, caught up in {d:.2} s\n", .{ behind, t });
     try std.testing.expect(behind > 0 and t < 2);
 }
 
@@ -84,7 +83,7 @@ test "the archer sees further by day than by night out of doors, and as little a
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 40, .y = 30 }, &.{});
     var seen: [4]usize = undefined;
-    for ([_]f32{ day.NOON, shots.LATE_DUSK, day.MIDNIGHT }, 0..) |h, i| {
+    for ([_]f32{ day.NOON, poses.LATE_DUSK, day.MIDNIGHT }, 0..) |h, i| {
         g.sim.clock = day.Clock.at(h);
         game.settle(g);
         seen[i] = std.mem.count(bool, &g.sim.lv.lit, &.{true});
@@ -92,7 +91,6 @@ test "the archer sees further by day than by night out of doors, and as little a
     g.sim.outdoors = false;
     game.settle(g);
     seen[3] = std.mem.count(bool, &g.sim.lv.lit, &.{true});
-    std.debug.print("cells in the archer's sight: {d} at noon, {d} at dusk, {d} at midnight, {d} underground\n", .{ seen[0], seen[1], seen[2], seen[3] });
     try std.testing.expect(seen[0] > seen[1] and seen[1] > seen[2]);
     try std.testing.expectEqual(seen[3], seen[2]);
 }
@@ -150,7 +148,6 @@ test "tight diagonals carry movement sight projectiles melee and gas in all four
         gas.turn(&g.sim.lv, &g.sim.rng);
         try std.testing.expect(g.sim.lv.gasAt(near) > 0);
     }
-    std.debug.print("4 tight diagonals: walking, pursuit, melee, sight, arrows, Juke, frost and gas agree\n", .{});
 }
 
 test "a step into a wall turns no one and spends no turn" {
@@ -180,7 +177,6 @@ test "a node's sky shows its light and its weather out of doors, and neither und
         if (n == strand) {
             const bright = sky.brightness(g.light.sky.?);
             const clear = sky.brightness(sky.at(g.pic.hour_shown));
-            std.debug.print("a bleak, drizzling wilds at {d:.2}: {d:.2} of a clear noon's light against {d:.2} clear; {d} drops\n", .{ g.pic.hour_shown, bright, clear, g.rain.n });
             try std.testing.expect(bright < clear * 0.9);
             try std.testing.expect(g.rain.n > 0);
         } else {
@@ -234,7 +230,6 @@ test "a door takes the archer to the door it leads to, and a node left is found 
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
     try std.testing.expectEqual(slime, g.sim.pool.items[harness.foeSlot(0)].at);
     try std.testing.expect(g.sim.lv.isSeen(.{ .x = 10, .y = 5 }));
-    std.debug.print("through a door and back: node {d}, the slime still at {d},{d}\n", .{ g.sim.node, slime.x, slime.y });
 }
 
 test "a skeleton follows the hero through a door, leaving none behind" {
@@ -263,7 +258,6 @@ test "a skeleton follows the hero through a door, leaving none behind" {
     try std.testing.expectEqual(hp, s.hp);
     try std.testing.expect(mathx.dist(s.at, hero) <= game.FOLLOWER_REACH);
     for (g.sim.visits[a].pool.constSlice()) |left| try std.testing.expect(!left.livingAlly());
-    std.debug.print("a skeleton followed to node {d}, {d} tiles from the hero with its {d} life\n", .{ b, mathx.dist(s.at, hero), s.hp });
 }
 
 test "a skeleton follows through a door that leads to another door on the same node, and is not doubled" {
@@ -287,7 +281,6 @@ test "a skeleton follows through a door that leads to another door on the same n
         for (g.sim.pool.constSlice()) |s| allies += @intFromBool(s.livingAlly());
         try std.testing.expectEqual(@as(usize, 1), allies);
     }
-    std.debug.print("three trips between doors on one node: {d} skeleton\n", .{allies});
 }
 
 test "a night raider is drawn coming in only once the hero's action of that turn lands" {
@@ -321,7 +314,6 @@ test "a night raider is drawn coming in only once the hero's action of that turn
             harness.drawnOut(g);
             continue;
         }
-        std.debug.print("a raider came in under a {d:.1} s action: drawn at once {}, drawn after it {}\n", .{ lead, early, true });
         try std.testing.expect(!early);
         return;
     }
@@ -373,7 +365,6 @@ test "a node's night raiders come in by its raid door, each at its own turn, fro
     }
     const spoiled = !std.meta.eql(ground, g.sim.ground) or mana != g.sim.mana;
     const xp = g.sim.growth.xp - growth.xp;
-    std.debug.print("one night with 3 raiders: {d} came over {d} turns, at most {d} cells from the door, {d} by day; a slain raider gave {d} xp, spoils {}\n", .{ came, turns_with, farthest, by_day, xp, spoiled });
     try std.testing.expectEqual(@as(usize, 3), came);
     try std.testing.expect(turns_with >= 2 and farthest <= 2 and by_day == 0 and !spoiled);
     try std.testing.expectEqual(@as(u64, atlas.raid.xpOf(progress.xpOf(atlas.raid.RAIDER))), xp);
@@ -397,7 +388,6 @@ test "a caravan guard stays behind when the hero goes through a door" {
     for (g.sim.visits[a].pool.constSlice()) |left| {
         if (left.livingAlly() and left.at.eq(post)) stayed += 1;
     }
-    std.debug.print("through a door: {d} caravan guard left on its post in node {d}\n", .{ stayed, a });
     try std.testing.expectEqual(@as(usize, 1), stayed);
 }
 
@@ -417,7 +407,6 @@ test "a skeleton following back and forth takes the slot it left, so no node's p
         g.sim.travel = .{ .node = if (g.sim.node == a) b else a, .door = 0 };
         game.leave(g);
     }
-    std.debug.print("three round trips with a skeleton: {d} bodies here, {d} in the node left\n", .{ g.sim.pool.n, g.sim.visits[b].pool.n });
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
     try std.testing.expectEqual(@as(usize, 2), g.sim.visits[b].pool.n);
     try std.testing.expectEqual(a, g.sim.node);
@@ -438,7 +427,6 @@ test "a procgen node rolls another floor round the same doors each run, and two 
         if (lv[0].tile[i] != lv[1].tile[i]) differ[0] += 1;
         if (lv[0].tile[i] != lv[2].tile[i]) differ[1] += 1;
     }
-    std.debug.print("one procgen node, two runs: {d} cells differ; two nodes of one run: {d}\n", .{ differ[0], differ[1] });
     for (lv) |l| try std.testing.expectEqual(@as(?usize, 0), l.doorAt(door));
     try std.testing.expect(differ[0] > 0 and differ[1] > 0);
 }
@@ -466,7 +454,6 @@ test "a door keeps the low glow, a level-up, the archer's facing and a walk pres
     try std.testing.expectEqual(actor.Facing.left, g.pic.facing[g.sim.heroSlot().?]);
     try std.testing.expect(!g.sim.heroActor().?.at.eq(.{ .x = 11, .y = 5 }));
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
-    std.debug.print("through a door on 1 hp: the low glow {d:.3} before, {d:.3} after, a walk queued: {}\n", .{ low, g.vignette.low, g.pending != null });
     try std.testing.expect(g.pending != null);
     try std.testing.expectApproxEqAbs(low, g.vignette.low, 0.05);
 }
@@ -548,7 +535,6 @@ test "healing gas mends every hurt body in it a fifteenth of its life a turn, it
     const t = harness.untilCaughtUp(g, &slots);
     const healing = wispsOf(g, look.HEALING_GAS);
     const caustic = wispsOf(g, look.GAS);
-    std.debug.print("a turn in gas: all three drawn {d:.3} s in, the archer mended by {d}, {d} healing wisps and {d} caustic\n", .{ t, gas.heal(harness.TEST_HP), healing, caustic });
     try std.testing.expect(t < 1);
     try std.testing.expectEqual(2 * fx.TICK_WISPS, healing);
     try std.testing.expectEqual(fx.TICK_WISPS, caustic);
@@ -573,7 +559,6 @@ test "steam scalds each body in it for a little fire damage a turn, less in wate
     for (ids[0..slots.len], &slots) |id, *s| s.* = actor.Pool.slot(id);
     const t = harness.untilCaughtUp(g, &slots);
     const wisps = wispsOf(g, look.STEAM);
-    std.debug.print("a turn in steam: the archer and a rat scalded for {d}, a rat in shallows for {d}, a pyre bloat for {d}; {d} steam wisps\n", .{ lost[0], lost[2], lost[3], wisps });
     try std.testing.expect(t < 1);
     try std.testing.expectEqual(3 * fx.TICK_WISPS, wisps);
 }
@@ -618,7 +603,6 @@ test "steam stays transparent and masked scalding reaches mana shield once per t
     g.sim.lv.release(.smoke, at.add(.{ .x = 1, .y = 0 }), gas.SMOKE_BURST);
     game.settle(g);
     try std.testing.expect(!g.sim.lv.isLit(beyond));
-    std.debug.print("steam compatibility: 100 masked shield ticks cost {d} mana, no life or burn; idle frames preserve steam/mana, steam stays transparent and smoke blocks sight\n", .{paid});
 }
 
 test "thick smoke hides what lies past its nearest cell, both ways, and thin smoke nothing; it harms nothing and no foe shuns it" {
@@ -647,5 +631,4 @@ test "thick smoke hides what lies past its nearest cell, both ways, and thin smo
     g.sim.pool.get(rat).?.awake = true;
     harness.use(g, .wait);
     try std.testing.expectEqual(@as(i32, 3), mathx.dist(g.sim.pool.get(rat).?.at, from));
-    std.debug.print("smoke: a 3x3 cloud from a cell off shows its near edge and hides the rat 4 off, and the rat the hero; thinned below {d} it hides nothing; the rat walks into it\n", .{grid.SMOKE_THICK});
 }

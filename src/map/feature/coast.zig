@@ -5,8 +5,6 @@ const carve = @import("../carve.zig");
 
 const P = mathx.P;
 
-// Path of Exile's Twilight Strand, Dwarf Fortress's ocean edge: the sea along one side, its surf, then a beach.
-
 pub const SEA_MAX: u8 = 24;
 pub const SHORE_MAX: u8 = 8;
 pub const BEACH_MAX: u8 = 16;
@@ -17,7 +15,6 @@ const WANDER: f32 = 9;
 const JAG: f32 = 2;
 const JAG_SHARE: f32 = 0.5;
 const JAG_ROW: i32 = 1 << 12;
-/// The furthest a line wanders either way, in shares of its `rough`.
 const SWING: f32 = 1 + JAG_SHARE;
 /// Noise rows far enough apart that the waterline and the beach's inland edge wander apart.
 const BEACH_ROW: i32 = 1 << 10;
@@ -107,7 +104,6 @@ test "a coast lies deep water, then shallows, then sand, in from its own side al
             if (t == .water or t == .shallows or t == .sand) far = @max(far, in);
             if (t == .shallows) try std.testing.expect(in >= 1);
         }
-        std.debug.print("a coast on the {s}: {d} water, {d} shallows, {d} sand, reaching {d} cells in\n", .{ @tagName(side), carve.count(&lv, .water), carve.count(&lv, .shallows), carve.count(&lv, .sand), far });
         try std.testing.expect(@as(f32, @floatFromInt(far)) <= @as(f32, @floatFromInt(@as(u32, p.sea) + p.shore + p.beach)) + 2 * swing);
     }
 }

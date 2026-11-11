@@ -3,11 +3,8 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// ADOM's Big Room and Animated Forest, the Caverns of Chaos graveyard, a pillared hall.
-
 pub const MARGIN_MAX: u8 = 16;
 const PILLAR_STEP: i32 = 4;
-/// Cells between the floor's edge and the outermost pillars.
 const PILLAR_GAP: i32 = 2;
 const ALCOVE_W: i32 = 3;
 const ALCOVE_D: i32 = 3;
@@ -20,7 +17,6 @@ pub const Style = enum { bare, pillars, graves, grove };
 
 pub const Params = struct {
     style: Style = .bare,
-    /// Cells of wall between the hall and the map's edge.
     margin: u8 = 4,
 
     pub fn fit(p: Params) Params {

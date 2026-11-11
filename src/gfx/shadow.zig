@@ -15,7 +15,6 @@ const Rgb = sky.Rgb;
 const smooth = mathx.smooth;
 const lum = sky.luma;
 
-/// A light at least this bright casts its full shadow; a torch is, out to about half its reach.
 const SHADOW_LAMP_FULL: f32 = 0.25;
 const SHADOW_FAINT = look.CLEAR_A;
 /// Of the body's drawn height.
@@ -23,27 +22,21 @@ const SHADOW_LEN_LO: f32 = 0.5;
 const SHADOW_LEN_HI: f32 = 1.8;
 const SHADOW_LEN_PER_CELL: f32 = 0.2;
 const SHADOW_SQUASH: f32 = 0.55;
-/// Cells: a light this close to a body's middle stands over it and casts no shadow.
 pub const SHADOW_OVERHEAD: f32 = 0.05;
 const SHADOW_NEAR: f32 = 0.5;
 const SHADOW_PAD: f32 = SHADOW_SOFT_TIP * @as(f32, @floatFromInt(model.SHADOW_TAPS));
 /// Texels between the shadow shader's blur taps, at its tip and at its foot.
 const SHADOW_SOFT_TIP: f32 = 2.0;
 const SHADOW_SOFT_FOOT: f32 = 0.6;
-/// Vertical shadow share: silhouettes fade to streaks from `THIN_HI` to `THIN_LO`.
 const THIN_LO: f32 = 0.06;
 const THIN_HI: f32 = 0.28;
-/// The streak's half-width, a share of the sprite's width, and its darkness against the silhouette's.
 const STREAK_W: f32 = 0.3;
 const STREAK_A: f32 = 0.8;
-/// Of the streak's length, how much lies behind the feet, where it eases in.
 pub const STREAK_FOOT: f32 = 0.1;
-/// How sharply it fades from the feet to the tip: 1 evenly.
 const STREAK_TAIL: f32 = 1.5;
 const CONTACT_W: f32 = 0.62;
 const CONTACT_H: f32 = 0.2;
 const CONTACT_A: f32 = 0.7;
-/// Canopy radius uses sprite width; trunk contact is relative to a body's.
 const CANOPY_R: f32 = 0.55;
 const CANOPY_SQUASH: f32 = 0.7;
 const CANOPY_AT: f32 = 0.45;
@@ -54,7 +47,6 @@ const FOREST_A: f32 = 1.3;
 const FOREST_MAX: f32 = 0.75;
 const FOREST_SOFT: f32 = 3.0;
 const FOREST_PAD: f32 = FOREST_SOFT * model.SHADOW_TAPS;
-/// Maximum ground reach, in cells, of a cell-tall sky or torch caster.
 pub const CAST_REACH: f32 = blk: {
     const l = @max(sky.REACH_MAX, SHADOW_LEN_HI);
     const pad = @max(SHADOW_PAD, FOREST_PAD) / look.SPRITE_PX;
@@ -88,7 +80,7 @@ fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *c
     return .{ .x = x, .y = y, .height = height, .share = share };
 }
 
-/// Shadows accumulate by minimum in a screen mask; `outer` restores the framebuffer. False without GL.
+/// False without GL.
 pub fn beginShadows(self: *light.Light, screen: P, outer: u32) bool {
     if (!self.options.shadows) return false;
     const pool = self.gpu.shade orelse return false;
@@ -117,7 +109,7 @@ pub fn endShadows(self: *light.Light, ox: i32, oy: i32, cell: i32) void {
     raster.drawTarget(t);
 }
 
-/// Between `beginShadows` and `endShadows`, before the walls, which cover whatever of it reaches them.
+/// Before the walls, which cover whatever of it reaches them.
 pub fn drawShadows(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const light.Shine, opacity: f32) void {
     const f = footOf(self, tex, dest, s, 1, opacity) orelse return;
     const fx = f.x;
@@ -141,7 +133,6 @@ pub fn drawShadows(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectang
     }
 }
 
-/// Between `beginShadows` and `endShadows`: a tree's canopy pool thrown away from each light, a soft pool over its trunk's foot.
 pub fn drawCanopy(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: *const light.Shine) void {
     const g = self.gpu.glow orelse return;
     const f = footOf(self, tex, dest, s, TRUNK_OF, 1) orelse return;
@@ -157,7 +148,6 @@ pub fn drawCanopy(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangl
     }
 }
 
-/// Contact draws now; silhouettes batch by joined sides at `endShadows`.
 pub fn drawForestShadows(self: *light.Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: *const light.Shine, shape: grid.WallShape) void {
     _ = footOf(self, tex, dest, s, 1, 1) orelse return;
     var f = ForestCast{ .tex = tex, .dest = dest, .centre = centre, .cast = undefined, .n = 0, .joined = .of(shape) };
@@ -207,7 +197,7 @@ fn endSilhouettes(self: *const light.Light) void {
     rl.beginShaderMode(self.gpu.shade.?);
 }
 
-/// Pixels: `lean` from the feet to the tip; `solid` the share that is silhouette, the rest a streak.
+/// Pixels.
 pub const Cast = struct { lean: [2]f32, len: f32, solid: f32, alpha: f32, shade: Rgb, source: ?[2]f32 = null };
 
 const Sides = packed struct(u4) {
@@ -320,13 +310,11 @@ fn streak(g: rl.Texture2D, fx: f32, fy: f32, width: f32, c: Cast) void {
     drawAlong(g, .{ fx, fy }, c.lean, .{ len, ry * 2 }, .{ .x = len * STREAK_FOOT, .y = ry }, look.colourOf(c.shade, c.alpha * STREAK_A * (1 - c.solid)));
 }
 
-/// `g` stretched to `size`, its long side turned down `lean`, `origin` of it at `at`.
 fn drawAlong(g: rl.Texture2D, at: [2]f32, lean: [2]f32, size: [2]f32, origin: rl.Vector2, c: rl.Color) void {
     const turn = std.math.radiansToDegrees(std.math.atan2(lean[1], lean[0]));
     rl.drawTexturePro(g, raster.whole(g), .{ .x = at[0], .y = at[1], .width = size[0], .height = size[1] }, origin, turn, c);
 }
 
-/// `u` 0 to 1 from behind the feet to the tip, the feet at `STREAK_FOOT`; `v` 0 to 1 across.
 pub fn streakAlpha(u: f32, v: f32) f32 {
     const along = if (u < STREAK_FOOT) mathx.smoothstep(0, STREAK_FOOT, u) else std.math.pow(f32, 1 - (u - STREAK_FOOT) / (1 - STREAK_FOOT), STREAK_TAIL);
     const off = v * 2 - 1;
@@ -369,5 +357,4 @@ test "scenery shadow margins include the drawn height and width of loaded terrai
     sprites.tiles.set(.caravan, null);
     sprites.tiles.set(.floor, cart);
     try std.testing.expectEqual(ordinary, sceneryMargin(&sprites));
-    std.debug.print("scenery shadow margins: empty and floor {d}; tall tree and wide caravan {d} cells\n", .{ ordinary, doubled });
 }

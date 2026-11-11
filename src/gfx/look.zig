@@ -19,7 +19,6 @@ pub fn pxScale(cell: f32) f32 {
 }
 /// A faced wall's bottom rows of brick, as `tools/tile_art/export_walls.lua` paints them.
 pub const WALL_FACE_PX: i32 = 23;
-/// A body or tile with no sprite draws its glyph this big, at `SPRITE_PX`.
 pub const GLYPH_PX: i32 = 60;
 
 pub const Look = struct {
@@ -75,7 +74,6 @@ pub const Occlusion = struct {
     }
 };
 
-/// Cells across and down the see-through aperture round an occluded body reaches, and where inside it the aperture is whole.
 const OCCLUSION_RADIUS = [2]f32{ 0.6, 0.85 };
 const OCCLUSION_INNER: f32 = 0.35;
 
@@ -126,18 +124,15 @@ pub const FOG = rgb(0x0a0a0a);
 pub const LIT = rl.Color.white;
 const FLOOR_BG = rgb(0x121116);
 const GRASS_BG = rgb(0x111a0e);
-/// The editor's wall where it has no texture.
 pub const BARE_WALL = rgb(0x1e1c24);
 pub const TEXT = rgb(0xd8cdb4);
 pub const DIM = rgb(0x8c8672);
 pub const LIFE = rgb(0x9c2f2a);
 pub const FIRE = rgb(0xff8a32);
 pub const FIRE_CORE = rgb(0xffe6a0);
-/// Under burning ground's flames.
 pub const FLAME_FILL = rgb(0xff5a14);
 pub const LEVEL_GOLD = rgb(0xe6c57c);
 pub const LEVEL_CORE = rgb(0xffedbd);
-/// The light a level gain adds to its body, per channel.
 pub const LEVEL_BODY_TINT = [3]f32{ 1, 0.72, 0.28 };
 pub const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
@@ -147,7 +142,6 @@ pub const LOSS = rgb(0xe18c83);
 const ARROW = rgb(0xe6dcb4);
 pub const VEIL = fade(BG, 0.72);
 
-/// Its symbol, centred on `cx, cy`; its ASCII `ch` where the font has no atlas.
 pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32) void {
     const l = TILES.getPtrConst(t);
     face.symbol(l.sym, l.ch, cx, cy, size, l.fg);
@@ -158,19 +152,15 @@ pub fn tile(t: grid.Tile) Look {
     return .{ .ch = l.ch, .fg = l.fg };
 }
 
-/// Under a tile's glyph where it has no sprite; null leaves the background.
 pub fn tileBg(t: grid.Tile) ?rl.Color {
     return TILES.getPtrConst(t).bg;
 }
 
-/// Fallback underlay when `ground.bedAt` finds no suitable neighbour.
 pub fn under(t: grid.Tile) ?grid.Tile {
     return t.ground() orelse if (t.upright() and tileBg(t) == null) .floor else null;
 }
 
-/// Tree crowns: ground the light shades beneath them, and the atmosphere's shafts fall between.
 const CROWNS = std.EnumSet(grid.Tile).init(.{ .shrub = true, .swamp_tree = true, .large_tree = true });
-/// Scenery depth of field softens: the crowns and the small plants.
 pub const SOFTENED = CROWNS.unionWith(grid.LITTER_TILES);
 
 comptime {
@@ -184,12 +174,10 @@ pub fn crowned(t: grid.Tile) bool {
     return CROWNS.contains(t);
 }
 
-/// Gas veils what stands in it; brick and rock walls stay clear.
 pub fn veiled(t: grid.Tile) bool {
     return t != .wall and t != .rock;
 }
 
-/// Drawn in the solid pass, over the ground and the shadows cast on it: everything that is not itself a ground.
 pub fn standsOver(t: grid.Tile) bool {
     return ground.of(t) == null;
 }
@@ -264,7 +252,6 @@ pub const TORCH_HANDLE = WOOD;
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
 pub const NPC = Look{ .ch = '@', .fg = rgb(0xd8a860) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
-/// What a picture of the whole map marks a cell with over its tile, a door before a barrel.
 pub const Mark = enum {
     door,
     barrel,
@@ -307,10 +294,8 @@ pub fn body(k: actor.Kind) Look {
     };
 }
 
-/// A figure's glyph is drawn over this ink offset down-right, so letters standing in for art read at a glance.
 pub const GLYPH_SHADOW = rl.Color{ .r = 0, .g = 0, .b = 0, .a = DROP_SHADOW_A };
 pub const GLYPH_SHADOW_PX: i32 = 4;
-/// A glyph's or a line of text's drop shadow, at full ink.
 pub const DROP_SHADOW_A: u8 = 200;
 
 /// Brogue's `poisonGasColor`, the caustic bloat's.
@@ -332,7 +317,6 @@ pub fn gasInk(g: grid.Gas) rl.Color {
 pub const BLOOD = rl.Color{ .r = 112, .g = 22, .b = 16, .a = GORE_A };
 pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = GORE_A };
 pub const SPLINTER = WOOD;
-/// Brogue's purple blood: the caustic bloat's, darker.
 pub const ICHOR = rl.Color{ .r = CAUSTIC_BLOAT.r / 2, .g = CAUSTIC_BLOAT.g / 2, .b = CAUSTIC_BLOAT.b / 2, .a = GORE_A };
 const GORE_A: u8 = 220;
 pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
@@ -344,7 +328,6 @@ pub const RIPPLE = rgb(0x9db6d4);
 pub const DIRT_DUST = rl.Color{ .r = 200, .g = 182, .b = 148, .a = 170 };
 pub const SAND_DUST = rl.Color{ .r = 238, .g = 226, .b = 192, .a = 160 };
 
-/// The dust a footfall on `t` kicks up.
 pub fn stepDust(t: grid.Tile) ?rl.Color {
     return switch (ground.of(t) orelse return null) {
         .dirt => DIRT_DUST,
@@ -354,7 +337,6 @@ pub fn stepDust(t: grid.Tile) ?rl.Color {
 }
 pub const NET = rgb(0xd6c496);
 pub const RAIN = rgb(0xc4d0e2);
-/// The atmosphere's water mist, and its light shafts and dust.
 pub const MIST_TINT = [3]f32{ 0.48, 0.58, 0.68 };
 pub const SHAFT_TINT = [3]f32{ 1.0, 0.87, 0.64 };
 
@@ -397,7 +379,6 @@ pub fn itemInk(rarity: items.Rarity) rl.Color {
 const AIM_AREA_A: f32 = 0.24;
 pub const RETICLE = rgb(0xe8c25a);
 
-/// A burst's cells, shaded while it is aimed.
 pub fn aimArea(a: skillbar.Act) rl.Color {
     return fade(arrowInk(a), AIM_AREA_A);
 }
@@ -426,7 +407,6 @@ pub fn elementInk(e: damage.Element) rl.Color {
 pub const LIGHTNING = rgb(0xf4e872);
 pub const LIGHTNING_CORE = FIRE_CORE;
 pub const PHYSICAL = ARROW;
-/// Life and mana as text, brighter than their orbs so they read on a panel.
 pub const LIFE_TEXT = rgb(0xe0645a);
 pub const MANA_TEXT = rgb(0x6e9ce8);
 
@@ -459,12 +439,10 @@ pub const PICK_BG = PANEL;
 pub const ROW_ON = RAISED;
 pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 
-/// The alpha below which nothing is drawn.
 pub const CLEAR_A: f32 = 0.004;
-/// The alpha of a skill or action that cannot be used now.
 pub const FADED_A: f32 = 0.35;
 
-/// How far a sprite is softened; a shader drawing over it again (the gas veil) softens its own alpha alike.
+/// A shader drawing over it again (the gas veil) softens its own alpha alike.
 pub const Focused = struct {
     texel: [2]f32 = .{ 0, 0 },
     strength: f32 = 0,
@@ -477,7 +455,6 @@ pub const Focused = struct {
     }
 };
 
-/// `texture0` here and at its four sides, premultiplied; the sides share what the centre leaves.
 pub const FOCUS_CENTRE_W = 0.4;
 pub const FOCUS_SIDE_W = (1 - FOCUS_CENTRE_W) / 4.0;
 pub const FOCUS_WEIGHTS = shaders.glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W }) ++
@@ -486,7 +463,6 @@ pub const FOCUS_WEIGHTS = shaders.glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W
     \\}
     \\
 ;
-/// `focused()`: `texture0` softened by `Focused`'s uniforms, premultiplied; `unpremultiplied(c)` its colour back.
 pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\uniform vec2 texel;
     \\uniform float strength;
@@ -505,17 +481,13 @@ pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\
 ;
 
-/// Each shining cell's band crosses once a period, at its own place in it.
 const SHINE_PERIOD_S: f32 = 7;
 const SHINE_WIPE_S: f32 = 0.9;
-/// Of the sprite's diagonal, the band's half-width.
 pub const SHINE_WIDTH: f32 = 0.12;
-/// How far the band leans: down the sprite per unit across.
 pub const SHINE_SLANT: f32 = 0.6;
 pub const SHINE_GAIN: f32 = 0.18;
 const SHINE_SEED: u64 = 0x5417E;
 const SHINE_PHASES = 1000;
-/// Where the shine's band crosses the sprite on `p` at `seconds`, corner to corner; null between its shines.
 pub fn shineSweep(seconds: f32, p: mathx.P) ?f32 {
     const phase = mathx.cellHash(SHINE_SEED, p) % SHINE_PHASES;
     const t = @mod(seconds + @as(f32, @floatFromInt(phase)) / SHINE_PHASES * SHINE_PERIOD_S, SHINE_PERIOD_S);
@@ -536,7 +508,6 @@ pub fn waterDepth(gr: ground.Ground) ?f32 {
     };
 }
 
-/// The grounds that mirror the scene and glint.
 pub const REFLECTIVE = blk: {
     var set = std.EnumSet(ground.Ground).initEmpty();
     for (std.enums.values(ground.Ground)) |gr| {
@@ -567,13 +538,11 @@ pub fn colourOf(c: sky.Rgb, a: f32) rl.Color {
     return .{ .r = @intFromFloat(k[0]), .g = @intFromFloat(k[1]), .b = @intFromFloat(k[2]), .a = @intFromFloat(std.math.clamp(a, 0, 1) * 255 + 0.5) };
 }
 
-/// `c` at `a`, its colour scaled by its alpha, for blending that ignores alpha.
 pub fn premultiplied(c: sky.Rgb, a: f32) rl.Color {
     const k = std.math.clamp(a, 0, 1);
     return colourOf(c * sky.splat(k), k);
 }
 
-/// The opacity of every ui panel's backing and the minimap's.
 const BACKING_A: f32 = 0.7;
 pub const BACKING = fade(rgb(0x101114), BACKING_A);
 pub const MINI_BG = fade(FOG, BACKING_A);
@@ -626,7 +595,6 @@ test "a cell's shine crosses once a period, corner to corner, and neighbours shi
         last = s;
     }
     const share = @as(f32, @floatFromInt(shining)) / @as(f32, @floatFromInt(frames));
-    std.debug.print("shine: lit {d:.3} of a {d} s period (wipe {d} s)\n", .{ share, SHINE_PERIOD_S, SHINE_WIPE_S });
     try std.testing.expectApproxEqAbs(SHINE_WIPE_S / SHINE_PERIOD_S, share, 0.01);
     var together: usize = 0;
     for (0..20) |x| {

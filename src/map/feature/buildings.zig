@@ -4,8 +4,6 @@ const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 const lume = @import("../lume.zig");
 
-// Dwarftown's houses, Dwarf Fortress's hamlet, Diablo II's cottages; decayed, Qud's ruins and the Lost City.
-
 const P = mathx.P;
 
 pub const COUNT_MAX: u8 = 24;
@@ -17,7 +15,6 @@ const SPLIT_TRIES: usize = 8;
 const BARREL_TRIES: usize = 40;
 /// Rooms `partition` holds waiting to be cut; past that, a room is left whole.
 const PARTS_MAX: usize = 64;
-/// Cells between a building and the map's edge.
 const SITE_MARGIN: i32 = 2;
 
 pub const Params = struct {
@@ -51,7 +48,6 @@ pub const LOTS_MAX: usize = @import("../procgen.zig").MAX_FEATURES * COUNT_MAX;
 pub const Lots = struct {
     box: [LOTS_MAX]Box = undefined,
     n: usize = 0,
-    /// The first lot of the feature taking them now.
     mine: usize = 0,
 
     /// Cells between two lots at the least, so neither's ring opens the other.
@@ -77,7 +73,6 @@ pub const Lots = struct {
         return b;
     }
 
-    /// Keep a clear ring around the site without opening protected terrain or another lot.
     fn site(self: *const Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
         if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
         const Site = struct {
@@ -169,7 +164,6 @@ fn splitAt(lv: *const grid.Level, rng: *mathx.Rng, b: Box, across: bool, least: 
     return null;
 }
 
-/// The two cells just outside `b` that a cut at `at` runs between: above and below it `across`, else either side.
 pub fn cutEnds(b: Box, across: bool, at: i32) [2]P {
     return if (across)
         .{ .{ .x = at, .y = b.lo.y - 1 }, .{ .x = at, .y = b.hi.y } }
@@ -177,7 +171,6 @@ pub fn cutEnds(b: Box, across: bool, at: i32) [2]P {
         .{ .{ .x = b.lo.x - 1, .y = at }, .{ .x = b.hi.x, .y = at } };
 }
 
-/// The line of cells a cut at `at` takes out of `b`: a column `across`, else a row.
 fn cutLine(b: Box, across: bool, at: i32) Box {
     return if (across)
         .{ .lo = .{ .x = at, .y = b.lo.y }, .hi = .{ .x = at + 1, .y = b.hi.y } }
@@ -225,7 +218,6 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots:
     }
 }
 
-/// `outside` is laid outside the doorway where that cell is solid.
 pub fn raise(lv: *grid.Level, rng: *mathx.Rng, b: Box, p: Params, outside: grid.Tile) void {
     var cells = b.cells();
     while (cells.next()) |q| {
@@ -256,6 +248,5 @@ test "buildings stand walled with a way in, and decayed ones lie in rubble" {
     apply(&lv, &rng, 0, pal, &lots, .{ .count = 8 });
     const walls = carve.count(&lv, .wall);
     apply(&lv, &rng, 0, pal, &lots, .{ .count = 8, .decay = 60 });
-    std.debug.print("8 houses: {d} wall cells; 8 more at 60% decay: {d} rubble\n", .{ walls, carve.count(&lv, .rubble) });
     try std.testing.expect(walls > 8 * 12 and carve.count(&lv, .rubble) > 40);
 }

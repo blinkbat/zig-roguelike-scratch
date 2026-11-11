@@ -6,7 +6,6 @@ const script = @import("../map/script.zig");
 const P = mathx.P;
 const Script = script.Script;
 
-/// What the conditions read of the run as it stands.
 pub const World = struct {
     node: usize = 0,
     hero: P = .{ .x = 0, .y = 0 },
@@ -16,13 +15,11 @@ pub const World = struct {
 
 pub const Timer = struct { left: i32 = 0, armed: bool = false };
 
-/// A trigger's place in its own list.
 pub const Run = struct {
     fired: bool = false,
     running: bool = false,
     at: u8 = 0,
     wait: i32 = 0,
-    /// Waiting on the conversation its `dialog` asked for.
     held: bool = false,
     preserved: bool = false,
     /// The turn it last finished, so a kept trigger runs at most once a turn.
@@ -33,7 +30,6 @@ pub const QUEST_BEGUN = "New quest: {s}.";
 pub const QUEST_MOVED = "Quest updated: {s}.";
 pub const QUEST_DONE = "Quest complete: {s}.";
 
-/// The conversation on screen.
 pub const Talk = struct {
     pub const WAS = .{.{ "npc", "folk" }};
     dialog: u8,
@@ -48,7 +44,6 @@ pub const Progress = struct {
     stage: u8 = 0,
 };
 
-/// SC1's switches, counters and timers, each trigger's progress, quests and the one conversation that may be up.
 pub const Runtime = struct {
     flags: [script.MAX_FLAGS]bool = @splat(false),
     counters: [script.MAX_COUNTERS]i32 = @splat(0),
@@ -61,20 +56,17 @@ pub const Runtime = struct {
     asked: ?u8 = null,
     talk: ?Talk = null,
     quests: [script.MAX_QUESTS]Progress = @splat(.{}),
-    /// Where each NPC placed on its node's roll was first stood this run.
     spots: script.Stood = @splat(null),
 
     pub fn died(self: *Runtime, k: actor.Kind) void {
         self.deaths.getPtr(k.family()).* +|= 1;
     }
 
-    /// NPC `i` stands while what it `shows` holds.
     pub fn shows(self: *const Runtime, s: *const Script, i: usize, w: World) bool {
         const c = s.npc[i].shows orelse return true;
         return self.holds(s, &c, w);
     }
 
-    /// Where NPC `i` stands, once it has stood anywhere.
     pub fn spotOf(self: *const Runtime, s: *const Script, i: usize) ?P {
         return s.standsAt(i, &self.spots);
     }
@@ -219,7 +211,6 @@ pub const Runtime = struct {
         }
     }
 
-    /// The dialog a trigger asked for, taken to be opened.
     pub fn takeAsked(self: *Runtime) ?u8 {
         const d = self.asked orelse return null;
         self.asked = null;
@@ -245,7 +236,6 @@ pub const Runtime = struct {
         return &s.dialog[t.dialog].line[t.line];
     }
 
-    /// Who the line names, else whoever was spoken to; empty when neither.
     pub fn speaker(self: *const Runtime, s: *const Script) []const u8 {
         const ln = self.lineOf(s) orelse return "";
         if (ln.who.n > 0) return ln.who.text();
@@ -253,7 +243,6 @@ pub const Runtime = struct {
         return s.npc[f].called();
     }
 
-    /// The choices whose gates hold, in order; a hidden one is not offered at all.
     pub fn offered(self: *const Runtime, s: *const Script, w: World, out: *[script.MAX_CHOICES]u8) []const u8 {
         const ln = self.lineOf(s) orelse return out[0..0];
         var n: usize = 0;
@@ -272,7 +261,6 @@ pub const Runtime = struct {
         t.cursor = @intCast(mathx.nudge(t.cursor, by, n));
     }
 
-    /// Takes offered row `row`, or goes on from a line with nothing offered; past the end, nothing.
     pub fn pick(self: *Runtime, s: *const Script, row: usize, w: World, l: *log.Log) void {
         const ln = self.lineOf(s) orelse return;
         var buf: [script.MAX_CHOICES]u8 = undefined;
@@ -638,5 +626,4 @@ test "a counter saturates rather than wrapping, and a text action reaches the lo
     t.rt.apply(&t.s, &.{ .kind = .counter, .countop = .add, .n = 5 }, &t.l);
     try std.testing.expectEqual(std.math.maxInt(i32), t.counter("n"));
     try std.testing.expectEqualStrings("The gate grinds open somewhere to the north.", t.l.line(0).?);
-    std.debug.print("trigger runtime: saturating counter and text action checked\n", .{});
 }

@@ -84,7 +84,6 @@ test "sealed storage rejects every truncated prefix and every changed byte" {
     try std.testing.expectEqualStrings(body, try open(buf.items, magic, print));
     try buf.append(0);
     try std.testing.expectError(error.Damaged, open(buf.items, magic, print));
-    std.debug.print("storage envelope: {d} truncated prefixes, {d} single-byte changes, wrong build and trailing data rejected\n", .{ buf.items.len - 1, buf.items.len - 1 });
 }
 
 test "storage accepts an empty sealed body and failed takes preserve destination and cursor" {
@@ -111,5 +110,4 @@ test "storage accepts an empty sealed body and failed takes preserve destination
     try std.testing.expectEqualSlices(u8, source[0..2], std.mem.asBytes(&first));
     try std.testing.expectEqualSlices(u8, source[2..4], std.mem.asBytes(&second));
     try std.testing.expectEqual(@as(usize, 0), bytes.len);
-    std.debug.print("storage reads: empty envelope, 4 short reads without mutation and 2 successive exact reads checked\n", .{});
 }

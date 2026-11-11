@@ -123,7 +123,6 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
     return null;
 }
 
-/// A leap or rush's `DESCRIBED` at `range` cells, after its `MIN_RANGE` where it has one.
 pub fn describeReach(comptime m: type, w: anytype, range: i32) void {
     (if (@hasDecl(m, "MIN_RANGE")) w.print(m.DESCRIBED, .{ m.MIN_RANGE, range }) else w.print(m.DESCRIBED, .{range})) catch {};
 }
@@ -178,5 +177,4 @@ test "skill contract diagnostics reject missing delivery status requirements and
     try std.testing.expectEqualStrings("damage BASE requires explicit delivery (melee, ranged or spell)", comptime invalid(.{ .module = MissingDelivery }).?);
     try std.testing.expectEqualStrings("afflict requires AILMENT, CHANCE, TAKES and VERB", comptime invalid(.{ .module = MissingStatus }).?);
     try std.testing.expectEqualStrings("a leap or rush requires aimable(*const Level, P, P, range: i32) bool", comptime invalid(.{ .module = BadGeometry, .reticle = .leap }).?);
-    std.debug.print("skill contracts: 3 incomplete definitions rejected with actionable delivery, status and signature diagnostics\n", .{});
 }

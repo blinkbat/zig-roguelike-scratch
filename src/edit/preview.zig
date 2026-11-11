@@ -9,7 +9,6 @@ const INITIAL_ROLL: u64 = 0x5EE;
 
 const Issues = struct {
     unlinked: usize = 0,
-    /// Open cells no walk from the start or a door reaches.
     cut_off: usize = 0,
     foes_cut_off: usize = 0,
     start_walled: bool = false,
@@ -26,7 +25,6 @@ pub const Scene = struct {
     shown_n: usize = 0,
     issues: Issues = .{},
     start_at: ?P = null,
-    /// Where each NPC on the node stands on this roll.
     npc_at: script.Stood = @splat(null),
     reach_dist: [grid.CELLS]i32 = undefined,
     reach_queue: [grid.CELLS]u32 = undefined,
@@ -81,7 +79,7 @@ pub const Scene = struct {
         self.stale = false;
     }
 
-    /// Where NPC `i` of the previewed node stands; null when it found no place on this roll.
+    /// null when it found no place on this roll.
     pub fn npcSpot(self: *const Scene, map: *const atlas.Atlas, i: usize) ?P {
         return map.script.standsAt(i, &self.npc_at);
     }
@@ -135,7 +133,7 @@ pub const Scene = struct {
         return is;
     }
 
-    /// Wet cells joined to ground the walk reaches, so a swimmer there meets it; reuses the walk's spent queue.
+    /// Reuses the walk's spent queue.
     fn swimReach(self: *Scene) grid.CellSet {
         var out = grid.CellSet.initEmpty();
         var spread = grid.Spread(*const grid.Level, grid.Level.wetAt){ .ctx = &self.lv, .steps = &grid.STEPS, .seen = &out, .queue = &self.reach_queue };
@@ -195,5 +193,4 @@ test "preview selection invalidation and rerolls never mutate the authored map" 
     scene.invalidate();
     scene.ensure(map, 0);
     try std.testing.expectEqual(grid.Tile.water, scene.lv.at(room.centre()));
-    std.debug.print("preview owner: selection, cache reuse, reroll, reset and authored edits; map remains unchanged by all previews\n", .{});
 }

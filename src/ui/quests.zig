@@ -11,10 +11,8 @@ const ENTRY_GAP: i32 = 14;
 const LINE_MAX: usize = @max(script.TITLE_MAX, script.NOTE_MAX) + 1;
 pub const NONE = "No quests yet.";
 
-/// A quest as the journal lists it: what its stage asks while under way, its title alone once finished.
 pub const Entry = struct { title: []const u8, asks: []const u8, done: bool };
 
-/// The journal as Character shows it, and the furthest down it scrolls: the first entry from which the rest all fit.
 pub const Journal = struct {
     entries: []const Entry = &.{},
     last_top: usize = 0,
@@ -31,7 +29,6 @@ pub const Journal = struct {
         return .{ .entries = entries, .last_top = top };
     }
 
-    /// Walking and the wheel move a whole entry, never past the last screenful.
     pub fn scroll(self: Journal, top: usize, st: *const input.State) usize {
         const by = -st.scroll + (if (st.walk) |d| d.delta().y else 0);
         return @min(mathx.nudge(top, by, self.entries.len), self.last_top);
@@ -47,7 +44,6 @@ fn entryHeight(face: anytype, e: Entry, w: i32) i32 {
     return font.BODY_LINE * (1 + n) + ENTRY_GAP;
 }
 
-/// The entries from `top` that fit `box`, drawn down it.
 pub fn draw(face: *const font.Face, entries: []const Entry, top: usize, box: rl.Rectangle) void {
     const x: i32 = @intFromFloat(box.x);
     const w: i32 = @intFromFloat(box.width);
@@ -86,5 +82,4 @@ test "every quest is reached by walking and the wheel, and scrolling stops at th
     try std.testing.expectEqual(@as(usize, 0), fits.last_top);
     try std.testing.expectEqual(@as(usize, 0), fits.scroll(0, &.{ .walk = .s }));
     try std.testing.expectEqual(@as(usize, 0), Journal.of(&face, &.{}, box).last_top);
-    std.debug.print("quest journal: {d} long quests scroll to entry {d}, whose tail fills {d} of 400px; short lists stay put\n", .{ entries.len, j.last_top, tail });
 }

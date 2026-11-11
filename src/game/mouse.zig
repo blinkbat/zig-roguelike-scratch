@@ -2,7 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
-const tactics = @import("tactics.zig");
+const tactics_exec = @import("tactics_exec.zig");
 const binds = @import("binds.zig");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
@@ -145,7 +145,7 @@ fn attack(g: *game.Game, at: P) bool {
     const set = skills.activeSet(g);
     for (skillbar.SLOTS) |b| {
         const act = g.bar.at(.{ .set = set, .button = b }) orelse continue;
-        if (act.reticle() == null or act.attack() == null or act == .overwatch or act.supplyOf() != null or !tactics.validAct(g, act, h.at, at)) continue;
+        if (act.reticle() == null or act.attack() == null or act == .overwatch or act.supplyOf() != null or !tactics_exec.validAct(g, act, h.at, at)) continue;
         if (skills.blockedNow(g, act) != null) continue;
         skills.useSkill(g, .{ .act = act, .by = b, .set = set });
         if (g.mode == .aim) {
@@ -269,7 +269,6 @@ test "mouse walking stops on harm despite healing or mana shielding" {
         game.update(g, 2);
         try std.testing.expectEqual(stopped, h.at);
     }
-    std.debug.print("mouse walking: harm cancels routes after healing and through mana shields\n", .{});
 }
 
 test "mouse walking follows explored routes once per turn and stops on arrival or another input" {
@@ -306,7 +305,6 @@ test "mouse walking follows explored routes once per turn and stops on arrival o
     game.update(g, 2);
     try std.testing.expectEqual(stopped, g.sim.heroActor().?.at);
     try std.testing.expect(g.mouse.target == null);
-    std.debug.print("mouse walking: {d} resolutions, {d} exact turns, busy queue, keyboard override and focus cancellation\n", .{ game.SCREENS.len, @as(usize, @intCast(dest.x - start.x)) * game.SCREENS.len });
 }
 
 test "a routed walk keeps a held walk's pace, the first step leaving at once" {
@@ -320,7 +318,6 @@ test "a routed walk keeps a held walk's pace, the first step leaving at once" {
     var t: f32 = 0;
     const first = g.sim.heroActor().?.at;
     while (g.sim.heroActor().?.at.eq(first)) : (t += mathx.FRAME_DT) game.update(g, mathx.FRAME_DT);
-    std.debug.print("routed walk: {d:.3} s a step against a held walk's {d:.3}\n", .{ t, input.Stepper.ARR });
     try std.testing.expect(t >= input.Stepper.ARR - mathx.FRAME_DT);
     try std.testing.expect(t <= input.Stepper.ARR + 2 * mathx.FRAME_DT);
 }
@@ -357,7 +354,6 @@ test "mouse routes avoid unknown cells walls gas barrels and stop when enemies a
     game.update(g, 2);
     try std.testing.expectEqual(stopped, g.sim.heroActor().?.at);
     try std.testing.expect(g.mouse.target == null);
-    std.debug.print("mouse routes: walls, gas, barrels, unknown destinations and newly visible enemies checked\n", .{});
 }
 
 test "mouse targeting respects legality and hud clicks never confirm or move through panels" {
@@ -391,7 +387,6 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     game.harness.clickAt(g, raster.middleAt(journal.box(g.screen)));
     try std.testing.expectEqual(after, g.sim.clock);
     try std.testing.expect(g.mouse.target == null);
-    std.debug.print("mouse targeting: HUD activation, no click-through, blocked shot, cancel and one clicked foe attack\n", .{});
 }
 
 test "a mouse release that ends no wall drag leaves a smart-aimed reticle on its foe" {
@@ -440,7 +435,6 @@ test "mouse attacks skip combustion for unburning foes and cast it on burning fo
     try std.testing.expectEqual(@as(u8, 0), foe.burn.turns);
     try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
     try std.testing.expect(g.sim.cooldown.get(.combustion) > 0);
-    std.debug.print("mouse attacks: 2 unburning-target cases choose Spark; burning target consumes burn with Combustion, one turn each\n", .{});
 }
 
 test "a clicked foe beside the hero is bumped when every aimed attack is cooling" {
@@ -453,7 +447,6 @@ test "a clicked foe beside the hero is bumped when every aimed attack is cooling
     const clock = g.sim.clock;
     clickCell(g, .{ .x = 21, .y = 20 });
     try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
-    std.debug.print("clicked foe with every attack cooling: the turn is spent on a bump\n", .{});
 }
 
 test "a clicked foe that dived out of sight before the walk resumed draws no reticle or shot" {
@@ -517,5 +510,4 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     g.pic.busy = 0;
     game.update(g, 0);
     try std.testing.expectEqual(@as(?game.Exit, .back), g.exit);
-    std.debug.print("mouse actions: chest one turn, loot free, character/menu/back, secondary toggle, death waits for presentation\n", .{});
 }

@@ -6,7 +6,7 @@ const hero = @import("../play/hero.zig");
 const progress = @import("../play/progress.zig");
 const passives = @import("../play/passives.zig");
 const attrs = @import("../play/attrs.zig");
-const items = @import("../play/items.zig");
+const Gear = @import("../play/gear.zig").Gear;
 const skillbar = @import("../play/skillbar.zig");
 const damage = @import("../play/damage.zig");
 const look = @import("../gfx/look.zig");
@@ -21,16 +21,14 @@ const AREA = @import("character_layout.zig").AREA;
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
 pub const View = struct { cursor: usize = 0, zoom: f32 = ZOOM_MIN, pan: rl.Vector2 = .{ .x = 0, .y = 0 }, focused: bool = true };
-const Loadout = struct { stats: attrs.Attrs, gear: items.Gear, steady: u8 = 0 };
+const Loadout = struct { stats: attrs.Attrs, gear: Gear, steady: u8 = 0 };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
 pub const ZOOM_START: f32 = 2.4;
 pub const ZOOM_RATE: f32 = 1.7;
-/// A press of a zoom button, and a notch of the wheel.
 pub const ZOOM_STEP: f32 = 0.4;
 pub const ZOOM_WHEEL: f32 = 0.2;
 pub const PAN_RATE: f32 = 3.4;
-/// Text and controls keep this far inside the canvas.
 const INSET: i32 = 20;
 const DETAIL_W: f32 = 332;
 const PANEL_GAP: f32 = 24;
@@ -46,7 +44,6 @@ const CANVAS_LEFT: i32 = @as(i32, @intFromFloat(CANVAS.x)) + INSET;
 const CANVAS_TOP: i32 = @intFromFloat(CANVAS.y);
 const CANVAS_BOTTOM: i32 = @intFromFloat(CANVAS.y + CANVAS.height);
 const DETAIL_TOP: i32 = @intFromFloat(DETAIL.y);
-/// The middle of the canvas's foot row under the wheel: legend and zoom.
 const FOOT_MID: i32 = CANVAS_BOTTOM - @as(i32, @intFromFloat(WHEEL_FOOT)) / 2;
 const LEGEND_STEP: i32 = 140;
 const ZOOM_PX: i32 = 28;
@@ -61,39 +58,29 @@ const REASON_Y: i32 = ACTION_Y - REASON_GAP - font.SMALL;
 const BIND_Y: i32 = REASON_Y - BIND_GAP - BUTTON_H;
 const HINT_Y: i32 = CANVAS_BOTTOM + 20;
 const HINT_STEP: i32 = 164;
-/// In a hint, between one glyph and the next, and past the last before the label.
 const HINT_GLYPH_GAP: i32 = 4;
 const HINT_LABEL_GAP: i32 = 2;
-/// The canvas's title row.
 const TITLE_Y: i32 = CANVAS_TOP + 18;
 const SKILL_SIZE: i32 = 56;
 const SKILL_MID_X: i32 = 372;
 const SKILL_STEP_X: i32 = 140;
 const SKILL_TOP: i32 = CANVAS_TOP + 86;
 const SKILL_STEP_Y: i32 = 126;
-/// A diagram of two rows or fewer: its first row's middle and the step between rows.
 const SPARSE_TOP: i32 = SKILL_TOP + 40;
 const SPARSE_STEP_Y: i32 = 164;
-/// Down from a skill tile's middle to its name's top.
 const SKILL_NAME_DY: i32 = 46;
-/// A link arrow keeps this clear of the name above and the tile below.
 const ARROW_CLEAR: i32 = 8;
-/// The rank plaque's corner, out from its tile's middle, and its size.
 const PLAQUE_AT = P{ .x = 10, .y = 16 };
 const PLAQUE_W: i32 = 42;
 const PLAQUE_H: i32 = font.SMALL + 6;
-/// The selected tile's frame, out from the tile.
 const SKILL_FOCUS_GROW: f32 = 5;
-/// Detail rows: name, rank or kind, description, the earliest rule, and a passive's first grant.
 const NAME_Y: i32 = DETAIL_TOP + 22;
 const RANK_Y: i32 = DETAIL_TOP + 56;
 const DESC_Y: i32 = DETAIL_TOP + 86;
 const RULE_MIN_Y: i32 = DETAIL_TOP + 128;
 const GRANT_Y: i32 = DETAIL_TOP + 45;
-/// Either side of a detail rule, and a caption to its first line.
 const RULE_GAP: i32 = 12;
 const CAPTION_STEP: i32 = font.SMALL_LINE + 1;
-/// Above the next rank's changes.
 const NEXT_GAP: i32 = 8;
 const BACK = look.rgb(0x0c0e12);
 const TILE = look.rgb(0x15171c);
@@ -103,12 +90,10 @@ const AVAILABLE = look.rgb(0xbcc9ba);
 const OWNED = look.UI_GOLD;
 const FOCUS = look.UI_FOCUS;
 const LINE = look.rgb(0x42413d);
-/// A link with one allocated end, or reaching an allocated bridge.
 const OPEN_LINE = look.rgb(0x77705a);
 const NODE_HIT_GROW: f32 = 3;
 const NODE_FOCUS_GROW: f32 = 5;
 const NODE_KEEP_IN: f32 = 7;
-/// An allocated node's outer ring, and a capstone's inner ring, from its rim.
 const OWNED_RING: f32 = 1;
 const CAPSTONE_RING: f32 = 3;
 
@@ -243,9 +228,7 @@ fn legendOf(comptime E: type, comptime inkOf: fn (E) rl.Color) [std.enums.values
     return out;
 }
 
-/// Half a legend mark's width.
 const MARK_HALF: i32 = 5;
-/// A foot legend entry's left to its name.
 const LEGEND_TEXT_DX: i32 = 20;
 
 fn legend(face: *const font.Face, entries: []const Legend) void {
@@ -297,16 +280,12 @@ fn skillInk(class: hero.Class, growth: *const progress.State, s: progress.Skill)
     return SkillState.of(class, growth, s).ink();
 }
 
-/// A skill icon's alpha when it can be learned now, when its parent is unlearned, and when otherwise locked.
 const LEARNABLE_A: f32 = 0.8;
 const ORPHAN_A: f32 = 0.3;
 const LOCKED_A: f32 = 0.55;
-/// A passive node out of reach, its arm's colour faded this far; and the link to it.
 const DISTANT_A: f32 = 0.55;
 const CLOSED_LINE_A: f32 = 0.65;
-/// Back and out from an arrow's point, each side of its head.
 const ARROW_HEAD = rl.Vector2{ .x = 4, .y = 5 };
-/// Half the bridge mark's width and the half-gap between its two bars.
 const SEAM_MARK = rl.Vector2{ .x = 3, .y = 2 };
 
 fn skillAlpha(class: hero.Class, growth: *const progress.State, s: progress.Skill) f32 {
@@ -451,7 +430,6 @@ const Layout = struct {
     centre: rl.Vector2,
     unit: f32,
 
-    /// Whether anything drawn within `margin` of the span from `a` to `b` can reach the clipped box.
     fn shows(self: Layout, a: rl.Vector2, b: rl.Vector2, margin: f32) bool {
         return @max(a.x, b.x) + margin >= self.box.x and @min(a.x, b.x) - margin <= self.box.x + self.box.width and
             @max(a.y, b.y) + margin >= self.box.y and @min(a.y, b.y) - margin <= self.box.y + self.box.height;
@@ -463,18 +441,14 @@ const Layout = struct {
     }
 };
 
-/// How far the wheel centres on the cursor: not at all at the overview, wholly at the closest zoom.
 fn pullOf(zoom: f32) f32 {
     return (std.math.clamp(zoom, ZOOM_MIN, ZOOM_MAX) - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN);
 }
 
-/// Rings the pan reaches at the overview, and how many more it gains as the zoom closes in.
 const PAN_REACH: f32 = 1.6;
 const PAN_REACH_ZOOMED: f32 = 6;
-/// Rings of room the overview leaves past the outermost.
 const WHEEL_MARGIN: f32 = 0.63;
 
-/// `view.pan` within its zoom's reach, and never taking the view's middle off the wheel.
 pub fn clampPan(view: View) rl.Vector2 {
     const limit = PAN_REACH + PAN_REACH_ZOOMED * (1 - 1 / view.zoom);
     const reach: f32 = @floatFromInt(passives.RINGS);
@@ -494,7 +468,6 @@ pub fn drag(view: View, delta: rl.Vector2) rl.Vector2 {
     return clampPan(moved);
 }
 
-/// A Character message, over the tree canvas where no button covers it.
 pub fn note(face: *const font.Face, text: [:0]const u8) void {
     face.drawMid(text, raster.middleAt(CANVAS).x, TITLE_Y, font.SMALL, look.TEXT);
 }
@@ -519,7 +492,6 @@ fn wheelLayout(view: View) Layout {
     return layout;
 }
 
-/// A node's radius: this share of a ring's unit, but never under `least` pixels.
 const NodeSize = struct { least: f32, share: f32 };
 const ORIGIN_SIZE = NodeSize{ .least = 8, .share = 0.26 };
 const SEAM_SIZE = NodeSize{ .least = 8, .share = 0.23 };
@@ -553,7 +525,6 @@ fn armInitial(arm: passives.Arm) [:0]const u8 {
     };
 }
 
-/// What a pool's point costs, said when short of it and when ready to spend it.
 fn Price(comptime pool: []const u8) type {
     return struct {
         const cost = std.fmt.comptimePrint("{d} {s} point{s}", .{ progress.POINT_COST, pool, mathx.plural(progress.POINT_COST) });
@@ -655,7 +626,6 @@ fn grantRow(face: *const font.Face, x: i32, y: i32, grant: passives.Grant) i32 {
     return face.paragraph(text.text(), x, y, TEXT_W, font.BODY, look.TEXT);
 }
 
-/// What the grants alone leave unsaid.
 fn grantNoteOf(n: passives.Node) ?[:0]const u8 {
     for ([_]?passives.Grant{ n.grant, n.bump }) |maybe| {
         const g = maybe orelse continue;
@@ -692,7 +662,6 @@ fn passiveDetails(face: *const font.Face, class: hero.Class, growth: *const prog
 }
 
 test "every class skill stays in its canvas and is reachable by directional selection" {
-    var checked: usize = 0;
     for (hero.CLASSES) |class| {
         const skills = progress.skills(class);
         var boxes: [skillbar.ACTS.len]rl.Rectangle = undefined;
@@ -723,12 +692,9 @@ test "every class skill stays in its canvas and is reachable by directional sele
             }
         }
         try std.testing.expectEqual(skills.len, reached.count());
-        checked += skills.len;
     }
-    std.debug.print("class skill diagrams: {d} non-overlapping tiles within their canvas; all reachable in {d} directions\n", .{ checked, mathx.ALL_DIRS.len });
 }
 
-/// Every zoom a button press reaches from the overview, the closest and the opening one.
 const TEST_ZOOMS = blk: {
     var out: []const f32 = &.{ ZOOM_START, ZOOM_MAX };
     var z: f32 = ZOOM_MIN;
@@ -766,7 +732,6 @@ test "passive diagram fits all nodes and retains its selected node through zoom"
             }
         }
     }
-    std.debug.print("passive diagram: all {d} nodes fit without overlap; selected node and clipped hit targets checked at {d} zoom levels\n", .{ passives.N, TEST_ZOOMS.len });
 }
 
 test "panning as far as it goes from any node never leaves the canvas empty" {
@@ -785,6 +750,5 @@ test "panning as far as it goes from any node never leaves the canvas empty" {
             }
         }
     }
-    std.debug.print("passive pan: at least {d} nodes stay on the canvas at the furthest pan from any node\n", .{fewest});
     try std.testing.expect(fewest > 0);
 }

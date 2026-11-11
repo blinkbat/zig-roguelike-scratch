@@ -22,7 +22,7 @@
 | Charge | Strikes a foe 1–4 tiles away along a clear line, an adjacent foe struck in place; can retreat 1–3 tiles to empty ground |
 | Respec | Deferred |
 
-Balance values live in `src/play/items.zig` (including loot rates and foe/barrel/chest gold), `src/play/progress.zig`, `src/play/passives.zig`, `src/play/attrs.zig` (life, mana, crit, dodge, armour cap), `src/play/hero.zig` (class bases, mana recovery), `src/play/flask.zig` and each skill module. These are small
+Balance values live in `src/play/item_bases.zig` (bases), `src/play/affixes.zig` (affix ranges), `src/play/loot.zig` (loot rates and foe/barrel/chest gold), `src/play/progress.zig`, `src/play/passives.zig`, `src/play/attrs.zig` (life, mana, crit, dodge, armour cap), `src/play/hero.zig` (class bases, mana recovery), `src/play/flask.zig` and each skill module. These are small
 prototype pools, not full Diablo/PoE itemization. Rank upgrades improve damage and mana cost;
 non-damaging skills with cooldowns also recover sooner, down to 2 turns (1 for a skill that takes
 no turn, since a 1-turn cooldown ends in the turn the skill used). Equipping or allocating life does not

@@ -8,15 +8,13 @@ const smooth = mathx.smooth;
 /// Per second.
 pub const REVEAL: f32 = 14.0;
 const FORGET: f32 = 5.0;
-/// Cells: memory is black on the edge of anything unseen and full this far from it.
 const VOID_FADE: f32 = 1.5;
-/// Keep the sight fade inside unseen cell rims so visible ground stays bright.
 const SIGHT_FADE: f32 = 0.4;
 pub const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
 const VOID_SPAN: usize = @intCast(grid.Cells.span(VOID_REACH));
 pub const View = struct { sight: f32, memory: f32, lit: f32 };
 
-/// 0 outside the grid; texel centres sit on whole numbers.
+/// Texel centres sit on whole numbers.
 fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
     const fx = @floor(u);
     const fy = @floor(v);
@@ -28,7 +26,6 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
 /// Bilinear self-weight is at least 1/4, keeping remembered open ground whole.
 const OPEN_WHOLE: f32 = 4;
 
-/// A map-sized field at a point on the screen, cells.
 pub fn sample(f: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
     const uv = fieldUv(.{ .x = 0, .y = 0 }, x, y);
     return bilinear(f, grid.W, grid.H, uv[0], uv[1]);
@@ -101,7 +98,6 @@ pub fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32) f32 {
     return f[mathx.slot(x, y, @intCast(w), @intCast(h)) orelse return 0];
 }
 
-/// Blend unreachable cells over `open` so walls cannot pass light onward.
 pub fn occluded(reach: []const f32, open: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
     const own = texel(reach, w, h, mathx.roundTiesUp(u), mathx.roundTiesUp(v)) > 0;
     return bilinear(if (own) reach else open, w, h, u, v);
@@ -145,17 +141,12 @@ pub const Visibility = struct {
     sight: [grid.CELLS]f32,
     memory: [grid.CELLS]f32,
     soft_sight: [grid.CELLS]f32,
-    /// Weighted sight over open ground only, preventing light leaks through walls.
     open_sight: [grid.CELLS]f32,
-    /// 1 on a cell that blocks no sight; set from the terrain.
     see_through: [grid.CELLS]f32,
-    /// Open-ground memory weights; `sightAt` divides weighted sight by these.
     open_weight: [grid.CELLS]f32,
-    /// Ground visibility includes shrub edges, keeping them continuous with adjacent ground.
     ground: [grid.CELLS]f32,
     blur: [grid.CELLS]f32,
     share: [grid.CELLS]f32,
-    /// `sight` but for what blocks it, as `Torch.open` is, so the carried light passes through no wall.
     carry_open: [grid.CELLS]f32,
     clear: [grid.CELLS]bool,
     clear_row: [grid.CELLS]bool,
@@ -202,7 +193,6 @@ pub const Visibility = struct {
         self.soften();
     }
 
-    /// Blur only seen cells, and ground sight only over open ground, to prevent dim rims and wall leaks.
     pub fn soften(self: *Visibility) void {
         for (&self.soft_sight, &self.open_sight, &self.open_weight, &self.carry_open, &self.sight, &self.memory, &self.see_through) |*seen, *open, *w, *carry, s, m, k| {
             seen.* = s * m;
@@ -245,7 +235,6 @@ pub const Visibility = struct {
         for (num, &self.share) |*o, d| o.* = if (d > 0) @min(1, o.* / d) else 0;
     }
 
-    /// A point on the screen, cells.
     pub fn sightAt(self: *const Visibility, x: f32, y: f32) f32 {
         return sightOf(Whole{ .fields = self }, self.groundAt(mathx.cellOf(.{ x, y })), x, y);
     }
@@ -266,7 +255,6 @@ pub const Visibility = struct {
         };
     }
 
-    /// Distance fade reaches black at unseen rims; a blur leaks around corners.
     pub fn fadeOf(self: *const Visibility, c: P) Fade {
         const own = self.memoryAt(c);
         if (own <= 0) return .{ .flat = 0 };
@@ -299,7 +287,7 @@ pub const Visibility = struct {
     }
 };
 
-/// The edges repeat their own cell. `out` may be `src`.
+/// `out` may be `src`.
 fn blur121(src: *const [grid.CELLS]f32, tmp: *[grid.CELLS]f32, out: *[grid.CELLS]f32) void {
     const w = grid.COLS;
     const h = grid.ROWS;

@@ -3,7 +3,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const skillbar = @import("../play/skillbar.zig");
-const items = @import("../play/items.zig");
+const item_bases = @import("../play/item_bases.zig");
 const consumable = @import("../play/consumable.zig");
 const look = @import("look.zig");
 const raster = @import("raster.zig");
@@ -263,7 +263,6 @@ fn closed(comptime points: []const [2]f32) [points.len][4]f32 {
     return path(&(points[0..points.len].* ++ [_][2]f32{points[0]}));
 }
 
-/// `n` sides round `cx`, `cy`, the first corner `turn` of a side clockwise from straight up.
 fn polygon(comptime cx: f32, comptime cy: f32, comptime r: f32, comptime n: usize, comptime turn: f32) [n][4]f32 {
     var out: [n][4]f32 = undefined;
     for (&out, 0..) |*line, i| {
@@ -285,7 +284,7 @@ const GLOVE = path(&.{ .{ 8, 22 }, .{ 8, 8 }, .{ 10, 5 }, .{ 22, 5 }, .{ 24, 8 }
 const BOOT = closed(&.{ .{ 9, 4 }, .{ 9, 27 }, .{ 27, 27 }, .{ 27, 23 }, .{ 19, 18 }, .{ 19, 4 } });
 const RING_BAND = polygon(16, 21, 7.5, 12, 0.5);
 
-const ITEM_LINES = std.EnumArray(items.Kind, []const [4]f32).init(.{
+const ITEM_LINES = std.EnumArray(item_bases.Kind, []const [4]f32).init(.{
     .sword = &([_][4]f32{ .{ 12, 20, 25, 7 }, .{ 9, 17, 15, 23 }, .{ 12, 20, 7, 25 } }),
     .axe = &([_][4]f32{.{ 16, 3, 16, 29 }} ++ path(&.{ .{ 16, 8 }, .{ 21, 7 }, .{ 25, 4 }, .{ 28, 12 }, .{ 25, 20 }, .{ 21, 16 }, .{ 16, 15 } }) ++ path(&.{ .{ 16, 8 }, .{ 11, 7 }, .{ 7, 4 }, .{ 4, 12 }, .{ 7, 20 }, .{ 11, 16 }, .{ 16, 15 } })),
     .bow = &(path(&.{ .{ 21, 6 }, .{ 15, 9 }, .{ 12, 16 }, .{ 15, 23 }, .{ 21, 26 } }) ++ [_][4]f32{.{ 21, 6, 21, 26 }}),
@@ -357,14 +356,12 @@ fn inkSkills() void {
     for (skillbar.ACTS) |a| inkSkill(a, skillX(a), 0, rl.Color.white);
 }
 
-/// An item glyph's side: beside a list row's text, or filling a paperdoll cell.
 pub const ItemSize = enum(i32) { row = 24, cell = 48 };
 
-pub fn drawItem(sprites: *const sprite.Sprites, k: items.Kind, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
+pub fn drawItem(sprites: *const sprite.Sprites, k: item_bases.Kind, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
     drawIcon(sprites, @intFromEnum(k), size, cx, cy, ink);
 }
 
-/// A supply's glyph is its skill's.
 pub fn drawSupply(sprites: *const sprite.Sprites, k: consumable.Kind, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
     drawIcon(sprites, ITEM_KINDS.len + @intFromEnum(k), size, cx, cy, ink);
 }
@@ -377,7 +374,7 @@ fn drawIcon(sprites: *const sprite.Sprites, i: usize, size: ItemSize, cx: i32, c
     raster.blit(t, raster.rect(iconX(i, size), iconY(size), px, px), raster.rect(x, y, px, px), ink);
 }
 
-const ITEM_KINDS = std.enums.values(items.Kind);
+const ITEM_KINDS = std.enums.values(item_bases.Kind);
 const ICONS = ITEM_KINDS.len + consumable.KINDS.len;
 
 fn iconLines(i: usize) []const [4]f32 {
@@ -437,7 +434,6 @@ fn inkLines(lines: []const [4]f32, x: i32, y: i32, px: i32, ink: rl.Color) void 
     }
 }
 
-/// Two grid units wide, with round caps.
 fn stroke(from: rl.Vector2, to: rl.Vector2, scale: f32, col: rl.Color) void {
     rl.drawLineEx(from, to, 2 * scale, col);
     rl.drawCircleV(from, scale, col);
@@ -453,5 +449,4 @@ test "every item and supply glyph keeps its strokes on the grid and differs from
         for (0..i) |j| try std.testing.expect(!std.mem.eql(u8, std.mem.sliceAsBytes(own), std.mem.sliceAsBytes(iconLines(j))));
         strokes += own.len;
     }
-    std.debug.print("item glyphs: {d} icons, {d} strokes, all within the {d}-unit grid and distinct\n", .{ ICONS, strokes, @as(u32, @intFromFloat(SKILL_GRID)) });
 }

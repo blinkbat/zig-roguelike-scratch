@@ -4,14 +4,10 @@ const day = @import("day.zig");
 
 // Outdoor weather, a pure function of the profile, run seed and minutes; only its rain reaches the rules (`terrain.rained`, `fire.damped`).
 
-/// How the day's light looks under this sky.
 pub const Light = enum {
-    /// The day as `gfx/sky.zig` keys it.
     clear,
-    /// Overcast: a weaker, greyer sun and a dimmer, colder sky.
     bleak,
 
-    /// The least overcast this light keeps under any weather.
     pub fn overcast(l: Light) f32 {
         return switch (l) {
             .clear => 0,
@@ -20,31 +16,22 @@ pub const Light = enum {
     }
 };
 
-/// The weather profile over this sky.
 pub const Weather = enum {
     clear,
-    /// A very soft rain that never lets up.
     drizzle,
-    /// A grey sea coast: squalls blow in and out, and sea fog comes on in the lulls.
     coastal,
-    /// Thunderstorms build, break and clear, lightning in the worst of them.
     stormy,
-    /// Long spells of fog, now and then a little rain.
     misty,
 };
 
-/// The slow tides every profile reads its layers from: how foul the sky runs, and how thick the air hangs.
 pub const Drive = enum { storm, haze };
 
-/// Each spell of a drive rolls afresh, holds, then eases into the next.
 pub const Cycle = struct {
     /// Game minutes a spell lasts.
     spell: u16 = 240,
-    /// Rolls raised to this: below 1 the drive runs high more often, above 1 low.
     lean: f32 = 1,
 };
 
-/// A layer's strength: `least` while its drive is at or below `from`, rising to `most` at the drive's top.
 pub const Span = struct {
     on: Drive = .storm,
     least: f32 = 0,
@@ -60,7 +47,6 @@ pub const Span = struct {
 
 pub const Layer = enum { overcast, rain, mist, lightning };
 
-/// What each layer is at a moment, 0 none to 1 its heaviest.
 pub const Now = std.EnumArray(Layer, f32);
 
 pub const Profile = struct {
@@ -68,7 +54,6 @@ pub const Profile = struct {
     layer: std.EnumArray(Layer, Span) = .initFill(.{}),
 };
 
-/// The drizzle's rain, all day long.
 pub const DRIZZLE: f32 = 0.19;
 
 pub const PROFILES = std.EnumArray(Weather, Profile).init(.{
@@ -112,7 +97,6 @@ pub const Climate = struct {
     light: Light = .clear,
     weather: Weather = .clear,
 
-    /// Its weather `minutes` into the run whose seed is `seed`; every node shares the drives, each reading them by its own profile.
     pub fn now(c: Climate, seed: u64, minutes: u64) Now {
         const p = PROFILES.get(c.weather);
         var d = std.EnumArray(Drive, f32).initUndefined();
@@ -124,7 +108,6 @@ pub const Climate = struct {
     }
 };
 
-/// Of a spell, the share at its end over which it eases into the next.
 const EASE_SHARE: f32 = 0.6;
 
 fn drive(seed: u64, k: Drive, c: Cycle, minutes: u64) f32 {
@@ -163,8 +146,6 @@ test "a profile's weather holds, changes by spells, keeps each layer in its span
     for (std.enums.values(Weather)) |w| {
         const c = Climate{ .weather = w };
         const p = PROFILES.get(w);
-        var shown = std.EnumArray(Layer, f32).initFill(0);
-        var wet: usize = 0;
         var most_turn: f32 = 0;
         var before = c.now(42, 0);
         var m: u64 = step;
@@ -174,14 +155,10 @@ test "a profile's weather holds, changes by spells, keeps each layer in its span
             for (std.enums.values(Layer)) |l| {
                 const s = p.layer.get(l);
                 try std.testing.expect(n.get(l) >= s.least - 1e-5 and n.get(l) <= s.most + 1e-5);
-                shown.set(l, @max(shown.get(l), n.get(l)));
                 most_turn = @max(most_turn, @abs(n.get(l) - before.get(l)));
             }
-            if (n.get(.rain) > 0) wet += 1;
             before = n;
         }
-        const turns: f32 = @floatFromInt(days * day.MINUTES / step);
-        std.debug.print("{s} over {d} days: raining {d:.0}% of turns; heaviest rain {d:.2}, mist {d:.2}, lightning {d:.2}; at most {d:.3} of a layer a turn\n", .{ @tagName(w), days, @as(f32, @floatFromInt(wet)) / turns * 100, shown.get(.rain), shown.get(.mist), shown.get(.lightning), most_turn });
         try std.testing.expect(most_turn < 0.2);
     }
     const coast = Climate{ .weather = .coastal };

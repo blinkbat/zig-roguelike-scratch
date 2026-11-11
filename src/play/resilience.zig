@@ -46,26 +46,22 @@ pub fn Turns(comptime N: u8) type {
             lengthen(&self.turns, N);
         }
 
-        /// One of its turns: whether it ran.
         pub fn wear(self: *@This()) bool {
             return wearTurn(&self.turns);
         }
     };
 }
 
-/// `turns` held to at least `n`.
 pub fn lengthen(turns: *u8, n: u8) void {
     turns.* = @max(turns.*, n);
 }
 
-/// One turn off a countdown: whether it was running.
 pub fn wearTurn(turns: *u8) bool {
     if (turns.* == 0) return false;
     turns.* -= 1;
     return true;
 }
 
-/// `afflict` for a status kept in the body field its kind names: starting it.
 pub fn Starts(comptime k: Kind) type {
     return struct {
         pub fn afflict(a: anytype, _: *mathx.Rng) void {
@@ -74,7 +70,6 @@ pub fn Starts(comptime k: Kind) type {
     };
 }
 
-/// A body's resistance to a status as shown, and the turns before its built-up part expires.
 pub const Standing = struct {
     percent: i16 = 0,
     turns: u8 = 0,
@@ -142,7 +137,6 @@ test "status buildup is independent, blocks repeated applications and expires on
     for (0..1000) |_| successes += @intFromBool(s.take(.stun, 75, &rng));
     try std.testing.expectEqual(@as(usize, 1), successes);
     try std.testing.expectEqual(@as(u32, 0), s.resistance(.bleed, 0));
-    std.debug.print("resilience: {d} independent meters, {d} successes before immunity; innate 75% needs 1, expiry {d} turns\n", .{ std.enums.values(Kind).len, mathx.PERCENT / GAIN, EXPIRY });
 }
 
 test "failed status applications preserve expiry freshness and all other meters" {
@@ -162,7 +156,6 @@ test "failed status applications preserve expiry freshness and all other meters"
         }
     }
     try std.testing.expect(accepted > 0 and refused > 0);
-    std.debug.print("status retry atomicity: {d} accepted and {d} resisted applications across all {d} meters\n", .{ accepted, refused, std.enums.values(Kind).len });
 }
 
 test "certain status outcomes draw no RNG and immunity expires without failed retries extending it" {
@@ -192,5 +185,4 @@ test "certain status outcomes draw no RNG and immunity expires without failed re
         s.settle();
         try std.testing.expectEqual(EXPIRY - 1, s.meters.get(kind).turns);
     }
-    std.debug.print("status lifetime: {d} meters check no-draw certainty, innate immunity, failed retries, exact expiry and one fresh-turn exemption\n", .{std.enums.values(Kind).len});
 }
