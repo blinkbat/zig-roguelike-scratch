@@ -204,12 +204,14 @@ pub const Body = struct {
     status: std.EnumArray(Status, u8) = .initFill(0),
     resilience: resilience.State = .{},
     sunder: sunder.Sunder = .{},
+    braced: ?mathx.Dir = null,
 
     pub fn of(a: actor.Actor, seq: u64) Body {
         var b = Body{ .kind = a.kind, .hp = a.hp, .max = a.max, .seq = seq };
         if (a.alive) {
             b.resilience = a.resilience;
             b.sunder = a.sunder;
+            b.braced = a.braced;
             for (std.enums.values(Status)) |s| b.status.set(s, s.turnsOf(a));
         }
         return b;

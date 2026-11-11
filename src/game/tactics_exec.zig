@@ -8,6 +8,7 @@ const fire = @import("../map/fire.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const glacial = @import("../play/glacial.zig");
+const areas = @import("../play/area.zig");
 const progress = @import("../play/progress.zig");
 const tactics = @import("../play/tactics.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -49,8 +50,9 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
 }
 
 fn warCry(g: *game.Game, from: P, rank: u8) void {
+    const reach = @min(tactics.WarCry.RADIUS + g.sim.wider(), areas.BURST_MAX);
     for (g.sim.pool.slice(), 0..) |*a, slot| {
-        if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, from) > tactics.WarCry.RADIUS + g.sim.wider()) continue;
+        if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, from) > reach) continue;
         a.awake = true;
         if (!g.sim.procStatus(a, .fright, tactics.WarCry.chance(rank))) continue;
         if (a.frighten(tactics.WarCry.turns(rank))) g.sim.sayAt(a.at, actor.FLEES, .{actor.row(a.kind).name});

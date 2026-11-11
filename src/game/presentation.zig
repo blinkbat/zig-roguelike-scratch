@@ -227,7 +227,7 @@ pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
 /// When each `Presentation` field is reset, every field in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
-    pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "lit", "tiles", "embers", "burnt", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
+    pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "lit", "tiles", "embers", "burnt", "busy", "lead", "bolt_lands", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
     pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
     pub const facing = [_][]const u8{"facing"};
     pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown" };
@@ -282,6 +282,8 @@ pub const Presentation = struct {
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
     lead: ?f32 = null,
+    /// Seconds until the turn's last firebolt strikes; the foes act after it.
+    bolt_lands: f32 = 0,
     fx: fx.Fx = .{},
     gold_taken: ?ground_items.Coins = null,
     mana_held: i32 = 0,
@@ -439,7 +441,10 @@ pub const Presentation = struct {
         const from = if (self.bolts[by.index]) |b| b.to else was.point();
         const span = @as(f32, @floatFromInt(cells)) * BOLT_CELL_S;
         self.bolts[by.index] = .{ .from = from, .to = now.point(), .heading = now.heading(), .t = -wait, .span = span, .after = !lands };
-        if (self.litShown(sim, was.at()) or self.litShown(sim, now.at())) self.holdUntil(wait + span);
+        for (was.flown..@as(usize, now.flown) + 1) |k| if (self.litShown(sim, now.cell(k))) {
+            self.holdUntil(wait + span);
+            break;
+        };
         return wait + span;
     }
 
@@ -946,8 +951,10 @@ pub const Presentation = struct {
         const hero = sim.heroSlot().?;
         const warded = self.owed[hero].worn;
         self.owed[hero].worn = null;
-        const hero_done = self.stagger(sim, gas, .fromInt(sim.hero), self.lead orelse 0, &turn);
+        const hero_done = @max(self.stagger(sim, gas, .fromInt(sim.hero), self.lead orelse 0, &turn), self.bolt_lands);
+        if (self.bolt_lands > 0) turn.next_at = @max(turn.next_at, self.bolt_lands + late + game.STAGGER_S);
         self.lead = null;
+        self.bolt_lands = 0;
         self.knocked_from = null;
         var part: [actor.MAX]f32 = @splat(hero_done);
         for (sim.order[0..sim.order_n]) |id| part[actor.Pool.slot(id)] = self.stagger(sim, gas, .fromInt(id), hero_done, &turn);

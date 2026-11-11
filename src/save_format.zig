@@ -229,6 +229,7 @@ pub fn validate(snapshot: *Snapshot) !void {
     _ = run.growth.gain(0);
     run.clock = day.Clock.at(run.clock.hour());
     run.mana_recovery = @mod(run.mana_recovery, hero.MANA_REGEN_TURNS);
+    snapshot.portable.life_recovery = @mod(snapshot.portable.life_recovery, hero.LIFE_REGEN_TURNS);
     Policy.restoreStart(&run.growth, run.class);
     for (skillbar.ACTS) |act| {
         const rank = run.growth.ranks.get(act);
@@ -339,7 +340,10 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *ground_it
         if (body.max > BODY_MOST or body.bleed.amount > BODY_MOST or body.clock.ticks < -BODY_MOST or body.clock.ticks > BODY_MOST) return error.Damaged;
         if (body.sunder.stacks > sunder.MOST or (body.sunder.stacks == 0) != (body.sunder.turns == 0)) return error.Damaged;
         if (body.maim.limp and body.maim.turns == 0) return error.Damaged;
-        if (body.bolt) |b| if (!b.valid() or actor.row(body.kind).hurls == null) return error.Damaged;
+        if (body.bolt) |b| {
+            const hu = actor.row(body.kind).hurls orelse return error.Damaged;
+            if (!b.valid(hu.range)) return error.Damaged;
+        }
     }
     for (level.occupant, 0..) |id, index| {
         if (id == grid.NO_ONE) continue;

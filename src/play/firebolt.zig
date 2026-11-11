@@ -34,9 +34,11 @@ pub const Bolt = struct {
         return c;
     }
 
-    /// Thrown from a cell on the map, along a line, no farther out than that line runs.
-    pub fn valid(b: Bolt) bool {
-        return grid.Level.inside(b.from) and !b.from.eq(b.toward) and b.flown <= mathx.dist(b.from, b.toward);
+    /// Thrown from a cell on the map, along a line no longer than `range` past the map's breadth, no farther out than that line runs.
+    pub fn valid(b: Bolt, range: i32) bool {
+        if (!grid.Level.inside(b.from) or b.from.eq(b.toward)) return false;
+        const far = @max(@abs(@as(i64, b.toward.x) - b.from.x), @abs(@as(i64, b.toward.y) - b.from.y));
+        return far <= @as(i64, range) + @max(grid.W, grid.H) and b.flown <= far;
     }
 
     pub fn at(b: Bolt) P {
@@ -112,6 +114,15 @@ test "a bolt flies its speed a turn along its line and is spent at its range" {
     try std.testing.expectEqual(Flew{ .cells = 2, .stop = .spent }, flown[2]);
     try std.testing.expectEqual(P{ .x = 16, .y = 13 }, b.at());
     try std.testing.expectEqual(P{ .x = 12, .y = 11 }, b.cell(2));
+}
+
+test "a bolt is valid only along a line its range could aim" {
+    const from = P{ .x = 10, .y = 10 };
+    const b = Bolt.aimed(from, .{ .x = 12, .y = 11 }, TEST_HURL.range);
+    try std.testing.expect(b.valid(TEST_HURL.range));
+    try std.testing.expect(!(Bolt{ .from = from, .toward = .{ .x = std.math.minInt(i32), .y = 10 } }).valid(TEST_HURL.range));
+    try std.testing.expect(!(Bolt{ .from = from, .toward = .{ .x = std.math.maxInt(i32), .y = 10 } }).valid(TEST_HURL.range));
+    try std.testing.expect(!(Bolt{ .from = from, .toward = from.add(.{ .x = 2, .y = 0 }), .flown = 3 }).valid(TEST_HURL.range));
 }
 
 test "a bolt enters a body's or barrel's cell, stops short of a wall, and never leaves its line" {

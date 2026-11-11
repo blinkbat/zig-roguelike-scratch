@@ -62,7 +62,7 @@ pub fn stampEntering(g: *game.Game, n: usize, at: P, back: bool) void {
 fn stampIn(g: *game.Game, n: usize, lv: *grid.Level, world: trigger.World) void {
     const w = g.sim.map orelse return lv.clearNpcs();
     const ground = if (n == g.sim.node) &g.sim.ground else &g.sim.visits[n].ground;
-    w.stampNpcs(n, lv, &g.sim.plot.spots, Standing{ .rt = &g.sim.plot, .s = &w.script, .w = world, .ground = ground });
+    w.stampNpcs(n, lv, game.rollOf(g.sim.seed, n), &g.sim.plot.spots, Standing{ .rt = &g.sim.plot, .s = &w.script, .w = world, .ground = ground });
 }
 
 pub fn restand(g: *game.Game) void {
@@ -474,12 +474,12 @@ test "an NPC's found spot keeps off the node's painted foes and what lies on the
     var lv: grid.Level = undefined;
     var stood: script.Stood = @splat(null);
     w.node[0].sketch(&lv);
-    w.stampNpcs(0, &lv, &stood, atlas.EVERY_NPC);
+    w.stampNpcs(0, &lv, 0, &stood, atlas.EVERY_NPC);
     const first = stood[0] orelse return error.NoPlace;
     try std.testing.expect(w.node[0].plan.bespoke.addFoe(.{ .kind = .rat, .at = first }));
     stood = @splat(null);
     w.node[0].sketch(&lv);
-    w.stampNpcs(0, &lv, &stood, atlas.EVERY_NPC);
+    w.stampNpcs(0, &lv, 0, &stood, atlas.EVERY_NPC);
     const second = stood[0] orelse return error.NoPlace;
     try std.testing.expect(!second.eq(first));
     const Lying = struct {
@@ -495,7 +495,7 @@ test "an NPC's found spot keeps off the node's painted foes and what lies on the
     };
     stood = @splat(null);
     w.node[0].sketch(&lv);
-    w.stampNpcs(0, &lv, &stood, Lying{ .cell = second });
+    w.stampNpcs(0, &lv, 0, &stood, Lying{ .cell = second });
     const third = stood[0] orelse return error.NoPlace;
     try std.testing.expect(!third.eq(first) and !third.eq(second));
 }
@@ -508,14 +508,14 @@ test "an NPC's found spot keeps off a painted NPC listed after it" {
     var lv: grid.Level = undefined;
     var stood: script.Stood = @splat(null);
     alone.node[0].sketch(&lv);
-    alone.stampNpcs(0, &lv, &stood, atlas.EVERY_NPC);
+    alone.stampNpcs(0, &lv, 0, &stood, atlas.EVERY_NPC);
     const far = stood[0] orelse return error.NoPlace;
     var text: [64]u8 = undefined;
     const w = try testWorld(try std.fmt.bufPrint(&text, "npc 0 far - Hermit\nnpc 0 {d} {d} - Painted", .{ far.x, far.y }));
     defer std.testing.allocator.destroy(w);
     stood = @splat(null);
     w.node[0].sketch(&lv);
-    w.stampNpcs(0, &lv, &stood, atlas.EVERY_NPC);
+    w.stampNpcs(0, &lv, 0, &stood, atlas.EVERY_NPC);
     const hermit = stood[0] orelse return error.NoPlace;
     try std.testing.expect(!hermit.eq(far));
     try std.testing.expectEqual(@as(?usize, 1), lv.npcAt(far));
@@ -589,6 +589,21 @@ test "a trade taken on the way to another line hands back to the conversation" {
     try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
     press(g, menu.CONFIRM);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+}
+
+test "the Character button on a trade with a conversation beneath closes back to the conversation" {
+    const w = try testWorld(MERCHANT);
+    defer std.testing.allocator.destroy(w);
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, SEED);
+    game.heroStep(g, .e, 0);
+    g.st = .{ .device = .keys, .walk = .s };
+    game.update(g, 0);
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(book.Page.trade, g.character.page);
+    press(g, menu.CHARACTER);
+    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
 }
 
 test "a trigger may not trade, and a conversation a trigger opened has no one to trade with" {

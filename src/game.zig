@@ -775,7 +775,8 @@ pub fn update(g: *Game, dt: f32) void {
     var late: f32 = 0;
     const was = screenOf(g);
     const turn_at = g.sim.clock.minute;
-    if (g.mode != .dead and g.mode != .talk and g.st.character_page != null) {
+    const beside_talk = g.mode == .dead or g.mode == .talk or g.sim.plot.talk != null;
+    if (!beside_talk and g.st.character_page != null) {
         const page = book.Page.of(g.st.character_page.?);
         if (bookOpen(g) and g.character.page == page) {
             g.mode = .play;
@@ -784,7 +785,7 @@ pub fn update(g: *Game, dt: f32) void {
             g.character.choose(page);
             g.character.enter(character.bookView(g, &g.nearby));
         }
-    } else if (g.mode != .dead and g.st.hit(CHARACTER) and (g.mode == .play or (g.mode == .pause and !bookOpen(g)))) {
+    } else if (!beside_talk and g.st.hit(CHARACTER) and (g.mode == .play or (g.mode == .pause and !bookOpen(g)))) {
         character.openCharacter(g);
     } else if (g.mode == .play and g.st.hit(PAUSE)) {
         character.openPause(g);

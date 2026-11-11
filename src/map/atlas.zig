@@ -471,10 +471,12 @@ pub const Atlas = struct {
         }{ .map = self, .node = n });
     }
 
-    pub fn stampNpcs(self: *const Atlas, n: usize, lv: *grid.Level, stood: *script.Stood, shown: anytype) void {
+    /// Node `n`'s NPCs on its level as stamped by `roll`, off the cells its foes stand on.
+    pub fn stampNpcs(self: *const Atlas, n: usize, lv: *grid.Level, roll: u64, stood: *script.Stood, shown: anytype) void {
         lv.clearNpcs();
         var avoid = shown.lying();
-        for (self.node[n].placed()) |f| avoid.set(grid.Level.idx(f.at));
+        var foes: [MAX_FOES]Foe = undefined;
+        for (self.node[n].placedOn(roll, &foes)) |f| avoid.set(grid.Level.idx(f.at));
         for (self.script.npcs(), 0..) |*npc, i| if (npc.node == n) if (self.script.standsAt(i, stood)) |c| avoid.set(grid.Level.idx(c));
         for (self.script.npcs(), 0..) |*npc, i| {
             if (npc.node != n or !shown.shows(i)) continue;
@@ -603,7 +605,7 @@ pub const Atlas = struct {
         if (nd.unrolled()) return true;
         nd.sketch(scratch);
         var stood: script.Stood = @splat(null);
-        self.stampNpcs(from.node, scratch, &stood, EVERY_NPC);
+        self.stampNpcs(from.node, scratch, 0, &stood, EVERY_NPC);
         return landing(scratch, from.at, nd.placed()) != null;
     }
 };
@@ -957,7 +959,7 @@ test "the caravan posts three guards beside its carts, apart from the merchant, 
         const seed = 0x6A2D +% i *% grid.TEST_SEED_STRIDE;
         var stood: script.Stood = @splat(null);
         nd.stamp(&lv, seed);
-        a.stampNpcs(link.node, &lv, &stood, EVERY_NPC);
+        a.stampNpcs(link.node, &lv, seed, &stood, EVERY_NPC);
         const at = landing(&lv, nd.doors()[link.door].at, &.{}) orelse return error.NoFloor;
         var pool = actor.Pool{};
         _ = pool.spawn(&lv, actor.Actor.of(actor.HERO, at));
@@ -1005,12 +1007,12 @@ test "the caravan's merchant stands beside a cart, and the stolen baby pib far u
         const seed = 0xFA2 +% i *% grid.TEST_SEED_STRIDE;
         var stood: script.Stood = @splat(null);
         a.node[caravan].stamp(&lv, seed);
-        a.stampNpcs(caravan, &lv, &stood, EVERY_NPC);
+        a.stampNpcs(caravan, &lv, seed, &stood, EVERY_NPC);
         const at = stood[merchant] orelse return error.NoPlace;
         try std.testing.expectEqual(@as(?usize, merchant), lv.npcAt(at));
         try std.testing.expect(besideCart(&lv, at));
         a.node[north.node].stamp(&lv, seed);
-        a.stampNpcs(north.node, &lv, &stood, EVERY_NPC);
+        a.stampNpcs(north.node, &lv, seed, &stood, EVERY_NPC);
         const pib = stood[baby] orelse return error.NoPlace;
         _ = grid.distances(&lv, door, &dist, &queue);
         const walk = dist[grid.Level.idx(pib)];

@@ -909,10 +909,11 @@ fn kinOf(g: *const game.Game, p: P) Kin {
 
 /// The line each braced foe the hero can see will charge or hook down, over the lit cells of it.
 fn drawBraced(g: *game.Game, c: Cam) void {
-    for (g.sim.pool.constSlice(), 0..) |a, i| {
-        const d = a.braced orelse continue;
-        if (!a.alive or g.pic.drawnAt(&g.sim, i) == null) continue;
-        const lane = windup.lane(&g.sim.lv, a.at, d, actor.braceReach(a.kind) orelse continue);
+    for (g.pic.pictured[0..g.sim.pool.n], 0..) |b, i| {
+        const d = b.braced orelse continue;
+        if (b.down()) continue;
+        const at = g.pic.drawnCell(&g.sim, i) orelse continue;
+        const lane = windup.lane(&g.sim.lv, at, d, actor.braceReach(b.kind) orelse continue);
         fillLit(g, c, lane.slice(), look.BRACED);
     }
 }

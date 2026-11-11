@@ -480,7 +480,7 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
                 if (comptime action.pierces()) {
                     combat.pierceHit(run, action, pierced.?, stroke);
                 } else if (comptime action.reticle() == .bow) {
-                    if (pierced != null and pierced.?.n > 1) skewerHits(run, action, pierced.?, stroke) else resolveProjectileHit(run, action, hit, flight, stroke);
+                    if (pierced != null and pierced.?.n > 0) skewerHits(run, action, pierced.?, stroke) else resolveProjectileHit(run, action, hit, flight, stroke);
                 } else unreachable;
             },
         }

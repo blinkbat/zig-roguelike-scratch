@@ -810,3 +810,16 @@ test "Skewering lets a shot pass through its extra foes and no further" {
         for (harness.foes(g), 0..) |a, i| try std.testing.expectEqual(i <= @as(usize, @intCast(extra)), a.hp < harness.TEST_HP);
     }
 }
+
+test "a Skewering shot through its one foe into a barrel strikes both" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
+    harness.toughenFoes(g);
+    const barrel = mathx.P{ .x = 23, .y = 20 };
+    g.sim.lv.putBarrel(barrel);
+    g.sim.inventory.gear.slots.set(.right_hand, harness.affixed(.bow, .{ .kind = .pierce, .value = 1 }));
+    harness.aimAt(g, .shoot, .{ .x = 22, .y = 20 });
+    try std.testing.expect(harness.foes(g)[0].hp < harness.TEST_HP);
+    try std.testing.expect(!g.sim.lv.hasBarrel(barrel));
+}

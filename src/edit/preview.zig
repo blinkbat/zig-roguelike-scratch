@@ -58,7 +58,7 @@ pub const Scene = struct {
             .bespoke => nd.sketch(&self.lv),
             .procgen => nd.stamp(&self.lv, self.roll),
         }
-        map.stampNpcs(node, &self.lv, &self.npc_at, atlas.EVERY_NPC);
+        map.stampNpcs(node, &self.lv, self.roll, &self.npc_at, atlas.EVERY_NPC);
         switch (nd.plan) {
             .bespoke => {},
             .procgen => {

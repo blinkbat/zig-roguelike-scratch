@@ -697,6 +697,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
     f.braced = null;
     const stalled = f.clock.stalled;
     const worn = wearTurn(g, id);
+    if (braced != null) g.pic.recordWear(&g.sim, .fromInt(id));
     if (f.disguised) return;
     f.sweep_in -|= 1;
     f.ready_in -|= 1;
@@ -759,6 +760,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
 fn brace(g: *game.Game, id: u16, d: mathx.Dir, comptime said: []const u8) void {
     const r = g.sim.pool.get(id).?;
     r.braced = d;
+    g.pic.recordWear(&g.sim, .fromInt(id));
     g.pic.turnLater(.fromInt(id), d.delta().x);
     g.sim.sayOf(r, said, .{actor.row(r.kind).name});
 }
@@ -807,6 +809,7 @@ fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, a
         } else if (smashedBy(g, next, row)) |hit| g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = hit });
     }
     crab.stuck = true;
+    g.pic.recordWear(&g.sim, .fromInt(id));
     g.sim.sayOf(crab, "The {s} is stuck fast.", .{row.name});
 }
 
@@ -927,7 +930,9 @@ fn flyBolts(g: *game.Game) bool {
         if (lands) thrower.ready_in = @max(thrower.ready_in, hu.every);
         const kind = thrower.kind;
         const s = Stroke{ .from = was.at(), .wait = g.pic.recordBolt(&g.sim, .fromIndex(i), was, now, flew.cells, lands, wait), .fire = true };
-        switch (flew.stop orelse continue) {
+        const stop = flew.stop orelse continue;
+        if (stop == .body or stop == .barrel) g.pic.bolt_lands = @max(g.pic.bolt_lands, s.wait);
+        switch (stop) {
             .body => |w| if (!boltHits(g, kind, w, hu, s)) return false,
             .barrel => |p| if (rewards.barrelLoot(&g.sim, p)) |gold| {
                 g.sim.sayAt(p, "The {s}'s " ++ firebolt.NAME ++ " smashes" ++ BARREL_DROPS, .{ actor.row(kind).name, gold });
@@ -941,6 +946,7 @@ fn flyBolts(g: *game.Game) bool {
 
 /// Fire past its fire resistance, without a dodge, on whatever body it flies into; false when that kills the hero.
 fn boltHits(g: *game.Game, by: actor.Kind, id: u16, hu: actor.Hurl, s: Stroke) bool {
+    reveal(g, .fromInt(id), s);
     const a = g.sim.pool.get(id) orelse return true;
     const at = a.at;
     const slot = actor.Pool.slot(id);
@@ -953,7 +959,7 @@ fn boltHits(g: *game.Game, by: actor.Kind, id: u16, hu: actor.Hurl, s: Stroke) b
     if (hero) {
         g.sim.log.push(.danger, "The {s}'s " ++ firebolt.NAME ++ " burns {s} for {d}.", .{ thrower, g.sim.name.text(), h.dmg });
         g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = by }, .dmg = h.dmg, .before = before } });
-    } else g.sim.sayAt(at, "The {s}'s " ++ firebolt.NAME ++ " burns the {s} for {d}.{s}", .{ thrower, actor.row(kind).name, h.dmg, deathNote(h) });
+    } else if (h.lethal or !a.veiled()) g.sim.sayAt(at, "The {s}'s " ++ firebolt.NAME ++ " burns the {s} for {d}.{s}", .{ thrower, actor.row(kind).name, h.dmg, deathNote(h) });
     if (!h.lethal and h.dmg > 0) _ = g.sim.igniteFresh(slot, a, hu.burns);
     if (hero) {
         g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(slot), .at = at, .lethal = h.lethal, .after = afterBlow(g, id, h) } }, s);
