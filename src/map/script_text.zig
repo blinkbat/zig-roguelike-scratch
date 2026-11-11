@@ -131,7 +131,7 @@ fn putAct(w: anytype, s: *const Script, comptime lead: Word, a: *const script.Ac
     try w.writeAll(says(lead));
     try w.writeAll(@tagName(a.kind));
     switch (a.kind) {
-        .preserve => {},
+        .preserve, .trade => {},
         .dialog => try w.print(" {s}", .{s.dialog[a.slot].name.text()}),
         .text => try putTail(w, &a.note),
         .flag => try w.print(" {s} {s}", .{ s.flag[a.slot].text(), @tagName(a.setop) }),
@@ -389,7 +389,7 @@ pub const Reader = struct {
     fn act(r: *const Reader, s: *const Script, f: *Tokens) Error!script.Act {
         var a = script.Act{ .kind = try value(script.ActKind, f) };
         switch (a.kind) {
-            .preserve => {},
+            .preserve, .trade => {},
             .dialog => a.slot = r.index.findDialog(f.next() orelse return error.BadLine) orelse return error.BadLink,
             .text => if (!a.note.set(rest(f))) return error.BadLine,
             .flag => {
@@ -517,6 +517,8 @@ pub const SAMPLE =
     \\ask What is down here? -> deeper
     \\need flag met_wenna on
     \\gets counter coins add 2
+    \\ask Show me your wares. -> end
+    \\gets trade
     \\ask Goodbye. -> end
     \\line deeper
     \\say Rats. Slime. Worse, past the gate.
@@ -605,6 +607,8 @@ test "a script reads back to the same text, every condition and action kind with
         for (t.conds()) |c| conds.insert(c.kind);
         for (t.acts()) |a| acts.insert(a.kind);
     }
+    var spoken = s.actIter();
+    while (spoken.next()) |a| acts.insert(a.kind);
     try std.testing.expectEqual(std.enums.values(script.CondKind).len, conds.count());
     try std.testing.expectEqual(std.enums.values(script.ActKind).len, acts.count());
 }
@@ -633,6 +637,8 @@ test "a script with a dangling name, a misplaced line or a trigger's action in a
         "trigger t 0 once live\nwhen deaths slime_half >= 1\n",
         "trigger t 0 once live\nwhen near 0 2\n",
         "trigger t 0 once live\ndo wait -1\n",
+        "trigger t 0 once live\ndo trade\n",
+        "dialog d\nline a\nact trade x\n",
         "trigger t 0 once live\nwhen elapsed >= 01\n",
         "when always\n",
         "npc 0 99 99 -\n",

@@ -33,6 +33,7 @@ const CardLine = union(enum) {
     damage: damage.Base,
     unarmed,
     armour: i16,
+    block: i16,
     innate: item_bases.Innate,
     requires: struct { at: attr.Attr, n: i32, available: i32, met: bool },
 
@@ -41,6 +42,7 @@ const CardLine = union(enum) {
             .damage => |hit| out.say(damage.PHYSICAL_FMT, .{ hit.lo, hit.hi }),
             .unarmed => return "No weapon damage",
             .armour => |n| out.say("{d}% " ++ attr.REDUCTION_LABEL, .{n}),
+            .block => |n| out.say(item_bases.BLOCK_FMT[1..], .{n}),
             .innate => |innate| {
                 out.clear();
                 innate.write(out.writer());
@@ -53,13 +55,13 @@ const CardLine = union(enum) {
     fn size(line: CardLine) i32 {
         return switch (line) {
             .requires, .unarmed => font.LABEL,
-            .damage, .armour, .innate => font.SMALL,
+            .damage, .armour, .block, .innate => font.SMALL,
         };
     }
 
     fn ink(line: CardLine) rl.Color {
         return switch (line) {
-            .damage, .armour, .innate => look.TEXT,
+            .damage, .armour, .block, .innate => look.TEXT,
             .unarmed => look.DIM,
             .requires => |r| if (r.met) look.DIM else look.LOSS,
         };
@@ -82,6 +84,7 @@ const CardLines = struct {
             out.add(.{ .damage = hit });
         } else if (slot == .right_hand) out.add(.unarmed);
         if (spec.armour > 0) out.add(.{ .armour = spec.armour });
+        if (spec.block > 0) out.add(.{ .block = spec.block });
         if (spec.innate) |innate| {
             out.add(.{ .innate = innate });
         }

@@ -5,6 +5,7 @@ const script = @import("../map/script.zig");
 const trigger = @import("../play/trigger.zig");
 const ground_items = @import("../play/ground_items.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
+const look = @import("../gfx/look.zig");
 const menu = @import("../ui/menu.zig");
 const panel = @import("../ui/talk.zig");
 const game = @import("../game.zig");
@@ -95,6 +96,13 @@ fn opened(g: *game.Game) void {
     g.mode = .talk;
     g.sim.unsaved = true;
     restand(g);
+    handOver(g);
+}
+
+/// A spoken `trade` opens the merchant's wares over the conversation.
+fn handOver(g: *game.Game) void {
+    const npc = g.sim.plot.takeTrading() orelse return;
+    game.character.openTrade(g, npc);
 }
 
 pub fn due(g: *game.Game) bool {
@@ -124,9 +132,17 @@ fn shownOf(g: *game.Game, s: *const script.Script, out: *Shown) bool {
     var picks: [script.MAX_CHOICES]u8 = undefined;
     const offered = rt.offered(s, g.sim.world(), &picks);
     for (offered, 0..) |c, i| out.labels[i] = ln.choice[c].ask.text();
-    out.view = .{ .who = rt.speaker(s), .say = ln.say.text(), .choices = out.labels[0..offered.len], .cursor = rt.talk.?.cursor, .prompt = prompt_icon.Prompt.menuOf(&g.st, menu.CONFIRM) };
+    out.view = .{ .who = rt.speaker(s), .say = ln.say.text(), .choices = out.labels[0..offered.len], .cursor = rt.talk.?.cursor, .prompt = prompt_icon.Prompt.menuOf(&g.st, menu.CONFIRM), .figure = figureOf(g, s, ln) };
     out.layout.of(&g.face, g.screen, out.view);
     return true;
+}
+
+/// The NPC spoken to, unless the line names another speaker.
+fn figureOf(g: *const game.Game, s: *const script.Script, ln: *const script.Line) ?panel.Figure {
+    const npc = &s.npc[g.sim.plot.talk.?.npc orelse return null];
+    if (ln.who.n > 0 and !ln.who.eql(npc.called())) return null;
+    const k = npc.looks orelse return .{};
+    return .{ .tex = g.sprites.body(k), .glyph = look.body(k) };
 }
 
 pub fn step(g: *game.Game) void {
@@ -152,6 +168,7 @@ pub fn step(g: *game.Game) void {
         g.sim.unsaved = true;
         restand(g);
     }
+    if (rt.trading != null) return handOver(g);
     if (rt.talk == null) finished(g);
 }
 
@@ -170,6 +187,8 @@ const harness = @import("harness.zig");
 const atlas = @import("../map/atlas.zig");
 const script_text = @import("../map/script_text.zig");
 const raster = @import("../gfx/raster.zig");
+const book = @import("../ui/book.zig");
+const trade = @import("../play/trade.zig");
 
 fn testWorld(text: []const u8) !*atlas.Atlas {
     const w = try atlas.testAtlas();
@@ -501,6 +520,87 @@ test "an NPC's found spot keeps off a painted NPC listed after it" {
     try std.testing.expect(!hermit.eq(far));
     try std.testing.expectEqual(@as(?usize, 1), lv.npcAt(far));
     try std.testing.expectEqual(@as(?usize, 0), lv.npcAt(hermit));
+}
+
+const MERCHANT =
+    \\dialog pedlar
+    \\line root
+    \\say Salt, rope, steel.
+    \\ask Show me your wares. -> end
+    \\gets trade
+    \\ask What else? -> more
+    \\gets trade
+    \\ask Goodbye. -> end
+    \\line more
+    \\say Nothing else.
+    \\npc 0 6 5 pedlar Pedlar
+;
+
+test "a choice that trades opens the merchant's wares without a turn; buying spends gold and closing returns to play" {
+    const w = try testWorld(MERCHANT);
+    defer std.testing.allocator.destroy(w);
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, SEED);
+    game.heroStep(g, .e, 0);
+    const turns = g.sim.plot.turns;
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
+    try std.testing.expectEqual(book.Page.trade, g.character.page);
+    try std.testing.expect(g.sim.plot.talk == null and g.sim.plot.trading == null);
+    const shelf = &g.sim.plot.wares[0].?;
+    const k = shelf.at(0).?.supply;
+    const stocked = shelf.supplies.get(k);
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.inventory.stacks.get(k));
+    try std.testing.expectEqualStrings(trade.NOT_ENOUGH_GOLD, g.character.message.text());
+    g.sim.gold = 100;
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(@as(u8, 1), g.sim.inventory.stacks.get(k));
+    try std.testing.expectEqual(stocked - 1, shelf.supplies.get(k));
+    try std.testing.expectEqual(100 - trade.supplyPrice(k), g.sim.gold);
+    try std.testing.expectEqual(g.sim.gold, g.pic.gold_shown);
+    press(g, menu.CHANGE);
+    try std.testing.expect(g.character.selling);
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.inventory.stacks.get(k));
+    try std.testing.expectEqual(100 - trade.supplyPrice(k) + trade.offered(trade.supplyPrice(k)), g.sim.gold);
+    press(g, menu.BACK);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try std.testing.expectEqual(turns, g.sim.plot.turns);
+    game.heroStep(g, .e, 0);
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(stocked - 1, g.sim.plot.wares[0].?.supplies.get(k));
+}
+
+test "a trade taken on the way to another line hands back to the conversation" {
+    const w = try testWorld(MERCHANT);
+    defer std.testing.allocator.destroy(w);
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, SEED);
+    game.heroStep(g, .e, 0);
+    g.st = .{ .device = .keys, .walk = .s };
+    game.update(g, 0);
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(book.Page.trade, g.character.page);
+    try std.testing.expectEqual(@as(u8, 1), g.sim.plot.talk.?.line);
+    press(g, menu.BACK);
+    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+}
+
+test "a trigger may not trade, and a conversation a trigger opened has no one to trade with" {
+    var rt = trigger.Runtime{};
+    const s = try script.testScript();
+    defer std.testing.allocator.destroy(s);
+    try script_text.readAlone(MERCHANT, s, 1);
+    var l = @import("../play/log.zig").Log{};
+    try std.testing.expect(rt.open(s, 0, null, &l));
+    rt.pick(s, 0, .{}, &l);
+    try std.testing.expectEqual(@as(?u8, null), rt.takeTrading());
+    try std.testing.expect(std.meta.isError(script_text.readAlone("trigger t 0 once live\nwhen always\ndo trade\n", s, 1)));
 }
 
 test "a trigger's conversation waits for the turn to be drawn, then takes the screen" {

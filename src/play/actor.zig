@@ -16,6 +16,8 @@ const confusion = @import("confusion.zig");
 const enfeeble = @import("enfeeble.zig");
 const maim = @import("maim.zig");
 const ward = @import("ward.zig");
+const windup = @import("windup.zig");
+const firebolt = @import("firebolt.zig");
 const heroes = @import("hero.zig");
 const wording = @import("../core/wording.zig");
 
@@ -67,6 +69,9 @@ pub const Kind = enum {
     bog_leech,
     mimic,
     goblin,
+    sluice_crab,
+    chain_gaoler,
+    cinder_imp,
     skeleton,
     caravan_guard,
 
@@ -130,6 +135,9 @@ comptime {
         std.debug.assert(r.pace >= clock.TURN);
         if (r.ranged) |shot| std.debug.assert(shot.range <= bow.LONGEST);
         if (r.net) |n| std.debug.assert(n.range <= bow.LONGEST);
+        if (r.charges) |c| std.debug.assert(c.range >= windup.NEAREST and c.range <= c.rush and c.rush <= windup.LONGEST);
+        if (r.hooks) |h| std.debug.assert(h.range >= windup.NEAREST and h.range <= windup.LONGEST);
+        if (r.hurls) |h| std.debug.assert(h.range <= bow.LONGEST and h.speed > 0 and h.every > 1 and r.keeps > 0);
     }
 }
 
@@ -206,6 +214,24 @@ pub const Net = struct { range: i32, pins: u8, every: u8 };
 /// Every `every` turns: heals the most hurt `kin` within `reach` by `amount`, or else wakes the sleeping ones.
 pub const Mend = struct { reach: i32, amount: i32, every: u8, kin: []const Kind };
 
+/// Braces a turn at a hero `range` cells off along an open straight line, then rushes `rush` cells at most down it, striking `blow` on what stops it.
+pub const Charge = struct { range: i32, rush: i32, every: u8, blow: Strike };
+
+/// Braces a turn at a hero `range` cells off on a straight line, then flings a hook down it every `every` turns, dragging the hero a cell closer.
+pub const Hook = struct { range: i32, every: u8, blow: Strike };
+
+pub const Hurl = firebolt.Hurl;
+
+/// Cells a braced line runs, drawn as its warning.
+pub fn braceReach(k: Kind) ?i32 {
+    const r = row(k);
+    if (r.charges) |c| return c.rush;
+    if (r.hooks) |h| return h.range;
+    return null;
+}
+
+pub const EXPOSED_STATUS = "Loses its next action. No physical damage reduction until then.";
+
 pub const Row = struct {
     armour: i32 = 0,
     stun_resist: u8 = 0,
@@ -238,6 +264,9 @@ pub const Row = struct {
     keeps: i32 = 0,
     net: ?Net = null,
     mends: ?Mend = null,
+    charges: ?Charge = null,
+    hooks: ?Hook = null,
+    hurls: ?Hurl = null,
     allied: bool = false,
     /// An ally that holds its ground, shooting the foes it sees, and stays behind at doors.
     posted: bool = false,
@@ -266,6 +295,9 @@ const SLAM = Blow{ .strike = .{ .hit = .{ .lo = 2, .hi = 5 }, .verb = "slams", .
 const BOLT = Blow{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } };
 const NET = Net{ .range = 5, .pins = 2, .every = 4 };
 const MEND = Mend{ .reach = 5, .amount = 8, .every = 3, .kin = &.{ .pib, .beefy_pib } };
+const CHARGE = Charge{ .range = 5, .rush = 6, .every = 3, .blow = .{ .hit = .{ .lo = 5, .hi = 9 }, .verb = "rams", .slain = "rammed flat", .knocks = true } };
+const HOOK = Hook{ .range = 4, .every = 4, .blow = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "hooks", .slain = "hooked through" } };
+const HURL = Hurl{ .range = 7, .speed = 2, .every = 2, .hit = .{ .lo = 3, .hi = 5 }, .burns = 40 };
 const ICY = damage.Resists.init(.{ .cold = damage.RESIST_MAX, .fire = -50, .chaos = 0, .lightning = 0 });
 const FIERY = damage.Resists.init(.{ .cold = -50, .fire = damage.RESIST_MAX, .chaos = 0, .lightning = 0 });
 
@@ -294,6 +326,9 @@ pub fn row(k: Kind) Row {
         .bog_leech => .{ .name = "bog leech", .movement = .swimming, .foe_type = .beast, .hp = 12, .sight = 5, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bites", .slain = "drained dry", .bleeds = 50 } }, .lurks = true, .fright_resist = mathx.PERCENT },
         .mimic => .{ .name = "mimic", .foe_type = .aberration, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 4, .hi = 8 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 20, .fright_resist = mathx.PERCENT },
         .goblin => .{ .name = "goblin", .foe_type = .humanoid, .hp = 14, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "hacks", .slain = "hacked down" } }, .armour = 10, .fright_resist = 25 },
+        .sluice_crab => .{ .name = "sluice crab", .foe_type = .beast, .hp = 22, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "pinches", .slain = "crushed in a claw" } }, .charges = CHARGE, .armour = 50, .stun_resist = 50, .fright_resist = mathx.PERCENT },
+        .chain_gaoler => .{ .name = "chain gaoler", .foe_type = .humanoid, .hp = 20, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "flails", .slain = "flogged down" } }, .hooks = HOOK, .armour = 20, .fright_resist = 50 },
+        .cinder_imp => .{ .name = "cinder imp", .foe_type = .aberration, .hp = 8, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "claws", .slain = "clawed down" } }, .keeps = 3, .hurls = HURL, .resists = FIERY, .fright_resist = 25 },
         .skeleton => .{ .name = "skeleton", .foe_type = null, .allied = true, .falls = "crumbles", .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "slashes" } }, .armour = 10, .fright_resist = mathx.PERCENT },
         .caravan_guard => .{ .name = "caravan guard", .foe_type = null, .allied = true, .posted = true, .hp = 16, .sight = bow.RANGE, .blow = BOLT, .ranged = .{ .range = bow.RANGE, .retreat = 0 }, .armour = 15, .fright_resist = mathx.PERCENT },
     };
@@ -370,8 +405,14 @@ pub const Actor = struct {
     tactics: @import("tactics.zig").State = .{},
     fright: u8 = 0,
     sweep_in: u8 = 0,
-    /// Its turns until it can throw a net or mend again.
+    /// Its turns until it can throw a net, mend, charge, hook or hurl again.
     ready_in: u8 = 0,
+    /// The line it braced along last turn, which its charge or hook follows this one.
+    braced: ?mathx.Dir = null,
+    /// Its charge missed: it loses its next action, without armour until then.
+    stuck: bool = false,
+    /// Its firebolt in the air, which flies on after it falls.
+    bolt: ?firebolt.Bolt = null,
     submerged: bool = false,
     disguised: bool = false,
     /// Came in a night raid: its death gives no experience, loot, flask charges or mana.
@@ -670,7 +711,7 @@ const Step = struct {
 };
 
 /// Brogue's `monsterAvoids`: gas, steam and flames are shunned by a body not already in some.
-fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
+pub fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
     const to = from.add(d.delta());
     for (std.enums.values(grid.Gas)) |kind| {
         if (kind.harms() and lv.volumeAt(kind, to) > 0 and lv.volumeAt(kind, from) == 0) return true;
@@ -810,7 +851,7 @@ test "a slime with no free cell beside it waits to split until a blow finds one"
 }
 
 test "every foe a floor is stocked with is its own family, and a slime ends as four quarters at most" {
-    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .frost_wisp, .pyre_bloat, .pib_shaman, .bog_leech, .mimic, .goblin }, &FOES);
+    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .frost_wisp, .pyre_bloat, .pib_shaman, .bog_leech, .mimic, .goblin, .sluice_crab, .chain_gaoler, .cinder_imp }, &FOES);
     try std.testing.expectEqual(Kind.slime, Kind.slime_quarter.family());
     try std.testing.expectEqual(Kind.rat, Kind.rat.family());
     try std.testing.expectEqual(@as(usize, 4), most(.slime));

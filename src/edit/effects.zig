@@ -256,7 +256,7 @@ pub const Viewer = struct {
         sh.zapInto(&v.effects);
         switch (act) {
             inline else => |a| if (comptime a.reticle() == .bow and a.bursts()) {
-                v.effects.burst(lands, .{ .at = end, .area = skillbar.Act.elemental(a).burst(&v.lv, sh.from, end), .element = a.element().? });
+                v.effects.burst(lands, .{ .at = end, .area = skillbar.Act.elemental(a).burst(&v.lv, sh.from, end, 0), .element = a.element().? });
             },
         }
     }

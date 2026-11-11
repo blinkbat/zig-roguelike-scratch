@@ -10,6 +10,8 @@ const atlas = @import("../map/atlas.zig");
 const day = @import("../map/day.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
+const firebolt = @import("../play/firebolt.zig");
+const windup = @import("../play/windup.zig");
 const attrs = @import("../play/attrs.zig");
 const burning = @import("../play/burning.zig");
 const damage = @import("../play/damage.zig");
@@ -235,14 +237,14 @@ pub fn burstHit(g: *game.Game, comptime act: skillbar.Act, hit: bow.Hit, impact:
         .body => |id| id,
         .barrel, .plant => null,
     };
-    areaHit(g, act, impact, M.burst(&g.sim.lv, s.from, impact), s, direct, hit != .body);
+    areaHit(g, act, impact, M.burst(&g.sim.lv, s.from, impact, g.sim.wider()), s, direct, hit != .body);
     boilUnder(g, act, impact, s.wait);
 }
 
 pub fn boilUnder(g: *game.Game, comptime act: skillbar.Act, at: P, wait: f32) void {
     if (comptime act.element() != .fire) return;
     const M = skillbar.Act.elemental(act);
-    fireLands(g, at, if (comptime act.bursts()) M.BLAST else 0, M.KINDLE, wait);
+    fireLands(g, at, if (comptime act.bursts()) M.BLAST + g.sim.wider() else 0, M.KINDLE, wait);
 }
 
 pub fn fireLands(g: *game.Game, at: P, range: i32, kindle: fire.Kindle, wait: f32) void {
@@ -442,13 +444,30 @@ fn heroDies(g: *game.Game) void {
     game.epitaph.inscribe(g);
 }
 
+/// The hero's action is spent: a turn passes unless haste spares it.
 pub fn endTurn(g: *game.Game) void {
+    if (!hastened(g)) passTurn(g);
+}
+
+/// As a free action: nothing ages, no foe acts.
+fn hastened(g: *game.Game) bool {
+    const h = g.sim.heroActor() orelse return false;
+    if (!g.sim.hastens()) return false;
+    g.sim.unsaved = true;
+    for (g.sim.pool.slice()) |*a| a.waits = false;
+    game.castSight(g, h.at);
+    g.sim.log.say("{s} acts with haste: no turn passes.", .{g.sim.name.text()});
+    return true;
+}
+
+pub fn passTurn(g: *game.Game) void {
     const h = g.sim.heroActor() orelse return;
     defer g.sim.finishTurn();
     beginTurn(g, h.at);
     heroAfterAction(g);
     if (g.mode == .dead) return;
     spreadGasAndAdvanceClocks(&g.sim);
+    if (!flyBolts(g)) return;
     if (!orderedFoeTurns(g)) return;
     waitingNewbornTurns(g);
     finishTurnPicture(g);
@@ -674,11 +693,18 @@ fn orderFoes(g: *game.Game, from: P) void {
 
 fn foeTurn(g: *game.Game, id: u16) void {
     const f = g.sim.pool.get(id) orelse return;
+    const braced = f.braced;
+    f.braced = null;
     const stalled = f.clock.stalled;
     const worn = wearTurn(g, id);
     if (f.disguised) return;
     f.sweep_in -|= 1;
     f.ready_in -|= 1;
+    if (f.stuck) {
+        f.stuck = false;
+        g.pic.recordWear(&g.sim, .fromInt(id));
+        return;
+    }
     const held = worn.held;
     if (worn.skips or stalled) return;
     const r = g.sim.pool.get(id) orelse return;
@@ -701,18 +727,23 @@ fn foeTurn(g: *game.Game, id: u16) void {
         if (groping) {} else if (if (held) null else fleeWay(g, r.at, id, h.at)) |d| {
             foeStep(g, id, r.at, d, af);
         } else if (besideWay(g, r.at, h.at)) |d| {
-            reach(g, id, row, d.delta().x, null, af);
+            _ = reach(g, id, row, d.delta().x, null, af);
         }
         if (r.fright == 0 and r.alive) g.sim.sayAt(r.at, "The {s} stops running.", .{row.name});
         return;
     }
     if (groping) return;
     if (row.movement == .swimming) return swimTurn(g, id, row, held, af);
+    if (row.charges) |c| if (chargeTurn(g, id, row, c, braced, held, af, sight)) return;
+    if (row.hooks) |hk| if (hookTurn(g, id, row, hk, braced, af, sight)) return;
     if (row.keeps > 0) return keepAway(g, id, row, held, af, sight);
     if (row.ranged) |ranged| {
         const gap = mathx.dist(r.at, h.at);
         if (!held and backOff(g, id, ranged.retreat, af)) return;
-        if (bow.clearShot(&g.sim.lv, r.at, h.at, ranged.range, g.sim.hero)) |flight| return reach(g, id, row, h.at.x - r.at.x, flight, af);
+        if (bow.clearShot(&g.sim.lv, r.at, h.at, ranged.range, g.sim.hero)) |flight| {
+            _ = reach(g, id, row, h.at.x - r.at.x, flight, af);
+            return;
+        }
         if (!held and gap > ranged.retreat) closeIn(g, id, ranged.retreat, af);
         return;
     }
@@ -722,7 +753,215 @@ fn foeTurn(g: *game.Game, id: u16) void {
     const to = r.at.add(d.delta());
     if (held and !to.eq(h.at)) return;
     if (!to.eq(h.at)) return foeStep(g, id, r.at, d, af);
-    reach(g, id, row, d.delta().x, null, af);
+    _ = reach(g, id, row, d.delta().x, null, af);
+}
+
+fn brace(g: *game.Game, id: u16, d: mathx.Dir, comptime said: []const u8) void {
+    const r = g.sim.pool.get(id).?;
+    r.braced = d;
+    g.pic.turnLater(.fromInt(id), d.delta().x);
+    g.sim.sayOf(r, said, .{actor.row(r.kind).name});
+}
+
+/// Braces at a hero on an open straight line in reach; the turn after, rushes the braced way whatever the hero did.
+fn chargeTurn(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, braced: ?mathx.Dir, held: bool, af: actor.Afflicted, sight: i32) bool {
+    if (held) return false;
+    if (braced) |d| {
+        rush(g, id, row, c, d, af);
+        return true;
+    }
+    const r = g.sim.pool.get(id).?;
+    const hero = g.sim.heroAt().?;
+    const gap = mathx.dist(r.at, hero);
+    if (r.ready_in > 0 or gap < windup.NEAREST or gap > c.range or !fov.sees(&g.sim.lv, r.at, hero, sight)) return false;
+    const d = windup.openTo(&g.sim.lv, r.at, hero, c.range) orelse return false;
+    brace(g, id, d, "The {s} braces to charge.");
+    return true;
+}
+
+/// Runs until the next cell is blocked: a hero there takes the charge's blow; anything else leaves it stuck.
+fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, af: actor.Afflicted) void {
+    const r = g.sim.pool.get(id).?;
+    r.ready_in = c.every;
+    var at = r.at;
+    var cells: i32 = 0;
+    while (cells < c.rush and g.sim.lv.stepOk(at, d, id)) : (cells += 1) at = at.add(d.delta());
+    g.pic.turnLater(.fromInt(id), d.delta().x);
+    if (cells > 0) {
+        g.sim.pool.move(&g.sim.lv, id, at);
+        tactics_exec.entered(g, id);
+    }
+    const crab = g.sim.pool.get(id) orelse return;
+    const next = at.add(d.delta());
+    if (g.sim.lv.passOk(at, d)) {
+        const w = g.sim.lv.who(next);
+        if (w != grid.NO_ONE and w == g.sim.hero) {
+            var rammed = row;
+            rammed.blow = .{ .strike = c.blow };
+            _ = reach(g, id, rammed, d.delta().x, null, af);
+            return;
+        }
+        if (g.sim.pool.get(w) != null) {
+            const hit = bodyBlow(g, id, w, c.blow, c.blow.verb, af.contains(.enfeeble), false);
+            g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = if (hit) |a| .{ .actor = a } else null });
+        } else if (smashedBy(g, next, row)) |hit| g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = hit });
+    }
+    crab.stuck = true;
+    g.sim.sayOf(crab, "The {s} is stuck fast.", .{row.name});
+}
+
+/// Braces at a hero on a straight line in reach; the turn after, flings its hook the braced way.
+fn hookTurn(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, braced: ?mathx.Dir, af: actor.Afflicted, sight: i32) bool {
+    if (braced) |d| {
+        fling(g, id, row, hk, d, af);
+        return true;
+    }
+    const r = g.sim.pool.get(id).?;
+    const hero = g.sim.heroAt().?;
+    const gap = mathx.dist(r.at, hero);
+    if (r.ready_in > 0 or gap < windup.NEAREST or gap > hk.range or !fov.sees(&g.sim.lv, r.at, hero, sight)) return false;
+    const d = windup.lineTo(r.at, hero) orelse return false;
+    if (!windup.lane(&g.sim.lv, r.at, d, hk.range).has(hero)) return false;
+    brace(g, id, d, "The {s} swings its hook.");
+    return true;
+}
+
+/// The first body or barrel down the line takes the hook; only a hero is struck and dragged a cell closer.
+fn fling(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, d: mathx.Dir, af: actor.Afflicted) void {
+    const r = g.sim.pool.get(id).?;
+    r.ready_in = hk.every;
+    g.pic.turnLater(.fromInt(id), d.delta().x);
+    var flight = bow.Flight{ .most = @intCast(hk.range) };
+    var at = r.at;
+    while (flight.len < flight.most and g.sim.lv.passOk(at, d)) {
+        at = at.add(d.delta());
+        flight.path[flight.len] = at;
+        flight.len += 1;
+        const w = g.sim.lv.who(at);
+        if (w != grid.NO_ONE) {
+            flight.struck = .{ .body = w };
+            break;
+        }
+        if (g.sim.lv.hasBarrel(at)) {
+            flight.struck = .{ .barrel = at };
+            break;
+        }
+    }
+    const caught = flight.struck orelse {
+        g.sim.sayOf(r, "The {s}'s hook catches nothing.", .{row.name});
+        return g.pic.recordFoeAttack(.fromInt(id), .miss, flight);
+    };
+    switch (caught) {
+        .body => |w| if (w == g.sim.hero) {
+            var hooked = row;
+            hooked.blow = .{ .strike = hk.blow };
+            hooked.ranged = .{ .range = hk.range, .retreat = 0 };
+            if (reach(g, id, hooked, d.delta().x, flight, af) and g.mode != .dead) shove(g, id, d.opposite(), "{s} is dragged closer.");
+            return;
+        } else {
+            const a = g.sim.pool.get(w).?;
+            g.sim.sayOf(a, "The {s}'s hook catches on the {s}.", .{ row.name, actor.row(a.kind).name });
+        },
+        .barrel, .plant => |p| g.sim.sayAt(p, "The {s}'s hook catches on the barrel.", .{row.name}),
+    }
+    g.pic.recordFoeAttack(.fromInt(id), .miss, flight);
+}
+
+/// A firebolt at the hero along a clear shot, once its last has come down; the turn after it moves.
+fn hurlerTurn(g: *game.Game, id: u16, hu: actor.Hurl, held: bool, af: actor.Afflicted) bool {
+    const r = g.sim.pool.get(id).?;
+    if (r.bolt == null and r.ready_in == 0 and hurl(g, id, hu)) return true;
+    return !held and r.ready_in > 0 and reposition(g, id, hu, af);
+}
+
+fn hurl(g: *game.Game, id: u16, hu: actor.Hurl) bool {
+    const r = g.sim.pool.get(id).?;
+    const hero = g.sim.heroAt().?;
+    if (mathx.adjacent(r.at, hero)) return false;
+    _ = bow.clearShot(&g.sim.lv, r.at, hero, hu.range, g.sim.hero) orelse return false;
+    const b = firebolt.Bolt.aimed(r.at, hero, hu.range);
+    r.bolt = b;
+    r.ready_in = hu.every;
+    g.pic.turnLater(.fromInt(id), hero.x - r.at.x);
+    g.sim.sayOf(r, "The {s} hurls a " ++ firebolt.NAME ++ ".", .{actor.row(r.kind).name});
+    g.pic.recordHurl(.fromInt(id), b, hero, g.pic.lead orelse 0);
+    return true;
+}
+
+/// A step to another cell it keeps its distance from and still has a clear shot from.
+fn reposition(g: *game.Game, id: u16, hu: actor.Hurl, af: actor.Afflicted) bool {
+    const r = g.sim.pool.get(id).?;
+    const Spot = struct {
+        g: *const game.Game,
+        from: P,
+        id: u16,
+        keeps: i32,
+        range: i32,
+
+        fn ok(s: @This(), d: mathx.Dir) bool {
+            const lv = &s.g.sim.lv;
+            if (!lv.stepOk(s.from, d, s.id) or actor.shuns(lv, s.from, d)) return false;
+            const to = s.from.add(d.delta());
+            const hero = s.g.sim.heroAt().?;
+            const gap = mathx.dist(to, hero);
+            return gap > s.keeps and gap <= s.range and bow.clearShot(lv, to, hero, s.range, s.g.sim.hero) != null;
+        }
+    };
+    const spot = Spot{ .g = g, .from = r.at, .id = id, .keeps = actor.row(r.kind).keeps, .range = hu.range };
+    const d = g.sim.rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, spot, Spot.ok) orelse return false;
+    foeStep(g, id, r.at, d, af);
+    return true;
+}
+
+/// Every firebolt in the air flies on, its thrower living or not; false once one kills the hero.
+fn flyBolts(g: *game.Game) bool {
+    const wait = g.pic.lead orelse 0;
+    for (0..g.sim.pool.n) |i| {
+        const thrower = &g.sim.pool.items[i];
+        const hu = actor.row(thrower.kind).hurls orelse continue;
+        const was = thrower.bolt orelse continue;
+        var now = was;
+        const flew = firebolt.fly(&now, &g.sim.lv, hu);
+        const lands = flew.stop != null;
+        thrower.bolt = if (lands) null else now;
+        if (lands) thrower.ready_in = @max(thrower.ready_in, hu.every);
+        const kind = thrower.kind;
+        const s = Stroke{ .from = was.at(), .wait = g.pic.recordBolt(&g.sim, .fromIndex(i), was, now, flew.cells, lands, wait), .fire = true };
+        switch (flew.stop orelse continue) {
+            .body => |w| if (!boltHits(g, kind, w, hu, s)) return false,
+            .barrel => |p| if (rewards.barrelLoot(&g.sim, p)) |gold| {
+                g.sim.sayAt(p, "The {s}'s " ++ firebolt.NAME ++ " smashes" ++ BARREL_DROPS, .{ actor.row(kind).name, gold });
+                g.pic.strike(&g.sim, g.cloud, .{ .barrel = p }, s);
+            },
+            .wall, .spent => if (g.pic.litShown(&g.sim, now.at())) g.pic.fx.puff(s.wait, .{ .at = now.point(), .ink = look.FIRE, .motes = fx.TICK_WISPS }),
+        }
+    }
+    return true;
+}
+
+/// Fire past its fire resistance, without a dodge, on whatever body it flies into; false when that kills the hero.
+fn boltHits(g: *game.Game, by: actor.Kind, id: u16, hu: actor.Hurl, s: Stroke) bool {
+    const a = g.sim.pool.get(id) orelse return true;
+    const at = a.at;
+    const slot = actor.Pool.slot(id);
+    const kind = a.kind;
+    const thrower = actor.row(by).name;
+    const dmg = damage.resisted(hu.hit.roll(&g.sim.rng), g.sim.combatStats(a).elements.get(firebolt.ELEMENT));
+    const before = a.hp;
+    const h = game.hurt(g, .fromInt(id), dmg);
+    const hero = id == g.sim.hero;
+    if (hero) {
+        g.sim.log.push(.danger, "The {s}'s " ++ firebolt.NAME ++ " burns {s} for {d}.", .{ thrower, g.sim.name.text(), h.dmg });
+        g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = by }, .dmg = h.dmg, .before = before } });
+    } else g.sim.sayAt(at, "The {s}'s " ++ firebolt.NAME ++ " burns the {s} for {d}.{s}", .{ thrower, actor.row(kind).name, h.dmg, deathNote(h) });
+    if (!h.lethal and h.dmg > 0) _ = g.sim.igniteFresh(slot, a, hu.burns);
+    if (hero) {
+        g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(slot), .at = at, .lethal = h.lethal, .after = afterBlow(g, id, h) } }, s);
+        if (h.lethal) heroDies(g);
+        return !h.lethal;
+    }
+    g.pic.strike(&g.sim, g.cloud, .{ .actor = landedImpact(g, id, at, h) }, s);
+    return true;
 }
 
 fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted, sight: i32) void {
@@ -820,7 +1059,8 @@ fn swimTurn(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflic
     const h = g.sim.heroActor().?;
     if (besideWay(g, r.at, h.at)) |d| {
         r.submerged = false;
-        return reach(g, id, row, d.delta().x, null, af);
+        _ = reach(g, id, row, d.delta().x, null, af);
+        return;
     }
     if (held) return;
     const d = actor.swim(&g.sim.lv, r.at, r.kind, h.at) orelse return;
@@ -830,9 +1070,13 @@ fn swimTurn(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflic
 fn keepAway(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflicted, sight: i32) void {
     if (row.mends) |m| if (mend(g, id, m, sight)) return;
     if (row.net) |n| if (throwNet(g, id, n)) return;
+    if (row.hurls) |hu| if (hurlerTurn(g, id, hu, held, af)) return;
     if (!held and backOff(g, id, row.keeps, af)) return;
     const r = g.sim.pool.get(id).?;
-    if (besideWay(g, r.at, g.sim.heroAt().?)) |d| return reach(g, id, row, d.delta().x, null, af);
+    if (besideWay(g, r.at, g.sim.heroAt().?)) |d| {
+        _ = reach(g, id, row, d.delta().x, null, af);
+        return;
+    }
     if (!held) closeIn(g, id, row.keeps, af);
 }
 
@@ -941,8 +1185,8 @@ fn flowTo(g: *game.Game, hero: P) *const [grid.CELLS]i32 {
     return &g.sim.flow;
 }
 
-/// `af`: what the turn it strikes on was worn under.
-fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, af: actor.Afflicted) void {
+/// `af`: what the turn it strikes on was worn under; whether a strike landed on the hero.
+fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, af: actor.Afflicted) bool {
     g.pic.turnLater(.fromInt(id), dx);
     const i = actor.Pool.slot(id);
     const kind = g.sim.pool.items[i].kind;
@@ -954,11 +1198,12 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
             const verb = if (sweeps) actor.SWEEP_VERB else s.verb;
             const hero = g.sim.heroActor().?;
             const attacker = &g.sim.pool.items[i];
-            const blow = attacks.foeBlow(&g.sim, attacker, hero, s, weak) orelse {
-                g.sim.log.say("{s} dodges the {s}.", .{ g.sim.name.text(), row.name });
+            const blocked = g.sim.heroBlocks();
+            const blow = (if (blocked) null else attacks.foeBlow(&g.sim, attacker, hero, s, weak)) orelse {
+                if (blocked) g.sim.log.say("{s} blocks the {s}.", .{ g.sim.name.text(), row.name }) else g.sim.log.say("{s} dodges the {s}.", .{ g.sim.name.text(), row.name });
                 g.pic.recordFoeAttack(.fromInt(id), .miss, flight);
                 if (row.ranged == null) tactics_exec.counter(g, id);
-                return;
+                return false;
             };
             const before = hero.hp;
             const defended = g.sim.combatStats(hero);
@@ -986,22 +1231,28 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
             if (row.ranged == null) returnThorns(g, id, hero.at);
             if (lethal) heroDies(g) else if (row.ranged == null) tactics_exec.counter(g, id);
             if (!lethal and s.knocks) knockHero(g, id);
+            return true;
         },
         .burst => |b| {
             if (b == .gas) g.sim.chronicle.note(.burst);
             _ = g.sim.pool.damage(&g.sim.lv, id, g.sim.pool.get(id).?.hp);
             g.pic.recordFoeAttack(.fromInt(id), .{ .burst = g.pic.afterOf(&g.sim, .fromIndex(i)) }, flight);
             fell(g, id);
+            return false;
         },
     }
 }
 
 fn knockHero(g: *game.Game, by: u16) void {
-    const slot = actor.Pool.slot(by);
-    const striker = g.sim.pool.items[slot].at;
+    const striker = g.sim.pool.items[actor.Pool.slot(by)].at;
+    const h = g.sim.heroActor() orelse return;
+    shove(g, by, mathx.dirTo(striker, h.at) orelse return, "{s} is knocked back.");
+}
+
+/// The hero a cell `d`, unless held or the cell is taken or a door.
+fn shove(g: *game.Game, by: u16, d: mathx.Dir, comptime said: []const u8) void {
     const h = g.sim.heroActor() orelse return;
     if (h.pin.holding()) return;
-    const d = mathx.dirTo(striker, h.at) orelse return;
     const from = h.at;
     const to = from.add(d.delta());
     if (!g.sim.lv.vacant(to) or g.sim.lv.doorAt(to) != null) return;
@@ -1010,7 +1261,7 @@ fn knockHero(g: *game.Game, by: u16) void {
     g.sim.flowed = false;
     g.sim.heroMoved();
     game.castSight(g, to);
-    g.sim.log.say("{s} is knocked back.", .{g.sim.name.text()});
+    g.sim.log.say(said, .{g.sim.name.text()});
     g.pic.recordKnock(.fromInt(by), from, to);
 }
 

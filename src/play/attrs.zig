@@ -85,6 +85,7 @@ const DEX_PER_CRIT: i32 = 4;
 pub const CRIT_MULTI: i32 = 150;
 const DEX_PER_DODGE: i32 = 2;
 pub const DODGE_MAX: i32 = 75;
+pub const BLOCK_MAX: i32 = 75;
 /// Percent of a physical blow armour may take at most.
 pub const ARMOUR_MAX: i32 = 75;
 
@@ -103,7 +104,9 @@ pub const Attrs = struct {
     armour: i32 = 0,
     damage_bonus: std.EnumArray(Style, i32) = .initFill(0),
     crit_bonus: i32 = 0,
+    crit_damage: i32 = 0,
     dodge_bonus: i32 = 0,
+    block: i32 = 0,
     weapon_crit_bonus: i32 = 0,
     spell_crit_bonus: i32 = 0,
     physical_bonus: i32 = 0,
@@ -170,6 +173,15 @@ pub const Attrs = struct {
         return @intCast(std.math.clamp(@divTrunc(a.get(.dexterity), DEX_PER_DODGE) + a.dodge_bonus, 0, DODGE_MAX));
     }
 
+    pub fn blockChance(a: Attrs) u32 {
+        return @intCast(std.math.clamp(a.block, 0, BLOCK_MAX));
+    }
+
+    /// Percent of the blow a critical strike deals.
+    pub fn critMulti(a: Attrs) i32 {
+        return CRIT_MULTI + @max(0, a.crit_damage);
+    }
+
     pub fn crits(a: Attrs, rng: *mathx.Rng) bool {
         return rng.percent(a.crit());
     }
@@ -179,7 +191,7 @@ pub const Attrs = struct {
     }
 
     fn dealtWith(a: Attrs, s: Style, amount: i32, critical: bool, extra: i32) Dealt {
-        return Dealt.of(@as(i64, @max(0, amount)) * @max(0, mathx.PERCENT + a.increase(s) + extra) * @as(i64, if (critical) CRIT_MULTI else mathx.PERCENT));
+        return Dealt.of(@as(i64, @max(0, amount)) * @max(0, mathx.PERCENT + a.increase(s) + extra) * @as(i64, if (critical) a.critMulti() else mathx.PERCENT));
     }
 
     pub fn span(a: Attrs, s: Style, b: damage.Base) damage.Span {
@@ -253,6 +265,12 @@ test "attributes raise life, mana, their own style's damage, crits and dodge" {
     try std.testing.expectEqual(@as(u32, 10), a.crit());
     try std.testing.expectEqual(@as(u32, 10), a.dodge());
     try std.testing.expectEqual(@as(u32, DODGE_MAX), Attrs.of(.{ .strength = 0, .dexterity = 1000, .intelligence = 0 }).dodge());
+    var savage = a;
+    savage.crit_damage = 30;
+    try std.testing.expectEqual(Dealt{ .whole = 21, .part = 6000 }, savage.dealt(.light, 10, true));
+    try std.testing.expectEqual(Dealt{ .whole = 12, .part = 0 }, savage.dealt(.light, 10, false));
+    savage.block = 200;
+    try std.testing.expectEqual(@as(u32, BLOCK_MAX), savage.blockChance());
     var rng = mathx.Rng.init(0xA77);
     const ROLLS = 10_000;
     var sum: i64 = 0;

@@ -25,6 +25,7 @@ conversion live in `save_format.zig` and `save_values.zig`. See [save compatibil
 | Derived editor data cannot mutate the authored map | `edit/preview.zig` | [preview](../src/edit/preview.zig) |
 | Graph textures have one owner and explicit invalidation | `edit/thumbnails.zig` | [thumbnails](../src/edit/thumbnails.zig), [canvas](../src/edit/canvas.zig) |
 | A map's script never names past its own tables | `map/script.zig`, `play/trigger.zig`, `game/talking.zig` | [script](../src/map/script.zig), [script_text](../src/map/script_text.zig), [trigger](../src/play/trigger.zig), [talking](../src/game/talking.zig), [edit](../src/edit/tests.zig) |
+| A procgen node's painted section keeps its cells through the roll, is joined round its walls, and its box takes no feature's lot | `map/section.zig`, `map/procgen.zig`, `carve.connect` | [procgen](../src/map/procgen.zig), [section](../src/map/section.zig), [atlas](../src/map/atlas.zig), [atlas_text](../src/map/atlas_text.zig), [save](../src/save.zig) |
 | Gameplay does not depend on UI or rendering modules | `tools/source_rules.zig` | [source_rules](../tools/source_rules.zig), [save](../src/save.zig) |
 
 ## Dependency boundaries
@@ -92,7 +93,8 @@ These helpers also cannot import Game, Presentation or the application.
 - `TravelCarry` keeps queued commands (Interact included), the mouse skill set, facing and the level-up effect across node replacement.
 
 `game/combat.zig`
-- Turn order: recovery/cooldowns, hero post-action harm, gas spread, foe clocks, each foe's action then its harm, waiting newborn harm, final ward/sight.
+- Turn order: recovery/cooldowns, hero post-action harm, gas spread, foe clocks, firebolts in flight, each foe's action then its harm, waiting newborn harm, final ward/sight.
+- A braced foe (`Actor.braced`) acts down its locked line on its next action; any skipped action drops the brace. A firebolt (`Actor.bolt`) flies on after its thrower dies and freezes with its level when the hero leaves; `Presentation.bolts` is rebuilt from it.
 - Consumed ticks and displacement clear even when hero death interrupts the turn.
 - Split children inherit consumed ticks, so they cannot repeat their parent's harm that turn.
 

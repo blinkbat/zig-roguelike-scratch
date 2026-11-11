@@ -8,7 +8,7 @@
 | Equipment rules | Attribute requirements, one main-hand item plus an offhand, or a two-handed item |
 | Requirements | Final loadout must remain valid; an item cannot fund its own requirement |
 | Loot | Normal, magic or rare; blues roll 1–2 mods and affix/base names; yellow rares roll 3–4 distinct mods and independent two-part names |
-| Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery, penetration, thorns, Spoils (gold and item rarity), weapon imbues (burn, chill or shock on hit), stun resistance, light radius, mana on kill, mana flask recovery, gas masks, stillness, Opportunist's (damage against slowed foes), Bounding (movement skill reach) and Alacrity (shorter cooldowns); equipment restrictions live in `items.Mod.allows` |
+| Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery, penetration, thorns, Spoils (gold and item rarity), weapon imbues (burn, chill or shock on hit), stun resistance, light radius, mana on kill, mana flask recovery, gas masks, stillness, Opportunist's (damage against slowed foes), Bounding (movement skill reach), Alacrity (shorter cooldowns), Savage (critical damage), Stalwart (block), Mending (life recovery), Vampiric (leech), Sweeping (area radius), Skewering (pierce) and Haste (actions that take no turn); equipment restrictions live in `affixes.Mod.allows` |
 | Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
 | Gold | Ground gold without items is a coin drop, automatically collected when stepped onto, with no extra turn or modal. Gold with items shares their bag; chest gold stays in its chest. A bag's or chest's gold is no row: the loot shows it beside the position count and takes it, free, as it closes; a chest holding only gold is taken without opening loot. Gold needs no inventory space |
 | Item actions | All items and supplies taken during one loot visit cost one turn together when it closes, including backing out. Drop, equip and unequip cost one turn when successful. Take all fills available inventory space and leaves excess items |
@@ -137,6 +137,18 @@ Opportunist's raises the hero's blows on a pinned, chilled or maimed foe (`Actor
 enfeeble and shock (`attacks.opportune`). Bounding adds cells to every leap's and rush's reach
 (`Simulation.reachOf`), for aiming, previews and the tooltip alike. Alacrity takes turns off every
 cooldown as it is spent (`progress.State.cooldown`), never below a turn-taking skill's floor.
+
+Savage raises the critical multiplier above its 150% (`Attrs.critMulti`). Shields block: the wooden shield
+20% and the buckler 10% (`Spec.block`), Stalwart adding more, capped at 75%. A block is rolled before the
+dodge on every foe strike, melee or ranged, and stops it whole like a dodge: no damage, statuses or thorns.
+Mending recovers life per 5 spent turns as mana recovery does, its partial progress saved (`life_recovery`).
+Vampiric heals a share of the damage each blow deals, rounded as often as its fraction, alongside life on hit.
+Sweeping adds cells to every area skill's radius (bursts, nova, detonations, caltrops, Gravity Well and
+War Cry; not Whirlwind, Bide or Cleave), up to `area.BURST_MAX`; previews share it (`Simulation.wider`).
+Skewering lets a single-target projectile (arrows and Spark, not bursts, chains or Piercing Shot) that strikes
+a body fly on through that many more, out to its reach, each struck as it is reached (`bow.skewer`). Haste
+gives each turn-spending action a chance to take no turn, as a free action: nothing ages and no foe acts.
+Waiting and stunned turns are never hastened (`combat.passTurn`).
 
 ## Tactical skills and class paths
 

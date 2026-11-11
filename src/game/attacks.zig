@@ -262,6 +262,12 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
         .bled = bled,
         .stunned = stunned,
         .imbued = imbued,
-        .recovery = if (h.dmg > 0) perks.life_on_hit + if (h.lethal) perks.life_on_kill else 0 else 0,
+        .recovery = if (h.dmg > 0) perks.life_on_hit + leeched(sim, h.dmg) + if (h.lethal) perks.life_on_kill else 0 else 0,
     } };
+}
+
+fn leeched(sim: *Simulation, dmg: i32) i32 {
+    const share = sim.inventory.gear.leech();
+    if (share == 0) return 0;
+    return @intCast(mathx.percentRound(@as(i64, dmg) * share, &sim.rng));
 }

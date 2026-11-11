@@ -15,7 +15,7 @@ pub const DEATH_RGB = [3]f32{ 0.65, 0.35, 0.32 };
 pub const Dying = struct { dark: f32 = 0, alpha: f32 = 1 };
 
 /// The kinds of turn effect a body can owe: `presentation.Owed`'s fields.
-pub const OWED_KINDS: usize = 15;
+pub const OWED_KINDS: usize = 16;
 /// A burst and a puff.
 const LOOSE_DUE: usize = 2;
 /// Capacity for every body's turn effects, hero hit and sweep, plus a burst and a puff, or chain jumps.

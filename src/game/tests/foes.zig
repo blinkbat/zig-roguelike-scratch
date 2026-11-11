@@ -1544,3 +1544,264 @@ test "a bolt bursting on a leech in deep water strikes it though the burst sprea
     }
     try std.testing.expect(struck > 0);
 }
+
+const LANE_HERO = P{ .x = 20, .y = 20 };
+const LANE_FOE = P{ .x = 24, .y = 20 };
+const OFF_LANE = P{ .x = 20, .y = 21 };
+
+/// `kind` four cells east of the hero, braced after one turn.
+fn braced(g: *game.Game, kind: actor.Kind) !u16 {
+    harness.arena(g, LANE_HERO, &.{});
+    const id = harness.spawnAt(g, kind, LANE_FOE, true);
+    game.settle(g);
+    combat.endTurn(g);
+    harness.drawnOut(g);
+    const a = g.sim.pool.get(id).?;
+    try std.testing.expectEqual(@as(?mathx.Dir, .w), a.braced);
+    try std.testing.expectEqual(LANE_FOE, a.at);
+    return id;
+}
+
+test "a sluice crab braces at a hero on an open line, then rams one who stays in its lane and knocks it back" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const id = try braced(g, .sluice_crab);
+    const hp = g.sim.heroActor().?.hp;
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
+    combat.endTurn(g);
+    const crab = g.sim.pool.get(id).?;
+    const c = actor.row(.sluice_crab).charges.?;
+    try std.testing.expectEqual(P{ .x = 21, .y = 20 }, crab.at);
+    try std.testing.expectEqual(LANE_HERO.add(mathx.Dir.w.delta()), g.sim.heroAt().?);
+    try harness.expectWithin(hp - g.sim.heroActor().?.hp, c.blow.hit.lo, c.blow.hit.hi);
+    try std.testing.expect(!crab.stuck and crab.braced == null);
+    try std.testing.expectEqual(c.every, crab.ready_in);
+    harness.stagger(g);
+    try std.testing.expectEqual(hp, g.pic.heroShown(&g.sim).?.hp);
+    harness.drawnOut(g);
+    try std.testing.expectEqual(g.sim.heroActor().?.hp, g.pic.heroShown(&g.sim).?.hp);
+}
+
+test "a sluice crab whose hero sidesteps charges on to a wall or its reach, then loses a turn with no armour" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const c = actor.row(.sluice_crab).charges.?;
+    for ([_]bool{ false, true }) |walled| {
+        const id = try braced(g, .sluice_crab);
+        if (walled) g.sim.lv.set(.{ .x = 20, .y = 20 }, .wall);
+        g.sim.pool.move(&g.sim.lv, g.sim.hero, OFF_LANE);
+        game.settle(g);
+        const hp = g.sim.heroActor().?.hp;
+        combat.endTurn(g);
+        const crab = g.sim.pool.get(id).?;
+        const end = if (walled) P{ .x = 21, .y = 20 } else LANE_FOE.sub(.{ .x = c.rush, .y = 0 });
+        try std.testing.expectEqual(end, crab.at);
+        try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+        try std.testing.expect(crab.stuck);
+        try std.testing.expectEqual(@as(i32, 0), g.sim.combatStats(crab).armour);
+        harness.drawnOut(g);
+        try std.testing.expectEqual(@as(u8, 1), g.pic.pictured[actor.Pool.slot(id)].status.get(.exposed));
+        combat.endTurn(g);
+        try std.testing.expectEqual(end, g.sim.pool.get(id).?.at);
+        try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+        try std.testing.expect(!crab.stuck);
+        try std.testing.expectEqual(actor.row(.sluice_crab).armour, g.sim.combatStats(crab).armour);
+        harness.stagger(g);
+        harness.idleFor(g, 0.5);
+        try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[actor.Pool.slot(id)].status.get(.exposed));
+    }
+}
+
+test "a sluice crab's charge smashes a barrel or rams a foe stepped into its lane, and sticks" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const in_lane = P{ .x = 22, .y = 20 };
+    for ([_]bool{ false, true }) |barrel| {
+        const id = try braced(g, .sluice_crab);
+        var rat: u16 = grid.NO_ONE;
+        if (barrel) g.sim.lv.putBarrel(in_lane) else {
+            rat = harness.spawnAt(g, .rat, in_lane, false);
+            harness.toughen(g.sim.pool.get(rat).?);
+        }
+        g.sim.pool.move(&g.sim.lv, g.sim.hero, OFF_LANE);
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(7);
+        combat.endTurn(g);
+        const crab = g.sim.pool.get(id).?;
+        try std.testing.expectEqual(P{ .x = 23, .y = 20 }, crab.at);
+        try std.testing.expect(crab.stuck);
+        if (barrel) {
+            try std.testing.expect(!g.sim.lv.hasBarrel(in_lane));
+        } else try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].struck != null);
+        harness.stagger(g);
+        harness.drawnOut(g);
+    }
+}
+
+test "a chain gaoler's hook drags a hero who stays on its line one cell closer as it lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const glide = @import("../glide.zig");
+    const id = try braced(g, .chain_gaoler);
+    const hp = g.sim.heroActor().?.hp;
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
+    combat.endTurn(g);
+    const hk = actor.row(.chain_gaoler).hooks.?;
+    const pulled = LANE_HERO.add(mathx.Dir.e.delta());
+    try std.testing.expectEqual(pulled, g.sim.heroAt().?);
+    try std.testing.expectEqual(LANE_FOE, g.sim.pool.get(id).?.at);
+    try harness.expectWithin(hp - g.sim.heroActor().?.hp, hk.blow.hit.lo, hk.blow.hit.hi);
+    try std.testing.expectEqual(hk.every, g.sim.pool.get(id).?.ready_in);
+    const slot = actor.Pool.slot(id);
+    harness.stagger(g);
+    try std.testing.expect(g.pic.foe_shots[slot].?.hook);
+    try std.testing.expect(harness.samePx(g.pic.glide[g.sim.heroSlot().?].ground(), glide.cellPx(LANE_HERO)));
+    harness.drawnOut(g);
+    try std.testing.expect(harness.samePx(g.pic.glide[g.sim.heroSlot().?].ground(), glide.cellPx(pulled)));
+}
+
+test "a chain gaoler's hook catches on a barrel or a foe in its line and misses a hero who stepped off it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const between = P{ .x = 22, .y = 20 };
+    const Case = enum { barrel, foe, sidestep };
+    for (std.enums.values(Case)) |case| {
+        const id = try braced(g, .chain_gaoler);
+        switch (case) {
+            .barrel => g.sim.lv.putBarrel(between),
+            .foe => harness.toughen(g.sim.pool.get(harness.spawnAt(g, .rat, between, false)).?),
+            .sidestep => g.sim.pool.move(&g.sim.lv, g.sim.hero, OFF_LANE),
+        }
+        game.settle(g);
+        const at = g.sim.heroAt().?;
+        const hp = g.sim.heroActor().?.hp;
+        g.sim.rng = mathx.Rng.init(3);
+        combat.endTurn(g);
+        try std.testing.expectEqual(at, g.sim.heroAt().?);
+        try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+        try std.testing.expectEqual(case == .barrel, g.sim.lv.hasBarrel(between));
+        try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].foe_hit.? == .miss);
+        try std.testing.expectEqual(actor.row(.chain_gaoler).hooks.?.every, g.sim.pool.get(id).?.ready_in);
+        harness.drawnOut(g);
+    }
+}
+
+const IMP_AT = P{ .x = 26, .y = 20 };
+
+/// A cinder imp six cells east of the hero throws, then falls, so only its bolt acts.
+fn thrown(g: *game.Game) !usize {
+    harness.arena(g, LANE_HERO, &.{});
+    const id = harness.spawnAt(g, .cinder_imp, IMP_AT, true);
+    game.settle(g);
+    combat.endTurn(g);
+    const imp = g.sim.pool.get(id).?;
+    const b = imp.bolt orelse return error.NotThrown;
+    try std.testing.expectEqual(@as(u8, 0), b.flown);
+    try std.testing.expectEqual(IMP_AT, b.at());
+    harness.drawnOut(g);
+    _ = g.sim.pool.damage(&g.sim.lv, id, imp.hp);
+    game.settle(g);
+    return actor.Pool.slot(id);
+}
+
+fn boltOf(g: *game.Game, slot: usize) ?@import("../../play/firebolt.zig").Bolt {
+    return g.sim.pool.items[slot].bolt;
+}
+
+test "a cinder imp's firebolt flies two cells a turn after its thrower falls, and burns a hero still in its line as it arrives" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const slot = try thrown(g);
+    const hu = actor.row(.cinder_imp).hurls.?;
+    for ([_]i32{ 24, 22 }) |x| {
+        combat.endTurn(g);
+        try std.testing.expectEqual(P{ .x = x, .y = 20 }, boltOf(g, slot).?.at());
+        harness.drawnOut(g);
+        try std.testing.expect(g.pic.bolts[slot] != null);
+    }
+    const hp = g.sim.heroActor().?.hp;
+    combat.endTurn(g);
+    try std.testing.expect(boltOf(g, slot) == null);
+    try harness.expectWithin(hp - g.sim.heroActor().?.hp, hu.hit.lo, hu.hit.hi);
+    harness.stagger(g);
+    try std.testing.expectEqual(hp, g.pic.heroShown(&g.sim).?.hp);
+    harness.drawnOut(g);
+    try std.testing.expectEqual(g.sim.heroActor().?.hp, g.pic.heroShown(&g.sim).?.hp);
+    try std.testing.expect(g.pic.bolts[slot] == null);
+}
+
+test "a firebolt misses a hero who leaves its line and flies on to its range" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const slot = try thrown(g);
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, OFF_LANE);
+    game.settle(g);
+    const hp = g.sim.heroActor().?.hp;
+    var turns: usize = 0;
+    var last = boltOf(g, slot).?;
+    while (boltOf(g, slot)) |b| : (turns += 1) {
+        last = b;
+        combat.endTurn(g);
+        harness.drawnOut(g);
+    }
+    const hu = actor.row(.cinder_imp).hurls.?;
+    try std.testing.expectEqual(@as(usize, @intCast(@divFloor(hu.range + hu.speed - 1, hu.speed))), turns);
+    try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+    try std.testing.expectEqual(LANE_HERO, last.at());
+}
+
+test "a firebolt burns a foe that steps into its path and smashes a barrel in it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const path = P{ .x = 23, .y = 20 };
+    const hu = actor.row(.cinder_imp).hurls.?;
+    for ([_]bool{ false, true }) |barrel| {
+        const slot = try thrown(g);
+        var rat: u16 = grid.NO_ONE;
+        if (!barrel) {
+            rat = harness.spawnAt(g, .rat, path.add(.{ .x = 0, .y = 1 }), false);
+            harness.toughen(g.sim.pool.get(rat).?);
+        }
+        combat.endTurn(g);
+        if (barrel) g.sim.lv.putBarrel(path) else g.sim.pool.move(&g.sim.lv, rat, path);
+        harness.drawnOut(g);
+        const hp = g.sim.heroActor().?.hp;
+        combat.endTurn(g);
+        try std.testing.expect(boltOf(g, slot) == null);
+        try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+        if (barrel) {
+            try std.testing.expect(!g.sim.lv.hasBarrel(path));
+        } else try harness.expectWithin(harness.TEST_HP - g.sim.pool.get(rat).?.hp, hu.hit.lo, hu.hit.hi);
+        harness.drawnOut(g);
+    }
+}
+
+test "a cinder imp moves to another cell it can still shoot from after each throw, and throws again only once its bolt is down" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, LANE_HERO, &.{});
+    const id = harness.spawnAt(g, .cinder_imp, IMP_AT, true);
+    game.settle(g);
+    combat.endTurn(g);
+    const imp = g.sim.pool.get(id).?;
+    try std.testing.expect(imp.bolt != null);
+    combat.endTurn(g);
+    try std.testing.expect(!imp.at.eq(IMP_AT));
+    const keeps = actor.row(.cinder_imp).keeps;
+    const hu = actor.row(.cinder_imp).hurls.?;
+    try std.testing.expect(mathx.dist(imp.at, LANE_HERO) > keeps and mathx.dist(imp.at, LANE_HERO) <= hu.range);
+    try std.testing.expect(bow.clearShot(&g.sim.lv, imp.at, LANE_HERO, hu.range, g.sim.hero) != null);
+    var throws: usize = 0;
+    var was = imp.bolt;
+    for (0..12) |_| {
+        g.sim.heroActor().?.hp = g.sim.heroActor().?.max;
+        combat.endTurn(g);
+        if (imp.bolt != null and was == null) {
+            throws += 1;
+            try std.testing.expectEqual(@as(u8, 0), imp.bolt.?.flown);
+        }
+        was = imp.bolt;
+        harness.drawnOut(g);
+    }
+    try std.testing.expect(throws > 0);
+}

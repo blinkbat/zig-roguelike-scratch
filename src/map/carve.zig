@@ -37,6 +37,7 @@ pub const Salt = enum(u64) {
     grain = 0xF1E1,
     tee = 0x7EE0,
     tee_woods = 0x7EE1,
+    section = 0x5EC7,
 
     pub fn of(salt: Salt, seed: u64) u64 {
         return seed ^ @intFromEnum(salt);
@@ -418,6 +419,8 @@ pub fn closes(t: grid.Tile, pal: Palette) bool {
 pub const Laid = struct {
     lots: []const grid.Box = &.{},
     before: ?*const [grid.CELLS]grid.Tile = null,
+    /// Painted by hand: a join goes round their solid cells, and through one only to reach what they shut in.
+    authored: ?*const grid.CellSet = null,
 };
 
 pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void {
@@ -446,9 +449,82 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void 
             if (orphan == NO_CELL) continue;
             const from = grid.Level.inset(grid.Level.of(orphan));
             const to = grid.nearest(from, InStretch{ .st = &st, .r = main }) orelse return;
-            trail(lv, rng, from, to, pal.path);
+            if (laid.authored) |painted| {
+                if (!joinRound(lv, rng, &st, region[orphan], main, from, to, pal.path, painted)) break;
+            } else trail(lv, rng, from, to, pal.path);
         }
     }
+}
+
+const TRAIL_MAX: usize = @intCast(grid.W + grid.H);
+
+/// The trail if it crosses no painted solid, else the way through fewest: false when that breaks one, so the pass relabels first.
+fn joinRound(lv: *grid.Level, rng: *mathx.Rng, st: *Stretches, from_r: u16, main: u16, a: P, b: P, path: grid.Tile, kept: *const grid.CellSet) bool {
+    var way: [TRAIL_MAX]P = undefined;
+    var n: usize = 0;
+    var crosses = false;
+    var t = Trail{ .p = a, .b = b };
+    while (t.next(rng)) |p| {
+        way[n] = p;
+        n += 1;
+        const i = grid.Level.idx(p);
+        crosses = crosses or (kept.isSet(i) and lv.tile[i].solid());
+    }
+    if (!crosses) {
+        for (way[0..n]) |p| lay(lv, p, path);
+        return true;
+    }
+    const broke = route(lv, st, from_r, main, path, kept) orelse return true;
+    return broke == 0;
+}
+
+/// Square steps from every cell of `from_r` to the nearest of `main` off the rim, through the fewest painted solid cells; how many.
+fn route(lv: *grid.Level, st: *Stretches, from_r: u16, main: u16, path: grid.Tile, kept: *const grid.CellSet) ?usize {
+    var back: [grid.CELLS]u32 = @splat(NO_CELL);
+    var walls: [grid.CELLS]u32 = undefined;
+    var seen = grid.CellSet.initEmpty();
+    const queue = &st.queue;
+    var tail: usize = 0;
+    for (st.region, 0..) |r, i| {
+        if (r != from_r) continue;
+        seen.set(i);
+        queue[tail] = @intCast(i);
+        tail += 1;
+    }
+    var head: usize = 0;
+    var breaks: usize = 0;
+    while (head < tail) : (breaks += 1) {
+        var walled: usize = 0;
+        while (head < tail) : (head += 1) {
+            const i = queue[head];
+            const p = grid.Level.of(i);
+            for (mathx.CARDINALS) |d| {
+                const q = p.add(d);
+                if (!grid.Level.inside(q) or grid.Level.onRim(q)) continue;
+                const k = grid.Level.idx(q);
+                if (seen.isSet(k)) continue;
+                seen.set(k);
+                if (st.region[k] == main) {
+                    var at = i;
+                    while (at != NO_CELL) : (at = back[at]) lay(lv, grid.Level.of(at), path);
+                    return breaks;
+                }
+                back[k] = i;
+                if (kept.isSet(k) and lv.tile[k].solid()) {
+                    walls[walled] = @intCast(k);
+                    walled += 1;
+                    continue;
+                }
+                queue[tail] = @intCast(k);
+                tail += 1;
+            }
+        }
+        for (walls[0..walled]) |k| {
+            queue[tail] = k;
+            tail += 1;
+        }
+    }
+    return null;
 }
 
 pub const Stretches = struct {
@@ -618,16 +694,28 @@ fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, l
 const Regions = std.StaticBitSet(grid.CELLS);
 
 pub fn trail(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, path: grid.Tile) void {
-    var p = a;
-    lay(lv, p, path);
-    while (!p.eq(b)) {
-        const dx = b.x - p.x;
-        const dy = b.y - p.y;
-        const across = dy == 0 or (dx != 0 and rng.below(@abs(dx) + @abs(dy)) < @abs(dx));
-        if (across) p.x += std.math.sign(dx) else p.y += std.math.sign(dy);
-        lay(lv, p, path);
-    }
+    var t = Trail{ .p = a, .b = b };
+    while (t.next(rng)) |p| lay(lv, p, path);
 }
+
+const Trail = struct {
+    p: P,
+    b: P,
+    begun: bool = false,
+
+    fn next(t: *Trail, rng: *mathx.Rng) ?P {
+        if (!t.begun) {
+            t.begun = true;
+            return t.p;
+        }
+        if (t.p.eq(t.b)) return null;
+        const dx = t.b.x - t.p.x;
+        const dy = t.b.y - t.p.y;
+        const across = dy == 0 or (dx != 0 and rng.below(@abs(dx) + @abs(dy)) < @abs(dx));
+        if (across) t.p.x += std.math.sign(dx) else t.p.y += std.math.sign(dy);
+        return t.p;
+    }
+};
 
 fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
     const t = lv.at(p);

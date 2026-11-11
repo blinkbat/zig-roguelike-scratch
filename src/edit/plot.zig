@@ -14,6 +14,7 @@ const widgets = @import("widgets.zig");
 const text_panel = @import("text_panel.zig");
 const modals = @import("modals.zig");
 const interaction = @import("interaction.zig");
+const talk = @import("../ui/talk.zig");
 const Script = script.Script;
 
 const PAD = widgets.PAD;
@@ -58,7 +59,7 @@ const KIND_PARTS: i32 = 3;
 const KIND_MIN_W: i32 = 150;
 const KIND_MAX_W: i32 = 200;
 const SILENT = "(says nothing)";
-const SAY_ROWS: i32 = 4;
+const SAY_ROWS: i32 = 6;
 const WHEEL_NOTCH: i32 = 2;
 
 pub const Page = enum {
@@ -120,6 +121,8 @@ pub const State = struct {
     detail: widgets.Scrolled = .{},
     /// The script's lists as the page last drew them; a picked index means nothing once they changed elsewhere.
     seen: Seen = .{},
+    /// A line drawn as the game draws it, over the page.
+    preview: ?LineAt = null,
 
     fn pickDialog(s: *State, d: u8) void {
         s.pick = .{ .dialog = d };
@@ -163,6 +166,7 @@ pub fn openNpc(ed: *editor.Editor, i: u8) void {
 
 pub fn open(ed: *editor.Editor, p: Page) void {
     ed.plot.focus = null;
+    ed.plot.preview = null;
     ed.plot.detail.top = 0;
     ed.plot.list.top = 0;
     if (!std.meta.eql(ed.plot.seen, Seen.of(&ed.map.script))) {
@@ -186,6 +190,10 @@ pub fn keys(ed: *editor.Editor) void {
     }
     if (d.clicked()) ed.gesture();
     if (d.undo or d.redo) return;
+    if (s.preview != null) {
+        if (interaction.backed(d) or d.enter) s.preview = null;
+        return;
+    }
     if (d.wheel != 0) {
         const by = d.notch() * WHEEL_NOTCH;
         s.list.wheel(d.mouse, by);
@@ -329,6 +337,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         s.focus = null;
     };
     s.fit(&ed.map.script);
+    if (s.preview) |at| return drawPreview(ed, g, at, clicked);
     switch (ed.modal.plot) {
         .script => drawScript(ed, g),
         .dialogs => drawDialogs(ed, g),
@@ -336,6 +345,36 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     }
     if (clicked and !s.claimed and !ed.fresh) s.focus = null;
     s.seen = Seen.of(&ed.map.script);
+}
+
+/// Every choice shown whatever its gate; a click on one follows it, a click elsewhere comes back.
+fn drawPreview(ed: *editor.Editor, g: *game.Game, at: LineAt, clicked: bool) void {
+    const m = &ed.map.script;
+    const ln = lineOf(m, at) orelse {
+        ed.plot.preview = null;
+        return;
+    };
+    var labels: [script.MAX_CHOICES][]const u8 = undefined;
+    for (ln.choices(), 0..) |*c, i| labels[i] = c.ask.text();
+    const speaker = speakerOf(m, at.d);
+    var view = talk.View{ .who = if (ln.who.n > 0) ln.who.text() else if (speaker) |n| n.called() else "", .say = ln.say.text(), .choices = labels[0..ln.choice_n], .cursor = script.MAX_CHOICES, .prompt = .{ .key = "Enter" } };
+    if (speaker) |n| if (ln.who.n == 0 or ln.who.eql(n.called())) {
+        view.figure = if (n.looks) |k| .{ .tex = g.sprites.body(k), .glyph = look.body(k) } else .{};
+    };
+    var l: talk.Layout = .{ .panel = undefined, .text_x = 0, .text_w = 0, .action = undefined };
+    l.of(&g.face, g.screen, view);
+    const row = l.rowAt(ed.desk.mouse);
+    if (row) |r| view.cursor = r;
+    talk.draw(&g.face, &g.sprites, g.screen, view, &l);
+    if (!clicked or ed.fresh) return;
+    const next = if (row) |r| ln.choice[r].next else if (ln.choice_n == 0 and raster.holds(l.action, ed.desk.mouse)) ln.then else null;
+    ed.plot.preview = if (next) |n| .{ .d = at.d, .l = n } else null;
+    if (next) |n| ed.plot.line = n;
+}
+
+fn speakerOf(m: *const Script, d: u8) ?*const script.Npc {
+    for (m.npcs()) |*n| if (n.dialog == d) return n;
+    return null;
 }
 
 const Frame = struct {
@@ -778,7 +817,9 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
     var y = top;
     wordsRow(ed, g, x, y, w, "Line", .{ .line = at }, "");
     y += STEP;
-    wordsRow(ed, g, x, y, w, "Speaker", .{ .who = at }, "(blank: whoever is spoken to)");
+    caption(g, x, y, LABEL_W, "Speaker", look.TEXT);
+    words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W - NAME_BTN_W - NAME_BTN_GAP), .{ .who = at }, "(blank: whoever is spoken to)");
+    if (rightButton(ed, g, x + w, y, NAME_BTN_W, "Preview in game", true, "This line as the game draws it; click a choice to follow it, Esc to come back")) ed.plot.preview = at;
     y += STEP;
     caption(g, x, y, LABEL_W, std.fmt.bufPrint(&buf, "Says {d}/{d}", .{ ln.say.n, script.SAY_MAX }) catch "", look.TEXT);
     const say_h = text_panel.fieldHeight(SAY_ROWS);
@@ -860,6 +901,7 @@ fn withAct(at: ActAt, i: u8) ActAt {
 
 fn actKindOk(m: *const Script, k: script.ActKind, spoken: bool) bool {
     if (spoken and !k.spoken()) return false;
+    if (!spoken and !k.scripted()) return false;
     return refOk(m, script.actRef(k));
 }
 
@@ -936,6 +978,7 @@ const ACT_WORDS = std.EnumArray(script.ActKind, []const u8).init(.{
     .wait = "wait",
     .preserve = "keep it ready",
     .quest = "quest",
+    .trade = "open trade",
 });
 const SETOP_WORDS = std.EnumArray(script.Setop, []const u8).init(.{ .off = "clear it", .on = "set it", .flip = "flip it" });
 const COUNTOP_WORDS = std.EnumArray(script.Countop, []const u8).init(.{ .set = "set to", .add = "add", .sub = "take" });
@@ -950,6 +993,7 @@ fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.
     var lay = widgets.Lay{ .x = fx, .y = y };
     switch (a.kind) {
         .preserve => caption(g, fx, y, fw, "not spent: it fires again when it next holds", look.DIM),
+        .trade => caption(g, fx, y, fw, "the NPC spoken to opens its wares once the choice is taken", look.DIM),
         .dialog => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &a.slot),
         .text => words(ed, g, widgets.row(fx, y, fw), .{ .note = at }, "(the line the log shows)"),
         .flag => {
@@ -1279,7 +1323,8 @@ test "an NPC's name gives its dialog a name the map reads back" {
     try std.testing.expectEqualStrings("old_wenna", stemOf(&buf, "Old Wenna!"));
     try std.testing.expectEqualStrings("", stemOf(&buf, "  "));
     try std.testing.expect(script.token(stemOf(&buf, "The Hunter of the Long Road")));
-    var s = Script{};
+    const s = try script.testScript();
+    defer std.testing.allocator.destroy(s);
     _ = s.addDialog("old_wenna").?;
     try std.testing.expectEqualStrings("dialog1", s.dialog[s.addDialog("old_wenna").?].name.text());
 }
@@ -1298,21 +1343,22 @@ test "typed words refuse what the map's words refuse" {
 test "changing a quest action fits its stage to the new quest's objectives" {
     const trigger = @import("../play/trigger.zig");
     const log = @import("../play/log.zig");
-    var m = Script{};
+    const m = try script.testScript();
+    defer std.testing.allocator.destroy(m);
     const first = m.addQuest().?;
     m.quest[first].stage_n = 3;
     const second = m.addQuest().?;
     _ = m.quest[second].stage[0].set("Return to the merchant");
     var a = script.Act{ .kind = .quest, .slot = first, .n = 3 };
     a.slot = second;
-    fitAct(&m, &a, false);
+    fitAct(m, &a, false);
     var runtime = trigger.Runtime{};
     var history = log.Log{};
-    runtime.apply(&m, &a, &history);
+    runtime.apply(m, &a, &history);
     try std.testing.expectEqual(@as(u8, 1), runtime.quests[second].stage);
     try std.testing.expectEqualStrings("Return to the merchant", m.quest[second].asks(runtime.quests[second].stage));
     a = .{ .kind = .quest, .slot = second, .questop = .done, .n = 3 };
     a.questop = .stage;
-    fitAct(&m, &a, true);
+    fitAct(m, &a, true);
     try std.testing.expectEqual(@as(i32, 1), a.n);
 }

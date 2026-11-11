@@ -8,6 +8,7 @@ const fire = @import("../map/fire.zig");
 const ice = @import("../map/ice.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
+const firebolt = @import("../play/firebolt.zig");
 const ground_items = @import("../play/ground_items.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -36,6 +37,7 @@ pub const Shot = struct {
     from: P,
     act: skillbar.Act = .shoot,
     net: bool = false,
+    hook: bool = false,
     t: f32 = 0,
     trail_t: f32 = 0,
 
@@ -95,6 +97,39 @@ test "missiles move continuously to the existing impact time in every direction"
         try std.testing.expect(moved > 0 and moved < 0.1);
     }
 }
+
+/// Seconds a firebolt takes over each cell it flies.
+pub const BOLT_CELL_S: f32 = 0.09;
+
+/// A firebolt as drawn: from `from` to `to` over `span` seconds once `t` reaches 0; seen before then if `before`, and after if `after`.
+pub const BoltShown = struct {
+    from: [2]f32,
+    to: [2]f32,
+    heading: [2]f32,
+    t: f32 = 0,
+    span: f32 = 0,
+    before: bool = true,
+    after: bool = true,
+
+    fn resting(b: firebolt.Bolt) BoltShown {
+        const p = b.point();
+        return .{ .from = p, .to = p, .heading = b.heading() };
+    }
+
+    pub fn at(self: *const BoltShown) ?[2]f32 {
+        if (self.t < 0) return if (self.before) self.from else null;
+        if (self.done()) return if (self.after) self.to else null;
+        return mathx.lerp2(self.from, self.to, self.t / self.span);
+    }
+
+    pub fn moving(self: *const BoltShown) bool {
+        return self.t >= 0 and !self.done();
+    }
+
+    fn done(self: *const BoltShown) bool {
+        return self.t >= self.span;
+    }
+};
 
 /// `snare`: a net, holding the hero as it lands, or dodged (null).
 pub const FoeHit = union(enum) { hurt: fx.After, kill: fx.After, burst: fx.After, snare: ?fx.After, miss };
@@ -158,6 +193,8 @@ pub const Owed = struct {
     knock: ?Knock = null,
     mended: ?Mended = null,
     struck: ?Struck = null,
+    /// A firebolt thrown at this cell, drawn leaving the hand as the throw lands.
+    hurled: ?P = null,
 
     pub fn any(o: *const Owed) bool {
         inline for (std.meta.fields(Owed)) |f| {
@@ -190,7 +227,7 @@ pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
 /// When each `Presentation` field is reset, every field in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
-    pub const turn = [_][]const u8{ "shot", "foe_shots", "knocked_from", "bursting", "lit", "tiles", "embers", "burnt", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
+    pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "lit", "tiles", "embers", "burnt", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
     pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
     pub const facing = [_][]const u8{"facing"};
     pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown" };
@@ -224,6 +261,8 @@ pub const Presentation = struct {
     owed: [actor.MAX]Owed = @splat(.{}),
     shot: ?Shot = null,
     foe_shots: [actor.MAX]?Shot = @splat(null),
+    /// Indexed by the thrower's pool slot; rebuilt from the simulation's bolts as a turn starts afresh.
+    bolts: [actor.MAX]?BoltShown = @splat(null),
     /// Where the hero stood before the turn's first knockback: its own move ends there.
     knocked_from: ?P = null,
     bursting: ?Bursting = null,
@@ -384,6 +423,32 @@ pub const Presentation = struct {
 
     pub fn recordWear(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
         self.owed[target.slot().index].worn = self.afterOf(sim, target.slot());
+    }
+
+    /// Drawn in the thrower's hand from `wait` seconds on, until its throw is staggered.
+    pub fn recordHurl(self: *Presentation, by: actor.ActorId, b: firebolt.Bolt, at: P, wait: f32) void {
+        var shown = BoltShown.resting(b);
+        shown.t = -wait;
+        shown.before = false;
+        self.bolts[by.slot().index] = shown;
+        self.owed[by.slot().index].hurled = at;
+    }
+
+    /// `was` flown `cells` on to `now` from `wait` seconds on, gone once there if it `lands`; when it gets there.
+    pub fn recordBolt(self: *Presentation, sim: *const Simulation, by: actor.ActorSlot, was: firebolt.Bolt, now: firebolt.Bolt, cells: u8, lands: bool, wait: f32) f32 {
+        const from = if (self.bolts[by.index]) |b| b.to else was.point();
+        const span = @as(f32, @floatFromInt(cells)) * BOLT_CELL_S;
+        self.bolts[by.index] = .{ .from = from, .to = now.point(), .heading = now.heading(), .t = -wait, .span = span, .after = !lands };
+        if (self.litShown(sim, was.at()) or self.litShown(sim, now.at())) self.holdUntil(wait + span);
+        return wait + span;
+    }
+
+    fn catchUpBolts(self: *Presentation, sim: *const Simulation) void {
+        for (sim.pool.constSlice(), self.bolts[0..sim.pool.n]) |a, *shown| {
+            if (shown.*) |b| {
+                if (b.done() and (!b.after or a.bolt == null)) shown.* = null;
+            } else if (a.bolt) |bolt| shown.* = BoltShown.resting(bolt);
+        }
     }
 
     pub fn recordKnock(self: *Presentation, by: actor.ActorId, from: P, to: P) void {
@@ -801,6 +866,9 @@ pub const Presentation = struct {
             self.showLaid(&sim.lv);
         }
         for (self.glide[0..sim.pool.n]) |*gl| gl.t += dt;
+        for (&self.bolts) |*b| if (b.*) |*shown| {
+            shown.t += dt;
+        };
         for (&self.dives) |*d| if (d.*) |*left| {
             left.* -= dt;
             if (left.* <= 0) d.* = null;
@@ -822,6 +890,9 @@ pub const Presentation = struct {
                 if (!s.fly(&self.fx, &sim.lv, dt)) pending.* = null;
             }
         }
+        for (&self.bolts) |*pending| if (pending.*) |*b| if (b.moving()) {
+            if (b.at()) |at| self.fx.trail(&sim.lv, at, b.heading, .fireball, 0);
+        };
         self.stepTurning(dt);
     }
 
@@ -862,6 +933,7 @@ pub const Presentation = struct {
             if (!self.fx.impacts.pending(.fromIndex(h))) self.mana_held = 0;
         }
         self.fx.react(self.pictured[0..sim.pool.n]);
+        self.catchUpBolts(sim);
     }
 
     /// `late` is seconds since the glides started.
@@ -894,7 +966,7 @@ pub const Presentation = struct {
 
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, target: actor.ActorId, start: f32, turn: *TurnTiming) f32 {
         comptime for (std.enums.values(std.meta.FieldEnum(Owed))) |t| switch (t) {
-            .foe_hit, .arrow, .gassed, .scalded, .scorched, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended, .struck => {},
+            .foe_hit, .arrow, .gassed, .scalded, .scorched, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended, .struck, .hurled => {},
         };
         const owed = self.owed[target.slot().index];
         self.owed[target.slot().index] = .{};
@@ -923,30 +995,31 @@ pub const Presentation = struct {
         const shown = self.litShown(sim, at) and !hidden;
         const visible_origin = !hidden and self.litShown(sim, motion.to);
         const arrow_seen = if (owed.arrow) |*f| owed.struck == null or shown or self.flightSeen(sim, f) else false;
-        const visible_action = (shown or arrow_seen) and (attack != null or owed.mended != null or owed.struck != null);
+        const visible_action = (shown or arrow_seen) and (attack != null or owed.mended != null or owed.struck != null or owed.hurled != null);
         const staggered = if (moved) shown or visible_origin else visible_action;
         var starts_at = if (staggered) turn.next_at else 0;
-        if (staggered and target.value != sim.hero and (moved or attack != null or owed.struck != null)) starts_at = @max(starts_at, turn.late + motion.left());
+        if (staggered and target.value != sim.hero and (moved or attack != null or owed.struck != null or owed.hurled != null)) starts_at = @max(starts_at, turn.late + motion.left());
         if (staggered and moved and target.value != sim.hero) starts_at = @max(starts_at, turn.late + self.clearIn(sim, slot, body.at));
         if (staggered) turn.next_at = starts_at + game.STAGGER_S;
         const begins_in = if (staggered) starts_at - turn.late else start;
         if (self.turning[slot]) |*t| t.in = begins_in;
         const hero_at = if (owed.knock) |k| k.from else turn.hero_cell;
         var finishes_in = if (staggered or moved) begins_in else @max(start, motion.left());
-        const bumps = owed.arrow == null and (owed.struck != null or attack != null);
+        const bumps = owed.arrow == null and (owed.struck != null or attack != null or owed.hurled != null);
         if (moved) {
             motion.* = motion.toward(destination, turn.late - starts_at);
         } else if (bumps) {
-            motion.* = motion.bumping(if (owed.struck) |s| s.at else hero_at, turn.late - starts_at);
+            motion.* = motion.bumping(if (owed.struck) |s| s.at else owed.hurled orelse hero_at, turn.late - starts_at);
         }
         if ((moved or bumps) and staggered) {
             finishes_in = motion.left();
             self.holdUntil(finishes_in);
         }
         var impact_in = begins_in + game.BUMP_LANDS;
+        if (moved and staggered and (attack != null or owed.struck != null)) impact_in = @max(impact_in, finishes_in);
         if (arrow_seen) {
             const release = @max(start, starts_at - turn.late);
-            const s = Shot{ .from = body.at, .flight = owed.arrow.?, .t = -release, .net = attack != null and attack.? == .snare };
+            const s = Shot{ .from = body.at, .flight = owed.arrow.?, .t = -release, .net = attack != null and attack.? == .snare, .hook = actor.row(body.kind).hooks != null };
             self.foe_shots[slot] = s;
             const loosed = self.loose(s);
             impact_in = loosed.lands;
@@ -997,6 +1070,9 @@ pub const Presentation = struct {
             if (h.recovery) |after| self.recordRecovery(sim, timing.impact_in, after);
         }
         if (owed.struck) |s| if (s.impact) |hit| self.strike(sim, gas, hit, .{ .from = timing.body.at, .wait = timing.impact_in });
+        if (owed.hurled != null) if (self.bolts[timing.slot.index]) |*b| {
+            b.t = -timing.impact_in;
+        };
     }
 
     fn scheduleReaction(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming, turn: *TurnTiming) f32 {

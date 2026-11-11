@@ -63,9 +63,10 @@ pub const Scene = struct {
             .bespoke => {},
             .procgen => {
                 var rng = mathx.Rng.init(self.roll);
-                const at = atlas.landing(&self.lv, arrival(map, node), nd.placed()) orelse arrival(map, node);
+                var buf: [atlas.MAX_FOES]atlas.Foe = undefined;
+                const at = atlas.landing(&self.lv, arrival(map, node), nd.placedOn(self.roll, &buf)) orelse arrival(map, node);
                 _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
-                nd.placePacks(&self.lv, &self.rolled_foes, &rng, at);
+                nd.populate(&self.lv, &self.rolled_foes, &rng, at, self.roll);
                 self.lv.clear(at);
             },
         }
@@ -95,7 +96,8 @@ pub const Scene = struct {
     fn startOn(self: *Scene, map: *const atlas.Atlas, node: usize) ?P {
         const s = map.start;
         if (s.node != node) return null;
-        return atlas.landing(&self.lv, s.at, map.node[node].placed());
+        var buf: [atlas.MAX_FOES]atlas.Foe = undefined;
+        return atlas.landing(&self.lv, s.at, map.node[node].placedOn(self.roll, &buf));
     }
 
     fn issuesOf(self: *Scene, map: *const atlas.Atlas, node: usize) Issues {

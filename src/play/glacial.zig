@@ -63,9 +63,9 @@ const Ahead = struct {
     }
 };
 
-pub fn cone(lv: *const grid.Level, from: P, impact: P) areas.Burst {
+pub fn cone(lv: *const grid.Level, from: P, impact: P, wider: i32) areas.Burst {
     if (from.eq(impact)) return .{};
-    return areas.spread(lv, impact, RANGE, Ahead{ .impact = impact, .heading = impact.sub(from) }, Ahead.holds);
+    return areas.spread(lv, impact, RANGE + wider, Ahead{ .impact = impact, .heading = impact.sub(from) }, Ahead.holds);
 }
 
 pub const burst = cone;
@@ -115,18 +115,20 @@ test "glacial cone follows cardinal diagonal and oblique shots and stops at wall
     for (mathx.ALL_DIRS) |dir| {
         const d = dir.delta();
         const from = impact.sub(d.scaled(5));
-        const area = cone(&lv, from, impact);
+        const area = cone(&lv, from, impact, 0);
         try std.testing.expect(area.has(impact));
         try std.testing.expect(area.has(impact.add(d.scaled(2))));
         try std.testing.expect(!area.has(impact.sub(d)));
         for (area.slice()) |p| try std.testing.expect(mathx.dist(impact, p) <= RANGE);
     }
     const from = P{ .x = 15, .y = 18 };
-    var area = cone(&lv, from, impact);
+    var area = cone(&lv, from, impact, 0);
     try std.testing.expect(area.has(.{ .x = 22, .y = 22 }));
     try std.testing.expect(!area.has(.{ .x = 22, .y = 18 }));
+    try std.testing.expect(!cone(&lv, .{ .x = 15, .y = 20 }, impact, 0).has(.{ .x = 23, .y = 20 }));
+    try std.testing.expect(cone(&lv, .{ .x = 15, .y = 20 }, impact, 1).has(.{ .x = 23, .y = 20 }));
     lv.set(.{ .x = 21, .y = 20 }, .wall);
-    area = cone(&lv, .{ .x = 15, .y = 20 }, impact);
+    area = cone(&lv, .{ .x = 15, .y = 20 }, impact, 0);
     try std.testing.expect(!area.has(.{ .x = 21, .y = 20 }));
     try std.testing.expect(!area.has(.{ .x = 22, .y = 20 }));
     try std.testing.expect(area.has(.{ .x = 21, .y = 21 }));

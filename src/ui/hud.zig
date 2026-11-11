@@ -371,7 +371,7 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
             rl.drawLine(x - 3, y - 1, x + 3, y + 1, colour);
             rl.drawLine(x + 3, y + 1, x - 3, y + 8, colour);
         },
-        .sundered => {
+        .sundered, .exposed => {
             rl.drawRectangleLines(x - 6, y - 7, 12, 14, colour);
             rl.drawLine(x - 1, y - 7, x + 2, y - 1, colour);
             rl.drawLine(x + 2, y - 1, x - 2, y + 3, colour);

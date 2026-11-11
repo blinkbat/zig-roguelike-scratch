@@ -682,3 +682,131 @@ test "a kill's flask refill shows as the kill is drawn, not as the arrow leaves"
     const t = harness.framesUntil(g, 0, Refilled.f);
     try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
 }
+
+const FirstRoll = struct {
+    chance: u32,
+    want: bool,
+    pub fn holds(r: @This(), rng: *mathx.Rng) bool {
+        return rng.percent(r.chance) == r.want;
+    }
+};
+
+test "a shield's block stops a foe's strike whole, at its base chance plus Stalwart" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    _ = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
+    const h = g.sim.heroActor().?;
+    harness.toughen(h);
+    try std.testing.expectEqual(@as(u32, 0), g.sim.heroAttrs().blockChance());
+    g.sim.inventory.gear.slots.set(.left_hand, harness.affixed(.shield, .{ .kind = .block, .value = 10 }));
+    const chance = g.sim.heroAttrs().blockChance();
+    try std.testing.expectEqual(@as(u32, 30), chance);
+    g.sim.rng = harness.rngWhere(FirstRoll{ .chance = chance, .want = true });
+    combat.passTurn(g);
+    try std.testing.expectEqual(harness.TEST_HP, h.hp);
+    try std.testing.expect(harness.logged(g, "blocks the rat"));
+    var blocks: usize = 0;
+    for (0..4000) |_| blocks += @intFromBool(g.sim.heroBlocks());
+    try std.testing.expect(harness.aboutRateOf(blocks, 4000, 0.3));
+}
+
+test "a hastened step spends no turn: the clock, foes and cooldowns all hold" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    _ = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
+    const h = g.sim.heroActor().?;
+    harness.toughen(h);
+    g.sim.inventory.gear.slots.set(.boots, harness.affixed(.boots, .{ .kind = .haste, .value = 10 }));
+    g.sim.cooldown.set(.juke, 2);
+    const clock = g.sim.clock;
+    g.sim.rng = harness.rngWhere(FirstRoll{ .chance = 10, .want = true });
+    game.heroStep(g, .n, 0);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(mathx.P{ .x = 20, .y = 19 }, h.at);
+    try std.testing.expectEqual(harness.TEST_HP, h.hp);
+    try std.testing.expectEqual(@as(u8, 2), g.sim.cooldown.get(.juke));
+    try std.testing.expect(harness.logged(g, "acts with haste"));
+    harness.drawnOut(g);
+    g.sim.rng = harness.rngWhere(FirstRoll{ .chance = 10, .want = false });
+    game.heroStep(g, .s, 0);
+    try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
+    try std.testing.expectEqual(@as(u8, 1), g.sim.cooldown.get(.juke));
+}
+
+test "waiting is never hastened" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    var boots = harness.affixed(.boots, .{ .kind = .haste, .value = 10 });
+    boots.mods[1] = .{ .kind = .life, .value = 2 };
+    g.sim.inventory.gear.slots.set(.boots, boots);
+    g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .haste, .value = 10 }));
+    for (0..20) |_| {
+        const clock = g.sim.clock;
+        harness.use(g, .wait);
+        try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
+    }
+}
+
+test "leech heals its share of each blow's damage, its fraction rounded fairly" {
+    const actor = @import("../../play/actor.zig");
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
+    const rat = harness.foeId(0);
+    const foe = g.sim.pool.get(rat).?;
+    g.sim.inventory.gear.slots.set(.left_ring, harness.affixed(.ring, .{ .kind = .leech, .value = 10 }));
+    const ROLLS = 4000;
+    var healed: usize = 0;
+    for (0..ROLLS) |_| {
+        harness.toughen(foe);
+        const out = attacks.resolve(&g.sim, actor.ActorId.fromInt(rat), .{ .dmg = 7, .hit_checked = true }, .chosen).?;
+        try std.testing.expectEqual(@as(i32, 7), out.hit.damage.dmg);
+        healed += @intCast(out.hit.recovery);
+    }
+    try std.testing.expect(harness.aboutRateOf(healed, ROLLS, 0.7));
+}
+
+test "Mending recovers life across spent turns, keeping its partial progress" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.inventory.gear.slots.set(.belt, harness.affixed(.belt, .{ .kind = .life_regen, .value = 2 }));
+    const h = g.sim.heroActor().?;
+    h.hp = 1;
+    for (0..2) |_| harness.use(g, .wait);
+    try std.testing.expectEqual(@as(i32, 1), h.hp);
+    harness.use(g, .wait);
+    try std.testing.expectEqual(@as(i32, 2), h.hp);
+    try std.testing.expectEqual(@as(i32, 1), g.sim.life_recovery);
+    for (0..2) |_| harness.use(g, .wait);
+    try std.testing.expectEqual(@as(i32, 3), h.hp);
+    try std.testing.expectEqual(@as(i32, 0), g.sim.life_recovery);
+}
+
+test "Sweeping widens a frost nova by a cell" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]bool{ false, true }) |wide| {
+        harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
+        harness.toughenFoes(g);
+        g.sim.mana = harness.TEST_MANA;
+        if (wide) g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .area, .value = 1 }));
+        harness.useAct(g, .frost_nova);
+        try std.testing.expectEqual(wide, harness.foes(g)[0].hp < harness.TEST_HP);
+    }
+}
+
+test "Skewering lets a shot pass through its extra foes and no further" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]i16{ 0, 1 }) |extra| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 22, .y = 20 }, .{ .x = 23, .y = 20 }, .{ .x = 24, .y = 20 } });
+        harness.toughenFoes(g);
+        g.sim.inventory.gear.slots.set(.right_hand, if (extra > 0) harness.affixed(.bow, .{ .kind = .pierce, .value = extra }) else .{ .kind = .bow });
+        harness.aimAt(g, .shoot, .{ .x = 22, .y = 20 });
+        for (harness.foes(g), 0..) |a, i| try std.testing.expectEqual(i <= @as(usize, @intCast(extra)), a.hp < harness.TEST_HP);
+    }
+}

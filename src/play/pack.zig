@@ -61,9 +61,8 @@ const SPOT_TRIES: usize = 2000;
 
 comptime {
     std.debug.assert(GAP > actor.row(actor.HERO).sight);
-    std.debug.assert(FEW * actor.FOES.len <= PER_FLOOR);
+    std.debug.assert(FEW * (Spec{}).held().count() <= PER_FLOOR);
     std.debug.assert(KINDS.len <= MAKEUPS_MAX and BIGGEST <= MAKEUP_MAX and REACH <= REACH_MAX);
-    for (actor.FOES) |k| std.debug.assert((Spec{}).holders(k) > 0);
     std.debug.assert((Spec{}).valid());
 }
 
@@ -241,6 +240,12 @@ pub const Spec = struct {
 
     pub fn valid(s: *const Spec) bool {
         return std.meta.eql(s.fit(), s.*);
+    }
+
+    fn held(self: *const Spec) Kinds {
+        var out = Kinds.initEmpty();
+        for (actor.FOES) |k| out.setPresent(k, self.holders(k) > 0);
+        return out;
     }
 
     fn holders(self: *const Spec, k: actor.Kind) usize {
@@ -434,11 +439,17 @@ fn widened(cells: grid.CellSet, r: i32) grid.CellSet {
 
 /// At most what the pool holds once every slime placed splits to quarters; a makeup whose lead finds no ground of its own gives way to the rest.
 pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, given: *const Spec) void {
+    placeOff(lv, pool, rng, start, exits, given, &grid.CellSet.initEmpty());
+}
+
+/// `place`, no pack standing on an `off` cell; bodies already in the pool count as they will once split.
+pub fn placeOff(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, given: *const Spec, off: *const grid.CellSet) void {
     const fitted = given.fit();
     const spec = &fitted;
-    const camp = campOf(lv);
+    var barred = campOf(lv);
+    barred.setUnion(off.*);
     const lairs = Lairs.of(lv, spec);
-    var bodies = pool.n;
+    var bodies = pool.eventual();
     var homeless = Homeless{};
     var packs: usize = 0;
     for (spec.makeups()) |*m| {
@@ -447,7 +458,7 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exit
             .weight => continue,
         };
         for (0..count) |_| {
-            if (packs == spec.packs or !m.fits(bodies, null) or !placeOne(lv, pool, rng, start, exits, spec, &camp, &lairs, m, &bodies)) break;
+            if (packs == spec.packs or !m.fits(bodies, null) or !placeOne(lv, pool, rng, start, exits, spec, &barred, &lairs, m, &bodies)) break;
             packs += 1;
         }
     }
@@ -455,7 +466,7 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exit
         while (packs < spec.packs and pool.tally(k).total < spec.few) {
             const m = spec.pick(rng, k, bodies, homeless) orelse break;
             const before = pool.tally(k).total;
-            if (!placeOne(lv, pool, rng, start, exits, spec, &camp, &lairs, m, &bodies)) {
+            if (!placeOne(lv, pool, rng, start, exits, spec, &barred, &lairs, m, &bodies)) {
                 homeless.add(m);
                 continue;
             }
@@ -465,13 +476,13 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exit
     }
     while (packs < spec.packs) {
         const m = spec.pick(rng, null, bodies, homeless) orelse return;
-        if (placeOne(lv, pool, rng, start, exits, spec, &camp, &lairs, m, &bodies)) packs += 1 else homeless.add(m);
+        if (placeOne(lv, pool, rng, start, exits, spec, &barred, &lairs, m, &bodies)) packs += 1 else homeless.add(m);
     }
 }
 
 /// An exit makeup's lead tries a door at random, then each other door in turn; a lair's, any cell of it.
-fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, spec: *const Spec, camp: *const grid.CellSet, lairs: *const Lairs, m: *const Makeup, bodies: *usize) bool {
-    const ground = Ground{ .lv = lv, .pool = pool, .start = start, .spec = spec, .camp = camp, .others = pool.n };
+fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, spec: *const Spec, barred: *const grid.CellSet, lairs: *const Lairs, m: *const Makeup, bodies: *usize) bool {
+    const ground = Ground{ .lv = lv, .pool = pool, .start = start, .spec = spec, .barred = barred, .others = pool.n };
     const lead = if (!m.exit) (if (m.lair == .anywhere) ground.leadSpot(rng, null, m.lead()) else ground.leadIn(rng, lairs.cells.getPtrConst(m.lair), m.lead())) orelse return false else lead: {
         if (exits.len == 0) return false;
         const first = rng.below(@intCast(exits.len));
@@ -512,11 +523,11 @@ const Ground = struct {
     pool: *const actor.Pool,
     start: P,
     spec: *const Spec,
-    camp: *const grid.CellSet,
+    barred: *const grid.CellSet,
     others: usize,
 
     fn clear(g: Ground, p: P, k: actor.Kind) bool {
-        if (!actor.dwells(k, g.lv, p) or mathx.dist(p, g.start) < g.spec.gap or g.camp.isSet(grid.Level.idx(p))) return false;
+        if (!actor.dwells(k, g.lv, p) or mathx.dist(p, g.start) < g.spec.gap or g.barred.isSet(grid.Level.idx(p))) return false;
         if (g.spec.apart == 0) return true;
         for (g.pool.items[0..g.others]) |*a| {
             if (a.foe() and mathx.dist(a.at, p) < g.spec.apart) return false;
@@ -571,8 +582,9 @@ const Ground = struct {
     }
 };
 
-test "every floor has a few of each foe it has ground for, each on its own ground, slimes by rats and crossbowmen by rats or shields" {
+test "every floor has a few of each foe its makeups hold and it has ground for, each on its own ground, slimes by rats and crossbowmen by rats or shields" {
     var lv: grid.Level = undefined;
+    const stocked = (Spec{}).held();
     var counts = std.EnumArray(actor.Kind, usize).initFill(0);
     var fewest = std.EnumArray(actor.Kind, usize).initFill(actor.MAX);
     var lone_slimes: usize = 0;
@@ -611,7 +623,7 @@ test "every floor has a few of each foe it has ground for, each on its own groun
     try std.testing.expectEqual(@as(usize, 0), lone_slimes);
     try std.testing.expectEqual(@as(usize, 0), lone_bandits);
     try std.testing.expect(counts.get(.slime) < counts.get(.rat));
-    for (actor.FOES) |k| try std.testing.expect(fewest.get(k) >= FEW);
+    for (actor.FOES) |k| if (stocked.contains(k)) try std.testing.expect(fewest.get(k) >= FEW);
 }
 
 test "a pack whose lead has no ground of its own gives way without costing the floor a pack" {

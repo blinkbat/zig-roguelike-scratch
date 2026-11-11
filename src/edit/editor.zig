@@ -1107,6 +1107,9 @@ pub fn capture(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8
                 ed.plot.field.set(ed.map.script.dialog[0].line[0].say.text());
                 try snapAs(ed, g, target, "{s}/edit-dialog-typing.png", .{dir});
                 ed.plot.focus = null;
+                ed.plot.preview = .{ .d = 0, .l = 0 };
+                try snapAs(ed, g, target, "{s}/edit-dialog-preview.png", .{dir});
+                ed.plot.preview = null;
             },
             .script => {
                 ed.plot.trigger = 0;
@@ -1152,6 +1155,8 @@ pub const SHOT_SCRIPT =
     \\ask Do you need anything? -> coins
     \\need flag met_wenna on
     \\gets counter coins add 5
+    \\ask Show me what you trade. -> end
+    \\gets trade
     \\ask Goodbye. -> end
     \\line deeper
     \\say Rats. Slime. Worse, past the gate.

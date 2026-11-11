@@ -627,8 +627,39 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqualStrings(comptime std.fmt.comptimePrint(hero.HP_FMT, .{ 19, actor.row(actor.HERO).hp }) ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.details(&line));
 }
 
+test "a merchant's shelf comes back from a save as it was left, and one naming no NPC is refused" {
+    const alloc = std.testing.allocator;
+    const w = try testMap();
+    defer alloc.destroy(w);
+    _ = w.script.addNpc(.{ .node = 0, .spot = .far }).?;
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    game.beginMapAt(g, w, w.start, 7);
+    const shelf = g.sim.plot.shelf(0, g.sim.seed);
+    g.sim.gold = 1000;
+    _ = try @import("play/trade.zig").buy(shelf, shelf.count() - 1, &g.sim.inventory, &g.sim.gold);
+    var buf = std.ArrayList(u8).init(alloc);
+    defer buf.deinit();
+    try write(g, &buf);
+    seal(&buf);
+    const back = try game.boot(alloc);
+    defer game.shut(alloc, back);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    into.* = .{};
+    try read(buf.items, back, into);
+    try std.testing.expectEqualDeep(g.sim.plot.wares[0].?.shelved(), back.sim.plot.wares[0].?.shelved());
+    try std.testing.expectEqualDeep(g.sim.plot.wares[0].?.supplies, back.sim.plot.wares[0].?.supplies);
+    try std.testing.expect(back.sim.plot.wares[1] == null);
+    g.sim.plot.wares[1] = g.sim.plot.wares[0];
+    buf.clearRetainingCapacity();
+    try write(g, &buf);
+    seal(&buf);
+    try std.testing.expectError(error.Damaged, read(buf.items, back, into));
+}
+
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0x7865f5e23418ae00;
+const RECORDED_FINGERPRINT: Print = 0x06fb05fbf0b6c23b;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
     game.beginMapAt(g, w, w.start, 7);
@@ -702,6 +733,45 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     try std.testing.expectEqualDeep(try peek(first.items), try peek(again.items));
     try std.testing.expectEqualSlices(u8, first.items, again.items);
     try std.testing.expectEqual(RECORDED_FINGERPRINT, FINGERPRINT);
+}
+
+test "a braced line, a stuck turn and a firebolt in flight survive a portable save, and a bolt on a kind that never throws one is refused" {
+    const alloc = std.testing.allocator;
+    const h = game.harness;
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    h.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const crab = h.spawnAt(g, .sluice_crab, .{ .x = 24, .y = 20 }, true);
+    const gaoler = h.spawnAt(g, .chain_gaoler, .{ .x = 20, .y = 24 }, true);
+    const imp = h.spawnAt(g, .cinder_imp, .{ .x = 26, .y = 26 }, true);
+    const bolt = @import("play/firebolt.zig").Bolt{ .from = .{ .x = 26, .y = 26 }, .toward = .{ .x = 12, .y = 12 }, .flown = 3 };
+    g.sim.pool.get(crab).?.stuck = true;
+    g.sim.pool.get(gaoler).?.braced = .n;
+    g.sim.pool.get(imp).?.bolt = bolt;
+    game.settle(g);
+    var buf = std.ArrayList(u8).init(alloc);
+    defer buf.deinit();
+    try write(g, &buf);
+    seal(&buf);
+    const back = try game.boot(alloc);
+    defer game.shut(alloc, back);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    game.begin(back, 1);
+    try read(buf.items, back, into);
+    for ([_]u16{ crab, gaoler, imp }) |id| {
+        const was = g.sim.pool.getConst(id).?;
+        const now = back.sim.pool.getConst(id).?;
+        try std.testing.expectEqual(was.stuck, now.stuck);
+        try std.testing.expectEqual(was.braced, now.braced);
+        try std.testing.expectEqual(was.bolt, now.bolt);
+    }
+    try std.testing.expectEqual(bolt.point(), back.pic.bolts[actor.Pool.slot(imp)].?.at().?);
+    g.sim.pool.get(crab).?.bolt = bolt;
+    buf.clearRetainingCapacity();
+    try write(g, &buf);
+    seal(&buf);
+    try std.testing.expectError(error.Damaged, read(buf.items, back, into));
 }
 
 test "legacy saves convert on load and reject invalid native tags before changing the run" {
@@ -982,4 +1052,43 @@ test "a generated run reloads every class without retaining the previous run's t
         try std.testing.expectEqualDeep(back.sim.growth, back.pic.growth_shown);
         try std.testing.expectEqual(@as(f32, 0), back.pic.fx.level_up.life);
     }
+}
+
+test "a procgen plan carries its section through a portable save, and one saved before sections loads with none" {
+    const wire = @import("core/wire.zig");
+    const Code = wire.Codec(format.Policy);
+    const alloc = std.testing.allocator;
+    const plan = try alloc.create(atlas.Procgen);
+    defer alloc.destroy(plan);
+    plan.* = .{};
+    const s = &plan.section;
+    s.anchor = .roams;
+    try std.testing.expect(s.paint(.{ .x = 5, .y = 5 }, .floor) and s.paint(.{ .x = 5, .y = 4 }, .wall));
+    try std.testing.expect(s.addTorch(.{ .x = 5, .y = 4 }) and s.addFoe(.{ .kind = .rat, .at = .{ .x = 5, .y = 5 } }));
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    try Code.write(&bytes, plan);
+    const back = try alloc.create(atlas.Procgen);
+    defer alloc.destroy(back);
+    try Code.read(bytes.items, back);
+    try std.testing.expectEqual(s.anchor, back.section.anchor);
+    try std.testing.expectEqualSlices(?grid.Tile, &s.tile, &back.section.tile);
+    try std.testing.expectEqualSlices(mathx.P, s.torch.slice(), back.section.torch.slice());
+    try std.testing.expectEqualSlices(atlas.Foe, s.foes(), back.section.foes());
+    try std.testing.expect(back.section.valid());
+
+    var older = std.ArrayList(u8).init(alloc);
+    defer older.deinit();
+    var cursor = wire.Cursor{ .bytes = bytes.items };
+    var record = try wire.Record.init(&cursor);
+    try wire.integer(&older, wire.FieldCount, record.remaining - 1);
+    while (try record.next()) |entry| {
+        if (std.mem.eql(u8, entry.name, "section")) continue;
+        const at = try wire.beginField(&older, entry.name);
+        try older.appendSlice(entry.bytes);
+        wire.endField(&older, at);
+    }
+    try Code.read(older.items, back);
+    try std.testing.expect(back.section.empty() and back.section.anchor == .fixed and back.section.foe_n == 0);
+    try std.testing.expectEqualDeep(plan.foes, back.foes);
 }

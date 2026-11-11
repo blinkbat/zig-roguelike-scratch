@@ -7,6 +7,7 @@ const wording = @import("../core/wording.zig");
 const resilience = @import("resilience.zig");
 const item_bases = @import("item_bases.zig");
 const items = @import("items.zig");
+const hero = @import("hero.zig");
 
 pub const Mod = enum {
     life,
@@ -36,6 +37,13 @@ pub const Mod = enum {
     opportunist,
     bounding,
     alacrity,
+    crit_damage,
+    block,
+    life_regen,
+    leech,
+    area,
+    pierce,
+    haste,
 
     pub fn grant(comptime m: Mod, amount: i32) passives.Grant {
         return .{ .kind = @field(passives.Kind, @tagName(m)), .amount = amount };
@@ -47,8 +55,8 @@ pub const Mod = enum {
 
     pub fn prefix(m: Mod) bool {
         return switch (m) {
-            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked, .opportunist => true,
-            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness, .bounding, .alacrity => false,
+            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked, .opportunist, .crit_damage, .block, .leech, .area, .pierce => true,
+            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness, .bounding, .alacrity, .life_regen, .haste => false,
         };
     }
 
@@ -56,7 +64,7 @@ pub const Mod = enum {
         return switch (m) {
             .resistance => std.enums.values(damage.Element),
             .imbue => &IMBUES,
-            .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .thorns, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity => &.{},
+            .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .thorns, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .crit_damage, .block, .life_regen, .leech, .area, .pierce, .haste => &.{},
         };
     }
     pub fn title(m: Mod, element: damage.Element) [:0]const u8 {
@@ -97,6 +105,13 @@ pub const Mod = enum {
             .opportunist => "Opportunist's",
             .bounding => "of Bounding",
             .alacrity => "of Alacrity",
+            .crit_damage => "Savage",
+            .block => "Stalwart",
+            .life_regen => "of Mending",
+            .leech => "Vampiric",
+            .area => "Sweeping",
+            .pierce => "Skewering",
+            .haste => "of Haste",
         };
     }
     pub fn allows(m: Mod, k: item_bases.Kind) bool {
@@ -128,6 +143,13 @@ pub const Mod = enum {
             .opportunist => weapon or slot == .gloves,
             .bounding => slot == .boots,
             .alacrity => k == .circlet or slot == .amulet,
+            .crit_damage => weapon or s.caster or slot == .gloves or slot == .amulet,
+            .block => k.blocks(),
+            .life_regen => slot == .chest or slot == .belt or slot == .amulet,
+            .leech => weapon or ring,
+            .area => s.caster or slot == .amulet,
+            .pierce => (weapon and s.attack == .ranged) or (s.caster and slot == .right_hand and !s.two_handed),
+            .haste => slot == .boots or slot == .amulet,
             .life, .mana, .strength, .dexterity, .intelligence => true,
         };
     }
@@ -176,6 +198,13 @@ const RANGES = std.EnumArray(Mod, Range).init(.{
     .opportunist = .{ .lo = 15, .hi = 30 },
     .bounding = .{ .lo = 1, .hi = 1 },
     .alacrity = .{ .lo = 1, .hi = 1 },
+    .crit_damage = .{ .lo = 10, .hi = 25 },
+    .block = .{ .lo = 5, .hi = 10 },
+    .life_regen = .{ .lo = 1, .hi = 2 },
+    .leech = .{ .lo = 5, .hi = 10 },
+    .area = .{ .lo = 1, .hi = 1 },
+    .pierce = .{ .lo = 1, .hi = 2 },
+    .haste = .{ .lo = 5, .hi = 10 },
 });
 
 pub const MODS = std.enums.values(Mod)[0..std.enums.values(Mod).len].*;
@@ -216,6 +245,7 @@ pub const Affix = struct {
         const n = m.value;
         switch (m.kind) {
             inline .life, .mana, .strength, .dexterity, .intelligence, .crit, .armour, .mana_regen, .life_flask => |k| k.grant(n).write(w),
+            .life_regen => w.print("+{d} life recovered per {d} turns", .{ n, hero.LIFE_REGEN_TURNS }) catch {},
             .physical_damage => w.print("+{d}% physical weapon damage", .{n}) catch {},
             .spell_damage => w.print("+{d}% spell damage", .{n}) catch {},
             .dodge => w.print("+{d}% dodge chance", .{n}) catch {},
@@ -234,6 +264,12 @@ pub const Affix = struct {
             .opportunist => w.print("+{d}% damage against pinned, chilled or maimed foes", .{n}) catch {},
             .bounding => w.print("+{d} movement skill range", .{n}) catch {},
             .alacrity => w.print("Skill cooldowns {d} turn{s} shorter", .{ n, mathx.plural(n) }) catch {},
+            .crit_damage => w.print("+{d}% critical strike damage", .{n}) catch {},
+            .block => w.print(item_bases.BLOCK_FMT, .{n}) catch {},
+            .leech => w.print("Heal {d}% of the damage blows deal", .{n}) catch {},
+            .area => w.print("+{d} area skill radius", .{n}) catch {},
+            .pierce => w.print("Projectiles pass through {d} more foe{s}", .{ n, mathx.plural(n) }) catch {},
+            .haste => w.print("{d}% chance an action takes no turn", .{n}) catch {},
         }
     }
 };

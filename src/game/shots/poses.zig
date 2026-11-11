@@ -80,6 +80,29 @@ fn captureCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-retreat.png");
 }
 
+fn captureBraced(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const h = game.harness;
+    h.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
+    h.toughen(g.sim.heroActor().?);
+    const crab = h.spawnAt(g, .sluice_crab, .{ .x = 25, .y = 20 }, true);
+    const gaoler = h.spawnAt(g, .chain_gaoler, .{ .x = 20, .y = 16 }, true);
+    const imp = h.spawnAt(g, .cinder_imp, .{ .x = 25, .y = 25 }, true);
+    game.settle(g);
+    h.use(g, .wait);
+    h.drawnOut(g);
+    if (g.sim.pool.get(crab).?.braced == null or g.sim.pool.get(gaoler).?.braced == null or g.sim.pool.get(imp).?.bolt == null) return error.FoesNotBraced;
+    try capture(g, target, SHOTS_DIR ++ "/braced.png");
+    h.use(g, .wait);
+    g.st = .{};
+    const hook = g.pic.foe_shots[actor.Pool.slot(gaoler)] orelse return error.HookNotFlung;
+    game.update(g, -hook.t + hook.lands() / 2);
+    try capture(g, target, SHOTS_DIR ++ "/braced-hook.png");
+    game.update(g, 0.1);
+    try capture(g, target, SHOTS_DIR ++ "/braced-strike.png");
+    h.drawnOut(g);
+    try capture(g, target, SHOTS_DIR ++ "/braced-after.png");
+}
+
 pub fn captureGeneral(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
@@ -162,6 +185,7 @@ pub fn captureGeneral(g: *game.Game) !void {
 
     try captureEffects(g, target);
     try captureCrossbowman(g, target);
+    try captureBraced(g, target);
     try capturePlayground(g, target);
 
     poseFright(g);
@@ -500,6 +524,9 @@ const WADERS = [_]Wader{
     .{ .kind = .bog_leech, .at = .{ .x = 19, .y = 21 } },
     .{ .kind = .skeleton, .at = .{ .x = 28, .y = 20 } },
     .{ .kind = .goblin, .at = .{ .x = 20, .y = 25 } },
+    .{ .kind = .sluice_crab, .at = .{ .x = 21, .y = 18 } },
+    .{ .kind = .chain_gaoler, .at = .{ .x = 24, .y = 18 } },
+    .{ .kind = .cinder_imp, .at = .{ .x = 27, .y = 18 } },
     .{ .kind = .caravan_guard, .at = .{ .x = 28, .y = 25 } },
 };
 

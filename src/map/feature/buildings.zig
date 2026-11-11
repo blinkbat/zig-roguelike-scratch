@@ -42,7 +42,8 @@ pub const Params = struct {
 
 const Box = grid.Box;
 
-pub const LOTS_MAX: usize = @import("../procgen.zig").MAX_FEATURES * COUNT_MAX;
+/// One more for a section's box.
+pub const LOTS_MAX: usize = @import("../procgen.zig").MAX_FEATURES * COUNT_MAX + 1;
 
 /// Every lot a floor's features take, so no feature raises one over another's.
 pub const Lots = struct {
@@ -60,6 +61,12 @@ pub const Lots = struct {
 
     pub fn slice(self: *const Lots) []const Box {
         return self.box[0..self.n];
+    }
+
+    /// Before any feature begins.
+    pub fn reserve(self: *Lots, b: Box) void {
+        std.debug.assert(self.n == 0);
+        _ = mathx.push(Box, &self.box, &self.n, b);
     }
 
     pub fn take(self: *Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, pal: carve.Palette) ?Box {

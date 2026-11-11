@@ -8,6 +8,7 @@ const contains = @import("../core/text.zig").contains;
 const pack = @import("../play/pack.zig");
 const atlas = @import("atlas.zig");
 const script_text = @import("script_text.zig");
+const section = atlas.section;
 const P = mathx.P;
 const Tokens = std.mem.TokenIterator(u8, .scalar);
 const Error = atlas.Error;
@@ -51,6 +52,7 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
                     try w.print(says(.feature) ++ "{s}\n", .{@tagName(ft.*)});
                     try putArm(w, ft);
                 }
+                try writeSection(w, &pg.section);
             },
             .bespoke => |*b| {
                 try w.print(says(.node) ++ "{s}\n", .{@tagName(nd.plan)});
@@ -75,6 +77,47 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
         }
     }
     try script_text.write(&self.script, w);
+}
+
+/// A row's painted run from its first painted cell to its last.
+fn writeSection(w: anytype, s: *const section.Section) !void {
+    if (s.anchor == .fixed and s.empty()) return;
+    try w.print(says(.section) ++ "{s}\n", .{@tagName(s.anchor)});
+    for (0..ROWS) |y| {
+        var first: ?usize = null;
+        var last: usize = 0;
+        for (0..COLS) |x| {
+            const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(y) });
+            if (s.tile[i] == null) continue;
+            if (first == null) first = x;
+            last = x;
+        }
+        const from = first orelse continue;
+        try w.print(says(.paint) ++ "{d} {d} ", .{ from, y });
+        for (from..last + 1) |x| {
+            const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(y) });
+            const t = s.tile[i] orelse {
+                try w.writeByte(section.UNPAINTED);
+                continue;
+            };
+            try w.writeByte(if (s.barrel[i]) grid.BARREL_LETTER else t.letter());
+        }
+        try w.writeByte('\n');
+    }
+    for (s.torch.slice()) |t| try w.print(says(.torch) ++ "{d} {d}\n", .{ t.x, t.y });
+    for (s.foes()) |f| try w.print(says(.foe) ++ "{s} {d} {d}\n", .{ @tagName(f.kind), f.at.x, f.at.y });
+}
+
+fn takePaint(s: *section.Section, f: *Tokens) Error!void {
+    const at = try cell(f);
+    const run = f.next() orelse return error.BadLine;
+    for (run, 0..) |c, k| {
+        if (c == section.UNPAINTED) continue;
+        const p = at.add(.{ .x = @intCast(k), .y = 0 });
+        const t = grid.groundOf(c) orelse return error.BadLine;
+        if (s.tileAt(p) != null or !s.paint(p, t)) return error.BadLine;
+        if (c == grid.BARREL_LETTER) _ = s.putBarrel(p);
+    }
 }
 
 pub fn load(self: *atlas.Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
@@ -189,16 +232,27 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                 row += 1;
             },
             .torch => {
-                const torches = &(try lastBespoke(self)).torch;
+                const nd = try lastNode(self);
+                const torches = switch (nd.plan) {
+                    .bespoke => |*b| &b.torch,
+                    .procgen => |*pg| &pg.section.torch,
+                };
                 const at = try cell(&f);
                 if (torches.has(at)) return error.BadLine;
                 if (!torches.add(at)) return error.TooMany;
             },
             .foe => {
-                const b = try lastBespoke(self);
+                const nd = try lastNode(self);
                 const k = try takeValue(actor.Kind, &f);
-                if (!k.stocked() or !b.addFoe(.{ .kind = k, .at = try cell(&f) })) return error.BadLine;
+                const foe = atlas.Foe{ .kind = k, .at = try cell(&f) };
+                const added = switch (nd.plan) {
+                    .bespoke => |*b| k.stocked() and b.addFoe(foe),
+                    .procgen => |*pg| pg.section.addFoe(foe),
+                };
+                if (!added) return error.BadLine;
             },
+            .section => (try lastProcgen(self)).section.anchor = try takeValue(section.Anchor, &f),
+            .paint => try takePaint(&(try lastProcgen(self)).section, &f),
         }
         if (f.next() != null) return error.BadLine;
     }
@@ -232,7 +286,7 @@ fn finished(self: *atlas.Atlas, rows: usize) Error!void {
                 if (on and !nd.barrelFits(b, grid.Level.of(i))) return error.BadLine;
             }
         },
-        .procgen => |*pg| if (!pg.valid()) return error.BadLine,
+        .procgen => |*pg| if (!pg.valid() or !pg.section.valid()) return error.BadLine,
     }
 }
 
@@ -253,9 +307,9 @@ pub fn floorKnobs(comptime a: Algo) []const []const u8 {
     return armKnobs(Floor, a);
 }
 const FLOOR_KNOBS_MAX = mostKnobs(Floor);
-const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe };
+const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe, section, paint };
 const ONCE_FILE = std.EnumSet(Word).initOne(.start);
-const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at });
+const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at, .section });
 const ONCE = ONCE_FILE.unionWith(ONCE_NODE);
 pub fn featureKnobs(comptime k: Kind) []const []const u8 {
     return armKnobs(Feature, k);
@@ -273,7 +327,7 @@ pub const GROUPS = blk: {
 };
 
 fn grouped(comptime f: std.builtin.Type.StructField) bool {
-    if (f.type == Floor) return false;
+    if (f.type == Floor or f.type == section.Section) return false;
     for (atlas.Procgen.COUNTED) |c| {
         if (std.mem.eql(u8, f.name, c[0]) or std.mem.eql(u8, f.name, c[1])) return false;
     }
@@ -718,6 +772,67 @@ test "a map's NPCs and script save with it, and NPCs off open bespoke floor are 
         try buf.appendSlice(extra);
         try std.testing.expectError(error.BadLine, back.parse(buf.items));
     }
+}
+
+test "a procgen node's section saves and loads back the same, and paint off the room or under nothing is refused" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const n = a.add(.{ .procgen = .{ .floor = Floor.of(.wilds) } }).?;
+    _ = a.node[n].plan.procgen.addFeature(.river);
+    const s = &a.node[n].plan.procgen.section;
+    s.anchor = .roams;
+    var it = grid.Box.sized(.{ .x = 20, .y = 10 }, 5, 4).cells();
+    while (it.next()) |p| _ = s.paint(p, if (p.y == 10) .wall else .floor);
+    _ = s.paint(.{ .x = 30, .y = 11 }, .shallows);
+    try std.testing.expect(s.paint(.{ .x = 22, .y = 12 }, null));
+    try std.testing.expect(s.putBarrel(.{ .x = 21, .y = 12 }));
+    try std.testing.expect(s.addTorch(.{ .x = 23, .y = 10 }));
+    try std.testing.expect(s.addFoe(.{ .kind = .rat, .at = .{ .x = 24, .y = 13 } }));
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    defer buf.deinit();
+    try a.write(buf.writer());
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "section roams\npaint 20 10 #####\npaint 20 11 ....._____-\npaint 20 12 .0_..\n") != null);
+    const back = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(back);
+    try back.parse(buf.items);
+    const got = &back.node[n].plan.procgen.section;
+    try std.testing.expectEqual(s.anchor, got.anchor);
+    try std.testing.expectEqualSlices(?grid.Tile, &s.tile, &got.tile);
+    try std.testing.expectEqualSlices(bool, &s.barrel, &got.barrel);
+    try std.testing.expectEqualSlices(P, s.torch.slice(), got.torch.slice());
+    try std.testing.expectEqualDeep(s.foe, got.foe);
+    var again = std.ArrayList(u8).init(std.testing.allocator);
+    defer again.deinit();
+    try back.write(again.writer());
+    try std.testing.expectEqualStrings(buf.items, again.items);
+
+    const head = HEADER ++ "\nstart 0 5 5\nnode procgen open\n";
+    const bad = [_][]const u8{
+        "paint 0 5 ...\n",
+        "paint 93 5 ...\n",
+        "paint 5 5 .Q.\n",
+        "paint 5 5 .O.\n",
+        "paint 5 5 ...\npaint 6 5 .\n",
+        "paint 5 5 ..\npaint 5 6 ..\npaint 5 7\n",
+        "paint 5 5 .H.\n",
+        "section roams\nsection fixed\n",
+        "section wide\n",
+        "paint 5 5 ...\nfoe rat 9 9\n",
+        "paint 5 5 0..\nfoe rat 5 5\n",
+        "paint 5 5 ...\ntorch 5 5\n",
+        "paint 5 5 ...\nfoe slime_half 6 5\n",
+    };
+    for (bad) |t| {
+        buf.clearRetainingCapacity();
+        try buf.appendSlice(head);
+        try buf.appendSlice(t);
+        try std.testing.expect(std.meta.isError(a.parse(buf.items)));
+    }
+    try std.testing.expectError(error.BadLine, a.parse(HEADER ++ "\nstart 0 5 5\nnode bespoke\npaint 5 5 .\n"));
+    try a.parse(head ++ "paint 5 5 #_#\npaint 5 6 ._.\ntorch 5 5\n");
+    try std.testing.expectEqual(@as(?grid.Tile, null), a.node[0].plan.procgen.section.tileAt(.{ .x = 6, .y = 5 }));
+    try a.parse(head);
+    try std.testing.expect(a.node[0].plan.procgen.section.empty());
 }
 
 test "map text accepts exact node feature and door limits and refuses the next entry" {

@@ -79,11 +79,11 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
     }
     if (has(d, "burst")) {
         if (d.reticle != .bow or !has(d, "ELEMENT") or !has(d, "afflict")) return "burst requires an elemental afflicting projectile";
-        if (!signature(m, "burst", &.{ *const grid.Level, mathx.P, mathx.P }, areas.Burst)) return "burst must accept (*const Level, P, P) and return area.Burst";
+        if (!signature(m, "burst", &.{ *const grid.Level, mathx.P, mathx.P, i32 }, areas.Burst)) return "burst must accept (*const Level, P, P, wider: i32) and return area.Burst";
     }
     if (has(d, "around")) {
         if (d.reticle != null or !has(d, "ELEMENT") or !has(d, "afflict")) return "around requires an unaimed elemental afflicting skill";
-        if (!signature(m, "around", &.{ *const grid.Level, mathx.P }, areas.Burst)) return "around must accept (*const Level, P) and return area.Burst";
+        if (!signature(m, "around", &.{ *const grid.Level, mathx.P, i32 }, areas.Burst)) return "around must accept (*const Level, P, wider: i32) and return area.Burst";
     }
     if (has(d, "JUMPS")) {
         if (d.reticle != .bow or !has(d, "afflict") or has(d, "burst")) return "JUMPS requires a non-burst afflicting projectile";

@@ -1,0 +1,24 @@
+roguelike-map 1
+start 0 48 32
+node procgen open
+ground dirt
+edge shrub
+litter 6
+decor 12 60 6
+packs 7
+few 1
+reach 2
+gap 8
+apart 3
+light clear
+weather clear
+makeup count 2 sluice_crab
+makeup count 2 chain_gaoler
+makeup count 2 cinder_imp cinder_imp
+makeup count 1 chain_gaoler sluice_crab cinder_imp
+feature border
+tile shrub
+width 19
+rough 8
+name Foe Trial
+at 0 0

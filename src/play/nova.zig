@@ -30,8 +30,8 @@ pub const afflict = glacial.afflict;
 pub const AILMENT = glacial.AILMENT;
 
 /// Every cell within `RANGE` of `from` the burst reaches past the terrain, `from` aside.
-pub fn around(lv: *const grid.Level, from: P) areas.Burst {
-    return areas.spread(lv, from, RANGE, from, notAt);
+pub fn around(lv: *const grid.Level, from: P, wider: i32) areas.Burst {
+    return areas.spread(lv, from, RANGE + wider, from, notAt);
 }
 
 fn notAt(from: P, p: P) bool {
@@ -41,11 +41,12 @@ fn notAt(from: P, p: P) bool {
 test "a frost nova reaches every open cell within two tiles but the caster's, and stops at a wall" {
     var lv = grid.openFloor();
     const from = P{ .x = 20, .y = 20 };
-    var area = around(&lv, from);
+    var area = around(&lv, from, 0);
     try std.testing.expectEqual(OPEN_CELLS, area.n);
     try std.testing.expect(!area.has(from));
+    try std.testing.expectEqual(@as(usize, @intCast(grid.Cells.square(RANGE + 1) - 1)), around(&lv, from, 1).n);
     lv.set(.{ .x = 21, .y = 20 }, .wall);
-    area = around(&lv, from);
+    area = around(&lv, from, 0);
     try std.testing.expect(!area.has(.{ .x = 21, .y = 20 }));
     try std.testing.expect(!area.has(.{ .x = 22, .y = 20 }));
     try std.testing.expect(area.has(.{ .x = 22, .y = 22 }));

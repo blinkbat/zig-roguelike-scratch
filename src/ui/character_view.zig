@@ -12,6 +12,7 @@ const resilience = @import("../play/resilience.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const consumable = @import("../play/consumable.zig");
+const trade = @import("../play/trade.zig");
 const wording = @import("../core/wording.zig");
 const quest_log = @import("quests.zig");
 const P = mathx.P;
@@ -25,6 +26,7 @@ pub const Page = enum {
     quests,
     nearby,
     loot,
+    trade,
 
     pub fn of(key_page: input.CharacterPage) Page {
         return switch (key_page) {
@@ -34,7 +36,7 @@ pub const Page = enum {
 
     pub fn shortcut(self: Page) ?input.CharacterPage {
         return switch (self) {
-            .nearby, .loot => null,
+            .nearby, .loot, .trade => null,
             inline else => |page| @field(input.CharacterPage, @tagName(page)),
         };
     }
@@ -93,6 +95,7 @@ pub const Nearby = union(enum) {
     }
 };
 pub const Vital = struct { now: i32 = 0, max: i32 = 0 };
+pub const Dealer = struct { who: []const u8, shelf: *const trade.Wares };
 const Defence = struct { dodge: u32, armour: i32 };
 pub const View = struct {
     class: hero.Class,
@@ -114,6 +117,7 @@ pub const View = struct {
     /// Null with no hero standing: the sheet's own, without terrain or sunder.
     defence: ?Defence = null,
     quests: quest_log.Journal = .{},
+    dealer: ?Dealer = null,
 
     pub fn stats(v: View) attr.Attrs {
         var out = v.inventory.gear.stats(v.base);
@@ -140,6 +144,8 @@ pub const Command = union(enum) {
     open_loot: P,
     travel: P,
     bindings: skillbar.Act,
+    buy: usize,
+    sell: usize,
 
     pub fn verb(c: Command) [:0]const u8 {
         return verbOf(std.meta.activeTag(c));
@@ -159,5 +165,7 @@ pub fn verbOf(c: std.meta.Tag(Command)) [:0]const u8 {
         .open_loot => "Loot",
         .travel => "Travel",
         .bindings => "Bind skill",
+        .buy => "Buy",
+        .sell => "Sell",
     };
 }

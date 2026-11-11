@@ -320,16 +320,18 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
     g.sim.node = n;
     g.sim.outdoors = g.sim.outdoorsNow();
     const back = g.sim.visited.isSet(n);
+    const roll = rollOf(g.sim.seed, n);
     if (back) {
         revisit(g, &g.sim.visits[n]);
         const hero = g.sim.heroSlot().?;
         g.sim.lv.clear(g.sim.pool.items[hero].at);
     } else {
-        w.node[n].stamp(&g.sim.lv, rollOf(g.sim.seed, n));
+        w.node[n].stamp(&g.sim.lv, roll);
         g.sim.ground = .{};
     }
     talking.stampEntering(g, n, at, back);
-    const placing: []const atlas.Foe = if (back) &.{} else w.node[n].placed();
+    var laid: [atlas.MAX_FOES]atlas.Foe = undefined;
+    const placing: []const atlas.Foe = if (back) &.{} else w.node[n].placedOn(roll, &laid);
     const to = atlas.landing(&g.sim.lv, at, placing) orelse at;
     if (back) {
         const hero = g.sim.heroSlot().?;
@@ -338,7 +340,7 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
     } else {
         spawnHero(g, to);
         switch (w.node[n].plan) {
-            .procgen => w.node[n].placePacks(&g.sim.lv, &g.sim.pool, &g.sim.rng, to),
+            .procgen => w.node[n].populate(&g.sim.lv, &g.sim.pool, &g.sim.rng, to, roll),
             .bespoke => for (placing) |f| {
                 if (actor.dwells(f.kind, &g.sim.lv, f.at)) _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(f.kind, f.at));
             },
@@ -751,7 +753,7 @@ fn stunnedTurn(g: *Game) bool {
     const h = g.sim.heroActor() orelse return false;
     if (!h.clock.owes()) return false;
     h.clock.pass(turn_clock.TURN);
-    combat.endTurn(g);
+    combat.passTurn(g);
     return true;
 }
 

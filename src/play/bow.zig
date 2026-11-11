@@ -157,32 +157,49 @@ fn veiled(seen: ?*const actor.Pool, w: u16) bool {
 /// The bodies an arrow passes through, nearest first, each with its index along the flight.
 pub const Pierced = struct {
     flight: Flight = .{ .most = RANGE },
-    body: [RANGE]u16 = undefined,
-    step: [RANGE]usize = undefined,
+    body: [LONGEST]u16 = undefined,
+    step: [LONGEST]usize = undefined,
     n: usize = 0,
 };
 
 /// On through every body past `to`, out to full range; a barrel, wall or barrier still stops it.
 pub fn pierce(lv: *const grid.Level, from: P, to: P) Pierced {
-    return through(lv, null, from, to, false);
+    return through(lv, null, from, to, RANGE, LONGEST, false);
 }
 
 pub fn piercePreviewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to: P) Flight {
-    return through(lv, pool, from, to, true).flight;
+    return through(lv, pool, from, to, RANGE, LONGEST, true).flight;
 }
 
-fn through(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, comptime visible_only: bool) Pierced {
-    var out = Pierced{};
+/// `fly`, but a body it strikes lets it on through, up to `extra` more, out to `reach`.
+pub fn skewer(lv: *const grid.Level, from: P, to: P, reach: i32, extra: usize) Pierced {
+    return skewered(lv, null, from, to, reach, extra, false);
+}
+
+pub fn skewerPreviewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to: P, reach: i32, extra: usize) Flight {
+    return skewered(lv, pool, from, to, reach, extra, true).flight;
+}
+
+fn skewered(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, reach: i32, extra: usize, comptime visible_only: bool) Pierced {
+    const first = trace(lv, seen, from, to, visible_only);
+    const hit = first.struck orelse return .{ .flight = first };
+    if (hit != .body) return .{ .flight = first };
+    return through(lv, seen, from, to, reach, extra + 1, visible_only);
+}
+
+fn through(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, reach: i32, bodies: usize, comptime visible_only: bool) Pierced {
+    const far = @min(reach, LONGEST);
+    var out = Pierced{ .flight = .{ .most = @intCast(far) } };
     const d = mathx.dist(from, to);
     if (d == 0) return out;
     const f = &out.flight;
-    var ray = grid.Ray.init(from, from.add(to.sub(from).scaled(@divFloor(RANGE + d - 1, d))));
+    var ray = grid.Ray.init(from, from.add(to.sub(from).scaled(@divFloor(far + d - 1, d))));
     while (f.advance(lv, seen, &ray, to, visible_only)) |s| {
         if (s.body) |b| {
             out.body[out.n] = b;
             out.step[out.n] = f.len - 1;
             out.n += 1;
-            if (s.cell == .last) break;
+            if (s.cell == .last or out.n == bodies) break;
         } else if (s.cell == .last or (s.w == grid.NO_ONE and f.prop(lv, s.c))) break;
     }
     if (f.struck == null and out.n > 0) f.struck = .{ .body = out.body[out.n - 1] };
@@ -220,6 +237,22 @@ test "a piercing arrow passes every body in its line to full range and stops at 
     const stopped = pierce(&lv, from, .{ .x = 12, .y = 11 });
     try std.testing.expectEqualSlices(u16, &.{near}, stopped.body[0..stopped.n]);
     try std.testing.expectEqual(@as(?Hit, .{ .barrel = .{ .x = 13, .y = 11 } }), stopped.flight.struck);
+}
+
+test "a skewering arrow passes only its extra bodies, and one striking nothing still lands on its mark" {
+    var lv = grid.openFloor();
+    var pool = actor.Pool{};
+    const from = P{ .x = 10, .y = 10 };
+    const a = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 12, .y = 10 }));
+    const b = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 13, .y = 10 }));
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 14, .y = 10 }));
+    const s = skewer(&lv, from, .{ .x = 12, .y = 10 }, RANGE, 1);
+    try std.testing.expectEqualSlices(u16, &.{ a, b }, s.body[0..s.n]);
+    try std.testing.expectEqual(@as(?Hit, .{ .body = b }), s.flight.struck);
+    try std.testing.expectEqual(@as(usize, 3), s.flight.len);
+    const wide = skewer(&lv, from, .{ .x = 11, .y = 9 }, RANGE, 2);
+    try std.testing.expectEqual(@as(usize, 0), wide.n);
+    try std.testing.expectEqualDeep(fly(&lv, from, .{ .x = 11, .y = 9 }), wide.flight);
 }
 
 test "an arrow stops on the first body in the line" {

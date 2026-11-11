@@ -7,6 +7,7 @@ const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
+const windup = @import("../play/windup.zig");
 const skillbar = @import("../play/skillbar.zig");
 const glacial = @import("../play/glacial.zig");
 const tactics = @import("../play/tactics.zig");
@@ -651,6 +652,7 @@ pub fn drawMap(g: *game.Game) void {
     g.light.drawMap(-c.x, -c.y, game.CELL);
     g.cinema.drawAir(g.light, o, game.CELL_F, g.screen, if (game.weatherNow(g)) |w| w.get(.mist) else 0);
     drawTacticalGround(g, c, ground, lo, hi);
+    drawBraced(g, c);
     const level_up_at: ?[2]f32 = if (g.sim.heroSlot()) |i| (if (g.pic.drawnAt(&g.sim, i)) |v| game.middle(v) else null) else null;
     if (level_up_at) |at| g.pic.fx.level_up.drawBeam(at, o[0], o[1], game.CELL_F);
 
@@ -665,7 +667,7 @@ pub fn drawMap(g: *game.Game) void {
             switch (g.mode.aim.act()) {
                 inline else => |a| if (comptime a.bursts()) if (f.impact()) |at| {
                     if (g.sim.lv.isLit(at)) {
-                        const area = skillbar.Act.elemental(a).burst(&g.sim.lv, from, at);
+                        const area = skillbar.Act.elemental(a).burst(&g.sim.lv, from, at, g.sim.wider());
                         fillLit(g, c, area.slice(), look.aimArea(a));
                     }
                 },
@@ -687,7 +689,7 @@ pub fn drawMap(g: *game.Game) void {
                 const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, g.mode.aim.mark);
                 for (arc.slice()) |p| fillCell(c, p, look.AIM_PATH);
             } else if (comptime a.reticle() == .ground and @hasDecl(skillbar.Act.skill(a), "area")) {
-                const area = skillbar.Act.skill(a).area(&g.sim.lv, g.mode.aim.mark);
+                const area = skillbar.Act.skill(a).area(&g.sim.lv, g.mode.aim.mark, g.sim.wider());
                 if (aim_legal) fillLit(g, c, area.slice(), look.AIM_PATH);
             },
         }
@@ -744,6 +746,11 @@ pub fn drawMap(g: *game.Game) void {
     for (&g.pic.foe_shots) |*pending| {
         const s = pending.* orelse continue;
         if (s.t >= 0) drawShot(g, s, o);
+    }
+    for (&g.pic.bolts) |*pending| {
+        const b = pending.* orelse continue;
+        const at = b.at() orelse continue;
+        if (g.pic.litShown(&g.sim, mathx.cellOf(at))) fx.drawMissile(at, b.heading, .fireball, g.pic.fx.seconds.at(), o[0], o[1], game.CELL_F);
     }
     if (blooming) {
         g.cinema.endScene(outer, o, game.CELL_F, g.light);
@@ -844,7 +851,11 @@ fn drawShot(g: *const game.Game, s: game.presentation.Shot, o: [2]f32) void {
 
 pub fn drawFlight(s: *const game.presentation.Shot, o: [2]f32, cell: f32) void {
     const at = s.position(s.t);
-    if (s.net) fx.drawNet(at, s.t, o[0], o[1], cell) else fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], cell);
+    if (s.net) {
+        fx.drawNet(at, s.t, o[0], o[1], cell);
+    } else if (s.hook) {
+        fx.drawHook(mathx.centre(s.from), at, s.direction(), o[0], o[1], cell);
+    } else fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], cell);
 }
 
 pub const Kin = std.EnumSet(mathx.Dir);
@@ -894,6 +905,16 @@ fn kinOf(g: *const game.Game, p: P) Kin {
         if (grid.Level.inside(q) and flameAlpha(g, grid.Level.idx(q)) > 0) kin.insert(d);
     }
     return kin;
+}
+
+/// The line each braced foe the hero can see will charge or hook down, over the lit cells of it.
+fn drawBraced(g: *game.Game, c: Cam) void {
+    for (g.sim.pool.constSlice(), 0..) |a, i| {
+        const d = a.braced orelse continue;
+        if (!a.alive or g.pic.drawnAt(&g.sim, i) == null) continue;
+        const lane = windup.lane(&g.sim.lv, a.at, d, actor.braceReach(a.kind) orelse continue);
+        fillLit(g, c, lane.slice(), look.BRACED);
+    }
 }
 
 fn drawTacticalGround(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P) void {
@@ -967,6 +988,11 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
             if (pic.status.get(s) > 0) if (s.emission(game.middle(at), flicker)) |e| break e;
         } else continue;
         g.light.emit(ground, source);
+    }
+    for (&g.pic.bolts) |*pending| {
+        const at = (pending.* orelse continue).at() orelse continue;
+        if (!g.pic.litShown(&g.sim, mathx.cellOf(at))) continue;
+        if (fx.missileLight(at, .fireball)) |e| g.light.emit(ground, e);
     }
     for (&g.pic.flames_shown, 0..) |left, i| {
         if (left == 0 or !ground.lit[i]) continue;

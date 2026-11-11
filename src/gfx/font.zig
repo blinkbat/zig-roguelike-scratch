@@ -384,7 +384,7 @@ pub const SMALL_LINE: i32 = SMALL + LEADING;
 pub const HEAD_LINE: i32 = HEAD + LEADING;
 pub const BODY_LINE: i32 = BODY + LEADING;
 pub const WRAP_LINES_MAX: usize = 18;
-pub const WRAP_COLS_MAX: usize = 96;
+pub const WRAP_COLS_MAX: usize = 160;
 pub const Wrapped = [WRAP_LINES_MAX][WRAP_COLS_MAX + 1]u8;
 
 /// Words wider than a line split across it.

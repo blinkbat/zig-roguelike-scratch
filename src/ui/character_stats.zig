@@ -36,6 +36,7 @@ const Measure = union(enum) {
     physical,
     element: damage.Element,
     dodge,
+    block,
     style: attr.Style,
     thorns,
     gold_find,
@@ -51,6 +52,7 @@ const Measure = union(enum) {
             .physical => attributes.physical_bonus,
             .element => |e| attributes.element_bonus.get(e),
             .dodge => @intCast(figures.dodge),
+            .block => @intCast(attributes.blockChance()),
             .style => |s| attributes.increase(s),
             .thorns => attributes.thorns,
             .gold_find => attributes.gold_find,
@@ -61,7 +63,7 @@ const Measure = union(enum) {
     fn percent(measure: Measure) bool {
         return switch (measure) {
             .attribute, .thorns => false,
-            .reduction, .weapon_crit, .spell_crit, .physical, .element, .dodge, .style, .gold_find, .item_rarity => true,
+            .reduction, .weapon_crit, .spell_crit, .physical, .element, .dodge, .block, .style, .gold_find, .item_rarity => true,
         };
     }
 
@@ -76,6 +78,7 @@ const Measure = union(enum) {
                 inline else => |t| comptime menu.named(t) ++ " damage bonus",
             },
             .dodge => "Chance to dodge",
+            .block => "Chance to block",
             .style => |s| s.label(),
             .thorns => "Physical thorns damage",
             .gold_find => "Gold collected bonus",
@@ -249,7 +252,7 @@ fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: item_bases.WeaponEffe
     return out;
 }
 
-const DEFENCES = [_]Measure{ .reduction, .dodge };
+const DEFENCES = [_]Measure{ .reduction, .dodge, .block };
 const CRITS = [_]Measure{ .weapon_crit, .spell_crit };
 
 fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
@@ -293,7 +296,7 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     left.stat(.physical, figures, .plain, quiet(attributes.physical_bonus, look.PHYSICAL));
     for (std.enums.values(damage.Element)) |e| left.stat(.{ .element = e }, figures, .plain, quiet(attributes.element_bonus.get(e), look.elementInk(e)));
     var text: menu.Note(48) = .{};
-    text.say("{d}%", .{attr.CRIT_MULTI});
+    text.say("{d}%", .{attributes.critMulti()});
     left.entry("Critical damage multiplier", text.text(), .plain, look.TEXT);
     left.stat(.thorns, figures, .plain, quiet(attributes.thorns, look.PHYSICAL));
     left.y += SECTION_GAP;
@@ -301,7 +304,11 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     const perks = view.inventory.gear.perks(view.growth.perks());
     text.say("{d} / {d} turns", .{ hero.manaRegen(perks), hero.MANA_REGEN_TURNS });
     left.entry("Mana recovery", text.text(), .plain, look.MANA_TEXT);
+    const mending = view.inventory.gear.lifeRegen();
+    text.say("{d} / {d} turns", .{ mending, hero.LIFE_REGEN_TURNS });
+    left.entry("Life recovery", text.text(), .plain, quiet(mending, look.LIFE_TEXT));
     left.amount("Life on hit", "{d}", perks.life_on_hit, look.LIFE_TEXT);
+    left.amount("Damage leeched as life", "{d}%", view.inventory.gear.leech(), look.LIFE_TEXT);
     left.amount("Life on kill", "{d}", perks.life_on_kill, look.LIFE_TEXT);
     left.amount("Life flask recovery", "+{d}%", perks.life_flask, look.LIFE_TEXT);
     left.amount("Mana on kill", "{d}", view.inventory.gear.manaOnKill(), look.MANA_TEXT);

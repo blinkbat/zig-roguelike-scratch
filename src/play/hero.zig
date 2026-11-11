@@ -10,6 +10,8 @@ const NUMBERS = [_][]const u8{ "none", "one", "two", "three", "four", "five", "s
 pub const MANA_REGEN: i32 = 1;
 pub const MANA_REGEN_TURNS: i32 = 5;
 
+pub const LIFE_REGEN_TURNS: i32 = 5;
+
 pub fn manaRegen(perks: @import("passives.zig").Perks) i32 {
     return MANA_REGEN + perks.mana_regen;
 }

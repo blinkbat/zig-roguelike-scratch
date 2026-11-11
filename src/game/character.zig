@@ -20,6 +20,8 @@ const skills = @import("skills.zig");
 const tactics_exec = @import("tactics_exec.zig");
 const skillbar = @import("../play/skillbar.zig");
 const consumable = @import("../play/consumable.zig");
+const trade = @import("../play/trade.zig");
+const hero = @import("../play/hero.zig");
 const quest_log = @import("../ui/quests.zig");
 const script = atlas.script;
 const P = mathx.P;
@@ -179,7 +181,55 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
         v.loot_gold = pile.amount;
     };
     v.quests = book.journalOn(g.screen, g.face, questEntries(g, &g.journal));
+    if (g.character.page == .trade) v.dealer = dealerOf(g);
     return v;
+}
+
+fn dealerOf(g: *const game.Game) ?book.Dealer {
+    const w = g.sim.map orelse return null;
+    const npc = g.character.dealer;
+    if (npc >= w.script.npc_n) return null;
+    const shelf = &(g.sim.plot.wares[npc] orelse return null);
+    return .{ .who = w.script.npc[npc].called(), .shelf = shelf };
+}
+
+/// The conversation stays open beneath, and is back once the trade is done.
+pub fn openTrade(g: *game.Game, npc: u8) void {
+    const w = g.sim.map orelse return;
+    if (npc >= w.script.npc_n) return;
+    _ = g.sim.plot.shelf(npc, g.sim.seed);
+    openCharacter(g);
+    g.character.choose(.trade);
+    g.character.dealer = npc;
+}
+
+fn closeBook(g: *game.Game) void {
+    if (g.character.page != .trade or g.sim.plot.talk == null) return game.toPlay(g);
+    g.mode = .talk;
+    game.holdWalk(g);
+}
+
+fn deal(g: *game.Game, command: book.Command) void {
+    if (!drawnFor(g)) return;
+    const shelf = &(g.sim.plot.wares[g.character.dealer] orelse return);
+    const done = switch (command) {
+        .buy => |row| trade.buy(shelf, row, &g.sim.inventory, &g.sim.gold),
+        .sell => |row| trade.sell(row, &g.sim.inventory, &g.sim.gold),
+        else => unreachable,
+    } catch |err| {
+        g.character.message.say("{s}", .{trade.caption(err)});
+        return;
+    };
+    var name: [items.NAME_MAX]u8 = undefined;
+    const what = switch (done.ware) {
+        .item => |it| it.spoken(&name),
+        .supply => |k| consumable.phrase(k),
+    };
+    const verb = if (command == .buy) "Bought" else "Sold";
+    g.sim.log.push(.loot, "{s} {s} for " ++ hero.COINS_FMT ++ ".", .{ verb, what, done.gold });
+    g.character.message.say("{s} for " ++ hero.COINS_FMT, .{ verb, done.gold });
+    g.pic.gold_shown = g.sim.gold;
+    g.sim.unsaved = true;
 }
 
 pub fn openNearby(g: *game.Game) bool {
@@ -266,7 +316,8 @@ fn notYet(g: *game.Game) void {
 pub fn characterCommand(g: *game.Game, command: book.Command) void {
     defer settleLoot(g);
     switch (command) {
-        .close => g.mode = .play,
+        .close => closeBook(g),
+        .buy, .sell => deal(g, command),
         .bindings => |act| {
             binds.openBinds(g);
             if (g.sim.growth.unlocked(act)) g.binds.assigning = act;
@@ -313,7 +364,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
     const h = g.sim.heroActor() orelse return;
     const base = g.sim.growth.attributes(g.sim.class);
     switch (command) {
-        .close, .passive, .skill, .bindings, .open_loot, .use => unreachable,
+        .close, .passive, .skill, .bindings, .open_loot, .use, .buy, .sell => unreachable,
         .equip => |e| {
             g.sim.inventory.equip(e.index, e.slot, base) catch |err| {
                 itemFailed(g, err);
@@ -419,12 +470,14 @@ fn spendTurn(g: *game.Game) void {
 pub fn pauseStep(g: *game.Game) void {
     switch (g.pause_page) {
         .character => {
-            if (padToGame(g)) return;
+            const trading = g.character.page == .trade;
+            if (!trading and padToGame(g)) return;
             const view = bookView(g, &g.nearby);
-            if (g.character.direct() and view.nearby.len == 0) {
+            if (g.character.direct() and !trading and view.nearby.len == 0) {
                 g.mode = .play;
                 return;
             }
+            if (trading and view.dealer == null) return closeBook(g);
             if (g.character.step(&g.st, g.screen, view)) |command| characterCommand(g, command);
         },
         .debug => game.debugging.step(g),

@@ -50,7 +50,7 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
 
 fn warCry(g: *game.Game, from: P, rank: u8) void {
     for (g.sim.pool.slice(), 0..) |*a, slot| {
-        if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, from) > tactics.WarCry.RADIUS) continue;
+        if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, from) > tactics.WarCry.RADIUS + g.sim.wider()) continue;
         a.awake = true;
         if (!g.sim.procStatus(a, .fright, tactics.WarCry.chance(rank))) continue;
         if (a.frighten(tactics.WarCry.turns(rank))) g.sim.sayAt(a.at, actor.FLEES, .{actor.row(a.kind).name});
@@ -182,7 +182,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
             g.pic.settleHero(&g.sim, 0);
         },
         .caltrops => {
-            const area = tactics.Caltrops.area(&g.sim.lv, at);
+            const area = tactics.Caltrops.area(&g.sim.lv, at, g.sim.wider());
             for (area.slice()) |p| {
                 if (!g.sim.lv.isLit(p)) continue;
                 g.sim.lv.caltrops[grid.Level.idx(p)] = .{ .turns = tactics.Caltrops.laid(rank), .rank = rank };
@@ -190,7 +190,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
             g.pic.holdFlames(&g.sim.lv, game.CAST_S);
         },
         .gravity_well => {
-            const area = tactics.GravityWell.area(&g.sim.lv, at);
+            const area = tactics.GravityWell.area(&g.sim.lv, at, g.sim.wider());
             const ids = skills.foesIn(g, area);
             for (ids.slice()) |id| {
                 const a = g.sim.pool.get(id) orelse continue;
@@ -239,7 +239,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     const fuel: i32 = fuelOf(act, target);
     @field(target, @tagName(Skill.FUEL)) = .{};
     g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(struck)));
-    const area = Skill.area(&g.sim.lv, at);
+    const area = Skill.area(&g.sim.lv, at, g.sim.wider());
     const ids = skills.foesIn(g, area);
     var raw = attacks.rawElementFor(&g.sim, act);
     raw.elements.getPtr(Skill.ELEMENT).* += Skill.FUEL_DAMAGE * fuel;

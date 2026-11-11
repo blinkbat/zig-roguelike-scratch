@@ -73,6 +73,29 @@ pub const Gear = struct {
         return @max(0, self.sum(.bounding));
     }
 
+    pub fn lifeRegen(self: Gear) i32 {
+        return @max(0, self.sum(.life_regen));
+    }
+
+    pub fn leech(self: Gear) i32 {
+        return @max(0, self.sum(.leech));
+    }
+
+    /// Cells added to every area skill's radius.
+    pub fn wider(self: Gear) i32 {
+        return @max(0, self.sum(.area));
+    }
+
+    /// Foes a single-target projectile passes through before the one that stops it.
+    pub fn pierce(self: Gear) usize {
+        return @intCast(@max(0, self.sum(.pierce)));
+    }
+
+    /// Percent chance an action spends no turn.
+    pub fn haste(self: Gear) u32 {
+        return @intCast(std.math.clamp(self.sum(.haste), 0, mathx.PERCENT));
+    }
+
     /// Each flask's recovery bonus: life from `held`, which already counts worn grants; mana from worn mods alone.
     pub fn draughts(self: Gear, held: passives.Perks) flask.Bonus {
         return .{ .life = held.life_flask, .mana = self.sum(.mana_flask) };

@@ -157,6 +157,23 @@ fn captureTalk(g: *game.Game) !void {
         g.sim.plot.pick(&w.script, 0, g.sim.world(), &g.sim.log);
         try capture(g, target, SHOTS_DIR ++ "/talk-line-" ++ suffix ++ ".png");
         g.sim.plot = .{};
+        w.script.npc[0].looks = .caravan_guard;
+        game.talking.speak(g, 0);
+        try capture(g, target, SHOTS_DIR ++ "/talk-figure-" ++ suffix ++ ".png");
+        w.script.npc[0].looks = null;
+        g.sim.plot = .{};
+        g.mode = .play;
+        g.sim.gold = 60;
+        g.sim.inventory = .{};
+        if (!g.sim.inventory.add(.{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 2 }, null, null, null } }) or !g.sim.inventory.stock(.bandage)) return error.InventoryFull;
+        game.character.openTrade(g, 0);
+        try capture(g, target, SHOTS_DIR ++ "/trade-buy-" ++ suffix ++ ".png");
+        g.character.cursor = g.sim.plot.wares[0].?.count() - 1;
+        try capture(g, target, SHOTS_DIR ++ "/trade-buy-item-" ++ suffix ++ ".png");
+        g.character.selling = true;
+        g.character.cursor = 1;
+        try capture(g, target, SHOTS_DIR ++ "/trade-sell-" ++ suffix ++ ".png");
+        g.sim.plot = .{};
         g.mode = .play;
     }
 }

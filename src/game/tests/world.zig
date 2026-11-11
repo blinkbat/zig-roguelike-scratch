@@ -114,7 +114,7 @@ test "tight diagonals carry movement sight projectiles melee and gas in all four
             try std.testing.expect(bow.aimable(&g.sim.lv, from, p, bow.RANGE));
         }
         try std.testing.expect(juke.aimable(&g.sim.lv, from, ahead, juke.RANGE));
-        const cone = glacial.cone(&g.sim.lv, from, near);
+        const cone = glacial.cone(&g.sim.lv, from, near, 0);
         try std.testing.expect(cone.has(ahead) and cone.has(far));
         var reverse: [grid.CELLS]bool = @splat(false);
         fov.castInto(&g.sim.lv, far, actor.row(HERO).sight, &reverse);
@@ -631,4 +631,20 @@ test "thick smoke hides what lies past its nearest cell, both ways, and thin smo
     g.sim.pool.get(rat).?.awake = true;
     harness.use(g, .wait);
     try std.testing.expectEqual(@as(i32, 3), mathx.dist(g.sim.pool.get(rat).?.at, from));
+}
+
+test "a procgen node's section foe stands on its painted cell once the hero arrives" {
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    w.* = .{};
+    const n = w.add(.{ .procgen = .{ .floor = .{ .open = .{} } } }).?;
+    const s = &w.node[n].plan.procgen.section;
+    const den = P{ .x = 30, .y = 30 };
+    try std.testing.expect(s.paint(den, .floor) and s.addFoe(.{ .kind = .goblin, .at = den }));
+    w.start = .{ .node = n, .at = .{ .x = 60, .y = 30 } };
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, 11);
+    const id = g.sim.lv.who(den);
+    try std.testing.expectEqual(actor.Kind.goblin, g.sim.pool.getConst(id).?.kind);
 }

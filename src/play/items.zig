@@ -85,16 +85,19 @@ pub const Item = struct {
     pub fn apply(self: Item, a: *attrs.Attrs) void {
         const base = item_bases.spec(self.kind);
         a.armour += base.armour;
+        a.block += base.block;
         if (base.innate) |innate| innate.apply(a);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
             .physical_damage => a.physical_bonus += m.value,
+            .crit_damage => a.crit_damage += m.value,
+            .block => a.block += m.value,
             .resistance => a.resists.getPtr(m.element).* += m.value,
             .thorns => a.thorns += m.value,
             .spoils => {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity => {},
+            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .life_regen, .leech, .area, .pierce, .haste => {},
             inline else => |k| k.grant(m.value).apply(a),
         };
     }

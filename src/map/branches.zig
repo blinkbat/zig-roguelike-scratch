@@ -145,6 +145,11 @@ pub fn improves(params: wilds.Params) bool {
 }
 
 pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Params) Result {
+    return improveRound(lv, seed, doors, params, &grid.CellSet.initEmpty());
+}
+
+/// Digging no loop through a `kept` cell and leaving no reward on one.
+pub fn improveRound(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Params, kept: *const grid.CellSet) Result {
     var result = Result{};
     const loops = params.loops;
     if (!improves(params)) return result;
@@ -168,7 +173,7 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
         if (!rng.percent(loops)) continue;
         const neck = Graph.first(lv, b.neck) orelse continue;
         _ = grid.distances(lv, neck, &distances, &queue);
-        if (rejoin(lv, &g, b, &distances, &queue, pal)) {
+        if (rejoin(lv, &g, b, &distances, &queue, pal, kept)) {
             result.loops += 1;
             g.build(lv, doors);
         }
@@ -184,7 +189,7 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
                 var deepest: i32 = MIN_DEPTH - 1;
                 for (0..grid.CELLS) |i| {
                     const p = grid.Level.of(i);
-                    if (!g.contains(b.root, Graph.cell(p)) or distances[i] <= deepest or !rewardAt(lv, p)) continue;
+                    if (!g.contains(b.root, Graph.cell(p)) or distances[i] <= deepest or !rewardAt(lv, p) or kept.isSet(i)) continue;
                     deepest = distances[i];
                     far = p;
                 }
@@ -201,8 +206,8 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
         blocked.wallBarrels();
         const origin = blocked.firstOpen() orelse return result;
         const available = blocked.openCount();
-        result.chests += stock(lv, &blocked, origin, doors, &rng, .chest, Reward.chest.target(available));
-        result.barrels = stock(lv, &blocked, origin, doors, &rng, .barrel, Reward.barrel.target(available));
+        result.chests += stock(lv, &blocked, origin, doors, &rng, .chest, Reward.chest.target(available), kept);
+        result.barrels = stock(lv, &blocked, origin, doors, &rng, .barrel, Reward.barrel.target(available), kept);
     }
     return result;
 }
@@ -240,7 +245,7 @@ pub const Reward = enum {
     }
 };
 
-fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng: *mathx.Rng, kind: Reward, target: usize) usize {
+fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng: *mathx.Rng, kind: Reward, target: usize, kept: *const grid.CellSet) usize {
     const rule = kind.rule();
     var spots: [grid.CELLS]P = undefined;
     var count: usize = 0;
@@ -249,7 +254,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
     for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);
         if (kind.has(lv, p)) _ = mathx.push(P, &placed, &have, p);
-        if (!rewardAt(lv, p) or p.eq(origin)) continue;
+        if (!rewardAt(lv, p) or p.eq(origin) or kept.isSet(i)) continue;
         if (grid.anyNear(p, doors, DOOR_CLEAR)) continue;
         var edges: usize = 0;
         for (mathx.CARDINALS) |d| {
@@ -321,7 +326,7 @@ fn rewardAt(lv: *const grid.Level, p: P) bool {
     return lv.at(p).rewards();
 }
 
-fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.CELLS]i32, queue: *[grid.CELLS]u32, pal: carve.Palette) bool {
+fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.CELLS]i32, queue: *[grid.CELLS]u32, pal: carve.Palette, kept: *const grid.CellSet) bool {
     var previous: [grid.CELLS]u32 = @splat(std.math.maxInt(u32));
     var depth: [grid.CELLS]u8 = @splat(0);
     var head: usize = 0;
@@ -333,7 +338,7 @@ fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.C
             const q = p.add(dir.delta());
             if (grid.Level.onRim(q) or lv.at(q) != pal.solid) continue;
             const k = grid.Level.idx(q);
-            if (depth[k] != 0) continue;
+            if (depth[k] != 0 or kept.isSet(k)) continue;
             depth[k] = 1;
             previous[k] = @intCast(i);
             queue[tail] = @intCast(k);
@@ -355,7 +360,7 @@ fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.C
                 }
                 return true;
             }
-            if (lv.at(q) != pal.solid or depth[k] != 0 or depth[i] == DIG_MAX) continue;
+            if (lv.at(q) != pal.solid or depth[k] != 0 or depth[i] == DIG_MAX or kept.isSet(k)) continue;
             depth[k] = depth[i] + 1;
             previous[k] = i;
             queue[tail] = @intCast(k);
@@ -418,7 +423,7 @@ test "scattered rewards leave narrow routes and the approach to existing treasur
     var blocked = lv;
     var rng = mathx.Rng.init(44);
     for ([_]Reward{ .chest, .barrel }) |kind| {
-        try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, kind, kind.rule().total));
+        try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, kind, kind.rule().total, &grid.CellSet.initEmpty()));
     }
     const at = P{ .x = 40, .y = 10 };
     lv.set(at.add(.{ .x = 0, .y = 1 }), .chest);

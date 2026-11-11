@@ -43,9 +43,9 @@ const sky = @import("sky.zig");
 pub fn matterOf(kind: ?actor.Kind) Matter {
     const k = kind orelse return .wood;
     return switch (k) {
-        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .bog_leech, .goblin, .caravan_guard => .blood,
+        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .bog_leech, .goblin, .sluice_crab, .chain_gaoler, .caravan_guard => .blood,
         .slime, .slime_half, .slime_quarter => .ooze,
-        .bloat, .frost_wisp, .pyre_bloat => .ichor,
+        .bloat, .frost_wisp, .pyre_bloat, .cinder_imp => .ichor,
         .mimic, .skeleton => .wood,
     };
 }
@@ -232,6 +232,7 @@ comptime {
 }
 const WARD_DOTS = 48;
 const SHOCK_SPARKS = 4;
+const EXPOSED_CRACKS: u8 = 3;
 const SHOCK_HZ: f32 = 9;
 const CONFUSION_DOTS = 3;
 /// Cells under a body's top its blindness and confusion marks sit, and how wide confusion circles.
@@ -612,6 +613,7 @@ pub const Fx = struct {
             .enfeebled => &drawEnfeebled,
             .maimed => &drawMaimed,
             .frightened => &drawFrightened,
+            .exposed => &drawExposed,
             .warded => &drawWarded,
             .resistant, .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => null,
         };
@@ -747,6 +749,12 @@ pub const Fx = struct {
             const mid = rl.Vector2{ .x = cx + m.cell * 0.04, .y = top + m.cell * 0.08 };
             pixel.bend(.{ .x = cx, .y = top }, mid, .{ .x = cx - m.cell * 0.02, .y = top + m.cell * 0.16 }, 1, k, m.ink);
         }
+    }
+
+    fn drawExposed(self: *const Fx, m: Mark) void {
+        var cracked = m;
+        cracked.stacks = EXPOSED_CRACKS;
+        self.drawSundered(cracked);
     }
 
     fn drawBlinded(_: *const Fx, m: Mark) void {
@@ -1144,6 +1152,24 @@ pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, 
     drawArrow(p, dir, col, .{ ox, oy }, k);
 }
 
+/// A chain run out from `from` to a barbed head at `at`, pointing `dir`.
+pub fn drawHook(from: [2]f32, at: [2]f32, dir: [2]f32, ox: f32, oy: f32, cell: f32) void {
+    const a = projected(from, ox, oy, cell);
+    const p = projected(at, ox, oy, cell);
+    const k = pxScale(cell);
+    pixel.line(a, p, 1, k, look.CHAIN);
+    const span = mathx.len(p.x - a.x, p.y - a.y);
+    var along: f32 = HOOK_LINK * k;
+    while (along < span) : (along += HOOK_LINK * k) pixel.fleck(.{ .x = a.x + dir[0] * along, .y = a.y + dir[1] * along }, 1.5, k, look.CHAIN);
+    for ([_]f32{ -1, 1 }) |side| {
+        const barb = rl.Vector2{ .x = p.x - dir[0] * HOOK_BARB * k - dir[1] * side * HOOK_BARB * k, .y = p.y - dir[1] * HOOK_BARB * k + dir[0] * side * HOOK_BARB * k };
+        pixel.line(p, barb, 2, k, look.CHAIN);
+    }
+}
+
+const HOOK_LINK: f32 = 6;
+const HOOK_BARB: f32 = 5;
+
 const NET_SPIN: f32 = 14;
 const NET_R: f32 = 8;
 
@@ -1408,7 +1434,7 @@ test "glacial frost waits for impact then fills only its cone and clears without
     const lv = grid.openFloor();
     var fx = Fx{};
     const at = mathx.P{ .x = 20, .y = 20 };
-    const area = glacial.cone(&lv, .{ .x = 15, .y = 20 }, at);
+    const area = glacial.cone(&lv, .{ .x = 15, .y = 20 }, at, 0);
     fx.burst(0.2, .{ .at = at, .area = area, .element = .cold });
     fx.step(&lv, 0.1);
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying);

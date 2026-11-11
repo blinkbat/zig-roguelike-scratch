@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const actor = @import("actor.zig");
 const log = @import("log.zig");
+const trade = @import("trade.zig");
 const script = @import("../map/script.zig");
 const P = mathx.P;
 const Script = script.Script;
@@ -57,6 +58,16 @@ pub const Runtime = struct {
     talk: ?Talk = null,
     quests: [script.MAX_QUESTS]Progress = @splat(.{}),
     spots: script.Stood = @splat(null),
+    /// The NPC a spoken `trade` asked to deal with, taken the same frame.
+    trading: ?u8 = null,
+    /// Each merchant's shelf, stocked the first time it trades.
+    wares: [script.MAX_NPCS]?trade.Wares = @splat(null),
+
+    pub fn shelf(self: *Runtime, npc: u8, run_seed: u64) *trade.Wares {
+        const w = &self.wares[npc];
+        if (w.* == null) w.* = trade.Wares.roll(run_seed, npc);
+        return &w.*.?;
+    }
 
     pub fn died(self: *Runtime, k: actor.Kind) void {
         self.deaths.getPtr(k.family()).* +|= 1;
@@ -158,7 +169,7 @@ pub const Runtime = struct {
                     r.at += 1;
                     r.preserved = true;
                 },
-                .text, .flag, .counter, .timer, .quest => {
+                .text, .flag, .counter, .timer, .quest, .trade => {
                     r.at += 1;
                     self.apply(s, a, l);
                 },
@@ -172,6 +183,9 @@ pub const Runtime = struct {
     pub fn apply(self: *Runtime, s: *const Script, a: *const script.Act, l: *log.Log) void {
         switch (a.kind) {
             .dialog, .wait, .preserve => {},
+            .trade => if (self.talk) |t| {
+                self.trading = t.npc;
+            },
             .quest => self.advanceQuest(s, a, l),
             .text => l.say("{s}", .{a.note.text()}),
             .flag => self.flags[a.slot] = switch (a.setop) {
@@ -209,6 +223,12 @@ pub const Runtime = struct {
                 if (was == .unstarted) l.say(QUEST_BEGUN, .{title}) else l.say(QUEST_MOVED, .{title});
             },
         }
+    }
+
+    pub fn takeTrading(self: *Runtime) ?u8 {
+        const npc = self.trading orelse return null;
+        self.trading = null;
+        return npc;
     }
 
     pub fn takeAsked(self: *Runtime) ?u8 {

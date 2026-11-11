@@ -247,6 +247,7 @@ pub fn validate(snapshot: *Snapshot) !void {
     for (&run.inventory.stacks.values) |*carried| carried.* = @min(carried.*, consumable.STACK_MAX);
     if (run.inventory.n > inventory.BAG_MAX) return error.Damaged;
     run.inventory.mend();
+    for (&snapshot.portable.plot.wares) |*shelf| if (shelf.*) |*w| w.mend();
     run.log.scroll = @min(run.log.scroll, run.log.n -| 1);
     try validateLevel(&run.lv, &run.pool, &run.ground);
     try validateLog(&run.log);
@@ -261,7 +262,10 @@ pub fn validate(snapshot: *Snapshot) !void {
                 if (!grid.Level.inside(door.at)) return error.Damaged;
             }
             switch (node.plan) {
-                .procgen => |*plan| plan.* = plan.fit(),
+                .procgen => |*plan| {
+                    if (!plan.section.valid()) return error.Damaged;
+                    plan.* = plan.fit();
+                },
                 .bespoke => |*plan| {
                     for (plan.foes()) |foe| {
                         if (!foe.kind.foe() or !grid.Level.inside(foe.at)) return error.Damaged;
@@ -296,6 +300,8 @@ fn validatePlot(plot: *const @FieldType(data.Portable, "plot"), s: *const atlas.
     if (plot.asked) |d| if (d >= s.dialog_n) return error.Damaged;
     for (plot.spots) |spot| if (spot) |p| if (!grid.Level.inside(p)) return error.Damaged;
     for (plot.quests) |q| if (!atlas.script.STAGE_SPAN.holds(q.stage)) return error.Damaged;
+    if (plot.trading) |f| if (f >= s.npc_n) return error.Damaged;
+    for (plot.wares, 0..) |shelf, i| if (shelf) |w| if (i >= s.npc_n or !w.valid()) return error.Damaged;
     const talk = plot.talk orelse return;
     if (talk.dialog >= s.dialog_n or talk.line >= s.dialog[talk.dialog].line_n or talk.cursor >= atlas.script.MAX_CHOICES) return error.Damaged;
     if (talk.npc) |f| if (f >= s.npc_n) return error.Damaged;
@@ -333,6 +339,7 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *ground_it
         if (body.max > BODY_MOST or body.bleed.amount > BODY_MOST or body.clock.ticks < -BODY_MOST or body.clock.ticks > BODY_MOST) return error.Damaged;
         if (body.sunder.stacks > sunder.MOST or (body.sunder.stacks == 0) != (body.sunder.turns == 0)) return error.Damaged;
         if (body.maim.limp and body.maim.turns == 0) return error.Damaged;
+        if (body.bolt) |b| if (!b.valid() or actor.row(body.kind).hurls == null) return error.Damaged;
     }
     for (level.occupant, 0..) |id, index| {
         if (id == grid.NO_ONE) continue;

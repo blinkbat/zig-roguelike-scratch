@@ -1,0 +1,17 @@
+roguelike-map 1
+start 0 48 32
+node procgen open
+name Market
+dialog pedlar
+line root
+who Pedlar
+say Salt, rope and steel. Gold first, then we talk.
+ask Show me your wares. -> end
+gets trade
+ask What else is there? -> more
+gets trade
+ask Farewell. -> end
+line more
+say Nothing a traveller like you can afford.
+npc 0 far pedlar Pedlar
+looks caravan_guard

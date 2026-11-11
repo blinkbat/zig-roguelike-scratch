@@ -64,6 +64,7 @@ test {
     _ = @import("map/carve.zig");
     _ = @import("map/branches.zig");
     _ = @import("map/procgen.zig");
+    _ = @import("map/section.zig");
     _ = @import("map/biome/cavern.zig");
     _ = @import("map/biome/caves.zig");
     _ = @import("map/biome/dunes.zig");
@@ -145,9 +146,12 @@ test {
     _ = @import("play/chain.zig");
     _ = @import("play/ward.zig");
     _ = @import("play/charge.zig");
+    _ = @import("play/windup.zig");
+    _ = @import("play/firebolt.zig");
     _ = @import("play/clock.zig");
     _ = @import("play/flask.zig");
     _ = @import("play/consumable.zig");
+    _ = @import("play/trade.zig");
     _ = @import("play/pack.zig");
     _ = @import("play/post.zig");
     _ = @import("play/raid.zig");

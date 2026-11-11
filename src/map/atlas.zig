@@ -13,6 +13,7 @@ const climate = @import("climate.zig");
 const listing = @import("listing.zig");
 const atlas_text = @import("atlas_text.zig");
 pub const script = @import("script.zig");
+pub const section = @import("section.zig");
 
 const P = mathx.P;
 
@@ -22,7 +23,7 @@ pub fn holdsNodes(n: usize, at: usize) bool {
     return n > 0 and n <= MAX_NODES and at < n;
 }
 
-pub const MAX_FOES: usize = actor.MAX - actor.most(actor.HERO);
+pub const MAX_FOES = section.MAX_FOES;
 pub const DIR = "maps";
 pub const EXT = ".map";
 pub const MAIN = mapPath("main");
@@ -64,7 +65,7 @@ pub const Link = struct {
 
 pub const Door = struct { at: P, to: ?Link = null };
 
-pub const Foe = struct { kind: actor.Kind, at: P };
+pub const Foe = section.Foe;
 
 pub const Algo = procgen.Algo;
 pub const Floor = procgen.Floor;
@@ -83,6 +84,7 @@ pub const Procgen = struct {
     sky: climate.Climate = .{},
     post: post.Post = .{},
     raid: raid.Raid = .{},
+    section: section.Section = .{},
 
     pub fn features(self: *const Procgen) []const Feature {
         return self.feature[0..self.feature_n];
@@ -358,16 +360,47 @@ pub const Node = struct {
 
     /// A procgen node's guards by its carts, then its packs round the hero arriving at `at`, exit packs by its doors.
     pub fn placePacks(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P) void {
+        self.packsOff(lv, pool, rng, at, &grid.CellSet.initEmpty());
+    }
+
+    /// The foes of the section `roll` laid, each on its cell while the pool has room, then `placePacks` with no pack on a painted cell.
+    pub fn populate(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, roll: u64) void {
+        const laid = self.sectionOn(roll) orelse return self.placePacks(lv, pool, rng, at);
+        for (self.plan.procgen.section.foes()) |f| {
+            const s = laid.foe(f);
+            if (pool.hasRoomFor(s.kind) and actor.dwells(s.kind, lv, s.at)) _ = pool.spawn(lv, actor.Actor.of(s.kind, s.at));
+        }
+        const painted = laid.cells();
+        self.packsOff(lv, pool, rng, at, &painted);
+    }
+
+    fn packsOff(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, off: *const grid.CellSet) void {
         post.place(lv, pool, self.plan.procgen.post);
         var buf: [grid.MAX_DOORS]P = undefined;
-        pack.place(lv, pool, rng, at, self.doorCells(&buf), &self.plan.procgen.foes);
+        pack.placeOff(lv, pool, rng, at, self.doorCells(&buf), &self.plan.procgen.foes, off);
+    }
+
+    pub fn sectionOn(self: *const Node, roll: u64) ?section.Placed {
+        var buf: [grid.MAX_DOORS]P = undefined;
+        return switch (self.plan) {
+            .procgen => |*pg| pg.section.lands(roll, self.doorCells(&buf)),
+            .bespoke => null,
+        };
+    }
+
+    /// Where the plan stands its foes on `roll`: a bespoke node's as painted, a procgen node's section's where it landed.
+    pub fn placedOn(self: *const Node, roll: u64, buf: *[MAX_FOES]Foe) []const Foe {
+        const laid = self.sectionOn(roll) orelse return self.placed();
+        const fs = self.plan.procgen.section.foes();
+        for (fs, buf[0..fs.len]) |f, *out| out.* = laid.foe(f);
+        return buf[0..fs.len];
     }
 
     pub fn stamp(self: *const Node, lv: *grid.Level, roll: u64) void {
         var buf: [grid.MAX_DOORS]P = undefined;
         const cells = self.doorCells(&buf);
         switch (self.plan) {
-            .procgen => |*pg| procgen.roll(lv, roll, cells, pg.floor, pg.features()),
+            .procgen => |*pg| procgen.rollWith(lv, roll, cells, pg.floor, pg.features(), pg.section.lands(roll, cells)),
             .bespoke => |*b| {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;
@@ -1100,4 +1133,57 @@ test "every map in the maps folder parses, and each procgen node rolls its groun
             rolled += 1;
         }
     }
+}
+
+test "a section's foes stand on their cells wherever it lands, packs keep off its cells, and the pool never overfills" {
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const n = a.add(.{ .procgen = .{ .floor = procgen.Floor.of(.open), .foes = .{ .packs = 12 } } }).?;
+    const door = P{ .x = 0, .y = 30 };
+    _ = a.addDoor(n, door);
+    const nd = &a.node[n];
+    const s = &nd.plan.procgen.section;
+    s.anchor = .roams;
+    var it = grid.Box.sized(.{ .x = 10, .y = 10 }, 9, 6).cells();
+    while (it.next()) |p| _ = s.paint(p, .floor);
+    for (0..4) |k| try std.testing.expect(s.addFoe(.{ .kind = .slime, .at = .{ .x = @intCast(11 + k * 2), .y = 12 } }));
+    try std.testing.expect(s.addFoe(.{ .kind = .rat, .at = .{ .x = 14, .y = 14 } }));
+    var lv: grid.Level = undefined;
+    var buf: [MAX_FOES]Foe = undefined;
+    var corners = grid.CellSet.initEmpty();
+    var moved: usize = 0;
+    var packed_foes: usize = 0;
+    var astray: usize = 0;
+    const RUNS = 50;
+    for (0..RUNS) |i| {
+        const roll = 0xF0E +% i *% grid.TEST_SEED_STRIDE;
+        nd.stamp(&lv, roll);
+        const placed = nd.placedOn(roll, &buf);
+        try std.testing.expectEqual(s.foe_n, placed.len);
+        const at = landing(&lv, door, placed) orelse return error.NoFloor;
+        var pool = actor.Pool{};
+        _ = pool.spawn(&lv, actor.Actor.of(actor.HERO, at));
+        var rng = mathx.Rng.init(roll);
+        nd.populate(&lv, &pool, &rng, at, roll);
+        try std.testing.expect(pool.eventual() <= actor.MAX);
+        const laid = nd.sectionOn(roll).?;
+        const k = grid.Level.idx(laid.area.lo);
+        if (!corners.isSet(k)) moved += 1;
+        corners.set(k);
+        const painted = laid.cells();
+        for (placed) |f| {
+            const id = lv.who(f.at);
+            try std.testing.expect(id != grid.NO_ONE);
+            try std.testing.expectEqual(f.kind, pool.items[actor.Pool.slot(id)].kind);
+        }
+        for (pool.constSlice()) |b| {
+            if (!b.foe() or (for (placed) |f| {
+                if (f.at.eq(b.at)) break true;
+            } else false)) continue;
+            packed_foes += 1;
+            if (painted.isSet(grid.Level.idx(b.at))) astray += 1;
+        }
+    }
+    try std.testing.expect(moved * 2 > RUNS and packed_foes > RUNS);
+    try std.testing.expectEqual(@as(usize, 0), astray);
 }

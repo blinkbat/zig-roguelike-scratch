@@ -5,7 +5,7 @@ const fov = @import("../map/fov.zig");
 
 const P = mathx.P;
 
-pub const BURST_MAX: i32 = 2;
+pub const BURST_MAX: i32 = 3;
 pub const Burst = grid.Bounded(P, grid.Cells.square(BURST_MAX));
 
 fn castR(range: i32) i32 {
@@ -24,8 +24,8 @@ pub fn wetIn(lv: *const grid.Level, at: P, range: i32) Burst {
     return reached(lv, at, range, grid.Level.wetAt, {}, every);
 }
 
-fn reached(lv: *const grid.Level, at: P, range: i32, comptime ground: fn (*const grid.Level, P) bool, ctx: anytype, comptime keep: fn (@TypeOf(ctx), P) bool) Burst {
-    std.debug.assert(range <= BURST_MAX);
+fn reached(lv: *const grid.Level, at: P, wanted: i32, comptime ground: fn (*const grid.Level, P) bool, ctx: anytype, comptime keep: fn (@TypeOf(ctx), P) bool) Burst {
+    const range = @min(wanted, BURST_MAX);
     var out = Burst{};
     var visible: [grid.CELLS]bool = @splat(false);
     fov.castInto(lv, at, castR(range), &visible);
@@ -45,12 +45,12 @@ pub fn patch(lv: *const grid.Level, at: P, range: i32) Burst {
 pub fn Patch(comptime range: i32) type {
     comptime std.debug.assert(range <= BURST_MAX);
     return struct {
-        pub fn area(lv: *const grid.Level, at: P) Burst {
-            return patch(lv, at, range);
+        pub fn area(lv: *const grid.Level, at: P, wider: i32) Burst {
+            return patch(lv, at, range + wider);
         }
 
-        pub fn burst(lv: *const grid.Level, _: P, impact: P) Burst {
-            return patch(lv, impact, range);
+        pub fn burst(lv: *const grid.Level, _: P, impact: P, wider: i32) Burst {
+            return patch(lv, impact, range + wider);
         }
     };
 }
@@ -75,4 +75,13 @@ test "a burst's wet cells take the deep water round it as well as the shallows a
     const area = patch(&lv, at, 1);
     try std.testing.expect(!area.has(deep) and area.has(shallow));
     try std.testing.expect(!wetIn(&lv, at, 2).has(walled));
+}
+
+test "a wider patch grows by its bonus and stops at the largest burst" {
+    var lv = grid.openFloor();
+    const at = P{ .x = 20, .y = 20 };
+    const One = Patch(1);
+    try std.testing.expectEqual(@as(usize, @intCast(grid.Cells.square(1))), One.area(&lv, at, 0).n);
+    try std.testing.expectEqual(@as(usize, @intCast(grid.Cells.square(2))), One.area(&lv, at, 1).n);
+    try std.testing.expectEqual(@as(usize, @intCast(grid.Cells.square(BURST_MAX))), One.burst(&lv, at, at, 9).n);
 }

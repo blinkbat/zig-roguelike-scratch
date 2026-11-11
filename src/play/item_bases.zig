@@ -118,6 +118,10 @@ pub const Kind = enum {
         };
     }
 
+    pub fn blocks(k: Kind) bool {
+        return spec(k).block > 0;
+    }
+
     pub fn flaskOf(k: Kind) ?flask.Kind {
         const innate = spec(k).innate orelse return null;
         return if (innate == .flask) innate.flask else null;
@@ -125,6 +129,7 @@ pub const Kind = enum {
 };
 
 pub const ON_HIT_FMT = "{d}% chance to {s} on hit";
+pub const BLOCK_FMT = "+{d}% chance to block";
 
 pub const WeaponEffect = struct {
     bleed: u32 = 0,
@@ -200,6 +205,7 @@ pub const Spec = struct {
     /// A spellcaster's implement, which rolls spell modifiers.
     caster: bool = false,
     armour: i16 = 0,
+    block: i16 = 0,
     innate: ?Innate = null,
 };
 
@@ -219,9 +225,9 @@ const SPECS = std.EnumArray(Kind, Spec).init(.{
     .wand = .{ .name = "Wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = .{ .spell_crit = 8 } },
     .tome = .{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = Innate.stat(.mana, 3) },
     .orb = .{ .name = "Orb", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = .{ .spell_crit = 6 } },
-    .buckler = .{ .name = "Buckler", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2, .innate = Innate.stat(.dodge, 4) },
+    .buckler = .{ .name = "Buckler", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2, .block = 10, .innate = Innate.stat(.dodge, 4) },
     .totem = .{ .name = "Totem", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.life_on_kill, 1) },
-    .shield = .{ .name = "Wooden shield", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6 },
+    .shield = .{ .name = "Wooden shield", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6, .block = 20 },
     .cap = .{ .name = "Leather cap", .slots = &.{.helm}, .armour = 2 },
     .helmet = .{ .name = "Iron helm", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4, .innate = Innate.stat(.life, 3) },
     .leather = .{ .name = "Leather armour", .slots = &.{.chest}, .needs = .{ .strength = 10 }, .armour = 5, .innate = Innate.stat(.dodge, 5) },

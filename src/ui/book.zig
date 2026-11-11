@@ -6,6 +6,7 @@ const character_stats = @import("character_stats.zig");
 pub const Page = character_view.Page;
 pub const PAGES = character_view.PAGES;
 pub const Nearby = character_view.Nearby;
+pub const Dealer = character_view.Dealer;
 pub const View = character_view.View;
 pub const Command = character_view.Command;
 pub const SIZE = layout.SIZE;
@@ -16,6 +17,13 @@ pub fn journalOn(screen: P, face: font.Face, entries: []const quest_log.Entry) q
 }
 pub const verifyCards = item_card.verify;
 pub const verifyStats = character_stats.verify;
+const SELL_LIST = "Sell list";
+const BUY_LIST = "Buy list";
+const THEIR_WARES = "Their wares";
+const YOUR_GOODS = "Your goods";
+const SOLD_OUT = "Nothing left to sell you";
+const NOTHING_TO_SELL = "Nothing to sell";
+const TRADE_TITLE_MAX = 48;
 const BOTH_HANDS = "Both hands";
 const BOTH_IN_USE = BOTH_HANDS ++ " in use";
 const EMPTY = "Empty";
@@ -30,6 +38,7 @@ const inventory = @import("../play/inventory.zig");
 const item_bases = @import("../play/item_bases.zig");
 const items = @import("../play/items.zig");
 const consumable = @import("../play/consumable.zig");
+const trade = @import("../play/trade.zig");
 const progress = @import("../play/progress.zig");
 const passives = @import("../play/passives.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -50,6 +59,8 @@ pub const Book = struct {
     last_page: Page = .equipment,
     last_cursor: usize = 0,
     loot_at: P = .{ .x = 0, .y = 0 },
+    /// The NPC the trade page deals with.
+    dealer: u8 = 0,
     zoom: f32 = trees.ZOOM_START,
     pan: rl.Vector2 = .{ .x = 0, .y = 0 },
     destination_index: usize = 0,
@@ -57,6 +68,8 @@ pub const Book = struct {
     message: menu.Note(80) = .{},
     advanced: bool = false,
     tabbing: bool = false,
+    /// On the trade page: the hero's goods listed, not the merchant's.
+    selling: bool = false,
 
     pub fn open(self: *Book) void {
         if (self.direct()) {
@@ -79,6 +92,7 @@ pub const Book = struct {
         self.cursor = 0;
         self.top = 0;
         self.tabbing = false;
+        self.selling = false;
         self.resetView();
     }
     fn resetView(self: *Book) void {
@@ -110,7 +124,24 @@ pub const Book = struct {
             .passives => passives.NODES.len,
             .skills => progress.skills(view.class).len,
             .nearby, .loot => view.nearby.len,
+            .trade => if (view.dealer) |d| (if (self.selling) trade.carried(view.inventory) else d.shelf.count()) else 0,
         };
+    }
+    fn ware(self: *const Book, view: View) ?trade.Ware {
+        const d = view.dealer orelse return null;
+        return if (self.selling) trade.carriedAt(view.inventory, self.cursor) else d.shelf.at(self.cursor);
+    }
+    fn wareItem(self: *const Book, view: View, w: trade.Ware) ?items.Item {
+        return switch (w) {
+            .supply => null,
+            .item => |i| if (self.selling) view.inventory.bag[i] else view.dealer.?.shelf.item[i],
+        };
+    }
+    fn askedFor(self: *const Book, view: View, w: trade.Ware) i32 {
+        return if (self.selling) trade.worth(view.inventory, w) else view.dealer.?.shelf.cost(w);
+    }
+    fn carded(self: *const Book) bool {
+        return self.page == .loot or self.page == .trade;
     }
     fn settledTop(self: *const Book, view: View) usize {
         if (self.page == .quests) return @min(self.top, view.quests.last_top);
@@ -124,7 +155,7 @@ pub const Book = struct {
         return switch (self.page) {
             .passives => .passives,
             .skills => .skills,
-            .equipment, .inventory, .stats, .quests, .nearby, .loot => null,
+            .equipment, .inventory, .stats, .quests, .nearby, .loot, .trade => null,
         };
     }
     fn treeView(self: *const Book) trees.View {
@@ -171,6 +202,7 @@ pub const Book = struct {
             .equipment => view.inventory.gear.slots.get(item_bases.SLOTS[self.cursor]),
             .inventory => if (self.bagIndex(view)) |b| view.inventory.bag[b] else null,
             .nearby, .loot => if (self.cursor < view.nearby.len) view.nearby[self.cursor].item() else null,
+            .trade => if (self.ware(view)) |w| self.wareItem(view, w) else null,
             .stats, .passives, .skills, .quests => null,
         };
     }
@@ -194,11 +226,12 @@ pub const Book = struct {
                 break :blk if (view.growth.canLearn(view.class, act)) .{ .skill = act } else null;
             },
             .nearby, .loot => view.nearby[self.cursor].command(),
+            .trade => if (self.selling) .{ .sell = self.cursor } else .{ .buy = self.cursor },
         };
     }
     fn size(self: *const Book, view: View) P {
         return switch (self.page) {
-            .loot => layout.LOOT_SIZE,
+            .loot, .trade => layout.LOOT_SIZE,
             .nearby => .{ .x = layout.DIRECT_W, .y = self.nearbyActionY(view) + layout.ACTION_H + menu.PANEL_PAD },
             .equipment, .inventory, .stats, .passives, .skills, .quests => layout.SIZE,
         };
@@ -207,17 +240,17 @@ pub const Book = struct {
         return if (self.direct()) menu.Surface.like(screen, self.size(view), layout.SIZE) else menu.Surface.of(screen, layout.SIZE);
     }
     fn directTop(self: *const Book) i32 {
-        return if (self.page == .loot) layout.LOOT_TOP else layout.CLOSE_Y + layout.CLOSE_H + layout.DIRECT_GAP;
+        return if (self.carded()) layout.LOOT_TOP else layout.CLOSE_Y + layout.CLOSE_H + layout.DIRECT_GAP;
     }
     fn visibleRows(self: *const Book) usize {
         return switch (self.page) {
-            .loot => layout.LOOT_ROWS,
+            .loot, .trade => layout.LOOT_ROWS,
             .nearby => layout.DIRECT_VISIBLE_ROWS,
             .equipment, .inventory, .stats, .passives, .skills, .quests => layout.VISIBLE_ROWS,
         };
     }
     fn noteY(self: *const Book, view: View) i32 {
-        if (self.page == .loot) return font.Face.topFor(layout.LOOT_FOOT_Y + layout.ACTION_H / 2, font.SMALL);
+        if (self.carded()) return font.Face.topFor(layout.LOOT_FOOT_Y + layout.ACTION_H / 2, font.SMALL);
         return self.directTop() + @as(i32, @intCast(@min(self.count(view), self.visibleRows()))) * layout.ROW_HEIGHT + layout.DIRECT_GAP;
     }
     fn nearbyActionY(self: *const Book, view: View) i32 {
@@ -252,6 +285,12 @@ pub const Book = struct {
         }
         if (menu.closed(st)) return .close;
         if (self.page == .loot and self.count(view) > 0 and st.hit(menu.CHANGE)) return .take_all;
+        if (self.page == .trade and st.hit(menu.CHANGE)) {
+            self.selling = !self.selling;
+            self.cursor = 0;
+            self.top = 0;
+            return null;
+        }
         if (!self.direct()) if (pageStep(st)) |d| {
             self.turnBy(d, view);
             return null;
@@ -356,6 +395,10 @@ pub const Book = struct {
             },
             .stats => c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = if (self.advanced) "Main stats" else "Advanced" }),
             .quests => {},
+            .trade => {
+                if (self.count(view) > 0) c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = character_view.verbOf(if (self.selling) .sell else .buy) });
+                c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = if (self.selling) BUY_LIST else SELL_LIST });
+            },
             .equipment, .inventory, .nearby, .loot => if (self.count(view) > 0) {
                 const chosen = self.selected(view);
                 const label: [:0]const u8 = if (chosen == null)
@@ -364,7 +407,7 @@ pub const Book = struct {
                     .equipment => character_view.verbOf(.unequip),
                     .inventory => character_view.verbOf(.equip),
                     .nearby, .loot => character_view.verbOf(.pickup),
-                    .stats, .passives, .skills, .quests => unreachable,
+                    .stats, .passives, .skills, .quests, .trade => unreachable,
                 };
                 c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = label });
                 if (self.page == .loot) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = character_view.verbOf(.take_all) });
@@ -380,7 +423,7 @@ pub const Book = struct {
     fn actionBox(self: *const Book, b: input.Button, view: View) rl.Rectangle {
         const i: i32 = @intCast(std.mem.indexOfScalar(input.Button, &ACTIONS, b).?);
         const at: P = switch (self.page) {
-            .loot => .{ .x = layout.DETAIL_X, .y = layout.LOOT_FOOT_Y },
+            .loot, .trade => .{ .x = layout.DETAIL_X, .y = layout.LOOT_FOOT_Y },
             .nearby => .{ .x = layout.LIST_X, .y = self.nearbyActionY(view) },
             .equipment, .inventory, .stats, .passives, .skills, .quests => .{ .x = layout.DETAIL_X, .y = layout.ACTION_Y },
         };
@@ -396,7 +439,7 @@ pub const Book = struct {
                 const s = layout.SLOT_BOX.get(item_bases.SLOTS[i]);
                 break :blk raster.rect(s.at.x, y + s.at.y, s.w, s.h);
             },
-            .inventory, .nearby, .loot => raster.rect(layout.LIST_X, (if (self.direct()) self.directTop() else y + layout.LIST_Y) + (@as(i32, @intCast(i)) - @as(i32, @intCast(self.top))) * layout.ROW_HEIGHT, layout.LIST_W, layout.ROW_HEIGHT),
+            .inventory, .nearby, .loot, .trade => raster.rect(layout.LIST_X, (if (self.direct()) self.directTop() else y + layout.LIST_Y) + (@as(i32, @intCast(i)) - @as(i32, @intCast(self.top))) * layout.ROW_HEIGHT, layout.LIST_W, layout.ROW_HEIGHT),
             .passives, .skills => trees.cellBox(self.treePanel().?, view.class, i, self.treeView()),
             .stats, .quests => unreachable,
         };
@@ -456,6 +499,7 @@ pub const Book = struct {
     }
 
     fn drawDirect(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
+        if (self.page == .trade) return self.drawTrade(face, sprites, view);
         header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else "ITEM BAG");
         if (self.page == .loot) {
             var holding: menu.Note(100) = .{};
@@ -483,6 +527,39 @@ pub const Book = struct {
             var coins: menu.Note(32) = .{};
             coins.say(hero.COINS_FMT, .{view.loot_gold});
             face.draw(coins.text(), position_x - layout.LOOT_GOLD_GAP - face.width(coins.text(), font.SMALL), note_y, font.SMALL, look.UI_GOLD);
+        }
+    }
+
+    fn drawTrade(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
+        const d = view.dealer orelse return;
+        var title: [TRADE_TITLE_MAX + 1]u8 = undefined;
+        header(face, menu.shout(&title, "{s}", .{d.who[0..@min(d.who.len, TRADE_TITLE_MAX)]}));
+        var holding: menu.Note(100) = .{};
+        holding.say("{s}     " ++ comptime menu.named(Page.inventory) ++ "  {d} / {d}     Gold  {d}", .{ if (self.selling) YOUR_GOODS else THEIR_WARES, view.inventory.n, inventory.BAG_MAX, view.gold });
+        face.draw(holding.text(), layout.LIST_X, layout.HOLDING_Y, font.SMALL, look.DIM);
+        divider(layout.LOOT_TOP, layout.LOOT_TOP + layout.CARD_H);
+        self.drawCells(face, sprites, view);
+        const note_y = self.noteY(view);
+        if (self.message.n > 0) face.draw(self.message.text(), layout.LIST_X, note_y, font.SMALL, look.TEXT);
+        if (self.count(view) == 0) {
+            face.draw(if (self.selling) NOTHING_TO_SELL else SOLD_OUT, layout.LIST_X + layout.TEXT_X, self.directTop(), font.BODY, look.DIM);
+            return;
+        }
+        const position = self.positionOf(view);
+        face.draw(position.text(), layout.DIRECT_W - layout.LIST_X - face.width(position.text(), font.SMALL), note_y, font.SMALL, look.DIM);
+        const w = self.ware(view).?;
+        const asked = self.askedFor(view, w);
+        var cost: menu.Note(40) = .{};
+        cost.say("{s}  " ++ hero.COINS_FMT, .{ if (self.selling) "Sells for" else "Price", asked });
+        const ink = if (self.selling or asked <= view.gold) look.UI_GOLD else look.LOSS;
+        face.draw(cost.text(), layout.DETAIL_X, layout.LOOT_TOP, font.BODY, ink);
+        const card_y = tradeCardY();
+        if (self.selected(view)) |it| {
+            const slot = self.destination(view);
+            item_card.draw(face, layout.DETAIL_X, card_y, layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), null);
+        } else switch (w) {
+            .supply => |k| item_card.drawSupply(face, layout.DETAIL_X, card_y, layout.DETAIL_W, k, view.inventory.stacks.get(k), null),
+            .item => {},
         }
     }
 
@@ -551,6 +628,27 @@ pub const Book = struct {
                     } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
                     listRow(face, x, row_mid, n.label(&name_buf), inkOf(n.item()), n.command().verb());
                 },
+                .trade => {
+                    var shown = self.*;
+                    shown.cursor = i;
+                    const w = shown.ware(view).?;
+                    const it = shown.wareItem(view, w);
+                    var cost: menu.Note(24) = .{};
+                    const asked = shown.askedFor(view, w);
+                    cost.say(hero.COINS_FMT, .{asked});
+                    const label = switch (w) {
+                        .item => it.?.name(&name_buf),
+                        .supply => |k| blk: {
+                            line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
+                            const left = if (self.selling) view.inventory.stacks.get(k) else view.dealer.?.shelf.supplies.get(k);
+                            break :blk std.fmt.bufPrintZ(&name_buf, "{s} ({d})", .{ menu.titleOf(k), left }) catch menu.titleOf(k);
+                        },
+                    };
+                    if (it) |held| line_icons.drawItem(sprites, held.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(held));
+                    var fitted: [items.NAME_MAX]u8 = undefined;
+                    face.drawMiddle(face.fit(&fitted, label, font.BODY, layout.SECOND_X - layout.TEXT_X - layout.COLUMN_GAP, false), x + layout.TEXT_X, row_mid, font.BODY, inkOf(it));
+                    face.drawMiddle(cost.text(), x + layout.SECOND_X, row_mid, font.SMALL, if (self.selling or asked <= view.gold) look.UI_GOLD else look.LOSS);
+                },
                 .passives, .skills, .stats, .quests => unreachable,
             }
         }
@@ -558,7 +656,7 @@ pub const Book = struct {
     fn requirementAttrs(self: *const Book, view: View, slot: item_bases.Slot) attr.Attrs {
         return switch (self.page) {
             .inventory => (view.inventory.swapped(self.bagIndex(view).?, slot) catch view.inventory.gear).statsWithout(slot, view.base),
-            .nearby, .loot => neededAttrs(view, self.selected(view).?, slot),
+            .nearby, .loot, .trade => neededAttrs(view, self.selected(view).?, slot),
             .equipment, .stats, .passives, .skills, .quests => view.inventory.gear.statsWithout(slot, view.base),
         };
     }
@@ -611,6 +709,10 @@ const Controls = struct {
         self.n += 1;
     }
 };
+
+fn tradeCardY() i32 {
+    return layout.LOOT_TOP + font.BODY_LINE;
+}
 
 fn pageStep(st: *const input.State) ?i32 {
     if (st.hit(menu.PAGE_PREV)) return -1;
@@ -869,6 +971,27 @@ test "loot exposes single pickup and take all through controller and mouse contr
     view.loot_gold = 37;
     try std.testing.expectEqual(@as(usize, 1), book.count(view));
     try std.testing.expectEqual(@as(usize, 7), book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).?.pickup);
+}
+
+test "trade lists the shelf or the bag, swaps them on change, and the priced card of the fullest item clears the actions" {
+    var inv = inventory.Inventory{};
+    try std.testing.expect(inv.add(.{ .kind = .cap }));
+    const growth = progress.State.of(.archer);
+    var view = testView(&inv, &growth);
+    const shelf = trade.Wares.roll(5, 0);
+    view.dealer = .{ .who = "Pedlar", .shelf = &shelf };
+    var book = Book{};
+    book.choose(.trade);
+    const screen = display.SCREEN_720;
+    try std.testing.expectEqual(shelf.count(), book.count(view));
+    try std.testing.expectEqual(@as(usize, 0), book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).?.buy);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CHANGE) }, screen, view) == null);
+    try std.testing.expect(book.selling);
+    try std.testing.expectEqual(trade.carried(&inv), book.count(view));
+    try std.testing.expectEqual(@as(usize, 0), book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).?.sell);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
+    const fullest = items.Item{ .kind = .greatsword, .rare_name = .{ .first = .Spine, .last = .Crusher }, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 }, .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .life_on_kill, .value = 2 } } };
+    try std.testing.expect(tradeCardY() + item_card.height(&.{}, layout.DETAIL_W, fullest, .right_hand) <= layout.LOOT_FOOT_Y);
 }
 
 test "the inventory list scrolls back when the bag shrinks" {

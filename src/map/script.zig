@@ -5,23 +5,23 @@ const actor = @import("../play/actor.zig");
 const P = mathx.P;
 
 pub const NAME_MAX: usize = 20;
-pub const WHO_MAX: usize = 24;
-pub const SAY_MAX: usize = 240;
-pub const ASK_MAX: usize = 60;
-pub const NOTE_MAX: usize = 80;
-pub const TITLE_MAX: usize = 32;
+pub const WHO_MAX: usize = 32;
+pub const SAY_MAX: usize = 480;
+pub const ASK_MAX: usize = 100;
+pub const NOTE_MAX: usize = 120;
+pub const TITLE_MAX: usize = 48;
 
 pub const MAX_QUESTS: usize = 12;
-pub const MAX_STAGES: usize = 8;
+pub const MAX_STAGES: usize = 10;
 pub const MAX_FLAGS: usize = 32;
 pub const MAX_COUNTERS: usize = 32;
 pub const MAX_TIMERS: usize = 16;
 pub const MAX_NPCS: usize = 32;
 pub const MAX_DIALOGS: usize = 12;
-pub const MAX_LINES: usize = 10;
-pub const MAX_CHOICES: usize = 4;
-pub const LINE_ACTS: usize = 3;
-pub const CHOICE_ACTS: usize = 2;
+pub const MAX_LINES: usize = 16;
+pub const MAX_CHOICES: usize = 5;
+pub const LINE_ACTS: usize = 4;
+pub const CHOICE_ACTS: usize = 3;
 pub const MAX_TRIGGERS: usize = 48;
 pub const MAX_CONDS: usize = 8;
 pub const MAX_ACTS: usize = 8;
@@ -39,13 +39,12 @@ comptime {
 
 /// Printable ascii without its ends' spaces, `N` at most.
 pub fn Words(comptime N: usize) type {
-    comptime std.debug.assert(N <= std.math.maxInt(u8));
     return struct {
         const Self = @This();
         pub const MAX = N;
         pub const COUNTED = .{.{ "buf", "n" }};
         buf: [N]u8 = @splat(0),
-        n: u8 = 0,
+        n: std.math.IntFittingRange(0, N) = 0,
 
         pub fn of(s: []const u8) Self {
             var w = Self{};
@@ -234,17 +233,23 @@ pub const ActKind = enum {
     wait,
     preserve,
     quest,
+    trade,
 
     pub fn spoken(k: ActKind) bool {
         return switch (k) {
-            .text, .flag, .counter, .timer, .quest => true,
+            .text, .flag, .counter, .timer, .quest, .trade => true,
             .dialog, .wait, .preserve => false,
         };
     }
 
+    /// Whether a trigger may do it: trading needs someone spoken to.
+    pub fn scripted(k: ActKind) bool {
+        return k != .trade;
+    }
+
     pub fn span(k: ActKind) Span {
         return switch (k) {
-            .dialog, .text, .flag, .counter, .preserve => SIGNED_SPAN,
+            .dialog, .text, .flag, .counter, .preserve, .trade => SIGNED_SPAN,
             .timer, .wait => COUNT_SPAN,
             .quest => QUEST_STAGE_SPAN,
         };
@@ -868,7 +873,7 @@ pub const Script = struct {
             if (!tokenName(&t.name) or !bounded(t)) return false;
             if (!PRIORITY.holds(t.priority)) return false;
             for (t.conds()) |*c| if (!self.condFits(c, node_n)) return false;
-            for (t.acts()) |*a| if (!self.actFits(a)) return false;
+            for (t.acts()) |*a| if (!a.kind.scripted() or !self.actFits(a)) return false;
         }
         return distinct(self.triggers());
     }
@@ -930,7 +935,7 @@ pub fn actRef(k: ActKind) ?Ref {
         inline .flag, .counter, .timer => |t| .{ .table = @field(Table, @tagName(t)) },
         .dialog => .dialog,
         .quest => .quest,
-        .text, .wait, .preserve => null,
+        .text, .wait, .preserve, .trade => null,
     };
 }
 
@@ -1066,8 +1071,15 @@ fn bounded(x: anytype) bool {
     return true;
 }
 
+pub fn testScript() !*Script {
+    const s = try std.testing.allocator.create(Script);
+    s.* = .{};
+    return s;
+}
+
 test "dropping an NPC, a node or a line leaves no reference past the end" {
-    var s = Script{};
+    const s = try testScript();
+    defer std.testing.allocator.destroy(s);
     _ = s.addNpc(.{ .node = 0, .spot = .{ .at = .{ .x = 3, .y = 3 } } }).?;
     _ = s.addNpc(.{ .node = 1, .spot = .{ .at = .{ .x = 4, .y = 4 } } }).?;
     _ = s.addNpc(.{ .node = 2, .spot = .{ .at = .{ .x = 5, .y = 5 } } }).?;
@@ -1100,7 +1112,8 @@ test "dropping an NPC, a node or a line leaves no reference past the end" {
 }
 
 test "a quest cannot go while named, and dropping a stage moves later references down onto the one it became" {
-    var s = Script{};
+    const s = try testScript();
+    defer std.testing.allocator.destroy(s);
     const q = s.addQuest().?;
     _ = s.addQuest().?;
     s.quest[q].stage_n = 3;
@@ -1126,7 +1139,8 @@ test "a quest cannot go while named, and dropping a stage moves later references
 }
 
 test "dropping a quest's last stage leaves nothing naming a stage past it" {
-    var s = Script{};
+    const s = try testScript();
+    defer std.testing.allocator.destroy(s);
     const q = s.addQuest().?;
     s.quest[q].stage_n = 2;
     const t = s.addTrigger().?;
@@ -1140,7 +1154,8 @@ test "dropping a quest's last stage leaves nothing naming a stage past it" {
 }
 
 test "a named table entry or dialog cannot be dropped while anything names it" {
-    var s = Script{};
+    const s = try testScript();
+    defer std.testing.allocator.destroy(s);
     const f = s.coin(.flag).?;
     const g = s.coin(.flag).?;
     try std.testing.expectEqualStrings("flag2", s.flag[g].text());

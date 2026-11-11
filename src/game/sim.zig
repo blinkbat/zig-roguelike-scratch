@@ -83,7 +83,7 @@ pub const Fields = struct {
     pub const derived = [_][]const u8{"outdoors"};
     /// Defaulted as a run starts, and again as a saved one resumes.
     pub const rebuilt = [_][]const u8{"chronicle"};
-    pub const run = [_][]const u8{ "kills", "gold", "mana_recovery", "flasks", "cooldown", "stepped", "log", "inventory", "ground", "plot" };
+    pub const run = [_][]const u8{ "kills", "gold", "mana_recovery", "life_recovery", "flasks", "cooldown", "stepped", "log", "inventory", "ground", "plot" };
     pub const resumed = [_][]const u8{"unsaved"};
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
     pub const turn = [_][]const u8{ "travel", "order_n", "flowed" };
@@ -122,6 +122,7 @@ pub const Simulation = struct {
     gold: i32 = 0,
     mana: i32 = heroes.DEFAULT.attrs().mana(),
     mana_recovery: i32 = 0,
+    life_recovery: i32 = 0,
     flasks: Flasks = .initFill(.{}),
     cooldown: std.EnumArray(skillbar.Act, u8) = .initFill(0),
     /// The hero stepped, leapt or was knocked back since its last action, which tears a bleed wider.
@@ -246,7 +247,7 @@ pub const Simulation = struct {
     }
 
     pub fn combatStatsOn(self: *const Simulation, a: *const actor.Actor, tile: grid.Tile, buildup: resilience.State, sundered: sunder.Sunder) terrain.Stats {
-        var base = terrain.Stats{ .elements = a.resists, .armour = actor.row(a.kind).armour };
+        var base = terrain.Stats{ .elements = a.resists, .armour = if (a.stuck) 0 else actor.row(a.kind).armour };
         if (a.kind.hero()) {
             const by = self.heroAttrs();
             base.dodge = by.dodge();
@@ -323,6 +324,24 @@ pub const Simulation = struct {
 
     pub fn manaRegen(self: *const Simulation) i32 {
         return heroes.manaRegen(self.heroPerks());
+    }
+
+    pub fn lifeRegen(self: *const Simulation) i32 {
+        return self.inventory.gear.lifeRegen();
+    }
+
+    pub fn wider(self: *const Simulation) i32 {
+        return self.inventory.gear.wider();
+    }
+
+    pub fn heroBlocks(self: *Simulation) bool {
+        const chance = self.heroAttrs().blockChance();
+        return chance > 0 and self.rng.percent(chance);
+    }
+
+    pub fn hastens(self: *Simulation) bool {
+        const chance = self.inventory.gear.haste();
+        return chance > 0 and self.rng.percent(chance);
     }
 
     /// Levels gained so far, the current one's progress as the fraction.

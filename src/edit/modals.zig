@@ -10,6 +10,8 @@ const listing = @import("../map/listing.zig");
 const lume = @import("../map/lume.zig");
 const gas = @import("../map/gas.zig");
 const actor = @import("../play/actor.zig");
+const firebolt = @import("../play/firebolt.zig");
+const windup = @import("../play/windup.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const dual = @import("../gfx/ground.zig");
@@ -259,6 +261,15 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             if (r.ranged) |ranged| {
                 f.put("Fires arrows up to {d} cells along a clear line", .{ranged.range});
                 f.put("Backs away within {d} cells; shoots if cornered", .{ranged.retreat});
+            }
+            if (r.charges) |c| {
+                f.put("Braces a turn at {d}-{d} cells on an open line, then charges {d} cells", .{ windup.NEAREST, c.range, c.rush });
+                f.put("{d}-{d} damage on contact; stopped short, it loses a turn and its reduction", .{ c.blow.hit.lo, c.blow.hit.hi });
+            }
+            if (r.hooks) |h| f.put("Braces, then hooks along the line {d} cells every {d} turns, pulling 1 cell", .{ h.range, h.every });
+            if (r.hurls) |h| {
+                f.put("{d}-{d} {s} firebolt, {d} cells a turn up to {d}; hits any body", .{ h.hit.lo, h.hit.hi, @tagName(firebolt.ELEMENT), h.speed, h.range });
+                f.put("{d}% to burn; moves after each throw, keeps {d} cells off", .{ h.burns, r.keeps });
             }
             if (r.light > 0) f.put("Carries a light {d} cells round", .{r.light});
             if (r.splits) |into| f.put("Splits into two {s}s under half its hp", .{actor.row(into).name});

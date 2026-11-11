@@ -72,6 +72,7 @@ pub const Status = enum {
     enfeebled,
     maimed,
     frightened,
+    exposed,
     warded,
     resistant,
     guarding,
@@ -84,6 +85,7 @@ pub const Status = enum {
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
             .warded => look.WARD,
+            .exposed => look.ailmentInk(.sunder),
             .imbued => look.ailmentInk(.burn),
             .resistant => look.UI_GOLD,
             inline else => |t| if (comptime t.stance() != null) look.UI_GOLD else look.ailmentInk(comptime t.ailment().?),
@@ -103,7 +105,7 @@ pub const Status = enum {
             .enfeebled => .enfeeble,
             .maimed => .maim,
             .frightened => .fright,
-            .warded, .resistant, .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => null,
+            .exposed, .warded, .resistant, .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => null,
         };
     }
 
@@ -115,7 +117,7 @@ pub const Status = enum {
             .overwatch => .overwatch,
             .imbued => .imbue,
             .biding => .bide,
-            .bleeding, .burning, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .warded, .resistant => null,
+            .bleeding, .burning, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .exposed, .warded, .resistant => null,
         };
     }
 
@@ -124,7 +126,7 @@ pub const Status = enum {
         return switch (s) {
             .burning => BURN_GLOW,
             .warded => WARD_GLOW,
-            .bleeding, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .resistant, .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => null,
+            .bleeding, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .exposed, .resistant, .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => null,
         };
     }
 
@@ -145,6 +147,7 @@ pub const Status = enum {
         return switch (s) {
             .resistant => resilience.ABOUT,
             .frightened => actor.FRIGHT_STATUS,
+            .exposed => actor.EXPOSED_STATUS,
             inline else => |t| comptime if (t.stance()) |a| skillbar.Act.skill(a).DESCRIPTION else module(t).STATUS,
         };
     }
@@ -153,7 +156,7 @@ pub const Status = enum {
         if (comptime s.stance() != null) @compileError("about names " ++ @tagName(s) ++ "'s skill's text");
         return switch (s) {
             .warded => ward,
-            .frightened, .resistant => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
+            .frightened, .exposed, .resistant => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
             else => resilience.module(comptime s.ailment().?).?,
         };
     }
@@ -162,6 +165,7 @@ pub const Status = enum {
         return switch (s) {
             .warded => "ward",
             .resistant => "resilience",
+            .exposed => "stuck",
             inline else => |t| if (comptime t.stance() != null) "tactics" else @tagName(comptime t.ailment().?),
         };
     }
@@ -176,6 +180,7 @@ pub const Status = enum {
             .imbued => a.tactics.imbue,
             .biding => a.tactics.bide,
             .frightened => a.fright,
+            .exposed => @intFromBool(a.stuck),
             inline else => |t| @field(a, field(t)).turns,
         };
     }

@@ -79,7 +79,7 @@ test "a frost vial's splash takes the cell it strikes and the eight round it, bu
     var lv = grid.openFloor();
     const at = P{ .x = 20, .y = 20 };
     const open: usize = @intCast(grid.Cells.square(FrostVial.BLAST));
-    try std.testing.expectEqual(open, FrostVial.burst(&lv, .{ .x = 14, .y = 20 }, at).n);
+    try std.testing.expectEqual(open, FrostVial.burst(&lv, .{ .x = 14, .y = 20 }, at, 0).n);
     lv.set(.{ .x = 21, .y = 20 }, .wall);
-    try std.testing.expect(!FrostVial.burst(&lv, .{ .x = 14, .y = 20 }, at).has(.{ .x = 21, .y = 20 }));
+    try std.testing.expect(!FrostVial.burst(&lv, .{ .x = 14, .y = 20 }, at, 0).has(.{ .x = 21, .y = 20 }));
 }

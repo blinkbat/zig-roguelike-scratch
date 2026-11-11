@@ -33,11 +33,11 @@ test "a fireball's blast takes the cell it strikes and the eight round it, but n
     var lv = grid.openFloor();
     const at = P{ .x = 20, .y = 20 };
     const open: usize = @intCast(grid.Cells.square(BLAST));
-    var area = burst(&lv, .{ .x = 14, .y = 20 }, at);
+    var area = burst(&lv, .{ .x = 14, .y = 20 }, at, 0);
     try std.testing.expectEqual(open, area.n);
     try std.testing.expect(area.has(at));
     lv.set(.{ .x = 21, .y = 20 }, .wall);
-    area = burst(&lv, .{ .x = 14, .y = 20 }, at);
+    area = burst(&lv, .{ .x = 14, .y = 20 }, at, 0);
     try std.testing.expectEqual(open - 1, area.n);
     try std.testing.expect(!area.has(.{ .x = 21, .y = 20 }));
 }

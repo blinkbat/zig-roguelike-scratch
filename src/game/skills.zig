@@ -231,6 +231,10 @@ pub fn recover(run: *game.Game) void {
     run.sim.mana_recovery += run.sim.manaRegen();
     run.sim.gainMana(@divTrunc(run.sim.mana_recovery, heroes.MANA_REGEN_TURNS));
     run.sim.mana_recovery = @mod(run.sim.mana_recovery, heroes.MANA_REGEN_TURNS);
+    run.sim.life_recovery +|= run.sim.lifeRegen();
+    const mended = @divTrunc(run.sim.life_recovery, heroes.LIFE_REGEN_TURNS);
+    run.sim.life_recovery = @mod(run.sim.life_recovery, heroes.LIFE_REGEN_TURNS);
+    combat.heal(run, mended, run.pic.lead orelse 0);
     if (run.sim.playground) run.sim.gainMana(run.sim.manaMax());
     for (std.enums.values(flask.Kind)) |k| recoverFlask(run, k, run.pic.lead orelse 0);
 }
@@ -281,7 +285,7 @@ fn useUnaimed(run: *game.Game, act: skillbar.Act) void {
     switch (act) {
         .wait => {
             acted(run, .wait);
-            combat.endTurn(run);
+            combat.passTurn(run);
         },
         .secondary => unreachable,
         inline else => |action| {
@@ -318,7 +322,7 @@ fn castSpell(run: *game.Game, comptime act: skillbar.Act) void {
     if (comptime act.surrounds()) {
         const s = game.presentation.Stroke{ .from = hero.at, .wait = game.CAST_S };
         run.pic.leadUntil(s.wait);
-        const area = Skill.around(&run.sim.lv, hero.at);
+        const area = Skill.around(&run.sim.lv, hero.at, run.sim.wider());
         if (foesIn(run, area).n == 0) sayDone(run, act);
         combat.areaHit(run, act, hero.at, area, s, null, false);
     } else if (comptime act.wards()) {
@@ -451,13 +455,23 @@ pub fn confirmAim(run: *game.Game) void {
 
 /// The flight the reticle shows toward `mark`, passing over bodies the hero cannot see.
 pub fn shownFlight(run: *const game.Game, from: P, act: skillbar.Act, mark: P) bow.Flight {
-    return if (act.pierces()) bow.piercePreviewAmong(&run.sim.lv, &run.sim.pool, from, mark) else bow.previewAmong(&run.sim.lv, &run.sim.pool, from, mark);
+    if (act.pierces()) return bow.piercePreviewAmong(&run.sim.lv, &run.sim.pool, from, mark);
+    const extra = skewers(&run.sim, act);
+    if (extra > 0) return bow.skewerPreviewAmong(&run.sim.lv, &run.sim.pool, from, mark, act.reach(), extra);
+    return bow.previewAmong(&run.sim.lv, &run.sim.pool, from, mark);
+}
+
+/// The extra foes worn pierce lets a single-target projectile pass through.
+fn skewers(sim: *const game.simulation.Simulation, act: skillbar.Act) usize {
+    if (act.reticle() != .bow or act.pierces() or act.bursts() or act.chains()) return 0;
+    return sim.inventory.gear.pierce();
 }
 
 pub const UNSEEN_ASK = "There's no visible target, {s} anyway?";
 
 fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
-    const pierced = if (act.pierces()) bow.pierce(&run.sim.lv, from, to) else null;
+    const extra = skewers(&run.sim, act);
+    const pierced = if (act.pierces()) bow.pierce(&run.sim.lv, from, to) else if (extra > 0) bow.skewer(&run.sim.lv, from, to, act.reach(), extra) else null;
     const flight = if (pierced) |p| p.flight else bow.fly(&run.sim.lv, from, to);
     const stroke = run.pic.recordProjectile(from, act, flight);
     if (flight.struck) |hit| {
@@ -466,7 +480,7 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
                 if (comptime action.pierces()) {
                     combat.pierceHit(run, action, pierced.?, stroke);
                 } else if (comptime action.reticle() == .bow) {
-                    resolveProjectileHit(run, action, hit, flight, stroke);
+                    if (pierced != null and pierced.?.n > 1) skewerHits(run, action, pierced.?, stroke) else resolveProjectileHit(run, action, hit, flight, stroke);
                 } else unreachable;
             },
         }
@@ -486,7 +500,7 @@ fn comeDown(run: *game.Game, act: skillbar.Act, flight: bow.Flight, stroke: game
     switch (act) {
         inline else => |action| {
             combat.boilUnder(run, action, at, stroke.wait);
-            if (comptime action.element() == .cold and action.bursts()) combat.coldLands(run, &skillbar.Act.elemental(action).burst(&run.sim.lv, stroke.from, at), stroke.wait);
+            if (comptime action.element() == .cold and action.bursts()) combat.coldLands(run, &skillbar.Act.elemental(action).burst(&run.sim.lv, stroke.from, at, run.sim.wider()), stroke.wait);
             if (comptime action.element() == .lightning) combat.conduct(run, at, stroke);
         },
     }
@@ -502,6 +516,21 @@ fn resolveProjectileHit(run: *game.Game, comptime action: skillbar.Act, hit: bow
         .barrel, .plant => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),
     }
     combat.boilUnder(run, action, flight.impact().?, stroke.wait);
+}
+
+/// Each body struck as the projectile reaches its cell, then whatever stopped it.
+fn skewerHits(run: *game.Game, comptime action: skillbar.Act, pierced: bow.Pierced, stroke: game.presentation.Stroke) void {
+    const cells: f32 = @floatFromInt(pierced.flight.len);
+    for (pierced.body[0..pierced.n], pierced.step[0..pierced.n]) |id, step| {
+        var s = stroke;
+        s.wait = stroke.wait * @as(f32, @floatFromInt(step + 1)) / cells;
+        hitProjectileActor(run, action, id, s);
+    }
+    switch (pierced.flight.struck.?) {
+        .barrel, .plant => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),
+        .body => {},
+    }
+    combat.boilUnder(run, action, pierced.flight.impact().?, stroke.wait);
 }
 
 fn hitProjectileActor(run: *game.Game, comptime action: skillbar.Act, id: u16, stroke: game.presentation.Stroke) void {

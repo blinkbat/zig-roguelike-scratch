@@ -289,6 +289,9 @@ pub fn body(k: actor.Kind) Look {
         .bog_leech => .{ .ch = 'L', .fg = rgb(0x8cff3f) },
         .mimic => .{ .ch = 'M', .fg = rgb(0xff9f1c) },
         .goblin => .{ .ch = 'g', .fg = rgb(0x9bc53d) },
+        .sluice_crab => .{ .ch = 'C', .fg = rgb(0x5fb3a8) },
+        .chain_gaoler => .{ .ch = 'J', .fg = rgb(0xa8a29a) },
+        .cinder_imp => .{ .ch = 'i', .fg = rgb(0xff7a1a) },
         .skeleton => .{ .ch = 'Z', .fg = rgb(0xe8e2cf) },
         .caravan_guard => .{ .ch = 'G', .fg = rgb(0x7cc86e) },
     };
@@ -344,8 +347,8 @@ pub const Gait = enum { hop, slide };
 
 pub fn gait(k: actor.Kind) Gait {
     return switch (k) {
-        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .mimic, .goblin, .skeleton, .caravan_guard => .hop,
-        .slime, .slime_half, .slime_quarter, .bloat, .frost_wisp, .pyre_bloat, .bog_leech => .slide,
+        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .mimic, .goblin, .chain_gaoler, .cinder_imp, .skeleton, .caravan_guard => .hop,
+        .slime, .slime_half, .slime_quarter, .bloat, .frost_wisp, .pyre_bloat, .bog_leech, .sluice_crab => .slide,
     };
 }
 
@@ -356,6 +359,9 @@ pub fn mini(t: grid.Tile, lit: bool) rl.Color {
 
 pub const AIM_REACH = fade(GOLD, 0.10);
 pub const AIM_PATH = fade(GOLD, 0.28);
+/// A braced foe's line: where its charge or hook will go.
+pub const BRACED = fade(rgb(0xe0503c), 0.32);
+pub const CHAIN = rgb(0x9a958c);
 pub const COLD = rgb(0x8cddf5);
 const PIN = rgb(0xc8c2b4);
 const SHOCK = rgb(0xb48cff);
