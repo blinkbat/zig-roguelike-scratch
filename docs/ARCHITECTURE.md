@@ -13,6 +13,9 @@ conversion live in `save_format.zig` and `save_values.zig`. See [save compatibil
 | Each resolution is pictured at its own impact | `game/presentation.zig`, `gfx/impact_queue.zig` | [impact_queue](../src/gfx/impact_queue.zig), [picture](../src/game/tests/picture.zig), [tactics_exec](../src/game/tactics_exec.zig) |
 | Sprite selection, GPU resources and appearance have separate owners | `gfx/sprite_assets.zig`, `gfx/sprites.zig`, `gfx/sprite_materials.zig`, `gfx/look.zig` | [sprite_assets](../src/gfx/sprite_assets.zig), [sprites](../src/gfx/sprites.zig) |
 | Turn stages preserve causality and clean up on death | `game/combat.zig`, `game/sim.zig` | [skills](../src/game/tests/skills.zig), [hero](../src/game/tests/hero.zig) |
+| Enemy ordering, targeting and support rules cannot schedule presentation | `game/foe_rules.zig` | [foe_rules](../src/game/foe_rules.zig), [foes](../src/game/tests/foes.zig) |
+| Projectile motion keeps impact times and never tracks hidden positions in its fading picture | `game/projectile_motion.zig` | [projectile_motion](../src/game/projectile_motion.zig), [picture](../src/game/tests/picture.zig) |
+| Status marks draw from time and explicit drawing inputs without access to the effects queue | `gfx/status_marks.zig` | [source_rules](../tools/source_rules.zig), headless effect captures |
 | Targeting is valid only while active | `game.zig`, `game/skills.zig`, `game/targeting.zig` | [skills](../src/game/tests/skills.zig), [picture](../src/game/tests/picture.zig) |
 | Transients reset at their declared lifetime | `game.zig`, `game/presentation.zig` | [world](../src/game/tests/world.zig), [loot](../src/game/tests/loot.zig), [save](../src/save.zig) |
 | A skill declares a checked integration contract | `play/skill_contract.zig`, `play/skillbar.zig` | [skill_contract](../src/play/skill_contract.zig), [skills](../src/game/tests/skills.zig) |
@@ -25,6 +28,7 @@ conversion live in `save_format.zig` and `save_values.zig`. See [save compatibil
 | Derived editor data cannot mutate the authored map | `edit/preview.zig` | [preview](../src/edit/preview.zig) |
 | Graph textures have one owner and explicit invalidation | `edit/thumbnails.zig` | [thumbnails](../src/edit/thumbnails.zig), [canvas](../src/edit/canvas.zig) |
 | A map's script never names past its own tables | `map/script.zig`, `play/trigger.zig`, `game/talking.zig` | [script](../src/map/script.zig), [script_text](../src/map/script_text.zig), [trigger](../src/play/trigger.zig), [talking](../src/game/talking.zig), [edit](../src/edit/tests.zig) |
+| Plot field lookup and name validation depend only on script data | `edit/plot_fields.zig` | [plot_fields](../src/edit/plot_fields.zig), [plot](../src/edit/plot.zig) |
 | A procgen node's painted section keeps its cells through the roll, is joined round its walls, and its box takes no feature's lot | `map/section.zig`, `map/procgen.zig`, `carve.connect` | [procgen](../src/map/procgen.zig), [section](../src/map/section.zig), [atlas](../src/map/atlas.zig), [atlas_text](../src/map/atlas_text.zig), [save](../src/save.zig) |
 | Gameplay does not depend on UI or rendering modules | `tools/source_rules.zig` | [source_rules](../tools/source_rules.zig), [save](../src/save.zig) |
 
@@ -48,6 +52,9 @@ for the application session and do not enter run saves; the HUD remains unfilter
 
 Visited terrain outside current sight is darkened and strongly desaturated by
 the cinema memory grade, blending back to full colour with visibility.
+Water highlights, bloom and atmosphere use the same smooth visibility field across
+known terrain, including the fade into memory; gameplay sight still gates dynamic
+emissive sources. Unexplored terrain does not populate the atmospheric field.
 Visible loot bags and stocked open chests have a faint steady sprite glow and
 a stronger shine sweep, fading with their pictured visibility.
 Visibility transitions use short presentation-only fades. Bodies, projectiles,
@@ -60,7 +67,7 @@ to keep narrow corridors clear. Automatic chest/bag opening is
 suppressed while a foe is visible; deliberate interaction still works.
 
 Runtime imports in `play/`, `map/`, `game/sim.zig`, `game/attacks.zig`,
-`game/rewards.zig` and `edit/preview.zig` are limited to core, play and map modules. The game rule
+`game/rewards.zig`, `game/foe_rules.zig`, `edit/plot_fields.zig` and `edit/preview.zig` are limited to core, play and map modules. The game rule
 modules may also depend on each other. They cannot import raylib, UI, rendering,
 editor coordination or the application. Use `core/wording.zig` for display names,
 `core/text.zig` for bounded text and `play/log.zig` for event history;
@@ -78,6 +85,13 @@ input types.
 Sprite asset selection and shader definitions cannot import the sprite renderer.
 Effect payloads and the impact queue cannot import the particle-effects coordinator.
 These helpers also cannot import Game, Presentation or the application.
+`gfx/status_marks.zig` cannot import the effects coordinator; its renderer reads
+only elapsed cosmetic time and explicit mark inputs. `game/projectile_motion.zig`
+cannot import Game or Presentation. Presentation supplies visibility to its motion
+view, which retains the last visible position during a fade.
+Liquid drops, bleeding marks and floor stains use `pixel.oval`, whose smallest
+silhouette still has clipped corners. Leaf footfalls emit one or two small,
+translucent strokes with a short, low arc. `--shot` includes `particle-shapes.png`.
 
 ## Lifetimes
 
@@ -109,6 +123,12 @@ These helpers also cannot import Game, Presentation or the application.
 - `resolve` returns null for an absent target, otherwise `.miss` or `.hit` carrying damage, statuses, culling and recovery.
 - Combat consumes the outcome once: damage consequences, log, snapshot/split, death rewards, then impact and recovery.
 - Hero rolls and weapon status resolution stay here; animation, input and death transitions stay in their adapters.
+- `chosenBlow` rolls armour and status before damage, preserving opportunity bonuses and split inheritance.
+
+`game/foe_rules.zig`
+- Owns enemy turn ordering, target queries, path-distance caching and ranged reposition selection from Simulation alone.
+- Net throws return flight, facing and whether the throw landed; a resisted net still lands and consumes its cooldown. Healing returns the healed slot, or a successful rouse with no slot.
+- Combat records the returned outcome immediately, before another actor changes the body. Rules cannot access presentation, input or application modes.
 
 `game/rewards.zig`
 - `defeat` resolves XP, drops, flask refills, gas, steam and witness fright from Simulation alone; Presentation holds dropped gold and schedules speech from its `Death`.

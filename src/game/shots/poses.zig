@@ -108,6 +108,8 @@ pub fn captureGeneral(g: *game.Game) !void {
     defer rl.unloadRenderTexture(target);
     try std.fs.cwd().makePath(SHOTS_DIR);
 
+    try captureParticleShapes();
+
     game.begin(g, SHOT_SEED);
     poseRat(g);
     g.st.lean = true;
@@ -415,6 +417,36 @@ fn captureEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
     }
     g.sim.class = heroes.DEFAULT;
     g.bar = skillbar.Bar.of(g.sim.class);
+}
+
+fn captureParticleShapes() !void {
+    const target = try rl.loadRenderTexture(1000, 720);
+    defer rl.unloadRenderTexture(target);
+    const level = grid.openFloor();
+    const at = [2]f32{ 20.5, 20.5 };
+    const cell: f32 = 256;
+    rl.beginTextureMode(target);
+    rl.clearBackground(.{ .r = 32, .g = 35, .b = 38, .a = 255 });
+    for ([_][:0]const u8{ "Blood", "Ooze", "Ichor", "Water", "Leaves" }, 0..) |label, column| {
+        const x: f32 = 100 + @as(f32, @floatFromInt(column)) * 200;
+        rl.drawText(label, @intFromFloat(x - 45), 12, 20, rl.Color.white);
+        for ([_]f32{ 0.05, 0.55 }, 0..) |age, row| {
+            var effects = fx.Fx{};
+            switch (column) {
+                0, 1, 2 => effects.sting(0, .{ .slot = .fromIndex(0), .drip = .{ .at = at, .matter = ([_]fx.Matter{ .blood, .ooze, .ichor })[column] } }),
+                3 => effects.splash(at),
+                else => effects.leaves(at),
+            }
+            effects.step(&level, age);
+            const y: f32 = 180 + @as(f32, @floatFromInt(row)) * 200;
+            effects.draw(x - at[0] * cell, y - at[1] * cell, cell);
+        }
+    }
+    const effects = fx.Fx{};
+    effects.drawStatus(.bleeding, .{ .x = 20, .y = 450, .cell = cell, .seed = 1, .ink = look.BLOOD, .alpha = 1, .stacks = 1 });
+    rl.drawText("Bleeding marks", 300, 650, 20, rl.Color.white);
+    rl.endTextureMode();
+    try exportTarget(target, SHOTS_DIR ++ "/particle-shapes.png");
 }
 
 fn captureArrows() !void {

@@ -122,17 +122,21 @@ test "skills cannot start a second turn while the first is still being drawn" {
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
     const clock = g.sim.clock;
     const hp = g.sim.heroActor().?.hp;
-    g.pic.busy = 0.5;
-    for (skillbar.SLOTS) |button| {
-        const act = g.bar.at(.{ .set = .primary, .button = button }) orelse continue;
-        if (act == .secondary) continue;
-        g.st = .{ .pressed = .initOne(button) };
-        game.update(g, 0);
-        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
-        try std.testing.expectEqual(clock, g.sim.clock);
-        try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
-        try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
-        try std.testing.expectEqual(act, g.pending.?.skill.act);
+    for ([_]bool{ false, true }) |tail| {
+        g.pic.busy = if (tail) game.COMBAT_QUEUE_S else 0.5;
+        for (skillbar.SLOTS) |button| {
+            const act = g.bar.at(.{ .set = .primary, .button = button }) orelse continue;
+            if (act == .secondary) continue;
+            g.st = .{ .pressed = .initOne(button) };
+            game.update(g, 0);
+            try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+            try std.testing.expectEqual(clock, g.sim.clock);
+            try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+            try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
+            if (tail) {
+                try std.testing.expectEqual(act, g.pending.?.skill.act);
+            } else try std.testing.expect(g.pending == null);
+        }
     }
     harness.calm(g);
     skills.openAim(g, .x, .shoot);

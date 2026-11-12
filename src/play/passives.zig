@@ -120,9 +120,17 @@ pub const Perks = struct {
     mana_cost: i32 = 0,
 
     pub fn culls(p: Perks, left: i32, max: i32) bool {
-        return left > 0 and left * mathx.PERCENT <= max * p.cull;
+        return left > 0 and @as(i64, left) * mathx.PERCENT <= @as(i64, max) * p.cull;
     }
 };
+test "culling compares large life totals without overflowing the percentage" {
+    const p = Perks{ .cull = 10 };
+    try std.testing.expect(p.culls(100_000_000, 1_000_000_000));
+    try std.testing.expect(!p.culls(100_000_001, 1_000_000_000));
+    try std.testing.expect(!(Perks{}).culls(30_000_000, 30_000_000));
+    try std.testing.expect(!p.culls(0, 1_000_000_000));
+}
+
 pub const Kind = enum {
     strength,
     dexterity,

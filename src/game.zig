@@ -102,7 +102,7 @@ pub const BUMP_S: f32 = BEAT_S;
 pub const BUMP_HIT: f32 = 0.5;
 pub const BUMP_LANDS: f32 = BUMP_S * BUMP_HIT;
 pub const CAST_S: f32 = BUMP_LANDS;
-pub const ZAP_S: f32 = 0.08;
+pub const ZAP_S = @import("game/projectile_motion.zig").ZAP_S;
 pub const BUMP_PX: f32 = CELL_F * 0.35;
 /// Ease-out-back's overshoot constant: 1.165 carries a slide 5% past its cell (1.70158, the usual one, 10%).
 pub const SLIDE_BACK: f32 = 1.165;
@@ -699,17 +699,26 @@ pub fn camWant(g: *const Game) rl.Vector2 {
 
 const Walk = struct { d: mathx.Dir, late: f32 };
 pub const Queued = union(enum) { walk: mathx.Dir, skill: skills.Use, interact };
+pub const COMBAT_QUEUE_S: f32 = 0.12;
+
+pub fn acceptsAction(g: *const Game) bool {
+    return g.pic.busy <= COMBAT_QUEUE_S or !foesNear(g);
+}
+
+fn queueAction(g: *Game, action: Queued) void {
+    if (acceptsAction(g)) g.pending = action;
+}
 
 fn queueWalk(g: *Game, d: mathx.Dir) void {
     if (g.pending) |q| {
         if (q != .walk and g.st.repeating()) return;
     }
-    g.pending = .{ .walk = d };
+    queueAction(g, .{ .walk = d });
 }
 
 fn queueInteract(g: *Game) bool {
     if (!g.st.interact or !(character.anyNearby(g) or talking.beside(g) != null)) return false;
-    g.pending = .interact;
+    queueAction(g, .interact);
     return true;
 }
 
@@ -717,7 +726,7 @@ fn queuePress(g: *Game) void {
     if (queueInteract(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
         character.openInspect(g);
     } else if (skills.usedSkill(g)) |u| {
-        g.pending = .{ .skill = u };
+        queueAction(g, .{ .skill = u });
     } else if (g.st.walk) |d| queueWalk(g, d);
 }
 
@@ -732,7 +741,7 @@ fn interacted(g: *Game) bool {
 }
 
 fn skillDue(g: *Game) ?skills.Use {
-    if (skills.usedSkill(g)) |u| g.pending = .{ .skill = u };
+    if (skills.usedSkill(g)) |u| queueAction(g, .{ .skill = u });
     return takeQueued(g, .skill);
 }
 

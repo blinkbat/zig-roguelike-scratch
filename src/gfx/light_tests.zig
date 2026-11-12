@@ -225,6 +225,38 @@ test "smooth water glints follow light direction and respect walls and memory" {
     for (l.texels.getPtrConst(.glints)) |pixel| try std.testing.expectEqual(rl.Color.blank, pixel);
 }
 
+test "water glints continue across the softened sight boundary and during fade out" {
+    var lv = litFloor();
+    @memset(&lv.tile, .water);
+    for (&lv.lit, 0..) |*lit, i| {
+        const p = grid.Level.of(i);
+        lit.* = p.x + p.y < 44;
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    l.sky = sky.at(day.NOON);
+    l.sky.?.dir = .{ 0, -1, 1 };
+    var remembered: usize = 0;
+    for (0..2) |phase| {
+        if (phase == 1) {
+            @memset(&lv.lit, false);
+            l.step(&lv, 0.05);
+        }
+        l.bake(&lv, .{ .x = 20, .y = 20 }, .{ .x = 25, .y = 25 });
+        for (20 * light.SUB..25 * light.SUB) |ty| {
+            for (20 * light.SUB..25 * light.SUB) |tx| {
+                const q = light.Light.texelCentre(tx, ty);
+                if (l.viewAt(q).lit <= model.FAINT) continue;
+                const i = ty * model.MAP_W + tx;
+                const glint = l.texels.getPtrConst(.glints)[i];
+                try std.testing.expect(lum(rgbOf(glint)) > 0);
+                if (!lv.isLit(mathx.cellOf(q))) remembered += 1;
+            }
+        }
+    }
+    try std.testing.expect(remembered > 0);
+}
+
 test "a torch pools light on the floor below it, fading to nothing at its reach" {
     var lv: grid.Level = undefined;
     testRoom(&lv, &.{});

@@ -12,6 +12,7 @@ const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
 const editor = @import("editor.zig");
 const widgets = @import("widgets.zig");
+const fields = @import("plot_fields.zig");
 const text_panel = @import("text_panel.zig");
 const modals = @import("modals.zig");
 const interaction = @import("interaction.zig");
@@ -85,29 +86,12 @@ pub const Page = enum {
     }
 };
 
-const LineAt = struct { d: u8, l: u8 };
-const StageAt = struct { q: u8, k: u8 };
-const ChoiceAt = struct { d: u8, l: u8, c: u8 };
-const TableAt = struct { t: script.Table, i: u8 };
-const ActAt = union(enum) {
-    trigger: struct { t: u8, a: u8 },
-    line: struct { at: LineAt, a: u8 },
-    choice: struct { at: ChoiceAt, a: u8 },
-};
-const Focus = union(enum) {
-    npc: u8,
-    dialog: u8,
-    line: LineAt,
-    who: LineAt,
-    say: LineAt,
-    ask: ChoiceAt,
-    trigger: u8,
-    table: TableAt,
-    note: ActAt,
-    quest: u8,
-    title: u8,
-    stage: StageAt,
-};
+const LineAt = fields.LineAt;
+const StageAt = fields.StageAt;
+const ChoiceAt = fields.ChoiceAt;
+const TableAt = fields.TableAt;
+const ActAt = fields.ActAt;
+const Focus = fields.Focus;
 pub const Pick = union(enum) { none, npc: u8, dialog: u8 };
 
 pub const State = struct {
@@ -238,109 +222,15 @@ fn typed(ed: *editor.Editor, t: Target) void {
     ed.say("{s}", .{if (t.unique != null) "A name is letters, digits, _ or -, not taken, " ++ std.fmt.comptimePrint("{d}", .{script.NAME_MAX}) ++ " at most" else "That is as long as it can be"});
 }
 
-const Target = struct { words: Words, unique: ?Unique = null };
-
-const Words = union(enum) {
-    name: *script.Name,
-    who: *script.Who,
-    say: *script.Say,
-    ask: *script.Ask,
-    note: *script.Note,
-    title: *script.Title,
-
-    fn text(w: Words) []const u8 {
-        return switch (w) {
-            inline else => |p| p.text(),
-        };
-    }
-
-    fn most(w: Words) usize {
-        return switch (w) {
-            inline else => |p| @TypeOf(p.*).MAX,
-        };
-    }
-
-    fn set(w: Words, s: []const u8) bool {
-        return switch (w) {
-            inline else => |p| p.set(s),
-        };
-    }
-};
-
-const Field = text_panel.FieldOf(WORDS_MAX, plainChar);
-const WORDS_MAX = blk: {
-    var most: usize = 0;
-    for (std.meta.fields(Words)) |f| most = @max(most, std.meta.Child(f.type).MAX);
-    break :blk most;
-};
-
-fn plainChar(c: u8) bool {
-    return c == '\n' or c == '\r' or script.plain(&[_]u8{c});
-}
-
-const Unique = union(enum) { dialog: u8, line: LineAt, trigger: u8, table: TableAt, quest: u8 };
-
-fn target(m: *Script, f: Focus) ?Target {
-    return switch (f) {
-        .npc => |i| if (i < m.npc_n) .{ .words = .{ .who = &m.npc[i].name } } else null,
-        .dialog => |i| if (i < m.dialog_n) .{ .words = .{ .name = &m.dialog[i].name }, .unique = .{ .dialog = i } } else null,
-        .line => |at| if (lineOf(m, at)) |ln| .{ .words = .{ .name = &ln.name }, .unique = .{ .line = at } } else null,
-        .who => |at| if (lineOf(m, at)) |ln| .{ .words = .{ .who = &ln.who } } else null,
-        .say => |at| if (lineOf(m, at)) |ln| .{ .words = .{ .say = &ln.say } } else null,
-        .ask => |at| if (choiceOf(m, at)) |c| .{ .words = .{ .ask = &c.ask } } else null,
-        .trigger => |i| if (i < m.trigger_n) .{ .words = .{ .name = &m.trigger[i].name }, .unique = .{ .trigger = i } } else null,
-        .table => |at| if (at.i < m.names(at.t).len) .{ .words = .{ .name = tableName(m, at) }, .unique = .{ .table = at } } else null,
-        .note => |at| if (actOf(m, at)) |a| .{ .words = .{ .note = &a.note } } else null,
-        .quest => |i| if (i < m.quest_n) .{ .words = .{ .name = &m.quest[i].name }, .unique = .{ .quest = i } } else null,
-        .title => |i| if (i < m.quest_n) .{ .words = .{ .title = &m.quest[i].title } } else null,
-        .stage => |at| if (at.q < m.quest_n and at.k < m.quest[at.q].stage_n) .{ .words = .{ .note = &m.quest[at.q].stage[at.k] } } else null,
-    };
-}
-
-fn put(m: *Script, t: Target, s: []const u8) bool {
-    const u = t.unique orelse return t.words.set(s);
-    return switch (u) {
-        .dialog => |i| script.renameIn(m.dialog[0..m.dialog_n], i, s),
-        .line => |at| script.renameIn(m.dialog[at.d].line[0..m.dialog[at.d].line_n], at.l, s),
-        .trigger => |i| script.renameIn(m.trigger[0..m.trigger_n], i, s),
-        .table => |at| m.rename(at.t, at.i, s),
-        .quest => |i| script.renameIn(m.quest[0..m.quest_n], i, s),
-    };
-}
-
-fn tableName(m: *Script, at: TableAt) *script.Name {
-    return switch (at.t) {
-        inline else => |t| &@field(m.*, @tagName(t))[at.i],
-    };
-}
-
-fn lineOf(m: *Script, at: LineAt) ?*script.Line {
-    if (at.d >= m.dialog_n or at.l >= m.dialog[at.d].line_n) return null;
-    return &m.dialog[at.d].line[at.l];
-}
-
-fn choiceOf(m: *Script, at: ChoiceAt) ?*script.Choice {
-    const ln = lineOf(m, .{ .d = at.d, .l = at.l }) orelse return null;
-    return if (at.c < ln.choice_n) &ln.choice[at.c] else null;
-}
-
-const ActList = struct { items: []script.Act, n: *u8 };
-
-fn listOf(m: *Script, at: ActAt) ?ActList {
-    return switch (at) {
-        .trigger => |t| if (t.t < m.trigger_n) .{ .items = &m.trigger[t.t].act, .n = &m.trigger[t.t].act_n } else null,
-        .line => |l| if (lineOf(m, l.at)) |ln| .{ .items = &ln.act, .n = &ln.act_n } else null,
-        .choice => |c| if (choiceOf(m, c.at)) |ch| .{ .items = &ch.act, .n = &ch.act_n } else null,
-    };
-}
-
-fn actOf(m: *Script, at: ActAt) ?*script.Act {
-    const list = listOf(m, at) orelse return null;
-    const a = switch (at) {
-        inline else => |p| p.a,
-    };
-    return if (a < list.n.*) &list.items[a] else null;
-}
+const Field = text_panel.FieldOf(fields.WORDS_MAX, fields.plainChar);
+const Target = fields.Target;
+const target = fields.target;
+const put = fields.put;
+const tableName = fields.tableName;
+const lineOf = fields.lineOf;
+const choiceOf = fields.choiceOf;
+const listOf = fields.listOf;
+const actOf = fields.actOf;
 
 pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.plot;

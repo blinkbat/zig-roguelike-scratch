@@ -1,5 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
+const status_marks = @import("status_marks.zig");
 const state = @import("effect_state.zig");
 const impact_queue = @import("impact_queue.zig");
 pub const Matter = state.Matter;
@@ -27,10 +28,6 @@ const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
 const glacial = @import("../play/glacial.zig");
-const burning = @import("../play/burning.zig");
-const shock = @import("../play/shock.zig");
-const confusion = @import("../play/confusion.zig");
-const ward = @import("../play/ward.zig");
 const look = @import("look.zig");
 const font = @import("font.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -124,6 +121,8 @@ const Mote = struct {
     /// Of its radius, how much wider it has grown by the end of its life.
     grow: f32 = 0,
     vapor: bool = false,
+    leaf: bool = false,
+    droplet: bool = false,
 };
 
 const STATUS_FLICKER: f32 = 0.1;
@@ -157,7 +156,7 @@ const Arc = struct {
 
 /// A brief light an effect casts: reach in cells, peak gain, and seconds to fade.
 const Glow = struct { radius: f32, gain: f32, life: f32 };
-pub const Mark = struct { x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color, alpha: f32, stacks: u8 };
+pub const Mark = status_marks.Mark;
 pub const EMBER_GLOW = Glow{ .radius = 2.2, .gain = 0.8, .life = 0.32 };
 const SHIMMER_GLOW = Glow{ .radius = 2.2, .gain = 0.65, .life = 0.4 };
 const FIRE_BURST_GLOW = Glow{ .radius = 3.5, .gain = 1.4, .life = 0.35 };
@@ -218,44 +217,9 @@ const RIPPLE_S: f32 = 0.9;
 const RIPPLE_R = [2]f32{ 2, 20 };
 const RIPPLE_FLAT: f32 = 0.45;
 const STEP_DUST = [2]u32{ 3, 6 };
-const BLEED_DROPS = 4;
-const CHILL_FLAKES = 5;
-const BURN_FLAMES = 7;
-const TORCH_FLAMES = 7;
-const FLAME_HZ: f32 = 1.7;
-const TORCH_RISE_PX: f32 = 16;
-const TORCH_FLECK_PX: f32 = 3.5;
-pub const TORCH_TOP_PX = 20;
+pub const TORCH_TOP_PX = status_marks.TORCH_TOP_PX;
 
-comptime {
-    std.debug.assert(TORCH_RISE_PX + TORCH_FLECK_PX <= TORCH_TOP_PX);
-}
-const WARD_DOTS = 48;
-const SHOCK_SPARKS = 4;
-const EXPOSED_CRACKS = @import("../play/sunder.zig").MOST;
-const SHOCK_HZ: f32 = 9;
-const CONFUSION_DOTS = 3;
-/// Cells under a body's top its blindness and confusion marks sit, and how wide confusion circles.
-const HALO_Y: f32 = 0.1;
-const HALO_R: f32 = 0.2;
-/// Across a body's cell, where enfeeblement's chevron sinks, and how often a second.
-const ENFEEBLE_X: f32 = 0.2;
-const ENFEEBLE_HZ: f32 = 0.8;
-/// Across a body's cell, where fright's mark trembles, how far either way, and how fast.
-const FRIGHT_X: f32 = 0.8;
-const FRIGHT_SHAKE: f32 = 0.015;
-const FRIGHT_RAD_S: f32 = 30;
 const SHIMMER_MOTES = 24;
-/// Stake (horizontal position, lean) pairs in cell units.
-const PIN_STAKES = [_][2]f32{ .{ 0.24, -0.06 }, .{ 0.5, 0 }, .{ 0.76, 0.06 } };
-const PIN_H: f32 = 0.16;
-const PIN_FOOT: f32 = 0.92;
-/// A ward's ring, out from the body's middle in cells.
-const WARD_R: f32 = 0.46;
-const WARD_RAD_S: f32 = 2.4;
-/// Where across a body's cell chill's flakes and burn's flames begin, and how far they spread.
-const MARKS_FROM: f32 = 0.22;
-const MARKS_SPAN: f32 = 0.56;
 
 /// `jitter` is a fraction of the gap between headings.
 fn ringDir(rng: *mathx.Rng, i: usize, n: usize, jitter: f32) [2]f32 {
@@ -592,36 +556,11 @@ pub const Fx = struct {
 
     /// A status's mark over a body whose cell's top-left is `m.x`, `m.y`.
     pub fn drawStatus(self: *const Fx, s: Status, m: Mark) void {
-        const mark = markOf(s) orelse return;
-        mark(self, m);
+        const renderer = status_marks.Renderer{ .seconds = self.seconds.at() };
+        renderer.drawStatus(s, m);
     }
 
-    pub fn marks(s: Status) bool {
-        return markOf(s) != null;
-    }
-
-    fn markOf(s: Status) ?*const fn (*const Fx, Mark) void {
-        return switch (s) {
-            .bleeding => &drawBleeding,
-            .burning => &markBurning,
-            .chilled => &drawChilled,
-            .pinned => &drawPinned,
-            .shocked => &drawShocked,
-            .sundered => &drawSundered,
-            .blinded => &drawBlinded,
-            .confused => &drawConfused,
-            .enfeebled => &drawEnfeebled,
-            .maimed => &drawMaimed,
-            .frightened => &drawFrightened,
-            .exposed => &drawExposed,
-            .warded => &drawWarded,
-            .resistant, .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => null,
-        };
-    }
-
-    fn markBurning(self: *const Fx, m: Mark) void {
-        self.drawBurning(m.x, m.y, m.cell, m.seed, m.alpha);
-    }
+    pub const marks = status_marks.Renderer.marks;
 
     pub fn pulseLights(self: *const Fx, buf: *[PULSES]light.Emission) []const light.Emission {
         var n: usize = 0;
@@ -632,17 +571,6 @@ pub const Fx = struct {
             n += 1;
         }
         return buf[0..n];
-    }
-
-    fn drawBleeding(self: *const Fx, m: Mark) void {
-        const t = self.seconds.at();
-        for (0..BLEED_DROPS) |i| {
-            const phase = @as(f32, @floatFromInt(i)) / BLEED_DROPS;
-            const age = @mod(t * 0.9 + phase + @as(f32, @floatFromInt(m.seed)) * 0.23, 1);
-            const at = rl.Vector2{ .x = m.x + m.cell * (0.3 + phase * 0.4), .y = m.y + m.cell * (0.45 + age * 0.4) };
-            const r = look.SPRITE_PX * (0.022 + age * 0.012);
-            pixel.rect(at, r, r * 1.8, pxScale(m.cell), look.fade(m.ink, (1 - age * age) * 0.9));
-        }
     }
 
     fn spill(self: *Fx, b: Burst) void {
@@ -698,130 +626,14 @@ pub const Fx = struct {
         }
     }
 
-    fn drawChilled(self: *const Fx, m: Mark) void {
-        const t = self.seconds.at() + @as(f32, @floatFromInt(m.seed));
-        for (0..CHILL_FLAKES) |i| {
-            const phase = @as(f32, @floatFromInt(i)) / CHILL_FLAKES;
-            const cx = m.x + m.cell * (MARKS_FROM + phase * MARKS_SPAN);
-            const cy = m.y + m.cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
-            const across = @as(f32, look.SPRITE_PX) * 0.07;
-            const col = look.fade(m.ink, 0.7 + @sin(t * 3 + phase) * 0.2);
-            pixel.cross(.{ .x = cx, .y = cy }, across, pxScale(m.cell), col);
-        }
-    }
-
-    fn drawPinned(_: *const Fx, m: Mark) void {
-        for (PIN_STAKES) |s| {
-            const foot = rl.Vector2{ .x = m.x + m.cell * s[0], .y = m.y + m.cell * PIN_FOOT };
-            const top = rl.Vector2{ .x = foot.x + m.cell * s[1], .y = foot.y - m.cell * PIN_H };
-            pixel.line(top, foot, 2, pxScale(m.cell), m.ink);
-        }
-    }
-
-    fn drawWarded(self: *const Fx, m: Mark) void {
-        const breath = @sin(self.seconds.at() * WARD_RAD_S);
-        const r = m.cell * (WARD_R + breath * 0.02);
-        for (0..WARD_DOTS) |i| {
-            const a = mathx.spoke(@floatFromInt(i), WARD_DOTS);
-            const k = 0.35 + 0.25 * @sin(a * 3 + self.seconds.at() * 2);
-            pixel.rect(.{ .x = m.x + m.cell * 0.5 + @cos(a) * r, .y = m.y + m.cell * 0.5 + @sin(a) * r }, 1, 2, pxScale(m.cell), look.fade(m.ink, k));
-        }
-    }
-
-    fn drawShocked(self: *const Fx, m: Mark) void {
-        const t = self.seconds.at() * SHOCK_HZ + @as(f32, @floatFromInt(m.seed)) * 0.37;
-        const k = pxScale(m.cell);
-        const arm = m.cell * 0.05;
-        for (0..SHOCK_SPARKS) |i| {
-            const phase = @as(f32, @floatFromInt(i)) / SHOCK_SPARKS;
-            if (@mod(t + phase * 3.7, 1) > 0.45) continue;
-            const at = rl.Vector2{ .x = m.x + m.cell * (MARKS_FROM + phase * MARKS_SPAN), .y = m.y + m.cell * (0.35 + @mod(phase * 2.3 + @floor(t) * 0.17, 0.4)) };
-            const bend = rl.Vector2{ .x = at.x + arm * 0.3, .y = at.y };
-            pixel.bend(.{ .x = at.x - arm, .y = at.y - arm }, bend, .{ .x = at.x - arm * 0.3, .y = at.y + arm * 1.2 }, 1, k, m.ink);
-        }
-    }
-
-    fn drawSundered(_: *const Fx, m: Mark) void {
-        const k = pxScale(m.cell);
-        for (0..m.stacks) |i| {
-            const cx = m.x + m.cell * (0.3 + @as(f32, @floatFromInt(i)) * 0.2);
-            const top = m.y + m.cell * 0.45;
-            const mid = rl.Vector2{ .x = cx + m.cell * 0.04, .y = top + m.cell * 0.08 };
-            pixel.bend(.{ .x = cx, .y = top }, mid, .{ .x = cx - m.cell * 0.02, .y = top + m.cell * 0.16 }, 1, k, m.ink);
-        }
-    }
-
-    fn drawExposed(self: *const Fx, m: Mark) void {
-        var cracked = m;
-        cracked.stacks = EXPOSED_CRACKS;
-        self.drawSundered(cracked);
-    }
-
-    fn drawBlinded(_: *const Fx, m: Mark) void {
-        const k = pxScale(m.cell);
-        const lid = m.y + m.cell * HALO_Y;
-        pixel.line(.{ .x = m.x + m.cell * 0.38, .y = lid }, .{ .x = m.x + m.cell * 0.62, .y = lid }, 1, k, m.ink);
-        for ([_]f32{ 0.42, 0.5, 0.58 }) |across| pixel.line(.{ .x = m.x + m.cell * across, .y = lid }, .{ .x = m.x + m.cell * across, .y = lid + m.cell * 0.04 }, 1, k, m.ink);
-    }
-
-    fn drawConfused(self: *const Fx, m: Mark) void {
-        const t = self.seconds.at() * 3 + @as(f32, @floatFromInt(m.seed));
-        for (0..CONFUSION_DOTS) |i| {
-            const a = t + mathx.spoke(@floatFromInt(i), CONFUSION_DOTS);
-            const at = rl.Vector2{ .x = m.x + m.cell * (0.5 + @cos(a) * HALO_R), .y = m.y + m.cell * (HALO_Y + @sin(a) * HALO_R * 0.35) };
-            pixel.rect(at, 2, 2, pxScale(m.cell), look.fade(m.ink, 0.65 + 0.3 * @sin(a)));
-        }
-    }
-
-    fn drawEnfeebled(self: *const Fx, m: Mark) void {
-        const k = pxScale(m.cell);
-        const sink = @mod(self.seconds.at() * ENFEEBLE_HZ + @as(f32, @floatFromInt(m.seed)) * 0.31, 1);
-        const tip = rl.Vector2{ .x = m.x + m.cell * ENFEEBLE_X, .y = m.y + m.cell * (HALO_Y + 0.08 + sink * 0.08) };
-        const arm = m.cell * 0.05;
-        const col = look.fade(m.ink, 0.9 - sink * 0.5);
-        pixel.bend(.{ .x = tip.x - arm, .y = tip.y - arm }, tip, .{ .x = tip.x + arm, .y = tip.y - arm }, 1, k, col);
-    }
-
-    fn drawMaimed(_: *const Fx, m: Mark) void {
-        const k = pxScale(m.cell);
-        const foot = m.y + m.cell * PIN_FOOT;
-        const knee = rl.Vector2{ .x = m.x + m.cell * 0.3, .y = foot - m.cell * 0.1 };
-        pixel.bend(.{ .x = m.x + m.cell * 0.24, .y = foot }, knee, .{ .x = m.x + m.cell * 0.38, .y = foot - m.cell * 0.04 }, 2, k, m.ink);
-    }
-
-    fn drawFrightened(self: *const Fx, m: Mark) void {
-        const k = pxScale(m.cell);
-        const shake = @sin(self.seconds.at() * FRIGHT_RAD_S + @as(f32, @floatFromInt(m.seed))) * FRIGHT_SHAKE;
-        const top = rl.Vector2{ .x = m.x + m.cell * (FRIGHT_X + shake), .y = m.y + m.cell * HALO_Y };
-        pixel.rect(top, 2, 6, k, m.ink);
-        pixel.rect(.{ .x = top.x, .y = top.y + 6 * k }, 2, 2, k, m.ink);
-    }
-
     pub fn drawBurning(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, alpha: f32) void {
-        const t = self.seconds.at();
-        for (0..BURN_FLAMES) |i| {
-            const phase = @as(f32, @floatFromInt(i)) / BURN_FLAMES;
-            const age = flameAge(t, phase, @as(f32, @floatFromInt(seed)) * 0.17);
-            const sway = @sin(t * 6 + phase * mathx.TAU) * 0.04;
-            const at = rl.Vector2{ .x = x + cell * (MARKS_FROM + phase * MARKS_SPAN + sway), .y = y + cell * (0.82 - age * 0.65) };
-            const r = look.SPRITE_PX * (0.065 - age * 0.045);
-            pixel.fleck(at, r, pxScale(cell), look.fade(Status.burning.ink(), (1 - age) * 0.85 * alpha));
-            pixel.rect(at, r, r * 1.5, pxScale(cell), look.fade(look.FIRE_CORE, (1 - age) * 0.9 * alpha));
-        }
+        const renderer = status_marks.Renderer{ .seconds = self.seconds.at() };
+        renderer.drawBurning(x, y, cell, seed, alpha);
     }
 
     pub fn drawTorch(self: *const Fx, x: f32, y: f32, cell: f32, seed: f32, lit: f32, memory: f32) void {
-        const k = pxScale(cell);
-        pixel.rect(.{ .x = x, .y = y + 7 * k }, 3, 12, k, look.fade(look.TORCH_HANDLE, memory * 0.7));
-        pixel.rect(.{ .x = x, .y = y + k }, 7, 3, k, look.fade(look.TORCH_DIM, memory));
-        const t = self.seconds.at();
-        for (0..TORCH_FLAMES) |i| {
-            const f: f32 = @floatFromInt(i);
-            const age = flameAge(t, f / TORCH_FLAMES, seed);
-            const p = rl.Vector2{ .x = x + @sin(t * 7 + f * 3 + seed) * (1 + age * 2) * k, .y = y - age * TORCH_RISE_PX * k };
-            pixel.fleck(p, TORCH_FLECK_PX - age * 2.8, k, look.fade(look.FIRE, (1 - age) * lit));
-            pixel.rect(p, 2 - age, 3 - age * 2, k, look.fade(look.FIRE_CORE, (1 - age) * lit));
-        }
+        const renderer = status_marks.Renderer{ .seconds = self.seconds.at() };
+        renderer.drawTorch(x, y, cell, seed, lit, memory);
     }
 
     fn footfallCount(self: *Fx, bounds: [2]u32) usize {
@@ -846,13 +658,22 @@ pub const Fx = struct {
                 .col = look.fade(look.WATER_DROP, self.rng.between(0.6, 1)),
                 .grav = 9,
                 .drag = 2,
+                .droplet = true,
             });
         }
         claim(Ripple, &self.ripples, &self.ripple_head).* = .{ .at = .{ at[0], at[1] + SPLASH_FOOT }, .t = 0 };
     }
 
     pub fn dust(self: *Fx, at: [2]f32, col: rl.Color) void {
-        for (0..self.footfallCount(STEP_DUST)) |_| {
+        self.dustCount(at, col, STEP_DUST);
+    }
+
+    pub fn woodDust(self: *Fx, at: [2]f32) void {
+        self.dustCount(at, look.fade(look.DIRT_DUST, 0.65), .{ 1, 2 });
+    }
+
+    fn dustCount(self: *Fx, at: [2]f32, col: rl.Color, count: [2]u32) void {
+        for (0..self.footfallCount(count)) |_| {
             const spot = self.footSpot(at, 0.5);
             const dir = spot.dir;
             self.emit(.{
@@ -863,6 +684,22 @@ pub const Fx = struct {
                 .col = look.fade(col, self.rng.between(0.55, 1)),
                 .drag = 4,
                 .grow = self.rng.between(0.6, 1.2),
+            });
+        }
+    }
+
+    pub fn leaves(self: *Fx, at: [2]f32) void {
+        for (0..self.footfallCount(.{ 1, 2 })) |_| {
+            const spot = self.footSpot(at, 0.6);
+            self.emit(.{
+                .p = .{ spot.p[0] + spot.dir[0] * 0.12, spot.p[1], spot.p[2] },
+                .v = .{ spot.dir[0] * self.rng.between(0.3, 0.6), spot.dir[1] * 0.15, self.rng.between(0.35, 0.65) },
+                .life = self.rng.between(0.3, 0.45),
+                .r = self.rng.between(1, 1.7),
+                .col = look.fade(look.GRASS_LEAF, self.rng.between(0.4, 0.6)),
+                .grav = 3.5,
+                .drag = 1.5,
+                .leaf = true,
             });
         }
     }
@@ -948,7 +785,7 @@ pub const Fx = struct {
             if (m.life <= 0 or !m.landed) continue;
             const a = m.life / (m.max * STAIN_FADE);
             const s = screen(m.p, ox, oy, cell);
-            pixel.rect(s, m.r * STAIN_W * 2, m.r * STAIN_H * 2, k, look.fade(m.col, a));
+            pixel.oval(s, m.r * STAIN_W * 2, m.r * STAIN_H * 2, k, look.fade(m.col, a));
         }
         for (&self.motes, 0..) |*m, i| {
             if (m.life <= 0 or m.landed or m.add) continue;
@@ -958,6 +795,13 @@ pub const Fx = struct {
             const r = m.r * (1 + m.grow * age);
             if (m.vapor) {
                 pixel.haze(at, r, k, @as(f32, @floatFromInt(i)) * 1.7 + age * 1.2, look.fade(m.col, a));
+            } else if (m.leaf) {
+                const turn = @as(f32, @floatFromInt(i)) * 2.4 + age * 4;
+                const dx = @cos(turn) * r * k;
+                const dy = @sin(turn) * r * k;
+                pixel.line(.{ .x = at.x - dx, .y = at.y - dy }, .{ .x = at.x + dx, .y = at.y + dy }, 1, k, look.fade(m.col, a));
+            } else if (m.stains or m.droplet) {
+                pixel.oval(at, r * 2, r * 2, k, look.fade(m.col, a));
             } else {
                 pixel.fleck(at, r, k, look.fade(m.col, a));
             }
@@ -1101,10 +945,6 @@ fn unprojected(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
 }
 
 const pxScale = look.pxScale;
-
-fn flameAge(t: f32, phase: f32, seed: f32) f32 {
-    return @mod(t * FLAME_HZ + phase + seed, 1);
-}
 
 /// By element: a trailed missile's light, its motes' life and rise, its burst's glow, and whether its motes add light.
 const Flare = struct { radius: f32, gain: f32, trail_s: f32, rise: f32, burst: Glow, add: bool };

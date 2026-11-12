@@ -393,6 +393,24 @@ test "consumables lie in a bag, list in its loot, stack when taken and stay put 
     try std.testing.expectEqual(@as(usize, 0), g.sim.inventory.n);
 }
 
+test "combat interactions only queue at the tail of the turn" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]bool{ false, true }) |tail| {
+        harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{.{ .x = 24, .y = 20 }});
+        try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = g.sim.heroActor().?.at }));
+        g.pic.busy = if (tail) game.COMBAT_QUEUE_S else game.GLIDE_S;
+        const clock = g.sim.clock;
+        harness.pressInteract(g);
+        try std.testing.expectEqual(tail, g.pending != null);
+        g.st = .{};
+        game.update(g, g.pic.busy + mathx.FRAME_DT);
+        try std.testing.expectEqual(if (tail) game.Mode.pause else game.Mode.play, std.meta.activeTag(g.mode));
+        try std.testing.expectEqual(clock, g.sim.clock);
+        try std.testing.expect(g.pending == null);
+    }
+}
+
 test "interact pressed mid-turn waits for quiet instead of queuing its button's skill; the turn's log lines wait too" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

@@ -110,7 +110,7 @@ pub fn prepare(g: *game.Game) void {
             }
         }
     }
-    if (!g.st.click) return;
+    if (!g.st.click or !game.acceptsAction(g)) return;
     const at = cell(g) orelse return;
     if (!g.sim.lv.isSeen(at)) return;
     g.mouse.target = at;
@@ -267,6 +267,26 @@ test "mouse walking stops on harm despite healing or mana shielding" {
         const stopped = h.at;
         game.update(g, 2);
         try std.testing.expectEqual(stopped, h.at);
+    }
+}
+
+test "combat mouse clicks only queue at the tail of the turn" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const start = P{ .x = 20, .y = 20 };
+    for ([_]bool{ false, true }) |tail| {
+        game.harness.arena(g, start, &.{.{ .x = 24, .y = 20 }});
+        g.pic.busy = if (tail) game.COMBAT_QUEUE_S else game.GLIDE_S;
+        const clock = g.sim.clock;
+        clickCell(g, .{ .x = 18, .y = 20 });
+        try std.testing.expectEqual(tail, g.mouse.target != null);
+        g.st = .{};
+        game.update(g, g.pic.busy + mathx.FRAME_DT);
+        try std.testing.expectEqual(if (tail) start.add(mathx.Dir.w.delta()) else start, g.sim.heroActor().?.at);
+        var next_clock = clock;
+        if (tail) _ = next_clock.turn();
+        try std.testing.expectEqual(next_clock, g.sim.clock);
+        try std.testing.expect(g.mouse.target == null);
     }
 }
 

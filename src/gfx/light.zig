@@ -539,7 +539,7 @@ pub const Light = struct {
                 const cloud = if (ray != null) model.cloudIn(corners, c, q) else 1;
                 const shaded = self.shadeWithSun(lv, &self.banks, torches, effects, q, i, v, if (ray) |*r| r else null, cloud);
                 map[i] = model.texelOf(shaded.colour, v.lit);
-                if (self.options.water_glints and wet and v.lit > model.FAINT and lv.isLit(c))
+                if (self.options.water_glints and wet and v.lit > model.FAINT)
                     glints[i] = look.colourOf(self.waterGlintWithSun(torches, effects, q, i, if (ray) |*r| r else null, cloud, if (same_terrain) shaded.sun else null), 1);
             }
         }

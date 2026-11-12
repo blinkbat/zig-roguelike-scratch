@@ -21,12 +21,12 @@ const areas = @import("../play/area.zig");
 const blind = @import("../play/blind.zig");
 const confusion = @import("../play/confusion.zig");
 const shock = @import("../play/shock.zig");
-const resilience = @import("../play/resilience.zig");
 const skillbar = @import("../play/skillbar.zig");
 const tactics = @import("../play/tactics.zig");
 const fx = @import("../gfx/fx.zig");
 const look = @import("../gfx/look.zig");
 const game = @import("../game.zig");
+const foes = @import("foe_rules.zig");
 const attacks = @import("attacks.zig");
 const rewards = @import("rewards.zig");
 const skills = @import("skills.zig");
@@ -94,11 +94,6 @@ fn occupants(comptime N: usize, lv: *const grid.Level, area: *const grid.Bounded
 
 const Struck = struct { id: u16, takes: bool };
 
-fn survives(sim: *const game.simulation.Simulation, a: *const actor.Actor, dmg: i32, ailment: resilience.Kind) bool {
-    const d = attacks.dealt(sim, a, dmg, ailment);
-    return d > 0 and d < a.hp;
-}
-
 fn strike(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) ?Struck {
     const M = skillbar.Act.skill(act);
     const to = s.from.add(d.delta());
@@ -109,26 +104,10 @@ fn strike(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) ?S
     }
     const a = g.sim.pool.get(id).?;
     if (!a.foe() or !attacks.heroLands(&g.sim, a, .chosen)) return null;
-    const blow = chosenBlow(g, a, attacks.heroSkill(&g.sim, act), act, true, 0);
+    const blow = attacks.chosenBlow(&g.sim, a, attacks.heroSkill(&g.sim, act), act, true, 0);
     wound(g, id, blow.roll, M.VERB, s);
     if (g.sim.pool.get(id) == null) return null;
     return .{ .id = id, .takes = blow.takes };
-}
-
-const Chosen = struct { roll: attacks.Roll, takes: bool };
-
-/// A landing chosen blow through `a`'s armour, its ailment rolled first where `through` and the blow leaves it alive.
-fn chosenBlow(g: *game.Game, a: *actor.Actor, raw: attacks.Roll, comptime act: skillbar.Act, through: bool, resist: i16) Chosen {
-    const M = skillbar.Act.skill(act);
-    const stats = g.sim.combatStats(a);
-    var r = raw.against(stats.armour, &g.sim.rng);
-    r.hit_checked = true;
-    r.opportunity = attacks.opportune(&g.sim, a);
-    const takes = if (comptime act.afflicts()) attacks.afflicted(&g.sim, a, M, through and survives(&g.sim, a, r.burnt(stats.elements).dmg, M.AILMENT), resist) else false;
-    if (comptime act.afflicts()) if (takes) {
-        r.applied = M.AILMENT;
-    };
-    return .{ .roll = r, .takes = takes };
 }
 
 fn cut(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) void {
@@ -166,12 +145,17 @@ pub fn skillHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     const a = g.sim.pool.get(id) orelse return;
     const at = a.at;
     const grounded = actor.row(a.kind).movement.grounded();
-    const wet: ?Wet = if (el == .lightning and grounded) if (wading(&g.sim, at)) |bodies| .{ .bodies = bodies, .struck = actor.Pool.slot(id), .born = g.sim.pool.n } else null else null;
+    var wet: ?Wet = null;
+    if (el == .lightning and grounded) {
+        if (wading(&g.sim, at)) |bodies| {
+            wet = .{ .bodies = bodies, .struck = actor.Pool.slot(id), .born = g.sim.pool.n };
+        }
+    }
     defer conductTo(g, at, wet, s);
     if (!a.foe() or !attacks.heroLands(&g.sim, a, .chosen)) return;
     const resists = g.sim.combatStats(a).elements;
     const reaches = if (el) |e| hit.blow.reaches(resists, e) else true;
-    const blow = chosenBlow(g, a, hit.against(resists), act, reaches, if (el) |e| resists.get(e) else 0);
+    const blow = attacks.chosenBlow(&g.sim, a, hit.against(resists), act, reaches, if (el) |e| resists.get(e) else 0);
     if (blow.roll.dmg > 0) wound(g, id, blow.roll, M.VERB, s);
     if (blow.takes) if (g.sim.pool.get(id)) |b| g.sim.sayFoeTakes(b, M.TAKES);
 }
@@ -485,7 +469,7 @@ fn beginTurn(g: *game.Game, from: P) void {
     game.castSight(g, from);
     g.sim.flowed = false;
     raiders(g);
-    orderFoes(g, from);
+    foes.orderFoes(&g.sim, from);
 }
 
 fn raiders(g: *game.Game) void {
@@ -669,91 +653,78 @@ fn wearHero(g: *game.Game) void {
     g.sim.log.say("The cold slows {s}.", .{g.sim.name.text()});
 }
 
-fn orderFoes(g: *game.Game, from: P) void {
-    g.sim.order_n = 0;
-    for (g.sim.pool.slice(), 0..) |a, i| {
-        const id = actor.Pool.idOf(i);
-        if (id == g.sim.hero or !a.alive or a.waits) continue;
-        _ = mathx.push(u16, &g.sim.order, &g.sim.order_n, id);
-    }
-    const Near = struct {
-        pool: *const actor.Pool,
-        from: P,
-        fn nearer(n: @This(), a: u16, b: u16) bool {
-            const sa = actor.Pool.slot(a);
-            const sb = actor.Pool.slot(b);
-            const da = mathx.dist(n.pool.items[sa].at, n.from);
-            const db = mathx.dist(n.pool.items[sb].at, n.from);
-            return da < db or (da == db and a < b);
-        }
-    };
-    std.mem.sort(u16, g.sim.order[0..g.sim.order_n], Near{ .pool = &g.sim.pool, .from = from }, Near.nearer);
-}
-
 fn foeTurn(g: *game.Game, id: u16) void {
-    const f = g.sim.pool.get(id) orelse return;
-    const braced = f.braced;
-    f.braced = null;
-    const stalled = f.clock.stalled;
+    const body = g.sim.pool.get(id) orelse return;
+    const braced = body.braced;
+    body.braced = null;
+    const stalled = body.clock.stalled;
     const worn = wearTurn(g, id);
     if (braced != null) g.pic.recordWear(&g.sim, .fromInt(id));
-    if (f.disguised) return;
-    f.sweep_in -|= 1;
-    f.ready_in -|= 1;
-    if (f.stuck) {
-        f.stuck = false;
+    if (body.disguised) return;
+    body.sweep_in -|= 1;
+    body.ready_in -|= 1;
+    if (body.stuck) {
+        body.stuck = false;
         g.pic.recordWear(&g.sim, .fromInt(id));
         return;
     }
     const held = worn.held;
     if (worn.skips or stalled) return;
-    const r = g.sim.pool.get(id) orelse return;
-    const h = g.sim.heroActor() orelse return;
-    const row = actor.row(r.kind);
-    const af = worn.afflicted;
-    const sight = blind.sight(af.contains(.blind), row.sight);
-    if (row.allied) return allyTurn(g, id, held, af, sight);
-    if (!r.awake) {
-        if (!fov.sees(&g.sim.lv, r.at, h.at, @max(1, sight - g.sim.inventory.gear.sum(.stillness)))) return;
-        r.awake = true;
-        g.pic.turnLater(.fromInt(id), h.at.x - r.at.x);
-        if (!r.submerged) g.sim.sayAt(r.at, "A {s} notices {s}.", .{ row.name, g.sim.name.text() });
+    const foe = g.sim.pool.get(id) orelse return;
+    const hero = g.sim.heroActor() orelse return;
+    const row = actor.row(foe.kind);
+    const afflictions = worn.afflicted;
+    const sight = blind.sight(afflictions.contains(.blind), row.sight);
+    if (row.allied) return allyTurn(g, id, held, afflictions, sight);
+    if (!foe.awake) {
+        if (!fov.sees(&g.sim.lv, foe.at, hero.at, @max(1, sight - g.sim.inventory.gear.sum(.stillness)))) return;
+        foe.awake = true;
+        g.pic.turnLater(.fromInt(id), hero.at.x - foe.at.x);
+        if (!foe.submerged) g.sim.sayAt(foe.at, "A {s} notices {s}.", .{ row.name, g.sim.name.text() });
         return;
     }
-    const groping = af.contains(.blind) and mathx.dist(r.at, h.at) > sight;
-    if (r.fright > 0) {
-        r.fright -= 1;
+    const groping = afflictions.contains(.blind) and mathx.dist(foe.at, hero.at) > sight;
+    if (foe.fright > 0) {
+        foe.fright -= 1;
         g.pic.recordWear(&g.sim, .fromInt(id));
-        if (groping) {} else if (if (held) null else fleeWay(g, r.at, id, h.at)) |d| {
-            foeStep(g, id, r.at, d, af);
-        } else if (besideWay(g, r.at, h.at)) |d| {
-            _ = reach(g, id, row, d.delta().x, null, af);
+        if (!groping) {
+            const escape = if (held) null else fleeWay(g, foe.at, id, hero.at);
+            if (escape) |direction| {
+                foeStep(g, id, foe.at, direction, afflictions);
+            } else if (foes.besideWay(&g.sim, foe.at, hero.at)) |direction| {
+                _ = reach(g, id, row, direction.delta().x, null, afflictions);
+            }
         }
-        if (r.fright == 0 and r.alive) g.sim.sayAt(r.at, "The {s} stops running.", .{row.name});
+        if (foe.fright == 0 and foe.alive) g.sim.sayAt(foe.at, "The {s} stops running.", .{row.name});
         return;
     }
     if (groping) return;
-    if (row.movement == .swimming) return swimTurn(g, id, row, held, af);
-    if (row.charges) |c| if (chargeTurn(g, id, row, c, braced, held, af, sight)) return;
-    if (row.hooks) |hk| if (hookTurn(g, id, row, hk, braced, af, sight)) return;
-    if (row.keeps > 0) return keepAway(g, id, row, held, af, sight);
+    if (row.movement == .swimming) return swimTurn(g, id, row, held, afflictions);
+    if (row.charges) |charge| if (chargeTurn(g, id, row, charge, braced, held, afflictions, sight)) return;
+    if (row.hooks) |hook| if (hookTurn(g, id, row, hook, braced, afflictions, sight)) return;
+    if (row.keeps > 0) return keepAway(g, id, row, held, afflictions, sight);
     if (row.ranged) |ranged| {
-        const gap = mathx.dist(r.at, h.at);
-        if (!held and backOff(g, id, ranged.retreat, af)) return;
-        if (bow.clearShot(&g.sim.lv, r.at, h.at, ranged.range, g.sim.hero)) |flight| {
-            _ = reach(g, id, row, h.at.x - r.at.x, flight, af);
+        const gap = mathx.dist(foe.at, hero.at);
+        if (!held and backOff(g, id, ranged.retreat, afflictions)) return;
+        if (bow.clearShot(&g.sim.lv, foe.at, hero.at, ranged.range, g.sim.hero)) |flight| {
+            _ = reach(g, id, row, hero.at.x - foe.at.x, flight, afflictions);
             return;
         }
-        if (!held and gap > ranged.retreat) closeIn(g, id, ranged.retreat, af);
+        if (!held and gap > ranged.retreat) closeIn(g, id, ranged.retreat, afflictions);
         return;
     }
-    if (row.blow == .strike and besideWay(g, r.at, h.at) == null) if (besideOf(g, r.at, .ally)) |ally| return bodyStrike(g, id, ally, af, null);
-    const flitted = if (!held and row.flits and g.sim.rng.chance(actor.FLIT)) actor.flit(&g.sim.lv, r.at, id, g.sim.hero, &g.sim.rng) else null;
-    const d = flitted orelse foeWay(g, r.at, id, h.at) orelse return;
-    const to = r.at.add(d.delta());
-    if (held and !to.eq(h.at)) return;
-    if (!to.eq(h.at)) return foeStep(g, id, r.at, d, af);
-    _ = reach(g, id, row, d.delta().x, null, af);
+    if (row.blow == .strike and foes.besideWay(&g.sim, foe.at, hero.at) == null) {
+        if (foes.besideOf(&g.sim, foe.at, .ally)) |ally| return bodyStrike(g, id, ally, afflictions, null);
+    }
+    var flitted: ?mathx.Dir = null;
+    if (!held and row.flits and g.sim.rng.chance(actor.FLIT)) {
+        flitted = actor.flit(&g.sim.lv, foe.at, id, g.sim.hero, &g.sim.rng);
+    }
+    const direction = flitted orelse foeWay(g, foe.at, id, hero.at) orelse return;
+    const to = foe.at.add(direction.delta());
+    if (held and !to.eq(hero.at)) return;
+    if (!to.eq(hero.at)) return foeStep(g, id, foe.at, direction, afflictions);
+    _ = reach(g, id, row, direction.delta().x, null, afflictions);
 }
 
 fn brace(g: *game.Game, id: u16, d: mathx.Dir, comptime said: []const u8) void {
@@ -771,18 +742,10 @@ fn chargeTurn(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, braced: ?
         rush(g, id, row, c, d, af);
         return true;
     }
-    const hero = braceTarget(g, id, c.range, sight) orelse return false;
+    const hero = foes.braceTarget(&g.sim, id, c.range, sight) orelse return false;
     const d = windup.openTo(&g.sim.lv, g.sim.pool.get(id).?.at, hero, c.range) orelse return false;
     brace(g, id, d, "The {s} braces to charge.");
     return true;
-}
-
-fn braceTarget(g: *game.Game, id: u16, range: i32, sight: i32) ?P {
-    const r = g.sim.pool.get(id).?;
-    const hero = g.sim.heroAt().?;
-    const gap = mathx.dist(r.at, hero);
-    if (r.ready_in > 0 or gap < windup.NEAREST or gap > range or !fov.sees(&g.sim.lv, r.at, hero, sight)) return null;
-    return hero;
 }
 
 /// Runs until the next cell is blocked: a hero there takes the charge's blow; anything else leaves it stuck.
@@ -823,7 +786,7 @@ fn hookTurn(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, braced: ?mat
         fling(g, id, row, hk, d, af);
         return true;
     }
-    const hero = braceTarget(g, id, hk.range, sight) orelse return false;
+    const hero = foes.braceTarget(&g.sim, id, hk.range, sight) orelse return false;
     const r = g.sim.pool.get(id).?;
     const d = windup.lineTo(r.at, hero) orelse return false;
     if (!windup.lane(&g.sim.lv, r.at, d, hk.range).has(hero)) return false;
@@ -892,30 +855,10 @@ fn hurl(g: *game.Game, id: u16, hu: actor.Hurl) bool {
 }
 
 /// A step to another cell it keeps its distance from and still has a clear shot from.
-fn reposition(g: *game.Game, id: u16, hu: actor.Hurl, af: actor.Afflicted) bool {
-    const r = g.sim.pool.get(id).?;
-    const Spot = struct {
-        g: *const game.Game,
-        from: P,
-        id: u16,
-        keeps: i32,
-        range: i32,
-
-        fn ok(s: @This(), d: mathx.Dir) bool {
-            const lv = &s.g.sim.lv;
-            if (!lv.stepOk(s.from, d, s.id) or actor.shuns(lv, s.from, d)) return false;
-            const to = s.from.add(d.delta());
-            const hero = s.g.sim.heroAt().?;
-            const gap = mathx.dist(to, hero);
-            return gap > s.keeps and gap <= s.range and bow.clearShot(lv, to, hero, s.range, s.g.sim.hero) != null;
-        }
-    };
-    const spot = Spot{ .g = g, .from = r.at, .id = id, .keeps = actor.row(r.kind).keeps, .range = hu.range };
-    g.sim.lv.clear(spot.from);
-    const picked = g.sim.rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, spot, Spot.ok);
-    g.sim.lv.stand(spot.from, id);
-    const d = picked orelse return false;
-    foeStep(g, id, r.at, d, af);
+fn reposition(g: *game.Game, id: u16, projectile: actor.Hurl, afflictions: actor.Afflicted) bool {
+    const direction = foes.repositionStep(&g.sim, id, projectile) orelse return false;
+    const from = g.sim.pool.get(id).?.at;
+    foeStep(g, id, from, direction, afflictions);
     return true;
 }
 
@@ -986,43 +929,14 @@ fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted, sight: i32)
     const r = g.sim.pool.get(id).?;
     if (actor.row(r.kind).posted) return guardTurn(g, id, af, sight);
     const hero = g.sim.heroAt().?;
-    if (besideOf(g, r.at, .foe)) |foe| return bodyStrike(g, id, foe, af, null);
+    if (foes.besideOf(&g.sim, r.at, .foe)) |foe| return bodyStrike(g, id, foe, af, null);
     if (held) return;
-    if (quarry(g, r.at, hero, sight)) |at| {
+    if (foes.quarry(&g.sim, r.at, hero, sight)) |at| {
         if (actor.approach(&g.sim.lv, r.at, id, at)) |d| return foeStep(g, id, r.at, d, af);
     }
     if (mathx.dist(r.at, hero) <= tactics.RaiseSkeleton.FOLLOW) return;
-    const d = actor.chase(&g.sim.lv, r.at, id, flowTo(g, hero)) orelse return;
+    const d = actor.chase(&g.sim.lv, r.at, id, foes.flowTo(&g.sim, hero)) orelse return;
     foeStep(g, id, r.at, d, af);
-}
-
-const Side = enum { foe, ally };
-
-fn besideOf(g: *game.Game, at: P, side: Side) ?u16 {
-    var best: ?u16 = null;
-    for (mathx.ALL_DIRS) |d| {
-        if (!g.sim.lv.passOk(at, d)) continue;
-        const id = g.sim.lv.who(at.add(d.delta()));
-        const a = g.sim.pool.getConst(id) orelse continue;
-        const fits = switch (side) {
-            .foe => a.foe(),
-            .ally => a.kind.ally(),
-        };
-        if (!fits or a.veiled()) continue;
-        if (best) |b| if (g.sim.pool.items[actor.Pool.slot(b)].hp <= a.hp) continue;
-        best = id;
-    }
-    return best;
-}
-
-fn quarry(g: *game.Game, from: P, hero: P, sight: i32) ?P {
-    var near = grid.Nearest{ .from = from };
-    for (g.sim.pool.constSlice()) |a| {
-        if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, hero) > tactics.RaiseSkeleton.LEASH) continue;
-        if (!fov.sees(&g.sim.lv, from, a.at, sight)) continue;
-        near.offer(a.at);
-    }
-    return near.best;
 }
 
 fn guardTurn(g: *game.Game, id: u16, af: actor.Afflicted, sight: i32) void {
@@ -1075,7 +989,7 @@ fn bodyBlow(g: *game.Game, by: u16, target: u16, s: actor.Strike, verb: []const 
 fn swimTurn(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflicted) void {
     const r = g.sim.pool.get(id).?;
     const h = g.sim.heroActor().?;
-    if (besideWay(g, r.at, h.at)) |d| {
+    if (foes.besideWay(&g.sim, r.at, h.at)) |d| {
         r.submerged = false;
         _ = reach(g, id, row, d.delta().x, null, af);
         return;
@@ -1091,7 +1005,7 @@ fn keepAway(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflic
     if (row.hurls) |hu| if (hurlerTurn(g, id, hu, held, af)) return;
     if (!held and backOff(g, id, row.keeps, af)) return;
     const r = g.sim.pool.get(id).?;
-    if (besideWay(g, r.at, g.sim.heroAt().?)) |d| {
+    if (foes.besideWay(&g.sim, r.at, g.sim.heroAt().?)) |d| {
         _ = reach(g, id, row, d.delta().x, null, af);
         return;
     }
@@ -1110,67 +1024,24 @@ fn backOff(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) bool {
 fn closeIn(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) void {
     const r = g.sim.pool.get(id).?;
     const hero = g.sim.heroAt().?;
-    const d = actor.chase(&g.sim.lv, r.at, id, flowTo(g, hero)) orelse return;
+    const d = actor.chase(&g.sim.lv, r.at, id, foes.flowTo(&g.sim, hero)) orelse return;
     if (mathx.dist(r.at.add(d.delta()), hero) <= keep) return;
     foeStep(g, id, r.at, d, af);
 }
 
-fn kinInReach(lv: *const grid.Level, m: actor.Mend, a: *const actor.Actor, from: P, within: i32) bool {
-    if (!a.alive or std.mem.indexOfScalar(actor.Kind, m.kin, a.kind) == null) return false;
-    return mathx.dist(a.at, from) <= within and grid.sightLine(lv, from, a.at);
-}
-
 /// Thrown along a clear flight at a hero not already held; a dodge or resistance spends it all the same.
-fn throwNet(g: *game.Game, id: u16, n: actor.Net) bool {
-    const r = g.sim.pool.get(id).?;
-    const h = g.sim.heroActor().?;
-    if (r.ready_in > 0 or h.pin.holding()) return false;
-    const flight = bow.clearShot(&g.sim.lv, r.at, h.at, n.range, g.sim.hero) orelse return false;
-    r.ready_in = n.every;
-    g.pic.turnLater(.fromInt(id), h.at.x - r.at.x);
-    const name = actor.row(r.kind).name;
-    if (g.sim.combatStats(r).misses(g.sim.combatStats(h), &g.sim.rng)) {
-        g.sim.log.say("{s} dodges the {s}'s net.", .{ g.sim.name.text(), name });
-        g.pic.recordFoeAttack(.fromInt(id), .{ .snare = null }, flight);
-        return true;
-    }
-    if (g.sim.pinFor(h, n.pins)) {
-        g.sim.log.push(.danger, "The {s} nets {s}!", .{ name, g.sim.name.text() });
-    } else g.sim.log.say("{s} shrugs off the {s}'s net.", .{ g.sim.name.text(), name });
-    g.pic.recordFoeAttack(.fromInt(id), .{ .snare = g.pic.heroAfter(&g.sim) }, flight);
+fn throwNet(g: *game.Game, id: u16, net: actor.Net) bool {
+    const result = foes.throwNet(&g.sim, id, net) orelse return false;
+    g.pic.turnLater(.fromInt(id), result.facing_delta);
+    const after = if (result.landed) g.pic.heroAfter(&g.sim) else null;
+    g.pic.recordFoeAttack(.fromInt(id), .{ .snare = after }, result.flight);
     return true;
 }
 
-fn mend(g: *game.Game, id: u16, m: actor.Mend, sight: i32) bool {
-    const r = g.sim.pool.get(id).?;
-    if (r.ready_in > 0) return false;
-    const within = @min(m.reach, sight);
-    var hurt: ?usize = null;
-    var sleepers = false;
-    for (g.sim.pool.slice(), 0..) |*a, i| {
-        if (!kinInReach(&g.sim.lv, m, a, r.at, within)) continue;
-        sleepers = sleepers or !a.awake;
-        if (!a.hurt()) continue;
-        if (hurt) |b| {
-            const worst = g.sim.pool.items[b];
-            if (@as(i64, a.hp) * worst.max >= @as(i64, worst.hp) * a.max) continue;
-        }
-        hurt = i;
-    }
-    const name = actor.row(r.kind).name;
-    if (hurt) |i| {
-        const a = &g.sim.pool.items[i];
-        _ = a.heal(m.amount);
-        g.sim.sayAt(r.at, "The {s} mends the {s}.", .{ name, actor.row(a.kind).name });
-        g.pic.owe(.fromInt(id), .mended, .{ .slot = actor.ActorSlot.fromIndex(i), .after = g.pic.afterOf(&g.sim, .fromIndex(i)) });
-    } else if (sleepers) {
-        for (g.sim.pool.slice()) |*a| {
-            if (kinInReach(&g.sim.lv, m, a, r.at, within)) a.awake = true;
-        }
-        g.sim.sayAt(r.at, "The {s} rouses its kin.", .{name});
-        g.pic.owe(.fromInt(id), .mended, .{});
-    } else return false;
-    r.ready_in = m.every;
+fn mend(g: *game.Game, id: u16, healing: actor.Mend, sight: i32) bool {
+    const result = foes.mend(&g.sim, id, healing, sight) orelse return false;
+    const after = if (result.slot) |slot| g.pic.afterOf(&g.sim, slot) else null;
+    g.pic.owe(.fromInt(id), .mended, .{ .slot = result.slot, .after = after });
     return true;
 }
 
@@ -1183,24 +1054,11 @@ fn foeStep(g: *game.Game, id: u16, from: P, chosen: mathx.Dir, af: actor.Afflict
 }
 
 fn foeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
-    return besideWay(g, at, hero) orelse actor.chase(&g.sim.lv, at, id, flowTo(g, hero));
+    return foes.besideWay(&g.sim, at, hero) orelse actor.chase(&g.sim.lv, at, id, foes.flowTo(&g.sim, hero));
 }
 
 fn fleeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
-    return actor.flee(&g.sim.lv, at, id, flowTo(g, hero));
-}
-
-fn besideWay(g: *const game.Game, at: P, hero: P) ?mathx.Dir {
-    const d = mathx.dirTo(at, hero) orelse return null;
-    return if (g.sim.lv.passOk(at, d)) d else null;
-}
-
-fn flowTo(g: *game.Game, hero: P) *const [grid.CELLS]i32 {
-    if (!g.sim.flowed) {
-        _ = grid.distances(&g.sim.lv, hero, &g.sim.flow, &g.sim.queue);
-        g.sim.flowed = true;
-    }
-    return &g.sim.flow;
+    return actor.flee(&g.sim.lv, at, id, foes.flowTo(&g.sim, hero));
 }
 
 /// `af`: what the turn it strikes on was worn under; whether a strike landed on the hero.

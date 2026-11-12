@@ -85,7 +85,7 @@ ash, rime and storm wands improve fire, cold and lightning damage respectively. 
 grant a larger general spell bonus. Tomes grant mana, orbs spell critical chance, totems
 life on kill, bucklers dodge, and shields physical reduction. Gloves, armour, belts, boots,
 helmets and rings offer heavy/light/spell damage, life, mana, dodge, recovery or armour
-identities. `items.Spec.innate` is the source; rolled modifiers never include these fixed effects.
+identities. `item_bases.Spec.innate` is the source; rolled modifiers never include these fixed effects.
 
 Equipment recovery effects combine with passive perks through `Simulation.heroPerks`.
 Weapon and spell critical bonuses remain separate, and elemental/physical bonuses apply
@@ -100,7 +100,7 @@ Worn-item kill recovery, including Totem and Harvest, also recovers life from st
 passive kill recovery applies only to blows. Healing is presented with the killing impact or tick.
 
 Rare names combine two saved words independently of the modifiers, such as `Spine Crusher`,
-`Void Maw` or `Magus Fold`; `items.RareName` owns the word pools. The base name remains visible beneath the
+`Void Maw` or `Magus Fold`; `affixes.RareName` owns the word pools. The base name remains visible beneath the
 yellow name on item cards. Added modifiers are yellow; fixed base properties stay neutral.
 Rares use the same legal modifier pool and value ranges as magic items, without repeating
 a modifier kind, with at most two prefixes and two suffixes. Names and all four mod slots

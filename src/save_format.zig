@@ -343,6 +343,7 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *ground_it
         if (body.max > BODY_MOST or body.bleed.amount > BODY_MOST or body.clock.ticks < -BODY_MOST or body.clock.ticks > BODY_MOST) return error.Damaged;
         if (body.sunder.stacks > sunder.MOST or (body.sunder.stacks == 0) != (body.sunder.turns == 0)) return error.Damaged;
         if (body.maim.limp and body.maim.turns == 0) return error.Damaged;
+        if (body.tactics.guard > progress.RANKS or body.tactics.steady > progress.RANKS) return error.Damaged;
         if (body.bolt) |b| {
             const hu = actor.row(body.kind).hurls orelse return error.Damaged;
             if (!b.valid(hu.range)) return error.Damaged;
@@ -498,6 +499,35 @@ test "a body whose clock, bleed or life would overflow a turn's arithmetic is da
         try std.testing.expectError(error.Damaged, validateLevel(&run.sim.lv, &run.sim.pool, &run.sim.ground));
     }
     h.* = saved;
+}
+
+test "portable saves reject tactical ranks beyond the supported skills before applying them" {
+    const alloc = std.testing.allocator;
+    const run = try game.boot(alloc);
+    defer game.shut(alloc, run);
+    game.harness.arena(run, .{ .x = 20, .y = 20 }, &.{});
+    const id = game.harness.spawnAt(run, .skeleton, .{ .x = 21, .y = 20 }, true);
+    const snapshot = try alloc.create(Snapshot);
+    defer alloc.destroy(snapshot);
+    try capture(run, snapshot);
+    const into = try alloc.create(data.Map);
+    defer alloc.destroy(into);
+    into.* = .{};
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    const body = &snapshot.run.pool.items[actor.Pool.slot(id)];
+    inline for (.{ "guard", "steady" }) |field| {
+        @field(body.tactics, field) = progress.RANKS;
+        try validate(snapshot);
+        @field(body.tactics, field) = 255;
+        bytes.clearRetainingCapacity();
+        try writeSnapshot(snapshot, &bytes);
+        try TestRecord.seal(&bytes);
+        try std.testing.expectError(error.Damaged, read(bytes.items, run, into));
+        try std.testing.expectEqual(@as(u8, 0), @field(run.sim.pool.get(id).?.tactics, field));
+        try std.testing.expectEqual(@as(usize, 0), into.node_n);
+        @field(body.tactics, field) = 0;
+    }
 }
 
 test "a loaded modifier below its roll is raised to the least its roll gives, carried or lying" {

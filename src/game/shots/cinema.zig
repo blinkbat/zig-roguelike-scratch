@@ -189,7 +189,8 @@ pub fn captureCinemaScene(g: *game.Game, target: rl.RenderTexture2D, comptime na
                 const dx = @mod(x + c.x, game.CELL);
                 const dy = @mod(y + c.y, game.CELL);
                 const interior = dx >= game.CELL / light.SUB and dx < game.CELL - game.CELL / light.SUB and dy >= game.CELL / light.SUB and dy < game.CELL - game.CELL / light.SUB;
-                if ((!g.sim.lv.isSeen(p) and interior) or (live_only and !g.sim.lv.isLit(p))) {
+                const sight = g.light.sightAt(@as(f32, @floatFromInt(x + c.x)) / game.CELL_F, @as(f32, @floatFromInt(y + c.y)) / game.CELL_F);
+                if (interior and (!g.sim.lv.isSeen(p) or (live_only and sight == 0))) {
                     hidden += 1;
                     if (!same) {
                         std.debug.print("cinema {s}/{s} changed hidden pixel {d},{d}, cell {d},{d}: {any} to {any}\n", .{ name, f.name, x, y, p.x, p.y, a, b });

@@ -24,111 +24,12 @@ const rewards = @import("rewards.zig");
 const Simulation = simulation.Simulation;
 const P = mathx.P;
 
-const FLIGHT_S: f32 = 0.022;
-const TRAIL_PER_CELL: usize = 12;
-
-pub fn flown(n: usize) f32 {
-    return @as(f32, @floatFromInt(n)) * FLIGHT_S;
-}
-
-/// Presentation only: the hit already resolved when this was made.
-pub const Shot = struct {
-    view: MotionView = .{},
-    flight: bow.Flight,
-    from: P,
-    act: skillbar.Act = .shoot,
-    net: bool = false,
-    hook: bool = false,
-    t: f32 = 0,
-    trail_t: f32 = 0,
-
-    pub fn lands(self: *const Shot) f32 {
-        return flown(self.flight.len -| 1);
-    }
-
-    pub fn ends(self: *const Shot) f32 {
-        return flown(self.flight.len);
-    }
-
-    pub fn position(self: *const Shot, time: f32) [2]f32 {
-        const a = mathx.centre(self.from);
-        const b = mathx.centre(self.flight.end() orelse return a);
-        const duration = self.lands();
-        const k = if (duration > 0) std.math.clamp(time / duration, 0, 1) else 1;
-        return mathx.lerp2(a, b, k);
-    }
-
-    pub fn direction(self: *const Shot) [2]f32 {
-        return mathx.unitToward(mathx.centre(self.from), self.position(self.ends()));
-    }
-
-    /// false once it has ended.
-    pub fn fly(self: *Shot, effects: *fx.Fx, lv: *const grid.Level, dt: f32) bool {
-        self.t += dt;
-        const end = @min(self.t, self.lands());
-        const gap = self.lands() / @as(f32, @floatFromInt(@max(1, self.flight.len * TRAIL_PER_CELL)));
-        const heading = self.direction();
-        while (self.trail_t < end) : (self.trail_t += gap) effects.trail(lv, self.position(self.trail_t), heading, self.act, self.t - self.trail_t);
-        return self.t < self.ends();
-    }
-
-    pub fn zapInto(self: *const Shot, effects: *fx.Fx) void {
-        if (self.act.element() != .lightning) return;
-        const to = self.flight.end() orelse return;
-        effects.zap(@max(0, self.lands() - game.ZAP_S), .{ .from = mathx.centre(self.from), .to = mathx.centre(to) });
-    }
-};
-
-test "missiles move continuously to the existing impact time in every direction" {
-    const lv = grid.openFloor();
-    const from = P{ .x = 20, .y = 20 };
-    for (mathx.ALL_DIRS) |d| {
-        const delta = d.delta();
-        const to = P{ .x = from.x + delta.x * 6, .y = from.y + delta.y * 6 };
-        const shot_ = Shot{ .from = from, .flight = bow.fly(&lv, from, to) };
-        const lands = shot_.lands();
-        try std.testing.expectEqual(mathx.centre(from), shot_.position(0));
-        try std.testing.expectEqual(mathx.centre(to), shot_.position(lands));
-        const a = shot_.position(lands * 0.4);
-        const b = shot_.position(lands * 0.41);
-        const moved = mathx.len(b[0] - a[0], b[1] - a[1]);
-        try std.testing.expect(moved > 0 and moved < 0.1);
-    }
-}
-
-/// Seconds a firebolt takes over each cell it flies.
-const BOLT_CELL_S: f32 = 0.09;
-
-/// A firebolt as drawn: from `from` to `to` over `span` seconds once `t` reaches 0; seen before then if `before`, and after if `after`.
-pub const BoltShown = struct {
-    view: MotionView = .{},
-    from: [2]f32,
-    to: [2]f32,
-    heading: [2]f32,
-    t: f32 = 0,
-    span: f32 = 0,
-    before: bool = true,
-    after: bool = true,
-
-    fn resting(b: firebolt.Bolt) BoltShown {
-        const p = b.point();
-        return .{ .from = p, .to = p, .heading = b.heading() };
-    }
-
-    pub fn at(self: *const BoltShown) ?[2]f32 {
-        if (self.t < 0) return if (self.before) self.from else null;
-        if (self.done()) return if (self.after) self.to else null;
-        return mathx.lerp2(self.from, self.to, self.t / self.span);
-    }
-
-    pub fn moving(self: *const BoltShown) bool {
-        return self.t >= 0 and !self.done();
-    }
-
-    fn done(self: *const BoltShown) bool {
-        return self.t >= self.span;
-    }
-};
+const projectiles = @import("projectile_motion.zig");
+pub const Shot = projectiles.Shot;
+pub const BoltShown = projectiles.BoltShown;
+pub const MotionView = projectiles.MotionView;
+pub const flown = projectiles.flown;
+const BOLT_CELL_S = projectiles.BOLT_CELL_S;
 
 /// `snare`: a net, holding the hero as it lands, or dodged (null).
 pub const FoeHit = union(enum) { hurt: fx.After, kill: fx.After, burst: fx.After, snare: ?fx.After, miss };
@@ -231,18 +132,6 @@ pub const SeenBody = struct {
     opacity: f32,
     dark: f32,
     flash: f32,
-};
-
-pub const MotionView = struct {
-    at: ?[2]f32 = null,
-    alpha: f32 = 0,
-
-    fn step(self: *MotionView, pic: *const Presentation, sim: *const Simulation, at: ?[2]f32, k: f32) void {
-        const visible = if (at) |p| pic.litShown(sim, mathx.cellOf(p)) else false;
-        if (visible) self.at = at;
-        self.alpha = mathx.ease(self.alpha, if (visible) 1 else 0, k, k);
-        if (self.alpha == 0) self.at = null;
-    }
 };
 
 pub const SeenCell = struct {
@@ -884,14 +773,19 @@ pub const Presentation = struct {
         self.mana_fill = mathx.ease(self.mana_fill, self.manaFill(sim), resource_ease, resource_ease);
     }
 
+    fn stepProjectileView(self: *const Presentation, sim: *const Simulation, view: *MotionView, at: ?[2]f32, easing: f32) void {
+        const visible = if (at) |position| self.litShown(sim, mathx.cellOf(position)) else false;
+        view.step(at, visible, easing);
+    }
+
     fn stepSighted(self: *Presentation, sim: *const Simulation, dt: f32) void {
         const k = mathx.easing(dt, visibility.REVEAL);
-        if (self.shot) |*s| s.view.step(self, sim, if (s.t >= 0) s.position(s.t) else null, k);
+        if (self.shot) |*s| self.stepProjectileView(sim, &s.view, if (s.t >= 0) s.position(s.t) else null, k);
         for (&self.foe_shots) |*pending| if (pending.*) |*s| {
-            s.view.step(self, sim, if (s.t >= 0) s.position(s.t) else null, k);
+            self.stepProjectileView(sim, &s.view, if (s.t >= 0) s.position(s.t) else null, k);
         };
         for (&self.bolts) |*pending| if (pending.*) |*b| {
-            b.view.step(self, sim, b.at(), k);
+            self.stepProjectileView(sim, &b.view, b.at(), k);
         };
         for (self.sighted[0..sim.pool.n], 0..) |*s, i| {
             const visible = self.visibleBody(sim, i) != null;
@@ -1014,6 +908,10 @@ pub const Presentation = struct {
             const under = self.tileShown(sim, game.cellUnder(at));
             if (under == .shallows) {
                 self.fx.splash(game.middle(at));
+            } else if (under == .grass or under == .tall_grass) {
+                self.fx.leaves(game.middle(at));
+            } else if (under == .bridge) {
+                self.fx.woodDust(game.middle(at));
             } else if (look.stepDust(under)) |col| self.fx.dust(game.middle(at), col);
         }
     }

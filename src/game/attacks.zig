@@ -271,3 +271,25 @@ fn leeched(sim: *Simulation, dmg: i32) i32 {
     if (share == 0) return 0;
     return @intCast(mathx.percentRound(@as(i64, dmg) * share, &sim.rng));
 }
+
+pub const Chosen = struct { roll: Roll, takes: bool };
+
+fn survives(sim: *const Simulation, a: *const actor.Actor, dmg: i32, ailment: resilience.Kind) bool {
+    const d = dealt(sim, a, dmg, ailment);
+    return d > 0 and d < a.hp;
+}
+
+pub fn chosenBlow(sim: *Simulation, target: *actor.Actor, raw: Roll, comptime act: skillbar.Act, through: bool, resist: i16) Chosen {
+    const M = skillbar.Act.skill(act);
+    const stats = sim.combatStats(target);
+    var roll = raw.against(stats.armour, &sim.rng);
+    roll.hit_checked = true;
+    roll.opportunity = opportune(sim, target);
+    var takes = false;
+    if (comptime act.afflicts()) {
+        const can_afflict = through and survives(sim, target, roll.burnt(stats.elements).dmg, M.AILMENT);
+        takes = afflicted(sim, target, M, can_afflict, resist);
+        if (takes) roll.applied = M.AILMENT;
+    }
+    return .{ .roll = roll, .takes = takes };
+}

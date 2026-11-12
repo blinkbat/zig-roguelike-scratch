@@ -106,7 +106,7 @@ pub const Cam = struct {
         return raster.rect(c.sx(p), c.sy(p), game.CELL, game.CELL);
     }
 
-    fn origin(c: Cam) [2]f32 {
+    pub fn origin(c: Cam) [2]f32 {
         return .{ @floatFromInt(-c.x), @floatFromInt(-c.y) };
     }
 

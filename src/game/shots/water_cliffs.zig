@@ -37,6 +37,8 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
     try std.fs.cwd().makePath(WATER_CLIFFS_DIR);
+    try captureFootfalls(g, target);
+    try captureWaterVisibility(g, target);
     try checkCaravanShadowCulling(g, target);
     try waterCliffTemplates(g);
     try checkWaterCapTint(g);
@@ -105,6 +107,68 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
     try capture(g, target, WATER_CLIFFS_DIR ++ "/mirrors.png");
     try checkWaterMirrors(g, target);
     try checkMapEdge(g, target);
+}
+
+fn captureWaterVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const lens = g.cinema.lens.options;
+    defer g.cinema.lens.options = lens;
+    g.cinema.lens.options = .neutral;
+    game.harness.grassArena(g, .{ .x = 24, .y = 19 }, &.{});
+    @memset(&g.sim.lv.tile, .water);
+    studyLit(g, true, day.NOON);
+    for (&g.sim.lv.lit, 0..) |*lit, i| {
+        const p = grid.Level.of(i);
+        lit.* = p.x + p.y < 44;
+    }
+    g.light.settle(&g.sim.lv);
+    g.pic.snapSight(&g.sim);
+    try capture(g, target, WATER_CLIFFS_DIR ++ "/visibility-diagonal.png");
+    const c = game.scene.Cam.of(g);
+    var air: [2]rl.Image = undefined;
+    for (&air, 0..) |*img, i| {
+        if (i == 1) @memset(&g.sim.lv.lit, false);
+        g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{});
+        intoTarget(g, target);
+        rl.clearBackground(rl.Color.black);
+        g.cinema.drawAir(g.light, .{ @floatFromInt(-c.x), @floatFromInt(-c.y) }, game.CELL_F, g.screen, 0);
+        outOfTarget(g);
+        img.* = try readTarget(target);
+    }
+    defer for (air) |img| rl.unloadImage(img);
+    var mist: usize = 0;
+    var px = pixels(g.screen.x, g.screen.y);
+    while (px.next()) |p| {
+        const a = rl.getImageColor(air[0], p.x, p.y);
+        const b = rl.getImageColor(air[1], p.x, p.y);
+        if (!sameRgb(a, b)) return error.WaterMistCutsAtGameplaySight;
+        if (!sameRgb(a, rl.Color.black)) mist += 1;
+    }
+    if (mist < MIN_PIXELS) return error.WaterMistMissing;
+    std.debug.print("water visibility GPU: {d} mist pixels follow presentation sight across a diagonal boundary\n", .{mist});
+    g.light.step(&g.sim.lv, 0.05);
+    try capture(g, target, WATER_CLIFFS_DIR ++ "/visibility-fading.png");
+    g.light.settle(&g.sim.lv);
+    try capture(g, target, WATER_CLIFFS_DIR ++ "/visibility-memory.png");
+}
+
+fn captureFootfalls(g: *game.Game, target: rl.RenderTexture2D) !void {
+    for ([_]grid.Tile{ .grass, .tall_grass, .dirt, .bridge }) |tile| {
+        const from = P{ .x = 24, .y = 19 };
+        const to = from.add(.{ .x = 1, .y = 0 });
+        game.harness.grassArena(g, from, &.{});
+        for (23..28) |x| g.sim.lv.set(.{ .x = @intCast(x), .y = from.y }, tile);
+        studyLit(g, true, day.NOON);
+        g.st = .{};
+        game.harness.stepTo(g, g.sim.hero, to);
+        const slot = g.sim.heroSlot().?;
+        game.update(g, g.pic.glide[slot].span());
+        g.pic.fx.step(&g.sim.lv, 0.1);
+        var motes: usize = 0;
+        for (g.pic.fx.motes) |m| motes += @intFromBool(m.life > 0);
+        if (motes == 0) return error.FootfallParticlesMissing;
+        var path: [128]u8 = undefined;
+        try capture(g, target, try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/footfall-{s}.png", .{@tagName(tile)}));
+    }
 }
 
 fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -460,6 +524,9 @@ pub fn checkWaterSurface(g: *game.Game) !void {
 }
 
 pub fn checkMapEdge(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const lens = g.cinema.lens.options;
+    defer g.cinema.lens.options = lens;
+    g.cinema.lens.options = .neutral;
     game.harness.grassArena(g, .{ .x = 24, .y = grid.H - 4 }, &.{});
     for (0..grid.W) |x| g.sim.lv.set(.{ .x = @intCast(x), .y = grid.H - 1 }, .grass);
     studyLit(g, true, day.NOON);
@@ -519,6 +586,7 @@ pub fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     g.cam = camera;
     @memset(&g.sim.lv.lit, false);
     g.light.settle(&g.sim.lv);
+    g.pic.snapSight(&g.sim);
     try capture(g, target, SHOTS_DIR ++ "/water-mirrors-memory.png");
     const memory = try readTarget(g.sprites.mirror_memory.?);
     defer rl.unloadImage(memory);
@@ -542,6 +610,7 @@ pub fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     try checkRememberedBarrels(g, target, memory);
     @memset(&g.sim.lv.seen, false);
     g.light.settle(&g.sim.lv);
+    g.pic.snapSight(&g.sim);
     intoTarget(g, target);
     const c = game.scene.Cam.of(g);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;

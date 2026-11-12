@@ -29,12 +29,16 @@ pub const Prompt = union(enum) {
 
     pub fn of(st: *const input.State, b: input.Button) Prompt {
         if (!st.device.pad()) return .{ .key = st.slotCaption(b) };
-        return switch (b) {
-            inline .a, .b, .x, .y => |f| .{ .face = .{ .button = @field(FaceButton, @tagName(f)), .sony = st.device.playstation() } },
-            .lb, .rb, .rt, .inspect => .{ .pill = st.caption(b) },
-            .character => if (st.device.playstation()) .{ .pill = st.caption(b) } else .menu,
-            .pause => if (st.device.playstation()) .{ .pill = st.caption(b) } else .view,
+        const face_button: FaceButton = switch (b.pad()) {
+            .right_face_down => .a,
+            .right_face_right => .b,
+            .right_face_left => .x,
+            .right_face_up => .y,
+            .middle_right => return if (st.device.playstation()) .{ .pill = st.caption(b) } else .menu,
+            .middle_left => return if (st.device.playstation()) .{ .pill = st.caption(b) } else .view,
+            else => return .{ .pill = st.caption(b) },
         };
+        return .{ .face = .{ .button = face_button, .sony = st.device.playstation() } };
     }
 
     pub fn width(p: Prompt, face: *const font.Face, h: i32) i32 {

@@ -113,7 +113,7 @@ const TRASH_LEVEL: u16 = 3;
 const ALMOST_SHARE: u64 = 5;
 const RECENT_MILESTONE: u32 = 10;
 
-const Taken = struct { total: i32 = 0, hits: usize = 0, biggest: i32 = 0 };
+const Taken = struct { total: i64 = 0, hits: usize = 0, biggest: i32 = 0 };
 
 fn taken(ctx: *const Context) Taken {
     var t = Taken{};
@@ -157,8 +157,8 @@ pub fn contributors(ctx: *const Context) Top {
     var all = grid.Bounded(Contributor, CONTRIBUTORS_MAX){};
     const t = taken(ctx);
     const total: f32 = @floatFromInt(@max(1, t.total));
-    var sources = grid.Bounded(struct { by: Source, sum: i32 }, SOURCES_MAX){};
-    var torn: i32 = 0;
+    var sources = grid.Bounded(struct { by: Source, sum: i64 }, SOURCES_MAX){};
+    var torn: i64 = 0;
     var tore = false;
     var misses: usize = 0;
     var stun: ?struct { turn: usize, event: usize, by: actor.Kind } = null;
@@ -186,7 +186,7 @@ pub fn contributors(ctx: *const Context) Top {
         all.push(.{ .weight = @as(f32, @floatFromInt(s.sum)) / total, .what = .{ .source = s.by } });
     }
     if (stun) |s| {
-        var after: i32 = 0;
+        var after: i64 = 0;
         for (ctx.turns[s.turn..], s.turn..) |*turn, ti| for (turn.slice(), 0..) |e, ei| {
             if (e == .hurt and (ti > s.turn or ei > s.event)) after += e.hurt.dmg;
         };
@@ -233,7 +233,7 @@ pub fn tags(ctx: *const Context, top: *const Top) Tags {
     const t = taken(ctx);
     if (k.dmg - k.before >= @max(OVERKILL_MIN, k.before)) out.insert(.overkill);
     if (k.before >= ctx.last().start.max) out.insert(.one_shot);
-    if (t.hits >= CHIP_HITS and t.biggest * CHIP_SHARE <= ctx.last().start.max) out.insert(.chip);
+    if (t.hits >= CHIP_HITS and @as(i64, t.biggest) * CHIP_SHARE <= ctx.last().start.max) out.insert(.chip);
     if (k.by == .foe and actor.row(k.by.foe).hp <= TRASH_HP and ctx.level >= TRASH_LEVEL) out.insert(.by_trash);
     var gassed_by: ?Tag = null;
     for (ctx.turns) |*turn| for (turn.slice()) |e| switch (e) {
@@ -538,6 +538,29 @@ test "a death by many small bites, a flask left full, reads as plain sentences" 
     try std.testing.expect(t.contains(.chip) and t.contains(.by_trash) and t.contains(.flask_unused) and !t.contains(.one_shot));
     const r = write(&ctx);
     try std.testing.expectEqualStrings("Arwen the archer was bitten to death by a mere rat in the Warrens. Arwen took one small wound after another. Arwen had a life flask ready but did not drink it.", r.text());
+}
+
+test "death reports retain large damage totals and do not mistake large hits for chips" {
+    var turns: [chronicle.KEPT]Turn = undefined;
+    for (&turns, 0..) |*turn, i| {
+        turn.* = turnOf(@intCast(i + 1), 1_000_000_000, &.{
+            .{ .stunned = .pib },
+            .{ .hurt = .{ .by = .bleed, .dmg = 500_000_000, .before = 500_000_000, .torn = true } },
+        });
+        turn.start.max = 1_000_000_000;
+    }
+    const ctx = testContext(&turns);
+    try std.testing.expectEqual(@as(i64, 2_500_000_000), taken(&ctx).total);
+    const top = contributors(&ctx);
+    try std.testing.expectEqual(TOP, top.n);
+    var sum: f32 = 0;
+    for (top.slice()) |c| {
+        try std.testing.expect(c.weight > 0);
+        sum += c.weight;
+    }
+    try std.testing.expectApproxEqAbs(@as(f32, 1), sum, 1e-5);
+    try std.testing.expect(!tags(&ctx, &top).contains(.chip));
+    try std.testing.expect(write(&ctx).text().len > 0);
 }
 
 test "an arrow answered by a bolt past the last of life names the hero's last shot" {

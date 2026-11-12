@@ -116,10 +116,10 @@ pub const Cinema = struct {
         var pixels: [grid.CELLS]rl.Color = @splat(rl.Color.blank);
         var cells = view.grown(FIELD_MARGIN).cells();
         while (cells.next()) |p| {
-            if (!lv.isLit(p)) continue;
+            if (!lv.isSeen(p)) continue;
             const t = lv.at(p);
             const pixel = &pixels[grid.Level.idx(p)];
-            @field(pixel, FIELD.lit) = 255;
+            @field(pixel, FIELD.lit) = if (lv.isLit(p)) 255 else 0;
             if (look.reflects(t)) {
                 @field(pixel, FIELD.water) = 255;
                 self.active_bloom = true;
@@ -253,7 +253,7 @@ const FIELD_FS = shaders.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\    return texture(field, (floor(p) + 0.5) / CELLS);
     \\}
     \\float liveAt(vec2 p) {
-    \\    return fieldAt(p).LIT * texture(visibility, p / CELLS).a;
+    \\    return insideMap(p) ? texture(visibility, p / CELLS).a : 0.0;
     \\}
     \\
 ;

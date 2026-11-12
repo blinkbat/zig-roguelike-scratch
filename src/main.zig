@@ -28,6 +28,10 @@ pub fn main() !void {
 }
 
 test {
+    _ = @import("gfx/status_marks.zig");
+    _ = @import("edit/plot_fields.zig");
+    _ = @import("game/projectile_motion.zig");
+    _ = @import("game/foe_rules.zig");
     _ = @import("gfx/effect_state.zig");
     _ = @import("gfx/impact_queue.zig");
     _ = @import("gfx/sprite_assets.zig");

@@ -290,6 +290,7 @@ pub const State = struct {
     /// Where the mouse rests on the window, when focused and over it.
     pointer: ?mathx.P = null,
     click: bool = false,
+    left_down: bool = false,
     left_released: bool = false,
     right_click: bool = false,
     middle_click: bool = false,
@@ -423,6 +424,7 @@ pub const State = struct {
         self.movePointer(if (rl.isCursorOnScreen()) mouseAt() else null, was_focused);
         const over = was_focused and self.pointer != null;
         self.click = over and rl.isMouseButtonPressed(.left);
+        self.left_down = over and rl.isMouseButtonDown(.left);
         self.left_released = over and rl.isMouseButtonReleased(.left);
         self.right_click = over and rl.isMouseButtonPressed(.right);
         self.middle_click = over and rl.isMouseButtonPressed(.middle);
@@ -958,12 +960,13 @@ test "mouse motion buttons and fractional wheel select keyboard hints without a 
     st.movePointer(.{ .x = 120, .y = 100 }, false);
     try std.testing.expect(!st.mouse_moved);
     st.click = true;
+    st.left_down = true;
     st.right_click = true;
     st.middle_click = true;
     st.dragging = true;
     st.mouse_moved = true;
     st.focus(false);
-    try std.testing.expect(!st.mouseUsed(0) and !st.dragging and st.pointer == null);
+    try std.testing.expect(!st.mouseUsed(0) and !st.left_down and !st.dragging and st.pointer == null);
 }
 
 test "a smooth wheel's fractions add up to whole notches, in the game and the editor alike" {

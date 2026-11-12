@@ -55,6 +55,8 @@ PS button do nothing; GLFW reads no touchpad.
   pulls a trigger past its latch (`input.choosePad`). A wheel or an unmapped joystick is passed over.
 - **Queued input**: movement, skills and interactions asked for while the last turn is still drawn run once it is quiet;
   the latest wins, except that a held walk repeating does not displace a queued skill or interaction.
+  With a visible foe nearby (the same check that suppresses automatic chest opening), only inputs in the
+  final 120 ms of the turn are buffered, including mouse map clicks; earlier inputs are discarded.
   Interactions queued during door travel open the nearby menu after arrival.
 - **Focus**: play input is cleared while the window is out of focus, including unsettled taps and queued actions;
   the current turn's presentation finishes without spending another turn. Device icons are retained, and trigger

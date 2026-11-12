@@ -330,6 +330,7 @@ pub const WATER_DROP = rl.Color{ .r = 214, .g = 232, .b = 252, .a = 205 };
 pub const RIPPLE = rgb(0x9db6d4);
 pub const DIRT_DUST = rl.Color{ .r = 200, .g = 182, .b = 148, .a = 170 };
 pub const SAND_DUST = rl.Color{ .r = 238, .g = 226, .b = 192, .a = 160 };
+pub const GRASS_LEAF = rl.Color{ .r = 174, .g = 192, .b = 92, .a = 225 };
 
 pub fn stepDust(t: grid.Tile) ?rl.Color {
     return switch (ground.of(t) orelse return null) {

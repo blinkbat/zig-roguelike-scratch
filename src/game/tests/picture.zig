@@ -292,12 +292,15 @@ test "a long frame that ends a step in shallows and starts the next walk still s
     try std.testing.expect(g.pic.fx.head != initial);
 }
 
-test "a step onto dirt or sand kicks up its own dust at the footfall, once" {
+test "a step kicks up its surface particles at the footfall, once" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const cases = [_]struct { tile: grid.Tile, ink: @TypeOf(look.DIRT_DUST) }{
         .{ .tile = .dirt, .ink = look.DIRT_DUST },
         .{ .tile = .sand, .ink = look.SAND_DUST },
+        .{ .tile = .grass, .ink = look.GRASS_LEAF },
+        .{ .tile = .tall_grass, .ink = look.GRASS_LEAF },
+        .{ .tile = .bridge, .ink = look.DIRT_DUST },
     };
     for (cases) |case| {
         const from = P{ .x = 20, .y = 20 };
@@ -323,13 +326,17 @@ test "footfalls do not appear on bare ground, hidden steps or melee bumps" {
     defer game.shut(std.testing.allocator, g);
     const cases = [_]struct { tile: grid.Tile, hidden: bool = false, bump: bool = false }{
         .{ .tile = .floor },
-        .{ .tile = .bridge },
+        .{ .tile = .stone_bridge },
         .{ .tile = .ice },
         .{ .tile = .lava },
         .{ .tile = .shallows, .hidden = true },
         .{ .tile = .shallows, .bump = true },
         .{ .tile = .dirt, .hidden = true },
         .{ .tile = .dirt, .bump = true },
+        .{ .tile = .grass, .hidden = true },
+        .{ .tile = .grass, .bump = true },
+        .{ .tile = .bridge, .hidden = true },
+        .{ .tile = .bridge, .bump = true },
     };
     for (cases) |case| {
         const from = P{ .x = 20, .y = 20 };
@@ -461,8 +468,14 @@ test "a turn's glides start the archer first, then each foe in sight a stagger b
     g.st = .{ .walk = .e };
     game.update(g, 0);
     try std.testing.expectEqual(at, g.sim.heroActor().?.at);
+    try std.testing.expect(g.pending == null);
     g.st = .{};
-    var waited: f32 = 0;
+    var waited = last - game.COMBAT_QUEUE_S * 0.5;
+    game.update(g, waited);
+    g.st = .{ .walk = .e };
+    game.update(g, 0);
+    try std.testing.expectEqual(@as(?game.Queued, .{ .walk = .e }), g.pending);
+    g.st = .{};
     while (g.sim.heroActor().?.at.eq(at) and waited < 1) : (waited += harness.TEST_DT) game.update(g, harness.TEST_DT);
     try std.testing.expect(!g.sim.heroActor().?.at.eq(at));
     try std.testing.expectApproxEqAbs(last, waited, harness.TEST_TOL);
@@ -1239,6 +1252,62 @@ test "a kick due late in a frame puts the foes a stagger after it lands, late on
     game.update(g, 0);
     const t = harness.framesUntil(g, g.sim.heroSlot().?, harness.reddened);
     try std.testing.expectApproxEqAbs(2 * game.BUMP_LANDS + game.STAGGER_S - late, t, harness.TEST_TOL);
+}
+
+test "combat walk taps and repeats only queue at the tail of the turn" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    for ([_]bool{ false, true }) |fresh| {
+        for ([_]bool{ false, true }) |tail| {
+            harness.arena(g, at, &.{.{ .x = 24, .y = 20 }});
+            try std.testing.expect(game.foesNear(g));
+            harness.nudge(g, .w);
+            const stepped = g.sim.heroActor().?.at;
+            const clock = g.sim.clock;
+            try std.testing.expect(g.pic.busy > game.COMBAT_QUEUE_S);
+            g.st = .{};
+            if (tail) game.update(g, g.pic.busy - game.COMBAT_QUEUE_S * 0.5);
+            g.st = .{ .walk = .w, .step = .{ .latched = .w, .fresh = fresh } };
+            game.update(g, 0);
+            try std.testing.expectEqual(tail, g.pending != null);
+            g.st = .{};
+            game.update(g, g.pic.busy + mathx.FRAME_DT);
+            const expected = if (tail) stepped.add(mathx.Dir.w.delta()) else stepped;
+            try std.testing.expectEqual(expected, g.sim.heroActor().?.at);
+            var next = clock;
+            if (tail) _ = next.turn();
+            try std.testing.expectEqual(next, g.sim.clock);
+            try std.testing.expect(g.pending == null);
+        }
+    }
+}
+
+test "combat skills discard early presses and retain tail presses ahead of held walking" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    for ([_]bool{ false, true }) |tail| {
+        harness.arena(g, at, &.{.{ .x = 24, .y = 20 }});
+        g.sim.heroActor().?.hp -= 5;
+        const clock = g.sim.clock;
+        g.pic.busy = if (tail) game.COMBAT_QUEUE_S else game.GLIDE_S;
+        const by = harness.boundTo(g, .life_flask);
+        g.st = .{ .pressed = .initOne(by.by.?), .down = .initOne(by.by.?) };
+        if (by.set == .secondary) g.st.down.insert(g.bar.modifier.?);
+        game.update(g, 0);
+        try std.testing.expectEqual(tail, g.pending != null);
+        g.st = .{ .walk = .w };
+        game.update(g, 0);
+        if (tail) try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);
+        g.st = .{};
+        game.update(g, g.pic.busy + mathx.FRAME_DT);
+        try std.testing.expectEqual(flask.CHARGES / flask.USE - @as(u8, if (tail) 1 else 0), g.sim.flasks.get(.life).uses());
+        try std.testing.expectEqual(at, g.sim.heroActor().?.at);
+        var next = clock;
+        if (tail) _ = next.turn();
+        try std.testing.expectEqual(next, g.sim.clock);
+    }
 }
 
 test "a flask pressed mid-walk is drunk once the step is drawn, ahead of the held walk" {

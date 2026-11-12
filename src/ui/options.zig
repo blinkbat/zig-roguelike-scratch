@@ -92,7 +92,7 @@ fn drag(c: *cinema.Cinema, row: Row, box: rl.Rectangle, x: i32) void {
 
 pub fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, screen: mathx.P, page: Page, display: *window.Display) ?Row {
     const entries = rows(page);
-    if (!st.dragging or st.pointer == null or !st.focused or st.walk != null or st.scroll != 0) selection.dragging = null;
+    if (!st.left_down or st.pointer == null or !st.focused or st.walk != null or st.scroll != 0) selection.dragging = null;
     if (selection.dragging) |i| {
         drag(c, entries[i], menu.rowBox(screen, menu.window(screen.y, entries.len, selection.at), i), st.pointer.?.x);
         return null;
@@ -196,12 +196,13 @@ test "visual sliders clamp, reset and drag without changing other effects" {
     try std.testing.expectEqual(@as(f32, 2), value(&c, .bloom));
     const box = menu.rowBox(screen, menu.window(screen.y, rows(.visuals).len, selection.at), selection.at);
     const rail = track(box);
-    _ = step(&c, &selection, &.{ .click = true, .dragging = true, .pointer = .{ .x = @intFromFloat(rail.x + rail.width / 2), .y = raster.middleAt(box).y } }, screen, .visuals, &display);
+    _ = step(&c, &selection, &.{ .click = true, .left_down = true, .pointer = .{ .x = @intFromFloat(rail.x + rail.width / 2), .y = raster.middleAt(box).y } }, screen, .visuals, &display);
     try std.testing.expectApproxEqAbs(@as(f32, 1), value(&c, .lens_blur), 0.02);
-    _ = step(&c, &selection, &.{ .dragging = true, .pointer = .{ .x = screen.x, .y = 0 } }, screen, .visuals, &display);
+    _ = step(&c, &selection, &.{ .left_down = true, .pointer = .{ .x = screen.x, .y = 0 } }, screen, .visuals, &display);
     try std.testing.expectEqual(@as(f32, 2), value(&c, .lens_blur));
-    _ = step(&c, &selection, &.{ .left_released = true }, screen, .visuals, &display);
+    _ = step(&c, &selection, &.{ .left_released = true, .dragging = true, .pointer = .{ .x = 0, .y = 0 } }, screen, .visuals, &display);
     try std.testing.expect(selection.dragging == null);
+    try std.testing.expectEqual(@as(f32, 2), value(&c, .lens_blur));
     reset(&c);
     try std.testing.expectEqualDeep(lens.Options{}, c.lens.options);
     try std.testing.expect(c.lens.options.active());

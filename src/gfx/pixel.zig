@@ -55,6 +55,30 @@ pub fn rect(at: rl.Vector2, w: f32, h: f32, scale: f32, col: rl.Color) void {
     fill(boxOf(at, w, h, scale), col);
 }
 
+fn ovalEach(at: rl.Vector2, w: f32, h: f32, scale: f32, sink: anytype) void {
+    const width = @max(3, @round(w));
+    const height = @max(3, @round(h));
+    const bounds = boxOf(at, width, height, scale);
+    const rows: usize = @intFromFloat(height);
+    var run = Run(@TypeOf(sink)){ .sink = sink };
+    for (0..rows) |row| {
+        const y: f32 = @floatFromInt(row);
+        const unit_y = (y + 0.5) * 2 / height - 1;
+        var inset = @floor(width * (1 - @sqrt(1 - unit_y * unit_y)) * 0.5);
+        if (row == 0 or row == rows - 1) inset = @max(1, inset);
+        const left: i32 = @intFromFloat(@round(inset * scale));
+        const top: i32 = @intFromFloat(@round(y * scale));
+        const bottom: i32 = @intFromFloat(@round((y + 1) * scale));
+        run.add(.{ .x = bounds.x + left, .y = bounds.y + top, .w = bounds.w - left * 2, .h = bottom - top });
+    }
+    run.flush();
+}
+
+pub fn oval(at: rl.Vector2, w: f32, h: f32, scale: f32, col: rl.Color) void {
+    if (col.a == 0) return;
+    ovalEach(at, w, h, scale, Filler{ .col = col });
+}
+
 pub fn cross(at: rl.Vector2, arm: f32, scale: f32, col: rl.Color) void {
     rect(at, arm, 1, scale, col);
     rect(at, 1, arm, scale, col);

@@ -28,16 +28,16 @@ Read the relevant references before editing and keep them aligned with changes. 
 | Task | Start here |
 | --- | --- |
 | App, turns, travel, lifecycle | `app.zig`, `game.zig`, `game/sim.zig`, `game/presentation.zig`; ARCHITECTURE |
-| Combat, skills, foes, statuses | `game/combat.zig`, `game/attacks.zig`, `game/skills.zig`, `game/rewards.zig`; `play/actor.zig`, `play/skillbar.zig`, `play/skill_contract.zig`, individual `play/` skill/status modules; ARCHITECTURE |
+| Combat, skills, foes, statuses | `game/combat.zig`, `game/attacks.zig`, `game/foe_rules.zig`, `game/skills.zig`, `game/rewards.zig`; `play/actor.zig`, `play/skillbar.zig`, `play/skill_contract.zig`, individual `play/` skill/status modules; ARCHITECTURE |
 | Items, loot, stats, progression | [PROGRESSION.md](docs/PROGRESSION.md); `play/items.zig`, `play/item_bases.zig`, `play/affixes.zig`, `play/loot.zig`, `play/gear.zig`, `play/inventory.zig`, `play/ground_items.zig`, `play/attrs.zig`, `play/progress.zig`, `game/character.zig` |
 | Skill/passive trees | [DIABLO2_SKILL_TREE.md](docs/DIABLO2_SKILL_TREE.md), [POE2_PASSIVE_TREE.md](docs/POE2_PASSIVE_TREE.md); `ui/trees.zig`, `play/passives.zig`, `play/progress.zig` |
 | Controls, aiming, mouse | [CONTROLLER.md](docs/CONTROLLER.md); `core/input.zig`, `input_bindings.zig`, `input_names.zig`, `input_repeat.zig` (all in `core/`); `game/targeting.zig`, `game/mouse.zig` |
 | HUD, menus, cards, wording | [HUD_LAYOUT.md](docs/HUD_LAYOUT.md), [DATA_PRESENTATION.md](docs/DATA_PRESENTATION.md); `ui/hud.zig`, `ui/book.zig`, `ui/character_*.zig`, `ui/item_card.zig`, `game/overlay.zig`, `core/wording.zig` |
 | Maps, generation, terrain | `map/atlas.zig`, `map/atlas_text.zig`, `map/procgen.zig`, `map/biome/`, `map/feature/`, `map/grid.zig`; [TERRAIN.md](docs/TERRAIN.md), `play/terrain.zig`; gas/fire/ice/day/climate live in `map/` |
 | Editor | ARCHITECTURE; `edit/editor.zig` (lifecycle), `interaction.zig` (input), `placement.zig` (brushes), `history.zig`, `preview.zig`, `thumbnails.zig` (all in `edit/`) |
-| NPCs, dialog, quests, triggers, trade | `map/script.zig`, `map/script_text.zig`, `play/trigger.zig`, `play/trade.zig`, `game/talking.zig`, `edit/plot.zig`, `ui/talk.zig`, `ui/quests.zig`, `ui/book.zig` (trade page); content in `maps/start.map` |
+| NPCs, dialog, quests, triggers, trade | `map/script.zig`, `map/script_text.zig`, `play/trigger.zig`, `play/trade.zig`, `game/talking.zig`, `edit/plot.zig`, `edit/plot_fields.zig`, `ui/talk.zig`, `ui/quests.zig`, `ui/book.zig` (trade page); content in `maps/start.map` |
 | Saves | [SAVE_FORMAT.md](docs/SAVE_FORMAT.md); `save.zig`, `save_data.zig`, `save_format.zig`, `save_values.zig`, `core/store.zig`, `core/wire.zig` |
-| Rendering, lighting, FX | ARCHITECTURE; `game/scene.zig`, `game/presentation.zig`; `gfx/`: `look`, `sprite_assets`, `sprites`, `ground`, `light*`, `shadow`, `effect_state`, `impact_queue`, `fx`, `cinema`, `weather` |
+| Rendering, lighting, FX | ARCHITECTURE; `game/scene.zig`, `game/presentation.zig`, `game/projectile_motion.zig`; `gfx/`: `look`, `sprite_assets`, `sprites`, `ground`, `light*`, `shadow`, `effect_state`, `impact_queue`, `status_marks`, `fx`, `cinema`, `weather` |
 | Art/assets | [TILE_ART_WORKFLOW.md](docs/TILE_ART_WORKFLOW.md), [ART_PROVENANCE.md](docs/ART_PROVENANCE.md); `assets/source/` and `tools/tile_art/` at repo root; `gfx/sprite_assets.zig` |
 | Source text editor | [TEXT_EDITOR.md](docs/TEXT_EDITOR.md); `edit/text_catalog.zig`, `edit/text_panel.zig`; root `text-tags.json`, `assets/data/player-labels.txt` |
 | Linux/macOS packaging | [RELEASE_BUILDS.md](docs/RELEASE_BUILDS.md); root `build-linux.cmd`, `build-macos.cmd` |

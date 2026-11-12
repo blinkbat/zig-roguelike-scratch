@@ -94,7 +94,7 @@ fn lifeTenths(bonus: i32) i32 {
 }
 
 pub fn lifeOf(max: i32, bonus: i32) i32 {
-    return @divTrunc(max * lifeShare(bonus), mathx.BASIS_POINTS);
+    return std.math.lossyCast(i32, @divTrunc(@as(i64, max) * lifeShare(bonus), mathx.BASIS_POINTS));
 }
 
 pub fn recovers(k: Kind, max_life: i32, bonus: Bonus) i32 {
@@ -105,6 +105,7 @@ pub fn recovers(k: Kind, max_life: i32, bonus: Bonus) i32 {
 }
 
 test "a bonused drink scales the base recovery once, without truncating its share" {
+    try std.testing.expectEqual(@as(i32, 625_000), lifeOf(1_000_000, 25));
     try std.testing.expectEqual(@as(i32, 25), lifeOf(40, 25));
     try std.testing.expectEqual(@as(i32, 125), lifeOf(200, 25));
     var buf: [128]u8 = undefined;
