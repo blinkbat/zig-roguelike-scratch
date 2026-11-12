@@ -68,6 +68,11 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
             },
         }
         if (nd.label.n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
+        if (nd.zoo) |z| {
+            try w.print("zoo {d} {d} {d} {d} {s}\n", .{ z.at.x, z.at.y, z.width, z.height, @tagName(z.side) });
+            if (z.key) |k| try w.print("zoo_key {d} {d}\n", .{ k.x, k.y });
+            for (z.pool[0..z.pool_n]) |e| try w.print("zoo_foe {d} {s}\n", .{ e.weight, @tagName(e.kind) });
+        }
         try w.print(says(.at) ++ "{d} {d}\n", .{ nd.pos.x, nd.pos.y });
         for (nd.doors()) |d| {
             try w.print(says(.door) ++ "{d} {d}", .{ d.at.x, d.at.y });
@@ -194,7 +199,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                 const nd = try lastNode(self);
                 const at = try cell(&f);
                 if (nd.doorAt(at) != null) return error.BadLine;
-                const k = self.addDoor(self.node_n - 1, at) orelse return error.TooMany;
+                const k = self.addDoor(self.node_n - 1, at) orelse return if (nd.door_n == grid.MAX_DOORS) error.TooMany else error.BadLine;
                 if (f.peek() != null) nd.door[k].to = .{ .node = try int(usize, &f), .door = try int(usize, &f) };
             },
             .feature => {
@@ -230,7 +235,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                     const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(row) });
                     b.barrel[i] = c == grid.BARREL_LETTER;
                     b.tile[i] = grid.groundOf(c) orelse return error.BadLine;
-                    if (b.tile[i].isOpened()) return error.BadLine;
+                    if (b.tile[i].isOpened() or b.tile[i].zooPart()) return error.BadLine;
                 }
                 row += 1;
             },
@@ -256,6 +261,20 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
             },
             .section => (try lastProcgen(self)).section.anchor = try takeValue(section.Anchor, &f),
             .paint => try takePaint(&(try lastProcgen(self)).section, &f),
+            .zoo => (try lastNode(self)).zoo = .{ .at = try cell(&f), .width = try int(u8, &f), .height = try int(u8, &f), .side = try takeValue(atlas.zoo.Side, &f), .pool_n = 0 },
+            .zoo_key => {
+                const z = &(try lastNode(self)).zoo;
+                if (z.* == null) return error.BadLine;
+                z.*.?.key = try cell(&f);
+            },
+            .zoo_foe => {
+                const z = &(try lastNode(self)).zoo;
+                if (z.* == null or z.*.?.pool_n >= atlas.zoo.MAX_KINDS) return error.BadLine;
+                const weight = try int(u8, &f);
+                const kind = try takeValue(actor.Kind, &f);
+                z.*.?.pool[z.*.?.pool_n] = .{ .kind = kind, .weight = weight };
+                z.*.?.pool_n += 1;
+            },
         }
         if (f.next() != null) return error.BadLine;
     }
@@ -264,6 +283,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
     if (!seen.contains(.start)) return error.NoStart;
     if (!self.linksValid()) return error.BadLink;
     if (self.start.node >= self.node_n) return error.BadLink;
+    if (!self.node[self.start.node].startFits(self.start.at)) return error.BadLine;
     if (!self.script.valid(self.node_n)) return error.BadLine;
     for (self.script.npcs()) |f| {
         if (f.cell()) |at| if (!self.npcFits(f.node, at)) return error.BadLine;
@@ -273,6 +293,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
 fn finished(self: *atlas.Atlas, rows: usize) Error!void {
     if (self.node_n == 0) return;
     const nd = &self.node[self.node_n - 1];
+    if (!nd.zooFits()) return error.BadLine;
     switch (nd.plan) {
         .bespoke => |*b| {
             if (rows != ROWS or !grid.propsWhole(&b.tile)) return error.BadLine;
@@ -310,9 +331,9 @@ pub fn floorKnobs(comptime a: Algo) []const []const u8 {
     return armKnobs(Floor, a);
 }
 const FLOOR_KNOBS_MAX = mostKnobs(Floor);
-const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe, section, paint };
+const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe, section, paint, zoo, zoo_key, zoo_foe };
 const ONCE_FILE = std.EnumSet(Word).initOne(.start);
-const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at, .section });
+const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at, .section, .zoo, .zoo_key });
 const ONCE = ONCE_FILE.unionWith(ONCE_NODE);
 pub fn featureKnobs(comptime k: Kind) []const []const u8 {
     return armKnobs(Feature, k);
@@ -524,6 +545,36 @@ test "node names are read with their node and line, blank names skipped" {
         try std.testing.expectEqual(w.line, got.line);
     }
     try std.testing.expect(it.next() == null);
+}
+
+test "zoo map text round trips and rejects malformed encounters" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const head = HEADER ++ "\nstart 0 5 5\nnode procgen open\n";
+    const encounter = "zoo 40 18 8 6 w\nzoo_key 32 28\nzoo_foe 4 rat\nzoo_foe 1 chain_gaoler\n";
+    try a.parse(head ++ encounter);
+    const wanted = a.node[0].zoo.?;
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    defer buf.deinit();
+    try a.write(buf.writer());
+    try a.parse(buf.items);
+    try std.testing.expectEqualDeep(wanted, a.node[0].zoo.?);
+    try std.testing.expectError(error.BadLine, a.parse(HEADER ++ "\nnode procgen open\n" ++ encounter ++ "node procgen open\nstart 0 41 21\n"));
+    try a.parse(HEADER ++ "\nnode procgen open\n" ++ encounter ++ "node procgen open\nstart 0 5 5\n");
+    const bad = [_][]const u8{
+        "zoo 40 18 8 6 w\n",
+        "zoo 40 18 8 6 w\nzoo_foe 0 rat\n",
+        "zoo 94 18 8 6 w\nzoo_foe 1 rat\n",
+        "zoo 40 18 8 6 w\nzoo_key 42 20\nzoo_foe 1 rat\n",
+        "zoo 40 18 8 6 w\nzoo_foe 1 knight\n",
+        "zoo_key 32 28\n",
+        "zoo 40 18 8 6 w\nzoo_foe 1 rat\ndoor 40 21\n",
+    };
+    for (bad) |tail| {
+        const text = try std.mem.concat(std.testing.allocator, u8, &.{ head, tail });
+        defer std.testing.allocator.free(text);
+        try std.testing.expectError(error.BadLine, a.parse(text));
+    }
 }
 
 test "a map saves and loads back the same" {

@@ -2,6 +2,42 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 
 pub const Kind = enum { stun, burn, bleed, chill, pin, shock, sunder, blind, confusion, enfeeble, maim, fright };
+pub const Tags = std.EnumSet(Tag);
+pub const Tag = enum {
+    wounds,
+    slows,
+    mental,
+    elemental,
+
+    pub fn description(tag: Tag) []const u8 {
+        return switch (tag) {
+            .wounds => "Injuries that drain life or weaken the body.",
+            .slows => "Effects that delay actions or hinder movement.",
+            .mental => "Effects that disrupt sight, direction or nerve.",
+            .elemental => "Ailments caused by fire, cold or lightning.",
+        };
+    }
+
+    pub fn members(tag: Tag) std.EnumSet(Kind) {
+        var out = std.EnumSet(Kind).initEmpty();
+        for (std.enums.values(Kind)) |kind| {
+            if (tags(kind).contains(tag)) out.insert(kind);
+        }
+        return out;
+    }
+};
+
+pub fn tags(kind: Kind) Tags {
+    return switch (kind) {
+        .bleed, .sunder, .enfeeble => Tags.initOne(.wounds),
+        .maim => Tags.initMany(&.{ .wounds, .slows }),
+        .stun, .pin => Tags.initOne(.slows),
+        .chill => Tags.initMany(&.{ .slows, .elemental }),
+        .blind, .confusion, .fright => Tags.initOne(.mental),
+        .burn, .shock => Tags.initOne(.elemental),
+    };
+}
+
 pub const GAIN: u8 = 25;
 pub const EXPIRY: u8 = 5;
 pub const ABOUT = std.fmt.comptimePrint("Repeated harmful statuses build resistance. Each successful application adds {d}%; it expires after {d} turns without another successful application.", .{ GAIN, EXPIRY });
@@ -117,6 +153,18 @@ pub const State = struct {
         }
     }
 };
+
+test "status tags cover ailments and overlapping selections count each status once" {
+    for (std.enums.values(Kind)) |kind| try std.testing.expect(tags(kind).count() > 0);
+    try std.testing.expect(tags(.chill).contains(.slows));
+    try std.testing.expect(tags(.chill).contains(.elemental));
+    try std.testing.expect(Tag.wounds.members().contains(.enfeeble));
+    var selected = Tag.slows.members();
+    selected.setUnion(Tag.elemental.members());
+    try std.testing.expectEqual(@as(usize, 6), selected.count());
+    try std.testing.expect(selected.contains(.chill));
+    try std.testing.expect(!selected.contains(.bleed));
+}
 
 test "status buildup is independent, blocks repeated applications and expires on spent turns" {
     var rng = mathx.Rng.init(0xAE51);

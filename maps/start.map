@@ -121,6 +121,12 @@ makeup count 1 nook mimic
 makeup count 1 pond slime slime
 makeup count 1 pond bog_leech bog_leech
 name Caravan
+zoo 40 18 8 6 w
+zoo_key 32 28
+zoo_foe 4 rat
+zoo_foe 3 goblin
+zoo_foe 2 pib
+zoo_foe 1 bandit_netter
 at 240 0
 door 0 46 0 0
 door 33 0 2 0

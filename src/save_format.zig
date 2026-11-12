@@ -261,7 +261,7 @@ pub fn validate(snapshot: *Snapshot) !void {
         if (!map.linksValid()) return error.Damaged;
         try validateDoors(&run.lv, &map.node[snapshot.node]);
         for (map.nodes()) |*node| {
-            if (!node.label.valid()) return error.Damaged;
+            if (!node.label.valid() or !node.zooFits()) return error.Damaged;
             for (node.doors()) |door| {
                 if (!grid.Level.inside(door.at)) return error.Damaged;
             }

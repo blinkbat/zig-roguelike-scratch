@@ -10,7 +10,6 @@ const font = @import("../gfx/font.zig");
 const sprites = @import("../gfx/sprites.zig");
 const raster = @import("../gfx/raster.zig");
 const look = @import("../gfx/look.zig");
-const Prompt = @import("../gfx/prompt_icon.zig").Prompt;
 
 pub const Page = enum { main, visuals, display };
 pub const Row = enum { visuals, display, fullscreen, vsync, frame_limit, lens_blur, perspective, vignette, bloom, atmosphere, depth_of_field, saturation, warmth, sepia, film_grain, scanlines, chromatic_aberration, reset_to_defaults, set_all_to_0, debug };
@@ -135,7 +134,7 @@ pub fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, sc
     return row;
 }
 
-pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *const cinema.Cinema, selected: usize, st: *const input.State, page: Page, display: window.Display) void {
+pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *const cinema.Cinema, selected: usize, _: *const input.State, page: Page, display: window.Display) void {
     const entries = rows(page);
     const win = menu.window(screen.y, entries.len, selected);
     const first = menu.rowBox(screen, win, win.from);
@@ -173,11 +172,6 @@ pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *c
     }
     if (page != .visuals) return;
     const bottom = raster.top(first) + @as(i32, @intCast(win.len)) * menu.ROW_STEP + 28;
-    const movement: Prompt = if (st.device.pad()) .dpad else .arrows;
-    var x = movement.drawFrom(&face, raster.left(first) + 20, bottom, 24, 1);
-    face.text("Adjust", x + 8, bottom - 10, font.SMALL, look.DIM);
-    x = Prompt.menuOf(st, menu.CHANGE).drawFrom(&face, x + 90, bottom, 24, 1);
-    face.text("Reset value", x + 8, bottom - 10, font.SMALL, look.DIM);
     var count: [24]u8 = undefined;
     face.centred(std.fmt.bufPrintZ(&count, "{d} / {d}", .{ selected + 1, entries.len }) catch "", raster.right(first) - 48, bottom, font.SMALL, look.DIM);
 }

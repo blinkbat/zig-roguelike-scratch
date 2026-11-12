@@ -132,8 +132,6 @@ const VIEW_PIC_TOP: f32 = 4;
 const VIEW_BIG: i32 = 160;
 
 pub const OBJECTS_TITLE = "Objects";
-pub const PICKS_ONE = Desk.NAV_CAPTION ++ " or " ++ Desk.PAINT_CAPTION ++ " picks one";
-pub const CLOSES = Desk.BACK_CAPTION ++ " closes";
 
 fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const chrome = widgets.MODAL_HEAD + widgets.PAD + widgets.ROW_STEP;
@@ -148,7 +146,6 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const y = f.y;
     cells.x = x + widgets.PAD;
     cells.y = y;
-    widgets.titleHint(&g.face, f, title, PICKS_ONE ++ SEP ++ CLOSES);
     for (editor.SEEN, 0..) |s, i| {
         const r = cells.at(i);
         const hh = widgets.plateHit(ed.controls(), r, i == ed.seen_at, true, true, seenName(s));

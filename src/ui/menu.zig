@@ -81,7 +81,7 @@ pub const Surface = struct {
 
     pub fn beginPanel(self: Surface, sprites: *const sprite.Sprites, size: mathx.P) void {
         self.begin();
-        sprite.backing(sprites, 0, 0, size.x, size.y);
+        sprite.layeredBacking(sprites, 0, 0, size.x, size.y, 1);
     }
 
     /// `f` as this surface draws it: scaled, from the mipmapped atlas rather than the native-size ones.
@@ -319,7 +319,7 @@ pub fn draw(face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, ti
 }
 
 pub fn listPanel(sprites: *const sprite.Sprites, rows: rl.Rectangle) void {
-    sprite.backingIn(sprites, raster.grown(rows, @floatFromInt(sprite.HUD_BORDER_CUT)));
+    sprite.layeredBackingIn(sprites, raster.grown(rows, @floatFromInt(sprite.HUD_BORDER_CUT)), 1);
 }
 
 fn markInset(face: font.Face) i32 {

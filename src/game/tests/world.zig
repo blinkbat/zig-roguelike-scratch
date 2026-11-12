@@ -283,6 +283,56 @@ test "a skeleton follows through a door that leads to another door on the same n
     }
 }
 
+test "same-node travel keeps followers that cannot fit in the destination chamber" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    const node = w.add(.{ .bespoke = .{} }).?;
+    const source = P{ .x = 2, .y = 5 };
+    const destination = P{ .x = 30, .y = 30 };
+    const b = &w.node[node].plan.bespoke;
+    for (2..7) |x| b.tile[grid.Level.idx(.{ .x = @intCast(x), .y = 5 })] = .floor;
+    b.tile[grid.Level.idx(destination)] = .floor;
+    const west = w.addDoor(node, source).?;
+    const east = w.addDoor(node, destination).?;
+    w.link(.{ .node = node, .door = west }, .{ .node = node, .door = east });
+    w.start = .{ .node = node, .at = .{ .x = 3, .y = 5 } };
+    try std.testing.expect(w.linksValid());
+    for (0..3) |room| {
+        for (1..3) |x| b.tile[grid.Level.idx(destination.add(.{ .x = @intCast(x), .y = 0 }))] = if (x <= room) .floor else .wall;
+        game.beginMapAt(g, w, w.start, 1);
+        var ids: [2]u16 = undefined;
+        var bodies: [2]actor.Actor = undefined;
+        for (&ids, &bodies, 0..) |*id, *body, i| {
+            id.* = harness.spawnAt(g, .skeleton, .{ .x = 4 + @as(i32, @intCast(i)), .y = 5 }, true);
+            const a = g.sim.pool.get(id.*).?;
+            a.hp -= @intCast(i + 1);
+            a.bleed.start();
+            body.* = a.*;
+        }
+        g.sim.travel = .{ .node = node, .door = east };
+        game.leave(g);
+        try std.testing.expectEqual(destination, g.sim.heroActor().?.at);
+        var moved: usize = 0;
+        for (ids, bodies) |id, before| {
+            const after = g.sim.pool.getConst(id) orelse return error.FollowerLost;
+            if (!after.at.eq(before.at)) moved += 1;
+            try std.testing.expectEqual(before.hp, after.hp);
+            try std.testing.expectEqualDeep(before.bleed, after.bleed);
+            try std.testing.expectEqual(id, g.sim.lv.who(after.at));
+        }
+        try std.testing.expectEqual(room, moved);
+        g.sim.travel = .{ .node = node, .door = west };
+        game.leave(g);
+        try std.testing.expectEqual(@as(usize, 3), g.sim.pool.n);
+        for (ids) |id| {
+            const a = g.sim.pool.getConst(id) orelse return error.FollowerLost;
+            try std.testing.expectEqual(id, g.sim.lv.who(a.at));
+        }
+    }
+}
+
 test "a night raider is drawn coming in only once the hero's action of that turn lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

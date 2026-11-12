@@ -143,8 +143,42 @@ const ARROW = rgb(0xe6dcb4);
 pub const VEIL = fade(BG, 0.72);
 
 pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32) void {
+    if (t == .key_taken) return;
+    if (t == .gate or t == .locked_gate or t == .open_gate or t == .zoo_key) return jailTile(t, cx, cy, size);
     const l = TILES.getPtrConst(t);
     face.symbol(l.sym, l.ch, cx, cy, size, l.fg);
+}
+
+fn jailTile(t: grid.Tile, cx: i32, cy: i32, size: i32) void {
+    const u = @max(1, @divTrunc(size + 16, 32));
+    if (t == .zoo_key) {
+        rl.drawRectangle(cx - 9 * u, cy - 5 * u, 10 * u, 10 * u, GOLD);
+        rl.drawRectangle(cx - 6 * u, cy - 2 * u, 4 * u, 4 * u, BG);
+        rl.drawRectangle(cx, cy - u, 11 * u, 3 * u, GOLD);
+        rl.drawRectangle(cx + 6 * u, cy, 3 * u, 6 * u, GOLD);
+        rl.drawRectangle(cx + 10 * u, cy, 3 * u, 5 * u, GOLD);
+        return;
+    }
+    const left = cx - 15 * u;
+    const top = cy - 16 * u;
+    const stone = rgb(0x625b55);
+    const iron = rgb(0x99948b);
+    rl.drawRectangle(left, top, 3 * u, 32 * u, stone);
+    rl.drawRectangle(cx + 12 * u, top, 3 * u, 32 * u, stone);
+    rl.drawRectangle(left, top, 30 * u, 3 * u, stone);
+    if (t == .open_gate) {
+        rl.drawRectangle(left + 3 * u, top + 3 * u, 3 * u, 29 * u, iron);
+        return;
+    }
+    rl.drawRectangle(left + 3 * u, top + 3 * u, 24 * u, 29 * u, rgb(0x292528));
+    var x = left + 5 * u;
+    while (x < cx + 12 * u) : (x += 5 * u) rl.drawRectangle(x, top + 3 * u, 2 * u, 29 * u, iron);
+    rl.drawRectangle(left + 3 * u, cy - 8 * u, 24 * u, 2 * u, iron);
+    rl.drawRectangle(left + 3 * u, cy + 8 * u, 24 * u, 2 * u, iron);
+    if (t == .locked_gate) {
+        rl.drawRectangle(cx - 3 * u, cy - 3 * u, 7 * u, 8 * u, GOLD);
+        rl.drawRectangle(cx, cy - u, u, 4 * u, BG);
+    }
 }
 
 pub fn tile(t: grid.Tile) Look {
@@ -224,6 +258,11 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .caravan = .{ .sym = "H", .ch = 'H', .fg = CARAVAN_INK.fg, .bg = null, .mini = CARAVAN_INK.mini, .mini_dim = CARAVAN_INK.mini_dim },
     .caravan_part = .{ .sym = "h", .ch = 'h', .fg = CARAVAN_INK.fg, .bg = null, .mini = CARAVAN_INK.mini, .mini_dim = CARAVAN_INK.mini_dim },
     .stone_bridge = .{ .sym = "=", .ch = '=', .fg = STONE_INK, .bg = rgb(0x1c1a18), .mini = rgb(0x6e665a), .mini_dim = rgb(0x34302a) },
+    .gate = .{ .sym = "D", .ch = 'D', .fg = DIM, .bg = null, .mini = DIM, .mini_dim = SHADE },
+    .locked_gate = .{ .sym = "J", .ch = 'J', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = SHADE },
+    .open_gate = .{ .sym = "d", .ch = 'd', .fg = DIM, .bg = null, .mini = DIM, .mini_dim = SHADE },
+    .zoo_key = .{ .sym = "k", .ch = 'k', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = SHADE },
+    .key_taken = .{ .sym = ".", .ch = '.', .fg = DIM, .bg = null, .mini = SHADE, .mini_dim = SHADE },
 });
 
 const CARAVAN_INK = .{ .fg = rgb(0xd8c8a4), .mini = rgb(0x9a7a52), .mini_dim = rgb(0x46382a) };
@@ -552,7 +591,11 @@ pub fn premultiplied(c: sky.Rgb, a: f32) rl.Color {
 }
 
 const BACKING_A: f32 = 0.7;
-pub const BACKING = fade(rgb(0x101114), BACKING_A);
+pub const BACKING = backingAt(0);
+pub fn backingAt(depth: u8) rl.Color {
+    const opacity = [_]f32{ BACKING_A, 0.92, 0.99, 1 };
+    return fade(rgb(0x101114), opacity[@min(depth, opacity.len - 1)]);
+}
 pub const MINI_BG = fade(FOG, BACKING_A);
 pub const MINI_HERO = rgb(0x9cf08a);
 pub const MINI_FOE = FOE;

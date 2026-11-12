@@ -133,6 +133,8 @@ pub const CASTERS = std.EnumArray(grid.Tile, ?Caster).initDefault(@as(?Caster, n
     .rock = .{ .h = WALL_H },
     .grave = .{ .h = 0.5, .r = 0.28 },
     .fence = .{ .h = 0.5 },
+    .gate = .{ .h = WALL_H },
+    .locked_gate = .{ .h = WALL_H },
     .crop = .{ .h = 0.4 },
     .glow_plant = .{ .h = 0.5, .r = 0.28 },
 });

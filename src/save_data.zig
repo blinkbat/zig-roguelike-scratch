@@ -124,7 +124,7 @@ const UNSAVED = .{
         "rain",
         "inspecting",
         "inspect_scroll",
-        "talk_page",
+        "keywords",
         "perf",
     },
     .sim = .{

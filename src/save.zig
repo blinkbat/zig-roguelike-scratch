@@ -659,7 +659,79 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0x06fb05fbf0b6c23b;
+const RECORDED_FINGERPRINT: Print = 0x978e19811f425a63;
+
+test "zoo keys doors populations and visits survive portable saves" {
+    const alloc = std.testing.allocator;
+    const w = try atlas.testAtlas();
+    defer alloc.destroy(w);
+    try w.load(alloc, atlas.START);
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    const back = try game.boot(alloc);
+    defer game.shut(alloc, back);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    const z = w.node[1].zoo.?;
+    game.beginMapAt(g, w, .{ .node = 1, .at = z.door().add(z.outward()) }, 17);
+    var buf = std.ArrayList(u8).init(alloc);
+    defer buf.deinit();
+    for (0..3) |phase| {
+        if (phase == 1) try std.testing.expect(z.collect(&g.sim.lv, z.key.?));
+        if (phase == 2) {
+            try std.testing.expect(z.open(&g.sim.lv, &g.sim.pool));
+            for (g.sim.pool.slice(), 0..) |body, i| {
+                if (body.livingFoe() and z.inside().holds(body.at)) {
+                    _ = g.sim.pool.damage(&g.sim.lv, actor.Pool.idOf(i), body.hp);
+                    break;
+                }
+            }
+        }
+        buf.clearRetainingCapacity();
+        try write(g, &buf);
+        seal(&buf);
+        try read(buf.items, back, into);
+        try std.testing.expectEqualDeep(z, into.node[1].zoo.?);
+        try std.testing.expectEqual(g.sim.lv.at(z.key.?), back.sim.lv.at(z.key.?));
+        try std.testing.expectEqual(g.sim.lv.at(z.door()), back.sim.lv.at(z.door()));
+        try std.testing.expectEqualDeep(g.sim.pool.constSlice(), back.sim.pool.constSlice());
+    }
+    g.sim.travel = .{ .node = 0, .door = 0 };
+    g.pic.busy = 0;
+    game.update(g, 0);
+    try std.testing.expectEqual(@as(usize, 0), g.sim.node);
+    buf.clearRetainingCapacity();
+    try write(g, &buf);
+    seal(&buf);
+    try read(buf.items, back, into);
+    back.sim.travel = .{ .node = 1, .door = 0 };
+    back.pic.busy = 0;
+    game.update(back, 0);
+    try std.testing.expectEqual(@as(usize, 1), back.sim.node);
+    try std.testing.expectEqual(grid.Tile.open_gate, back.sim.lv.at(z.door()));
+    try std.testing.expectEqual(grid.Tile.key_taken, back.sim.lv.at(z.key.?));
+    var living: usize = 0;
+    for (back.sim.pool.constSlice()) |body| if (body.livingFoe() and z.inside().holds(body.at)) {
+        living += 1;
+    };
+    try std.testing.expectEqual(@as(usize, 20), living);
+}
+
+test "a node saved before zoos defaults to no zoo" {
+    const Code = @import("core/wire.zig").Codec(format.Policy);
+    const alloc = std.testing.allocator;
+    const node = try alloc.create(atlas.Node);
+    defer alloc.destroy(node);
+    node.* = .{ .plan = .{ .procgen = .{} }, .zoo = .{} };
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    try Code.write(&bytes, node);
+    var older = std.ArrayList(u8).init(alloc);
+    defer older.deinit();
+    try format.TestRecord.change(&older, bytes.items, &.{"zoo"}, null);
+    try Code.read(older.items, node);
+    try std.testing.expect(node.zoo == null);
+}
 
 fn fixture(g: *game.Game, w: *const Map) !void {
     game.beginMapAt(g, w, w.start, 7);

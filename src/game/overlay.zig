@@ -237,9 +237,9 @@ pub fn drawBinds(g: *game.Game) void {
             shown = binds.pickAct(kit, pick);
             const picker = bindPicker(b, binds.picksOf(kit));
             var label: menu.Note(100) = .{};
-            label.say("Choose skill  /  {d}-{d} of {d}", .{ picker.first() + 1, picker.end(), picker.picks });
+            label.say("{d}-{d} of {d}", .{ picker.first() + 1, picker.end(), picker.picks });
             g.face.draw(label.text(), picker.x, picker.y - font.LABEL - BIND_POP_DY, font.LABEL, look.DIM);
-            sprite.backingIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)));
+            sprite.layeredBackingIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)), 1);
             for (picker.first()..picker.end()) |i| {
                 const r = picker.cell(i);
                 const x: i32 = @intFromFloat(r.x);
@@ -293,7 +293,7 @@ pub fn drawHud(g: *game.Game) void {
     game.mouseControls.draw(g);
 }
 
-pub const Part = struct { spot: game.Spot, box: rl.Rectangle };
+pub const Part = struct { spot: game.Spot, box: rl.Rectangle, source_box: ?rl.Rectangle = null };
 const ORBS = 2;
 pub const SPOTS_MAX = ORBS + skillbar.SLOTS.len + @typeInfo(hud.Shown).array.len + 1 + actor.MAX;
 
@@ -324,9 +324,10 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
         const at = g.pic.drawnAt(&g.sim, i) orelse continue;
         if (g.pic.pictured[i].down()) continue;
         const p = cam.px(at);
-        const box = raster.rect(p.x, p.y, game.CELL, game.CELL);
-        if (p.x + game.CELL <= 0 or p.y + game.CELL <= 0 or p.x >= g.screen.x or p.y >= g.screen.y) continue;
-        out[n] = .{ .spot = .{ .actor = actor.Pool.idOf(i) }, .box = box };
+        const source = raster.rect(p.x, p.y, game.CELL, game.CELL);
+        const box = g.cinema.lens.screenBox(source, g.screen);
+        if (!rl.checkCollisionRecs(box, raster.rect(0, 0, g.screen.x, g.screen.y))) continue;
+        out[n] = .{ .spot = .{ .actor = actor.Pool.idOf(i) }, .box = box, .source_box = source };
         n += 1;
     }
     return out[0..n];
@@ -361,7 +362,7 @@ pub fn inspectStep(g: *game.Game) void {
         g.inspect_scroll = mathx.nudge(g.inspect_scroll, scroll, hud.TIP_LINES_MAX);
     }
     if (g.st.pointing()) {
-        for (spots) |part| if (under(part, g.st.pointer.?)) {
+        for (spots) |part| if (under(g, part, g.st.pointer.?)) {
             inspect(g, part.spot);
             return;
         };
@@ -388,7 +389,8 @@ fn round(s: game.Spot) bool {
     return s == .life or s == .mana;
 }
 
-fn under(s: Part, p: mathx.P) bool {
+fn under(g: *const game.Game, s: Part, p: mathx.P) bool {
+    if (s.source_box) |box| return raster.holds(box, g.cinema.lens.sourcePoint(p, g.screen));
     return if (round(s.spot)) rl.checkCollisionPointCircle(raster.vec(p), raster.middle(s.box), s.box.width / 2) else raster.holds(s.box, p);
 }
 
@@ -397,7 +399,7 @@ pub fn hovered(g: *const game.Game) ?Part {
     const p = g.st.pointer orelse return null;
     var buf: [SPOTS_MAX]Part = undefined;
     for (spotsOf(g, &buf)) |s| {
-        if (under(s, p)) return s;
+        if (under(g, s, p)) return s;
     }
     return null;
 }
@@ -406,22 +408,27 @@ pub fn drawTips(g: *game.Game) void {
     if (g.mode == .aim and g.mode.aim.askedHere()) {
         var buf: [TIP_TITLE_MAX]u8 = undefined;
         const ask = std.fmt.bufPrintZ(&buf, skills.UNSEEN_ASK, .{g.mode.aim.act().name()}) catch return;
-        hud.prompt(&g.face, &g.sprites, g.screen, game.scene.Cam.of(g).box(g.mode.aim.mark), ask);
+        hud.prompt(&g.face, &g.sprites, g.screen, g.cinema.lens.screenBox(game.scene.Cam.of(g).box(g.mode.aim.mark), g.screen), ask);
     } else if (g.mode == .inspect) {
         var buf: [SPOTS_MAX]Part = undefined;
         const spots = spotsOf(g, &buf);
         drawTip(g, inspected(g, spots));
-    } else if (!g.st.device.pad()) {
-        if (hovered(g)) |here| drawTip(g, here);
+    } else if (g.keywords.focus != null or !g.st.device.pad()) {
+        if (g.keywords.keep_root) {
+            var buf: [SPOTS_MAX]Part = undefined;
+            if (spotAt(spotsOf(g, &buf), g.inspecting)) |here| drawTip(g, here);
+        } else if (hovered(g)) |here| drawTip(g, here);
     }
 }
 
 fn drawTip(g: *game.Game, here: Part) void {
+    if (g.mode == .play) g.inspecting = here.spot;
     hud.focus(here.box, round(here.spot));
     var title_buf: [TIP_TITLE_MAX]u8 = undefined;
     var body_buf: [TIP_BODY_MAX]u8 = undefined;
     const tip = tipOf(g, here.spot, &title_buf, &body_buf) orelse return;
-    const scroll = hud.tooltipScrolled(&g.face, &g.sprites, hudLayout(g), g.screen, here.box, tip.title, tip.body, if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll else 0);
+    const words = if (here.spot == .status and here.spot.status.ailment() != null) &g.keywords else null;
+    const scroll = hud.tooltipScrolled(&g.face, &g.sprites, hudLayout(g), g.screen, here.box, tip.title, tip.body, if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll else 0, words);
     if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll = scroll;
 }
 
@@ -479,12 +486,27 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
                 break :blk .{ .title = st.title(), .body = body.getWritten() };
             }
             const turns = if (g.pic.heroShown(&g.sim)) |h| h.status.get(st) else 0;
+            var body = std.io.fixedBufferStream(body_buf);
+            const w = body.writer();
+            w.writeAll(st.about()) catch {};
+            if (st.ailment()) |kind| writeStatusTags(kind, w);
             break :blk .{
                 .title = std.fmt.bufPrintZ(title_buf, "{s}, {d} turn{s}", .{ st.title(), turns, plural(turns) }) catch st.title(),
-                .body = st.about(),
+                .body = body.getWritten(),
             };
         },
     };
+}
+
+fn writeStatusTags(kind: resilience.Kind, w: anytype) void {
+    const tags = resilience.tags(kind);
+    w.writeAll("\n" ++ hud.TIP_RULE ++ "\n") catch {};
+    var names = tags.iterator();
+    var first = true;
+    while (names.next()) |tag| {
+        w.print("{s}{s}", .{ if (first) "" else ", ", menu.named(tag) }) catch {};
+        first = false;
+    }
 }
 
 fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip {

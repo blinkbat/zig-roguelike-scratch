@@ -227,10 +227,6 @@ comptime {
 }
 
 const SEP = menu.SEP;
-pub const CRIB_MAP = Desk.PAINT_CAPTION ++ " place" ++ SEP ++ Desk.ERASE_CAPTION ++ " second ink or remove" ++ SEP ++ Desk.TOOLS_CAPTION ++
-    " tool" ++ SEP ++ Desk.SHAPES_CAPTION ++ " shape" ++ SEP ++ Desk.PICK_CAPTION ++ " pick" ++ SEP ++ Desk.HELP_CAPTION ++ " every key";
-pub const CRIB_GRAPH = Desk.PAINT_CAPTION ++ " open a node" ++ SEP ++ "drag it to move it, or a door's dot to another's to link them" ++ SEP ++
-    Desk.ERASE_CAPTION ++ " on a dot unlinks" ++ SEP ++ Desk.GRAPH_CAPTION ++ " back to the map" ++ SEP ++ Desk.HELP_CAPTION ++ " every key";
 const HelpSection = struct {
     head: [:0]const u8,
     column: usize = 0,

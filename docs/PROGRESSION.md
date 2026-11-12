@@ -130,6 +130,12 @@ travel and saves preserve them. Terrain and rain modifiers are resolved at the
 occupied tile, as described in [TERRAIN.md](TERRAIN.md). Duration, stacking and
 proc values remain in the owning status modules.
 
+The overlapping status tags in `play/resilience.zig` are Wounds (bleed, sunder,
+enfeeble, maim), Slows (stun, chill, pin, maim), Mental (blind, confusion, fright),
+and Elemental (burn, chill, shock). Tags provide family selection for future
+effects and modifiers; they do not share resistance buildup or alter damage
+resistance. Tag membership is derived metadata, not saved actor state.
+
 ## Presentation
 
 Items, equipment layout and Stats follow

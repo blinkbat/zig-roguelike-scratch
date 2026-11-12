@@ -388,7 +388,10 @@ fn rushTo(run: *game.Game, from: P, comptime action: skillbar.Act, mark: P) void
 /// Over the hero's own cell, so the reticle reaches the far side of a corridor.
 pub fn nudgeAim(run: *game.Game, d: mathx.Dir) void {
     const hero = run.sim.heroActor() orelse return;
-    if (run.mode.aim.act().attack() != null and run.mode.aim.act().reticle() != .bow) if (targetToward(run, hero.at, d)) |at| return markAim(run, hero.at, at);
+    const act = run.mode.aim.act();
+    if (act.attack() != null and act.reticle() != .leap and targetAt(run, act, hero.at, run.sim.lv.who(run.mode.aim.mark)) != null) {
+        if (targetToward(run, hero.at, d)) |at| return markAim(run, hero.at, at);
+    }
     var to = run.mode.aim.mark.add(d.delta());
     switch (run.mode.aim.act().reticle().?) {
         .leap, .rush, .ground => if (!juke.inReach(hero.at, to, run.sim.reachOf(run.mode.aim.act())) or !grid.Level.inside(to)) return,
@@ -411,6 +414,7 @@ fn targetToward(run: *game.Game, from: P, d: mathx.Dir) ?P {
         const along = delta.x * way.x + delta.y * way.y;
         if (along <= 0) continue;
         const across: i32 = @intCast(@abs(delta.x * way.y - delta.y * way.x));
+        if (across > along) continue;
         const score = along + 2 * across;
         if (score >= best_score) continue;
         best_score = score;

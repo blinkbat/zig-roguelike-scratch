@@ -124,6 +124,7 @@ const App = struct {
 
     fn goPage(app: *App, p: Page) void {
         game.holdWalk(app.g);
+        app.g.keywords = .{};
         app.note.clear();
         app.page = p;
     }
@@ -404,6 +405,16 @@ const App = struct {
 
     fn titleStep(app: *App) bool {
         const g = app.g;
+        if (!g.keywords.screen.eq(g.screen)) g.keywords = .{};
+        const controls = g.st;
+        const explaining = g.keywords.step(&controls);
+        if (explaining) g.st = .{ .device = controls.device, .focused = controls.focused };
+        defer if (explaining) {
+            g.st = controls;
+            game.holdWalk(g);
+        };
+        g.keywords.beginFrame(&controls, g.screen);
+        defer g.keywords.draw(&g.face, &g.sprites, g.screen, &controls);
         rl.clearBackground(look.BG);
         const note = app.note.text();
         const back = menu.backedAt(&g.st, g.screen);
@@ -667,13 +678,14 @@ var start_edit: ?[]const u8 = null;
 test "every type whose words the player may rename is registered under its own name" {
     const debug = @import("game/debug.zig");
     const types = .{
-        MainRow,                               OptionRow,                           game.PauseRow,
-        debug.Page,                            debug.Row,                           hero.Class,
-        @import("play/skillbar.zig").Act,      @import("play/item_bases.zig").Kind, @import("play/attrs.zig").Attr,
-        @import("play/damage.zig").Element,    @import("play/resilience.zig").Kind, @import("play/flask.zig").Kind,
-        @import("play/consumable.zig").Kind,   actor.FoeType,                       actor.Movement,
-        @import("ui/character_view.zig").Page, @import("ui/trees.zig").SkillState,  editor.View,
-        editor.Family,                         editor.Inspect,                      @import("map/grid.zig").Tile,
+        MainRow,                            OptionRow,                             game.PauseRow,
+        debug.Page,                         debug.Row,                             hero.Class,
+        @import("play/skillbar.zig").Act,   @import("play/item_bases.zig").Kind,   @import("play/attrs.zig").Attr,
+        @import("play/damage.zig").Element, @import("play/resilience.zig").Kind,   @import("play/resilience.zig").Tag,
+        @import("play/flask.zig").Kind,     @import("play/consumable.zig").Kind,   actor.FoeType,
+        actor.Movement,                     @import("ui/character_view.zig").Page, @import("ui/trees.zig").SkillState,
+        editor.View,                        editor.Family,                         editor.Inspect,
+        @import("map/grid.zig").Tile,
     };
     const wording = @import("core/wording.zig");
     try std.testing.expectEqual(wording.TYPES.len, types.len);
@@ -858,6 +870,7 @@ pub const HEADLESS = [_]Headless{
     .{ .flag = "--shot-cinema", .body = @import("game/shots/cinema.zig").captureCinema },
     .{ .flag = "--shot-trees", .body = @import("game/shots/trees.zig").captureTrees },
     .{ .flag = "--shot-water-cliffs", .body = @import("game/shots/water_cliffs.zig").captureWaterCliffs },
+    .{ .flag = "--shot-zoo", .body = @import("game/shots/zoo.zig").captureZoo },
     .{ .flag = "--bench", .body = bench.benchWalk, .startup_shown = true },
 };
 

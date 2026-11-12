@@ -327,6 +327,10 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
         if (measure.turns > 0) text.say("{d}%, {d} turn{s}", .{ measure.percent, measure.turns, mathx.plural(measure.turns) }) else text.say("{d}%", .{measure.percent});
         right.entry(resistanceLabel(k), text.text(), .plain, quiet(measure.percent, look.ailmentInk(k)));
     }
+    var groups_width: i32 = 0;
+    for (@import("keywords.zig").STATUS_TERMS) |term| groups_width += face.width(term.title, font.SMALL) + 18;
+    right.fits(groups_width);
+    right.y += font.SMALL;
     return .{ left, right };
 }
 
@@ -340,8 +344,17 @@ pub fn draw(face: *const font.Face, view: View) void {
     _ = sheet(face, view, false);
 }
 
-pub fn drawAdvanced(face: *const font.Face, view: View) void {
-    _ = advancedSheet(face, view, false);
+pub fn drawAdvanced(face: *const font.Face, view: View, on: menu.Surface) void {
+    const keywords = @import("keywords.zig");
+    const cols = advancedSheet(face, view, false);
+    const y = cols[1].y - font.SMALL;
+    var x = cols[1].x;
+    for (keywords.STATUS_TERMS) |term| {
+        if (view.keywords) |links| {
+            links.text(face, term.title, x, y, font.SMALL, look.UI_FOCUS, &.{term}, on);
+        } else face.text(term.title, x, y, font.SMALL, look.UI_FOCUS);
+        x += face.width(term.title, font.SMALL) + 18;
+    }
 }
 
 pub fn verify(face: *const font.Face) !void {

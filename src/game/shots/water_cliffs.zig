@@ -125,6 +125,8 @@ fn captureWaterVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
     try capture(g, target, WATER_CLIFFS_DIR ++ "/visibility-diagonal.png");
     const c = game.scene.Cam.of(g);
     var air: [2]rl.Image = undefined;
+    var air_n: usize = 0;
+    defer for (air[0..air_n]) |img| rl.unloadImage(img);
     for (&air, 0..) |*img, i| {
         if (i == 1) @memset(&g.sim.lv.lit, false);
         g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{});
@@ -133,8 +135,8 @@ fn captureWaterVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
         g.cinema.drawAir(g.light, .{ @floatFromInt(-c.x), @floatFromInt(-c.y) }, game.CELL_F, g.screen, 0);
         outOfTarget(g);
         img.* = try readTarget(target);
+        air_n += 1;
     }
-    defer for (air) |img| rl.unloadImage(img);
     var mist: usize = 0;
     var px = pixels(g.screen.x, g.screen.y);
     while (px.next()) |p| {
@@ -191,10 +193,12 @@ fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
         const view = game.scene.viewBox(g, c);
         g.light.bake(&g.sim.lv, view.lo, view.hi);
         var images: [2]rl.Image = undefined;
+        var image_n: usize = 0;
+        defer for (images[0..image_n]) |im| rl.unloadImage(im);
         for (0..2) |i| {
             images[i] = try shadowMask(g, target, c, if (i == 0) view else grid.Box.inMap(0));
+            image_n += 1;
         }
-        defer for (images) |im| rl.unloadImage(im);
         var different: usize = 0;
         var px = pixels(g.screen.x, g.screen.y);
         while (px.next()) |p| {

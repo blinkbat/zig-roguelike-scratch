@@ -28,6 +28,7 @@ pub fn main() !void {
 }
 
 test {
+    _ = @import("ui/keywords.zig");
     _ = @import("gfx/status_marks.zig");
     _ = @import("edit/plot_fields.zig");
     _ = @import("game/projectile_motion.zig");
@@ -100,6 +101,7 @@ test {
     _ = @import("map/climate.zig");
     _ = @import("map/lume.zig");
     _ = @import("map/atlas.zig");
+    _ = @import("map/zoo.zig");
     _ = @import("map/atlas_text.zig");
     _ = @import("map/script.zig");
     _ = @import("map/script_text.zig");
@@ -201,12 +203,14 @@ test {
     _ = @import("game/shots/water_cliffs.zig");
     _ = @import("game/shots/ui.zig");
     _ = @import("game/shots/trees.zig");
+    _ = @import("game/shots/zoo.zig");
     _ = @import("game/shots/cinema.zig");
     _ = @import("game/shots/debug.zig");
     _ = @import("game/shots/bench.zig");
     _ = @import("game/scene.zig");
     _ = @import("game/overlay.zig");
     _ = @import("game/character.zig");
+    _ = @import("game/jail.zig");
     _ = @import("game/combat.zig");
     _ = @import("game/attacks.zig");
     _ = @import("game/harness.zig");

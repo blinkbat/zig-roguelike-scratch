@@ -16,6 +16,7 @@ const atlas = @import("map/atlas.zig");
 const playground = @import("map/playground.zig");
 const menu = @import("ui/menu.zig");
 const hud = @import("ui/hud.zig");
+const keywords = @import("ui/keywords.zig");
 const book = @import("ui/book.zig");
 const quest_log = @import("ui/quests.zig");
 const heroes = @import("play/hero.zig");
@@ -42,6 +43,7 @@ const climate = @import("map/climate.zig");
 pub const scene = @import("game/scene.zig");
 pub const overlay = @import("game/overlay.zig");
 pub const character = @import("game/character.zig");
+pub const jail = @import("game/jail.zig");
 pub const debugging = @import("game/debug.zig");
 pub const combat = @import("game/combat.zig");
 pub const harness = @import("game/harness.zig");
@@ -187,7 +189,7 @@ pub const Game = struct {
     target: ?u16 = null,
     inspecting: Spot = .{ .slot = 0 },
     inspect_scroll: usize = 0,
-    talk_page: usize = 0,
+    keywords: keywords.State = .{},
     /// Map pixels, eased toward the hero. Nothing in the simulation reads it.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
     screen: P = WINDOW,
@@ -260,10 +262,10 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
 /// Every unsaved `Game` field is in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     pub const loot = [_][]const u8{ "character", "looted", "loot_gold" };
-    pub const run = [_][]const u8{ "mode", "epitaph", "talk_page" };
+    pub const run = [_][]const u8{ "mode", "epitaph" };
     /// Reset as a saved run resumes, besides `run` and `loot`.
     pub const resumed = [_][]const u8{"exit"};
-    pub const turn = [_][]const u8{ "pending", "target", "inspecting", "inspect_scroll" };
+    pub const turn = [_][]const u8{ "pending", "target", "inspecting", "inspect_scroll", "keywords" };
     pub const graphics = [_][]const u8{ "light", "cloud", "vignette", "mini", "cinema" };
     /// Given their values by hand.
     pub const set = [_][]const u8{ "died_in", "pause_menu", "pause_page", "display", "debug", "back", "permadeath", "hall", "perf", "st", "mouse", "binds", "cam", "screen", "framebuffer", "rain", "sprites", "graphics_ready", "art", "face" };
@@ -319,9 +321,10 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
         carried = h.*;
         carried.tactics.steady = 0;
     }
+    const back = g.sim.visited.isSet(n);
+    const same = back and g.sim.node == n;
     g.sim.node = n;
     g.sim.outdoors = g.sim.outdoorsNow();
-    const back = g.sim.visited.isSet(n);
     const roll = rollOf(g.sim.seed, n);
     if (back) {
         revisit(g, &g.sim.visits[n]);
@@ -347,17 +350,20 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
                 if (actor.dwells(f.kind, &g.sim.lv, f.at)) _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(f.kind, f.at));
             },
         }
+        if (w.node[n].plan == .bespoke) if (w.node[n].zoo) |z| z.populate(&g.sim.lv, &g.sim.pool, &g.sim.rng);
     }
     const h = g.sim.heroActor().?;
     carried.at = h.at;
     h.* = carried;
     var placed: usize = 0;
     for (followers) |f| {
-        const over = g.sim.pool.spentFrom(0);
-        if (over == null and !g.sim.pool.hasRoomFor(f.kind)) break;
+        const over = if (same) null else g.sim.pool.spentFrom(0);
+        if (!same and over == null and !g.sim.pool.hasRoomFor(f.kind)) break;
         var body = f;
         body.at = followerCell(&g.sim.lv, f.kind, h.at) orelse break;
-        _ = g.sim.pool.spawnOver(&g.sim.lv, over, body);
+        if (same) {
+            g.sim.pool.move(&g.sim.lv, g.sim.lv.who(f.at), body.at);
+        } else _ = g.sim.pool.spawnOver(&g.sim.lv, over, body);
         placed += 1;
     }
     combat.arrive(g, h.at);
@@ -419,7 +425,6 @@ fn goThrough(g: *Game, l: atlas.Link) void {
     var title: [atlas.TITLE_MAX]u8 = undefined;
     g.sim.log.say("Entered {s}.", .{g.sim.map.?.node[l.node].title(l.node, &title)});
     const same = l.node == from;
-    if (same) followersLeft(&g.sim.visits[from], followers.n);
     const placed = enter(g, l.node, g.sim.map.?.door(l).at, followers.slice());
     if (!same) followersLeft(&g.sim.visits[from], placed);
     carried.restore(g);
@@ -551,7 +556,7 @@ pub fn castSight(g: *Game, from: P) void {
     g.mini.stale = true;
 }
 
-pub const Move = enum { kick, open, burst, loot, step, talk, swap, blocked };
+pub const Move = enum { kick, open, gate, burst, loot, step, talk, swap, blocked };
 
 pub fn foesNear(g: *const Game) bool {
     for (g.sim.pool.constSlice()) |a| if (a.seenFoe(&g.sim.lv)) return true;
@@ -566,6 +571,7 @@ pub fn heroMove(g: *Game, d: mathx.Dir) Move {
 pub fn moveOf(g: *const Game, lv: *const grid.Level, from: P, d: mathx.Dir, occupied: bool) Move {
     const to = from.add(d.delta());
     const there = lv.at(to);
+    if (there == .gate or there == .locked_gate) return .gate;
     if (there.opened() != null) return if (foesNear(g)) .blocked else .open;
     if (there.bursts()) return .burst;
     if (!lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
@@ -577,7 +583,7 @@ pub fn moveOf(g: *const Game, lv: *const grid.Level, from: P, d: mathx.Dir, occu
 fn spends(m: Move) bool {
     return switch (m) {
         .kick, .burst, .loot, .step, .swap => true,
-        .open, .talk, .blocked => false,
+        .open, .gate, .talk, .blocked => false,
     };
 }
 
@@ -601,6 +607,10 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
     const move = heroMove(g, d);
     if (spends(move)) tactics_exec.beforeAction(&g.sim);
     switch (move) {
+        .gate => {
+            _ = jail.interact(g, to);
+            return;
+        },
         .kick => {
             const w = g.sim.lv.who(to);
             const s = heroBump(g, h.at, to, late);
@@ -777,8 +787,11 @@ fn stunnedTurn(g: *Game) bool {
 /// Advance presentation before new actions so their effects start at the correct delay.
 pub fn update(g: *Game, dt: f32) void {
     if (!g.st.focused) holdWalk(g);
+    if (!g.keywords.screen.eq(g.screen)) g.keywords = .{};
+    const keyword_input = g.keywords.step(&g.st);
+    if (keyword_input) holdWalk(g);
     mouseControls.prepare(g);
-    if (mouseControls.clickable(modeShown(g)) and overLog(g) and g.st.scroll != 0) g.sim.log.move(g.st.scroll);
+    if (!keyword_input and mouseControls.clickable(modeShown(g)) and overLog(g) and g.st.scroll != 0) g.sim.log.move(g.st.scroll);
     const death_drawn = deathShown(g);
     g.pic.advance(&g.sim, dt);
     if (g.pic.uprooted()) |p| g.light.uproot(&g.sim.lv, p);
@@ -793,7 +806,7 @@ pub fn update(g: *Game, dt: f32) void {
     const was = screenOf(g);
     const turn_at = g.sim.clock.minute;
     const beside_talk = g.mode == .dead or g.mode == .talk or g.sim.plot.talk != null;
-    if (!beside_talk and g.st.character_page != null) {
+    if (keyword_input) {} else if (!beside_talk and g.st.character_page != null) {
         const page = book.Page.of(g.st.character_page.?);
         if (bookOpen(g) and g.character.page == page) {
             g.mode = .play;
@@ -841,8 +854,11 @@ pub fn update(g: *Game, dt: f32) void {
         .talk => talking.step(g),
     }
     if (g.sim.clock.minute == turn_at) character.settleLoot(g);
-    if (characterShown(g) or g.mode == .inspect) if (g.sim.travel) |l| if (g.pic.quiet()) goThrough(g, l);
-    if (!std.meta.eql(was, screenOf(g))) holdWalk(g);
+    if (!keyword_input and (characterShown(g) or g.mode == .inspect)) if (g.sim.travel) |l| if (g.pic.quiet()) goThrough(g, l);
+    if (!std.meta.eql(was, screenOf(g))) {
+        holdWalk(g);
+        g.keywords = .{};
+    }
     g.pic.stepGlide(&g.sim, g.cloud, late);
     g.pic.catchUp(&g.sim);
     g.pic.footfalls(&g.sim);
@@ -966,6 +982,8 @@ pub fn deadBox(screen: P) rl.Rectangle {
 }
 
 pub fn drawFrame(g: *Game) void {
+    g.keywords.beginFrame(&g.st, g.screen);
+    defer g.keywords.draw(&g.face, &g.sprites, g.screen, &g.st);
     rl.clearBackground(look.FOG);
     scene.drawMap(g);
     g.vignette.draw(g.screen.x, g.screen.y);
@@ -1030,7 +1048,7 @@ pub fn syncScreen(g: *Game, toggle: bool) void {
 
 pub fn frame(g: *Game) void {
     const dt = rl.getFrameTime();
-    g.st.context = switch (g.mode) {
+    g.st.context = if (g.keywords.focus != null) .menu else switch (g.mode) {
         .play => .play,
         .aim => .target,
         .pause => if (characterShown(g) and g.character.treeActive()) .tree else .menu,

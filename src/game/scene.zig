@@ -1079,7 +1079,7 @@ fn drawLean(g: *game.Game, c: Cam, ground: *const grid.Level, stood: *const grid
         const p = at.add(d.delta());
         const col = switch (leanShown(g, ground, stood, at, d)) {
             .kick => look.LEAN_FOE,
-            .step, .open, .burst, .loot, .talk, .swap => look.LEAN_OPEN,
+            .step, .open, .gate, .burst, .loot, .talk, .swap => look.LEAN_OPEN,
             .blocked => look.LEAN_BLOCKED,
         };
         outline(c, p, col);

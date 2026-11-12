@@ -79,7 +79,7 @@ pub const Book = struct {
             self.cursor = cursor;
         }
         self.resetView();
-        self.tabbing = !self.direct();
+        self.tabbing = false;
     }
     pub fn direct(self: *const Book) bool {
         return self.page.direct();
@@ -359,7 +359,6 @@ pub const Book = struct {
         const walked: ?i32 = if (st.walk) |w| (if (w.delta().x != 0) w.delta().x else null) else null;
         if (walked orelse pageStep(st)) |d| {
             self.turnBy(d, view);
-            self.tabbing = true;
             return null;
         }
         if (st.hit(menu.CONFIRM)) self.tabbing = false;
@@ -457,7 +456,7 @@ pub const Book = struct {
             self.drawDirect(face, sprites, view);
         } else {
             var who: menu.Note(100) = .{};
-            who.say("{s}" ++ menu.SEP ++ "{s}", .{ view.name, view.class.title() });
+            if (std.ascii.eqlIgnoreCase(view.name, view.class.title())) who.say("{s}", .{view.name}) else who.say("{s}" ++ menu.SEP ++ "{s}", .{ view.name, view.class.title() });
             header(face, who.text());
             var xp: menu.Note(100) = .{};
             xp.say("Level  {d}     XP  {d} / {d}", .{ view.growth.level, view.growth.xp, view.growth.needed() });
@@ -469,7 +468,7 @@ pub const Book = struct {
             } else if (self.treePanel()) |panel| {
                 trees.draw(panel, face, sprites, view.class, view.growth, self.treeView(), view.device, .{ .stats = view.stats(), .gear = view.inventory.gear, .readied = view.readied }, on);
             } else if (self.page == .stats) {
-                if (self.advanced) character_stats.drawAdvanced(face, view) else character_stats.draw(face, view);
+                if (self.advanced) character_stats.drawAdvanced(face, view, on) else character_stats.draw(face, view);
             } else {
                 self.drawCells(face, sprites, view);
                 self.drawDetail(face, view);
@@ -564,8 +563,6 @@ pub const Book = struct {
     fn drawCells(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
         if (self.page == .inventory) {
             const text_x = layout.LIST_X + layout.TEXT_X;
-            face.draw("ITEM", text_x, layout.CONTENT_TOP, font.SMALL, look.DIM);
-            face.draw("SLOT", layout.LIST_X + layout.SECOND_X, layout.CONTENT_TOP, font.SMALL, look.DIM);
             if (self.count(view) == 0) face.draw(EMPTY, text_x, layout.CONTENT_TOP + layout.EMPTY_DY, font.BODY, look.DIM);
             const position = self.positionOf(view);
             face.draw(position.text(), text_x, layout.FOOT_Y, font.SMALL, look.DIM);
@@ -618,7 +615,7 @@ pub const Book = struct {
                     if (n.item()) |it| {
                         line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
                     } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
-                    listRow(face, x, row_mid, n.label(&name_buf), inkOf(n.item()), n.command().verb(), look.DIM);
+                    listRow(face, x, row_mid, n.label(&name_buf), inkOf(n.item()), if (self.page == .loot) "" else n.command().verb(), look.DIM);
                 },
                 .trade => {
                     const s = self.dealing(view).?;
@@ -901,7 +898,7 @@ test "stats change between main and advanced by button and by click, and back st
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
 }
 
-test "the book opens on its tabs: left and right choose one, confirm enters it, back returns to the tabs" {
+test "the book opens inside its last tab and choosing another tab enters it immediately" {
     var inv = inventory.Inventory{};
     try std.testing.expect(inv.add(.{ .kind = .cap }));
     var growth = progress.State.of(.archer);
@@ -909,23 +906,22 @@ test "the book opens on its tabs: left and right choose one, confirm enters it, 
     var book = Book{};
     const screen = display.WINDOW;
     book.open();
+    try std.testing.expect(!book.tabbing);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
     try std.testing.expect(book.tabbing);
     try std.testing.expect(book.step(&.{ .walk = .e }, screen, view) == null);
     try std.testing.expectEqual(Page.inventory, book.page);
-    try std.testing.expect(book.tabbing);
-    try std.testing.expect(book.step(&.{ .walk = .s }, screen, view) == null);
-    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.REMOVE) }, screen, view) == null);
-    try std.testing.expectEqual(@as(usize, 1), inv.n);
-    _ = book.step(&.{ .walk = .w }, screen, view);
-    _ = book.step(&.{ .walk = .e }, screen, view);
-    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view) == null);
     try std.testing.expect(!book.tabbing);
-    try std.testing.expectEqual(Page.inventory, book.page);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).? == .equip);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
     try std.testing.expect(book.tabbing);
     try std.testing.expectEqual(Page.inventory, book.page);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
+    book.open();
+    try std.testing.expect(!book.tabbing and book.page == .inventory);
+    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
+    _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, view);
+    try std.testing.expect(!book.tabbing and book.page == .stats);
 }
 
 test "the quests tab is chosen from the tabs, scrolls once entered, and backs out to the tabs" {
@@ -939,12 +935,10 @@ test "the quests tab is chosen from the tabs, scrolls once entered, and backs ou
     const screen = display.WINDOW;
     var book = Book{ .page = .skills };
     book.open();
+    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
     _ = book.step(&.{ .walk = .e }, screen, view);
-    try std.testing.expect(book.tabbing and book.page == .quests);
-    _ = book.step(&.{ .walk = .s }, screen, view);
+    try std.testing.expect(!book.tabbing and book.page == .quests);
     try std.testing.expectEqual(@as(usize, 0), book.top);
-    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view) == null);
-    try std.testing.expect(!book.tabbing);
     _ = book.step(&.{ .walk = .s }, screen, view);
     try std.testing.expectEqual(@as(usize, 1), book.top);
     _ = book.step(&.{ .scroll = -100 }, screen, view);
@@ -966,9 +960,11 @@ test "the passives tab reads menu input until entered, and a click on its drawn 
     book.tabbing = true;
     try std.testing.expect(!book.treeActive());
     _ = book.step(&.{ .walk = .e }, screen, view);
-    try std.testing.expectEqual(Page.skills, book.page);
+    try std.testing.expect(!book.tabbing and book.page == .skills);
+    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
     _ = book.step(&.{ .walk = .w }, screen, view);
-    try std.testing.expect(book.tabbing and book.page == .passives);
+    try std.testing.expect(!book.tabbing and book.page == .passives);
+    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
     const zoom = book.zoom;
     const box = trees.zoomBox(true);
     const p = book.surface(screen, view).screenOf(raster.middle(box));

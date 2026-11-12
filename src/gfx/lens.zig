@@ -11,7 +11,7 @@ pub const Options = struct {
     saturation: f32 = 1,
     warmth: f32 = 0.10,
     film_grain: f32 = 0,
-    scanlines: f32 = 0.60,
+    scanlines: f32 = 0.45,
     chromatic_aberration: f32 = 0.30,
     sepia: f32 = 0.05,
 
@@ -78,7 +78,27 @@ pub const Lens = struct {
         if (self.options.perspective == 0 or self.program == null or self.scene == null) return point;
         return perspectivePoint(point, screen, self.options.perspective);
     }
+
+    pub fn screenBox(self: *const Lens, box: rl.Rectangle, screen: mathx.P) rl.Rectangle {
+        if (self.options.perspective == 0 or self.program == null or self.scene == null) return box;
+        return perspectiveBox(box, screen, self.options.perspective);
+    }
 };
+
+fn perspectiveBox(box: rl.Rectangle, screen: mathx.P, strength: f32) rl.Rectangle {
+    const middle = @as(f32, @floatFromInt(screen.x)) * 0.5;
+    var lo = std.math.inf(f32);
+    var hi = -std.math.inf(f32);
+    for ([_]f32{ box.y, box.y + box.height }) |y| {
+        const scale = 1 + PERSPECTIVE * strength * y / @as(f32, @floatFromInt(screen.y));
+        for ([_]f32{ box.x, box.x + box.width }) |x| {
+            const projected = (x - middle) * scale + middle;
+            lo = @min(lo, projected);
+            hi = @max(hi, projected);
+        }
+    }
+    return .{ .x = lo, .y = box.y, .width = hi - lo, .height = box.height };
+}
 
 fn perspectivePoint(point: mathx.P, screen: mathx.P, strength: f32) mathx.P {
     const width: f32 = @floatFromInt(screen.x);

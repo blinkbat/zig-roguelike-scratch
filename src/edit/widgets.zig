@@ -492,11 +492,6 @@ pub fn modalFrame(face: *const font.Face, screen: P, want_w: i32, h: i32, title:
     return .{ .x = x, .w = w, .top = top, .y = y + MODAL_HEAD };
 }
 
-pub fn titleHint(face: *const font.Face, f: Frame, title: [:0]const u8, hint: []const u8) void {
-    const x = f.x + 2 * PAD + textFace(face).width(title, TITLE);
-    drawFit(face, hint, DETAIL, f.x + f.w - PAD - x, false, x, midIn(f.top, TITLE, DETAIL), look.DIM);
-}
-
 const Page = struct {
     frame: Frame,
     bottom: i32,

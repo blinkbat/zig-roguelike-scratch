@@ -46,7 +46,6 @@ const CANVAS_TOP: i32 = raster.top(CANVAS);
 const CANVAS_BOTTOM: i32 = raster.bottom(CANVAS);
 const DETAIL_TOP: i32 = raster.top(DETAIL);
 const FOOT_MID: i32 = CANVAS_BOTTOM - @as(i32, @intFromFloat(WHEEL_FOOT)) / 2;
-const LEGEND_STEP: i32 = 140;
 const ZOOM_PX: i32 = 28;
 const ZOOM_GAP: i32 = 14;
 const BUTTON_H: i32 = 34;
@@ -57,10 +56,6 @@ const DETAIL_BOTTOM: i32 = raster.bottom(DETAIL);
 const ACTION_Y: i32 = DETAIL_BOTTOM - ACTION_FOOT_GAP - BUTTON_H;
 const REASON_Y: i32 = ACTION_Y - REASON_GAP - font.SMALL;
 const BIND_Y: i32 = REASON_Y - BIND_GAP - BUTTON_H;
-const HINT_Y: i32 = CANVAS_BOTTOM + 20;
-const HINT_STEP: i32 = 164;
-const HINT_GLYPH_GAP: i32 = 4;
-const HINT_LABEL_GAP: i32 = 2;
 const TITLE_Y: i32 = CANVAS_TOP + 18;
 const SKILL_SIZE: i32 = 56;
 const SKILL_MID_X: i32 = 372;
@@ -86,7 +81,7 @@ const NEXT_GAP: i32 = 8;
 const BACK = look.rgb(0x0c0e12);
 const TILE = look.rgb(0x15171c);
 const BORDER = look.rgb(0x34373d);
-const LOCKED = look.rgb(0x656773);
+const LOCKED = look.rgb(0x9698a3);
 const AVAILABLE = look.rgb(0xbcc9ba);
 const OWNED = look.UI_GOLD;
 const FOCUS = look.UI_FOCUS;
@@ -127,32 +122,8 @@ pub fn overviewBox() rl.Rectangle {
 pub fn draw(panel: Panel, face: *const font.Face, sprites: *const sprite.Sprites, class: hero.Class, growth: *const progress.State, view: View, device: input.Device, loadout: Loadout, surface: menu.Surface) void {
     switch (panel) {
         .skills => drawSkills(face, sprites, class, growth, view, loadout),
-        .passives => {
-            drawPassives(face, class, growth, view, surface, device);
-            treeHints(face, device);
-        },
+        .passives => drawPassives(face, class, growth, view, surface, device),
     }
-}
-
-fn hint(face: *const font.Face, x: i32, y: i32, prompts: []const prompt_icon.Prompt, label: [:0]const u8) void {
-    var next = x;
-    for (prompts) |prompt| next = prompt.drawFrom(face, next, y, font.BODY, 1) + HINT_GLYPH_GAP;
-    face.drawMiddle(label, next + HINT_LABEL_GAP, y, font.SMALL, look.DIM);
-}
-
-fn treeHints(face: *const font.Face, device: input.Device) void {
-    const y = HINT_Y;
-    const x = CANVAS_LEFT;
-    const keys = input.TreeKeys;
-    const pad = device.pad();
-    const overview = overviewPrompt(device);
-    const hints = [_]struct { pad: []const prompt_icon.Prompt, keys: []const prompt_icon.Prompt, label: [:0]const u8 }{
-        .{ .pad = &.{.{ .stick = .left }}, .keys = &.{.{ .key = keys.BROWSE_CAPTION }}, .label = "Browse" },
-        .{ .pad = &.{.{ .stick = .right }}, .keys = &.{ .{ .key = keys.PAN_CAPTION }, .arrows }, .label = "Pan" },
-        .{ .pad = &.{.dpad}, .keys = &.{ .{ .key = keys.ZOOM_OUT_CAPTION }, .{ .key = keys.ZOOM_IN_CAPTION } }, .label = "Zoom" },
-        .{ .pad = &.{overview}, .keys = &.{overview}, .label = OVERVIEW },
-    };
-    for (hints, 0..) |h, i| hint(face, x + @as(i32, @intCast(i)) * HINT_STEP, y, if (pad) h.pad else h.keys, h.label);
 }
 
 const OVERVIEW = "Overview";
@@ -195,10 +166,9 @@ fn skillBox(class: hero.Class, i: usize) rl.Rectangle {
     return raster.rect(x - SKILL_SIZE / 2, y - SKILL_SIZE / 2, SKILL_SIZE, SKILL_SIZE);
 }
 
-fn frame(face: *const font.Face, title: [:0]const u8, points: u16) void {
+fn frame(face: *const font.Face, points: u16) void {
     backdrop(CANVAS);
     backdrop(DETAIL);
-    face.draw(title, CANVAS_LEFT, TITLE_Y, font.SMALL, look.TEXT);
     drawPoints(face, points, true);
 }
 
@@ -218,26 +188,6 @@ fn drawPoints(face: *const font.Face, points: u16, right: bool) void {
     line.say("{d} point{s} available", .{ points, mathx.plural(points) });
     const x = if (right) CANVAS_RIGHT - face.width(line.text(), font.SMALL) else CANVAS_LEFT;
     face.draw(line.text(), x, TITLE_Y, font.SMALL, if (points > 0) OWNED else look.DIM);
-}
-
-const Legend = struct { name: [:0]const u8, color: rl.Color };
-
-fn legendOf(comptime E: type, comptime inkOf: fn (E) rl.Color) [std.enums.values(E).len]Legend {
-    var out: [std.enums.values(E).len]Legend = undefined;
-    for (std.enums.values(E), &out) |e, *l| l.* = .{ .name = menu.named(e), .color = inkOf(e) };
-    return out;
-}
-
-const MARK_HALF: i32 = 5;
-const LEGEND_TEXT_DX: i32 = 20;
-
-fn legend(face: *const font.Face, entries: []const Legend) void {
-    const y = FOOT_MID;
-    for (entries, 0..) |l, i| {
-        const x = CANVAS_LEFT + @as(i32, @intCast(i)) * LEGEND_STEP;
-        rl.drawRectangleLinesEx(raster.rect(x, y - MARK_HALF, 2 * MARK_HALF + 1, 2 * MARK_HALF + 1), 1, l.color);
-        face.drawMiddle(l.name, x + LEGEND_TEXT_DX, y, font.SMALL, l.color);
-    }
 }
 
 fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, width: i32, ink: rl.Color) i32 {
@@ -272,8 +222,6 @@ pub const SkillState = enum {
             .locked => LOCKED,
         };
     }
-
-    const LEGEND = legendOf(SkillState, ink);
 };
 
 fn skillInk(class: hero.Class, growth: *const progress.State, s: progress.Skill) rl.Color {
@@ -298,7 +246,7 @@ fn skillAlpha(class: hero.Class, growth: *const progress.State, s: progress.Skil
 
 fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: hero.Class, growth: *const progress.State, view: View, loadout: Loadout) void {
     const cursor = view.cursor;
-    frame(face, "CLASS SKILLS", growth.active_points);
+    frame(face, growth.active_points);
     const skills = progress.skills(class);
     for (skills, 0..) |s, i| if (s.parent) |parent| {
         for (skills, 0..) |p, j| if (p.act == parent) {
@@ -321,7 +269,6 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         face.centred(rank.text(), pm.x, pm.y, font.SMALL, ink);
         face.drawMid(s.act.name(), mid.x, mid.y + SKILL_NAME_DY, font.SMALL, if (growth.unlocked(s.act) or i == cursor) look.TEXT else LOCKED);
     }
-    legend(face, &SkillState.LEGEND);
     skillDetails(face, class, growth, cursor, loadout);
 }
 
@@ -676,13 +623,13 @@ test "every class skill stays in its canvas and is reachable by directional sele
         const area = CANVAS;
         const plaque_over: f32 = @floatFromInt(PLAQUE_AT.x + PLAQUE_W - SKILL_SIZE / 2);
         const name_foot: f32 = @floatFromInt(SKILL_NAME_DY + font.SMALL - SKILL_SIZE / 2);
-        const legend_top: f32 = @floatFromInt(FOOT_MID - font.SMALL / 2);
+        const footer_top: f32 = @floatFromInt(FOOT_MID - font.SMALL / 2);
         for (skills, 0..) |_, i| {
             const box = skillBox(class, i);
             boxes[i] = box;
             try std.testing.expect(box.x >= area.x and box.y >= area.y);
             try std.testing.expect(box.x + box.width + plaque_over <= area.x + area.width);
-            try std.testing.expect(box.y + box.height + name_foot <= legend_top);
+            try std.testing.expect(box.y + box.height + name_foot <= footer_top);
             for (boxes[0..i]) |other| {
                 const overlaps = box.x < other.x + other.width and other.x < box.x + box.width and
                     box.y < other.y + other.height and other.y < box.y + box.height;

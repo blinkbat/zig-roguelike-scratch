@@ -55,6 +55,12 @@ partial, critical and empty resources, ailments, cooldowns, unavailable skills,
 both sets, binding and device glyphs at 1280x720, 1600x900 and 1920x1080.
 Capture definitions live in `src/game/shots/`.
 
+Status cards show underlined group names using `ui/keywords.zig`. Hovering a name
+or focusing it with Inspect opens a short definition above the parent card.
+The parent stays visible while entering the word or definition; keyword inputs
+never activate the underlying HUD or advance a turn. Capture coverage includes
+mouse hover, controller navigation and the scaled Advanced Stats menu.
+
 ## Aseprite paint template
 
 The working file is `C:/Users/DavidBennett/Desktop/hud-elements.aseprite`. Its canonical source copy is `assets/source/hud-elements.aseprite`. The sheet is 1024x1024 at native pixel scale; paint the individual components below the assembled reference on the top **Draw here** layer. Save the Aseprite document to preserve its layers and named slices.

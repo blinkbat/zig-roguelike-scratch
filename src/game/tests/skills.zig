@@ -837,12 +837,110 @@ test "smart aim replaces dead hidden blocked distant and invalid targets with a 
     }
 }
 
+test "smart aim cycles in eight directions and escapes without wrapping or spending" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const centre = P{ .x = 24, .y = 24 };
+    for (mathx.ALL_DIRS) |d| {
+        const way = d.delta();
+        const side = P{ .x = -way.y, .y = way.x };
+        const from = centre.add(side.scaled(2)).add(way.scaled(2));
+        const next = centre.add(way.scaled(2));
+        const last = centre.add(way.scaled(4));
+        harness.arena(g, from, &.{ centre, next, last });
+        g.target = harness.foeId(0);
+        harness.useAct(g, .shoot);
+        const clock = g.sim.clock;
+        const mana = g.sim.mana;
+        const rng = g.sim.rng;
+        harness.nudge(g, d);
+        try std.testing.expectEqual(next, g.mode.aim.mark);
+        try std.testing.expectEqual(@as(?u16, harness.foeId(1)), g.target);
+        harness.nudge(g, d);
+        try std.testing.expectEqual(last, g.mode.aim.mark);
+        try std.testing.expectEqual(@as(?u16, harness.foeId(2)), g.target);
+        harness.nudge(g, d);
+        try std.testing.expectEqual(last.add(way), g.mode.aim.mark);
+        try std.testing.expectEqual(@as(?u16, null), g.target);
+        try std.testing.expectEqual(clock, g.sim.clock);
+        try std.testing.expectEqual(mana, g.sim.mana);
+        try std.testing.expectEqualDeep(rng, g.sim.rng);
+        try std.testing.expect(g.pic.shot == null);
+    }
+}
+
+test "smart aim escapes sideways candidates and stays free until landing on an enemy" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const first = P{ .x = 23, .y = 20 };
+    const sideways = P{ .x = 24, .y = 23 };
+    harness.arena(g, from, &.{ first, sideways });
+    harness.useAct(g, .shoot);
+    harness.nudge(g, .e);
+    try std.testing.expectEqual(P{ .x = 24, .y = 20 }, g.mode.aim.mark);
+    try std.testing.expectEqual(@as(?u16, null), g.target);
+    harness.nudge(g, .s);
+    try std.testing.expectEqual(P{ .x = 24, .y = 21 }, g.mode.aim.mark);
+    harness.nudge(g, .s);
+    try std.testing.expectEqual(P{ .x = 24, .y = 22 }, g.mode.aim.mark);
+    harness.nudge(g, .s);
+    try std.testing.expectEqual(sideways, g.mode.aim.mark);
+    try std.testing.expectEqual(@as(?u16, harness.foeId(1)), g.target);
+    harness.nudge(g, .n);
+    try std.testing.expectEqual(first, g.mode.aim.mark);
+    try std.testing.expectEqual(@as(?u16, harness.foeId(0)), g.target);
+}
+
+test "smart aim melee and rush cycle then release into their normal free movement" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const first = P{ .x = 21, .y = 20 };
+    const second = P{ .x = 20, .y = 19 };
+    for ([_]skillbar.Act{ .shield_bash, .charge }) |act| {
+        harness.heroArena(g, .knight, from, &.{ first, second });
+        g.target = harness.foeId(0);
+        harness.useAct(g, act);
+        harness.nudge(g, .nw);
+        try std.testing.expectEqual(second, g.mode.aim.mark);
+        harness.nudge(g, .w);
+        try std.testing.expectEqual(P{ .x = 19, .y = if (act == .charge) 19 else 20 }, g.mode.aim.mark);
+        try std.testing.expectEqual(@as(?u16, null), g.target);
+        harness.nudge(g, .ne);
+        try std.testing.expectEqual(P{ .x = if (act == .charge) 20 else 21, .y = if (act == .charge) 18 else 19 }, g.mode.aim.mark);
+        try std.testing.expectEqual(@as(?u16, null), g.target);
+    }
+}
+
+test "smart aim cycling ignores hidden dead blocked and distant enemies" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const first = P{ .x = 23, .y = 20 };
+    const second = P{ .x = 23, .y = 23 };
+    const Invalid = enum { hidden, dead, blocked, distant };
+    for (std.enums.values(Invalid)) |why| {
+        harness.arena(g, from, &.{ first, second });
+        harness.useAct(g, .shoot);
+        switch (why) {
+            .hidden => g.sim.lv.lit[grid.Level.idx(second)] = false,
+            .dead => _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(1), harness.LETHAL_DMG),
+            .blocked => g.sim.lv.set(.{ .x = 22, .y = 22 }, .wall),
+            .distant => g.sim.pool.move(&g.sim.lv, harness.foeId(1), .{ .x = 23, .y = 20 + bow.RANGE + 1 }),
+        }
+        skills.nudgeAim(g, .s);
+        try std.testing.expectEqual(P{ .x = 23, .y = 21 }, g.mode.aim.mark);
+        try std.testing.expectEqual(@as(?u16, null), g.target);
+    }
+}
+
 test "free projectile aim moves one cell in eight directions and retains melee and rush targeting" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
     const centre = P{ .x = 24, .y = 24 };
-    harness.arena(g, from, &.{centre});
+    harness.arena(g, from, &.{});
     for (mathx.ALL_DIRS) |d| {
         const delta = d.delta();
         _ = harness.spawnAt(g, .rat, centre.add(.{ .x = 2 * delta.x, .y = 2 * delta.y }), false);

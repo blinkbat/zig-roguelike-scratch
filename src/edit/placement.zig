@@ -286,6 +286,7 @@ pub fn place(ed: *Editor, p: P) void {
             linkDoors(ed, from, here);
         },
         .start => {
+            if (!ed.here().startFits(p)) return;
             if (ed.map.start.node == ed.node and ed.map.start.at.eq(p)) return;
             ed.map.start = .{ .node = ed.node, .at = p };
             ed.changed();
@@ -447,7 +448,8 @@ pub fn legal(ed: *Editor, p: P) bool {
     const nd = ed.here();
     if (!ed.tool.fits(nd)) return false;
     return switch (ed.tool) {
-        .paint, .start => true,
+        .paint => true,
+        .start => nd.startFits(p),
         .barrel => ed.map.barrelGoes(ed.node, &nd.plan.bespoke, p),
         .torch => nd.torchGoes(&nd.plan.bespoke, p),
         .foe => |k| ed.map.foeGoes(ed.node, &nd.plan.bespoke, p, k),

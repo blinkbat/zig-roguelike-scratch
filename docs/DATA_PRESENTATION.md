@@ -16,10 +16,15 @@ Magic blue, rare yellow, resource/element colors and actual gain/loss colors
 retain their meanings. Red marks a real blocker or loss. Zero values are dim.
 Controls use device-aware glyphs, including keyboard keycaps.
 
+Follow the foundational UI restraint rules in `AGENTS.md`: no explanatory
+headings for self-evident content, repeated action text or permanent control
+legends. Existing actionable controls keep their names and glyphs. Keep locked
+skill names readable; borders, icons, ranks and selected details convey state.
+
 Character and binding panels stay centered and grow at half the window-fitting
 rate, capped at 1.25x, fitting small windows within a 16px margin. Drawing,
 hit regions and passive clipping share the transform. Detail/body text is
-18px/20px before scaling. The binding picker's labeled strip stays clear of
+18px/20px before scaling. The binding picker's range count stays clear of
 skill-set labels and its details are left-aligned.
 
 Descriptions explain the specific effect and exceptions, not repeated armour,
@@ -27,6 +32,21 @@ resistance, attribute-scaling, flask or status rules. Dedicated status inspectio
 owns status definitions. Use explicit units: damage bonuses are percentages,
 critical damage is a multiplier, armour is physical damage reduction, and
 cooldowns/durations are turns. Do not invent DPS or a universal gear score.
+
+Status hover cards and controller Inspect show the effect first, then its Wounds,
+Slows, Mental and/or Elemental tags as underlined keywords. Hover a word, or enter
+keyword inspection with the Inspect action and navigate the available words, to
+open its definition and member list above the current card. Back closes that
+definition first. Advanced Stats also offers all four groups for lookup without
+an active status. Membership comes from `play/resilience.zig`.
+Show only the underlined words: no category prefix or controller/back hints.
+
+`ui/keywords.zig` owns the shared keyword component. Menus and tooltips pass stable
+term definitions and their drawing surface; hit regions use the same transform
+as the words. Definitions stay on screen and preserve their underlying menu or
+tooltip. All interaction uses the existing device-aware Inspect and Back actions.
+Shared panel backgrounds become more opaque with stacking depth: base HUD,
+menus/tooltips, then keyword definitions. `gfx/look.zig` owns the opacity steps.
 
 ## Items and equipment
 

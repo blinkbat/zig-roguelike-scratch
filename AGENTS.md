@@ -2,6 +2,16 @@
 
 Grid roguelike and map editor in **Zig 0.14.1 + raylib**. Paths below are repository-relative unless stated otherwise.
 
+## UI restraint — foundational requirement
+
+- Implement the UI the user requests. Do not invent visible additions because they seem helpful.
+- Do not add labels, headings, buttons, control hints, explanatory text, extra entry points or duplicate information unless explicitly requested. If an unrequested addition seems necessary, ask before implementing it.
+- Take the request literally: adding tags means showing the tag words, not a "Tags:" label. Adding hover/controller inspection does not authorize on-screen controller or Back hints.
+- Keep necessary behavior working without narrating it in the UI. Reuse established interactions. Do not add a tutorial, legend, glossary section or extra menu to explain a requested feature unless asked.
+- Avoid clutter and repetition, weak readability or visual hierarchy, and unnecessary steps, menus or popups. None of these is an acceptable tradeoff to make silently; ask when a real design tradeoff arises.
+- Stacked panels must become more opaque toward the top so underlying text cannot compete with the content being read.
+- Review every visible addition before handoff: identify the user request that authorizes it; remove additions without one. This is a foundational UI constraint, not an optional preference.
+
 ## Working rules
 
 - Preserve unrelated/uncommitted work. Ask before product/design decisions. Do not commit, push or branch unless asked.
@@ -19,7 +29,7 @@ Run from the repository root; wrappers select and verify Zig 0.14.1. Setup: [REA
 - Tests must not write saves/maps. Full procgen tests take minutes; check CPU before declaring a stall. Keep the direct test runner in `build.zig`: raylib stdout deadlocks Zig's `--listen=-` test protocol.
 - Every `src/**/*.zig` except `main.zig` must appear in its `test {}` imports and be at least 512 bytes. Builds enforce this and dependency boundaries through `tools/source_rules.zig`.
 - For visual changes, inspect actual headless PNGs. Build into `zig-out-dev`; copy `maps/` and the executable (with a distinct basename) into a fresh `%TEMP%` directory, then run there. Captures write `shots/` under the working directory; do not run `shot.cmd` from the repo.
-- Capture flags: `--shot` (general/maps), `--shot-ui`, `--shot-editor`, `--shot-debug`, `--shot-trees`, `--shot-water-cliffs`, `--shot-cinema`; `--bench` measures CPU/draw/resource costs. Coverage lives in `src/game/shots/` (one file per flag, shared helpers in `capture.zig`), dispatch in `src/app.zig`.
+- Capture flags: `--shot` (general/maps), `--shot-ui`, `--shot-editor`, `--shot-debug`, `--shot-trees`, `--shot-water-cliffs`, `--shot-cinema`, `--shot-zoo`; `--bench` measures CPU/draw/resource costs. Coverage lives in `src/game/shots/` (one file per flag, shared helpers in `capture.zig`), dispatch in `src/app.zig`.
 
 ## Task routing
 

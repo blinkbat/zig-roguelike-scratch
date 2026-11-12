@@ -108,6 +108,7 @@ pub const View = struct {
     loot_gold: i32 = 0,
     nearby: []const Nearby = &.{},
     device: input.Device = .keys,
+    keywords: ?*@import("keywords.zig").State = null,
     chest: bool = false,
     life: Vital = .{},
     mana: Vital = .{},

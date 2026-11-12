@@ -93,7 +93,7 @@ pub const Status = enum {
         };
     }
 
-    fn ailment(s: Status) ?resilience.Kind {
+    pub fn ailment(s: Status) ?resilience.Kind {
         return switch (s) {
             .bleeding => .bleed,
             .burning => .burn,

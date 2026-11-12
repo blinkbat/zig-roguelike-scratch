@@ -541,6 +541,14 @@ pub fn backingIn(sprites: *const Sprites, r: rl.Rectangle) void {
     hudPanelIn(sprites, r, look.BACKING, look.LIT);
 }
 
+pub fn layeredBacking(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, depth: u8) void {
+    hudPanel(sprites, x, y, width, height, look.backingAt(depth), look.LIT);
+}
+
+pub fn layeredBackingIn(sprites: *const Sprites, r: rl.Rectangle, depth: u8) void {
+    hudPanelIn(sprites, r, look.backingAt(depth), look.LIT);
+}
+
 fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, tint: rl.Color) void {
     const tex = sprites.hud_border orelse {
         rl.drawRectangleLines(x, y, width, height, tint);

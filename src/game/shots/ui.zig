@@ -131,7 +131,78 @@ fn captureInspect(g: *game.Game) !void {
         g.sim.lv.set(at, .grass);
         g.inspecting = .{ .actor = id };
         try capture(g, target, SHOTS_DIR ++ "/inspect-enemy-grass-" ++ suffix ++ ".png");
+        const camera = g.cam;
+        const perspective = g.cinema.lens.options.perspective;
+        g.cinema.lens.options.perspective = 2;
+        g.cam = .{ .x = @floatFromInt(at.x * game.CELL - @divTrunc(size.x * 3, 4)), .y = @floatFromInt(at.y * game.CELL - @divTrunc(size.y * 3, 5)) };
+        try capture(g, target, SHOTS_DIR ++ "/inspect-perspective-" ++ suffix ++ ".png");
+        g.cam = camera;
+        g.cinema.lens.options.perspective = perspective;
+        const hero = g.sim.heroActor().?;
+        hero.bleed.start();
+        hero.chill.apply();
+        hero.maim.start();
+        hero.enfeeble.start();
+        hero.confusion.start();
+        game.settle(g);
+        inline for (.{ input.Device.keys, input.Device.xbox }) |device| {
+            g.st = .{ .device = device };
+            g.mode = if (device.pad()) .inspect else .play;
+            inline for (.{ .bleeding, .chilled, .maimed, .enfeebled, .confused }) |status| {
+                const spot = game.Spot{ .status = status };
+                g.inspecting = spot;
+                g.keywords = .{};
+                if (!device.pad()) {
+                    const overlay = @import("../overlay.zig");
+                    var parts: [overlay.SPOTS_MAX]overlay.Part = undefined;
+                    for (overlay.spotsOf(g, &parts)) |part| {
+                        if (std.meta.eql(part.spot, spot)) g.st.pointer = @import("../../gfx/raster.zig").middleAt(part.box);
+                    }
+                }
+                try capture(g, target, SHOTS_DIR ++ "/status-tags-" ++ @tagName(status) ++ "-" ++ @tagName(device) ++ "-" ++ suffix ++ ".png");
+                if (status == .chilled or status == .maimed or status == .confused) {
+                    const prefix = SHOTS_DIR ++ "/keyword-" ++ @tagName(status) ++ "-" ++ @tagName(device) ++ "-" ++ suffix;
+                    try captureKeyword(g, target, 0, prefix ++ ".png");
+                    if (g.keywords.n > 1) try captureKeyword(g, target, 1, prefix ++ "-second.png");
+                }
+            }
+            g.mode = .pause;
+            g.pause_page = .character;
+            g.character.choose(.stats);
+            g.character.advanced = true;
+            g.st = .{ .device = device };
+            g.keywords = .{};
+            const prefix = SHOTS_DIR ++ "/keyword-stats-" ++ @tagName(device) ++ "-" ++ suffix;
+            try capture(g, target, prefix ++ "-base.png");
+            if (g.keywords.n != @import("../../ui/keywords.zig").STATUS_TERMS.len) return error.MissingKeywordLinks;
+            try captureKeyword(g, target, 0, prefix ++ "-wounds.png");
+            try captureKeyword(g, target, 3, prefix ++ "-elemental.png");
+        }
+        g.keywords = .{};
+        g.st = .{ .device = .keys };
         g.mode = .play;
+    }
+}
+
+fn captureKeyword(g: *game.Game, target: rl.RenderTexture2D, index: usize, path: [:0]const u8) !void {
+    const raster = @import("../../gfx/raster.zig");
+    if (index >= g.keywords.n) return error.MissingKeywordLink;
+    if (g.st.device.pad()) {
+        if (g.keywords.focus == null) _ = g.keywords.step(&.{ .device = g.st.device, .pressed = .initOne(.inspect) });
+        var steps: usize = 0;
+        while (g.keywords.focus != index and steps < g.keywords.n) : (steps += 1) {
+            _ = g.keywords.step(&.{ .device = g.st.device, .walk = .e });
+        }
+        if (g.keywords.focus != index) return error.KeywordUnreachable;
+    } else {
+        g.st.pointer = raster.middleAt(g.keywords.links[index].box);
+    }
+    try capture(g, target, path);
+    const popup = g.keywords.popup orelse return error.KeywordPopupMissing;
+    if (!g.st.device.pad()) {
+        g.st.pointer = raster.middleAt(popup);
+        drawInto(g, target);
+        if (g.keywords.popup == null) return error.KeywordPopupLostOnEntry;
     }
 }
 
@@ -163,10 +234,7 @@ fn captureTalk(g: *game.Game) !void {
         const old_speech = w.script.dialog[0].line[0].say;
         _ = w.script.dialog[0].line[0].say.set("We used to count the bells from the road. One for the gates, two for the watch, three for a traveller who would not be coming home. I remember the night they rang thirteen times.\n\nNo one in the village spoke of it the next morning. The baker opened his shutters. The guards changed their watch. But every door along the northern lane had been painted white, and every name above it had been scraped away.\n\nIf you mean to go there, take this with you: when the bells begin, do not answer anyone who calls you by your name.");
         try capture(g, target, SHOTS_DIR ++ "/talk-story-" ++ suffix ++ ".png");
-        g.talk_page = 1;
-        try capture(g, target, SHOTS_DIR ++ "/talk-story-continued-" ++ suffix ++ ".png");
         w.script.dialog[0].line[0].say = old_speech;
-        g.talk_page = 0;
         w.script.npc[0].looks = null;
         g.sim.plot = .{};
         g.mode = .play;

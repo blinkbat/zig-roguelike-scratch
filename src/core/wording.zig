@@ -17,6 +17,7 @@ pub const TYPES = [_]Registration{
     .{ .name = "play.attrs.Attr" },
     .{ .name = "play.damage.Element" },
     .{ .name = "play.resilience.Kind" },
+    .{ .name = "play.resilience.Tag" },
     .{ .name = "play.flask.Kind", .casing = .word },
     .{ .name = "play.consumable.Kind" },
     .{ .name = "play.actor.FoeType" },

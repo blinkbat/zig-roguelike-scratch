@@ -62,7 +62,13 @@ pub const Scene = struct {
         }
         map.stampNpcs(node, &self.lv, self.roll, &self.npc_at, atlas.EVERY_NPC);
         switch (nd.plan) {
-            .bespoke => {},
+            .bespoke => if (nd.zoo) |z| {
+                var rng = mathx.Rng.init(self.roll);
+                for (placing) |f| if (self.rolled_foes.hasRoomFor(f.kind) and actor.dwells(f.kind, &self.lv, f.at)) {
+                    _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(f.kind, f.at));
+                };
+                z.populate(&self.lv, &self.rolled_foes, &rng);
+            },
             .procgen => {
                 var rng = mathx.Rng.init(self.roll);
                 const from = arrival(map, node);
@@ -73,7 +79,7 @@ pub const Scene = struct {
             },
         }
         self.shown_n = 0;
-        for (nd.placed()) |f| self.show(f);
+        if (nd.zoo == null) for (nd.placed()) |f| self.show(f);
         for (self.rolled_foes.slice()) |a| {
             if (!a.kind.hero()) self.show(.{ .kind = a.kind, .at = a.at });
         }
@@ -116,6 +122,14 @@ pub const Scene = struct {
         }
         if (flood) |*f| {
             while (f.next()) |_| {}
+            if (nd.zoo) |z| {
+                const approach = z.door().add(z.outward());
+                const key_reached = if (z.key) |k| self.reach_dist[grid.Level.idx(k)] >= 0 else true;
+                if (self.reach_dist[grid.Level.idx(approach)] >= 0 and key_reached) {
+                    f.seed(z.threshold());
+                    while (f.next()) |_| {}
+                }
+            }
         } else @memset(&self.reach_dist, -1);
         for (0..grid.CELLS) |i| {
             if (!self.cutOff(i)) continue;
@@ -196,4 +210,34 @@ test "preview selection invalidation and rerolls never mutate the authored map" 
     scene.invalidate();
     scene.ensure(map, 0);
     try std.testing.expectEqual(grid.Tile.water, scene.lv.at(room.centre()));
+}
+
+test "zoo previews show the encounter without marking its locked interior unreachable" {
+    const alloc = std.testing.allocator;
+    const map = try atlas.testAtlas();
+    defer alloc.destroy(map);
+    try map.load(alloc, atlas.START);
+    const before = try alloc.create(atlas.Atlas);
+    defer alloc.destroy(before);
+    before.* = map.*;
+    const scene = try alloc.create(Scene);
+    defer alloc.destroy(scene);
+    scene.* = .{};
+    scene.ensure(map, 1);
+    const z = map.node[1].zoo.?;
+    var count: usize = 0;
+    for (scene.shownFoes()) |f| if (z.inside().holds(f.at)) {
+        count += 1;
+    };
+    try std.testing.expectEqual(@as(usize, 21), count);
+    try std.testing.expectEqual(@as(usize, 0), scene.issues.cut_off);
+    try std.testing.expectEqual(grid.Tile.locked_gate, scene.lv.at(z.door()));
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(before), std.mem.asBytes(map));
+
+    _ = map.oneRoom(grid.Box.inMap(1), .{ .x = 5, .y = 5 });
+    map.node[0].zoo = .{};
+    scene.invalidate();
+    scene.ensure(map, 0);
+    try std.testing.expectEqual(@as(usize, 21), scene.shown_n);
+    try std.testing.expectEqual(@as(usize, 0), scene.issues.cut_off);
 }

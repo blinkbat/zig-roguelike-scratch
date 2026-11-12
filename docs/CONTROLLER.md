@@ -50,7 +50,7 @@ PS button do nothing; GLFW reads no touchpad.
 | Secondary skill set | hold the slot bound to it (LB) | hold Ctrl |
 | Character | Start / Menu / Options | Tab |
 | Game menu (from play) | Select / View / Share / Create | Esc |
-| Character tabs | LB / RB, or left / right then A on the tabs | Q / E, or arrows then Enter on the tabs |
+| Character tabs | LB / RB, or left / right on the tabs | Q / E, or arrows on the tabs |
 | Character page back to its tabs, then closed | B | Esc |
 | Equipment / Inventory / Stats / Passives / Skills / Quests directly | Character tabs | F1 / F2 / F3 / F4 / F5 / F7 |
 | Skills: bind selected skill | X | C |
@@ -61,7 +61,7 @@ PS button do nothing; GLFW reads no touchpad.
 | Confirm, select | A | Enter, Space or Z |
 | Interact in play | A / Cross | Enter or Space |
 | Talk to NPCs | walk into them, or Interact beside them | walk into them, Enter or Space beside them |
-| Conversation: choose, go on | D-pad up/down, A; LB/RB for long passages | arrows/WS, Enter, Space or Z; Q/E for long passages; or click a reply/Continue (no back-out) |
+| Conversation: choose, go on | D-pad up/down, A | arrows/WS, Enter, Space or Z; or click a reply/Continue (no back-out) |
 | Scroll event log | Inspect log, up/down | Wheel over log, or Inspect then up/down |
 | Bind screen: change, remove | X, Y | C, Del |
 | Passive tree: browse | Left stick, actual bearing | WASD, arrows, numpad |
@@ -101,15 +101,18 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   Esc cancels. On the keyboard the skill's own number confirms too (1, then 1); on the pad pressing the skill again
   does not confirm it unless that button is also the standard confirm. B always cancels, even when it opened the skill. Secondary skills keep their selected set after the modifier is released.
 - **Smart aim** keeps the previously selected enemy while it remains alive, visible and legal for the chosen skill,
-  following it when it moves. Otherwise the reticle selects the nearest legal visible enemy. Directional input
-  moves projectile reticles freely one cell at a time; melee and rush targeting retain directional suggestions.
+  following it when it moves. Otherwise the reticle selects the nearest legal visible enemy. From a selected enemy,
+  directional input cycles to a legal visible enemy within 45 degrees of the pressed direction, measured from the
+  reticle, without wrapping. With no candidate in that direction, the reticle moves freely using the skill's normal
+  movement and range limits. Free aim stays free until the reticle lands on a legal enemy again; suggestions never
+  pull it back from empty ground. This applies to projectile, melee and rush targeting.
   Projectile aiming opens without an enemy and accepts empty or dark cells within range and geometric line of sight.
   Previews and automatic suggestions ignore unseen bodies and barrels. Confirmation fires even without a visible target;
   nonpiercing flight stops at the first collision, including unseen interceptors.
   Leap destinations remain freely aimed. Selecting or replacing a target spends nothing and never fires automatically;
   the normal confirmation is still required. A direct mouse click on an enemy is explicit targeting and confirmation.
   Target memory clears on level changes, restarts and save loads.
-- **Character and Game are separate.** Start opens Character with its last page selected and focus on the tabs; confirm enters the page, and another Start press closes Character. F1–F5 and F7 open the corresponding Character page, switch pages directly, and close an already open matching page. Their glyphs appear on the tabs when using the keyboard. These shortcuts cancel an unconfirmed reticle and spend no turn. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
+- **Character and Game are separate.** Start opens Character inside its last page; another Start press closes Character. Selecting a tab enters it immediately. F1–F5 and F7 open the corresponding Character page, switch pages directly, and close an already open matching page. Their glyphs appear on the tabs when using the keyboard. These shortcuts cancel an unconfirmed reticle and spend no turn. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
 - **Binding belongs to Skills.** Its bind action carries a learned skill to the slot screen; select a destination and confirm once. Back returns to Skills. The picker remains available for utility skills and the secondary-set modifier. Clearing a slot is direct. Binding spends no turn.
 - **Pause > Debug** groups controls into Gameplay (Restart Map, Reveal Map, Unkillable), Lighting
   (Composed Lighting, Shadows, Body Lighting, Effect Lights), Effects (Bloom, Atmosphere, Depth Of Field,
@@ -126,6 +129,10 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   Loot offers Take item on confirm and Take all on change, with glyphs and clickable
   buttons. Busy input waits for the current turn or door travel.
 - **Inspect** walks visible onscreen characters, the life orb, skill slots, mana orb, active statuses and event log without spending a turn.
+  Underlined keywords have their own inspection layer: hover a word, or press
+  Inspect again while terms are visible to focus them. Directional input moves
+  among the words; Back or Inspect returns to the unchanged underlying card or
+  menu. Advanced Stats exposes the status groups even without active ailments.
   Every unit card shows only its name (title case for foes, the hero's own name) and pictured HP, then a divider and the tile with its signed effects.
   Page controls and the mouse wheel scroll long cards. The
   log scrolls up/down while selected; move sideways to leave it. B, Select or

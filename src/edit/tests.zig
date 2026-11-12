@@ -124,6 +124,39 @@ fn testBespoke() !*editor.Editor {
     return ed;
 }
 
+test "editor zoo reservations keep rejected placements out of saved maps" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const z = @import("../map/zoo.zig").Spec{ .key = .{ .x = 32, .y = 28 } };
+    ed.here().zoo = z;
+    ed.plan().bespoke.fill(grid.Box.inMap(1), .floor);
+    ed.map.start = .{ .node = 0, .at = .{ .x = 10, .y = 10 } };
+    const before = ed.map.start;
+    for ([_]P{ z.threshold(), z.door().add(z.outward()), z.key.? }) |p| {
+        for ([_]editor.Tool{ .door, .{ .foe = .rat } }) |tool| {
+            ed.tool = tool;
+            try std.testing.expect(!placement.legal(ed, p));
+            placement.place(ed, p);
+            try std.testing.expectEqual(@as(usize, 0), ed.here().door_n);
+            try std.testing.expectEqual(@as(usize, 0), ed.plan().bespoke.foe_n);
+        }
+    }
+    ed.tool = .start;
+    try std.testing.expect(!placement.legal(ed, z.threshold()));
+    placement.place(ed, z.threshold());
+    try std.testing.expectEqualDeep(before, ed.map.start);
+    const outside = z.door().add(z.outward());
+    try std.testing.expect(placement.legal(ed, outside));
+    placement.place(ed, outside);
+    var bytes = std.ArrayList(u8).init(std.testing.allocator);
+    defer bytes.deinit();
+    try ed.map.write(bytes.writer());
+    const loaded = try std.testing.allocator.create(atlas.Atlas);
+    defer std.testing.allocator.destroy(loaded);
+    try loaded.parse(bytes.items);
+    try std.testing.expectEqualDeep(ed.map.start, loaded.start);
+}
+
 fn dragFirstBox(ed: *editor.Editor) P {
     const was = ed.map.node[0].pos;
     ed.view = .graph;

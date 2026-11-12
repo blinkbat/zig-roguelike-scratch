@@ -45,9 +45,6 @@ pub const View = struct {
     cursor: usize,
     prompt: prompt_icon.Prompt,
     figure: ?Figure = null,
-    page: usize = 0,
-    previous: prompt_icon.Prompt = .{ .key = "Q" },
-    next: prompt_icon.Prompt = .{ .key = "E" },
     ending: bool = false,
 };
 
@@ -59,17 +56,10 @@ pub const Layout = struct {
     rows: [script.MAX_CHOICES]rl.Rectangle = undefined,
     row_n: usize = 0,
     action: rl.Rectangle = undefined,
-    previous: rl.Rectangle = undefined,
-    next: rl.Rectangle = undefined,
     content: rl.Rectangle = undefined,
     starts: [script.MAX_CHOICES]usize = undefined,
     ends: [script.MAX_CHOICES]usize = undefined,
     line_n: usize = 0,
-    reply_heading: usize = 0,
-    capacity: usize = 1,
-    page: usize = 0,
-    pages: usize = 1,
-    first: usize = 0,
     last: usize = 0,
     who_y: i32 = 0,
     who_rule_y: i32 = 0,
@@ -85,23 +75,16 @@ pub const Layout = struct {
         const header: i32 = font.HEAD_LINE + 24;
         const footer: i32 = 20 + menu.ACTION_BOX.y;
         const cap_h = @min(@divTrunc(screen.y * 2, 3), screen.y - 2 * MARGIN);
-        self.capacity = @intCast(@max(1, @divTrunc(cap_h - 2 * PAD - header - footer, LEADING)));
+        const capacity: usize = @intCast(@max(1, @divTrunc(cap_h - 2 * PAD - header - footer, LEADING)));
         var total = self.line_n;
-        self.reply_heading = total;
         if (self.row_n > 0) total += 1;
         for (v.choices[0..self.row_n], 0..) |label, i| {
-            const n = @max(1, countLines(face, label, self.text_w - NUMBER_W));
-            const room = self.capacity - total % self.capacity;
-            if (n <= self.capacity and n > room) total += room;
             self.starts[i] = total;
-            total += n;
+            total += @max(1, countLines(face, label, self.text_w - NUMBER_W));
             self.ends[i] = total;
         }
-        self.pages = @max(1, std.math.divCeil(usize, total, self.capacity) catch unreachable);
-        self.page = @min(v.page, self.pages - 1);
-        self.first = self.page * self.capacity;
-        self.last = @min(total, self.first + self.capacity);
-        const visible: i32 = @intCast(@min(@max(total, 3), self.capacity));
+        self.last = @min(total, capacity);
+        const visible: i32 = @intCast(@min(@max(total, 3), capacity));
         const h = 2 * PAD + header + visible * LEADING + footer;
         const x = @divTrunc(screen.x - w, 2);
         const y = @max(MARGIN, screen.y - @max(104, @divTrunc(screen.y, 8)) - h);
@@ -113,33 +96,19 @@ pub const Layout = struct {
         self.text_y = y + PAD + header;
         self.content = raster.rect(self.text_x - 10, self.text_y - 4, self.text_w + 20, visible * LEADING + 8);
         for (0..self.row_n) |i| {
-            const start = @max(self.first, self.starts[i]);
+            const start = self.starts[i];
             const end = @min(self.last, self.ends[i]);
             self.rows[i] = if (end > start)
-                raster.rect(self.text_x - 10, self.text_y + @as(i32, @intCast(start - self.first)) * LEADING - 4, self.text_w + 20, @as(i32, @intCast(end - start)) * LEADING - 2)
+                raster.rect(self.text_x - 10, self.text_y + @as(i32, @intCast(start)) * LEADING - 4, self.text_w + 20, @as(i32, @intCast(end - start)) * LEADING - 2)
             else
                 raster.rect(0, 0, 0, 0);
         }
         self.action = raster.rect(x + w - PAD - menu.ACTION_BOX.x, y + h - PAD - menu.ACTION_BOX.y, menu.ACTION_BOX.x, menu.ACTION_BOX.y);
-        self.previous = raster.rect(self.text_x, raster.top(self.action), 132, menu.ACTION_BOX.y);
-        self.next = raster.rect(self.text_x + 144, raster.top(self.action), 132, menu.ACTION_BOX.y);
-    }
-
-    pub fn choiceReady(self: *const Layout, i: usize) bool {
-        return i < self.row_n and self.ends[i] > self.first and self.ends[i] <= self.last;
-    }
-
-    pub fn continues(self: *const Layout, cursor: usize) bool {
-        return self.page + 1 < self.pages and !self.choiceReady(cursor);
-    }
-
-    pub fn pageForChoice(self: *const Layout, i: usize) usize {
-        return self.starts[i] / self.capacity;
     }
 
     pub fn rowAt(self: *const Layout, p: P) ?usize {
         for (self.rows[0..self.row_n], 0..) |r, i| {
-            if (self.choiceReady(i) and raster.holds(r, p)) return i;
+            if (r.height > 0 and raster.holds(r, p)) return i;
         }
         return null;
     }
@@ -154,15 +123,7 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
     const who = if (v.who.len > 0) v.who else "Conversation";
     face.engraved(face.fit(&buf, who, font.HEAD, l.text_w - 110, false), l.text_x, l.who_y, font.HEAD, look.UI_GOLD);
     rl.drawRectangle(l.text_x, l.who_rule_y, l.text_w, 1, look.fade(look.UI_GOLD, look.FADED_A));
-    if (l.pages > 1) {
-        const page = std.fmt.bufPrintZ(&buf, "{d} / {d}", .{ l.page + 1, l.pages }) catch "";
-        face.text(page, l.text_x + l.text_w - face.width(page, font.SMALL), l.who_y + 3, font.SMALL, look.DIM);
-    }
     drawPassage(face, v.say, l.text_x, l.text_w, 0, l, look.TEXT);
-    if (l.row_n > 0 and l.reply_heading >= l.first and l.reply_heading < l.last) {
-        const y = l.text_y + @as(i32, @intCast(l.reply_heading - l.first)) * LEADING;
-        face.text("Your reply", l.text_x, y + 6, font.SMALL, look.DIM);
-    }
     for (l.rows[0..l.row_n], v.choices[0..l.row_n], 0..) |r, label, i| {
         if (r.height == 0) continue;
         const on = i == v.cursor;
@@ -171,9 +132,7 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
         face.text(std.fmt.bufPrintZ(&buf, "{d}.", .{i + 1}) catch "", l.text_x, raster.top(r) + 4, BODY, look.UI_GOLD);
         drawPassage(face, label, l.text_x + NUMBER_W, l.text_w - NUMBER_W, l.starts[i], l, if (on) look.UI_FOCUS else look.TEXT);
     }
-    if (l.page > 0) menu.action(face, l.previous, v.previous, "Previous");
-    if (l.page + 1 < l.pages and !l.continues(v.cursor)) menu.action(face, l.next, v.next, "More");
-    menu.action(face, l.action, v.prompt, if (l.continues(v.cursor)) "Continue" else if (l.row_n > 0) "Reply" else if (v.ending) "Leave" else "Continue");
+    menu.action(face, l.action, v.prompt, if (l.row_n > 0) "Reply" else if (v.ending) "Leave" else "Continue");
 }
 
 fn drawPassage(face: *const font.Face, body: []const u8, x: i32, w: i32, start: usize, l: *const Layout, ink: rl.Color) void {
@@ -182,8 +141,7 @@ fn drawPassage(face: *const font.Face, body: []const u8, x: i32, w: i32, start: 
     var buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
     while (nextLine(face, body, &offset, w, &buf)) |text| : (line += 1) {
         if (line >= l.last) break;
-        if (line < l.first) continue;
-        face.text(text, x, l.text_y + @as(i32, @intCast(line - l.first)) * LEADING, BODY, ink);
+        face.text(text, x, l.text_y + @as(i32, @intCast(line)) * LEADING, BODY, ink);
     }
 }
 
@@ -245,7 +203,7 @@ fn drawFigure(face: *const font.Face, r: rl.Rectangle, f: Figure) void {
     raster.blit(t, raster.facing(t, false), raster.rect(x, y, w, h), look.LIT);
 }
 
-test "long conversations retain every line and keep every page inside the raised panel" {
+test "an oversized line clips inside the raised panel rather than splitting into pages" {
     const face = menu.TestFace{};
     var l: Layout = .{};
     const longest = "a word " ** (script.SAY_MAX / 7);
@@ -256,7 +214,7 @@ test "long conversations retain every line and keep every page inside the raised
             l.of(&face, screen, .{ .who = "w" ** script.WHO_MAX, .say = longest, .choices = &asks, .cursor = 0, .prompt = .{ .key = "Enter" }, .figure = figure });
             try std.testing.expect(l.panel.y >= 0 and l.panel.y + l.panel.height <= @as(f32, @floatFromInt(screen.y)));
             try std.testing.expect(l.action.y + l.action.height <= l.panel.y + l.panel.height);
-            try std.testing.expect(l.pages > 1);
+            try std.testing.expect(l.line_n > l.last);
             try std.testing.expect(l.line_n > font.WRAP_LINES_MAX);
             try std.testing.expect(l.panel.y + l.panel.height <= @as(f32, @floatFromInt(screen.y - 100)));
             for (l.rows[0..l.row_n]) |r| if (r.height > 0) {

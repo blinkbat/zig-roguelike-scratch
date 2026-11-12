@@ -733,12 +733,28 @@ fn poseHiddenShadows(g: *game.Game, hour: ?f32) void {
         g.sim.lv.addTorch(.{ .x = 30, .y = 18 });
     }
     studyAt(g, hour != null, hour orelse day.NOON);
+    g.sim.lv.light(.{ .x = x, .y = row.get(.actor) });
+    g.pic.snapSight(&g.sim);
     for (0..grid.CELLS) |i| {
         const visible = grid.Level.of(i).x < x;
         g.sim.lv.seen[i] = visible;
         g.sim.lv.lit[i] = visible;
     }
     g.light.settle(&g.sim.lv);
+}
+
+test "hidden-shadow captures remember the actor before hiding it in every lighting setup" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]?f32{ MORNING, NIGHT, null }) |hour| {
+        poseHiddenShadows(g, hour);
+        const slot = game.harness.foeSlot(0);
+        const at = g.sim.pool.items[slot].at;
+        try std.testing.expect(!g.sim.lv.isLit(at));
+        try std.testing.expect(g.pic.casterAt(&g.sim, slot, grid.Box.inMap(0)) != null);
+        g.pic.snapSight(&g.sim);
+        try std.testing.expect(g.pic.casterAt(&g.sim, slot, grid.Box.inMap(0)) == null);
+    }
 }
 
 pub fn shadowMask(g: *game.Game, target: rl.RenderTexture2D, c: game.scene.Cam, cast: grid.Box) !rl.Image {

@@ -149,6 +149,7 @@ fn bodyShownIn(g: *game.Game, p: P) bool {
 }
 
 pub fn anyNearby(g: *game.Game) bool {
+    if (game.jail.beside(g) != null) return true;
     var nearby: game.NearbyBuf = undefined;
     return nearbyOf(g, &nearby).len > 0;
 }
@@ -167,6 +168,7 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     const life = g.pic.lifeShown(&g.sim);
     var v = book.View{ .class = g.sim.class, .name = g.sim.name.text(), .inventory = &g.sim.inventory, .growth = growth, .base = growth.attributes(g.sim.class), .gold = if (now) g.sim.gold else g.pic.gold_shown, .nearby = shownNearby(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.sim.lv.at(g.character.loot_at) == .chest_open, .life = .{ .now = life.hp, .max = life.max }, .mana = .{ .now = g.pic.manaShown(&g.sim), .max = g.sim.manaMax() } };
     if (g.sim.heroBody()) |h| {
+        v.keywords = &g.keywords;
         v.readied = g.sim.heroReadied();
         const at = g.pic.drawnCell(&g.sim, g.sim.heroSlot().?) orelse h.at;
         const pictured = g.pic.heroShown(&g.sim);
@@ -233,6 +235,7 @@ fn deal(g: *game.Game, command: book.Command) void {
 }
 
 pub fn openNearby(g: *game.Game) bool {
+    if (game.jail.beside(g)) |at| return game.jail.interact(g, at);
     var buf: game.NearbyBuf = undefined;
     const nearby = nearbyOf(g, &buf);
     if (nearby.len == 0) return false;
@@ -471,7 +474,11 @@ pub fn pauseStep(g: *game.Game) void {
     switch (g.pause_page) {
         .options, .visuals, .display => {
             const options = @import("../ui/options.zig");
-            const page: options.Page = switch (g.pause_page) { .visuals => .visuals, .display => .display, else => .main };
+            const page: options.Page = switch (g.pause_page) {
+                .visuals => .visuals,
+                .display => .display,
+                else => .main,
+            };
             if (menu.backedAt(&g.st, g.screen)) {
                 g.pause_page = if (page == .main) .main else .options;
                 g.pause_menu = .{ .at = if (page == .main) game.rowAt(game.PauseRow.options) else options.index(.main, if (page == .visuals) .visuals else .display) };
@@ -541,7 +548,11 @@ pub fn drawPause(g: *game.Game) void {
     veil(g);
     switch (g.pause_page) {
         .options, .visuals, .display => {
-            const page: @import("../ui/options.zig").Page = switch (g.pause_page) { .visuals => .visuals, .display => .display, else => .main };
+            const page: @import("../ui/options.zig").Page = switch (g.pause_page) {
+                .visuals => .visuals,
+                .display => .display,
+                else => .main,
+            };
             @import("../ui/options.zig").draw(g.face, &g.sprites, g.screen, &g.cinema, g.pause_menu.at, &g.st, page, g.display);
             menu.drawBack(&g.face, g.screen, &g.st);
         },

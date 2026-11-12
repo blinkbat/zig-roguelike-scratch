@@ -56,6 +56,11 @@ pub const Tile = enum(u8) {
     caravan,
     caravan_part,
     stone_bridge,
+    gate,
+    locked_gate,
+    open_gate,
+    zoo_key,
+    key_taken,
 
     pub fn solid(t: Tile) bool {
         return TERRAIN.getPtrConst(t).solid;
@@ -164,7 +169,14 @@ pub const Tile = enum(u8) {
     }
 
     pub fn single(t: Tile) bool {
-        return !t.isOpened() and !t.pieced();
+        return !t.isOpened() and !t.pieced() and !t.zooPart();
+    }
+
+    pub fn zooPart(t: Tile) bool {
+        return switch (t) {
+            .gate, .locked_gate, .open_gate, .zoo_key, .key_taken => true,
+            else => false,
+        };
     }
 
     pub fn letter(t: Tile) u8 {
@@ -201,6 +213,11 @@ pub const Tile = enum(u8) {
             .caravan => 'H',
             .caravan_part => 'h',
             .stone_bridge => 'B',
+            .gate => 'D',
+            .locked_gate => 'J',
+            .open_gate => 'd',
+            .zoo_key => 'k',
+            .key_taken => 'K',
         };
     }
 
@@ -354,6 +371,11 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .caravan = CART,
     .caravan_part = CART_PART,
     .stone_bridge = .{ .solid = false, .blind = false, .spans = true },
+    .gate = .{ .solid = true, .blind = true, .ground = .floor },
+    .locked_gate = .{ .solid = true, .blind = true, .ground = .floor },
+    .open_gate = .{ .solid = false, .blind = false, .ground = .floor },
+    .zoo_key = .{ .solid = false, .blind = false, .ground = .floor },
+    .key_taken = .{ .solid = false, .blind = false, .ground = .floor },
 });
 
 const WHOLES = blk: {

@@ -82,7 +82,6 @@ Map serialization retains paragraph breaks and spaces through `say_more |...` an
 `say` and `ask` syntax. The map file ceiling is 32 MiB.
 
 In-game dialogue sits above the bottom HUD, with a fixed speaker header, wrapped
-replies and a fixed action row. Ordinary conversations fit one panel. Long passages
-use Continue and Previous only when needed, with a page indicator. Reading does not
-execute reply actions or spend a turn. Oversized replies remain readable across
-pages and cannot be picked until their final fragment is shown.
+replies and a fixed action row. A line is one panel: the game never splits it into
+pages. The author breaks a long passage by chaining lines with `then`; text past the
+panel's height is clipped, and the editor preview shows the same clip.

@@ -124,6 +124,8 @@ test "a way held between a Character page and its tabs turns no page and moves n
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     g.st = .{};
     character.openCharacter(g);
+    try std.testing.expect(!g.character.tabbing);
+    harness.pressWalking(g, BACK, null);
     try std.testing.expect(g.character.tabbing);
     for (0..10) |_| harness.walkFrame(g, harness.TEST_DT, .s);
     harness.pressWalking(g, CONFIRM, .s);
@@ -295,6 +297,8 @@ test "Character and Game have separate shortcuts and never spend a turn" {
     harness.press(g, menu.CHARACTER);
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);
     try std.testing.expectEqual(book.Page.inventory, g.character.page);
+    harness.press(g, BACK);
+    try std.testing.expect(g.character.tabbing);
     harness.press(g, BACK);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(clock, g.sim.clock);
@@ -554,6 +558,62 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
     try std.testing.expect(std.meta.eql(clock, g.sim.clock));
 }
 
+test "status inspection explains overlapping tags without changing the simulation" {
+    const keywords = @import("../../ui/keywords.zig");
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.heroActor().?.chill.apply();
+    g.pic.catchUp(&g.sim);
+    const before = g.sim.heroActor().?.*;
+    const clock = g.sim.clock;
+    var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
+    var body: [overlay.TIP_BODY_MAX]u8 = undefined;
+    const tip = overlay.tipOf(g, .{ .status = .chilled }, &title, &body).?;
+    try std.testing.expect(std.mem.startsWith(u8, tip.body, @import("../../play/glacial.zig").STATUS));
+    try std.testing.expect(std.mem.indexOf(u8, tip.body, "\nSlows, Elemental") != null);
+    try std.testing.expect(std.mem.indexOf(u8, tip.body, "Tags:") == null);
+    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS[1].body, "\nStun, Chill, Pin, Maim.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS[3].body, "\nBurn, Chill, Shock.") != null);
+    const enfeebled = overlay.tipOf(g, .{ .status = .enfeebled }, &title, &body).?;
+    try std.testing.expect(std.mem.endsWith(u8, enfeebled.body, "\nWounds"));
+    const guarding = overlay.tipOf(g, .{ .status = .guarding }, &title, &body).?;
+    try std.testing.expect(std.mem.indexOf(u8, guarding.body, "Tags:") == null);
+    try std.testing.expectEqualDeep(before, g.sim.heroActor().?.*);
+    try std.testing.expectEqualDeep(clock, g.sim.clock);
+}
+
+test "keyword inspection sits above character menus and HUD inspection without spending turns" {
+    const keywords = @import("../../ui/keywords.zig");
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const clock = g.sim.clock;
+    for ([_]game.Mode{ .pause, .inspect }) |mode| {
+        g.mode = if (mode == .pause) .pause else .inspect;
+        g.pause_page = .character;
+        g.character.choose(.stats);
+        g.character.advanced = true;
+        g.inspecting = .{ .status = .chilled };
+        g.keywords = .{ .screen = g.screen };
+        g.keywords.register(keywords.STATUS_TERMS[0], raster.rect(100, 100, 60, 20));
+        g.keywords.register(keywords.STATUS_TERMS[1], raster.rect(200, 100, 60, 20));
+        harness.press(g, skillbar.INSPECT);
+        try std.testing.expectEqual(@as(?usize, 0), g.keywords.focus);
+        harness.nudge(g, .e);
+        try std.testing.expectEqual(@as(?usize, 1), g.keywords.focus);
+        harness.press(g, CONFIRM);
+        try std.testing.expectEqual(@as(?usize, 1), g.keywords.focus);
+        harness.press(g, BACK);
+        try std.testing.expectEqual(@as(?usize, null), g.keywords.focus);
+        try std.testing.expectEqual(mode, std.meta.activeTag(g.mode));
+        try std.testing.expectEqual(book.Page.stats, g.character.page);
+        try std.testing.expect(g.character.advanced);
+        try std.testing.expectEqual(game.Spot{ .status = .chilled }, g.inspecting);
+        try std.testing.expectEqualDeep(clock, g.sim.clock);
+    }
+}
+
 test "inspect forgets the body it was on once the hero enters a node" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -588,4 +648,35 @@ test "the mouse over an orb, a slot or a status shows its tooltip while playing,
     g.st.pointer = raster.middleAt(spots[1].box);
     g.mode = .pause;
     try std.testing.expectEqual(@as(?overlay.Part, null), overlay.hovered(g));
+}
+
+test "actor inspection follows the perspective shown on screen" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    g.screen = game.SCREEN_720;
+    g.cam = .{ .x = @floatFromInt(from.x * game.CELL - 1000), .y = @floatFromInt(from.y * game.CELL - 450) };
+    const lens = &g.cinema.lens;
+    lens.program = std.mem.zeroes(std.meta.Child(@TypeOf(lens.program)));
+    lens.scene = std.mem.zeroes(std.meta.Child(@TypeOf(lens.scene)));
+    defer {
+        lens.program = null;
+        lens.scene = null;
+    }
+    for ([_]f32{ 0, 0.5, 2 }) |strength| {
+        lens.options.perspective = strength;
+        const y = 480;
+        const x: f32 = 1000 + game.CELL_F - 5;
+        const scale = 1 + 0.10 * strength * (y + 0.5) / 720;
+        g.st = .{ .device = .keys, .pointer = .{ .x = @intFromFloat(@floor((x + 0.5 - 640) * scale + 640)), .y = y }, .mouse_moved = true };
+        g.mode = .play;
+        const part = overlay.hovered(g).?;
+        try std.testing.expectEqual(game.Spot{ .actor = g.sim.hero }, part.spot);
+        try std.testing.expect(raster.holds(part.box, g.st.pointer.?));
+        g.mode = .inspect;
+        g.inspecting = .life;
+        overlay.inspectStep(g);
+        try std.testing.expectEqual(part.spot, g.inspecting);
+    }
 }

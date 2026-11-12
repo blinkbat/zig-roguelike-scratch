@@ -415,7 +415,7 @@ pub const Actor = struct {
     bolt: ?firebolt.Bolt = null,
     submerged: bool = false,
     disguised: bool = false,
-    /// Came in a night raid: its death gives no experience, loot, flask charges or mana.
+    /// Night raid rewards are limited to reduced experience.
     raider: bool = false,
     /// The ground its chest stands on.
     under: grid.Tile = .floor,

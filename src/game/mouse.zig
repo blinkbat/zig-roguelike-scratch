@@ -184,6 +184,10 @@ pub fn step(g: *game.Game) bool {
         game.character.openLoot(g, at);
         return true;
     }
+    if (game.jail.reached(g, at)) {
+        g.mouse.stop();
+        return game.jail.interact(g, at);
+    }
     if (!h.at.eq(at) and game.character.doorReached(g, h.at, at) != null) {
         g.mouse.stop();
         game.character.characterCommand(g, .{ .travel = at });
@@ -228,7 +232,8 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
             if (visited.isSet(i)) continue;
             visited.set(i);
             const end = q.eq(to);
-            if (!g.sim.lv.walkable(q) and !(end and g.sim.lv.at(q).opened() != null)) continue;
+            const t = g.sim.lv.at(q);
+            if (!g.sim.lv.walkable(q) and !(end and (t.opened() != null or t == .gate or t == .locked_gate))) continue;
             if ((g.sim.lv.barrelSeen(q) or g.sim.lv.npcAt(q) != null) and !end) continue;
             if (g.sim.lv.isLit(q) and ((g.sim.lv.taken(q) and !end and !g.sim.allyAt(q)) or g.sim.lv.harmful(q))) continue;
             if (!end and g.sim.leadsTo(q) != null) continue;
@@ -510,6 +515,11 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     g.st = .{ .right_click = true };
     game.update(g, 0);
+    try std.testing.expect(g.character.tabbing);
+    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
+    g.st = .{ .right_click = true };
+    game.update(g, 0);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, menu.PAUSE)) };
     game.update(g, 0);
     try std.testing.expectEqual(game.PausePage.main, g.pause_page);

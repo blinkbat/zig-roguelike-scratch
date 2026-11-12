@@ -242,7 +242,7 @@ const TIP_VALUE_DX = 24;
 const TIP_VALUE_X = @divTrunc(TIP_W, 2) + TIP_VALUE_DX;
 
 /// Returns the first line shown.
-pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize) usize {
+pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize, words: ?*@import("keywords.zig").State) usize {
     var buf: [TIP_LINES_MAX][font.WRAP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
     var wrapped: font.Wrapped = undefined;
@@ -281,7 +281,7 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
             y = onScreen(raster.top(over) - @divTrunc(h, 2), h, screen.y);
         }
     }
-    sprite.backing(sprites, x, y, TIP_W, h);
+    sprite.layeredBacking(sprites, x, y, TIP_W, h, 1);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
     for (lines[first .. first + shown], first..) |l, i| {
         const top = y + TIP_BODY_Y + @as(i32, @intCast(i - first)) * TIP_LINE;
@@ -291,6 +291,11 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
             buf[i][split] = 0;
             face.text(buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM);
             face.text(buf[i][split + 1 .. l.len :0], x + TIP_VALUE_X, top, font.SMALL, look.TEXT);
+        } else if (words) |links| {
+            const keywords = @import("keywords.zig");
+            const before = links.n;
+            links.text(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, &keywords.STATUS_TERMS, keywords.IDENTITY);
+            if (links.n > before) links.root = raster.rect(x, y, TIP_W, h);
         } else face.text(l, x + TIP_PAD, top, font.SMALL, look.TEXT);
     }
     return first;
@@ -301,7 +306,7 @@ pub fn prompt(face: *const font.Face, sprites: *const sprite.Sprites, screen: ma
     const h = font.BODY + 2 * TIP_PAD;
     const x = centredOver(over, w, screen);
     const y = above(raster.top(over), h);
-    sprite.backing(sprites, x, y, w, h);
+    sprite.layeredBacking(sprites, x, y, w, h, 1);
     face.text(text, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
 }
 

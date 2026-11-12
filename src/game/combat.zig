@@ -303,6 +303,7 @@ pub fn collectGold(g: *game.Game, at: P) void {
 }
 
 pub fn arrive(g: *game.Game, at: P) void {
+    game.jail.arrive(g, at);
     if (rewards.coinDrop(&g.sim, at)) collectGold(g, at);
     rewards.noticeItems(&g.sim, at);
 }

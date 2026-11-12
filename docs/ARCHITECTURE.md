@@ -36,6 +36,8 @@ conversion live in `save_format.zig` and `save_values.zig`. See [save compatibil
 
 `gfx/lens.zig` owns screen-space filters after the world and before HUD/menus.
 `game/mouse.zig` uses its inverse perspective mapping for cell picking.
+Actor inspection uses that inverse mapping for picking and projected bounds for
+focus, navigation and tooltip placement; HUD targets stay in screen coordinates.
 `ui/options.zig` owns Visuals controls; Display settings live beside them.
 Settings last for the application session and do not enter run saves.
 
@@ -87,6 +89,14 @@ cannot import Game or Presentation. Presentation supplies visibility to its moti
 view, which retains the last visible position during a fade.
 ## Lifetimes
 
+`ui/keywords.zig` owns underlined keyword text, screen-space hit regions and one
+definition layer. Hosts call `step` before handling input, `beginFrame` before
+drawing, register terms through `text` with the actual `menu.Surface`, then draw
+the definition last. Term strings come from stable definitions. Game menus and
+title menus share this routing; HUD cards retain their source while the pointer
+crosses into the card or definition. Keyword state is unsaved and clears with
+screen, window-size and run/turn resets. Gameplay rules never read it.
+
 `game/sim.zig` (Simulation)
 - Owns run data, the seeded RNG and consumed turn ticks.
 - Free actions and idle frames do not age it.
@@ -132,6 +142,7 @@ view, which retains the last visible position during a fade.
 - Barrier targeting distinguishes choosing its start from its end.
 - Confirmation copies the target before closing and passes that value to execution.
 - `TravelCarry` keeps queued commands (Interact included), the mouse skill set, facing and the level-up effect across node replacement.
+- Same-node doors move followers in place; followers without a destination cell stay alive where they were, retaining identity and statuses.
 
 `game/combat.zig`
 - Turn order: recovery/cooldowns, hero post-action harm, gas spread, foe clocks, firebolts in flight, each foe's action then its harm, waiting newborn harm, final ward/sight.
@@ -193,10 +204,53 @@ Undo/redo swaps invalidate only affected thumbnails, or all thumbnails when node
 identity changes. Source wording and attribution remain separate transactions in
 `text_catalog.zig` and `text_panel.zig`; map undo never rewrites source files.
 
+## Monster zoos
+
+`map/zoo.zig` owns a reusable encounter; either kind of atlas node can hold one
+optional `zoo`. `game/jail.zig` adapts its key pickup and door interaction to turns,
+logging and presentation. The local gate blocks movement and sight and is separate
+from atlas travel doors. Opening it spends a turn and wakes the surviving room
+occupants; it stays open for retreat. Trying a locked gate spends no turn.
+
+Author an encounter in that node's map text:
+
+```text
+zoo 40 18 8 6 w
+zoo_key 32 28
+zoo_foe 4 rat
+zoo_foe 3 goblin
+zoo_foe 2 pib
+zoo_foe 1 bandit_netter
+```
+
+The first line is x, y, outer width, outer height and entrance side (`n/e/s/w`).
+Omitting `zoo_key` leaves the closed door unlocked. Each `zoo_foe` supplies a positive
+relative weight and a stocked enemy kind; the pool is independent of ordinary
+packs. Dimensions are 5–10 cells, with one clear inner threshold and two chests
+against the far wall. Every remaining inner cell gets a weighted enemy while actor
+capacity permits, including reserves for slime splitting. Swimmers receive shallow
+water under their cells; mimics reveal and restore their ground when released.
+
+The room is stamped after terrain generation, with a walkable perimeter and
+short connections for its approach and key that stay outside its walls. Unrelated
+sealed rooms remain sealed. The key is outside the perimeter and is
+connected before the door is sealed. Ordinary packs and derived NPC placements
+avoid the encounter. Authored foes, travel doors and fixed painted sections cannot
+overlap it; roaming painted sections cannot share its node. The editor previews
+the encounter and counts its interior as reachable through the unlockable door.
+Placement and pool editing currently use map text.
+Editor door, foe and start placement preserves these encounter reservations,
+including the replacement start chosen when its node is removed.
+
+The Caravan node places this 21-monster room east of the northbound route, with
+the key to its southwest. `--shot-zoo` captures the key, closed gate, release and
+packed interior using the real map. Tests cover generation, visibility, all enemy
+kinds, input, map parsing, portable saves and revisits.
+
 ## Verification
 
-Dialogue layout and pagination live in `ui/talk.zig`; `game/talking.zig` owns the
-unsaved reading position and separates Continue from actual script choices.
+Dialogue layout lives in `ui/talk.zig` and never paginates; authored `then` lines are
+the only page breaks. `game/talking.zig` drives the conversation.
 The editor previews the same layout. Long-form writing limits, independent editor
 scrolling and the source text concern tree are documented in [TEXT_EDITOR.md](TEXT_EDITOR.md).
 `core/wire.zig` traverses aggregate save values by reference, so large authored

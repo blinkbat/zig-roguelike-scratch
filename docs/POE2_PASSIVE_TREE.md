@@ -83,7 +83,7 @@ allocation action spends one point. Middle-drag starts inside the canvas and
 ends on release; wheel and on-screen controls zoom. Exact controller/keyboard
 bindings live in [CONTROLLER.md](CONTROLLER.md).
 
-Use `--shot-trees` and [AGENTS.md](../AGENTS.md#verification) for visual changes.
+Use `--shot-ui` and [AGENTS.md](../AGENTS.md#verification) for visual changes.
 Check all origins, branch silhouettes, both bridge depths, focus in every state,
 zero-point frontier visibility, multi-grant text and small-window clipping.
 Verify outward prerequisites, two-way bridge access, one-point transactions and

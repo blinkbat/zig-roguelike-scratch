@@ -86,7 +86,7 @@ pub const Section = struct {
     /// Whether it changed; null erases. What no longer fits on or over the cell goes with it.
     pub fn paint(self: *Section, p: P, t: ?grid.Tile) bool {
         if (!ROOM.holds(p)) return false;
-        if (t) |put| if (put.isOpened()) return false;
+        if (t) |put| if (put.isOpened() or put.zooPart()) return false;
         const i = grid.Level.idx(p);
         if (std.meta.eql(self.tile[i], t)) return false;
         self.tile[i] = t;
@@ -151,7 +151,7 @@ pub const Section = struct {
         for (self.tile, self.barrel, &whole, 0..) |t, b, *w, i| {
             const p = grid.Level.of(i);
             w.* = t orelse .floor;
-            if (t) |put| if (!ROOM.holds(p) or put.isOpened()) return false;
+            if (t) |put| if (!ROOM.holds(p) or put.isOpened() or put.zooPart()) return false;
             if (b and !self.barrelFits(p)) return false;
         }
         if (!grid.propsWhole(&whole)) return false;

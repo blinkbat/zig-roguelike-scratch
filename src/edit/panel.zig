@@ -657,9 +657,7 @@ pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     const file = std.fmt.bufPrintZ(&path_buf, "{s}{s}", .{ ed.path(), if (ed.history.dirty) " *" else "" }) catch "";
     const file_w = @min(face.width(file, widgets.TEXT), @divTrunc(w, 3));
     widgets.drawFit(&g.face, file, widgets.TEXT, file_w, true, x + w - file_w, y, if (ed.history.dirty) look.UI_GOLD else look.DIM);
-    const said = ed.said_t > 0;
-    const line: []const u8 = if (said) ed.said.text() else if (ed.view == .map) editor.CRIB_MAP else editor.CRIB_GRAPH;
-    widgets.drawFit(&g.face, line, widgets.TEXT, w - file_w - widgets.BLOCK_GAP, false, x, y, if (said) look.UI_FOCUS else look.DIM);
+    if (ed.said_t > 0) widgets.drawFit(&g.face, ed.said.text(), widgets.TEXT, w - file_w - widgets.BLOCK_GAP, false, x, y, look.UI_FOCUS);
 }
 
 fn toolState(ed: *const editor.Editor, buf: []u8) [:0]const u8 {
@@ -676,8 +674,8 @@ fn hover(ed: *editor.Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
     var a: [atlas.TITLE_MAX]u8 = undefined;
     if (ed.view == .graph) {
         if (ed.dotUnder(c, ed.desk.mouse)) |l| {
-            const to = ed.map.door(l).to orelse return std.fmt.bufPrintZ(buf, "Node {d} door {d}: leads nowhere; drag to another door's dot to link it", .{ l.node, l.door }) catch "";
-            return std.fmt.bufPrintZ(buf, "Node {d} door {d} leads to {s}, door {d}; {s} unlinks", .{ l.node, l.door, ed.nodeName(to.node, &a), to.door, Desk.ERASE_CAPTION }) catch "";
+            const to = ed.map.door(l).to orelse return std.fmt.bufPrintZ(buf, "Node {d} door {d}: leads nowhere", .{ l.node, l.door }) catch "";
+            return std.fmt.bufPrintZ(buf, "Node {d} door {d} leads to {s}, door {d}", .{ l.node, l.door, ed.nodeName(to.node, &a), to.door }) catch "";
         }
         const n = ed.boxUnder(c, ed.desk.mouse) orelse return "";
         var d: [widgets.LINE]u8 = undefined;
@@ -707,7 +705,7 @@ fn hover(ed: *editor.Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
     }
     if (nd.doorAt(p)) |k| {
         if (nd.door[k].to) |to| {
-            wr.print(", door {d} to {s}, door {d} ({s} goes through)", .{ k, ed.nodeName(to.node, &a), to.door, Desk.GO_CAPTION }) catch {};
+            wr.print(", door {d} to {s}, door {d}", .{ k, ed.nodeName(to.node, &a), to.door }) catch {};
         } else wr.print(", door {d}, leading nowhere", .{k}) catch {};
     }
     const n = out.getWritten().len;

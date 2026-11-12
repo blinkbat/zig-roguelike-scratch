@@ -110,7 +110,6 @@ pub const State = struct {
     seen: Seen = .{},
     /// A line drawn as the game draws it, over the page.
     preview: ?LineAt = null,
-    preview_page: usize = 0,
     preview_cursor: usize = 0,
 
     fn pickDialog(s: *State, d: u8) void {
@@ -262,15 +261,9 @@ fn drawPreview(ed: *editor.Editor, g: *game.Game, at: LineAt, clicked: bool) voi
     ed.plot.preview_cursor = @min(ed.plot.preview_cursor, ln.choice_n -| 1);
     if (ed.desk.nav != 0 and ln.choice_n > 0) ed.plot.preview_cursor = mathx.wrap(ed.plot.preview_cursor, ed.desk.nav, ln.choice_n);
     var view = talk.View{ .who = ln.speakerOr(speaker), .say = ln.say.text(), .choices = labels[0..ln.choice_n], .cursor = ed.plot.preview_cursor, .prompt = prompt_icon.Prompt.menuOn(.keys, menu.CONFIRM) };
-    view.page = ed.plot.preview_page;
     if (speaker) |n| view.figure = talk.Figure.of(&g.sprites, n, ln);
     var l: talk.Layout = .{};
     l.of(&g.face, g.screen, view);
-    if (ed.desk.nav != 0 and ln.choice_n > 0) {
-        ed.plot.preview_page = l.pageForChoice(ed.plot.preview_cursor);
-        view.page = ed.plot.preview_page;
-        l.of(&g.face, g.screen, view);
-    }
     const row = l.rowAt(ed.desk.mouse);
     if (clicked) if (row) |r| {
         view.cursor = r;
@@ -278,26 +271,11 @@ fn drawPreview(ed: *editor.Editor, g: *game.Game, at: LineAt, clicked: bool) voi
     };
     talk.draw(&g.face, &g.sprites, g.screen, view, &l);
     if ((!clicked and !ed.desk.enter) or ed.fresh) return;
-    if (clicked and l.page > 0 and raster.holds(l.previous, ed.desk.mouse)) {
-        ed.plot.preview_page = l.page - 1;
-        return;
-    }
     const action = ed.desk.enter or (clicked and raster.holds(l.action, ed.desk.mouse));
-    if (l.page + 1 < l.pages and ((action and l.continues(view.cursor)) or (clicked and !l.continues(view.cursor) and raster.holds(l.next, ed.desk.mouse)))) {
-        ed.plot.preview_page = l.page + 1;
-        view.page = ed.plot.preview_page;
-        l.of(&g.face, g.screen, view);
-        for (0..l.row_n) |i| if (l.choiceReady(i)) {
-            ed.plot.preview_cursor = i;
-            break;
-        };
-        return;
-    }
-    const chosen = if (clicked and row != null) row else if (action and l.choiceReady(view.cursor)) view.cursor else null;
+    const chosen = if (clicked and row != null) row else if (action and ln.choice_n > 0) view.cursor else null;
     if (chosen == null and !(ln.choice_n == 0 and action)) return;
     const next = if (chosen) |r| ln.choice[r].next else ln.then;
     ed.plot.preview = if (next) |n| .{ .d = at.d, .l = n } else null;
-    ed.plot.preview_page = 0;
     ed.plot.preview_cursor = 0;
     if (next) |n| ed.plot.line = n;
 }
@@ -760,7 +738,6 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
     y += STEP;
     if (nameRow(ed, g, x, y, w, "Speaker", .{ .who = at }, "Preview in game", true, "This line as the game draws it; click a choice to follow it, Esc to come back", "(blank: whoever is spoken to)")) {
         ed.plot.preview = at;
-        ed.plot.preview_page = 0;
         ed.plot.preview_cursor = 0;
     }
     y += STEP;
