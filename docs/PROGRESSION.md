@@ -1,313 +1,142 @@
 # Items and progression
 
-| System | First version |
-|---|---|
-| Persistence | Whole run saved; death loses equipment, inventory and progression |
-| Inventory | Item list; no weight or stash |
-| Slots | Main hand, offhand, helm, chest, belt, gloves, boots, two rings, amulet, life flask, mana flask |
-| Equipment rules | Attribute requirements, one main-hand item plus an offhand, or a two-handed item |
-| Requirements | Final loadout must remain valid; an item cannot fund its own requirement |
-| Loot | Normal, magic or rare; blues roll 1–2 mods and affix/base names; yellow rares roll 3–4 distinct mods and independent two-part names |
-| Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery, penetration, thorns, Spoils (gold and item rarity), weapon imbues (burn, chill or shock on hit), stun resistance, light radius, mana on kill, mana flask recovery, gas masks, stillness, Opportunist's (damage against slowed foes), Bounding (movement skill reach), Alacrity (shorter cooldowns), Savage (critical damage), Stalwart (block), Mending (life recovery), Vampiric (leech), Sweeping (area radius), Skewering (pierce) and Haste (actions that take no turn); equipment restrictions live in `affixes.Mod.allows` |
-| Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
-| Gold | Ground gold without items is a coin drop, automatically collected when stepped onto, with no extra turn or modal. Gold with items shares their bag; chest gold stays in its chest. A bag's or chest's gold is no row: the loot shows it beside the position count and takes it, free, as it closes; a chest holding only gold is taken without opening loot. Gold needs no inventory space |
-| Item actions | All items and supplies taken during one loot visit cost one turn together when it closes, including backing out. Drop, equip and unequip cost one turn when successful. Take all fills available inventory space and leaves excess items |
-| Interact | First bump or Interact opens a closed chest for one turn, revealing its contents without a modal. Stepping onto a bag/open chest opens loot for the movement turn; bags remain walkable. Interact browses a sole bag/open chest directly, or lists nearby containers/doors when there is a choice; a door always lists. Closing loot without taking items or supplies is free |
-| Loot artwork | One `item-bag.png` per ground cell containing items, including any gold in that cell. Gold alone uses `small-coins.png` or `large-coins.png`. Chests use `chest-item-bag.png` while containing items or gold, then `chest-open.png` when empty. No coin lights |
-| Foe loot | Gold is common; item drops are 75% plain white, 20% magic blue and 5% rare yellow before rarity bonuses. Whites have no rolled mods, blues 1–2, rares 3–4. A mimic always leaves a rare with its chest gold; a barrel sometimes leaves a white beside its gold |
-| XP | Foe kills grant XP; each level grants one passive and one active point |
-| Passive tree | 81-node radial graph lifted from Soulslike; three origins, six branches and six bridges |
-| Active trees | Per class, prerequisites, three ranks; Shoot is a fixed basic attack and cannot be upgraded; only learned skills may be bound |
-| Initial skills | Archer: Shoot/Juke; Wizard: Spark/Blink; Knight: Charge/Cleave; all keep bump melee |
-| Charge | Strikes a foe 1–4 tiles away along a clear line, an adjacent foe struck in place; can retreat 1–3 tiles to empty ground |
-| Respec | Deferred |
+Balance, skill paths and item catalogs live in source. This document records
+transaction rules and integration behavior.
 
-Balance values live in `src/play/item_bases.zig` (bases), `src/play/affixes.zig` (affix ranges), `src/play/loot.zig` (loot rates and foe/barrel/chest gold), `src/play/progress.zig`, `src/play/passives.zig`, `src/play/attrs.zig` (life, mana, crit, dodge, armour cap), `src/play/hero.zig` (class bases, mana recovery), `src/play/flask.zig` and each skill module. These are small
-prototype pools, not full Diablo/PoE itemization. Rank upgrades improve damage and mana cost;
-non-damaging skills with cooldowns also recover sooner, down to 2 turns (1 for a skill that takes
-no turn, since a 1-turn cooldown ends in the turn the skill used). Equipping or allocating life does not
-heal current HP.
+| Responsibility | Owner under `src/` |
+| --- | --- |
+| Item identity, bases and innate effects | `play/items.zig`, `play/item_bases.zig` |
+| Legal modifiers, rolls and names | `play/affixes.zig`, `play/loot.zig` |
+| Loadout validation and storage | `play/gear.zig`, `play/inventory.zig`, `play/ground_items.zig` |
+| Attributes and class bases | `play/attrs.zig`, `play/hero.zig` |
+| XP, ranks, costs and point spending | `play/progress.zig` |
+| Passive graph and grants | `play/passives.zig` |
+| Flasks and supplies | `play/flask.zig`, `play/consumable.zig` |
+| Combat and recovery integration | `game/sim.zig`, `game/attacks.zig`, `game/combat.zig`, `game/skills.zig`, `game/rewards.zig` |
+| Equipment and loot commands | `game/character.zig` |
 
-Shoot remains available as a basic attack and scales with equipment and attributes, with
-no skill-rank bonus. Loading an older run refunds points spent above its first rank once.
+## Inventory and loot transactions
 
-Save evolution follows [SAVE_FORMAT.md](SAVE_FORMAT.md): portable saves use named fields
-and enum keys, default supported additions, and preserve passive allocations by identity.
-Only compatible raw legacy layouts load through the fingerprint-gated reader.
+Inventory is a list without weight or stash. Equipment has main hand, offhand,
+helm, chest, belt, gloves, boots, two rings, amulet and two flask slots.
+A main-hand item allows an offhand unless it occupies both hands. The resulting
+loadout must satisfy every requirement; an item cannot fund its own requirement.
 
-Mana uses small whole numbers alongside life. Starting pools are 20 for archer/knight and 24 for wizard;
-base skill costs range from 2 to 7. Intelligence grants 2 mana per 5 points, and mana affixes grant 1–3.
-Natural recovery is 1 mana per 5 spent turns; recovery passives add to that five-turn rate, with partial
-progress retained across turns, doors and saves. Cost reductions round up to whole mana, with a minimum
-of 1 for paid skills. Mana Shield still absorbs one damage per mana.
+Successful equip, unequip and drop each spend a turn. Raising maximum life through
+equipment or allocation does not heal current HP. Death loses run equipment,
+inventory and progression; persistence follows [SAVE_FORMAT.md](SAVE_FORMAT.md).
 
-Flasks are items worn in the Life flask and Mana flask slots, as in PoE2. A new run wears both; they never
-roll as loot. Like other gear they can be unequipped, dropped and worn again for a turn. Only a worn flask can
-be drunk or gains charges from kills; its charges wait in the slot while it is off.
+A first bump or Interact opens a closed chest for one turn, revealing contents
+without a modal. Stepping onto a bag or stocked open chest opens loot for the
+movement turn; bags remain walkable with items left behind. Automatic opening
+is suppressed while a foe is visible. Deliberate Interact browses a sole bag/open
+chest for free. Multiple nearby objects offer a choice; doors always keep that
+choice so queued input cannot immediately return through an arrival door.
 
-Every consumable spends a turn, flasks included. A drink spends its charges and recovers its first of three
-ticks on that turn, before foes act; the other two happen on the next two spent turns. A life flask restores
-half maximum life before passive bonuses; a mana flask restores 10 mana. Drinking again restarts that
-flask's recovery.
+Loot shows only the selected cell. Take item affects its selected row; Take all
+fills available inventory space and leaves excess items. All items and supplies
+taken during one visit cost one turn together when loot closes, including Back
+or leaving for another screen. Closing without taking items or supplies is free.
+An empty modal closes.
 
-Consumables (`play/consumable.zig`): Bandage stops bleeding; Smelling salts hold stun resistance at 100% through
-the turn they are used and the five after; a thrown Frost vial splashes small cold damage and a chill roll on every
-foe within one tile of its mark, scaling as a spell. Each is a stack in the bag (up to 20 of a kind) listed above
-the items in Inventory, used there or from a bound skill slot, which shows the count. Foes drop one 8% of the
-time and chests 50%; they lie in the ground bag with any items and gold. Using one spends a turn.
+Ground gold without items is a coin drop, collected on stepping onto it without
+an extra turn or modal; Interact can take it for one turn. Gold with items shares
+their bag, and chest gold stays in its chest. Loot shows gold beside the position
+count, not as an item row, and takes it free as the modal closes. A chest containing
+only gold is collected without opening loot. Gold needs no inventory space.
+Movement and browsing do not collect gold from bags or chests.
 
-## Weapons and offhands
+One bag marker represents each item-bearing ground cell. Coin-only cells use coin
+sprites; nonempty open chests use the chest/bag sprite and empty ones the open
+chest sprite. Coins have no lights.
 
-Strength scales **heavy** weapon damage; Dexterity scales **light** weapon damage.
-Melee versus ranged determines which equipped weapon a skill uses, independently of
-its scaling attribute. Spells still scale with Intelligence. The same weapon lookup
-governs basic melee, skill damage, rank bonuses and live damage previews.
+## Items and combat effects
 
-| Scaling | Basic weapon types |
-|---|---|
-| Heavy / Strength | Longsword, mace, greatsword, crossbow, greatclub; the existing great axe |
-| Light / Dexterity | Bow, sling, dagger, short sword, handaxe |
-| No innate attack | Wand, staff |
-| Offhand | Tome, orb, buckler, shield, totem |
+Base identity is independent of normal, magic or rare quality. Normal items have
+fixed base properties; magic and rare items add legal rolled modifiers.
+Magic names describe their prefix/suffix rolls. Rare two-part names are saved
+independently of their modifiers. Innate effects remain separate from affixes;
+`affixes.Mod.allows` owns equipment restrictions.
 
-All 46 bases can drop white, blue or yellow. White items retain fixed base properties and have
-no rolled modifiers; blues add one or two ordinary modifiers and rares add three or four. Base identity is independent
-of rarity. Requirements follow the relevant build attribute.
+Strength scales heavy weapons, Dexterity light weapons and Intelligence spells.
+Melee/ranged delivery independently selects the equipped weapon. Basic attacks,
+skills, rank bonuses and previews share weapon lookup and damage calculations.
+Caster implements have no innate attack. Weapon and spell critical bonuses are
+separate; damage-type bonuses affect only matching components.
 
-Daggers and hunting bows favor weapon critical strikes; handaxes and great axes bleed,
-with great axes applying stronger bleeds. Maces and greatclubs can stun. Crossbows ignore
-20 percentage points of physical reduction; bandits have 15% and beefy pibs 20%.
-Short swords have a narrow damage range; greatswords and war bows favor raw damage.
-Great weapons, bows, crossbows and staves occupy both hands; slings and wands allow an offhand.
+Equipment and passive recovery combine through `Simulation.heroPerks`.
+Worn-item kill recovery also applies to status kills; passive kill recovery
+applies only to blows. Recovery is pictured with its killing impact or tick.
+Mana recovery keeps partial progress across spent turns, travel and saves.
+Paid skill costs round up to whole mana with a minimum of one.
 
-Caster implements have no attack damage. The ordinary wand grants spell critical chance;
-ash, rime and storm wands improve fire, cold and lightning damage respectively. Oak staves
-grant a larger general spell bonus. Tomes grant mana, orbs spell critical chance, totems
-life on kill, bucklers dodge, and shields physical reduction. Gloves, armour, belts, boots,
-helmets and rings offer heavy/light/spell damage, life, mana, dodge, recovery or armour
-identities. `item_bases.Spec.innate` is the source; rolled modifiers never include these fixed effects.
+Thorns retaliate against a connected adjacent melee hit, including one absorbed
+by Mana Shield or lethal to the hero. Dodges, arrows and damage over time do not
+trigger them. Attacker armour applies; thorns cannot crit, apply weapon statuses,
+cull, trigger blow recovery or recurse. Kills still award normal rewards and
+equipment kill recovery for a surviving hero. Picture returned damage, death and
+splits with the incoming impact, separately from Unyielding.
 
-Equipment recovery effects combine with passive perks through `Simulation.heroPerks`.
-Weapon and spell critical bonuses remain separate, and elemental/physical bonuses apply
-only to their matching damage component. Live damage and previews share these calculations.
+Spoils supplies separate gold and item-rarity bonuses. Gold scales once on pickup,
+with probabilistic fractional rounding. Rarity changes quality rather than drop
+count and uses equipment at the time foes/chests roll items. Both rarity thresholds
+scale and cap independently; the rare threshold is nested inside magic-or-rare.
+Values and rounding implementation live in `play/loot.zig`.
 
-Magic names always describe their rolls, for example `Bear's Leather gloves of Precision`.
-They have no independent unique name. A two-affix roll always pairs opposite sides; a single
-affix may be either side. Warded prefixes identify their rolled element. Innate base effects
-remain separate from affixes. Recovery modifiers add to equipment/passive recovery; Puncturing
-adds to a matching weapon's innate penetration. Cruel applies only to physical weapon damage.
-Worn-item kill recovery, including Totem and Harvest, also recovers life from status kills;
-passive kill recovery applies only to blows. Healing is presented with the killing impact or tick.
+Reach, area, penetration, recovery and cooldown modifiers must reach aiming,
+previews, resolution and inspection through their shared simulation/progression
+helpers. Haste can make an action free, aging nothing and giving foes no action;
+waiting and stunned turns cannot be hastened.
 
-Rare names combine two saved words independently of the modifiers, such as `Spine Crusher`,
-`Void Maw` or `Magus Fold`; `affixes.RareName` owns the word pools. The base name remains visible beneath the
-yellow name on item cards. Added modifiers are yellow; fixed base properties stay neutral.
-Rares use the same legal modifier pool and value ranges as magic items, without repeating
-a modifier kind, with at most two prefixes and two suffixes. Names and all four mod slots
-survive equipment swaps, pickups, drops, travel and saves.
+## Flasks, supplies and skill lifetime
 
-Thorned chest armour and shields return physical damage on a connected adjacent melee hit,
-including one absorbed by mana shield or one that kills the hero. Dodges, arrows and damage
-over time do not trigger it. The attacker's armour applies; thorns cannot crit, apply weapon
-statuses, cull, trigger blow recovery or retaliate recursively. Kills still award normal XP,
-loot and Harvest recovery for a surviving hero. Returned damage, deaths and slime splits
-are shown with the incoming impact, separately from any Unyielding counterattack.
+New runs equip life and mana flasks, which do not roll as loot. They can be
+unequipped, dropped and worn for a turn. Only a worn flask can be drunk or receive
+kill charges; stored charges remain while unequipped.
 
-Jewellery of Spoils adds the same rolled percentage to two separate stats: gold collected
-and item rarity. Gold scales once on pickup, from every source; fractional coins round
-probabilistically. Item rarity improves quality without increasing the number of drops.
-The combined magic-or-rare threshold (25% base) and rare threshold (5% base) each scale
-by `1 + rarity / 100`, round down to whole percentages and cap at 100%. The rare threshold
-is checked within the combined threshold: +100% rarity yields 50% plain, 40% magic and
-10% rare; sufficiently high rarity can make every item rare.
-Foes and newly opened chests use equipped rarity when their items roll. Bonuses from
-multiple items add together. Advanced Stats and item cards show all three
-new stats.
+Consumables spend a turn. Flask drinking spends charges and applies its first
+recovery tick before foes act; later ticks follow spent turns. Drinking again
+restarts that flask's recovery. Supplies stack in Inventory and can be used there
+or through bound slots showing their counts. Exact effects, capacities, durations
+and drops belong to `play/consumable.zig` and `play/flask.zig`.
 
-Searing, Rimed and Charged weapons roll fire, cold or lightning and add that chance to
-burn, chill or shock to the weapon's own physical hits, rolled after the skill's own ailment
-like bleed and stun (`attacks.IMBUED`). Resolve adds to the hero's stun resistance in
-`Simulation.combatStatsOn`. The Lantern adds to the hero's carried light, both sight
-(`Simulation.heroLight`) and its drawn glow (`Light.carry_r`). Siphoning recovers mana on
-any kill, as flasks refill, and the orb shows it as the death is drawn (`Presentation.mana_killed`).
-Draughts scales a mana drink as Plenty scales a life one. Masked helms cut the hero's caustic gas
-and steam harm, the remainder rounding up as often as its fraction. Stillness shortens the
-distance at which a sleeping foe notices the hero, never below one cell.
-Opportunist's raises the hero's blows on a pinned, chilled or maimed foe (`Actor.slowed`), before
-enfeeble and shock (`attacks.opportune`). Bounding adds cells to every leap's and rush's reach
-(`Simulation.reachOf`), for aiming, previews and the tooltip alike. Alacrity takes turns off every
-cooldown as it is spent (`progress.State.cooldown`), never below a turn-taking skill's floor.
+Idle frames and free actions never age preparations, stances or ground effects.
+A flask drink is an action and ends Guard and Overwatch. Unyielding can always
+be turned off, even with no mana. Barriers, fire walls and caltrops persist with
+their level; hero preparations and stances travel with the hero.
 
-Savage raises the critical multiplier above its 150% (`Attrs.critMulti`). Shields block: the wooden shield
-20% and the buckler 10% (`Spec.block`), Stalwart adding more, capped at 75%. A block is rolled before the
-dodge on every foe strike, melee or ranged, and stops it whole like a dodge: no damage, statuses or thorns.
-Mending recovers life per 5 spent turns as mana recovery does, its partial progress saved (`life_recovery`).
-Vampiric heals a share of the damage each blow deals, rounded as often as its fraction, alongside life on hit.
-Sweeping adds cells to every area skill's radius (bursts, nova, detonations, caltrops, Gravity Well and
-War Cry; not Whirlwind, Bide or Cleave), up to `area.BURST_MAX`; previews share it (`Simulation.wider`).
-Skewering lets a single-target projectile (arrows and Spark, not bursts, chains or Piercing Shot) that strikes
-a body fly on through that many more, out to its reach, each struck as it is reached (`bow.skewer`). Haste
-gives each turn-spending action a chance to take no turn, as a free action: nothing ages and no foe acts.
-Waiting and stunned turns are never hastened (`combat.passTurn`).
+Barrier and Fire Wall share two-endpoint targeting but retain their own placement
+rules. Both preview and resolution read those rules. Barriers block movement and
+projectiles but allow sight and do not replace terrain. Fire Wall applies normal
+burn resistance and ignites flammable ground through the map fire system.
+Reaction, projectile and split timing follow [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Tactical skills and class paths
+## Progression and statuses
 
-Upgradeable class skills retain three ranks; Shoot remains a fixed basic attack. Basic attacks
-and mobility start learned; other skills require their parent. The trees group elemental damage,
-preparation, control and defense:
+Each level grants separate active and passive points. Only learned class skills
+may be bound; innate utilities remain available. Shoot is a fixed basic attack
+with equipment/attribute scaling and no skill-rank bonus. Compatible old saves
+refund excess Shoot ranks once. Rank costs and cooldown floors come from
+`progress.State`, including the turn consumed by using a skill.
 
-| Class | Paths |
-|---|---|
-| Archer | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot, Piercing Shot; Juke -> Caltrops |
-| Wizard | Spark -> Fireball -> Combustion, Fire Wall; Spark -> Chain Lightning; Blink -> Raise Skeleton; Blink -> Frost Nova -> Shatter, Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
-| Knight | Cleave -> Guard -> Bide, Unyielding; Cleave -> Rend -> War Cry; Cleave -> Imbue; Charge -> Shield Bash -> Whirlwind |
+See [active skills](DIABLO2_SKILL_TREE.md) and [passives](POE2_PASSIVE_TREE.md)
+for graph and panel contracts. Keep authored paths and grant values in their
+source tables rather than copying them here.
 
-Caltrops pins entering ground foes at every rank, adds bleed at rank 2, then strengthens
-both at rank 3. Flying foes ignore caltrops. Gravity Well pulls foes toward its center;
-rank 2 adds a one-turn pin, rank 3 increases pull distance and pin duration. Both use normal
-status resistance. Combustion requires a burning foe, consumes its burn and explodes nearby
-foes with fire damage; the remaining burn increases the explosion's base damage. Shatter is
-its cold counterpart: it requires a chilled foe and consumes the chill. Each chilled foe shows
-a chill meter above its life bar, one segment per remaining chill turn.
+Each harmful status has independent innate resistance and temporary buildup.
+Only successful applications build resistance or refresh its expiry. Free actions
+and idle frames never age it. Slime splits inherit meters and bleed strength;
+travel and saves preserve them. Terrain and rain modifiers are resolved at the
+occupied tile, as described in [TERRAIN.md](TERRAIN.md). Duration, stacking and
+proc values remain in the owning status modules.
 
-Piercing Shot's arrow flies on through every body in its line to full bow range, rolling once
-and scaling per foe; a barrel, wall, barrier or closed chest stops it. Rend strikes an adjacent
-foe and always opens a 2-per-turn bleed, subject to bleed resistance.
+## Presentation
 
-War Cry gives each visible foe within 3 tiles a rank-based chance to become Frightened, a status
-with its own resistance meter. Frightened foes run from the hero and attack only when cornered.
-Each foe's innate fright resistance comes from `actor.row().fright_resist`, resolved by
-`actor.innateResist` in [actor.zig](../src/play/actor.zig). A value of 100% prevents War Cry from frightening it.
-A pib's witness fright applies the same status without a roll.
+Items, equipment layout and Stats follow
+[DATA_PRESENTATION.md](DATA_PRESENTATION.md); input follows
+[CONTROLLER.md](CONTROLLER.md). [HUD_LAYOUT.md](HUD_LAYOUT.md) owns pictured
+resource timing and the event log's placement.
 
-Steady Aim prepares the next arrow with damage and critical bonuses; movement cancels it.
-Overwatch covers a chosen cone until the next action and fires once when a foe moves into
-it with an unobstructed arrow path. Guard reduces physical attack damage until the next
-action. Whirlwind strikes all adjacent foes and barrels once. Unyielding toggles a melee
-counter stance with rank-based chance, draining mana on spent turns and ending when upkeep
-cannot be paid. It can always be turned off, even at zero mana. Idle frames advance none
-of these effects; a flask drink is an action and ends Guard and Overwatch.
-
-Arcane Barrier selects two endpoints (mouse drag/release, or two ordinary confirmations).
-Every cell must be visible, empty, in reach, and free of doors and chests. The rank limits
-length and duration. The straight wall blocks movement and projectiles while allowing
-sight, and expires on spent turns without replacing its underlying terrain. Fire Wall uses the
-same two-endpoint targeting over visible dry walkable ground, bodies allowed, but not water,
-barrels, chests or doors. Foes on its cells catch fire as it rises and foes entering later catch
-fire, both through burn resistance. Foes shun its flames as they shun gas. Its flames on
-grass, reeds, crops or bridges kindle them and may leap one cell on (`FireWall.HEAT`), as any
-ground fire does (`map/fire.zig`). Barrier, flame and caltrop lifetimes persist with the node;
-hero preparations and stances persist with the hero.
-
-## Class balance and status resistance
-
-The knight starts with 24 Strength, 34 life, 10% physical reduction and a 3-5 basic strike.
-Charge and Shield Bash cost 3 mana; Cleave starts learned and costs 2. Spark's base damage
-is 2-4, retaining its 2-mana cost and 50% base stun chance.
-
-Every hero and foe has separate temporary resistance meters for stun, burn, bleed, chill,
-pin, shock, sunder, blind, confusion, enfeeble, maim and fright. A successful application adds 25 percentage points, up to 100%; each meter clears
-after five spent turns without a successful reapplication. Failed attempts do not refresh
-the timer. Idle frames and free actions never age these meters. Innate
-stun resistance adds to buildup: beefy pib starts at 75%, so one landed stun temporarily
-makes it immune. These gates apply to spells, weapon effects and foes hitting heroes or
-other foes. Slime halves inherit meters and bleed strength; doors and saves preserve them.
-The HUD shows an inspectable resistance icon and meter, and wounded foes show a slim gold
-bar for their highest current buildup below their life bar.
-
-Six afflictions last a number of the body's own turns; only shock has a source yet. Shock (3 turns) makes the
-next hit that deals damage deal 50% more, rounded up, and is spent on it. Lightning landing in deep water or shallows,
-striking a wading body or none, shocks every grounded body, hero included, in the water joined to that cell within
-2 cells. Sunder (4 turns from the latest stack) takes
-10 points of armour per stack, up to 3 stacks, and its stacks all fall away together. Blindness (3 turns) limits sight
-to adjacent cells: a blinded foe neither notices nor hunts a hero farther away. Confusion (3 turns) sends half of all
-moves a random way, gas or not; a confused hero strays only onto moves that would also spend the turn, bumps included.
-Enfeeble (3 turns) makes the body's blows deal 30% less, rounded up. Maim (4 turns) makes every second step cost the
-body its next turn.
-
-## Tree panels and maintained references
-
-Read [DIABLO2_SKILL_TREE.md](DIABLO2_SKILL_TREE.md) before working on the class skill panel and
-[POE2_PASSIVE_TREE.md](POE2_PASSIVE_TREE.md) before working on the passive panel. These research and
-implementation references distinguish observed source behavior from this game's adaptations.
-
-Skills use compact square glyphs, downward prerequisite arrows, attached rank badges and a fixed
-inspection panel with effect text and current/next values. The existing class kits and three-rank
-progression remain authoritative; unimplemented D2 categories or level gates are not shown.
-
-Passives use the existing `zig-soulslike` graph construction and radial positions: three arms, two
-branches per arm, branch widths 1/2/3/3/2/1 and six cross-arm bridges at branch rings three and five.
-Small stat nodes grant attributes. Larger interest nodes carry the Soulslike tree's effects, translated
-to turns: life, mana, armour, style damage, critical and dodge chance, leech (life per foe a blow
-damages), life per kill, cull (blows kill foes left at or below a share of life), life flask recovery,
-mana per five turns and cheaper skills; usually with an attribute rider. Each branch ends at a larger
-double-ring capstone whose rider may be a second effect. Bridges grant attributes from both
-neighboring arms. Attribute-side grants go through `attrs`; the rest are `passives.Perks`, read by
-`progress.State.perks` and applied by `Simulation.manaRegen` in `game/sim.zig`, `drink` in
-`game/skills.zig`, `wound` in `game/combat.zig`, `State.cost` and the life flask's description
-(`flask.Life.describe`). `passives.Grant.write` formats grants through `TEXT` and the shared attribute/style labels.
-
-The chosen class's origin is allocated free and gives no extra bonus. The other two origins are
-immediately purchasable for one point each. There is no central hub. Further nodes require any one allocated
-incoming feeder; branches climb outward, while bridges unlock their two endpoints in either direction.
-Each allocation costs one passive point, never a turn or gold. XP still awards the two point pools;
-Soulslike's purchase-to-level economy is not imported. Selection, zoom and browsing spend nothing.
-
-The board opens zoomed in; zoom follows the selected node, with pan and a full-board overview control.
-The graph uses simple circles and quiet lines without labels, legends or a central node. Allocated
-nodes have solid arm-coloured fills and gold rims; reachable nodes have clear rims, and distant
-nodes stay muted. The sidebar shows a small name, readable grants and riders, any essential note,
-and one allocation action or status. One deliberate action allocates the selected eligible node.
-Portable saves retain allocations by `(arm, branch, seam, ring, slot)` identity and refund
-removed nodes. Preserve those identities when rearranging the graph; changed meanings need
-an explicit migration. Unknown raw layouts, including the old hex tree, remain incompatible.
-
-## Equipment layout references
-
-Item text, comparisons, character stats and inspection follow
-[DATA_PRESENTATION.md](DATA_PRESENTATION.md). Its 2026-10-20 research pass uses Diablo II
-as the complexity target and PoE2 as a reference for separating advanced detail.
-
-The paperdoll follows the actual Diablo II slot arrangement, inspected against this
-[Diablo II inventory screenshot](https://www.game-over.net/review/july2000/diablo2/Screen0.JPG).
-It was also compared with the
-[PoE2 inventory screenshot](https://deltiasgaming.com/wp-content/uploads/2024/12/Path-of-Exile-2-Inventory.jpg).
-The games share the central helm/body/belt stack and tall outer hand slots; PoE2 places
-rings beside the body, while D2 puts rings alongside the belt. This implementation uses D2.
-
-| Position | D2 equipment slot |
-|---|---|
-| Upper center | Helm |
-| Upper center-right | Small amulet slot |
-| Center | Tall chest slot, beneath helm |
-| Outer left / outer right | Tall Main hand / Offhand slots |
-| Lower row, left to right | Gloves, right ring, belt, left ring, boots |
-
-The main hand is on the viewer's left and the offhand on the right, matching D2/PoE2.
-Use role names in all player-facing labels. The stored `right_hand`/`left_hand` enum
-values remain unchanged. A two-hander marks the offhand with Both hands and the held
-weapon's name; it is not presented as an empty slot. Each cell shows the worn item's glyph in its rarity
-color, with the name under it in cells tall enough; an empty slot shows its slot's glyph faded, and the
-offhand shows the held two-hander's glyph faded. List rows lead with the item's glyph. Slot size and position follow
-the reference; inventory remains the agreed list.
-Selected and equipped items use separate cards with only applicable base properties,
-nonzero requirements and actual magic modifiers, with no "If equipped" character-change section
-or separate bleed-damage line. Unmet requirements show the available attribute after displacement,
-excluding the item's own bonus.
-The Stats page leads with what the player reads at a glance: life and mana, and each learned
-skill's hit with its status chances (the skill's roll, then the weapon's second roll for that
-status). Defenses, attributes, crit chance and progression follow. Its Advanced sheet,
-like D2's Advanced Stats, holds every damage bonus, the crit multiplier, recovery, and each
-elemental and status resistance, zeros included. Placeholder artwork is indexed in
-[ART_PROVENANCE.md](ART_PROVENANCE.md).
-
-## Event log
-
-`src/play/log.zig` owns the 128 saved entries in `Simulation.log`;
-`src/ui/journal.zig` draws them, newest at the bottom. Damage, incoming harm,
-recovery, loot, progression and status events have separate colors. It remains visible in
-exploration and combat, anchored at bottom left beside the compact HUD. Arriving on dropped
-items names each item without picking it up or repeating while idle. Mouse wheel scrolls over
-the log; HUD inspection can select it and scroll up/down, then leave sideways or cancel.
-New events return to the newest entry, as in the local `bg2-threejs` example. Text wraps
-inside the available width, as in `crawler`.
+`play/log.zig` owns saved events; `ui/journal.zig` renders them newest at the
+bottom. New events return scrolling to the newest entry. Arrival on dropped items
+names them without collecting them or repeating while idle.

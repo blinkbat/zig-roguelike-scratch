@@ -1,16 +1,10 @@
-# Path of Exile 2 HUD
+# HUD layout
 
-## Requested scope
+The HUD is one fixed-width assembly centered at the bottom: red life orb, skills,
+then blue mana orb. Controls follow [CONTROLLER.md](CONTROLLER.md); wording and
+typography follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md).
 
-Use Path of Exile 2 as the reference. Build one fixed-width HUD centered at the bottom, with a filled red life orb on the left, skills in the middle, and a filled blue mana orb on the right. Use simple graphics that David can paint over later.
-
-Controls and device captions follow [CONTROLLER.md](CONTROLLER.md); item and progression rules follow [PROGRESSION.md](PROGRESSION.md).
-
-## Reference and adaptation
-
-The [official PlayStation Store gameplay gallery](https://store.playstation.com/en-us/concept/10010602) includes this [Path of Exile 2 controller screenshot](https://image.api.playstation.com/vulcan/ap/rnd/202408/2123/a3c89df0c4e35ea926b73c75b1c9b1bd11f6b2fc80768f06.jpg), inspected for the orb, skill-slot and button-caption hierarchy. It shows red and blue globes, a framed skill strip, and contextual button labels. Its globes sit at the screen edges; bringing both beside the skills in one fixed-width assembly is David's requested adaptation.
-
-Only display the corresponding systems this game actually has. Do not fill the layout with imitation systems or decorative counters.
+## Contents
 
 | Show | Presentation |
 |---|---|
@@ -38,39 +32,36 @@ The live HUD omits the hero-name label, enemy counters, gold tally and permanent
 - Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
 - Use Source Sans 3 for compact resource values and cooldowns, with Balthazar for headings and symbols; inputs are icons, not captions. Avoid extra explanatory prose in play.
 - Keep geometry, colours and draw functions together so authored orb/frame art can replace the primitives later. Reuse the existing skill images.
-- Life follows the presented HP (`Presentation.pictured`), so it changes when a hit lands. Mana spent by Mana Shield follows each hit's impact; skill spending and flask sips update immediately, while natural recovery and cooldowns follow spent turns. The experience bar eases toward a turn's experience once that turn is drawn (`Presentation.xp_shown`). Layout code does not change gameplay.
 
-## Verification
+## Ownership and timing
 
-Use the existing check, test, shot and build scripts. Inspect full, partial, critical and empty resources, active ailments, cooldown/unavailable skills, primary/secondary sets, and controller/keyboard captions. Check centering and clipping at 1280x720, 1600x900 and 1920x1080. Verify the bind screen still works with the same binding data. Keep previews and reports in TEMP or the existing headless shot workflow; do not launch an interactive game.
+`src/ui/hud.zig` owns geometry and drawing; `src/game/overlay.zig` supplies
+game data through `drawHud` and `drawSkills`. The map spans `Game.screen`,
+with camera clearance from `hud.COVER`. The bind panel sizes for skill rows,
+wrapped descriptions and actions using Character's scale.
 
-## Implementation
+Life uses `Presentation.pictured`; Mana Shield spending follows its impact.
+Skill spending and flask sips update immediately; natural recovery and cooldowns
+follow spent turns. Life/mana fills ease in both directions while labels remain
+exact. New floors and resumed saves settle fills immediately. These floats are
+presentation-only and unsaved. XP follows `Presentation.xp_shown` once the turn
+is drawn.
 
-Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game/overlay.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Each slot's input is a `prompt_icon.Prompt` icon under it.
+`play/log.zig` owns saved history; `ui/journal.zig` draws it. New events return
+to the latest entry; the wheel or HUD inspector scrolls it.
 
-Small text is rasterized at its displayed size (17, 18, 20 and 24px) with point filtering, measured and drawn from the same atlas. Sizes through 18px use Source Sans 3; larger text uses Balthazar. Scaled panels use the corresponding mipmapped face, and map symbols retain Balthazar. Input icons are 25px tall with 17px labels, 6px below their slots. The 48px slots contain basic 30px procedural icons, with equal 8px horizontal gaps between all seven slots, including the modifier.
-
-The map spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind screen sizes its panel for the skill rows, longest available description and action buttons, using Character's `book.SIZE` as its scale reference over a veil. `play/log.zig` owns the saved event history in `Simulation.log`; `ui/journal.zig` draws its bottom-left panel, and the wheel or HUD inspector scrolls it.
-
-The dedicated captures are `shots/hud-full-1280.png`, `hud-partial-1600.png`, `hud-critical-1920.png`, `hud-empty-1600.png`, `hud-ps5-1280.png`, `hud-secondary-pad.png`, `hud-bind-pad.png`, `hud-bind-ps5.png`, `hud-bind-720.png`, `hud-inspect-skill.png`, `hud-inspect-status.png` and `hud-inspect-mana.png`. Use `--shot-ui` with the [temporary-directory capture procedure in AGENTS.md](../AGENTS.md#build-and-verification); previews and logs stay outside the repository.
-
-## Inspection wording
-
-Follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md). The 2026-10-20 pass puts a skill's
-effect before its resource cost, cooldown, targeting range and actual damage ranges.
-Ranks belong in the title when applicable. Free actions, remaining drinks and turns
-until ready use ordinary phrases. Ailments describe their consequence directly.
-Resource orbs retain compact label/value pairs. The tooltip supports wrapped
-paragraphs, explicit line breaks and these pairs together; no empty damage, rank,
-mana or cooldown table is added for utility actions.
+Use `--shot-ui` with [AGENTS.md](../AGENTS.md#verification). Inspect full,
+partial, critical and empty resources, ailments, cooldowns, unavailable skills,
+both sets, binding and device glyphs at 1280x720, 1600x900 and 1920x1080.
+Capture definitions live in `src/game/shots/`.
 
 ## Aseprite paint template
 
-The working file is `C:/Users/DavidBennett/Desktop/hud-elements.aseprite`. Its initial source copy is `assets/source/hud-elements.aseprite`. The sheet is 1024x1024 at native pixel scale; paint the individual components below the assembled reference on the top **Draw here** layer. Save the Aseprite document to preserve its layers and named slices.
+The working file is `C:/Users/DavidBennett/Desktop/hud-elements.aseprite`. Its canonical source copy is `assets/source/hud-elements.aseprite`. The sheet is 1024x1024 at native pixel scale; paint the individual components below the assembled reference on the top **Draw here** layer. Save the Aseprite document to preserve its layers and named slices.
 
-The dimensions below describe that existing template, which predates the compact HUD. It has not been regenerated or painted over. Inspect current owner edits before adapting it; provenance is recorded in [ART_PROVENANCE.md](ART_PROVENANCE.md).
+These are template dimensions, not current runtime geometry. Inspect owner edits before adapting the sheet; provenance is recorded in [ART_PROVENANCE.md](ART_PROVENANCE.md).
 
-The locked guide layers are **underdrawing (25%)**, **alignment (22%)**, and **labels and separators (45%)**, above a separate dark paper layer. **Draw here** is blank, editable and 100% opaque. Hide paper and every GUIDE layer for artwork exports. The assembled reference is guide-only; it is not a component to export.
+The locked guide layers are **underdrawing (25%)**, **alignment (22%)**, and **labels and separators (45%)**, above a separate dark paper layer. The initial **Draw here** layer is blank, editable and 100% opaque; inspect for later paint before exporting. Hide paper and every GUIDE layer for artwork exports. The assembled reference is guide-only; it is not a component to export.
 
 | Component slices | Size | Painting rule |
 | --- | --- | --- |
@@ -94,5 +85,3 @@ Numbers, resource labels, button captions and cooldowns remain code-rendered. Th
 `C:/Users/DavidBennett/Desktop/border.aseprite` holds the owner's gold border on `Layer 1`, a 73x55 cel at (1,1) on a 128x128 canvas. `tools/hud_art/export_border.lua` preserves that source and copies it to `assets/source/hud-border.aseprite`, exporting the native 73x55 rectangle to `assets/ui/hud-border.png`. It backs up existing files in `%TEMP%/hud-border-export/` and checks the reopened pixels and clear center. Run it with the Aseprite batch command in `TILE_ART_WORKFLOW.md`; inspect later owner edits before exporting again.
 
 `sprites.hudBorder` keeps the four original 9x9 corner regions and repeats the matching horizontal and vertical strips, clipping the last repeat without scaling, mirroring, rotating or recolouring the art. Nine-pixel cuts keep the dark corner-to-rail transition out of the repeated bottom edge. The texture loads with common play graphics and is shared by the bottom plate, skill slots and bind picker, status boxes, minimap, the character card, tooltips and prompts, the event log, menus and save rows, conversations and the death panel. Selected slots retain a coloured inner outline; unavailable slots retain their opacity fade. Status boxes are 40px to keep their icons and counts clear of the painted trim, and the minimap reserves a 9px frame. Orb rims and resource fills remain procedural.
-
-Life and mana fill levels ease both upward and downward using the XP bar's exponential rate (8/s). Labels remain exact. Fill targets use presented life and held mana: a pending bite cannot drain either orb before impact. A flask drink spends a turn and applies its first recovery tick on that turn, before foes act; the label updates on that frame while the fill eases normally. Mana inspection states recovery per five turns. New floors and resumed saves settle the fills immediately; these two floats are presentation only, never saved. The regression test checks held impact, exact easing in both directions, and convergence without overshoot.

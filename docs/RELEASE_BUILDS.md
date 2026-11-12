@@ -30,7 +30,7 @@ The README inside the archive lists runtime packages. System graphics libraries
 are supplied by Linux, rather than bundled from the build environment.
 
 For graphics reports, open the game menu's Debug > Diagnostics and capture the active vendor,
-renderer, OpenGL version and build mode. Debug > Display exposes fullscreen, VSync and a frame
+renderer, OpenGL version and build mode. Options > Display exposes fullscreen, VSync and a frame
 limit; Debug > Lighting and Effects let the tester isolate shadows, body/effect lighting,
 water reflections/glints, weather and the cinema effects. Settings are temporary for that session.
 Linux fullscreen uses the current monitor's native mode through GLFW, retaining the previous

@@ -34,21 +34,10 @@ conversion live in `save_format.zig` and `save_values.zig`. See [save compatibil
 
 ## Dependency boundaries
 
-gfx/lens.zig owns screen-space lens blur, perspective, vignette and colour filters,
-applied after the world (including its markers) and before the HUD and menus.
-Blur leaves the middle sharp, softly blurs the bottom and more strongly blurs
-the top. Perspective widens the foreground; game/mouse.zig uses the same
-inverse mapping at the selected strength when picking cells. ui/options.zig shares
-strength sliders under title Options > Visuals and Pause > Options > Visuals, including saturation,
-warmth, sepia, film grain, scanlines and chromatic aberration. The lens filters
-default to lens blur 10%, perspective 50%, vignette 85%, saturation 100%, warmth
-10%, sepia 5%, grain 0%, scanlines 60% and chromatic aberration 30%.
-Existing bloom, atmosphere and scenery focus default to 100% and also
-have strength sliders; their Debug switches refer to the same enabled state.
-Sliders support horizontal navigation in 5% steps, mouse dragging, per-value reset
-and Reset to defaults / Set all to 0. Display (fullscreen, VSync, frame limit)
-lives beside Visuals in Options. Vertical navigation and scrolling select rows. Settings last
-for the application session and do not enter run saves; the HUD remains unfiltered.
+`gfx/lens.zig` owns screen-space filters after the world and before HUD/menus.
+`game/mouse.zig` uses its inverse perspective mapping for cell picking.
+`ui/options.zig` owns Visuals controls; Display settings live beside them.
+Settings last for the application session and do not enter run saves.
 
 Visited terrain outside current sight is darkened and strongly desaturated by
 the cinema memory grade, blending back to full colour with visibility.
@@ -65,6 +54,13 @@ known tiles only, with overlapping edge fades rounding the inner corners; unseen
 cells stay fully covered. Wall-adjacent feather widths interpolate continuously
 to keep narrow corridors clear. Automatic chest/bag opening is
 suppressed while a foe is visible; deliberate interaction still works.
+
+Shadow casters sample light independently of fog; receiver visibility fades the
+landed mask. Culling includes silhouettes and blur beyond the camera, and actor
+birth/death timing follows presentation. Bind the receiver shader's light-map
+sampler after changing blend mode: raylib flushes auxiliary texture bindings on
+a blend change. Water reflections separate live bodies/effects from remembered
+scenery, preserve source visibility and compensate for the terrain lighting pass.
 
 Runtime imports in `play/`, `map/`, `game/sim.zig`, `game/attacks.zig`,
 `game/rewards.zig`, `game/foe_rules.zig`, `edit/plot_fields.zig` and `edit/preview.zig` are limited to core, play and map modules. The game rule
@@ -89,10 +85,6 @@ These helpers also cannot import Game, Presentation or the application.
 only elapsed cosmetic time and explicit mark inputs. `game/projectile_motion.zig`
 cannot import Game or Presentation. Presentation supplies visibility to its motion
 view, which retains the last visible position during a fade.
-Liquid drops, bleeding marks and floor stains use `pixel.oval`, whose smallest
-silhouette still has clipped corners. Leaf footfalls emit one or two small,
-translucent strokes with a short, low arc. `--shot` includes `particle-shapes.png`.
-
 ## Lifetimes
 
 `game/sim.zig` (Simulation)
@@ -201,29 +193,6 @@ Undo/redo swaps invalidate only affected thumbnails, or all thumbnails when node
 identity changes. Source wording and attribution remain separate transactions in
 `text_catalog.zig` and `text_panel.zig`; map undo never rewrites source files.
 
-## Finding input, editor and character UI behavior
-
-| Change | Owner |
-| --- | --- |
-| Device polling and input context | `core/input.zig`: `State.update` orders pointer, button, text, tree and movement reads; all device reads remain here |
-| Movement repeat and stick hysteresis | `core/input_repeat.zig`: `Stepper`, `RadialStepper` and their pure repeat tests |
-| Contextual bindings and Desk shortcuts | `core/input_bindings.zig`: tables and checked captions, with no device polling |
-| Input glyph naming | `core/input_names.zig`: device labels and marked captions |
-| Light sampling and baking | `gfx/light.zig`: source state and bake orchestration; `light_model.zig` owns shading math and source types |
-| Light drawing and resources | `gfx/light_gpu.zig`: shader/texture lifetime, uploads and draw operations |
-| Editor tools, shapes, descriptions and help | `edit/tool_catalog.zig`; it does not access Editor or Game |
-| Editor naming and paste validation | `edit/name_field.zig`: bounded naming fields fed by Desk snapshots |
-| Character navigation and commands | `ui/book.zig`: `Book.step`, selection and panel drawing |
-| Character read-only inputs and command types | `ui/character_view.zig`: `View`, `Nearby`, `Page` and `Command` |
-| Shared character geometry | `ui/character_layout.zig`: panel, tab, list and equipment bounds shared by drawing and hit testing |
-| Item-card rows and typography | `ui/item_card.zig`: card drawing, height and typography verification |
-| Main and advanced character statistics | `ui/character_stats.zig`: columns, status chances and typography verification |
-
-The existing `input.Stepper`, `editor.Tool`, `book.View` and related exports remain
-entry points for callers. The extracted character renderers read a `View` without
-access to Book navigation, Game or editor state. Tests stay with their owning
-logic; integration tests continue to exercise the public entry points.
-
 ## Verification
 
 Dialogue layout and pagination live in `ui/talk.zig`; `game/talking.zig` owns the
@@ -233,7 +202,7 @@ scrolling and the source text concern tree are documented in [TEXT_EDITOR.md](TE
 `core/wire.zig` traverses aggregate save values by reference, so large authored
 dialogue buffers do not create recursive stack copies during encoding.
 
-Run `check.cmd` and affected test filters for each migration, then the full suite
+Run `check.cmd` and affected test filters for each change, then the full suite
 after combat, scheduling or lifecycle changes. Preserve seeded outcomes and the
 legacy reader fingerprint and portable save identities. Tests use in-memory saves and maps. Run actual headless
 captures for presentation/editor changes, inspect PNGs, benchmark, and finish with

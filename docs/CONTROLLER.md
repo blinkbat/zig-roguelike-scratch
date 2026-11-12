@@ -1,33 +1,10 @@
 # Controller
 
-The controller is the primary input; the keyboard mirrors it. Path of Exile 2's controller scheme is the high-water
-mark. Everything that touches a device is `src/core/input.zig`.
+The controller is primary; keyboard and mouse mirror its actions.
+`src/core/input.zig` alone polls devices. Binding tables, glyph names and repeat
+behavior live in `input_bindings.zig`, `input_names.zig` and `input_repeat.zig`.
 
-## Path of Exile 2
-
-What PoE2 does, from player reports and guides (late 2024 to 2025; no official map was found, so check in game):
-
-- **Skills sit on buttons, not a numbered bar.** Face buttons, bumpers and triggers each hold a skill. A second set
-  is used while a modifier is held, a shoulder by default (reports say LB; some say LT), and the modifier can be
-  rebound or made a toggle. Dodge roll is B.
-- **Binding is a screen of slots.** Pick a slot, then the skill for it; or pick a skill and press the button to put it
-  on. The secondary-set modifier is itself a bindable slot ("Activate Secondary Skill Set").
-- **Held buttons open menus.** Holding View (PS: touchpad) opens a radial; its 6 o'clock entry is the bind screen.
-  Holding Menu (inventory) is also reported to reach rebinding. A tap of Menu opens the inventory.
-- **Historical reports of no live switching between pad and keyboard.** PoE2 picks its control mode at the menu, and prompts stay in it
-  until restart; players ask for the Diablo IV / Baldur's Gate 3 behaviour, where prompts follow whatever was last
-  touched.
-
-Sources: [Steam: hold back for the mini menu](https://steamcommunity.com/app/2694490/discussions/0/594008672803383278),
-[Steam: hold select, bottom of the radial](https://steamcommunity.com/app/2694490/discussions/0/598513665563476233),
-[PoE forum: toggle secondary skill set](https://www.pathofexile.com/forum/view-thread/3892566),
-[Keymap Labs](https://keymap.io/controls/path-of-exile-2/),
-[Game8: dodge](https://game8.co/games/Path-of-Exile-2/archives/490382),
-[Deltia's: binding skills](https://deltiasgaming.com/?p=95876),
-[Steam: no on-the-fly switching](https://steamcommunity.com/app/2694490/discussions/0/598513772173271367),
-[PoE forum: simultaneous inputs](https://www.pathofexile.com/forum/view-thread/3673537).
-
-## Ours
+## Devices and options
 
 Options > Visuals and Pause > Options > Visuals share effect sliders. Vertical navigation selects a
 row; horizontal navigation adjusts it in 5% steps. Confirm switches between a
@@ -40,7 +17,7 @@ including beyond their ends to reach the limits, and scroll through the list.
 No screen names a key or button in prose. Control hints use glyphs throughout, including the editor.
 The skill bar and bind screen show each slot's input as an icon of the
 device last pressed (`State.device`, `prompt_icon.Prompt`): any gamepad button or the stick pushed past walking makes it the
-pad; any key, mouse movement, mouse button or wheel motion selects keyboard/mouse hints. A stationary cursor leaves controller navigation alone, and no pad plugged in is always the keyboard. This behavior is deliberate; the dated reports above do not establish the latest PoE2 client. HUD tooltips spend no turn.
+pad; any key, mouse movement, mouse button or wheel motion selects keyboard/mouse hints. A stationary cursor leaves controller navigation alone, and no pad plugged in is always the keyboard. HUD tooltips spend no turn.
 
 GLFW maps every pad onto Xbox's buttons by place, so the table names Xbox's. A Sony pad (vendor `054c` in the
 joystick's GUID, `input.padOf`) shows PlayStation's icons instead: Cross A, Circle B, Square X, Triangle Y, L1/R1 the
@@ -48,8 +25,7 @@ bumpers, L2/R2 the triggers. The right-stick click (RS/R3) opens Inspect. The le
 PS button do nothing; GLFW reads no touchpad.
 
 - **Mappings** (`input.mapPads`): `assets/data/gamecontrollerdb.txt` is SDL_GameControllerDB at commit `c1d5289`
-  (2026-10-02, zlib, `assets/data/gamecontrollerdb-LICENSE`), embedded and newer than the copy GLFW ships (which lacks the
-  DualSense Edge). `SDL_GAMECONTROLLERCONFIG`, then a `gamecontrollerdb.txt` beside the exe, take over the pads they
+  (zlib, `assets/data/gamecontrollerdb-LICENSE`), embedded to supplement GLFW's mappings. `SDL_GAMECONTROLLERCONFIG`, then a `gamecontrollerdb.txt` beside the exe, take over the pads they
   name, so a new pad needs no rebuild. To update, replace the asset from the repo's `gamecontrollerdb.txt`.
 - **Which pad**: the first of raylib's four slots that GLFW has a mapping for, until another pad presses a button or
   pulls a trigger past its latch (`input.choosePad`). A wheel or an unmapped joystick is passed over.
@@ -63,6 +39,8 @@ PS button do nothing; GLFW reads no touchpad.
   latches keep polling so a held trigger does not register a new press on return.
 - **Triggers** press past 60% of their travel and let go under 40% (`input.TRIGGER_ON`/`OFF`), not raylib's one line
   at 55%, so a finger resting on RT does not fire its slot over and over.
+
+## Bindings
 
 | Action | Pad | Keyboard |
 |---|---|---|
@@ -97,7 +75,7 @@ PS button do nothing; GLFW reads no touchpad.
 Class kits and template bindings live in `skillbar`; `progress.State` filters new-run defaults and the bind picker to learned skills.
 With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B, RB, RT.
 
-### Mouse
+## Mouse
 
 Arcane Barrier and Fire Wall use two ordinary targeting confirmations for their endpoints. With the
 mouse, press on the first endpoint, drag to preview the straight line and release to
@@ -111,6 +89,8 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
 - Character and Menu buttons sit in the bottom-right gutter with keyboard/mouse hints. Right-click during play also opens the game menu. Character tabs, shoulder arrows, equipment, inventory, loot, tree actions and binding controls accept clicks. Click an item, skill, passive node or binding slot to select it; moving toward its action button preserves that selection. The wheel scrolls lists and the event log.
 - On Passives, wheel to zoom and drag with the middle button to pan; release stops the drag. The visible Overview action resets zoom and pan. Selection, pan and zoom spend no points. Use the visible allocation or upgrade action to spend one point.
 - The death screen's action is clickable once the lethal turn finishes. The editor retains paint/erase, wheel zoom and middle-drag pan, with clickable Copy/Cut/Paste/Clear/Fit controls and right-click to close modals. Play here (top bar) and Go through (Doors tab) arm the next map-cell click; right-click cancels. These actions neither paint nor change the map.
+
+## Interaction contracts
 
 - **Everything is slots.** On the pad a slot is its button. On the keyboard it is a number (`input.SLOT_ORDER`), and
   the slot holding "Activate Secondary Skill Set" is Ctrl instead, so moving the modifier renumbers the rest. The bar
@@ -129,7 +109,7 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   Leap destinations remain freely aimed. Selecting or replacing a target spends nothing and never fires automatically;
   the normal confirmation is still required. A direct mouse click on an enemy is explicit targeting and confirmation.
   Target memory clears on level changes, restarts and save loads.
-- **Character and Game are separate.** Start opens Character with its last page selected and focus on the tabs; confirm enters the page, and another Start press closes Character. F1–F5 open the corresponding Character page, switch pages directly, and close an already open matching page. Their glyphs appear on the tabs when using the keyboard. These shortcuts cancel an unconfirmed reticle and spend no turn. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
+- **Character and Game are separate.** Start opens Character with its last page selected and focus on the tabs; confirm enters the page, and another Start press closes Character. F1–F5 and F7 open the corresponding Character page, switch pages directly, and close an already open matching page. Their glyphs appear on the tabs when using the keyboard. These shortcuts cancel an unconfirmed reticle and spend no turn. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
 - **Binding belongs to Skills.** Its bind action carries a learned skill to the slot screen; select a destination and confirm once. Back returns to Skills. The picker remains available for utility skills and the secondary-set modifier. Clearing a slot is direct. Binding spends no turn.
 - **Pause > Debug** groups controls into Gameplay (Restart Map, Reveal Map, Unkillable), Lighting
   (Composed Lighting, Shadows, Body Lighting, Effect Lights), Effects (Bloom, Atmosphere, Depth Of Field,
@@ -141,8 +121,10 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   Reveal changes neither normal sight nor saved exploration. Back returns one submenu at a time,
   retaining the parent selection, before returning to Pause.
 - **Character** contains equipment, inventory, stats, shared passives and class skills. Shoulders / Q and E change pages from anywhere. Clicking a tab enters its content. Back returns from page content to the tabs, then closes Character from the tabs. Equip, unequip, drop and point allocation each take one deliberate action; no action submenu or confirmation modal. Rings have an explicit destination switch and the comparison follows that destination. Successful item actions keep the screen open and still spend one turn. Point allocation is free of simulation turns. The underlying inventory/progression transactions remain authoritative.
-- The passive tree starts zoomed in, at `trees.ZOOM_START`. Left-stick bearing browses, right stick pans, D-pad up/down zooms. Shifted keyboard navigation pans; =/-, keypad +/- and Page Up/Down zoom; right-stick click / Home gives the overview. Pan and zoom never allocate points.
-- **Interact** or a first bump opens a closed chest for one turn, revealing its items and gold without opening a panel. Stepping onto a loose bag or stocked open chest opens loot for the movement turn; bags stay walkable even when loot is left behind. Ground gold without items uses a coin drop and auto-loots when stepped onto, with no extra turn or modal. Gold with items shares their bag. Interact browses a sole visible bag/open chest within reach for free, or takes a sole coin drop for one turn. Multiple nearby drops/containers/doors first offer a choice; selecting an entry affects only that cell. Doors always keep a choice, preventing queued input from immediately returning through an arrival door. Loot offers Take item for the selected row through the confirm control and Take all through the change control, with device glyphs and clickable buttons; its gold is no row, shown beside the position count and taken free as the loot closes. Everything taken during one loot visit is one action: the turn is spent once, when the loot closes (Back, emptied or left for another screen), and only if something was taken; Take all fills available inventory space and leaves excess items. Gold needs no inventory space. The modal closes when empty. Busy input waits for the current turn or door travel. Movement and browsing never collect gold from bags or chests.
+- Loot opening, gold collection and turn accounting follow
+  [PROGRESSION.md](PROGRESSION.md#inventory-and-loot-transactions).
+  Loot offers Take item on confirm and Take all on change, with glyphs and clickable
+  buttons. Busy input waits for the current turn or door travel.
 - **Inspect** walks visible onscreen characters, the life orb, skill slots, mana orb, active statuses and event log without spending a turn.
   Every unit card shows only its name (title case for foes, the hero's own name) and pictured HP, then a divider and the tile with its signed effects.
   Page controls and the mouse wheel scroll long cards. The
@@ -155,23 +137,8 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   In Objects, select a foe and choose Fight (or Enter) to test it in an arena. The pause menu returns to the
   unchanged editor; death retry or Debug > Gameplay > Restart Map resets the fight.
 
-## Binding and glyph audit, 2026-10-20
+## Verification
 
-The second pass checked play, targeting, Character, both trees, binding, Inspect, naming, title/options, save deletion and the desk editor. The defaults remain controller-first, with keyboard mirrors. Targeting still needs an explicit commit because it spends a roguelike turn; menus do not add another confirmation after that choice. Save deletion retains its second press because it destroys a run.
-
-| Finding | Fix |
-|---|---|
-| Character buried in Pause; bind screen hidden behind a hold | Separate Start/Select entry points, binding in Skills |
-| Four confirmations to equip, multiple back layers | One direct command, one back to play; gear screen stays open |
-| Tab navigation steals content focus | Opens on the tabs, confirm enters a page and Back returns; inside a page the shoulders/Q/E still switch pages and list and node navigation stay in content |
-| Direction held through page changes moves the new cursor | Consume carried navigation on page changes |
-| Tiny fixed book | Window-scaled panels, larger body/detail type, matching hit regions and tree clipping |
-| Old icons survived the button remapping | `Prompt.of` derives from `Button.pad`; Xbox Menu/View and Sony Options/Share/Create checked |
-| Keyboard back looked like an arbitrary letter | Escape is the primary back glyph; X remains an alias |
-| Binding actions and mouse targets unclear | Explicit glyph actions, direct selected-skill assignment, scaled mouse targets and wrapped descriptions |
-| Clicking UI left controller hints active | Mouse movement, buttons and wheel select keyboard/mouse prompts; a stationary cursor leaves controller selection alone |
-| Queued interaction could bounce through a door | Direct opening limited to sole bags/chests; doors keep their choice |
-
-[D2R's console account](https://news.blizzard.com/en-us/article/23722094/bringing-the-original-diablo-ii-experience-to-console) supports direct skill trays and adapting interaction to the device. GGG's [PoE2 0.1.1c notes](https://webcdn.pathofexile.com/forum/view-thread/3717308) explicitly cover controller font enlargement, item navigation, dedicated interface-confirm bindings, advanced item information and a full-inventory weapon-swap fix. The useful comparison is direct access, readable consequences, consistent device hints and intact transactions. These are dated primary sources, not claims about every present-day default.
-
-Mapping/state tests and rendered captures do not substitute for a physical controller play session. `--shot-ui` captures Character, loot, HUD and level-up studies without rerunning the map/effect studies; run it from a temporary working directory as with `--shot`.
+Mapping/state tests and rendered captures do not substitute for physical controller
+testing. Use `--shot-ui` for Character, loot, HUD and binding, and `--shot-trees`
+for trees, following [AGENTS.md](../AGENTS.md#verification). Keep previews in TEMP.

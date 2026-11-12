@@ -5,7 +5,7 @@ not automatically an owner original: some contain assistant-built extensions of 
 Keep original paint and derived work separate in editable sources. Do not regenerate over
 later owner edits.
 
-## Needs an owner art pass
+## Procedural art and placeholders
 
 | Element | Attribution | Location | Review |
 |---|---|---|---|
@@ -16,9 +16,6 @@ later owner edits.
 | Event panel | Owner border, assistant layout and colors | `src/ui/journal.zig`, `assets/ui/hud-border.png` | Layout/color review; border painting is the owner's |
 | Missing body/tile pictures | Assistant glyph fallback | `src/gfx/look.zig`: body/tile lookup | Unpainted kinds retain glyphs |
 | Combat effects, weather, lighting, water reflections | Assistant procedural rendering | `src/gfx/fx.zig`, `pixel.zig`, `weather.zig`, `light.zig`, `shadow.zig`, `light_gpu.zig`; map drawing | Effects review; these are not painted source pixels |
-
-The original inventory/progression pass used code-drawn placeholders. The later loot-container
-pass registers the supplied bag and coin PNGs below without changing their pixels.
 
 ## Owner originals and derived terrain
 
@@ -43,7 +40,7 @@ documented scripts; it does not mean every resulting tile has been hand-painted 
 | `assets/plants/flowers.png` | Owner-supplied 64x64 raster; editable source and individual authorship not verified | Scattered on separate grass tiles alongside brush by stable cell position; original pixels unchanged | Supplied raster preserved at native scale |
 | `assets/bodies/beefy-pib.png` | Owner-supplied 64x64 raster, placed in `assets/` by the owner; editable source not recorded | Registered as the beefy pib's body; original pixels unchanged | Supplied raster preserved |
 | `assets/bodies/bandit-crossbowman.png` | Owner-supplied 64x64 raster in `assets/`; editable source and individual authorship not verified | Registered as the bandit crossbowman's body; original pixels unchanged | Supplied raster preserved at native scale |
-| `assets/props/caravan-cart.png` | Owner-supplied 128x128 raster in `assets/`; editable source not recorded | Registered as the `caravan` prop: stands on two cells, rising a cell above them; not yet placed on any map; original pixels unchanged | Supplied raster preserved at native scale |
+| `assets/props/caravan-cart.png` | Owner-supplied 128x128 raster in `assets/`; editable source not recorded | Registered as the `caravan` prop: stands on two cells, rising a cell above them; original pixels unchanged | Supplied raster preserved at native scale |
 | `assets/plants/glowbulb.png` | Owner-supplied 64x64 raster in `assets/`; editable source not recorded | Registered as the glowbulb (`glow_plant`) prop's picture over its grass, replacing its `&` glyph; original pixels unchanged | Supplied raster preserved at native scale |
 | `assets/bodies/pib-shaman.png` | Owner-supplied 64x64 raster in `assets/`; editable source not recorded | Registered as the pib shaman's body; original pixels unchanged | Supplied raster preserved at native scale |
 | `assets/bodies/bandit-trapper.png` | Owner-supplied 64x64 raster in `assets/`; editable source and individual authorship not verified | Registered as the bandit trapper's body; original pixels unchanged | Supplied raster preserved at native scale |
@@ -82,8 +79,7 @@ water shader, including its camera gradient, reflections and glints. No lighting
 into these assets. `water_cliff_materials.lua` shares the source-to-deep palette and material
 classification between the port and exporter.
 
-The owner subsequently requested half-height shallow cliffs. `pinch_shallow_cliff.lua`
-derives `Shallow cliff - half height` in the shallow canonical source, preserving original
+`pinch_shallow_cliff.lua` derives `Shallow cliff - half height` in the shallow canonical source, preserving original
 layer 8 hidden and unchanged. It keeps each lip row and horizontal position, compresses
 the face column to half its height with native-palette endpoint sampling, and moves matching
 border edits. Shallow caps/profiles and the 6/64-cell shadow height follow that adjustment.
@@ -98,7 +94,7 @@ owner originals.
 ## Existing raster files awaiting individual attribution
 
 The project describes these as supplied PNG art, but their individual source files and edit
-histories have not been verified in this pass. This is an attribution task, not an instruction
+histories have not been verified. This is an attribution task, not an instruction
 to repaint or replace them.
 
 | Group | Runtime files | Status |
@@ -111,10 +107,10 @@ to repaint or replace them.
 `Balthazar-Regular.ttf` is third-party font art, covered by `Balthazar-OFL.txt`.
 `SourceSans3-Regular.ttf` is Adobe's unmodified Source Sans 3, used for compact UI text,
 covered by `SourceSans3-OFL.txt`. Source: [Adobe's release tree](https://github.com/adobe-fonts/source-sans/tree/87b37a2daaed80fcb8e8ccb0085c4d72ddade12e),
-`TTF/SourceSans3-Regular.ttf`; retrieved 2026-10-22. Balthazar remains the display face.
+`TTF/SourceSans3-Regular.ttf`. Balthazar remains the display face.
 Controller mappings are data, covered by `gamecontrollerdb-LICENSE`.
 
-## Rules for future changes
+## Attribution rules
 
 - Record each new asset here as owner original, assistant-derived, assistant placeholder,
   third-party, or unverified; include its editable source and review status.
