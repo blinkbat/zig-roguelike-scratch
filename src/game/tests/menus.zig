@@ -417,6 +417,51 @@ test "Debug graphics toggles are independent and spend no simulation" {
     }
 }
 
+test "Options sliders are independent and return through their parent without a turn" {
+    const options = @import("../../ui/options.zig");
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const clock = g.sim.clock;
+    const rng = g.sim.rng;
+    character.openPause(g);
+    g.pause_menu.at = game.rowAt(game.PauseRow.options);
+    harness.press(g, CONFIRM);
+    try std.testing.expectEqual(game.PausePage.options, g.pause_page);
+    g.pause_menu.at = options.index(.main, .visuals);
+    harness.press(g, CONFIRM);
+    try std.testing.expectEqual(game.PausePage.visuals, g.pause_page);
+    inline for (std.meta.fields(@TypeOf(g.cinema.lens.options))) |field| {
+        g.pause_menu.at = options.index(.visuals, @field(options.Row, field.name));
+        const defaults: @TypeOf(g.cinema.lens.options) = .{};
+        for ([_]mathx.Dir{ .e, .w }) |direction| {
+            harness.nudge(g, direction);
+            inline for (std.meta.fields(@TypeOf(g.cinema.lens.options))) |other| {
+                const adjustment: f32 = if (direction == .e and std.mem.eql(u8, field.name, other.name)) 0.05 else 0;
+                try std.testing.expectApproxEqAbs(@field(defaults, other.name) + adjustment, @field(g.cinema.lens.options, other.name), 0.0001);
+            }
+        }
+    }
+    harness.press(g, BACK);
+    try std.testing.expectEqual(game.PausePage.options, g.pause_page);
+    g.pause_menu.at = options.index(.main, .display);
+    harness.press(g, CONFIRM);
+    try std.testing.expectEqual(game.PausePage.display, g.pause_page);
+    harness.press(g, BACK);
+    try std.testing.expectEqual(game.PausePage.options, g.pause_page);
+    g.pause_menu.at = options.index(.main, .debug);
+    harness.press(g, CONFIRM);
+    try std.testing.expectEqual(game.PausePage.debug, g.pause_page);
+    harness.press(g, BACK);
+    try std.testing.expectEqual(game.PausePage.options, g.pause_page);
+    try std.testing.expectEqual(options.index(.main, .debug), g.pause_menu.at);
+    harness.press(g, BACK);
+    try std.testing.expectEqual(game.PausePage.main, g.pause_page);
+    try std.testing.expectEqual(game.rowAt(game.PauseRow.options), g.pause_menu.at);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(rng, g.sim.rng);
+}
+
 test "Debug reveal toggles map terrain without spending turns or changing explored cells" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

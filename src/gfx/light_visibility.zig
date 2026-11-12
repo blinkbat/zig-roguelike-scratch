@@ -7,9 +7,9 @@ const smooth = mathx.smooth;
 
 /// Per second.
 pub const REVEAL: f32 = 14.0;
-const FORGET: f32 = 5.0;
+const FORGET: f32 = 12.0;
 const VOID_FADE: f32 = 1.5;
-const SIGHT_FADE: f32 = 0.4;
+const SIGHT_FADE: f32 = 1.0;
 pub const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
 const VOID_SPAN: usize = @intCast(grid.Cells.span(VOID_REACH));
 pub const View = struct { sight: f32, memory: f32, lit: f32 };
@@ -113,6 +113,8 @@ fn hidesGround(t: grid.Tile) bool {
 
 const Fade = struct {
     flat: ?f32 = null,
+    origin: P = .{ .x = 0, .y = 0 },
+    sight_fade: [4]f32 = @splat(SIGHT_FADE),
     n: usize = 0,
     short: [grid.Cells.square(VOID_REACH)]Short = undefined,
 
@@ -125,15 +127,24 @@ const Fade = struct {
 
     fn at(f: *const Fade, x: f32, y: f32, sight: f32) f32 {
         if (f.flat) |v| return v;
-        const reach = mathx.lerpF(VOID_FADE, SIGHT_FADE, sight);
+        const width = mathx.bilerp(f.sight_fade, x - @as(f32, @floatFromInt(f.origin.x)), y - @as(f32, @floatFromInt(f.origin.y)));
+        const reach = mathx.lerpF(VOID_FADE, width, sight);
         var v: f32 = 1;
+        var across: f32 = 1;
+        var along: f32 = 1;
         for (f.short[0..f.n]) |c| {
             const dx = @max(0, @max(c.x - x, x - c.x - 1));
             const dy = @max(0, @max(c.y - y, y - c.y - 1));
             if (dx >= reach or dy >= reach) continue;
-            v = @min(v, mathx.lerpF(c.m, 1, smooth(mathx.len(dx, dy) / reach)));
+            const edge = mathx.lerpF(c.m, 1, smooth(mathx.len(dx, dy) / reach));
+            v = @min(v, edge);
+            const length2 = dx * dx + dy * dy;
+            if (length2 > 0) {
+                across = @min(across, mathx.lerpF(1, edge, dx * dx / length2));
+                along = @min(along, mathx.lerpF(1, edge, dy * dy / length2));
+            }
         }
-        return v;
+        return @min(v, across * along);
     }
 };
 
@@ -157,8 +168,8 @@ pub const Visibility = struct {
     }
 
     pub fn terrain(self: *Visibility, level: *const grid.Level) void {
-        for (&self.see_through, &self.ground, &level.tile) |*k, *g, t| {
-            k.* = mask(!t.blind());
+        for (&self.see_through, &self.ground, &level.tile, 0..) |*k, *g, t, i| {
+            k.* = mask(!level.blocksSight(grid.Level.of(i)));
             g.* = mask(!hidesGround(t));
         }
     }
@@ -259,7 +270,17 @@ pub const Visibility = struct {
         const own = self.memoryAt(c);
         if (own <= 0) return .{ .flat = 0 };
         if (own >= 1 and self.whole(c)) return .{ .flat = 1 };
-        var f = Fade{};
+        var f = Fade{ .origin = c };
+        for (&f.sight_fade, 0..) |*width, i| {
+            const vertex = c.add(mathx.unslot(i, 2));
+            var adjacent = grid.Cells.of(vertex.sub(.{ .x = 1, .y = 1 }), vertex.add(.{ .x = 1, .y = 1 }));
+            while (adjacent.next()) |p| {
+                if (grid.cellOr(f32, &self.see_through, p, 0) == 0) {
+                    width.* = 0.4;
+                    break;
+                }
+            }
+        }
         var box = grid.Cells.around(c, VOID_REACH);
         while (box.next()) |p| {
             const m = self.memoryAt(p);

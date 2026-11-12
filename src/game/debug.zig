@@ -12,12 +12,11 @@ const font = @import("../gfx/font.zig");
 const cinema = @import("../gfx/cinema.zig");
 const light = @import("../gfx/light.zig");
 
-pub const Page = enum { main, gameplay, lighting, effects, display, diagnostics };
+pub const Page = enum { main, gameplay, lighting, effects, diagnostics };
 pub const Row = enum {
     gameplay,
     lighting,
     effects,
-    display,
     diagnostics,
     restart_map,
     reveal_map,
@@ -32,9 +31,6 @@ pub const Row = enum {
     water_reflections,
     water_glints,
     weather,
-    fullscreen,
-    vsync,
-    frame_limit,
     performance_overlay,
 };
 
@@ -76,13 +72,11 @@ pub const Perf = struct {
 
 pub const State = struct {
     page: Page = .main,
+    parent: game.PausePage = .main,
     visuals: Visuals = .{},
-    vsync: bool = true,
-    limit: usize = 0,
     performance_overlay: bool = true,
 };
 
-const LIMITS = [_]i32{ 0, 30, 60, 120, 144 };
 
 fn rowOf(comptime page: Page) Row {
     return @field(Row, @tagName(page));
@@ -104,7 +98,6 @@ pub fn rows(page: Page) []const Row {
         .gameplay => &.{ .restart_map, .reveal_map, .unkillable },
         .lighting => &.{ .composed_lighting, .shadows, .body_lighting, .effect_lights },
         .effects => &.{ .bloom, .atmosphere, .depth_of_field, .water_reflections, .water_glints, .weather },
-        .display => &.{ .fullscreen, .vsync, .frame_limit },
         .diagnostics => &.{.performance_overlay},
     };
 }
@@ -131,6 +124,7 @@ pub fn select(g: *game.Game, row: Row) void {
 }
 
 pub fn open(g: *game.Game, page: Page) void {
+    if (g.pause_page != .debug) g.debug.parent = if (g.pause_page == .options) .options else .main;
     g.pause_page = .debug;
     g.debug.page = page;
     g.pause_menu = .{};
@@ -182,11 +176,6 @@ pub fn option(g: *game.Game, row: Row) ?*bool {
     return null;
 }
 
-pub fn syncDisplay(g: *const game.Game) void {
-    if (g.debug.vsync) rl.setWindowState(.{ .vsync_hint = true }) else rl.clearWindowState(.{ .vsync_hint = true });
-    rl.setTargetFPS(LIMITS[g.debug.limit]);
-}
-
 pub fn step(g: *game.Game) void {
     var state = g.st;
     if (g.debug.page == .diagnostics) {
@@ -196,8 +185,8 @@ pub fn step(g: *game.Game) void {
     }
     if (menu.backed(&state) or (g.debug.page != .diagnostics and menu.backedAt(&state, g.screen))) {
         if (g.debug.page == .main) {
-            g.pause_page = .main;
-            g.pause_menu.at = game.rowAt(game.PauseRow.debug);
+            g.pause_page = g.debug.parent;
+            g.pause_menu.at = if (g.pause_page == .options) @import("../ui/options.zig").index(.main, .debug) else game.rowAt(game.PauseRow.debug);
         } else {
             const row: Row = switch (g.debug.page) {
                 .main => unreachable,
@@ -219,15 +208,6 @@ pub fn step(g: *game.Game) void {
     switch (row) {
         .restart_map => game.restart(g),
         .reveal_map => game.scene.toggleReveal(g),
-        .fullscreen => game.syncScreen(g, true),
-        .vsync => {
-            g.debug.vsync = !g.debug.vsync;
-            syncDisplay(g);
-        },
-        .frame_limit => {
-            g.debug.limit = mathx.wrap(g.debug.limit, 1, LIMITS.len);
-            syncDisplay(g);
-        },
         inline else => |r| {
             if (comptime (!switched(r) and opens(r) == null)) @compileError("Debug row " ++ @tagName(r) ++ " does nothing");
             unreachable;
@@ -238,13 +218,11 @@ pub fn step(g: *game.Game) void {
 pub const LABEL_MAX: usize = 64;
 
 pub fn label(g: *game.Game, comptime row: Row, buf: []u8) [:0]const u8 {
+    _ = buf;
     const name = comptime menu.titleOf(row);
     if (option(g, row)) |on| return menu.toggle(name, on.*);
     return switch (row) {
         .reveal_map => menu.toggle(name, g.light.reveal_map),
-        .fullscreen => menu.toggle(name, window.fullscreen()),
-        .vsync => menu.toggle("VSync", g.debug.vsync),
-        .frame_limit => if (LIMITS[g.debug.limit] == 0) name ++ ": Uncapped" else std.fmt.bufPrintZ(buf, name ++ ": {d} FPS", .{LIMITS[g.debug.limit]}) catch name,
         else => name,
     };
 }

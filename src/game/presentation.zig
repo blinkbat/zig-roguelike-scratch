@@ -33,6 +33,7 @@ pub fn flown(n: usize) f32 {
 
 /// Presentation only: the hit already resolved when this was made.
 pub const Shot = struct {
+    view: MotionView = .{},
     flight: bow.Flight,
     from: P,
     act: skillbar.Act = .shoot,
@@ -58,10 +59,7 @@ pub const Shot = struct {
     }
 
     pub fn direction(self: *const Shot) [2]f32 {
-        const a = mathx.centre(self.from);
-        const b = self.position(self.ends());
-        const len = @max(0.001, mathx.len(b[0] - a[0], b[1] - a[1]));
-        return .{ (b[0] - a[0]) / len, (b[1] - a[1]) / len };
+        return mathx.unitToward(mathx.centre(self.from), self.position(self.ends()));
     }
 
     /// false once it has ended.
@@ -99,10 +97,11 @@ test "missiles move continuously to the existing impact time in every direction"
 }
 
 /// Seconds a firebolt takes over each cell it flies.
-pub const BOLT_CELL_S: f32 = 0.09;
+const BOLT_CELL_S: f32 = 0.09;
 
 /// A firebolt as drawn: from `from` to `to` over `span` seconds once `t` reaches 0; seen before then if `before`, and after if `after`.
 pub const BoltShown = struct {
+    view: MotionView = .{},
     from: [2]f32,
     to: [2]f32,
     heading: [2]f32,
@@ -224,13 +223,45 @@ pub const Harm = struct { kill: bool, after: fx.After, recovery: ?fx.After = nul
 /// `in` is set once the turn it was taken in has its stagger.
 pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
 
+pub const SeenBody = struct {
+    at: rl.Vector2,
+    pic: fx.Body,
+    lift: i32,
+    facing: actor.Facing,
+    opacity: f32,
+    dark: f32,
+    flash: f32,
+};
+
+pub const MotionView = struct {
+    at: ?[2]f32 = null,
+    alpha: f32 = 0,
+
+    fn step(self: *MotionView, pic: *const Presentation, sim: *const Simulation, at: ?[2]f32, k: f32) void {
+        const visible = if (at) |p| pic.litShown(sim, mathx.cellOf(p)) else false;
+        if (visible) self.at = at;
+        self.alpha = mathx.ease(self.alpha, if (visible) 1 else 0, k, k);
+        if (self.alpha == 0) self.at = null;
+    }
+};
+
+pub const SeenCell = struct {
+    alpha: f32 = 0,
+    bag: bool = false,
+    coins: i32 = 0,
+    npc: ?usize = null,
+    flame: f32 = 0,
+    barrier: bool = false,
+    caltrops: bool = false,
+};
+
 /// When each `Presentation` field is reset, every field in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
-    pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "lit", "tiles", "embers", "burnt", "busy", "lead", "bolt_lands", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
+    pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "lit", "lit_kindled", "tiles", "embers", "burnt", "busy", "lead", "bolt_lands", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
     pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
     pub const facing = [_][]const u8{"facing"};
-    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown" };
+    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "seen_bodies", "seen_cells", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown" };
     pub const scratch = [_][]const u8{ "ground_shown", "burnt_ground", "burnt_box" };
     /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
     pub const kept = [_][]const u8{ "seq", "fx", "occluder" };
@@ -246,6 +277,8 @@ pub const Presentation = struct {
     turning: [actor.MAX]?Turning = @splat(null),
     /// How far into sight each body has faded; 0 while unseen.
     sighted: [actor.MAX]f32 = @splat(1),
+    seen_bodies: [actor.MAX]?SeenBody = @splat(null),
+    seen_cells: [grid.CELLS]SeenCell = @splat(.{}),
     pictured: [actor.MAX]fx.Body = undefined,
     /// The blows dealt so far, so the picture takes them in the order they were dealt.
     seq: u64 = 0,
@@ -267,6 +300,7 @@ pub const Presentation = struct {
     knocked_from: ?P = null,
     bursting: ?Bursting = null,
     lit: Held([grid.CELLS]bool) = .{ .before = @splat(false) },
+    lit_kindled: bool = false,
     /// The ground's flames, barrier and caltrops as drawn: the simulation's, but kept as they were while `tiles` holds.
     flames_shown: [grid.CELLS]u8 = @splat(0),
     tiles_drawn: [grid.CELLS]grid.Tile = @splat(.floor),
@@ -362,6 +396,7 @@ pub const Presentation = struct {
     }
 
     fn stand(self: *Presentation, i: usize, body: *const actor.Actor, facing: actor.Facing) void {
+        self.seen_bodies[i] = null;
         self.pictured[i] = fx.Body.of(body.*, self.seq);
         self.glide[i] = glide.Glide.rest(body);
         self.facing[i] = facing;
@@ -544,6 +579,8 @@ pub const Presentation = struct {
     pub fn snapGlide(self: *Presentation, pool: *const actor.Pool) void {
         self.occlusion = @splat(0);
         self.sighted = @splat(1);
+        self.seen_bodies = @splat(null);
+        self.seen_cells = @splat(.{});
         for (pool.constSlice(), 0..) |*a, i| self.glide[i] = glide.Glide.rest(a);
     }
 
@@ -590,8 +627,19 @@ pub const Presentation = struct {
     }
 
     pub fn bodyAt(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
-        if (!self.fading(sim, i)) return self.drawnAt(sim, i);
-        return self.litNow(sim, i);
+        if (self.visibleBody(sim, i)) |at| return at;
+        if (self.sighted[i] <= 0) return null;
+        return if (self.seen_bodies[i]) |b| b.at else null;
+    }
+
+    fn visibleBody(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
+        return if (self.fading(sim, i)) self.litNow(sim, i) else self.drawnAt(sim, i);
+    }
+
+    pub fn bodyShown(self: *const Presentation, sim: *const Simulation, i: usize) SeenBody {
+        if (self.visibleBody(sim, i) == null) if (self.seen_bodies[i]) |b| return b;
+        const dying = self.fx.impacts.dyingOf(.fromIndex(i));
+        return .{ .at = self.glide[i].now(), .pic = self.pictured[i], .lift = self.glide[i].lift(), .facing = self.facing[i], .opacity = dying.alpha, .dark = dying.dark, .flash = if (self.fx.impacts.isDying(.fromIndex(i))) 0 else self.fx.impacts.flashOf(.fromIndex(i)) };
     }
 
     fn fading(self: *const Presentation, sim: *const Simulation, i: usize) bool {
@@ -603,8 +651,7 @@ pub const Presentation = struct {
     }
 
     pub fn casterAt(self: *const Presentation, sim: *const Simulation, i: usize, area: grid.Box) ?rl.Vector2 {
-        if (!self.figured(sim, i) and !self.fading(sim, i)) return null;
-        const at = self.glide[i].now();
+        const at = self.bodyAt(sim, i) orelse return null;
         return if (area.holds(game.cellUnder(at))) at else null;
     }
 
@@ -642,7 +689,7 @@ pub const Presentation = struct {
             tiles[grid.Level.idx(b.at)] = b.was;
         };
         if (held) for (&self.ground_shown.lit, self.lit.before) |*l, was| {
-            l.* = l.* or was;
+            l.* = self.litHeld(l.*, was);
         };
         return &self.ground_shown;
     }
@@ -661,11 +708,28 @@ pub const Presentation = struct {
 
     pub fn burstPlant(self: *Presentation, lv: *const grid.Level, at: P, was: grid.Tile, wait: f32) void {
         self.bursting = .{ .at = at, .was = was, .left = wait };
+        self.holdLit(lv, wait, false);
+    }
+
+    /// Light gone with the ground stays lit while it holds; light a fire `kindles` stays dark too.
+    fn holdLit(self: *Presentation, lv: *const grid.Level, wait: f32, kindles: bool) void {
+        if (!self.lit.on()) self.lit_kindled = false;
         self.lit.hold(&lv.lit, wait);
+        self.lit_kindled = self.lit_kindled or kindles;
     }
 
     pub fn holdFlames(self: *Presentation, lv: *const grid.Level, wait: f32) void {
         self.tiles.hold(&lv.tile, wait);
+        self.holdLit(lv, wait, false);
+    }
+
+    pub fn holdFire(self: *Presentation, lv: *const grid.Level, wait: f32) void {
+        self.tiles.hold(&lv.tile, wait);
+        self.holdLit(lv, wait, true);
+    }
+
+    fn litHeld(self: *const Presentation, now: bool, was: bool) bool {
+        return was or (now and !self.lit_kindled);
     }
 
     pub fn flamesShown(self: *const Presentation, i: usize) bool {
@@ -716,8 +780,8 @@ pub const Presentation = struct {
     }
 
     pub fn litShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
-        if (sim.lv.isLit(p)) return true;
-        return self.lit.on() and grid.cellOr(bool, &self.lit.before, p, false);
+        if (!self.lit.on()) return sim.lv.isLit(p);
+        return self.litHeld(sim.lv.isLit(p), grid.cellOr(bool, &self.lit.before, p, false));
     }
 
     fn flightSeen(self: *const Presentation, sim: *const Simulation, flight: *const bow.Flight) bool {
@@ -772,12 +836,12 @@ pub const Presentation = struct {
         return .{ .hp = h.hp, .max = h.max };
     }
 
-    pub fn lifeFill(self: *const Presentation, sim: *const Simulation) f32 {
+    fn lifeFill(self: *const Presentation, sim: *const Simulation) f32 {
         const life = self.lifeShown(sim);
         return mathx.fillOf(life.hp, life.max);
     }
 
-    pub fn manaFill(self: *const Presentation, sim: *const Simulation) f32 {
+    fn manaFill(self: *const Presentation, sim: *const Simulation) f32 {
         return mathx.fillOf(self.manaShown(sim), sim.manaMax());
     }
 
@@ -811,6 +875,7 @@ pub const Presentation = struct {
     pub fn easeOver(self: *Presentation, sim: *const Simulation, ground: *const grid.Level, dt: f32) void {
         self.stepOcclusion(sim, &ground.tile, dt);
         self.stepSighted(sim, dt);
+        self.stepSeenCells(sim, mathx.easing(dt, visibility.REVEAL));
         self.hour_shown = day.wrapHour(self.hour_shown + day.toward(self.hour_shown, sim.clock.hour()) * mathx.easing(dt, HOUR_EASE));
         self.weather_shown = climate.eased(self.weather_shown, sim.weatherHere(), mathx.easing(dt, WEATHER_EASE));
         self.xp_shown = mathx.ease(self.xp_shown, self.xp_aim, mathx.easing(dt, XP_EASE), 1);
@@ -821,10 +886,48 @@ pub const Presentation = struct {
 
     fn stepSighted(self: *Presentation, sim: *const Simulation, dt: f32) void {
         const k = mathx.easing(dt, visibility.REVEAL);
+        if (self.shot) |*s| s.view.step(self, sim, if (s.t >= 0) s.position(s.t) else null, k);
+        for (&self.foe_shots) |*pending| if (pending.*) |*s| {
+            s.view.step(self, sim, if (s.t >= 0) s.position(s.t) else null, k);
+        };
+        for (&self.bolts) |*pending| if (pending.*) |*b| {
+            b.view.step(self, sim, b.at(), k);
+        };
         for (self.sighted[0..sim.pool.n], 0..) |*s, i| {
-            if (self.fading(sim, i)) continue;
-            s.* = if (!self.figured(sim, i)) 1 else if (self.drawnAt(sim, i) == null) 0 else mathx.ease(s.*, 1, k, k);
+            const visible = self.visibleBody(sim, i) != null;
+            if (visible) self.seen_bodies[i] = self.bodyShown(sim, i);
+            s.* = if (self.seen_bodies[i] == null) 0 else mathx.ease(s.*, if (visible) 1 else 0, k, k);
         }
+    }
+
+    pub fn snapSight(self: *Presentation, sim: *const Simulation) void {
+        self.stepSighted(sim, 1);
+        self.stepSeenCells(sim, 1);
+    }
+
+    fn stepSeenCells(self: *Presentation, sim: *const Simulation, k: f32) void {
+        for (&self.seen_cells, 0..) |*v, i| {
+            const p = grid.Level.of(i);
+            const visible = self.litShown(sim, p);
+            v.alpha = mathx.ease(v.alpha, if (visible) 1 else 0, k, k);
+            if (!visible) continue;
+            v.bag = false;
+            v.coins = 0;
+            v.npc = self.npcShown(p);
+            v.flame = if (self.flamesShown(i)) 1 else self.ember(i);
+            v.barrier = self.barrier_shown[i] > 0;
+            v.caltrops = self.caltrops_shown[i].turns > 0;
+        }
+        inline for (sim.ground.laid()) |laid| for (laid) |l| {
+            if (self.laidShown(sim, l)) self.seen_cells[grid.Level.idx(l.at)].bag = true;
+        };
+        for (sim.ground.coins[0..sim.ground.coin_n]) |pile| {
+            if (self.pileShown(sim, pile)) |p| self.seen_cells[grid.Level.idx(p.at)].coins = p.amount;
+        }
+    }
+
+    pub fn cellAlpha(self: *const Presentation, p: P) f32 {
+        return if (grid.Level.inside(p)) self.seen_cells[grid.Level.idx(p)].alpha else 0;
     }
 
     fn occluding(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
@@ -1002,17 +1105,18 @@ pub const Presentation = struct {
         const shown = self.litShown(sim, at) and !hidden;
         const visible_origin = !hidden and self.litShown(sim, motion.to);
         const arrow_seen = if (owed.arrow) |*f| owed.struck == null or shown or self.flightSeen(sim, f) else false;
-        const visible_action = (shown or arrow_seen) and (attack != null or owed.mended != null or owed.struck != null or owed.hurled != null);
+        const lunges = attack != null or owed.struck != null or owed.hurled != null;
+        const visible_action = (shown or arrow_seen) and (lunges or owed.mended != null);
         const staggered = if (moved) shown or visible_origin else visible_action;
         var starts_at = if (staggered) turn.next_at else 0;
-        if (staggered and target.value != sim.hero and (moved or attack != null or owed.struck != null or owed.hurled != null)) starts_at = @max(starts_at, turn.late + motion.left());
+        if (staggered and target.value != sim.hero and (moved or lunges)) starts_at = @max(starts_at, turn.late + motion.left());
         if (staggered and moved and target.value != sim.hero) starts_at = @max(starts_at, turn.late + self.clearIn(sim, slot, body.at));
         if (staggered) turn.next_at = starts_at + game.STAGGER_S;
         const begins_in = if (staggered) starts_at - turn.late else start;
         if (self.turning[slot]) |*t| t.in = begins_in;
         const hero_at = if (owed.knock) |k| k.from else turn.hero_cell;
         var finishes_in = if (staggered or moved) begins_in else @max(start, motion.left());
-        const bumps = owed.arrow == null and (owed.struck != null or attack != null or owed.hurled != null);
+        const bumps = owed.arrow == null and lunges;
         if (moved) {
             motion.* = motion.toward(destination, turn.late - starts_at);
         } else if (bumps) {
@@ -1195,9 +1299,8 @@ pub const Presentation = struct {
                 .gas => gas.hold(s.wait),
                 .fire => {
                     gas.hold(s.wait);
-                    self.holdFlames(&sim.lv, s.wait);
+                    self.holdFire(&sim.lv, s.wait);
                     if (self.litShown(sim, at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
-                    self.lit.hold(&sim.lv.lit, s.wait);
                 },
             },
             .strike => {},
@@ -1223,7 +1326,17 @@ pub const Presentation = struct {
 };
 
 /// Where a blow came from, and how long until the picture reaches it.
-pub const Stroke = struct { from: P, wait: f32, fire: bool = false };
+pub const Stroke = struct {
+    from: P,
+    wait: f32,
+    fire: bool = false,
+
+    pub fn along(s: Stroke, step: usize, cells: usize) Stroke {
+        var out = s;
+        out.wait = s.wait * @as(f32, @floatFromInt(step + 1)) / @as(f32, @floatFromInt(cells));
+        return out;
+    }
+};
 
 pub const Life = struct { hp: i32, max: i32 };
 

@@ -61,7 +61,7 @@ pub const Flight = struct {
     }
 
     fn enter(f: *Flight, lv: *const grid.Level, c: P, to: P, comptime visible_only: bool) Cell {
-        if (!grid.Level.inside(c) or f.len == f.most or lv.hasBarrier(c) or (!c.eq(to) and lv.at(c).blind())) return .stop;
+        if (!grid.Level.inside(c) or f.len == f.most or lv.hasBarrier(c) or (!c.eq(to) and lv.blocksSight(c))) return .stop;
         f.path[f.len] = c;
         f.len += 1;
         if (lv.at(c).halts() or walled(lv.at(c))) return .last;
@@ -86,7 +86,7 @@ pub const Flight = struct {
 
 const Step = struct { c: P, cell: Cell, w: u16, body: ?u16 };
 
-fn walled(t: grid.Tile) bool {
+pub fn walled(t: grid.Tile) bool {
     return t.solid() and t.blind();
 }
 
@@ -190,10 +190,9 @@ fn skewered(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, rea
 fn through(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, reach: i32, bodies: usize, comptime visible_only: bool) Pierced {
     const far = @min(reach, LONGEST);
     var out = Pierced{ .flight = .{ .most = @intCast(far) } };
-    const d = mathx.dist(from, to);
-    if (d == 0) return out;
+    if (from.eq(to)) return out;
     const f = &out.flight;
-    var ray = grid.Ray.init(from, from.add(to.sub(from).scaled(@divFloor(far + d - 1, d))));
+    var ray = grid.Ray.init(from, mathx.onTo(from, to, far));
     while (f.advance(lv, seen, &ray, to, visible_only)) |s| {
         if (s.body) |b| {
             out.body[out.n] = b;

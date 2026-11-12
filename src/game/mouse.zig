@@ -74,7 +74,7 @@ pub fn overUi(g: *const game.Game, p: P) bool {
 pub fn cell(g: *game.Game) ?P {
     const p = g.st.pointer orelse return null;
     if (p.x < 0 or p.y < 0 or p.x >= g.screen.x or p.y >= g.screen.y or overUi(g, p)) return null;
-    const at = game.scene.Cam.of(g).cellAt(p);
+    const at = game.scene.Cam.of(g).cellAt(g.cinema.lens.sourcePoint(p, g.screen));
     return if (grid.Level.inside(at)) at else null;
 }
 
@@ -136,8 +136,7 @@ pub fn aim(g: *game.Game) bool {
 }
 
 fn danger(g: *const game.Game) bool {
-    for (g.sim.pool.constSlice()) |a| if (a.seenFoe(&g.sim.lv)) return true;
-    return false;
+    return game.foesNear(g);
 }
 
 fn attack(g: *game.Game, at: P) bool {

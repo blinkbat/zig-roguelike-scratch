@@ -41,9 +41,106 @@ pub fn captureCinema(g: *game.Game) !void {
     studyAt(g, true, MORNING);
     try captureCinemaScene(g, target, "forest");
     try cinemaWater(g, target);
+    try captureLens(g);
+    try captureVisibility(g, target);
     game.character.openPause(g);
     game.debugging.select(g, .composed_lighting);
     try capture(g, target, CINEMA_DIR ++ "/debug.png");
+}
+
+fn captureVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const from = P{ .x = 20, .y = 20 };
+    const foe = P{ .x = 24, .y = 20 };
+    const reeds = P{ .x = 22, .y = 20 };
+    game.harness.grassArena(g, from, &.{foe});
+    g.sim.lv.set(reeds, .reeds);
+    @import("../../map/fire.zig").lay(&g.sim.lv, reeds, 3, 0);
+    const bag = P{ .x = 23, .y = 22 };
+    if (!g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = bag })) return error.CaptureLootFull;
+    studyAt(g, true, day.NOON);
+    if (!g.sim.lv.isLit(foe)) return error.BurningReedsBlockSight;
+    try capture(g, target, CINEMA_DIR ++ "/visibility-flame-los.png");
+    for (0..grid.CELLS) |i| {
+        const p = grid.Level.of(i);
+        const dx = p.x - from.x;
+        const dy = p.y - from.y;
+        g.sim.lv.seen[i] = dx * dx + dy * dy < 64;
+        g.sim.lv.lit[i] = g.sim.lv.seen[i];
+    }
+    g.light.settle(&g.sim.lv);
+    g.pic.snapSight(&g.sim);
+    try capture(g, target, CINEMA_DIR ++ "/visibility-edge.png");
+    for (&g.sim.lv.lit, 0..) |*lit, i| if (grid.Level.of(i).x > 21) {
+        lit.* = false;
+    };
+    var path: [160]u8 = undefined;
+    var elapsed: f32 = 0;
+    for ([_]f32{ 0.05, 0.12, 0.25, 0.60 }) |t| {
+        game.harness.ease(g, t - elapsed);
+        g.light.step(&g.sim.lv, t - elapsed);
+        elapsed = t;
+        try capture(g, target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/visibility-out-{d:.0}ms.png", .{t * 1000}));
+    }
+    for (&g.sim.lv.lit, g.sim.lv.seen) |*lit, seen| lit.* = seen;
+    elapsed = 0;
+    for ([_]f32{ 0.05, 0.12, 0.25 }) |t| {
+        game.harness.ease(g, t - elapsed);
+        g.light.step(&g.sim.lv, t - elapsed);
+        elapsed = t;
+        try capture(g, target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/visibility-in-{d:.0}ms.png", .{t * 1000}));
+    }
+}
+
+fn captureLens(g: *game.Game) !void {
+    const lens = &g.cinema.lens;
+    const before = lens.options;
+    defer lens.options = before;
+    if (lens.program == null) return error.LensShaderMissing;
+    for ([_]P{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
+        const shot = try targetAt(g, size);
+        defer shot.close(g);
+        poseWaterMirrors(g, day.NOON, true);
+        lens.options = .neutral;
+        drawInto(g, shot.target);
+        const base = try readTarget(shot.target);
+        defer rl.unloadImage(base);
+        var path: [160]u8 = undefined;
+        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-off.png", .{size.y}));
+        inline for (std.meta.fields(@TypeOf(lens.options))) |field| {
+            lens.options = .neutral;
+            @field(lens.options, field.name) = if (comptime std.mem.eql(u8, field.name, "saturation")) 0 else 1;
+            try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-{s}.png", .{ size.y, field.name }));
+            const image = try readTarget(shot.target);
+            defer rl.unloadImage(image);
+            if (@import("capture.zig").differentPixels(base, image) == 0) return error.LensDidNotChangeFrame;
+            if (comptime std.mem.eql(u8, field.name, "lens_blur")) {
+                var points = grid.Cells.of(.{ .x = 0, .y = @divTrunc(size.y * 40, 100) }, .{ .x = size.x, .y = @divTrunc(size.y * 60, 100) });
+                while (points.next()) |p| {
+                    if (!sameRgb(rl.getImageColor(base, p.x, p.y), rl.getImageColor(image, p.x, p.y))) return error.LensBlurChangedSharpBand;
+                }
+            }
+        }
+        lens.options = .{ .lens_blur = 1, .perspective = 1, .vignette = 1, .saturation = 1.2, .warmth = 0.3 };
+        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-all.png", .{size.y}));
+        const on_ms = try meanDraw(g, shot.target, 12, CINEMA_FRAMES);
+        if (lens.scene.?.texture.width != size.x or lens.scene.?.texture.height != size.y or lens.spread.?.texture.width != size.x or lens.spread.?.texture.height != size.y) return error.LensResizeFailed;
+        lens.options = .neutral;
+        if (try redrawnDiff(g, shot.target, base) != 0) return error.LensOffChangedFrame;
+        std.debug.print("lens {d}p: off {d:.3} ms, all {d:.3} ms mean headless draw\n", .{ size.y, try meanDraw(g, shot.target, 12, CINEMA_FRAMES), on_ms });
+        std.debug.print("lens {d}p: independent effects, sharp middle, resize and exact restoration checked\n", .{size.y});
+        lens.options = .{};
+        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-defaults.png", .{size.y}));
+        game.character.openPause(g);
+        g.pause_page = .visuals;
+        g.pause_menu.at = 0;
+        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-options.png", .{size.y}));
+        g.pause_menu.at = @import("../../ui/options.zig").index(.visuals, .set_all_to_0);
+        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-filters-menu.png", .{size.y}));
+        g.pause_page = .display;
+        g.pause_menu = .{};
+        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-display-menu.png", .{size.y}));
+        g.mode = .play;
+    }
 }
 
 pub fn cinemaWater(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -55,6 +152,9 @@ pub fn cinemaWater(g: *game.Game, target: rl.RenderTexture2D) !void {
 }
 
 pub fn captureCinemaScene(g: *game.Game, target: rl.RenderTexture2D, comptime name: []const u8) !void {
+    const lens_options = g.cinema.lens.options;
+    g.cinema.lens.options = .neutral;
+    defer g.cinema.lens.options = lens_options;
     const options = g.cinema.options;
     defer g.cinema.options = options;
     try std.fs.cwd().makePath(CINEMA_DIR);

@@ -52,6 +52,8 @@ pub const Scene = struct {
         if (!self.stale and self.node == node) return;
         self.node = node;
         const nd = &map.node[node];
+        var laid: [atlas.MAX_FOES]atlas.Foe = undefined;
+        const placing = nd.placedOn(self.roll, &laid);
         self.rolled_foes = .{};
         self.npc_at = @splat(null);
         switch (nd.plan) {
@@ -63,8 +65,8 @@ pub const Scene = struct {
             .bespoke => {},
             .procgen => {
                 var rng = mathx.Rng.init(self.roll);
-                var buf: [atlas.MAX_FOES]atlas.Foe = undefined;
-                const at = atlas.landing(&self.lv, arrival(map, node), nd.placedOn(self.roll, &buf)) orelse arrival(map, node);
+                const from = arrival(map, node);
+                const at = atlas.landing(&self.lv, from, placing) orelse from;
                 _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
                 nd.populate(&self.lv, &self.rolled_foes, &rng, at, self.roll);
                 self.lv.clear(at);
@@ -75,8 +77,8 @@ pub const Scene = struct {
         for (self.rolled_foes.slice()) |a| {
             if (!a.kind.hero()) self.show(.{ .kind = a.kind, .at = a.at });
         }
-        self.start_at = self.startOn(map, node);
-        self.issues = self.issuesOf(map, node);
+        self.start_at = self.startOn(map, node, placing);
+        self.issues = self.issuesOf(map, node, placing);
         self.stale = false;
     }
 
@@ -93,14 +95,13 @@ pub const Scene = struct {
         return self.shown[0..self.shown_n];
     }
 
-    fn startOn(self: *Scene, map: *const atlas.Atlas, node: usize) ?P {
+    fn startOn(self: *Scene, map: *const atlas.Atlas, node: usize, placing: []const atlas.Foe) ?P {
         const s = map.start;
         if (s.node != node) return null;
-        var buf: [atlas.MAX_FOES]atlas.Foe = undefined;
-        return atlas.landing(&self.lv, s.at, map.node[node].placedOn(self.roll, &buf));
+        return atlas.landing(&self.lv, s.at, placing);
     }
 
-    fn issuesOf(self: *Scene, map: *const atlas.Atlas, node: usize) Issues {
+    fn issuesOf(self: *Scene, map: *const atlas.Atlas, node: usize, placing: []const atlas.Foe) Issues {
         const nd = &map.node[node];
         var is = Issues{ .unlinked = nd.unlinked() };
         const s = map.start;
@@ -122,7 +123,7 @@ pub const Scene = struct {
             if (is.reach_from == null) is.reach_from = grid.Level.of(i);
         }
         var swims: ?grid.CellSet = null;
-        for (nd.placed()) |foe| {
+        for (placing) |foe| {
             const i = grid.Level.idx(foe.at);
             if (self.reach_dist[i] >= 0) continue;
             if (actor.row(foe.kind).movement == .swimming) {

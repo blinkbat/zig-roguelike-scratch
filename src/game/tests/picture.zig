@@ -673,7 +673,7 @@ test "a body at rest lands on its tile's pixel whatever fraction the camera is a
     }
 }
 
-test "hidden and offscreen objects keep casting without being drawn" {
+test "offscreen shadows retain the last visible body then fade with it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const p = P{ .x = 27, .y = 20 };
@@ -687,6 +687,10 @@ test "hidden and offscreen objects keep casting without being drawn" {
     try std.testing.expect(g.pic.casterAt(&g.sim, i, view) == null);
     try std.testing.expectEqual(g.pic.glide[i].now(), g.pic.casterAt(&g.sim, i, cast).?);
     g.pic.split_from[i] = g.sim.heroSlot().?;
+    harness.ease(g, mathx.FRAME_DT);
+    try std.testing.expect(g.pic.casterAt(&g.sim, i, cast) != null);
+    try std.testing.expect(g.pic.sighted[i] > 0 and g.pic.sighted[i] < 1);
+    harness.ease(g, 0.6);
     try std.testing.expect(g.pic.casterAt(&g.sim, i, cast) == null);
     g.pic.split_from[i] = null;
     g.sim.pool.items[i].alive = false;
@@ -696,7 +700,7 @@ test "hidden and offscreen objects keep casting without being drawn" {
     try std.testing.expect(g.pic.barrelPresent(&g.sim, p));
 }
 
-test "a body coming into sight fades in with its ground and shadow; one born in sight appears at once" {
+test "bodies fade both ways and hidden motion never moves the fading picture" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const p = P{ .x = 24, .y = 20 };
@@ -707,7 +711,18 @@ test "a body coming into sight fades in with its ground and shadow; one born in 
     g.sim.lv.lit[k] = false;
     g.light.visibility.snap(&g.sim.lv, false);
     harness.ease(g, dt);
+    try std.testing.expect(g.pic.sighted[i] > 0 and g.pic.sighted[i] < 1);
+    const last = g.pic.bodyShown(&g.sim, i);
+    try std.testing.expect(g.pic.drawnAt(&g.sim, i) == null);
+    g.pic.glide[i] = .rest(&actor.Actor.of(.rat, .{ .x = 40, .y = 40 }));
+    g.pic.pictured[i].hp = 1;
+    harness.ease(g, dt);
+    try std.testing.expectEqualDeep(last, g.pic.bodyShown(&g.sim, i));
+    try std.testing.expectEqual(last.at, g.pic.bodyAt(&g.sim, i).?);
+    harness.ease(g, 0.6);
     try std.testing.expectEqual(@as(f32, 0), g.pic.sighted[i]);
+    try std.testing.expect(g.pic.bodyAt(&g.sim, i) == null);
+    g.pic.glide[i] = .rest(&g.sim.pool.items[i]);
     g.sim.lv.lit[k] = true;
     var first: f32 = 0;
     var frames: usize = 0;
@@ -721,13 +736,44 @@ test "a body coming into sight fades in with its ground and shadow; one born in 
     try std.testing.expect(first > 0 and first < 0.5);
     try std.testing.expect(apart < 1e-5);
     try std.testing.expect(frames <= 15);
-    g.sim.lv.lit[k] = false;
-    g.pic.split_from[i] = g.sim.heroSlot().?;
-    harness.ease(g, dt);
-    g.pic.split_from[i] = null;
-    g.sim.lv.lit[k] = true;
-    harness.ease(g, dt);
-    try std.testing.expectEqual(@as(f32, 1), g.pic.sighted[i]);
+    try std.testing.expect(g.pic.sighted[i] > 0.95);
+}
+
+test "loot hazards NPCs and missiles fade from their last visible state only" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const p = P{ .x = 23, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const i = grid.Level.idx(p);
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = p }));
+    g.pic.flames_shown[i] = 2;
+    g.pic.barrier_shown[i] = 2;
+    g.pic.caltrops_shown[i].turns = 2;
+    g.pic.npc_shown[i] = 1;
+    g.pic.shot = .{ .from = p, .flight = bow.fly(&g.sim.lv, p, .{ .x = 30, .y = 20 }) };
+    g.pic.snapSight(&g.sim);
+    const cell = g.pic.seen_cells[i];
+    const missile = g.pic.shot.?.view;
+    try std.testing.expect(cell.bag and cell.barrier and cell.caltrops and cell.flame == 1 and cell.npc == 0);
+    g.sim.lv.lightless();
+    g.pic.flames_shown[i] = 0;
+    g.pic.barrier_shown[i] = 0;
+    g.pic.caltrops_shown[i].turns = 0;
+    g.pic.npc_shown[i] = grid.NO_NPC;
+    g.pic.shot.?.t = g.pic.shot.?.lands();
+    harness.ease(g, mathx.FRAME_DT);
+    const hidden = g.pic.seen_cells[i];
+    try std.testing.expect(hidden.alpha > 0 and hidden.alpha < cell.alpha);
+    try std.testing.expect(hidden.bag and hidden.barrier and hidden.caltrops and hidden.flame == 1 and hidden.npc == 0);
+    try std.testing.expectEqual(missile.at, g.pic.shot.?.view.at);
+    try std.testing.expect(g.pic.shot.?.view.alpha > 0 and g.pic.shot.?.view.alpha < 1);
+    harness.ease(g, 0.6);
+    try std.testing.expectEqual(@as(f32, 0), g.pic.cellAlpha(p));
+    try std.testing.expect(g.pic.shot.?.view.at == null);
+    g.sim.lv.light(p);
+    harness.ease(g, mathx.FRAME_DT);
+    try std.testing.expect(g.pic.cellAlpha(p) > 0 and g.pic.cellAlpha(p) < 0.5);
+    try std.testing.expect(!g.pic.seen_cells[i].barrier and g.pic.seen_cells[i].npc == null);
 }
 
 test "the minimap and the day beneath it fit in the top right, clear of the hud" {

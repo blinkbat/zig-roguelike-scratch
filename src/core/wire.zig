@@ -79,34 +79,38 @@ pub fn Codec(comptime Policy: type) type {
         }
 
         pub fn write(out: *std.ArrayList(u8), value: anytype) !void {
-            const T = @TypeOf(value);
+            return writeRef(out, &value);
+        }
+
+        fn writeRef(out: *std.ArrayList(u8), value: anytype) !void {
+            const T = std.meta.Child(@TypeOf(value));
             if (comptime @hasDecl(Policy, "Stored")) {
-                if (comptime Policy.Stored(T) != T) return write(out, try Policy.encode(value));
+                if (comptime Policy.Stored(T) != T) return write(out, try Policy.encode(value.*));
             }
             switch (@typeInfo(T)) {
                 .pointer => |p| {
                     if (p.size != .one) @compileError("wire values require bounded arrays");
-                    try write(out, value.*);
+                    try writeRef(out, value.*);
                 },
                 .int => |info| {
                     if (info.bits > 64) @compileError("wire integer exceeds 64 bits");
                     try out.append(@intFromBool(info.signedness == .signed));
-                    const bits: Bits = if (info.signedness == .signed) @bitCast(@as(i64, value)) else @intCast(value);
+                    const bits: Bits = if (info.signedness == .signed) @bitCast(@as(i64, value.*)) else @intCast(value.*);
                     try integer(out, Bits, bits);
                 },
-                .float => try integer(out, Bits, @bitCast(@as(f64, value))),
-                .bool => try out.append(@intFromBool(value)),
+                .float => try integer(out, Bits, @bitCast(@as(f64, value.*))),
+                .bool => try out.append(@intFromBool(value.*)),
                 .void => {},
-                .@"enum" => try string(out, @tagName(value)),
+                .@"enum" => try string(out, @tagName(value.*)),
                 .optional => {
-                    try out.append(@intFromBool(value != null));
-                    if (value) |child| try write(out, child);
+                    try out.append(@intFromBool(value.* != null));
+                    if (value.*) |*child| try writeRef(out, child);
                 },
-                .array => try array(out, &value, value.len),
+                .array => try array(out, value, value.len),
                 .@"union" => {
-                    try string(out, @tagName(value));
-                    switch (value) {
-                        inline else => |payload| try write(out, payload),
+                    try string(out, @tagName(value.*));
+                    switch (value.*) {
+                        inline else => |*payload| try writeRef(out, payload),
                     }
                 },
                 .@"struct" => {

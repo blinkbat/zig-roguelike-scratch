@@ -189,7 +189,7 @@ pub fn improveRound(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.
                 var deepest: i32 = MIN_DEPTH - 1;
                 for (0..grid.CELLS) |i| {
                     const p = grid.Level.of(i);
-                    if (!g.contains(b.root, Graph.cell(p)) or distances[i] <= deepest or !rewardAt(lv, p) or kept.isSet(i)) continue;
+                    if (!g.contains(b.root, Graph.cell(p)) or distances[i] <= deepest or !rewardGoes(lv, p, kept)) continue;
                     deepest = distances[i];
                     far = p;
                 }
@@ -254,7 +254,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
     for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);
         if (kind.has(lv, p)) _ = mathx.push(P, &placed, &have, p);
-        if (!rewardAt(lv, p) or p.eq(origin) or kept.isSet(i)) continue;
+        if (!rewardGoes(lv, p, kept) or p.eq(origin)) continue;
         if (grid.anyNear(p, doors, DOOR_CLEAR)) continue;
         var edges: usize = 0;
         for (mathx.CARDINALS) |d| {
@@ -324,6 +324,10 @@ fn rewardAt(lv: *const grid.Level, p: P) bool {
         }
     }
     return lv.at(p).rewards();
+}
+
+fn rewardGoes(lv: *const grid.Level, p: P, kept: *const grid.CellSet) bool {
+    return !kept.isSet(grid.Level.idx(p)) and rewardAt(lv, p);
 }
 
 fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.CELLS]i32, queue: *[grid.CELLS]u32, pal: carve.Palette, kept: *const grid.CellSet) bool {

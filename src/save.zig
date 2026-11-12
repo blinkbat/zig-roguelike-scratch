@@ -1079,15 +1079,7 @@ test "a procgen plan carries its section through a portable save, and one saved 
 
     var older = std.ArrayList(u8).init(alloc);
     defer older.deinit();
-    var cursor = wire.Cursor{ .bytes = bytes.items };
-    var record = try wire.Record.init(&cursor);
-    try wire.integer(&older, wire.FieldCount, record.remaining - 1);
-    while (try record.next()) |entry| {
-        if (std.mem.eql(u8, entry.name, "section")) continue;
-        const at = try wire.beginField(&older, entry.name);
-        try older.appendSlice(entry.bytes);
-        wire.endField(&older, at);
-    }
+    try format.TestRecord.change(&older, bytes.items, &.{"section"}, null);
     try Code.read(older.items, back);
     try std.testing.expect(back.section.empty() and back.section.anchor == .fixed and back.section.foe_n == 0);
     try std.testing.expectEqualDeep(plan.foes, back.foes);

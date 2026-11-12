@@ -26,7 +26,7 @@ pub const Inventory = struct {
     bag: [BAG_MAX]items.Item = undefined,
     n: usize = 0,
     gear: Gear = .{},
-    stacks: std.EnumArray(consumable.Kind, u8) = .initFill(0),
+    stacks: consumable.Stacks = .initFill(0),
 
     pub const COUNTED = .{.{ "bag", "n" }};
 
@@ -48,18 +48,11 @@ pub const Inventory = struct {
 
     /// Kinds carried, in `consumable.KINDS` order.
     pub fn carriedCount(self: *const Inventory) usize {
-        var n: usize = 0;
-        for (consumable.KINDS) |k| n += @intFromBool(self.stacks.get(k) > 0);
-        return n;
+        return consumable.stocked(&self.stacks);
     }
 
     pub fn carriedAt(self: *const Inventory, row: usize) ?consumable.Kind {
-        var left = row;
-        for (consumable.KINDS) |k| if (self.stacks.get(k) > 0) {
-            if (left == 0) return k;
-            left -= 1;
-        };
-        return null;
+        return consumable.stockedAt(&self.stacks, row);
     }
 
     pub fn remove(self: *Inventory, at: usize) items.Item {

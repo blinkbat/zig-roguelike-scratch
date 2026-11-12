@@ -10,7 +10,7 @@ const Script = script.Script;
 pub const Error = error{ BadLine, TooMany, BadLink };
 
 /// Each script line's first word; the map's other words and knobs must not take one.
-pub const Word = enum { flag, counter, timer, quest, stage, dialog, line, who, say, act, ask, need, gets, then, npc, shows, looks, trigger, when, do };
+pub const Word = enum { flag, counter, timer, quest, stage, dialog, line, who, say, say_more, act, ask, ask_more, need, gets, then, npc, shows, looks, trigger, when, do };
 const BY = "by";
 const FAR = "far";
 const ARROW = " -> ";
@@ -31,6 +31,19 @@ pub fn wordOf(text: []const u8) ?Word {
 
 fn says(comptime w: Word) []const u8 {
     return firstWord(w);
+}
+
+fn appendLine(words: anytype, raw: []const u8, started: *bool) Error!void {
+    if (raw.len == 0 or raw[0] != '|') return error.BadLine;
+    const line = raw[1..];
+    if (!script.plain(line) or words.n + @as(usize, @intFromBool(started.*)) + line.len > @TypeOf(words.*).MAX) return error.BadLine;
+    if (started.*) {
+        words.buf[words.n] = '\n';
+        words.n += 1;
+    }
+    @memcpy(words.buf[words.n..][0..line.len], line);
+    words.n += @intCast(line.len);
+    started.* = true;
 }
 
 pub const Lines = struct {
@@ -70,10 +83,18 @@ pub fn write(s: *const Script, w: anytype) !void {
         for (d.lines()) |*l| {
             try w.print(says(.line) ++ "{s}\n", .{l.name.text()});
             if (l.who.n > 0) try w.print(says(.who) ++ "{s}\n", .{l.who.text()});
-            if (l.say.n > 0) try w.print(says(.say) ++ "{s}\n", .{l.say.text()});
+            if (std.mem.indexOfScalar(u8, l.say.text(), '\n') != null) {
+                var lines = std.mem.splitScalar(u8, l.say.text(), '\n');
+                while (lines.next()) |line| try w.print(says(.say_more) ++ "|{s}\n", .{line});
+            } else if (l.say.n > 0) try w.print(says(.say) ++ "{s}\n", .{l.say.text()});
             for (l.acts()) |*a| try putAct(w, s, .act, a);
             for (l.choices()) |*c| {
-                try w.print(says(.ask) ++ "{s}" ++ ARROW ++ "{s}\n", .{ c.ask.text(), target(d, c.next) });
+                const multiline = std.mem.indexOfScalar(u8, c.ask.text(), '\n') != null;
+                try w.print(says(.ask) ++ "{s}" ++ ARROW ++ "{s}\n", .{ if (multiline) "" else c.ask.text(), target(d, c.next) });
+                if (multiline) {
+                    var lines = std.mem.splitScalar(u8, c.ask.text(), '\n');
+                    while (lines.next()) |line| try w.print(says(.ask_more) ++ "|{s}\n", .{line});
+                }
                 if (c.gate) |*g| try putCond(w, s, .need, g);
                 for (c.acts()) |*a| try putAct(w, s, .gets, a);
             }
@@ -192,6 +213,8 @@ pub const Reader = struct {
     dialog: ?u8 = null,
     line: ?u8 = null,
     choice: ?u8 = null,
+    say_started: bool = false,
+    ask_started: bool = false,
     trigger: ?u8 = null,
     quest: ?u8 = null,
     npc: ?u8 = null,
@@ -233,11 +256,22 @@ pub const Reader = struct {
                 if (!mathx.push(script.Line, &d.line, &d.line_n, .{ .name = script.Name.of(try nameOf(f)) })) return error.TooMany;
                 r.line = d.line_n - 1;
                 r.choice = null;
+                r.say_started = false;
+                r.ask_started = false;
             },
             inline .who, .say => |t| {
                 const l = try r.lineOf(s);
                 const words = &@field(l, @tagName(t));
                 if (words.n > 0 or !words.set(try said(f))) return error.BadLine;
+                if (t == .say) r.say_started = true;
+            },
+            .say_more => {
+                const l = try r.lineOf(s);
+                try appendLine(&l.say, rest(f), &r.say_started);
+            },
+            .ask_more => {
+                const c = try r.choiceOf(s);
+                try appendLine(&c.ask, rest(f), &r.ask_started);
             },
             .act => {
                 const l = try r.lineOf(s);
@@ -254,6 +288,7 @@ pub const Reader = struct {
                 if (!c.ask.set(all[0..ask_n])) return error.BadLine;
                 if (!mathx.push(script.Choice, &l.choice, &l.choice_n, c)) return error.TooMany;
                 r.choice = l.choice_n - 1;
+                r.ask_started = c.ask.n > 0;
             },
             .need => {
                 const c = try r.choiceOf(s);
@@ -570,6 +605,26 @@ pub fn readAlone(text: []const u8, s: *Script, node_n: usize) Error!void {
         if (f.next() != null) return error.BadLine;
     }
     if (!s.valid(node_n)) return error.BadLine;
+}
+
+test "story sized speech and replies retain paragraphs through map serialization" {
+    const a = std.testing.allocator;
+    const s = try a.create(Script);
+    defer a.destroy(s);
+    try readAlone("dialog story\nline opening\nask Listen -> end\n", s, 1);
+    const speech = "The road remembers. " ** 1000 ++ "\n\nAnd so do I.";
+    const reply = "Tell me what happened. " ** 200 ++ "\nI will listen.";
+    try std.testing.expect(s.dialog[0].line[0].say.set(speech));
+    try std.testing.expect(s.dialog[0].line[0].choice[0].ask.set(reply));
+    var bytes = std.ArrayList(u8).init(a);
+    defer bytes.deinit();
+    try write(s, bytes.writer());
+    try readAlone(bytes.items, s, 1);
+    try std.testing.expectEqualStrings(std.mem.trim(u8, speech, " "), s.dialog[0].line[0].say.text());
+    try std.testing.expectEqualStrings(std.mem.trim(u8, reply, " "), s.dialog[0].line[0].choice[0].ask.text());
+    try std.testing.expect(s.dialog[0].line[0].say.set("x" ** script.SAY_MAX));
+    try std.testing.expect(!s.dialog[0].line[0].say.set("x" ** (script.SAY_MAX + 1)));
+    try std.testing.expectEqual(script.SAY_MAX, s.dialog[0].line[0].say.n);
 }
 
 fn testRead(text: []const u8, s: *Script) Error!void {

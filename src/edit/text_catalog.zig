@@ -6,7 +6,7 @@ const input = @import("../core/input.zig");
 const atlas = @import("../map/atlas.zig");
 const atlas_text = @import("../map/atlas_text.zig");
 
-pub const MAX_TEXT: usize = 4096;
+pub const MAX_TEXT: usize = 32768;
 const FILE_CAP = atlas_text.TEXT_CAP;
 const TAG_FILE = "text-tags.json";
 const LABEL_FILE = wording.FILE;
@@ -542,13 +542,28 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (std.mem.startsWith(u8, path, SRC)) {
         const rel = path[SRC.len..];
         if (std.mem.eql(u8, rel, SAVE_SOURCE)) return "Save";
+        if (contains(&.{ "play/log.zig", "ui/journal.zig" }, rel)) return "Log lines";
+        if (contains(&.{ "ui/talk.zig", "game/talking.zig", "map/script.zig", "play/trigger.zig" }, rel)) return "Dialogue";
+        if (std.mem.eql(u8, rel, "ui/quests.zig")) return "Quests";
         if (std.mem.startsWith(u8, rel, "edit/")) return "Editor";
         if (std.mem.startsWith(u8, rel, "map/")) return "Maps";
+        if (contains(&.{ "ui/item_card.zig", "play/trade.zig", "play/consumable.zig" }, rel)) return "Items";
+        if (std.mem.startsWith(u8, rel, "ui/character") or contains(&.{ "game/character.zig", "play/attrs.zig", "play/progress.zig", "play/hero.zig", "ui/book.zig" }, rel)) return "Character";
+        if (contains(&.{ "play/passives.zig", "ui/trees.zig", "game/skills.zig" }, rel)) return "Skills";
+        if (contains(&.{ "game/binds.zig", "ui/naming.zig" }, rel)) return "Input";
+        if (contains(&.{ "ui/hud.zig", "game/overlay.zig" }, rel)) return "HUD";
         if (std.mem.startsWith(u8, rel, "ui/")) return "Interface";
         if (contains(&ITEMS_SOURCES, rel)) return "Items";
         if (std.mem.eql(u8, rel, SKILLBAR_SOURCE)) return "Skills";
         if (contains(&EFFECT_SOURCES, rel)) return "Effects";
         if (contains(&LOOK_SOURCES, rel)) return "Look";
+        if (std.mem.eql(u8, rel, "play/actor.zig")) return "Characters";
+        if (contains(&.{ "play/burning.zig", "play/bleeding.zig", "play/blind.zig", "play/shock.zig", "play/glacial.zig", "play/stagger.zig", "play/juke.zig", "play/resilience.zig", "play/pinning.zig", "play/status.zig" }, rel)) return "Status effects";
+        if (std.mem.startsWith(u8, rel, "play/")) return "Combat";
+        if (std.mem.startsWith(u8, rel, "game/")) return "Gameplay";
+        if (std.mem.eql(u8, rel, "app.zig")) return "Interface";
+        if (std.mem.eql(u8, rel, "game.zig")) return "Gameplay";
+        if (std.mem.startsWith(u8, rel, "save")) return "Save";
     }
     return humanize(a, stem(std.fs.path.basename(path)));
 }
@@ -699,6 +714,13 @@ const ContextScan = struct {
         if (call) |name| {
             try identity.appendSlice(" > ");
             try identity.appendSlice(name);
+            if (std.mem.indexOf(u8, name, "log.") != null or
+                (std.mem.eql(u8, s.module, "play.log") and (std.mem.eql(u8, name, "say") or std.mem.eql(u8, name, "add"))))
+            {
+                category = "Log lines";
+                const dot = std.mem.lastIndexOfScalar(u8, s.module, '.');
+                role = try humanize(s.a, s.module[if (dot) |at| at + 1 else 0..]);
+            }
         }
         return .{ .category = category, .owner = owner.?, .role = role, .context = try identity.toOwnedSlice() };
     }

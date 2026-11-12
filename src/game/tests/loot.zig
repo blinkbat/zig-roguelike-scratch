@@ -173,6 +173,36 @@ test "a broken barrel sometimes leaves a white item in a bag with its gold, unse
     try std.testing.expect(scene.bagCells(g).isSet(grid.Level.idx(at)));
 }
 
+test "nearby visible foes suppress automatic chests and bags but permit deliberate interaction" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 21, .y = 20 };
+    const foe = P{ .x = 24, .y = 20 };
+    harness.arena(g, from, &.{foe});
+    g.sim.lv.set(at, .chest);
+    const before = g.sim.clock.minute;
+    try std.testing.expectEqual(game.Move.blocked, game.heroMove(g, .e));
+    game.heroStep(g, .e, 0);
+    try std.testing.expectEqual(grid.Tile.chest, g.sim.lv.at(at));
+    try std.testing.expectEqual(before, g.sim.clock.minute);
+    character.openLoot(g, at);
+    try std.testing.expectEqual(grid.Tile.chest_open, g.sim.lv.at(at));
+    harness.arena(g, from, &.{foe});
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = at }));
+    try std.testing.expectEqual(game.Move.step, game.heroMove(g, .e));
+    harness.nudge(g, .e);
+    try std.testing.expectEqual(at, g.sim.heroActor().?.at);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    harness.drawnOut(g);
+    character.openLoot(g, at);
+    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    harness.arena(g, from, &.{foe});
+    g.sim.lv.set(at, .chest);
+    g.sim.lv.lit[grid.Level.idx(foe)] = false;
+    try std.testing.expectEqual(game.Move.open, game.heroMove(g, .e));
+}
+
 test "a chest first bump reveals loot and stops held walking; the next enters and opens loot" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

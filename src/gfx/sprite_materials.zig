@@ -53,14 +53,15 @@ pub const FADE_FS = shaders.FS_HEAD ++
     \\}
 ;
 
-pub const ShineShader = struct { shader: rl.Shader, sweep: i32 };
+pub const ShineShader = struct { shader: rl.Shader, sweep: i32, glow: i32 };
 pub const SHINE_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .SHINE_WIDTH = look.SHINE_WIDTH, .SHINE_SLANT = look.SHINE_SLANT, .SHINE_GAIN = look.SHINE_GAIN }) ++
     \\uniform float sweep;
+    \\uniform float glow;
     \\void main() {
     \\    vec4 tex = texture(texture0, fragTexCoord);
     \\    float along = (fragTexCoord.x + fragTexCoord.y * SHINE_SLANT) / (1.0 + SHINE_SLANT);
     \\    float band = 1.0 - smoothstep(0.0, SHINE_WIDTH, abs(along - sweep));
-    \\    finalColor = vec4(fragColor.rgb, tex.a * fragColor.a * band * SHINE_GAIN);
+    \\    finalColor = vec4(fragColor.rgb, tex.a * fragColor.a * (glow + band * (SHINE_GAIN + glow)));
     \\}
 ;
 

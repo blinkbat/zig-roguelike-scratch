@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
+const bow = @import("bow.zig");
 
 const P = mathx.P;
 
@@ -19,11 +20,10 @@ pub const Bolt = struct {
     toward: P,
     flown: u8 = 0,
 
-    /// At `at`, its line carried on past it.
+    /// At `mark`, its line carried on past it.
     pub fn aimed(from: P, mark: P, range: i32) Bolt {
-        const d = mathx.dist(from, mark);
-        std.debug.assert(d > 0);
-        return .{ .from = from, .toward = from.add(mark.sub(from).scaled(@divFloor(range + d - 1, d))) };
+        std.debug.assert(!from.eq(mark));
+        return .{ .from = from, .toward = mathx.onTo(from, mark, range) };
     }
 
     /// The cell `k` along its line; `from` itself at 0.
@@ -34,11 +34,11 @@ pub const Bolt = struct {
         return c;
     }
 
-    /// Thrown from a cell on the map, along a line no longer than `range` past the map's breadth, no farther out than that line runs.
+    /// Thrown from a cell on the map, along a line at least `range` long and no longer than `range` past the map's breadth, no farther out than that line runs.
     pub fn valid(b: Bolt, range: i32) bool {
         if (!grid.Level.inside(b.from) or b.from.eq(b.toward)) return false;
         const far = @max(@abs(@as(i64, b.toward.x) - b.from.x), @abs(@as(i64, b.toward.y) - b.from.y));
-        return far <= @as(i64, range) + @max(grid.W, grid.H) and b.flown <= far;
+        return far >= range and far <= @as(i64, range) + @max(grid.W, grid.H) and b.flown <= far;
     }
 
     pub fn at(b: Bolt) P {
@@ -52,10 +52,7 @@ pub const Bolt = struct {
     }
 
     pub fn heading(b: Bolt) [2]f32 {
-        const a = mathx.centre(b.from);
-        const z = mathx.centre(b.toward);
-        const len = @max(0.001, mathx.len(z[0] - a[0], z[1] - a[1]));
-        return .{ (z[0] - a[0]) / len, (z[1] - a[1]) / len };
+        return mathx.unitToward(mathx.centre(b.from), mathx.centre(b.toward));
     }
 };
 
@@ -64,9 +61,16 @@ pub const Stop = union(enum) { body: u16, barrel: P, wall, spent };
 
 pub const Flew = struct { cells: u8 = 0, stop: ?Stop = null };
 
-/// `speed` cells on, or fewer where it comes down; it enters a body's or barrel's cell, but not a wall's.
+/// `speed` cells on, or fewer where it comes down; it enters a body's or barrel's cell, but not a wall's, and strikes a body that stepped into the cell it hangs in.
 pub fn fly(b: *Bolt, lv: *const grid.Level, h: Hurl) Flew {
     var out = Flew{};
+    if (b.flown > 0) {
+        const w = lv.who(b.at());
+        if (w != grid.NO_ONE) {
+            out.stop = .{ .body = w };
+            return out;
+        }
+    }
     while (out.cells < h.speed) {
         if (b.flown >= h.range) {
             out.stop = .spent;
@@ -79,7 +83,7 @@ pub fn fly(b: *Bolt, lv: *const grid.Level, h: Hurl) Flew {
         }
         const w = lv.who(c);
         const t = lv.at(c);
-        if (w == grid.NO_ONE and !lv.hasBarrel(c) and t.solid() and t.blind()) {
+        if (w == grid.NO_ONE and !lv.hasBarrel(c) and bow.walled(t)) {
             out.stop = .wall;
             return out;
         }
@@ -123,6 +127,8 @@ test "a bolt is valid only along a line its range could aim" {
     try std.testing.expect(!(Bolt{ .from = from, .toward = .{ .x = std.math.minInt(i32), .y = 10 } }).valid(TEST_HURL.range));
     try std.testing.expect(!(Bolt{ .from = from, .toward = .{ .x = std.math.maxInt(i32), .y = 10 } }).valid(TEST_HURL.range));
     try std.testing.expect(!(Bolt{ .from = from, .toward = from.add(.{ .x = 2, .y = 0 }), .flown = 3 }).valid(TEST_HURL.range));
+    try std.testing.expect(!(Bolt{ .from = from, .toward = from.add(.{ .x = TEST_HURL.range - 1, .y = 0 }) }).valid(TEST_HURL.range));
+    for (1..8) |d| try std.testing.expect(Bolt.aimed(from, from.add(.{ .x = @intCast(d), .y = 1 }), TEST_HURL.range).valid(TEST_HURL.range));
 }
 
 test "a bolt enters a body's or barrel's cell, stops short of a wall, and never leaves its line" {
@@ -137,4 +143,14 @@ test "a bolt enters a body's or barrel's cell, stops short of a wall, and never 
     lv.set(.{ .x = 10, .y = 12 }, .wall);
     try std.testing.expectEqual(Flew{ .cells = 1, .stop = .wall }, fly(&w, &lv, TEST_HURL));
     try std.testing.expectEqual(P{ .x = 10, .y = 11 }, w.at());
+}
+
+test "a bolt strikes a body that steps into the cell it hangs in, but not its thrower before it flies" {
+    var lv = grid.openFloor();
+    var b = Bolt.aimed(.{ .x = 10, .y = 10 }, .{ .x = 11, .y = 10 }, TEST_HURL.range);
+    lv.stand(b.from, 1);
+    try std.testing.expectEqual(Flew{ .cells = 2 }, fly(&b, &lv, TEST_HURL));
+    lv.stand(b.at(), 4);
+    try std.testing.expectEqual(Flew{ .stop = .{ .body = 4 } }, fly(&b, &lv, TEST_HURL));
+    try std.testing.expectEqual(P{ .x = 12, .y = 10 }, b.at());
 }

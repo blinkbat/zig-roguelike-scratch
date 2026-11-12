@@ -1106,6 +1106,14 @@ pub fn capture(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8
                 ed.plot.focus = .{ .say = .{ .d = 0, .l = 0 } };
                 ed.plot.field.set(ed.map.script.dialog[0].line[0].say.text());
                 try snapAs(ed, g, target, "{s}/edit-dialog-typing.png", .{dir});
+                const old_speech = ed.map.script.dialog[0].line[0].say;
+                _ = ed.map.script.dialog[0].line[0].say.set("The road remembers every traveller who followed it north. " ** 80 ++ "\n\nAt the end of the story, the gate finally opens.");
+                ed.plot.field.set(ed.map.script.dialog[0].line[0].say.text());
+                try snapAs(ed, g, target, "{s}/edit-dialog-long-end.png", .{dir});
+                ed.plot.field.scroll = 0;
+                ed.plot.field.reveal = false;
+                try snapAs(ed, g, target, "{s}/edit-dialog-long-start.png", .{dir});
+                ed.map.script.dialog[0].line[0].say = old_speech;
                 ed.plot.focus = null;
                 ed.plot.preview = .{ .d = 0, .l = 0 };
                 try snapAs(ed, g, target, "{s}/edit-dialog-preview.png", .{dir});

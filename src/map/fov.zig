@@ -58,7 +58,7 @@ const Into = struct {
     out: *[grid.CELLS]bool,
 
     fn stops(_: Into, lv: *const grid.Level, p: P) bool {
-        return lv.at(p).blind();
+        return lv.blocksSight(p);
     }
 
     fn mark(s: Into, p: P) void {
@@ -139,6 +139,40 @@ test "foe sight reads current occluders independently of hero sight and memory" 
     try std.testing.expect(sees(&lv, watcher, hero, 3));
     lv.set(between, .wall);
     try std.testing.expect(!sees(&lv, watcher, hero, 3));
+}
+
+test "burning foliage passes sight light and targeting while solid cover and thick smoke remain opaque" {
+    const fire = @import("fire.zig");
+    const bow = @import("../play/bow.zig");
+    const hero = P{ .x = 20, .y = 20 };
+    const between = hero.add(.{ .x = 1, .y = 0 });
+    const target = hero.add(.{ .x = 3, .y = 0 });
+    for ([_]grid.Tile{ .floor, .grass, .reeds, .crop, .wall, .shrub }) |tile| {
+        var lv = grid.openFloor();
+        lv.set(between, tile);
+        cast(&lv, hero, 5);
+        try std.testing.expectEqual(!tile.blind(), lv.isLit(target));
+        fire.lay(&lv, between, fire.BURNS, 0);
+        const visible = !tile.blind() or tile.burns();
+        cast(&lv, hero, 5);
+        try std.testing.expectEqual(visible, lv.isLit(target));
+        try std.testing.expectEqual(visible, sees(&lv, target, hero, 5));
+        try std.testing.expectEqual(visible, grid.sightLine(&lv, hero, target));
+        try std.testing.expectEqual(visible, bow.aimable(&lv, hero, target, 5));
+        if (visible) try std.testing.expect(bow.fly(&lv, hero, target).end().?.eq(target));
+        var lit: [grid.CELLS]bool = @splat(false);
+        castInto(&lv, hero, 5, &lit);
+        try std.testing.expectEqual(visible, lit[grid.Level.idx(target)]);
+        lv.smoke[grid.Level.idx(between)] = grid.SMOKE_THICK;
+        cast(&lv, hero, 5);
+        try std.testing.expect(!lv.isLit(target));
+        try std.testing.expect(!grid.sightLine(&lv, hero, target));
+        lv.smoke[grid.Level.idx(between)] = 0;
+        var rng = mathx.Rng.init(1);
+        _ = fire.douse(&lv, &.{between}, 100, &rng);
+        cast(&lv, hero, 5);
+        try std.testing.expectEqual(!tile.blind(), lv.isLit(target));
+    }
 }
 
 test "an open floor lights a round pool, not a square one" {

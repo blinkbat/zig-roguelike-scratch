@@ -129,7 +129,8 @@ pub const Kind = enum {
 };
 
 pub const ON_HIT_FMT = "{d}% chance to {s} on hit";
-pub const BLOCK_FMT = "+{d}% chance to block";
+pub const BLOCK_CHANCE_FMT = "{d}% chance to block";
+pub const BLOCK_FMT = "+" ++ BLOCK_CHANCE_FMT;
 
 pub const WeaponEffect = struct {
     bleed: u32 = 0,

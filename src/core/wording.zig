@@ -7,10 +7,10 @@ const Case = enum { sentence, title, word };
 const Registration = struct { name: []const u8, saved_name: ?[]const u8 = null, casing: Case = .sentence, except: []const []const u8 = &.{}, only: ?[]const []const u8 = null };
 pub const TYPES = [_]Registration{
     .{ .name = "app.MainRow", .except = &.{"ossuary"} },
-    .{ .name = "app.OptionRow" },
-    .{ .name = "game.PauseRow", .only = &.{ "debug", "quit" } },
+    .{ .name = "ui.options.Row", .saved_name = "app.OptionRow", .except = &.{ "vsync", "frame_limit" } },
+    .{ .name = "game.PauseRow", .only = &.{ "options", "debug", "quit" } },
     .{ .name = "game.debug.Page", .except = &.{"main"} },
-    .{ .name = "game.debug.Row", .casing = .title, .except = &.{ "vsync", "frame_limit" } },
+    .{ .name = "game.debug.Row", .casing = .title },
     .{ .name = "play.hero.Class" },
     .{ .name = "play.skillbar.Act", .casing = .title, .except = &.{"secondary"} },
     .{ .name = "play.item_bases.Kind", .saved_name = "play.items.Kind" },

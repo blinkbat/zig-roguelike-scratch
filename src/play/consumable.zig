@@ -11,6 +11,22 @@ const P = mathx.P;
 pub const Kind = enum { bandage, smelling_salts, frost_vial };
 pub const KINDS = std.enums.values(Kind);
 pub const STACK_MAX: u8 = 20;
+pub const Stacks = std.EnumArray(Kind, u8);
+
+pub fn stocked(s: *const Stacks) usize {
+    var n: usize = 0;
+    for (KINDS) |k| n += @intFromBool(s.get(k) > 0);
+    return n;
+}
+
+pub fn stockedAt(s: *const Stacks, row: usize) ?Kind {
+    var left = row;
+    for (KINDS) |k| if (s.get(k) > 0) {
+        if (left == 0) return k;
+        left -= 1;
+    };
+    return null;
+}
 
 pub fn roll(rng: *mathx.Rng, percent: u32) ?Kind {
     return if (rng.percent(percent)) rng.pick(Kind, KINDS) else null;

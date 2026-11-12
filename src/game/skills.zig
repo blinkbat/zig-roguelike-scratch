@@ -228,15 +228,16 @@ fn useSupply(run: *game.Game, comptime act: skillbar.Act, comptime k: consumable
 }
 
 pub fn recover(run: *game.Game) void {
-    run.sim.mana_recovery += run.sim.manaRegen();
-    run.sim.gainMana(@divTrunc(run.sim.mana_recovery, heroes.MANA_REGEN_TURNS));
-    run.sim.mana_recovery = @mod(run.sim.mana_recovery, heroes.MANA_REGEN_TURNS);
-    run.sim.life_recovery +|= run.sim.lifeRegen();
-    const mended = @divTrunc(run.sim.life_recovery, heroes.LIFE_REGEN_TURNS);
-    run.sim.life_recovery = @mod(run.sim.life_recovery, heroes.LIFE_REGEN_TURNS);
-    combat.heal(run, mended, run.pic.lead orelse 0);
+    run.sim.gainMana(accrue(&run.sim.mana_recovery, run.sim.manaRegen(), heroes.MANA_REGEN_TURNS));
+    combat.heal(run, accrue(&run.sim.life_recovery, run.sim.lifeRegen(), heroes.LIFE_REGEN_TURNS), run.pic.lead orelse 0);
     if (run.sim.playground) run.sim.gainMana(run.sim.manaMax());
     for (std.enums.values(flask.Kind)) |k| recoverFlask(run, k, run.pic.lead orelse 0);
+}
+
+fn accrue(banked: *i32, regen: i32, turns: i32) i32 {
+    banked.* +|= regen;
+    defer banked.* = @mod(banked.*, turns);
+    return @divTrunc(banked.*, turns);
 }
 
 fn recoverFlask(run: *game.Game, k: flask.Kind, wait: f32) void {
@@ -520,11 +521,8 @@ fn resolveProjectileHit(run: *game.Game, comptime action: skillbar.Act, hit: bow
 
 /// Each body struck as the projectile reaches its cell, then whatever stopped it.
 fn skewerHits(run: *game.Game, comptime action: skillbar.Act, pierced: bow.Pierced, stroke: game.presentation.Stroke) void {
-    const cells: f32 = @floatFromInt(pierced.flight.len);
     for (pierced.body[0..pierced.n], pierced.step[0..pierced.n]) |id, step| {
-        var s = stroke;
-        s.wait = stroke.wait * @as(f32, @floatFromInt(step + 1)) / cells;
-        hitProjectileActor(run, action, id, s);
+        hitProjectileActor(run, action, id, stroke.along(step, pierced.flight.len));
     }
     switch (pierced.flight.struck.?) {
         .barrel, .plant => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),

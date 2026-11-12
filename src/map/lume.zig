@@ -38,19 +38,17 @@ pub fn skyReach(outdoors: bool, hour: f32, sight: i32) f32 {
 
 fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, out: *[grid.CELLS]bool) void {
     @memset(out, false);
-    const near = sight + TORCH_REACH;
-    for (lv.torches()) |t| {
-        if (mathx.dist(torchFloor(t), viewer) <= near) torchPool(lv, torchFloor(t), out);
-    }
+    for (lv.torches()) |t| poolNear(lv, viewer, sight, .{ .at = torchFloor(t), .reach = TORCH_REACH }, out);
     var glows = lv.glowing();
-    while (glows.next()) |p| {
-        if (mathx.dist(p, viewer) <= near) torchPool(lv, p, out);
-    }
+    while (glows.next()) |p| poolNear(lv, viewer, sight, .{ .at = p, .reach = TORCH_REACH }, out);
     for (&lv.flames, 0..) |left, i| {
-        const p = grid.Level.of(i);
-        if (left > 0 and mathx.dist(p, viewer) <= sight + FIRE_REACH) fov.castInto(lv, p, FIRE_REACH, out);
+        if (left > 0) poolNear(lv, viewer, sight, .{ .at = grid.Level.of(i), .reach = FIRE_REACH }, out);
     }
     for (carried) |s| fov.castInto(lv, s.at, s.reach, out);
+}
+
+fn poolNear(lv: *const grid.Level, viewer: P, sight: i32, s: Source, out: *[grid.CELLS]bool) void {
+    if (mathx.dist(s.at, viewer) <= sight + s.reach) fov.castInto(lv, s.at, s.reach, out);
 }
 
 fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool, was_seen: *const [grid.CELLS]bool) void {

@@ -29,6 +29,14 @@ Sources: [Steam: hold back for the mini menu](https://steamcommunity.com/app/269
 
 ## Ours
 
+Options > Visuals and Pause > Options > Visuals share effect sliders. Vertical navigation selects a
+row; horizontal navigation adjusts it in 5% steps. Confirm switches between a
+neutral/default value and a sample strength, Change resets the selected value,
+and Reset to defaults restores the visual preset. Set all to 0 zeros every slider.
+Display settings (fullscreen, VSync, frame limit) are in Options > Display.
+Mouse users can drag the rails,
+including beyond their ends to reach the limits, and scroll through the list.
+
 No screen names a key or button in prose. Control hints use glyphs throughout, including the editor.
 The skill bar and bind screen show each slot's input as an icon of the
 device last pressed (`State.device`, `prompt_icon.Prompt`): any gamepad button or the stick pushed past walking makes it the
@@ -73,7 +81,7 @@ PS button do nothing; GLFW reads no touchpad.
 | Confirm, select | A | Enter, Space or Z |
 | Interact in play | A / Cross | Enter or Space |
 | Talk to NPCs | walk into them, or Interact beside them | walk into them, Enter or Space beside them |
-| Conversation: choose, go on | D-pad up/down, A | arrows/WS, Enter, Space or Z; or click a choice (no back-out) |
+| Conversation: choose, go on | D-pad up/down, A; LB/RB for long passages | arrows/WS, Enter, Space or Z; Q/E for long passages; or click a reply/Continue (no back-out) |
 | Scroll event log | Inspect log, up/down | Wheel over log, or Inspect then up/down |
 | Bind screen: change, remove | X, Y | C, Del |
 | Passive tree: browse | Left stick, actual bearing | WASD, arrows, numpad |
@@ -81,7 +89,7 @@ PS button do nothing; GLFW reads no touchpad.
 | Passive tree: zoom | D-pad up/down; X/Y steps | =/-, keypad +/-, Page Up/Down; C/Del steps |
 | Passive tree: overview | Right-stick click | Home |
 | Delete a save | Y | Del |
-| Fullscreen | Options > Fullscreen | Alt+Enter, or Options |
+| Fullscreen | Options > Display > Fullscreen | Alt+Enter, or Options |
 | Name the hero | walk the letter grid, A types, X deletes | type it; Backspace deletes, Enter is done |
 
 Class kits and template bindings live in `skillbar`; `progress.State` filters new-run defaults and the bind picker to learned skills.
@@ -123,7 +131,7 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
 - **Binding belongs to Skills.** Its bind action carries a learned skill to the slot screen; select a destination and confirm once. Back returns to Skills. The picker remains available for utility skills and the secondary-set modifier. Clearing a slot is direct. Binding spends no turn.
 - **Pause > Debug** groups controls into Gameplay (Restart Map, Reveal Map, Unkillable), Lighting
   (Composed Lighting, Shadows, Body Lighting, Effect Lights), Effects (Bloom, Atmosphere, Depth Of Field,
-  Water Reflections, Water Glints, Weather), Display (Fullscreen, VSync, Frame Limit), and Diagnostics.
+  Water Reflections, Water Glints, Weather), and Diagnostics. Display settings live in Options > Display.
   Diagnostics shows the active OpenGL vendor/renderer/version, window and framebuffer size, build mode,
   and FPS/CPU timing; its performance overlay can be toggled. CPU timing excludes frame pacing and is
   not GPU timing. Frame Limit cycles through uncapped, 30, 60, 120 and 144 FPS; VSync can cap it further.

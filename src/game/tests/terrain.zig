@@ -211,6 +211,26 @@ test "terrain inspection retains the drawn tile and modifiers until freezing and
     }
 }
 
+test "light a fire kindles stays dark, and light a douse puts out stays lit, until the blow lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 23, .y = 20 };
+    const glow = grid.Level.idx(at.add(.{ .x = 2, .y = 0 }));
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    game.settle(g);
+    for ([_]bool{ true, false }) |kindling| {
+        g.sim.lv.lit[glow] = !kindling;
+        g.pic.advance(&g.sim, 1);
+        const area = areas.patch(&g.sim.lv, at, 0);
+        if (kindling) combat.fireLands(g, at, 0, .{ .chance = 0 }, 0.3) else combat.coldLands(g, &area, 0.3);
+        g.sim.lv.lit[glow] = kindling;
+        try std.testing.expectEqual(!kindling, g.pic.litShown(&g.sim, grid.Level.of(glow)));
+        try std.testing.expectEqual(!kindling, g.pic.groundShown(&g.sim).lit[glow]);
+        g.pic.advance(&g.sim, 0.4);
+        try std.testing.expectEqual(kindling, g.pic.litShown(&g.sim, grid.Level.of(glow)));
+    }
+}
+
 test "inspection includes visible actors beside the HUD and excludes actors beyond the screen" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

@@ -171,6 +171,7 @@ test {
     _ = @import("gfx/pixel.zig");
     _ = @import("gfx/cloud.zig");
     _ = @import("gfx/cinema.zig");
+    _ = @import("gfx/lens.zig");
     _ = @import("gfx/sky.zig");
     _ = @import("gfx/vignette.zig");
     _ = @import("gfx/weather.zig");
@@ -179,6 +180,7 @@ test {
     _ = @import("gfx/light_gpu.zig");
     _ = @import("gfx/light_tests.zig");
     _ = @import("ui/menu.zig");
+    _ = @import("ui/options.zig");
     _ = @import("ui/hud.zig");
     _ = @import("ui/book.zig");
     _ = @import("ui/character_view.zig");

@@ -70,6 +70,7 @@ pub const Light = struct {
         mathx.defaults(&l.banks);
         l.visibility.reset();
         @memset(&l.scratch.tile, .floor);
+        @memset(&l.scratch.flames, 0);
         @memset(&l.scratch.los, false);
         l.grounded();
         for (std.enums.values(model.Layer)) |k| @memset(l.texels.getPtr(k), model.UNSEEN.get(k));
@@ -118,6 +119,7 @@ pub const Light = struct {
 
     fn retile(self: *Light, lv: *const grid.Level) void {
         self.scratch.tile = lv.tile;
+        self.scratch.flames = lv.flames;
         self.countCasters(&self.scratch);
         self.visibility.terrain(&self.scratch);
         self.visibility.soften();
@@ -139,7 +141,7 @@ pub const Light = struct {
     }
 
     pub fn follow(self: *Light, lv: *const grid.Level) void {
-        if (!std.mem.eql(grid.Tile, &self.scratch.tile, &lv.tile)) self.retile(lv);
+        if (!std.mem.eql(grid.Tile, &self.scratch.tile, &lv.tile) or !std.mem.eql(u8, &self.scratch.flames, &lv.flames)) self.retile(lv);
     }
 
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {

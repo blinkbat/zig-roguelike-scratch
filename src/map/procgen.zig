@@ -186,7 +186,7 @@ comptime {
         const m = @field(FEATURES, name);
         if (takesLots(m)) most = @max(most, m.COUNT_MAX);
     }
-    std.debug.assert(buildings.LOTS_MAX >= MAX_FEATURES * most);
+    std.debug.assert(buildings.LOTS_MAX >= MAX_FEATURES * most + buildings.SECTION_LOTS);
 }
 
 /// Reproducible from the seed, the doors and the plan; the edge sealed, then every open cell joined, each door too.
@@ -259,6 +259,30 @@ pub fn reshape(lv: *grid.Level) void {
 }
 
 const TEST_RUNS: usize = 12;
+const KINDS = std.enums.values(Kind);
+
+fn everyFeature() [KINDS.len]Feature {
+    var all: [KINDS.len]Feature = undefined;
+    for (KINDS, &all) |k, *f| f.* = Feature.of(k);
+    return all;
+}
+
+fn testDoors(rng: *mathx.Rng) [4]P {
+    return .{
+        .{ .x = 0, .y = rng.range(1, grid.H - 2) },
+        .{ .x = grid.W - 1, .y = rng.range(1, grid.H - 2) },
+        .{ .x = rng.range(1, grid.W - 2), .y = grid.H - 1 },
+        .{ .x = rng.range(3, grid.W - 4), .y = rng.range(3, grid.H - 4) },
+    };
+}
+
+fn testMix(all: []const Feature, i: usize) []const Feature {
+    return switch (i % 3) {
+        0 => &.{},
+        1 => all[0 .. all.len / 2],
+        else => all,
+    };
+}
 const COUNT_RUNS: usize = 200;
 const SMALL_HOUSES = (buildings.Params{ .count = buildings.COUNT_MAX, .size = .{ 5, 6 } }).fit();
 const PACKED_SHRINES = (setpiece.Params{ .piece = .shrine, .count = setpiece.COUNT_MAX, .apart = 0 }).fit();
@@ -268,24 +292,13 @@ test "every base, bare and under every feature, joins its ground, reaches its do
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var rng = mathx.Rng.init(0x9E0);
-    const kinds = comptime std.enums.values(Kind);
-    var all: [kinds.len]Feature = undefined;
-    for (kinds, &all) |k, *f| f.* = Feature.of(k);
+    const all = everyFeature();
     for (std.enums.values(Algo)) |a| {
         var least: usize = grid.CELLS;
         var most: usize = 0;
         for (0..TEST_RUNS) |i| {
-            const doors = [_]P{
-                .{ .x = 0, .y = rng.range(1, grid.H - 2) },
-                .{ .x = grid.W - 1, .y = rng.range(1, grid.H - 2) },
-                .{ .x = rng.range(1, grid.W - 2), .y = grid.H - 1 },
-                .{ .x = rng.range(3, grid.W - 4), .y = rng.range(3, grid.H - 4) },
-            };
-            const features: []const Feature = switch (i % 3) {
-                0 => &.{},
-                1 => all[0 .. all.len / 2],
-                else => &all,
-            };
+            const doors = testDoors(&rng);
+            const features = testMix(&all, i);
             const seed = 0x51ED +% i *% grid.TEST_SEED_STRIDE;
             roll(&lv, seed, &doors, Floor.of(a), features);
             try grid.expectAllReached(&lv, doors[0], &dist, &queue);
@@ -330,25 +343,14 @@ test "every base under every feature mix keeps a section's painted cells and tor
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var rng = mathx.Rng.init(0x5EC);
-    const kinds = comptime std.enums.values(Kind);
-    var all: [kinds.len]Feature = undefined;
-    for (kinds, &all) |k, *f| f.* = Feature.of(k);
+    const all = everyFeature();
     const anchors = std.enums.values(section.Anchor);
     var lost: usize = 0;
     var dark: usize = 0;
     for (std.enums.values(Algo)) |a| {
         for (0..TEST_RUNS) |i| {
-            const doors = [_]P{
-                .{ .x = 0, .y = rng.range(1, grid.H - 2) },
-                .{ .x = grid.W - 1, .y = rng.range(1, grid.H - 2) },
-                .{ .x = rng.range(1, grid.W - 2), .y = grid.H - 1 },
-                .{ .x = rng.range(3, grid.W - 4), .y = rng.range(3, grid.H - 4) },
-            };
-            const features: []const Feature = switch (i % 3) {
-                0 => &.{},
-                1 => all[0 .. all.len / 2],
-                else => &all,
-            };
+            const doors = testDoors(&rng);
+            const features = testMix(&all, i);
             const seed = 0x5EC7 +% i *% grid.TEST_SEED_STRIDE;
             const s = testSection(anchors[i % anchors.len], false);
             const laid = s.lands(seed, &doors).?;
@@ -376,12 +378,14 @@ test "a section painted shut is opened through one wall cell and the rest of its
     const RUNS = 50;
     for ([_]Algo{ .open, .wilds, .caves, .rooms }) |a| {
         var other: usize = 0;
+        var dark: usize = 0;
         for (0..RUNS) |i| {
             const seed = 0x5407 +% i *% grid.TEST_SEED_STRIDE;
             const s = testSection(.roams, true);
             const laid = s.lands(seed, &doors).?;
             rollWith(&lv, seed, &doors, Floor.of(a), &.{}, laid);
             try grid.expectAllReached(&lv, doors[0], &dist, &queue);
+            if (!nearDoor(laid.at(SECTION_TORCH), &doors) and !lv.torch.has(laid.at(SECTION_TORCH))) dark += 1;
             var breached: usize = 0;
             var it = SECTION_ROOM.cells();
             while (it.next()) |p| {
@@ -390,6 +394,7 @@ test "a section painted shut is opened through one wall cell and the rest of its
             if (breached != 1) other += 1;
         }
         try std.testing.expectEqual(@as(usize, 0), other);
+        try std.testing.expectEqual(@as(usize, 0), dark);
     }
 }
 

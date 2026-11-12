@@ -11,12 +11,7 @@ pub const Lane = grid.Bounded(P, LONGEST);
 pub const NEAREST: i32 = 2;
 
 /// The way from `from` to `to` when `to` lies on one of the eight straight lines through it.
-pub fn lineTo(from: P, to: P) ?mathx.Dir {
-    const v = to.sub(from);
-    if (v.x == 0 and v.y == 0) return null;
-    if (v.x != 0 and v.y != 0 and @abs(v.x) != @abs(v.y)) return null;
-    return mathx.toward(from, to);
-}
+pub const lineTo = @import("charge.zig").wayTo;
 
 /// The cells along `d` from `from`, `reach` at most, stopping short of the first a step cannot enter.
 pub fn lane(lv: *const grid.Level, from: P, d: mathx.Dir, reach: i32) Lane {

@@ -153,16 +153,11 @@ pub const Bespoke = struct {
     }
 
     pub fn foeAt(self: *const Bespoke, p: P) ?usize {
-        for (self.foes(), 0..) |f, i| {
-            if (f.at.eq(p)) return i;
-        }
-        return null;
+        return section.foeIn(self.foes(), p);
     }
 
     pub fn bodies(self: *const Bespoke) usize {
-        var n = actor.most(actor.HERO);
-        for (self.foes()) |f| n += actor.most(f.kind);
-        return n;
+        return section.bodiesOf(self.foes());
     }
 
     pub fn roomAt(self: *const Bespoke, p: P, k: actor.Kind) bool {
@@ -359,14 +354,14 @@ pub const Node = struct {
     }
 
     /// A procgen node's guards by its carts, then its packs round the hero arriving at `at`, exit packs by its doors.
-    pub fn placePacks(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P) void {
+    fn placePacks(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P) void {
         self.packsOff(lv, pool, rng, at, &grid.CellSet.initEmpty());
     }
 
     /// The foes of the section `roll` laid, each on its cell while the pool has room, then `placePacks` with no pack on a painted cell.
     pub fn populate(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, roll: u64) void {
         const laid = self.sectionOn(roll) orelse return self.placePacks(lv, pool, rng, at);
-        for (self.plan.procgen.section.foes()) |f| {
+        for (laid.section.foes()) |f| {
             const s = laid.foe(f);
             if (pool.hasRoomFor(s.kind) and actor.dwells(s.kind, lv, s.at)) _ = pool.spawn(lv, actor.Actor.of(s.kind, s.at));
         }
@@ -380,7 +375,7 @@ pub const Node = struct {
         pack.placeOff(lv, pool, rng, at, self.doorCells(&buf), &self.plan.procgen.foes, off);
     }
 
-    pub fn sectionOn(self: *const Node, roll: u64) ?section.Placed {
+    fn sectionOn(self: *const Node, roll: u64) ?section.Placed {
         var buf: [grid.MAX_DOORS]P = undefined;
         return switch (self.plan) {
             .procgen => |*pg| pg.section.lands(roll, self.doorCells(&buf)),
@@ -391,7 +386,7 @@ pub const Node = struct {
     /// Where the plan stands its foes on `roll`: a bespoke node's as painted, a procgen node's section's where it landed.
     pub fn placedOn(self: *const Node, roll: u64, buf: *[MAX_FOES]Foe) []const Foe {
         const laid = self.sectionOn(roll) orelse return self.placed();
-        const fs = self.plan.procgen.section.foes();
+        const fs = laid.section.foes();
         for (fs, buf[0..fs.len]) |f, *out| out.* = laid.foe(f);
         return buf[0..fs.len];
     }
@@ -400,7 +395,7 @@ pub const Node = struct {
         var buf: [grid.MAX_DOORS]P = undefined;
         const cells = self.doorCells(&buf);
         switch (self.plan) {
-            .procgen => |*pg| procgen.rollWith(lv, roll, cells, pg.floor, pg.features(), pg.section.lands(roll, cells)),
+            .procgen => |*pg| procgen.rollWith(lv, roll, cells, pg.floor, pg.features(), self.sectionOn(roll)),
             .bespoke => |*b| {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;

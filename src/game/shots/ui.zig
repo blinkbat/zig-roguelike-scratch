@@ -160,6 +160,13 @@ fn captureTalk(g: *game.Game) !void {
         w.script.npc[0].looks = .caravan_guard;
         game.talking.speak(g, 0);
         try capture(g, target, SHOTS_DIR ++ "/talk-figure-" ++ suffix ++ ".png");
+        const old_speech = w.script.dialog[0].line[0].say;
+        _ = w.script.dialog[0].line[0].say.set("We used to count the bells from the road. One for the gates, two for the watch, three for a traveller who would not be coming home. I remember the night they rang thirteen times.\n\nNo one in the village spoke of it the next morning. The baker opened his shutters. The guards changed their watch. But every door along the northern lane had been painted white, and every name above it had been scraped away.\n\nIf you mean to go there, take this with you: when the bells begin, do not answer anyone who calls you by your name.");
+        try capture(g, target, SHOTS_DIR ++ "/talk-story-" ++ suffix ++ ".png");
+        g.talk_page = 1;
+        try capture(g, target, SHOTS_DIR ++ "/talk-story-continued-" ++ suffix ++ ".png");
+        w.script.dialog[0].line[0].say = old_speech;
+        g.talk_page = 0;
         w.script.npc[0].looks = null;
         g.sim.plot = .{};
         g.mode = .play;

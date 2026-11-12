@@ -469,6 +469,25 @@ fn spendTurn(g: *game.Game) void {
 
 pub fn pauseStep(g: *game.Game) void {
     switch (g.pause_page) {
+        .options, .visuals, .display => {
+            const options = @import("../ui/options.zig");
+            const page: options.Page = switch (g.pause_page) { .visuals => .visuals, .display => .display, else => .main };
+            if (menu.backedAt(&g.st, g.screen)) {
+                g.pause_page = if (page == .main) .main else .options;
+                g.pause_menu = .{ .at = if (page == .main) game.rowAt(game.PauseRow.options) else options.index(.main, if (page == .visuals) .visuals else .display) };
+                return;
+            }
+            const row = options.step(&g.cinema, &g.pause_menu, &g.st, g.screen, page, &g.display) orelse return;
+            switch (row) {
+                .visuals, .display => {
+                    g.pause_page = if (row == .visuals) .visuals else .display;
+                    g.pause_menu = .{};
+                },
+                .fullscreen => game.syncScreen(g, true),
+                .debug => game.debugging.open(g, .main),
+                else => unreachable,
+            }
+        },
         .character => {
             const trading = g.character.page == .trade;
             if (!trading and padToGame(g)) return;
@@ -489,6 +508,10 @@ pub fn pauseStep(g: *game.Game) void {
             const i = g.pause_menu.stepAt(&g.st, game.PAUSE_ROWS.len, g.screen) orelse return;
             switch (game.PAUSE_ROWS[i]) {
                 .resume_ => g.mode = .play,
+                .options => {
+                    g.pause_page = .options;
+                    g.pause_menu = .{};
+                },
                 .debug => game.debugging.open(g, .main),
                 inline .back, .quit => |r| {
                     g.mode = .play;
@@ -502,7 +525,7 @@ pub fn pauseStep(g: *game.Game) void {
 fn pauseLabel(g: *const game.Game, r: game.PauseRow) [:0]const u8 {
     return switch (r) {
         .resume_ => "Resume",
-        .debug, .quit => menu.named(r),
+        .options, .debug, .quit => menu.named(r),
         .back => switch (g.back) {
             .title => "Title",
             .editor => "Back to the editor",
@@ -517,6 +540,11 @@ pub fn veil(g: *const game.Game) void {
 pub fn drawPause(g: *game.Game) void {
     veil(g);
     switch (g.pause_page) {
+        .options, .visuals, .display => {
+            const page: @import("../ui/options.zig").Page = switch (g.pause_page) { .visuals => .visuals, .display => .display, else => .main };
+            @import("../ui/options.zig").draw(g.face, &g.sprites, g.screen, &g.cinema, g.pause_menu.at, &g.st, page, g.display);
+            menu.drawBack(&g.face, g.screen, &g.st);
+        },
         .character => {
             g.character.draw(&g.face, &g.sprites, g.screen, bookView(g, &g.nearby));
         },

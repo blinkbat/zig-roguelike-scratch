@@ -1,11 +1,15 @@
 # Player-facing text editor
 
 The editor's Text view reads production Zig source under the project's `src` directory.
-Browse by feature, then by the skill, item, screen or source owner. Passages identify their
+Browse an expandable tree by concern, text type, then skill, item, screen or source owner.
+For example, Items contains Name and Description branches; Log lines contains gameplay
+subgroups and individual message owners. Branches show matching passage counts and
+stay in the tree when another branch expands. Passages identify their
 purpose, such as Name, Description, Flavor or Tooltip, before showing the wording. The
 inspector keeps the owner, purpose, exact source declaration and file/line visible above
 the draft. Search matches wording, feature, owner, purpose and source identifiers. Clear
-the query or return to All features to broaden the results. Each list scrolls independently.
+the query or select All text to broaden the results. The tree, passage list and writing
+field scroll independently; writing fields show a scrollbar and reveal the caret after navigation.
 
 Selecting a passage focuses its wording; selecting the search field focuses filtering.
 The editing text is 24px, with 20px supporting labels. The Written by controls set an
@@ -54,7 +58,7 @@ enum labels, including their default casing and excluded fields. When moving a r
 enum, update its registration name and retain the original key through `saved_name`;
 the catalog and runtime display helpers use that same mapping.
 
-Editable text is nonempty ASCII, up to 4096 bytes, matching the game's text rendering
+Editable text is nonempty ASCII, up to 32,768 bytes, matching the game's text rendering
 contract. Display aliases
 are single-line text. Quotes, backslashes and newlines are escaped safely. Format placeholders such as
 `{s}` and `{d}`, escaped braces and inline control glyph markers must remain unchanged and
@@ -64,3 +68,21 @@ an in-game layout check after rebuilding.
 The tag file is also checked for changes made since loading. A malformed tag file produces
 a warning and is preserved: source edits can still save, but attribution cannot be updated
 until that file is repaired. Unknown tags are never inferred from existing prose.
+
+## Map dialogue
+
+The Dialog editor edits the open map. Speech holds 32,768 ASCII characters, replies
+8,192 and speaker names 128. Speech and replies accept paragraphs with Enter; Escape
+leaves the writing field. Their larger text wells show character counts and scroll
+independently of the surrounding details. The line list has its own scroll area and
+keeps Add, Up and Delete available at its foot.
+
+Map serialization retains paragraph breaks and spaces through `say_more |...` and
+`ask_more |...` continuation records. Single-line content retains the existing
+`say` and `ask` syntax. The map file ceiling is 32 MiB.
+
+In-game dialogue sits above the bottom HUD, with a fixed speaker header, wrapped
+replies and a fixed action row. Ordinary conversations fit one panel. Long passages
+use Continue and Previous only when needed, with a page indicator. Reading does not
+execute reply actions or spend a turn. Oversized replies remain readable across
+pages and cannot be picked until their final fragment is shown.

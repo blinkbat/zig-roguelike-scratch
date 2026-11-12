@@ -7,6 +7,7 @@ const atlas = @import("../map/atlas.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
+const prompt_icon = @import("../gfx/prompt_icon.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
 const editor = @import("editor.zig");
@@ -119,10 +120,14 @@ pub const State = struct {
     claimed: bool = false,
     list: widgets.Scrolled = .{},
     detail: widgets.Scrolled = .{},
+    lines: widgets.Scrolled = .{},
+    field_box: rl.Rectangle = widgets.NO_BOX,
     /// The script's lists as the page last drew them; a picked index means nothing once they changed elsewhere.
     seen: Seen = .{},
     /// A line drawn as the game draws it, over the page.
     preview: ?LineAt = null,
+    preview_page: usize = 0,
+    preview_cursor: usize = 0,
 
     fn pickDialog(s: *State, d: u8) void {
         s.pick = .{ .dialog = d };
@@ -191,16 +196,23 @@ pub fn keys(ed: *editor.Editor) void {
     if (d.clicked()) ed.gesture();
     if (d.undo or d.redo) return;
     if (s.preview != null) {
-        if (interaction.backed(d) or d.enter) s.preview = null;
+        if (interaction.backed(d)) s.preview = null;
         return;
     }
     if (d.wheel != 0) {
         const by = d.notch() * WHEEL_NOTCH;
-        s.list.wheel(d.mouse, by);
-        s.detail.wheel(d.mouse, by);
+        if (s.focus != null and raster.holds(s.field_box, d.mouse)) {
+            s.field.scroll = widgets.scrollTop(s.field.scroll, by, s.field.lines, s.field.rows);
+            s.field.reveal = false;
+        } else {
+            s.list.wheel(d.mouse, by);
+            s.lines.wheel(d.mouse, by);
+            s.detail.wheel(d.mouse, by);
+        }
     }
     if (s.focus) |f| {
-        const t = (if (d.back or d.enter) null else target(&ed.map.script, f)) orelse {
+        const multiline = f == .say or f == .ask;
+        const t = (if (d.back or (d.enter and !multiline)) null else target(&ed.map.script, f)) orelse {
             s.focus = null;
             return;
         };
@@ -216,7 +228,8 @@ fn close(ed: *editor.Editor) void {
 
 fn typed(ed: *editor.Editor, t: Target) void {
     const s = &ed.plot;
-    if (!s.field.feed(&ed.desk, false)) return ed.say("Plain letters on one line, {d} at most", .{s.field.cap});
+    const multiline = t.words == .say or t.words == .ask;
+    if (!s.field.feed(&ed.desk, multiline)) return ed.say("Text does not fit: {d} characters at most", .{s.field.cap});
     const now = std.mem.trim(u8, s.field.text(), " ");
     const was = t.words.text();
     if (std.mem.eql(u8, now, was)) return;
@@ -262,7 +275,7 @@ const WORDS_MAX = blk: {
 };
 
 fn plainChar(c: u8) bool {
-    return script.plain(&[_]u8{c});
+    return c == '\n' or c == '\r' or script.plain(&[_]u8{c});
 }
 
 const Unique = union(enum) { dialog: u8, line: LineAt, trigger: u8, table: TableAt, quest: u8 };
@@ -347,7 +360,6 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     s.seen = Seen.of(&ed.map.script);
 }
 
-/// Every choice shown whatever its gate; a click on one follows it, a click elsewhere comes back.
 fn drawPreview(ed: *editor.Editor, g: *game.Game, at: LineAt, clicked: bool) void {
     const m = &ed.map.script;
     const ln = lineOf(m, at) orelse {
@@ -357,18 +369,46 @@ fn drawPreview(ed: *editor.Editor, g: *game.Game, at: LineAt, clicked: bool) voi
     var labels: [script.MAX_CHOICES][]const u8 = undefined;
     for (ln.choices(), 0..) |*c, i| labels[i] = c.ask.text();
     const speaker = speakerOf(m, at.d);
-    var view = talk.View{ .who = if (ln.who.n > 0) ln.who.text() else if (speaker) |n| n.called() else "", .say = ln.say.text(), .choices = labels[0..ln.choice_n], .cursor = script.MAX_CHOICES, .prompt = .{ .key = "Enter" } };
-    if (speaker) |n| if (ln.who.n == 0 or ln.who.eql(n.called())) {
-        view.figure = if (n.looks) |k| .{ .tex = g.sprites.body(k), .glyph = look.body(k) } else .{};
-    };
-    var l: talk.Layout = .{ .panel = undefined, .text_x = 0, .text_w = 0, .action = undefined };
+    ed.plot.preview_cursor = @min(ed.plot.preview_cursor, ln.choice_n -| 1);
+    if (ed.desk.nav != 0 and ln.choice_n > 0) ed.plot.preview_cursor = mathx.wrap(ed.plot.preview_cursor, ed.desk.nav, ln.choice_n);
+    var view = talk.View{ .who = ln.speakerOr(speaker), .say = ln.say.text(), .choices = labels[0..ln.choice_n], .cursor = ed.plot.preview_cursor, .prompt = prompt_icon.Prompt.menuOn(.keys, menu.CONFIRM) };
+    view.page = ed.plot.preview_page;
+    if (speaker) |n| view.figure = talk.Figure.of(&g.sprites, n, ln);
+    var l: talk.Layout = .{};
     l.of(&g.face, g.screen, view);
+    if (ed.desk.nav != 0 and ln.choice_n > 0) {
+        ed.plot.preview_page = l.pageForChoice(ed.plot.preview_cursor);
+        view.page = ed.plot.preview_page;
+        l.of(&g.face, g.screen, view);
+    }
     const row = l.rowAt(ed.desk.mouse);
-    if (row) |r| view.cursor = r;
+    if (clicked) if (row) |r| {
+        view.cursor = r;
+        ed.plot.preview_cursor = r;
+    };
     talk.draw(&g.face, &g.sprites, g.screen, view, &l);
-    if (!clicked or ed.fresh) return;
-    const next = if (row) |r| ln.choice[r].next else if (ln.choice_n == 0 and raster.holds(l.action, ed.desk.mouse)) ln.then else null;
+    if ((!clicked and !ed.desk.enter) or ed.fresh) return;
+    if (clicked and l.page > 0 and raster.holds(l.previous, ed.desk.mouse)) {
+        ed.plot.preview_page = l.page - 1;
+        return;
+    }
+    const action = ed.desk.enter or (clicked and raster.holds(l.action, ed.desk.mouse));
+    if (l.page + 1 < l.pages and ((action and l.continues(view.cursor)) or (clicked and !l.continues(view.cursor) and raster.holds(l.next, ed.desk.mouse)))) {
+        ed.plot.preview_page = l.page + 1;
+        view.page = ed.plot.preview_page;
+        l.of(&g.face, g.screen, view);
+        for (0..l.row_n) |i| if (l.choiceReady(i)) {
+            ed.plot.preview_cursor = i;
+            break;
+        };
+        return;
+    }
+    const chosen = if (clicked and row != null) row else if (action and l.choiceReady(view.cursor)) view.cursor else null;
+    if (chosen == null and !(ln.choice_n == 0 and action)) return;
+    const next = if (chosen) |r| ln.choice[r].next else ln.then;
     ed.plot.preview = if (next) |n| .{ .d = at.d, .l = n } else null;
+    ed.plot.preview_page = 0;
+    ed.plot.preview_cursor = 0;
     if (next) |n| ed.plot.line = n;
 }
 
@@ -481,9 +521,9 @@ fn dropRow(ed: *editor.Editor, g: *game.Game, right: i32, y: i32, tip: [:0]const
     return true;
 }
 
-fn nameRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: []const u8, f: Focus, act: [:0]const u8, live: bool, tip: [:0]const u8) bool {
+fn nameRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: []const u8, f: Focus, act: [:0]const u8, live: bool, tip: [:0]const u8, blank: []const u8) bool {
     caption(g, x, y, LABEL_W, label, look.TEXT);
-    words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W - NAME_BTN_W - NAME_BTN_GAP), f, "");
+    words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W - NAME_BTN_W - NAME_BTN_GAP), f, blank);
     return rightButton(ed, g, x + w, y, NAME_BTN_W, act, live, tip);
 }
 
@@ -551,6 +591,7 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
     const s = &ed.plot;
     const on = if (s.focus) |now| std.meta.eql(now, f) else false;
     if (on) {
+        s.field_box = r;
         const shown = if (ed.clip) |c| ed.mouseIn(c) else true;
         if (text_panel.drawField(ed, g, &s.field, r, true, true) or (shown and ed.mouseIn(r))) s.claimed = true;
         return;
@@ -566,7 +607,12 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
         widgets.drawFit(&g.face, blank, TEXT, w, false, x, y, look.DIM);
     } else if (r.height > @as(f32, @floatFromInt(text_panel.fieldHeight(1)))) {
         widgets.scissorIn(ed.clip, r);
-        _ = g.face.paragraph(now, x, y, w, TEXT, look.TEXT);
+        var paragraphs = std.mem.splitScalar(u8, now, '\n');
+        var down = y;
+        while (paragraphs.next()) |paragraph| {
+            if (down >= raster.top(r) + @as(i32, @intFromFloat(r.height))) break;
+            down = @max(down + TEXT + 4, g.face.paragraph(paragraph, x, down, w, TEXT, look.TEXT));
+        }
         widgets.reclip(ed.clip);
     } else widgets.drawFit(&g.face, now, TEXT, w, false, x, y, look.TEXT);
     if (h.hit) {
@@ -768,7 +814,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     const lines_w = widgets.share(w, LINES_PARTS, LINES_MIN_W, LINES_MAX_W);
     var y = top;
     const users = m.dialogUsers(di);
-    if (nameRow(ed, g, x, y, w, "Dialog", .{ .dialog = di }, dropLabel(&buf, users, "dialog"), users == 0, "Delete it; a dialog an NPC or trigger still names cannot go")) {
+    if (nameRow(ed, g, x, y, w, "Dialog", .{ .dialog = di }, dropLabel(&buf, users, "dialog"), users == 0, "Delete it; a dialog an NPC or trigger still names cannot go", "")) {
         if (m.dropDialog(di)) {
             ed.bank();
             s.pick = .none;
@@ -777,16 +823,21 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     }
     y += STEP + GAP;
     const lx = x;
+    const line_area = s.lines.at(raster.rect(lx, y, lines_w, bottom - y - STEP - GAP));
+    y = line_area.begin(&ed.clip);
     countHeading(g, lx, y, lines_w, "Lines", d.line_n, script.MAX_LINES);
     y += STEP;
     var line_buf: [script.NAME_MAX + script.SAY_MAX + "> ".len + ": ".len + 1]u8 = undefined;
     for (d.lines(), 0..) |*ln, i| {
-        const first = if (ln.say.n > 0) ln.say.text() else SILENT;
+        const speech = ln.say.text();
+        const first = if (speech.len > 0) speech[0 .. std.mem.indexOfScalar(u8, speech, '\n') orelse speech.len] else SILENT;
         const label = std.fmt.bufPrintZ(&line_buf, "{s}{s}: {s}", .{ if (i == 0) "> " else "", ln.name.text(), first }) catch "";
         if (listRow(ed, g, lx, lines_w, y, label, s.line == i, if (i == 0) "Where it opens" else null)) s.line = @intCast(i);
         y += STEP;
     }
     const tools_w = lines_w - GAP;
+    line_area.close(&ed.clip, y, 0);
+    y = bottom - STEP;
     if (button(ed, g, widgets.slotOf(lx, tools_w, y, 0, 3), "+ Line", false, d.line_n < script.MAX_LINES, "Another line, reached by a choice or a then")) {
         if (d.addLine()) |l| {
             ed.bank();
@@ -817,13 +868,16 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
     var y = top;
     wordsRow(ed, g, x, y, w, "Line", .{ .line = at }, "");
     y += STEP;
-    caption(g, x, y, LABEL_W, "Speaker", look.TEXT);
-    words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W - NAME_BTN_W - NAME_BTN_GAP), .{ .who = at }, "(blank: whoever is spoken to)");
-    if (rightButton(ed, g, x + w, y, NAME_BTN_W, "Preview in game", true, "This line as the game draws it; click a choice to follow it, Esc to come back")) ed.plot.preview = at;
+    if (nameRow(ed, g, x, y, w, "Speaker", .{ .who = at }, "Preview in game", true, "This line as the game draws it; click a choice to follow it, Esc to come back", "(blank: whoever is spoken to)")) {
+        ed.plot.preview = at;
+        ed.plot.preview_page = 0;
+        ed.plot.preview_cursor = 0;
+    }
     y += STEP;
-    caption(g, x, y, LABEL_W, std.fmt.bufPrint(&buf, "Says {d}/{d}", .{ ln.say.n, script.SAY_MAX }) catch "", look.TEXT);
+    caption(g, x, y, w, std.fmt.bufPrint(&buf, "Speech   {d} / {d}", .{ ln.say.n, script.SAY_MAX }) catch "", look.TEXT);
+    y += STEP;
     const say_h = text_panel.fieldHeight(SAY_ROWS);
-    words(ed, g, raster.rect(x + LABEL_W, y, w - LABEL_W, say_h), .{ .say = at }, SILENT);
+    words(ed, g, raster.rect(x, y, w, say_h), .{ .say = at }, SILENT);
     y += say_h + GAP;
     y = actRows(ed, g, x, x, y, w, "When shown", .{ .line = .{ .at = at, .a = 0 } });
     y += GAP;
@@ -835,10 +889,12 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
     while (c < ln.choice_n) : (c += 1) {
         const ch = &ln.choice[c];
         const cat = ChoiceAt{ .d = di, .l = li, .c = c };
-        caption(g, x, y, LABEL_W, std.fmt.bufPrint(&buf, "{d}. Answer", .{c + 1}) catch "", look.TEXT);
-        words(ed, g, widgets.row(x + LABEL_W, y, beforeDrop(w)), .{ .ask = cat }, "(what the hero says)");
+        caption(g, x, y, w - DROP_W, std.fmt.bufPrint(&buf, "Reply {d}   {d} / {d}", .{ c + 1, ch.ask.n, script.ASK_MAX }) catch "", look.TEXT);
         if (dropRow(ed, g, x + w, y, "Take this choice away", script.Choice, &ln.choice, &ln.choice_n, c)) break;
         y += STEP;
+        const ask_h = text_panel.fieldHeight(3);
+        words(ed, g, raster.rect(x, y, w, ask_h), .{ .ask = cat }, "(what the hero says)");
+        y += ask_h + GAP;
         caption(g, x + SUB_X, y, SUB_W, "goes to", look.DIM);
         targetStep(ed, g, widgets.row(x + LABEL_W, y, TARGET_W), d, &ch.next);
         y += STEP;
@@ -1218,7 +1274,7 @@ fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i
     const m = &ed.map.script;
     const t = &m.trigger[ti];
     var y = top;
-    if (nameRow(ed, g, x, y, w, "Trigger", .{ .trigger = ti }, "Delete trigger", true, "Throw it away")) {
+    if (nameRow(ed, g, x, y, w, "Trigger", .{ .trigger = ti }, "Delete trigger", true, "Throw it away", "")) {
         m.dropTrigger(ti);
         ed.bank();
         ed.plot.trigger = null;
@@ -1290,7 +1346,7 @@ fn drawQuest(ed: *editor.Editor, g: *game.Game, qi: u8, x: i32, top: i32, w: i32
     var buf: [widgets.LINE]u8 = undefined;
     var y = top;
     const users = m.questUsers(qi);
-    if (nameRow(ed, g, x, y, w, "Quest", .{ .quest = qi }, dropLabel(&buf, users, "quest"), users == 0, "Delete it; a quest conditions or actions still name cannot go")) {
+    if (nameRow(ed, g, x, y, w, "Quest", .{ .quest = qi }, dropLabel(&buf, users, "quest"), users == 0, "Delete it; a quest conditions or actions still name cannot go", "")) {
         if (m.dropQuest(qi)) {
             ed.bank();
             ed.plot.quest = null;
@@ -1338,6 +1394,29 @@ test "typed words refuse what the map's words refuse" {
     try std.testing.expect(!f.insert("a" ** (script.NAME_MAX + 1)));
     try std.testing.expect(f.insert("a" ** script.NAME_MAX));
     try std.testing.expect(script.Name.of(f.text()).eql(f.text()));
+}
+
+test "dialog field wheel scrolls its text without moving the surrounding editor pane" {
+    const ed = try editor.Editor.create(std.testing.allocator);
+    defer ed.destroy();
+    const di = ed.map.script.addDialog("story").?;
+    ed.plot.focus = .{ .say = .{ .d = di, .l = 0 } };
+    ed.plot.field.set("The road remembers.");
+    ed.plot.field.lines = 100;
+    ed.plot.field.rows = 6;
+    ed.plot.field.scroll = 30;
+    ed.plot.field.reveal = false;
+    ed.plot.field_box = raster.rect(10, 10, 300, 200);
+    ed.plot.detail = .{ .box = raster.rect(0, 0, 500, 500), .top = 48, .most = 300 };
+    ed.desk = .{ .mouse = .{ .x = 20, .y = 20 }, .wheel = -1 };
+    keys(ed);
+    try std.testing.expectEqual(@as(usize, 32), ed.plot.field.scroll);
+    try std.testing.expectEqual(@as(i32, 48), ed.plot.detail.top);
+    try std.testing.expect(!ed.plot.field.reveal);
+    ed.desk = .{ .enter = true };
+    keys(ed);
+    try std.testing.expect(ed.plot.focus != null);
+    try std.testing.expectEqualStrings("The road remembers.\n", ed.map.script.dialog[di].line[0].say.text());
 }
 
 test "changing a quest action fits its stage to the new quest's objectives" {

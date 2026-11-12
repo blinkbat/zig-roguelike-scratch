@@ -26,11 +26,12 @@ pub const LIVE_ONLY = std.EnumSet(Effect).init(.{ .bloom = true, .atmosphere = t
 const Focus = struct { shader: rl.Shader, texel: i32, strength: i32 };
 
 const Focused = look.Focused;
-const Bloom = struct { shader: rl.Shader, field: i32, visibility: i32, glints: i32, origin: i32, cell: i32, screen: i32, direction: i32, extract: i32 };
-const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, sunlight: i32, brightness: i32, direction: i32, weather_mist: i32 };
+const Bloom = struct { shader: rl.Shader, field: i32, visibility: i32, glints: i32, origin: i32, cell: i32, screen: i32, direction: i32, extract: i32, amount: i32 };
+const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, sunlight: i32, brightness: i32, direction: i32, weather_mist: i32, amount: i32 };
 const Grade = struct { shader: rl.Shader, visibility: i32, origin: i32, cell: i32, screen: i32 };
 
-const MEMORY_GREY: f32 = 0.7;
+const MEMORY_GREY: f32 = 0.9;
+const MEMORY_BRIGHTNESS: f32 = 0.7;
 
 const FOCUS_MAX: f32 = 0.24;
 /// Screen pixels between the bloom blur's taps, across then down.
@@ -81,6 +82,9 @@ fn markEmissive(pixels: *[grid.CELLS]rl.Color, at: [2]f32) bool {
 }
 
 pub const Cinema = struct {
+    pub const Strengths = struct { bloom: f32 = 1, atmosphere: f32 = 1, depth_of_field: f32 = 1 };
+    strengths: Strengths = .{},
+    lens: @import("lens.zig").Lens = .{},
     options: Options = .{},
     focus: ?Focus = null,
     bloom: ?Bloom = null,
@@ -92,6 +96,7 @@ pub const Cinema = struct {
     active_bloom: bool = false,
 
     pub fn load(self: *Cinema) void {
+        self.lens.load();
         self.focus = shaders.program(Focus, FOCUS_FS);
         self.bloom = shaders.program(Bloom, BLOOM_FS);
         self.air = shaders.program(Air, AIR_FS);
@@ -100,6 +105,7 @@ pub const Cinema = struct {
     }
 
     pub fn unload(self: *Cinema) void {
+        self.lens.unload();
         raster.unloadAll(self);
     }
 
@@ -179,6 +185,7 @@ pub const Cinema = struct {
         rl.setShaderValueTexture(b.shader, b.glints, glints);
         shaders.setUniform(b.shader, b.direction, direction);
         shaders.setUniform(b.shader, b.extract, extract);
+        shaders.setUniform(b.shader, b.amount, self.strengths.bloom);
     }
 
     pub fn beginFocus(self: *Cinema, t: grid.Tile, tex: rl.Texture2D, at: [2]f32, hero: ?[2]f32) ?Focused {
@@ -191,7 +198,7 @@ pub const Cinema = struct {
 
     pub fn focusOf(self: *const Cinema, t: grid.Tile, tex: rl.Texture2D, at: [2]f32, hero: ?[2]f32) ?Focused {
         if (!self.options.depth_of_field) return null;
-        const strength = focusStrength(t, at, hero);
+        const strength = focusStrength(t, at, hero) * self.strengths.depth_of_field;
         if (strength <= 0) return null;
         if (self.focus == null) return null;
         const size = raster.sizeOf(tex);
@@ -211,6 +218,7 @@ pub const Cinema = struct {
         shaders.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));
         shaders.setUniform(a.shader, a.direction, k.across());
         shaders.setUniform(a.shader, a.weather_mist, std.math.clamp(mist, 0, 1));
+        shaders.setUniform(a.shader, a.amount, self.strengths.atmosphere);
         rl.drawRectangle(0, 0, screen.x, screen.y, rl.Color.white);
         rl.endShaderMode();
     }
@@ -254,6 +262,7 @@ const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .BLOOM_GAI
     \\uniform sampler2D glints;
     \\uniform vec2 direction;
     \\uniform int extract;
+    \\uniform float amount;
     \\vec3 sampleLight(vec2 uv) {
     \\    uv = clamp(uv, 0.5 / screen, vec2(1.0) - 0.5 / screen);
     \\    vec3 c = texture(texture0, uv).rgb;
@@ -275,18 +284,19 @@ const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .BLOOM_GAI
     \\    sum += (sampleLight(fragTexCoord + d * 3.0) + sampleLight(fragTexCoord - d * 3.0)) * 0.054054;
     \\    sum += (sampleLight(fragTexCoord + d * 4.0) + sampleLight(fragTexCoord - d * 4.0)) * 0.016216;
     \\    vec2 p = cellAtFrag();
-    \\    float gain = extract != 0 ? 1.0 : BLOOM_GAIN * liveAt(p);
+    \\    float gain = extract != 0 ? 1.0 : BLOOM_GAIN * amount * liveAt(p);
     \\    finalColor = vec4(sum * gain, 1.0);
     \\}
 ;
 
-const GRADE_FS = shaders.FS_HEAD ++ shaders.MAP_VIEW_FS ++ shaders.glslConsts(.{ .MEMORY_GREY = MEMORY_GREY }) ++
+const GRADE_FS = shaders.FS_HEAD ++ shaders.MAP_VIEW_FS ++ shaders.glslConsts(.{ .MEMORY_GREY = MEMORY_GREY, .MEMORY_BRIGHTNESS = MEMORY_BRIGHTNESS }) ++
     \\uniform sampler2D visibility;
     \\void main() {
     \\    vec4 c = texture(texture0, fragTexCoord);
     \\    vec2 p = cellAtFrag();
     \\    float live = insideMap(p) ? texture(visibility, p / CELLS).a : 1.0;
-    \\    finalColor = vec4(mix(c.rgb, vec3(dot(c.rgb, LUMA)), MEMORY_GREY * (1.0 - live)), c.a);
+    \\    vec3 remembered = mix(c.rgb, vec3(dot(c.rgb, LUMA)), MEMORY_GREY) * MEMORY_BRIGHTNESS;
+    \\    finalColor = vec4(mix(remembered, c.rgb, live), c.a);
     \\}
 ;
 
@@ -296,6 +306,7 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR 
     \\uniform float brightness;
     \\uniform vec2 direction;
     \\uniform float weather_mist;
+    \\uniform float amount;
     \\
 ++ shaders.SIN_HASH_FS ++ shaders.VALUE_NOISE_FS ++
     \\vec4 softField(vec2 p) {
@@ -321,7 +332,7 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR 
     \\    vec2 dotAt = vec2(seed, hash(dustCell + 19.0)) * 0.7 + 0.15;
     \\    float dust = (1.0 - smoothstep(0.008, 0.024, length(fract(p - drift) - dotAt))) * step(DUST_EMPTY, seed);
     \\    dust *= sunlight * (0.25 + trees) * DUST_GAIN * (0.6 + 0.4 * sin(time * 0.7 + seed * 20.0));
-    \\    float alpha = (mist + shafts + dust) * live;
+    \\    float alpha = (mist + shafts + dust) * live * amount;
     \\    vec3 tint = (MIST_TINT * mist + SHAFT_TINT * (shafts + dust)) / max(mist + shafts + dust, 0.00001);
     \\    finalColor = vec4(tint, alpha);
     \\}

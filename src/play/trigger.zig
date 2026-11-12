@@ -258,9 +258,7 @@ pub const Runtime = struct {
 
     pub fn speaker(self: *const Runtime, s: *const Script) []const u8 {
         const ln = self.lineOf(s) orelse return "";
-        if (ln.who.n > 0) return ln.who.text();
-        const f = self.talk.?.npc orelse return "";
-        return s.npc[f].called();
+        return ln.speakerOr(if (self.talk.?.npc) |f| &s.npc[f] else null);
     }
 
     pub fn offered(self: *const Runtime, s: *const Script, w: World, out: *[script.MAX_CHOICES]u8) []const u8 {

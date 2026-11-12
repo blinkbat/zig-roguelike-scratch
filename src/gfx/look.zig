@@ -492,6 +492,7 @@ const SHINE_WIPE_S: f32 = 0.9;
 pub const SHINE_WIDTH: f32 = 0.12;
 pub const SHINE_SLANT: f32 = 0.6;
 pub const SHINE_GAIN: f32 = 0.18;
+pub const LOOT_GLOW: f32 = 0.1;
 const SHINE_SEED: u64 = 0x5417E;
 const SHINE_PHASES = 1000;
 pub fn shineSweep(seconds: f32, p: mathx.P) ?f32 {

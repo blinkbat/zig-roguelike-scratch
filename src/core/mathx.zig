@@ -14,6 +14,17 @@ pub fn lerp2(a: [2]f32, b: [2]f32, t: f32) [2]f32 {
     return .{ lerpF(a[0], b[0], t), lerpF(a[1], b[1], t) };
 }
 
+pub fn unitToward(a: [2]f32, b: [2]f32) [2]f32 {
+    const l = @max(0.001, len(b[0] - a[0], b[1] - a[1]));
+    return .{ (b[0] - a[0]) / l, (b[1] - a[1]) / l };
+}
+
+/// The line from `from` through `mark`, carried on to at least `reach` cells out.
+pub fn onTo(from: P, mark: P, reach: i32) P {
+    const d = dist(from, mark);
+    return from.add(mark.sub(from).scaled(@divFloor(reach + d - 1, d)));
+}
+
 /// Within this of its target an ease lands on it exactly.
 pub const SETTLE: f32 = 1e-3;
 

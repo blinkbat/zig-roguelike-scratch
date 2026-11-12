@@ -211,7 +211,7 @@ pub fn sameRgb(a: rl.Color, b: rl.Color) bool {
     return a.r == b.r and a.g == b.g and a.b == b.b;
 }
 
-pub fn grassOver(lv: *grid.Level) void {
+fn grassOver(lv: *grid.Level) void {
     retile(lv, .floor, .grass);
 }
 
@@ -334,7 +334,7 @@ pub fn barrelRng(item: bool) mathx.Rng {
 }
 
 pub const LETHAL_DMG: i32 = 1000;
-pub const SLAY_WAIT_S: f32 = 0.2;
+const SLAY_WAIT_S: f32 = 0.2;
 
 pub fn slay(g: *game.Game, id: u16, from: P) void {
     combat.wound(g, id, .{ .dmg = LETHAL_DMG }, combat.SHOOT, .{ .from = from, .wait = SLAY_WAIT_S });

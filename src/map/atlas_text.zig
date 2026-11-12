@@ -20,7 +20,7 @@ const Kind = procgen.Kind;
 const Feature = procgen.Feature;
 
 pub const HEADER = "roguelike-map 1";
-pub const TEXT_CAP: usize = 8 << 20;
+pub const TEXT_CAP: usize = 32 << 20;
 
 pub fn save(self: *atlas.Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
     var text = std.ArrayList(u8).init(alloc);
@@ -60,12 +60,11 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
                     try w.writeAll(says(.row));
                     for (0..COLS) |x| {
                         const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(y) });
-                        try w.writeByte(if (b.barrel[i]) grid.BARREL_LETTER else b.tile[i].letter());
+                        try w.writeByte(grid.letterOf(b.tile[i], b.barrel[i]));
                     }
                     try w.writeByte('\n');
                 }
-                for (b.torches()) |t| try w.print(says(.torch) ++ "{d} {d}\n", .{ t.x, t.y });
-                for (b.foes()) |f| try w.print(says(.foe) ++ "{s} {d} {d}\n", .{ @tagName(f.kind), f.at.x, f.at.y });
+                try putTorchesAndFoes(w, b.torches(), b.foes());
             },
         }
         if (nd.label.n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
@@ -100,12 +99,16 @@ fn writeSection(w: anytype, s: *const section.Section) !void {
                 try w.writeByte(section.UNPAINTED);
                 continue;
             };
-            try w.writeByte(if (s.barrel[i]) grid.BARREL_LETTER else t.letter());
+            try w.writeByte(grid.letterOf(t, s.barrel[i]));
         }
         try w.writeByte('\n');
     }
-    for (s.torch.slice()) |t| try w.print(says(.torch) ++ "{d} {d}\n", .{ t.x, t.y });
-    for (s.foes()) |f| try w.print(says(.foe) ++ "{s} {d} {d}\n", .{ @tagName(f.kind), f.at.x, f.at.y });
+    try putTorchesAndFoes(w, s.torch.slice(), s.foes());
+}
+
+fn putTorchesAndFoes(w: anytype, torches: []const P, foes: []const atlas.Foe) !void {
+    for (torches) |t| try w.print(says(.torch) ++ "{d} {d}\n", .{ t.x, t.y });
+    for (foes) |f| try w.print(says(.foe) ++ "{s} {d} {d}\n", .{ @tagName(f.kind), f.at.x, f.at.y });
 }
 
 fn takePaint(s: *section.Section, f: *Tokens) Error!void {
@@ -233,11 +236,11 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
             },
             .torch => {
                 const nd = try lastNode(self);
+                const at = try cell(&f);
                 const torches = switch (nd.plan) {
                     .bespoke => |*b| &b.torch,
-                    .procgen => |*pg| &pg.section.torch,
+                    .procgen => |*pg| if (pg.section.torchFits(at)) &pg.section.torch else return error.BadLine,
                 };
-                const at = try cell(&f);
                 if (torches.has(at)) return error.BadLine;
                 if (!torches.add(at)) return error.TooMany;
             },
@@ -820,6 +823,7 @@ test "a procgen node's section saves and loads back the same, and paint off the 
         "paint 5 5 ...\nfoe rat 9 9\n",
         "paint 5 5 0..\nfoe rat 5 5\n",
         "paint 5 5 ...\ntorch 5 5\n",
+        "torch 5 5\npaint 5 5 #\npaint 5 6 .\n",
         "paint 5 5 ...\nfoe slime_half 6 5\n",
     };
     for (bad) |t| {

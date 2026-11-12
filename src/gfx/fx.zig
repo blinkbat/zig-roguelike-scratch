@@ -232,7 +232,7 @@ comptime {
 }
 const WARD_DOTS = 48;
 const SHOCK_SPARKS = 4;
-const EXPOSED_CRACKS: u8 = 3;
+const EXPOSED_CRACKS = @import("../play/sunder.zig").MOST;
 const SHOCK_HZ: f32 = 9;
 const CONFUSION_DOTS = 3;
 /// Cells under a body's top its blindness and confusion marks sit, and how wide confusion circles.
@@ -1135,18 +1135,22 @@ pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
 }
 
 pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, oy: f32, cell: f32) void {
+    drawMissileFaded(at, dir, act, t, ox, oy, cell, 1);
+}
+
+pub fn drawMissileFaded(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     if (act.element() == .lightning) return;
     const p = projected(at, ox, oy, cell);
     const k = pxScale(cell);
-    const col = look.arrowInk(act);
+    const col = look.fade(look.arrowInk(act), alpha);
     if (missileOf(act).ball) {
         for (0..6) |i| {
             const f: f32 = @floatFromInt(i);
             const w = rl.Vector2{ .x = p.x - dir[0] * f * 4 * k, .y = p.y - dir[1] * f * 4 * k + @sin(t * 65 + f * 2) * 2 * k };
-            pixel.fleck(w, 5.5 - f * 0.7, k, look.fade(look.FIRE, 1 - f * 0.13));
+            pixel.fleck(w, 5.5 - f * 0.7, k, look.fade(look.FIRE, (1 - f * 0.13) * alpha));
         }
-        pixel.fleck(p, 3, k, look.FIRE_CORE);
-        pixel.rect(p, 2, 2, k, rl.Color.white);
+        pixel.fleck(p, 3, k, look.fade(look.FIRE_CORE, alpha));
+        pixel.rect(p, 2, 2, k, look.fade(rl.Color.white, alpha));
         return;
     }
     drawArrow(p, dir, col, .{ ox, oy }, k);
@@ -1154,16 +1158,21 @@ pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, 
 
 /// A chain run out from `from` to a barbed head at `at`, pointing `dir`.
 pub fn drawHook(from: [2]f32, at: [2]f32, dir: [2]f32, ox: f32, oy: f32, cell: f32) void {
+    drawHookFaded(from, at, dir, ox, oy, cell, 1);
+}
+
+pub fn drawHookFaded(from: [2]f32, at: [2]f32, dir: [2]f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     const a = projected(from, ox, oy, cell);
     const p = projected(at, ox, oy, cell);
     const k = pxScale(cell);
-    pixel.line(a, p, 1, k, look.CHAIN);
+    const ink = look.fade(look.CHAIN, alpha);
+    pixel.line(a, p, 1, k, ink);
     const span = mathx.len(p.x - a.x, p.y - a.y);
     var along: f32 = HOOK_LINK * k;
-    while (along < span) : (along += HOOK_LINK * k) pixel.fleck(.{ .x = a.x + dir[0] * along, .y = a.y + dir[1] * along }, 1.5, k, look.CHAIN);
+    while (along < span) : (along += HOOK_LINK * k) pixel.fleck(.{ .x = a.x + dir[0] * along, .y = a.y + dir[1] * along }, 1.5, k, ink);
     for ([_]f32{ -1, 1 }) |side| {
         const barb = rl.Vector2{ .x = p.x - dir[0] * HOOK_BARB * k - dir[1] * side * HOOK_BARB * k, .y = p.y - dir[1] * HOOK_BARB * k + dir[0] * side * HOOK_BARB * k };
-        pixel.line(p, barb, 2, k, look.CHAIN);
+        pixel.line(p, barb, 2, k, ink);
     }
 }
 
@@ -1174,6 +1183,10 @@ const NET_SPIN: f32 = 14;
 const NET_R: f32 = 8;
 
 pub fn drawNet(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32) void {
+    drawNetFaded(at, t, ox, oy, cell, 1);
+}
+
+pub fn drawNetFaded(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     const p = projected(at, ox, oy, cell);
     const k = pxScale(cell);
     const c = @cos(t * NET_SPIN);
@@ -1189,15 +1202,15 @@ pub fn drawNet(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32) void {
     };
     const m = Mesh{ .p = p, .c = c, .s = s, .k = k };
     for ([_]f32{ -NET_R, 0, NET_R }) |o| {
-        pixel.line(m.knot(-NET_R, o), m.knot(NET_R, o), 1, k, look.NET);
-        pixel.line(m.knot(o, -NET_R), m.knot(o, NET_R), 1, k, look.NET);
+        pixel.line(m.knot(-NET_R, o), m.knot(NET_R, o), 1, k, look.fade(look.NET, alpha));
+        pixel.line(m.knot(o, -NET_R), m.knot(o, NET_R), 1, k, look.fade(look.NET, alpha));
     }
 }
 
 /// On the art-pixel grid `k` screen pixels a side from `origin`.
 pub fn drawArrow(p: rl.Vector2, dir: [2]f32, col: rl.Color, origin: [2]f32, k: f32) void {
     const tail = rl.Vector2{ .x = p.x - dir[0] * 16 * k, .y = p.y - dir[1] * 16 * k };
-    pixel.gridLine(tail, p, origin, k, look.SPLINTER, false);
+    pixel.gridLine(tail, p, origin, k, look.fade(look.SPLINTER, @as(f32, @floatFromInt(col.a)) / 255), false);
     const back = rl.Vector2{ .x = p.x - dir[0] * 4 * k, .y = p.y - dir[1] * 4 * k };
     for ([_]f32{ -2, -1, 0, 1, 2 }) |side| {
         pixel.gridLine(p, .{ .x = back.x - dir[1] * side * k, .y = back.y + dir[0] * side * k }, origin, k, col, false);

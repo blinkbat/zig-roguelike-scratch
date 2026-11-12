@@ -10,6 +10,7 @@ const spar = @import("map/spar.zig");
 const playground = @import("map/playground.zig");
 const actor = @import("play/actor.zig");
 const menu = @import("ui/menu.zig");
+const options_menu = @import("ui/options.zig");
 const naming = @import("ui/naming.zig");
 const stage = @import("ui/stage.zig");
 const look = @import("gfx/look.zig");
@@ -26,7 +27,7 @@ const input = @import("core/input.zig");
 const mathx = @import("core/mathx.zig");
 
 const Scene = enum { title, play, edit };
-const Page = enum { main, map, class, name, load, ossuary, bones, options, debug };
+const Page = enum { main, map, class, name, load, ossuary, bones, options, visuals, display, debug };
 const MainRow = enum {
     new,
     maps,
@@ -37,11 +38,7 @@ const MainRow = enum {
     quit,
 };
 const MAIN_ROWS = std.enums.values(MainRow);
-const OptionRow = enum {
-    fullscreen,
-    debug,
-};
-const OPTION_ROWS = std.enums.values(OptionRow);
+const OptionRow = options_menu.Row;
 const DEBUG_ROWS = [_]struct { row: game.debugging.Row, note: [:0]const u8 }{
     .{ .row = .unkillable, .note = std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.titleOf(game.debugging.Row.unkillable), game.simulation.UNKILLABLE_HP }) },
 };
@@ -534,20 +531,23 @@ const App = struct {
                 if (app.hall.n > 0) app.drawBones(&app.hall.slice()[@min(app.bones.at, app.hall.n - 1)]);
                 if (back or app.hall.n == 0) app.goPage(.ossuary);
             },
-            .options => {
-                const full = window.fullscreen();
-                var rows: [OPTION_ROWS.len][]const u8 = undefined;
-                for (OPTION_ROWS, &rows) |r, *l| l.* = switch (r) {
-                    .fullscreen => menu.toggle(menu.named(OptionRow.fullscreen), full),
-                    .debug => menu.named(r),
-                };
-                const picked = app.options.stepAt(&g.st, rows.len, g.screen);
-                menu.draw(g.face, &g.sprites, g.screen, comptime menu.caps(menu.named(MainRow.options)), &rows, app.options.at, null);
+            .options, .visuals, .display => {
+                const page: options_menu.Page = switch (app.page) { .visuals => .visuals, .display => .display, else => .main };
+                const picked = options_menu.step(&g.cinema, &app.options, &g.st, g.screen, page, &g.display);
+                options_menu.draw(g.face, &g.sprites, g.screen, &g.cinema, app.options.at, &g.st, page, g.display);
                 if (back) {
-                    app.toTitle();
-                } else if (picked) |i| switch (OPTION_ROWS[i]) {
+                    if (page == .main) app.toTitle() else {
+                        app.goPage(.options);
+                        app.options = .{ .at = options_menu.index(.main, if (page == .visuals) .visuals else .display) };
+                    }
+                } else if (picked) |row| switch (row) {
+                    .visuals, .display => {
+                        app.goPage(if (row == .visuals) .visuals else .display);
+                        app.options = .{};
+                    },
                     .fullscreen => game.syncScreen(g, true),
                     .debug => app.goPage(.debug),
+                    else => unreachable,
                 };
             },
             .debug => {
@@ -839,7 +839,7 @@ fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime inner: fn (*gam
     input.mapPads();
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
-    g.debug.vsync = flags.vsync_hint;
+    g.display.vsync = flags.vsync_hint;
     defer game.unloadGraphics(g);
     g.face = font.Face.load(look.TILE_CODEPOINTS);
     defer g.face.unload();

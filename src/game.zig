@@ -144,8 +144,8 @@ pub const Back = enum { title, editor };
 pub const Exit = enum { back, quit };
 
 const PAUSE = menu.PAUSE;
-pub const PausePage = enum { main, debug, character };
-pub const PauseRow = enum { resume_, debug, back, quit };
+pub const PausePage = enum { main, options, visuals, display, debug, character };
+pub const PauseRow = enum { resume_, options, debug, back, quit };
 pub const PAUSE_ROWS = std.enums.values(PauseRow);
 
 pub fn rowAt(row: anytype) usize {
@@ -163,6 +163,7 @@ pub const Game = struct {
     died_in: Mode = .play,
     pause_menu: menu.Menu = .{},
     pause_page: PausePage = .main,
+    display: @import("core/window.zig").Display = .{},
     debug: debugging.State = .{},
     character: book.Book = .{},
     /// Something was taken from the open loot menu; closing it spends the one turn.
@@ -186,6 +187,7 @@ pub const Game = struct {
     target: ?u16 = null,
     inspecting: Spot = .{ .slot = 0 },
     inspect_scroll: usize = 0,
+    talk_page: usize = 0,
     /// Map pixels, eased toward the hero. Nothing in the simulation reads it.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
     screen: P = WINDOW,
@@ -258,13 +260,13 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
 /// Every unsaved `Game` field is in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     pub const loot = [_][]const u8{ "character", "looted", "loot_gold" };
-    pub const run = [_][]const u8{ "mode", "epitaph" };
+    pub const run = [_][]const u8{ "mode", "epitaph", "talk_page" };
     /// Reset as a saved run resumes, besides `run` and `loot`.
     pub const resumed = [_][]const u8{"exit"};
     pub const turn = [_][]const u8{ "pending", "target", "inspecting", "inspect_scroll" };
     pub const graphics = [_][]const u8{ "light", "cloud", "vignette", "mini", "cinema" };
     /// Given their values by hand.
-    pub const set = [_][]const u8{ "died_in", "pause_menu", "pause_page", "debug", "back", "permadeath", "hall", "perf", "st", "mouse", "binds", "cam", "screen", "framebuffer", "rain", "sprites", "graphics_ready", "art", "face" };
+    pub const set = [_][]const u8{ "died_in", "pause_menu", "pause_page", "display", "debug", "back", "permadeath", "hall", "perf", "st", "mouse", "binds", "cam", "screen", "framebuffer", "rain", "sprites", "graphics_ready", "art", "face" };
     pub const scratch = [_][]const u8{ "nearby", "journal" };
 };
 const SimFields = simulation.Fields;
@@ -505,6 +507,7 @@ pub fn settle(g: *Game) void {
     g.pic.showLaid(&g.sim.lv);
     g.pic.snapGlide(&g.sim.pool);
     g.pic.catchUp(&g.sim);
+    g.pic.snapSight(&g.sim);
     g.pic.settleResources(&g.sim);
     g.cam = camWant(g);
     g.pic.hour_shown = g.sim.clock.hour();
@@ -550,6 +553,11 @@ pub fn castSight(g: *Game, from: P) void {
 
 pub const Move = enum { kick, open, burst, loot, step, talk, swap, blocked };
 
+pub fn foesNear(g: *const Game) bool {
+    for (g.sim.pool.constSlice()) |a| if (a.seenFoe(&g.sim.lv)) return true;
+    return false;
+}
+
 pub fn heroMove(g: *Game, d: mathx.Dir) Move {
     const h = g.sim.heroActor() orelse return .blocked;
     return moveOf(g, &g.sim.lv, h.at, d, g.sim.lv.taken(h.at.add(d.delta())));
@@ -558,12 +566,12 @@ pub fn heroMove(g: *Game, d: mathx.Dir) Move {
 pub fn moveOf(g: *const Game, lv: *const grid.Level, from: P, d: mathx.Dir, occupied: bool) Move {
     const to = from.add(d.delta());
     const there = lv.at(to);
-    if (there.opened() != null) return .open;
+    if (there.opened() != null) return if (foesNear(g)) .blocked else .open;
     if (there.bursts()) return .burst;
     if (!lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
     if (lv.npcAt(to) != null) return .talk;
     if (occupied) return if (g.sim.allyAt(to)) .swap else .kick;
-    return if (character.lootReached(g, from, to)) .loot else .step;
+    return if (!foesNear(g) and character.lootReached(g, from, to)) .loot else .step;
 }
 
 fn spends(m: Move) bool {
@@ -628,7 +636,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
                 tactics_exec.shoved(g, ally);
             }
             if (h.limp(h.afflictions())) g.sim.log.say("{s} " ++ maim.LIMPS ++ ".", .{g.sim.name.text()});
-            if (loot) character.openLoot(g, to);
+            if (loot and !foesNear(g)) character.openLoot(g, to);
         },
         .blocked => return,
     }
@@ -997,6 +1005,7 @@ pub fn mapAssets(g: *Game) sprite_assets.Assets {
         if (a.alive) need.body(a.kind);
         if (posing) need.beneath(a.under, a.at);
         if (!g.pic.gone(&g.sim, i)) need.body(g.pic.pictured[i].kind);
+        if (g.pic.sighted[i] > 0) if (g.pic.seen_bodies[i]) |last| need.body(last.pic.kind);
         if (posing or g.pic.masked.isSet(i)) need.mimic_closed = true;
     }
     return need;
@@ -1005,7 +1014,7 @@ pub fn mapAssets(g: *Game) sprite_assets.Assets {
 pub fn syncScreen(g: *Game, toggle: bool) void {
     if (toggle) {
         if (window.MONITOR_OWNED) window.toggleMonitorOwned() else rl.toggleBorderlessWindowed();
-        debugging.syncDisplay(g);
+        g.display.sync();
     }
     g.screen = .{ .x = rl.getScreenWidth(), .y = rl.getScreenHeight() };
 }

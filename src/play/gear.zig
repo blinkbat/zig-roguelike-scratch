@@ -52,7 +52,7 @@ pub const Gear = struct {
     }
 
     pub fn manaOnKill(self: Gear) i32 {
-        return @max(0, self.sum(.mana_on_kill));
+        return self.floored(.mana_on_kill);
     }
 
     pub fn sum(self: Gear, kind: affixes.Mod) i32 {
@@ -63,32 +63,36 @@ pub const Gear = struct {
         return n;
     }
 
+    fn floored(self: Gear, kind: affixes.Mod) i32 {
+        return @max(0, self.sum(kind));
+    }
+
     /// Turns Alacrity takes off every cooldown.
     pub fn quicker(self: Gear) u8 {
-        return std.math.lossyCast(u8, @max(0, self.sum(.alacrity)));
+        return std.math.lossyCast(u8, self.floored(.alacrity));
     }
 
     /// Cells Bounding adds to every movement skill's reach.
     pub fn bounding(self: Gear) i32 {
-        return @max(0, self.sum(.bounding));
+        return self.floored(.bounding);
     }
 
     pub fn lifeRegen(self: Gear) i32 {
-        return @max(0, self.sum(.life_regen));
+        return self.floored(.life_regen);
     }
 
     pub fn leech(self: Gear) i32 {
-        return @max(0, self.sum(.leech));
+        return self.floored(.leech);
     }
 
     /// Cells added to every area skill's radius.
     pub fn wider(self: Gear) i32 {
-        return @max(0, self.sum(.area));
+        return self.floored(.area);
     }
 
     /// Foes a single-target projectile passes through before the one that stops it.
     pub fn pierce(self: Gear) usize {
-        return @intCast(@max(0, self.sum(.pierce)));
+        return @intCast(self.floored(.pierce));
     }
 
     /// Percent chance an action spends no turn.

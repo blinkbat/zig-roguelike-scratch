@@ -292,7 +292,7 @@ pub const Simulation = struct {
     }
 
     /// Fire that takes hold of `a` only `of` percent of the time, past its fire and burn resistance.
-    pub fn igniteBy(self: *Simulation, a: *actor.Actor, of: u32) bool {
+    fn igniteBy(self: *Simulation, a: *actor.Actor, of: u32) bool {
         const chance = damage.resistedChance(of, self.combatStats(a).elements.get(.fire));
         if (!self.procStatus(a, .burn, chance)) return false;
         a.burn.start();
@@ -335,13 +335,11 @@ pub const Simulation = struct {
     }
 
     pub fn heroBlocks(self: *Simulation) bool {
-        const chance = self.heroAttrs().blockChance();
-        return chance > 0 and self.rng.percent(chance);
+        return damage.procs(&self.rng, self.heroAttrs().blockChance());
     }
 
     pub fn hastens(self: *Simulation) bool {
-        const chance = self.inventory.gear.haste();
-        return chance > 0 and self.rng.percent(chance);
+        return damage.procs(&self.rng, self.inventory.gear.haste());
     }
 
     /// Levels gained so far, the current one's progress as the fraction.
@@ -362,7 +360,7 @@ pub const Simulation = struct {
         return w.node[self.node].outdoor();
     }
 
-    pub fn climateNow(self: *const Simulation) climate.Climate {
+    fn climateNow(self: *const Simulation) climate.Climate {
         const w = self.map orelse return .{};
         return w.node[self.node].sky();
     }

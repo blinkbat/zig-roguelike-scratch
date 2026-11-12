@@ -13,8 +13,25 @@ pub const MAX_FOES: usize = actor.MAX - actor.most(actor.HERO);
 pub const ROOM = grid.Box.inMap(1);
 pub const UNPAINTED: u8 = '_';
 
+comptime {
+    std.debug.assert(grid.groundOf(UNPAINTED) == null);
+}
+
 pub const Foe = struct { kind: actor.Kind, at: P };
 const NO_FOE = Foe{ .kind = std.enums.values(actor.Kind)[0], .at = ORIGIN };
+
+pub fn bodiesOf(foes: []const Foe) usize {
+    var n = actor.most(actor.HERO);
+    for (foes) |f| n += actor.most(f.kind);
+    return n;
+}
+
+pub fn foeIn(foes: []const Foe, p: P) ?usize {
+    for (foes, 0..) |f, i| {
+        if (f.at.eq(p)) return i;
+    }
+    return null;
+}
 
 pub const Anchor = enum {
     fixed,
@@ -33,9 +50,7 @@ pub const Section = struct {
     foe_n: usize = 0,
 
     pub fn tileAt(self: *const Section, p: P) ?grid.Tile {
-        if (!grid.Level.inside(p)) return null;
-        const i = grid.Level.idx(p);
-        return self.tile[i];
+        return grid.cellOr(?grid.Tile, &self.tile, p, null);
     }
 
     fn paintedAs(self: *const Section, p: P, t: grid.Tile) bool {
@@ -109,10 +124,7 @@ pub const Section = struct {
     }
 
     pub fn foeAt(self: *const Section, p: P) ?usize {
-        for (self.foes(), 0..) |f, i| {
-            if (f.at.eq(p)) return i;
-        }
-        return null;
+        return foeIn(self.foes(), p);
     }
 
     pub fn foeFits(self: *const Section, p: P, k: actor.Kind) bool {
@@ -121,9 +133,7 @@ pub const Section = struct {
     }
 
     pub fn bodies(self: *const Section) usize {
-        var n = actor.most(actor.HERO);
-        for (self.foes()) |f| n += actor.most(f.kind);
-        return n;
+        return bodiesOf(self.foes());
     }
 
     pub fn addFoe(self: *Section, f: Foe) bool {
@@ -148,15 +158,13 @@ pub const Section = struct {
         for (self.torch.slice(), 0..) |w, i| {
             if (!self.torchFits(w) or grid.anyNear(w, self.torch.slice()[0..i], 1)) return false;
         }
-        var n = actor.most(actor.HERO);
         for (self.foes(), 0..) |f, i| {
             if (!self.foeFits(f.at, f.kind) or self.foeAt(f.at).? != i) return false;
-            n += actor.most(f.kind);
         }
         for (self.foe[self.foe_n..]) |f| {
             if (!std.meta.eql(f, NO_FOE)) return false;
         }
-        return n <= actor.MAX;
+        return self.bodies() <= actor.MAX;
     }
 
     /// Where a roll lays it, or null when it paints nothing.
@@ -173,19 +181,20 @@ pub const Section = struct {
 /// Every corner that keeps `b` in `ROOM` and its ring off the doors is as likely; with none, it stays where painted.
 fn roam(b: grid.Box, seed: u64, doors: []const P) P {
     const corners = grid.Box{ .lo = ROOM.lo, .hi = ROOM.hi.sub(.{ .x = b.width() - 1, .y = b.height() - 1 }) };
-    var n: u32 = 0;
-    var cells = corners.cells();
-    while (cells.next()) |lo| n += @intFromBool(clearOf(b, lo, doors));
-    if (n == 0) return b.lo;
+    const w: usize = @intCast(corners.width());
+    const Roam = struct {
+        b: grid.Box,
+        doors: []const P,
+        lo: P,
+        w: usize,
+
+        fn clear(r: @This(), i: usize) u32 {
+            return @intFromBool(clearOf(r.b, r.lo.add(mathx.unslot(i, r.w)), r.doors));
+        }
+    };
     var rng = carve.Salt.section.rng(seed);
-    var k = rng.below(n);
-    cells = corners.cells();
-    while (cells.next()) |lo| {
-        if (!clearOf(b, lo, doors)) continue;
-        if (k == 0) return lo;
-        k -= 1;
-    }
-    unreachable;
+    const i = rng.weighted(w * @as(usize, @intCast(corners.height())), Roam{ .b = b, .doors = doors, .lo = corners.lo, .w = w }, Roam.clear) orelse return b.lo;
+    return corners.lo.add(mathx.unslot(i, w));
 }
 
 fn clearOf(b: grid.Box, lo: P, doors: []const P) bool {

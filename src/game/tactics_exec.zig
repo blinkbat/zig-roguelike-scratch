@@ -219,7 +219,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
         .fire_wall => {
             const area = span(g, act, from, aim.anchor().?, at).?;
             for (area.slice()) |p| fire.lay(&g.sim.lv, p, tactics.FireWall.laid(rank), tactics.FireWall.HEAT);
-            g.pic.holdFlames(&g.sim.lv, game.CAST_S);
+            g.pic.holdFire(&g.sim.lv, game.CAST_S);
             for (area.slice()) |p| {
                 const id = g.sim.lv.who(p);
                 const a = g.sim.pool.get(id) orelse continue;

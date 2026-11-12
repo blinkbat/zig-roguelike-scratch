@@ -219,10 +219,8 @@ fn conductTo(g: *game.Game, at: P, wet: ?Wet, s: Stroke) void {
 pub fn pierceHit(g: *game.Game, comptime act: skillbar.Act, pierced: bow.Pierced, s: Stroke) void {
     const M = skillbar.Act.skill(act);
     const raw = attacks.rawFor(&g.sim, act);
-    const cells: f32 = @floatFromInt(pierced.flight.len);
     for (pierced.body[0..pierced.n], pierced.step[0..pierced.n]) |id, step| {
-        const wait = s.wait * @as(f32, @floatFromInt(step + 1)) / cells;
-        wound(g, id, attacks.heroScaled(&g.sim, act, raw).physical(), M.VERB, .{ .from = s.from, .wait = wait });
+        wound(g, id, attacks.heroScaled(&g.sim, act, raw).physical(), M.VERB, s.along(step, pierced.flight.len));
     }
     const end = pierced.flight.struck orelse return;
     switch (end) {
@@ -248,7 +246,7 @@ pub fn boilUnder(g: *game.Game, comptime act: skillbar.Act, at: P, wait: f32) vo
 }
 
 pub fn fireLands(g: *game.Game, at: P, range: i32, kindle: fire.Kindle, wait: f32) void {
-    g.pic.holdFlames(&g.sim.lv, wait);
+    g.pic.holdFire(&g.sim.lv, wait);
     const fired = rewards.fireRound(&g.sim, at, range, kindle);
     if (fired.steeped != null or fired.caught) g.cloud.hold(wait);
 }
@@ -523,6 +521,7 @@ fn spreadGasAndAdvanceClocks(sim: *game.simulation.Simulation) void {
 fn orderedFoeTurns(g: *game.Game) bool {
     for (g.sim.order[0..g.sim.order_n]) |id| {
         const i = actor.Pool.slot(id);
+        if (g.sim.pool.items[i].waits) continue;
         const was = g.sim.pool.items[i].at;
         foeTurn(g, id);
         if (g.mode == .dead) return false;
@@ -772,13 +771,18 @@ fn chargeTurn(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, braced: ?
         rush(g, id, row, c, d, af);
         return true;
     }
+    const hero = braceTarget(g, id, c.range, sight) orelse return false;
+    const d = windup.openTo(&g.sim.lv, g.sim.pool.get(id).?.at, hero, c.range) orelse return false;
+    brace(g, id, d, "The {s} braces to charge.");
+    return true;
+}
+
+fn braceTarget(g: *game.Game, id: u16, range: i32, sight: i32) ?P {
     const r = g.sim.pool.get(id).?;
     const hero = g.sim.heroAt().?;
     const gap = mathx.dist(r.at, hero);
-    if (r.ready_in > 0 or gap < windup.NEAREST or gap > c.range or !fov.sees(&g.sim.lv, r.at, hero, sight)) return false;
-    const d = windup.openTo(&g.sim.lv, r.at, hero, c.range) orelse return false;
-    brace(g, id, d, "The {s} braces to charge.");
-    return true;
+    if (r.ready_in > 0 or gap < windup.NEAREST or gap > range or !fov.sees(&g.sim.lv, r.at, hero, sight)) return null;
+    return hero;
 }
 
 /// Runs until the next cell is blocked: a hero there takes the charge's blow; anything else leaves it stuck.
@@ -795,7 +799,7 @@ fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, a
     }
     const crab = g.sim.pool.get(id) orelse return;
     const next = at.add(d.delta());
-    if (g.sim.lv.passOk(at, d)) {
+    if (cells < c.rush and g.sim.lv.passOk(at, d)) {
         const w = g.sim.lv.who(next);
         if (w != grid.NO_ONE and w == g.sim.hero) {
             var rammed = row;
@@ -819,10 +823,8 @@ fn hookTurn(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, braced: ?mat
         fling(g, id, row, hk, d, af);
         return true;
     }
+    const hero = braceTarget(g, id, hk.range, sight) orelse return false;
     const r = g.sim.pool.get(id).?;
-    const hero = g.sim.heroAt().?;
-    const gap = mathx.dist(r.at, hero);
-    if (r.ready_in > 0 or gap < windup.NEAREST or gap > hk.range or !fov.sees(&g.sim.lv, r.at, hero, sight)) return false;
     const d = windup.lineTo(r.at, hero) orelse return false;
     if (!windup.lane(&g.sim.lv, r.at, d, hk.range).has(hero)) return false;
     brace(g, id, d, "The {s} swings its hook.");
@@ -835,9 +837,7 @@ fn fling(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, d: mathx.Dir, a
     r.ready_in = hk.every;
     g.pic.turnLater(.fromInt(id), d.delta().x);
     var flight = bow.Flight{ .most = @intCast(hk.range) };
-    var at = r.at;
-    while (flight.len < flight.most and g.sim.lv.passOk(at, d)) {
-        at = at.add(d.delta());
+    for (windup.lane(&g.sim.lv, r.at, d, hk.range).slice()) |at| {
         flight.path[flight.len] = at;
         flight.len += 1;
         const w = g.sim.lv.who(at);
@@ -911,14 +911,17 @@ fn reposition(g: *game.Game, id: u16, hu: actor.Hurl, af: actor.Afflicted) bool 
         }
     };
     const spot = Spot{ .g = g, .from = r.at, .id = id, .keeps = actor.row(r.kind).keeps, .range = hu.range };
-    const d = g.sim.rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, spot, Spot.ok) orelse return false;
+    g.sim.lv.clear(spot.from);
+    const picked = g.sim.rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, spot, Spot.ok);
+    g.sim.lv.stand(spot.from, id);
+    const d = picked orelse return false;
     foeStep(g, id, r.at, d, af);
     return true;
 }
 
 /// Every firebolt in the air flies on, its thrower living or not; false once one kills the hero.
 fn flyBolts(g: *game.Game) bool {
-    const wait = g.pic.lead orelse 0;
+    const wait = boltsWait(g);
     for (0..g.sim.pool.n) |i| {
         const thrower = &g.sim.pool.items[i];
         const hu = actor.row(thrower.kind).hurls orelse continue;
@@ -938,10 +941,19 @@ fn flyBolts(g: *game.Game) bool {
                 g.sim.sayAt(p, "The {s}'s " ++ firebolt.NAME ++ " smashes" ++ BARREL_DROPS, .{ actor.row(kind).name, gold });
                 g.pic.strike(&g.sim, g.cloud, .{ .barrel = p }, s);
             },
-            .wall, .spent => if (g.pic.litShown(&g.sim, now.at())) g.pic.fx.puff(s.wait, .{ .at = now.point(), .ink = look.FIRE, .motes = fx.TICK_WISPS }),
+            .wall, .spent => if (g.pic.litShown(&g.sim, now.at())) g.pic.fx.puff(s.wait, .{ .at = now.point(), .ink = look.FIRE }),
         }
     }
     return true;
+}
+
+/// Bolts fly once the hero's own step this turn is drawn.
+fn boltsWait(g: *const game.Game) f32 {
+    const lead = g.pic.lead orelse 0;
+    const at = g.pic.knocked_from orelse g.sim.heroAt() orelse return lead;
+    const step = g.pic.glide[actor.Pool.slot(g.sim.hero)];
+    if (step.to.eq(at)) return lead;
+    return @max(lead, step.toward(at, 0).left());
 }
 
 /// Fire past its fire resistance, without a dodge, on whatever body it flies into; false when that kills the hero.

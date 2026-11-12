@@ -95,6 +95,7 @@ const UNSAVED = .{
         "pause_page",
         "journal",
         "debug",
+        "display",
         "mode",
         "died_in",
         "pause_menu",
@@ -123,6 +124,7 @@ const UNSAVED = .{
         "rain",
         "inspecting",
         "inspect_scroll",
+        "talk_page",
         "perf",
     },
     .sim = .{

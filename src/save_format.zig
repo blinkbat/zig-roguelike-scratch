@@ -248,7 +248,10 @@ pub fn validate(snapshot: *Snapshot) !void {
     for (&run.inventory.stacks.values) |*carried| carried.* = @min(carried.*, consumable.STACK_MAX);
     if (run.inventory.n > inventory.BAG_MAX) return error.Damaged;
     run.inventory.mend();
-    for (&snapshot.portable.plot.wares) |*shelf| if (shelf.*) |*w| w.mend();
+    for (&snapshot.portable.plot.wares) |*shelf| if (shelf.*) |*w| {
+        if (!w.valid()) return error.Damaged;
+        w.mend();
+    };
     run.log.scroll = @min(run.log.scroll, run.log.n -| 1);
     try validateLevel(&run.lv, &run.pool, &run.ground);
     try validateLog(&run.log);
@@ -302,7 +305,7 @@ fn validatePlot(plot: *const @FieldType(data.Portable, "plot"), s: *const atlas.
     for (plot.spots) |spot| if (spot) |p| if (!grid.Level.inside(p)) return error.Damaged;
     for (plot.quests) |q| if (!atlas.script.STAGE_SPAN.holds(q.stage)) return error.Damaged;
     if (plot.trading) |f| if (f >= s.npc_n) return error.Damaged;
-    for (plot.wares, 0..) |shelf, i| if (shelf) |w| if (i >= s.npc_n or !w.valid()) return error.Damaged;
+    for (plot.wares, 0..) |shelf, i| if (shelf != null and i >= s.npc_n) return error.Damaged;
     const talk = plot.talk orelse return;
     if (talk.dialog >= s.dialog_n or talk.line >= s.dialog[talk.dialog].line_n or talk.cursor >= atlas.script.MAX_CHOICES) return error.Damaged;
     if (talk.npc) |f| if (f >= s.npc_n) return error.Damaged;
@@ -365,8 +368,8 @@ fn validateLog(history: *const log.Log) !void {
     for (&history.lines) |*line| if (line.n >= log.Log.COLS or line.buf[line.n] != 0) return error.Damaged;
 }
 
-const TestRecord = struct {
-    fn change(out: *std.ArrayList(u8), bytes: []const u8, path: []const []const u8, replacement: ?[]const u8) !void {
+pub const TestRecord = struct {
+    pub fn change(out: *std.ArrayList(u8), bytes: []const u8, path: []const []const u8, replacement: ?[]const u8) !void {
         var cursor = wire.Cursor{ .bytes = bytes };
         var record = try wire.Record.init(&cursor);
         try wire.integer(out, wire.FieldCount, record.remaining - @as(wire.FieldCount, @intFromBool(path.len == 1 and replacement == null)));

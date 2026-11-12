@@ -265,8 +265,8 @@ pub const AROUND = [4]struct { d: P, bit: u4 }{
     .{ .d = .{ .x = 0, .y = 0 }, .bit = SE },
 };
 pub const NW_AT: usize = 0;
-pub const NE_AT: usize = 1;
-pub const SW_AT: usize = 2;
+const NE_AT: usize = 1;
+const SW_AT: usize = 2;
 pub const SE_AT: usize = 3;
 pub const ACROSS: usize = NE_AT - NW_AT;
 pub const DOWN: usize = SW_AT - NW_AT;

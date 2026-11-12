@@ -72,6 +72,12 @@ test "following new tiles refreshes open light fields even when sight and memory
     defer std.testing.allocator.destroy(l);
     const i = grid.Level.idx(at);
     try std.testing.expectEqual(@as(f32, 0), l.visibility.carry_open[i]);
+    lv.flames[i] = 1;
+    l.follow(&lv);
+    try std.testing.expectEqual(@as(f32, 1), l.visibility.carry_open[i]);
+    lv.flames[i] = 0;
+    l.follow(&lv);
+    try std.testing.expectEqual(@as(f32, 0), l.visibility.carry_open[i]);
     lv.set(at, .dirt);
     l.follow(&lv);
     l.step(&lv, mathx.FRAME_DT);
@@ -438,7 +444,7 @@ fn stepUntil(l: *light.Light, lv: *const grid.Level, q: [2]f32, comptime done: f
     return frames;
 }
 
-test "a cell coming into sight fades up fast, and fades down to memory slower once out of it" {
+test "a cell fades quickly both into sight and back to memory" {
     var lv = grid.openFloor();
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
@@ -470,7 +476,7 @@ test "a cell coming into sight fades up fast, and fades down to memory slower on
         }
     }.of;
     try std.testing.expect(up > 0 and ms(up) < 333);
-    try std.testing.expect(down > up and ms(down) < 1000);
+    try std.testing.expect(down > 0 and ms(down) < 333);
     for (0..600) |_| l.step(&lv, mathx.FRAME_DT);
     try std.testing.expectApproxEqAbs(dim, lum(l.at(&lv, &.{}, q)), 0.002);
 }
@@ -603,6 +609,29 @@ test "clipped light baking clears unseen texels without touching adjacent rows o
         }
     }
     try std.testing.expect(dark > 0 and visible > 0);
+}
+
+test "unexplored fog rounds inward corners without exposing unknown cells" {
+    var lv = grid.openFloor();
+    for (0..grid.CELLS) |i| {
+        const p = grid.Level.of(i);
+        lv.seen[i] = p.x < 20 and p.y < 20;
+        lv.lit[i] = lv.seen[i];
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const edge = l.viewAt(.{ 19.5, 15.5 }).memory;
+    const corner = l.viewAt(.{ 19.5, 19.5 }).memory;
+    try std.testing.expect(corner > 0 and corner < edge * 0.7);
+    try std.testing.expectEqual(@as(f32, 0), l.viewAt(.{ 20.01, 19.5 }).memory);
+    try std.testing.expectEqual(@as(f32, 0), l.viewAt(.{ 19.5, 20.01 }).memory);
+    var previous: f32 = 0;
+    for (0..101) |i| {
+        const d: f32 = @as(f32, @floatFromInt(i)) / 100;
+        const m = l.viewAt(.{ 20 - d, 20 - d }).memory;
+        try std.testing.expect(m >= previous and m - previous < 0.05);
+        previous = m;
+    }
 }
 
 test "fog tint follows the soft exploration edge without changing visibility" {

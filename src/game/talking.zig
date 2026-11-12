@@ -93,6 +93,7 @@ pub fn speak(g: *game.Game, npc: usize) void {
 
 fn opened(g: *game.Game) void {
     game.holdWalk(g);
+    g.talk_page = 0;
     g.mode = .talk;
     g.sim.unsaved = true;
     restand(g);
@@ -123,7 +124,7 @@ pub fn due(g: *game.Game) bool {
 const Shown = struct {
     labels: [script.MAX_CHOICES][]const u8 = undefined,
     view: panel.View,
-    layout: panel.Layout = .{ .panel = undefined, .text_x = 0, .text_w = 0, .action = undefined },
+    layout: panel.Layout = .{},
 };
 
 fn shownOf(g: *game.Game, s: *const script.Script, out: *Shown) bool {
@@ -133,16 +134,16 @@ fn shownOf(g: *game.Game, s: *const script.Script, out: *Shown) bool {
     const offered = rt.offered(s, g.sim.world(), &picks);
     for (offered, 0..) |c, i| out.labels[i] = ln.choice[c].ask.text();
     out.view = .{ .who = rt.speaker(s), .say = ln.say.text(), .choices = out.labels[0..offered.len], .cursor = rt.talk.?.cursor, .prompt = prompt_icon.Prompt.menuOf(&g.st, menu.CONFIRM), .figure = figureOf(g, s, ln) };
+    out.view.page = g.talk_page;
+    out.view.previous = prompt_icon.Prompt.menuOf(&g.st, menu.PAGE_PREV);
+    out.view.next = prompt_icon.Prompt.menuOf(&g.st, menu.PAGE_NEXT);
+    out.view.ending = ln.then == null;
     out.layout.of(&g.face, g.screen, out.view);
     return true;
 }
 
-/// The NPC spoken to, unless the line names another speaker.
 fn figureOf(g: *const game.Game, s: *const script.Script, ln: *const script.Line) ?panel.Figure {
-    const npc = &s.npc[g.sim.plot.talk.?.npc orelse return null];
-    if (ln.who.n > 0 and !ln.who.eql(npc.called())) return null;
-    const k = npc.looks orelse return .{};
-    return .{ .tex = g.sprites.body(k), .glyph = look.body(k) };
+    return panel.Figure.of(&g.sprites, &s.npc[g.sim.plot.talk.?.npc orelse return null], ln);
 }
 
 pub fn step(g: *game.Game) void {
@@ -151,7 +152,17 @@ pub fn step(g: *game.Game) void {
     if (!shownOf(g, s, &shown)) return finished(g);
     const w = g.sim.world();
     const rt = &g.sim.plot;
-    if (g.st.walk) |d| if (d.delta().y != 0) rt.moveCursor(s, w, d.delta().y);
+    if (g.st.walk) |d| if (d.delta().y != 0 and shown.layout.row_n > 0) {
+        rt.moveCursor(s, w, d.delta().y);
+        g.talk_page = shown.layout.pageForChoice(rt.talk.?.cursor);
+        _ = shownOf(g, s, &shown);
+    };
+    const previous = g.st.hit(menu.PAGE_PREV) or (shown.layout.page > 0 and g.st.clicked(shown.layout.previous));
+    const next = g.st.hit(menu.PAGE_NEXT) or (shown.layout.page + 1 < shown.layout.pages and !shown.layout.continues(rt.talk.?.cursor) and g.st.clicked(shown.layout.next));
+    if (previous or next) {
+        turnPage(g, s, &shown, if (previous) -1 else 1);
+        return;
+    }
     var picked = false;
     if (g.st.pointing()) if (shown.layout.rowAt(g.st.pointer.?)) |row| {
         rt.talk.?.cursor = @intCast(row);
@@ -161,15 +172,29 @@ pub fn step(g: *game.Game) void {
         }
     };
     if (!picked and rt.talk != null and (g.st.hit(menu.CONFIRM) or g.st.clicked(shown.layout.action))) {
+        if (shown.layout.continues(rt.talk.?.cursor)) {
+            turnPage(g, s, &shown, 1);
+            return;
+        }
         rt.confirm(s, w, &g.sim.log);
         picked = true;
     }
     if (picked) {
+        g.talk_page = 0;
         g.sim.unsaved = true;
         restand(g);
     }
     if (rt.trading != null) return handOver(g);
     if (rt.talk == null) finished(g);
+}
+
+fn turnPage(g: *game.Game, s: *const script.Script, shown: *Shown, by: i32) void {
+    g.talk_page = mathx.nudge(shown.layout.page, by, shown.layout.pages);
+    _ = shownOf(g, s, shown);
+    for (0..shown.layout.row_n) |i| if (shown.layout.choiceReady(i)) {
+        g.sim.plot.talk.?.cursor = @intCast(i);
+        break;
+    };
 }
 
 fn finished(g: *game.Game) void {
@@ -248,6 +273,31 @@ test "bumping an NPC opens its conversation without a turn; it closes only throu
     game.heroStep(g, .s, 0);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqualStrings("Stranger has nothing to say.", g.sim.log.line(0).?);
+}
+
+test "conversation Continue reads long speech before any reply action or turn" {
+    const w = try testWorld(WENNA);
+    defer std.testing.allocator.destroy(w);
+    _ = w.script.dialog[0].line[0].say.set("The road remembers every traveller. " ** 100);
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, SEED);
+    game.heroStep(g, .e, 0);
+    const turns = g.sim.plot.turns;
+    var shown: Shown = .{ .view = undefined };
+    try std.testing.expect(shownOf(g, &w.script, &shown));
+    try std.testing.expect(shown.layout.pages > 1);
+    press(g, menu.CONFIRM);
+    try std.testing.expectEqual(@as(usize, 1), g.talk_page);
+    try std.testing.expect(!g.sim.plot.flags[0]);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.plot.talk.?.line);
+    press(g, menu.PAGE_PREV);
+    try std.testing.expectEqual(@as(usize, 0), g.talk_page);
+    var attempts: usize = 0;
+    while (!g.sim.plot.flags[0] and attempts < 100) : (attempts += 1) press(g, menu.CONFIRM);
+    try std.testing.expect(g.sim.plot.flags[0]);
+    try std.testing.expectEqual(@as(usize, 0), g.talk_page);
+    try std.testing.expectEqual(turns, g.sim.plot.turns);
 }
 
 test "a choice clicked while confirm is pressed is one pick" {

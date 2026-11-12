@@ -157,8 +157,8 @@ fn lootOf(sim: *Simulation, fallen: actor.Actor) loot.Loot {
     return loot.foeLoot(&sim.loot_rng, rarity);
 }
 
-pub const PYRE_REACH: i32 = 1;
-pub const PYRE_KINDLE = fire.Kindle{ .chance = 40 };
+const PYRE_REACH: i32 = 1;
+const PYRE_KINDLE =fire.Kindle{ .chance = 40 };
 comptime {
     std.debug.assert(PYRE_REACH <= areas.BURST_MAX);
 }
@@ -179,7 +179,7 @@ fn ignite(sim: *Simulation, at: P, name: []const u8) Caught {
 }
 
 /// The bodies standing on water it boiled, or null when none boiled.
-pub fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
+fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
     _ = ice.melt(&sim.lv, areas.patch(&sim.lv, at, reach).slice());
     const wet = areas.wetIn(&sim.lv, at, reach);
     if (gas.boil(&sim.lv, wet.slice()) == 0) return null;

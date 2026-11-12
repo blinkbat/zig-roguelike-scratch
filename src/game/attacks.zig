@@ -126,7 +126,7 @@ pub fn rollRaw(rng: *mathx.Rng, comptime act: skillbar.Act, bases: skillbar.Equi
     return raw;
 }
 
-pub fn rollRawElement(rng: *mathx.Rng, comptime act: skillbar.Act, bases: skillbar.EquippedBases) damage.Damage {
+fn rollRawElement(rng: *mathx.Rng, comptime act: skillbar.Act, bases: skillbar.EquippedBases) damage.Damage {
     var raw = damage.Damage{};
     if (comptime act.element()) |element| raw.elements.set(element, bases.element.?.roll(rng));
     return raw;

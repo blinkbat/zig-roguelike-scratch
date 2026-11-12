@@ -1,5 +1,10 @@
 # Terrain and character inspection
 
+Burning reeds and crops stop blocking sight immediately while alight. Hero and
+foe visibility, light propagation and projectile targeting share the level's
+current terrain-opacity rule. Dousing surviving foliage restores its cover;
+walls and other nonflammable cover still block, as does independently thick smoke.
+
 Terrain modifiers belong to `src/play/terrain.zig`. Its typed table covers hit chance,
 dodge, every elemental resistance and every harmful status resistance, with neutral defaults
 for tiles that have no effects. Tile balance values live only in that table; rain's live

@@ -102,11 +102,12 @@ pub const Sprites = struct {
         return true;
     }
 
-    pub fn drawShine(self: *const Sprites, t: rl.Texture2D, dest: rl.Rectangle, sweep: f32, col: rl.Color) void {
+    pub fn drawShine(self: *const Sprites, t: rl.Texture2D, dest: rl.Rectangle, sweep: f32, col: rl.Color, glow: f32) void {
         const s = self.shine orelse return;
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
         shaders.setUniform(s.shader, s.sweep, sweep);
+        shaders.setUniform(s.shader, s.glow, glow);
         raster.stretch(t, dest, col);
     }
 

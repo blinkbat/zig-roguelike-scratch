@@ -189,6 +189,10 @@ fn optionalPng(comptime name: []const u8) ?[]const u8 {
     return if (comptime listed(name)) @embedFile(name) else null;
 }
 
+fn embedPng(comptime name: []const u8) []const u8 {
+    return @embedFile(name);
+}
+
 pub const GROUND_PNGS = blk: {
     var pngs = std.EnumArray(ground.Ground, ?[]const u8).initFill(null);
     for (std.enums.values(ground.Ground)) |g| pngs.set(g, optionalPng(g.png()));
@@ -277,27 +281,27 @@ pub const SOURCES = .{
     .bodies = BODY_PNGS,
     .tiles = TILE_PNGS,
     .grounds = GROUND_PNGS,
-    .grass2 = @as([]const u8, @embedFile("grass2.png")),
-    .dirt2 = @as([]const u8, @embedFile("dirt2.png")),
-    .shallows2 = @as([]const u8, @embedFile("shallows2.png")),
-    .shallows3 = @as([]const u8, @embedFile("shallows3.png")),
-    .shallows_cliff = @as([]const u8, @embedFile("shallows-cliff.png")),
-    .shallows_cliff_cap = @as([]const u8, @embedFile("shallows-cliff-cap.png")),
-    .water_cliff = @as([]const u8, @embedFile("water-cliff.png")),
-    .water_cliff_cap = @as([]const u8, @embedFile("water-cliff-cap.png")),
-    .dirt_shallows_edges = @as([]const u8, @embedFile("dirt-shallows-edges.png")),
-    .dirt_water_edges = @as([]const u8, @embedFile("dirt-water-edges.png")),
-    .shallows_water_edges = @as([]const u8, @embedFile("shallows-water-edges.png")),
-    .shallows_water_cap = @as([]const u8, @embedFile("shallows-water-cap.png")),
-    .shrub2 = @as([]const u8, @embedFile("shrub2.png")),
-    .brush = @as([]const u8, @embedFile("brush.png")),
-    .flowers = @as([]const u8, @embedFile("flowers.png")),
-    .barrel = @as([]const u8, @embedFile("barrel.png")),
-    .item_bag = @as([]const u8, @embedFile("item-bag.png")),
-    .chest_item_bag = @as([]const u8, @embedFile("chest-item-bag.png")),
-    .mimic_closed = @as([]const u8, @embedFile("mimic-closed.png")),
-    .small_coins = @as([]const u8, @embedFile("small-coins.png")),
-    .large_coins = @as([]const u8, @embedFile("large-coins.png")),
+    .grass2 = embedPng("grass2.png"),
+    .dirt2 = embedPng("dirt2.png"),
+    .shallows2 = embedPng("shallows2.png"),
+    .shallows3 = embedPng("shallows3.png"),
+    .shallows_cliff = embedPng("shallows-cliff.png"),
+    .shallows_cliff_cap = embedPng("shallows-cliff-cap.png"),
+    .water_cliff = embedPng("water-cliff.png"),
+    .water_cliff_cap = embedPng("water-cliff-cap.png"),
+    .dirt_shallows_edges = embedPng("dirt-shallows-edges.png"),
+    .dirt_water_edges = embedPng("dirt-water-edges.png"),
+    .shallows_water_edges = embedPng("shallows-water-edges.png"),
+    .shallows_water_cap = embedPng("shallows-water-cap.png"),
+    .shrub2 = embedPng("shrub2.png"),
+    .brush = embedPng("brush.png"),
+    .flowers = embedPng("flowers.png"),
+    .barrel = embedPng("barrel.png"),
+    .item_bag = embedPng("item-bag.png"),
+    .chest_item_bag = embedPng("chest-item-bag.png"),
+    .mimic_closed = embedPng("mimic-closed.png"),
+    .small_coins = embedPng("small-coins.png"),
+    .large_coins = embedPng("large-coins.png"),
     .wall = @as([]const u8, WALLS_PNG),
     .forest = @as([]const u8, FOREST_PNG),
 };

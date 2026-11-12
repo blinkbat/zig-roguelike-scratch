@@ -5,9 +5,9 @@ const actor = @import("../play/actor.zig");
 const P = mathx.P;
 
 pub const NAME_MAX: usize = 20;
-pub const WHO_MAX: usize = 32;
-pub const SAY_MAX: usize = 480;
-pub const ASK_MAX: usize = 100;
+pub const WHO_MAX: usize = 128;
+pub const SAY_MAX: usize = 32768;
+pub const ASK_MAX: usize = 8192;
 pub const NOTE_MAX: usize = 120;
 pub const TITLE_MAX: usize = 48;
 
@@ -39,6 +39,10 @@ comptime {
 
 /// Printable ascii without its ends' spaces, `N` at most.
 pub fn Words(comptime N: usize) type {
+    return Text(N, false);
+}
+
+fn Text(comptime N: usize, comptime multiline: bool) type {
     return struct {
         const Self = @This();
         pub const MAX = N;
@@ -57,7 +61,8 @@ pub fn Words(comptime N: usize) type {
         }
 
         pub fn set(self: *Self, s: []const u8) bool {
-            const t = fitText(s, N) orelse return false;
+            const t = std.mem.trim(u8, s, " ");
+            if (t.len > N or !allowed(t)) return false;
             self.buf = @splat(0);
             @memcpy(self.buf[0..t.len], t);
             self.n = @intCast(t.len);
@@ -69,15 +74,20 @@ pub fn Words(comptime N: usize) type {
         }
 
         pub fn valid(self: *const Self) bool {
-            return self.n <= N and plain(self.text()) and std.mem.eql(u8, std.mem.trim(u8, self.text(), " "), self.text());
+            return self.n <= N and allowed(self.text()) and std.mem.eql(u8, std.mem.trim(u8, self.text(), " "), self.text());
+        }
+
+        fn allowed(s: []const u8) bool {
+            for (s) |c| if (!std.ascii.isPrint(c) and !(multiline and c == '\n')) return false;
+            return true;
         }
     };
 }
 
 pub const Name = Words(NAME_MAX);
 pub const Who = Words(WHO_MAX);
-pub const Say = Words(SAY_MAX);
-pub const Ask = Words(ASK_MAX);
+pub const Say = Text(SAY_MAX, true);
+pub const Ask = Text(ASK_MAX, true);
 pub const Note = Words(NOTE_MAX);
 pub const Title = Words(TITLE_MAX);
 
@@ -244,7 +254,10 @@ pub const ActKind = enum {
 
     /// Whether a trigger may do it: trading needs someone spoken to.
     pub fn scripted(k: ActKind) bool {
-        return k != .trade;
+        return switch (k) {
+            .dialog, .text, .flag, .counter, .timer, .wait, .preserve, .quest => true,
+            .trade => false,
+        };
     }
 
     pub fn span(k: ActKind) Span {
@@ -334,6 +347,11 @@ pub const Line = struct {
 
     pub fn choices(self: *const Line) []const Choice {
         return self.choice[0..self.choice_n];
+    }
+
+    pub fn speakerOr(self: *const Line, spoken_to: ?*const Npc) []const u8 {
+        if (self.who.n > 0) return self.who.text();
+        return if (spoken_to) |n| n.called() else "";
     }
 
     pub fn acts(self: *const Line) []const Act {

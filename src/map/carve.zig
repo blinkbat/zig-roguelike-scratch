@@ -459,7 +459,7 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void 
 const TRAIL_MAX: usize = @intCast(grid.W + grid.H);
 
 /// The trail if it crosses no painted solid, else the way through fewest: false when that breaks one, so the pass relabels first.
-fn joinRound(lv: *grid.Level, rng: *mathx.Rng, st: *Stretches, from_r: u16, main: u16, a: P, b: P, path: grid.Tile, kept: *const grid.CellSet) bool {
+fn joinRound(lv: *grid.Level, rng: *mathx.Rng, st: *Stretches, from_r: u16, main: u16, a: P, b: P, path: grid.Tile, painted: *const grid.CellSet) bool {
     var way: [TRAIL_MAX]P = undefined;
     var n: usize = 0;
     var crosses = false;
@@ -468,18 +468,18 @@ fn joinRound(lv: *grid.Level, rng: *mathx.Rng, st: *Stretches, from_r: u16, main
         way[n] = p;
         n += 1;
         const i = grid.Level.idx(p);
-        crosses = crosses or (kept.isSet(i) and lv.tile[i].solid());
+        crosses = crosses or (painted.isSet(i) and lv.tile[i].solid());
     }
     if (!crosses) {
         for (way[0..n]) |p| lay(lv, p, path);
         return true;
     }
-    const broke = route(lv, st, from_r, main, path, kept) orelse return true;
+    const broke = route(lv, st, from_r, main, path, painted) orelse return true;
     return broke == 0;
 }
 
 /// Square steps from every cell of `from_r` to the nearest of `main` off the rim, through the fewest painted solid cells; how many.
-fn route(lv: *grid.Level, st: *Stretches, from_r: u16, main: u16, path: grid.Tile, kept: *const grid.CellSet) ?usize {
+fn route(lv: *grid.Level, st: *Stretches, from_r: u16, main: u16, path: grid.Tile, painted: *const grid.CellSet) ?usize {
     var back: [grid.CELLS]u32 = @splat(NO_CELL);
     var walls: [grid.CELLS]u32 = undefined;
     var seen = grid.CellSet.initEmpty();
@@ -510,7 +510,7 @@ fn route(lv: *grid.Level, st: *Stretches, from_r: u16, main: u16, path: grid.Til
                     return breaks;
                 }
                 back[k] = i;
-                if (kept.isSet(k) and lv.tile[k].solid()) {
+                if (painted.isSet(k) and lv.tile[k].solid()) {
                     walls[walled] = @intCast(k);
                     walled += 1;
                     continue;
@@ -519,9 +519,12 @@ fn route(lv: *grid.Level, st: *Stretches, from_r: u16, main: u16, path: grid.Til
                 tail += 1;
             }
         }
-        for (walls[0..walled]) |k| {
-            queue[tail] = k;
-            tail += 1;
+        for ([_]bool{ false, true }) |lit| {
+            for (walls[0..walled]) |k| {
+                if (lv.torch.has(grid.Level.of(k)) != lit) continue;
+                queue[tail] = k;
+                tail += 1;
+            }
         }
     }
     return null;

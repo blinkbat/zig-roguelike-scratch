@@ -9,6 +9,17 @@ pub const SCREEN_1080 = P{ .x = 1920, .y = 1080 };
 pub const SCREEN_1440 = P{ .x = 2560, .y = 1440 };
 pub const SCREENS = [_]P{ SCREEN_720, SCREEN_1080, SCREEN_1440 };
 
+pub const Display = struct {
+    pub const LIMITS = [_]i32{ 0, 30, 60, 120, 144 };
+    vsync: bool = true,
+    limit: usize = 0,
+
+    pub fn sync(self: Display) void {
+        if (self.vsync) rl.setWindowState(.{ .vsync_hint = true }) else rl.clearWindowState(.{ .vsync_hint = true });
+        rl.setTargetFPS(LIMITS[self.limit]);
+    }
+};
+
 // X11/KDE panels and the macOS menu bar/Dock stay over an undecorated screen-sized window; only a monitor-owned one covers them.
 pub const MONITOR_OWNED = switch (@import("builtin").os.tag) {
     .linux, .macos => true,

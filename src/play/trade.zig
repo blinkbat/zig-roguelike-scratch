@@ -45,7 +45,7 @@ pub const Wares = struct {
     pub const COUNTED = .{.{ "item", "item_n" }};
     item: [WARES_MAX]items.Item = undefined,
     item_n: u8 = 0,
-    supplies: std.EnumArray(consumable.Kind, u8) = .initFill(0),
+    supplies: consumable.Stacks = .initFill(0),
 
     /// The same shelf for the same run and merchant.
     pub fn roll(run_seed: u64, merchant: u8) Wares {
@@ -61,31 +61,17 @@ pub const Wares = struct {
         return self.item[0..self.item_n];
     }
 
-    fn stocked(self: *const Wares) usize {
-        var n: usize = 0;
-        for (consumable.KINDS) |k| n += @intFromBool(self.supplies.get(k) > 0);
-        return n;
-    }
-
     pub fn count(self: *const Wares) usize {
-        return self.stocked() + self.item_n;
+        return consumable.stocked(&self.supplies) + self.item_n;
     }
 
     /// Supplies first, in `consumable.KINDS` order, then the items.
     pub fn at(self: *const Wares, row: usize) ?Ware {
-        var left = row;
-        for (consumable.KINDS) |k| if (self.supplies.get(k) > 0) {
-            if (left == 0) return .{ .supply = k };
-            left -= 1;
-        };
-        return if (left < self.item_n) .{ .item = left } else null;
+        return rowOf(&self.supplies, self.item_n, row);
     }
 
     pub fn cost(self: *const Wares, w: Ware) i32 {
-        return switch (w) {
-            .supply => |k| supplyPrice(k),
-            .item => |i| price(self.item[i]),
-        };
+        return asking(w, self.shelved());
     }
 
     pub fn mend(self: *Wares) void {
@@ -104,16 +90,24 @@ pub fn carried(inv: *const inventory.Inventory) usize {
 }
 
 pub fn carriedAt(inv: *const inventory.Inventory, row: usize) ?Ware {
-    if (inv.carriedAt(row)) |k| return .{ .supply = k };
-    const at = row - inv.carriedCount();
-    return if (at < inv.n) .{ .item = at } else null;
+    return rowOf(&inv.stacks, inv.n, row);
 }
 
 pub fn worth(inv: *const inventory.Inventory, w: Ware) i32 {
-    return offered(switch (w) {
+    return offered(asking(w, inv.bag[0..inv.n]));
+}
+
+fn rowOf(stacks: *const consumable.Stacks, n: usize, row: usize) ?Ware {
+    if (consumable.stockedAt(stacks, row)) |k| return .{ .supply = k };
+    const at = row - consumable.stocked(stacks);
+    return if (at < n) .{ .item = at } else null;
+}
+
+fn asking(w: Ware, goods: []const items.Item) i32 {
+    return switch (w) {
         .supply => |k| supplyPrice(k),
-        .item => |i| price(inv.bag[i]),
-    });
+        .item => |i| price(goods[i]),
+    };
 }
 
 pub const Failure = error{ Gold, Full, StackFull, Gone };

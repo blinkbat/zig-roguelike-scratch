@@ -253,6 +253,7 @@ fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: item_bases.WeaponEffe
 }
 
 const DEFENCES = [_]Measure{ .reduction, .dodge, .block };
+const PER_TURNS_FMT = "{d} / {d} turns";
 const CRITS = [_]Measure{ .weapon_crit, .spell_crit };
 
 fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
@@ -302,10 +303,10 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     left.y += SECTION_GAP;
     left.heading("RECOVERY AND LOOT");
     const perks = view.inventory.gear.perks(view.growth.perks());
-    text.say("{d} / {d} turns", .{ hero.manaRegen(perks), hero.MANA_REGEN_TURNS });
+    text.say(PER_TURNS_FMT, .{ hero.manaRegen(perks), hero.MANA_REGEN_TURNS });
     left.entry("Mana recovery", text.text(), .plain, look.MANA_TEXT);
     const mending = view.inventory.gear.lifeRegen();
-    text.say("{d} / {d} turns", .{ mending, hero.LIFE_REGEN_TURNS });
+    text.say(PER_TURNS_FMT, .{ mending, hero.LIFE_REGEN_TURNS });
     left.entry("Life recovery", text.text(), .plain, quiet(mending, look.LIFE_TEXT));
     left.amount("Life on hit", "{d}", perks.life_on_hit, look.LIFE_TEXT);
     left.amount("Damage leeched as life", "{d}%", view.inventory.gear.leech(), look.LIFE_TEXT);

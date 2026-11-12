@@ -23,7 +23,7 @@ const THEIR_WARES = "Their wares";
 const YOUR_GOODS = "Your goods";
 const SOLD_OUT = "Nothing left to sell you";
 const NOTHING_TO_SELL = "Nothing to sell";
-const TRADE_TITLE_MAX = 48;
+const TRADE_TITLE_MAX = script.WHO_MAX;
 const BOTH_HANDS = "Both hands";
 const BOTH_IN_USE = BOTH_HANDS ++ " in use";
 const EMPTY = "Empty";
@@ -39,6 +39,7 @@ const item_bases = @import("../play/item_bases.zig");
 const items = @import("../play/items.zig");
 const consumable = @import("../play/consumable.zig");
 const trade = @import("../play/trade.zig");
+const script = @import("../map/script.zig");
 const progress = @import("../play/progress.zig");
 const passives = @import("../play/passives.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -124,21 +125,15 @@ pub const Book = struct {
             .passives => passives.NODES.len,
             .skills => progress.skills(view.class).len,
             .nearby, .loot => view.nearby.len,
-            .trade => if (view.dealer) |d| (if (self.selling) trade.carried(view.inventory) else d.shelf.count()) else 0,
+            .trade => if (self.dealing(view)) |s| s.count() else 0,
         };
     }
-    fn ware(self: *const Book, view: View) ?trade.Ware {
+    fn dealing(self: *const Book, view: View) ?Side {
         const d = view.dealer orelse return null;
-        return if (self.selling) trade.carriedAt(view.inventory, self.cursor) else d.shelf.at(self.cursor);
+        return if (self.selling) .{ .bag = view.inventory } else .{ .shelf = d.shelf };
     }
-    fn wareItem(self: *const Book, view: View, w: trade.Ware) ?items.Item {
-        return switch (w) {
-            .supply => null,
-            .item => |i| if (self.selling) view.inventory.bag[i] else view.dealer.?.shelf.item[i],
-        };
-    }
-    fn askedFor(self: *const Book, view: View, w: trade.Ware) i32 {
-        return if (self.selling) trade.worth(view.inventory, w) else view.dealer.?.shelf.cost(w);
+    fn priceInk(self: *const Book, view: View, asked: i32) rl.Color {
+        return if (self.selling or asked <= view.gold) look.UI_GOLD else look.LOSS;
     }
     fn carded(self: *const Book) bool {
         return self.page == .loot or self.page == .trade;
@@ -202,7 +197,7 @@ pub const Book = struct {
             .equipment => view.inventory.gear.slots.get(item_bases.SLOTS[self.cursor]),
             .inventory => if (self.bagIndex(view)) |b| view.inventory.bag[b] else null,
             .nearby, .loot => if (self.cursor < view.nearby.len) view.nearby[self.cursor].item() else null,
-            .trade => if (self.ware(view)) |w| self.wareItem(view, w) else null,
+            .trade => if (self.dealing(view)) |s| (if (s.at(self.cursor)) |w| s.item(w) else null) else null,
             .stats, .passives, .skills, .quests => null,
         };
     }
@@ -289,6 +284,7 @@ pub const Book = struct {
             self.selling = !self.selling;
             self.cursor = 0;
             self.top = 0;
+            self.message.clear();
             return null;
         }
         if (!self.direct()) if (pageStep(st)) |d| {
@@ -501,12 +497,7 @@ pub const Book = struct {
     fn drawDirect(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
         if (self.page == .trade) return self.drawTrade(face, sprites, view);
         header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else "ITEM BAG");
-        if (self.page == .loot) {
-            var holding: menu.Note(100) = .{};
-            holding.say(comptime menu.named(Page.inventory) ++ "  {d} / {d}     Gold  {d}", .{ view.inventory.n, inventory.BAG_MAX, view.gold });
-            face.draw(holding.text(), layout.LIST_X, layout.HOLDING_Y, font.SMALL, look.DIM);
-            divider(layout.LOOT_TOP, layout.LOOT_TOP + layout.CARD_H);
-        }
+        if (self.page == .loot) drawHolding(face, view, null);
         self.drawCells(face, sprites, view);
         if (self.count(view) == 0) {
             face.draw(EMPTY, layout.LIST_X + layout.TEXT_X, self.directTop(), font.BODY, look.DIM);
@@ -520,9 +511,7 @@ pub const Book = struct {
         }
         const note_y = self.noteY(view);
         if (self.message.n > 0) face.draw(self.message.text(), layout.LIST_X, note_y, font.SMALL, look.TEXT);
-        const position = self.positionOf(view);
-        const position_x = layout.DIRECT_W - layout.LIST_X - face.width(position.text(), font.SMALL);
-        face.draw(position.text(), position_x, note_y, font.SMALL, look.DIM);
+        const position_x = self.drawPosition(face, view, note_y);
         if (self.page == .loot and view.loot_gold > 0) {
             var coins: menu.Note(32) = .{};
             coins.say(hero.COINS_FMT, .{view.loot_gold});
@@ -532,12 +521,10 @@ pub const Book = struct {
 
     fn drawTrade(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
         const d = view.dealer orelse return;
+        const s = self.dealing(view).?;
         var title: [TRADE_TITLE_MAX + 1]u8 = undefined;
         header(face, menu.shout(&title, "{s}", .{d.who[0..@min(d.who.len, TRADE_TITLE_MAX)]}));
-        var holding: menu.Note(100) = .{};
-        holding.say("{s}     " ++ comptime menu.named(Page.inventory) ++ "  {d} / {d}     Gold  {d}", .{ if (self.selling) YOUR_GOODS else THEIR_WARES, view.inventory.n, inventory.BAG_MAX, view.gold });
-        face.draw(holding.text(), layout.LIST_X, layout.HOLDING_Y, font.SMALL, look.DIM);
-        divider(layout.LOOT_TOP, layout.LOOT_TOP + layout.CARD_H);
+        drawHolding(face, view, if (self.selling) YOUR_GOODS else THEIR_WARES);
         self.drawCells(face, sprites, view);
         const note_y = self.noteY(view);
         if (self.message.n > 0) face.draw(self.message.text(), layout.LIST_X, note_y, font.SMALL, look.TEXT);
@@ -545,14 +532,12 @@ pub const Book = struct {
             face.draw(if (self.selling) NOTHING_TO_SELL else SOLD_OUT, layout.LIST_X + layout.TEXT_X, self.directTop(), font.BODY, look.DIM);
             return;
         }
-        const position = self.positionOf(view);
-        face.draw(position.text(), layout.DIRECT_W - layout.LIST_X - face.width(position.text(), font.SMALL), note_y, font.SMALL, look.DIM);
-        const w = self.ware(view).?;
-        const asked = self.askedFor(view, w);
+        _ = self.drawPosition(face, view, note_y);
+        const w = s.at(self.cursor).?;
+        const asked = s.asked(w);
         var cost: menu.Note(40) = .{};
         cost.say("{s}  " ++ hero.COINS_FMT, .{ if (self.selling) "Sells for" else "Price", asked });
-        const ink = if (self.selling or asked <= view.gold) look.UI_GOLD else look.LOSS;
-        face.draw(cost.text(), layout.DETAIL_X, layout.LOOT_TOP, font.BODY, ink);
+        face.draw(cost.text(), layout.DETAIL_X, layout.LOOT_TOP, font.BODY, self.priceInk(view, asked));
         const card_y = tradeCardY();
         if (self.selected(view)) |it| {
             const slot = self.destination(view);
@@ -567,6 +552,13 @@ pub const Book = struct {
         var out: menu.Note(50) = .{};
         out.say("{d} / {d}", .{ if (self.count(view) > 0) self.cursor + 1 else 0, self.count(view) });
         return out;
+    }
+
+    fn drawPosition(self: *const Book, face: *const font.Face, view: View, note_y: i32) i32 {
+        const position = self.positionOf(view);
+        const x = layout.DIRECT_W - layout.LIST_X - face.width(position.text(), font.SMALL);
+        face.draw(position.text(), x, note_y, font.SMALL, look.DIM);
+        return x;
     }
 
     fn drawCells(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
@@ -613,41 +605,37 @@ pub const Book = struct {
                     var carried: menu.Note(24) = .{};
                     carried.say(item_card.CARRIED_FMT, .{view.inventory.stacks.get(k)});
                     line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
-                    listRow(face, x, row_mid, menu.titleOf(k), inkOf(null), carried.text());
+                    listRow(face, x, row_mid, menu.titleOf(k), inkOf(null), carried.text(), look.DIM);
                 } else {
                     const at = i - stocked(view);
                     const it = view.inventory.bag[at];
                     const slots = it.kind.slots();
                     line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
-                    listRow(face, x, row_mid, it.name(&name_buf), inkOf(it), if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name());
+                    listRow(face, x, row_mid, it.name(&name_buf), inkOf(it), if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name(), look.DIM);
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];
                     if (n.item()) |it| {
                         line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
                     } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
-                    listRow(face, x, row_mid, n.label(&name_buf), inkOf(n.item()), n.command().verb());
+                    listRow(face, x, row_mid, n.label(&name_buf), inkOf(n.item()), n.command().verb(), look.DIM);
                 },
                 .trade => {
-                    var shown = self.*;
-                    shown.cursor = i;
-                    const w = shown.ware(view).?;
-                    const it = shown.wareItem(view, w);
+                    const s = self.dealing(view).?;
+                    const w = s.at(i).?;
+                    const it = s.item(w);
                     var cost: menu.Note(24) = .{};
-                    const asked = shown.askedFor(view, w);
+                    const asked = s.asked(w);
                     cost.say(hero.COINS_FMT, .{asked});
                     const label = switch (w) {
                         .item => it.?.name(&name_buf),
                         .supply => |k| blk: {
                             line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
-                            const left = if (self.selling) view.inventory.stacks.get(k) else view.dealer.?.shelf.supplies.get(k);
-                            break :blk std.fmt.bufPrintZ(&name_buf, "{s} ({d})", .{ menu.titleOf(k), left }) catch menu.titleOf(k);
+                            break :blk std.fmt.bufPrintZ(&name_buf, "{s} ({d})", .{ menu.titleOf(k), s.left(k) }) catch menu.titleOf(k);
                         },
                     };
                     if (it) |held| line_icons.drawItem(sprites, held.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(held));
-                    var fitted: [items.NAME_MAX]u8 = undefined;
-                    face.drawMiddle(face.fit(&fitted, label, font.BODY, layout.SECOND_X - layout.TEXT_X - layout.COLUMN_GAP, false), x + layout.TEXT_X, row_mid, font.BODY, inkOf(it));
-                    face.drawMiddle(cost.text(), x + layout.SECOND_X, row_mid, font.SMALL, if (self.selling or asked <= view.gold) look.UI_GOLD else look.LOSS);
+                    listRow(face, x, row_mid, label, inkOf(it), cost.text(), self.priceInk(view, asked));
                 },
                 .passives, .skills, .stats, .quests => unreachable,
             }
@@ -726,11 +714,62 @@ fn divider(top: i32, foot: i32) void {
 fn header(face: *const font.Face, text: [:0]const u8) void {
     face.engraved(text, layout.LIST_X, font.Face.topFor(layout.HEADER_MID, font.HEAD), font.HEAD, look.TEXT);
 }
-fn listRow(face: *const font.Face, x: i32, mid: i32, text: [:0]const u8, ink: rl.Color, second: [:0]const u8) void {
+fn listRow(face: *const font.Face, x: i32, mid: i32, text: [:0]const u8, ink: rl.Color, second: [:0]const u8, second_ink: rl.Color) void {
     var fitted: [items.NAME_MAX]u8 = undefined;
     face.drawMiddle(face.fit(&fitted, text, font.BODY, layout.SECOND_X - layout.TEXT_X - layout.COLUMN_GAP, false), x + layout.TEXT_X, mid, font.BODY, ink);
-    face.drawMiddle(second, x + layout.SECOND_X, mid, font.SMALL, look.DIM);
+    face.drawMiddle(second, x + layout.SECOND_X, mid, font.SMALL, second_ink);
 }
+
+const HOLDING_FMT = menu.named(Page.inventory) ++ "  {d} / {d}     Gold  {d}";
+fn drawHolding(face: *const font.Face, view: View, lead: ?[]const u8) void {
+    var holding: menu.Note(100) = .{};
+    if (lead) |l| holding.say("{s}     " ++ HOLDING_FMT, .{ l, view.inventory.n, inventory.BAG_MAX, view.gold }) else holding.say(HOLDING_FMT, .{ view.inventory.n, inventory.BAG_MAX, view.gold });
+    face.draw(holding.text(), layout.LIST_X, layout.HOLDING_Y, font.SMALL, look.DIM);
+    divider(layout.LOOT_TOP, layout.LOOT_TOP + layout.CARD_H);
+}
+
+const Side = union(enum) {
+    shelf: *const trade.Wares,
+    bag: *const inventory.Inventory,
+
+    fn count(s: Side) usize {
+        return switch (s) {
+            .shelf => |w| w.count(),
+            .bag => |inv| trade.carried(inv),
+        };
+    }
+
+    fn at(s: Side, row: usize) ?trade.Ware {
+        return switch (s) {
+            .shelf => |w| w.at(row),
+            .bag => |inv| trade.carriedAt(inv, row),
+        };
+    }
+
+    fn item(s: Side, w: trade.Ware) ?items.Item {
+        return switch (w) {
+            .supply => null,
+            .item => |i| switch (s) {
+                .shelf => |shelf| shelf.item[i],
+                .bag => |inv| inv.bag[i],
+            },
+        };
+    }
+
+    fn asked(s: Side, w: trade.Ware) i32 {
+        return switch (s) {
+            .shelf => |shelf| shelf.cost(w),
+            .bag => |inv| trade.worth(inv, w),
+        };
+    }
+
+    fn left(s: Side, k: consumable.Kind) u8 {
+        return switch (s) {
+            .shelf => |shelf| shelf.supplies.get(k),
+            .bag => |inv| inv.stacks.get(k),
+        };
+    }
+};
 const ACTIONS = [_]input.Button{ menu.CONFIRM, menu.CHANGE, menu.REMOVE };
 fn neededAttrs(view: View, it: items.Item, slot: item_bases.Slot) attr.Attrs {
     return view.inventory.gear.wearing(it, slot).statsWithout(slot, view.base);

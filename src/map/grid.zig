@@ -220,6 +220,10 @@ pub fn groundOf(c: u8) ?Tile {
     return if (c == BARREL_LETTER) BARREL_GROUND else Tile.ofLetter(c);
 }
 
+pub fn letterOf(t: Tile, barrel: bool) u8 {
+    return if (barrel) BARREL_LETTER else t.letter();
+}
+
 pub fn propsWhole(tile: *const [CELLS]Tile) bool {
     for (0..CELLS) |i| {
         if (!propWhole(tile, i)) return false;
@@ -702,8 +706,13 @@ pub const Level = struct {
         };
     }
 
+    pub fn blocksSight(self: *const Level, p: P) bool {
+        const tile = self.at(p);
+        return tile.blind() and !(tile.burns() and self.burning(p));
+    }
+
     pub fn hidesBeyond(self: *const Level, p: P) bool {
-        return self.at(p).blind() or self.volumeAt(.smoke, p) >= SMOKE_THICK;
+        return self.blocksSight(p) or self.volumeAt(.smoke, p) >= SMOKE_THICK;
     }
 
     pub fn volumeAt(self: *const Level, kind: Gas, p: P) u16 {
@@ -1246,7 +1255,7 @@ fn lineOk(lv: *const Level, from: P, to: P, comptime rule: LineRule) bool {
         if (rule.lit and !lv.isLit(c)) return false;
         if (rule.projectiles and lv.hasBarrier(c)) return false;
         if (c.eq(to)) return true;
-        if (if (rule.smoke) lv.hidesBeyond(c) else lv.at(c).blind()) return false;
+        if (if (rule.smoke) lv.hidesBeyond(c) else lv.blocksSight(c)) return false;
     }
     return true;
 }

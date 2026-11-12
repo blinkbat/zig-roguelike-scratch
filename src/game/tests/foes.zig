@@ -1612,6 +1612,19 @@ test "a sluice crab whose hero sidesteps charges on to a wall or its reach, then
     }
 }
 
+test "a sluice crab that charges its whole reach strikes nothing past the end of its lane" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const c = actor.row(.sluice_crab).charges.?;
+    const past = LANE_FOE.sub(.{ .x = c.rush + 1, .y = 0 });
+    _ = try braced(g, .sluice_crab);
+    g.sim.lv.putBarrel(past);
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, OFF_LANE);
+    game.settle(g);
+    combat.endTurn(g);
+    try std.testing.expect(g.sim.lv.hasBarrel(past));
+}
+
 test "a sluice crab's charge smashes a barrel or rams a foe stepped into its lane, and sticks" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -1730,6 +1743,25 @@ test "a cinder imp's firebolt flies two cells a turn after its thrower falls, an
     try std.testing.expect(g.pic.bolts[slot] == null);
 }
 
+test "a firebolt flies on only once the hero's step into its line is drawn" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const slot = try thrown(g);
+    for (0..2) |_| {
+        combat.endTurn(g);
+        harness.drawnOut(g);
+    }
+    const hp = g.sim.heroActor().?.hp;
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, LANE_HERO.add(mathx.Dir.e.delta()));
+    combat.endTurn(g);
+    try std.testing.expect(g.sim.heroActor().?.hp < hp);
+    const thrown_in = -g.pic.bolts[slot].?.t;
+    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    const step = g.pic.glide[actor.Pool.slot(g.sim.hero)].left();
+    try std.testing.expect(step > 0);
+    try std.testing.expect(thrown_in >= step - 1e-4);
+}
+
 test "a firebolt misses a hero who leaves its line and flies on to its range" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -1804,4 +1836,18 @@ test "a cinder imp moves to another cell it can still shoot from after each thro
         harness.drawnOut(g);
     }
     try std.testing.expect(throws > 0);
+}
+
+test "a cinder imp may step straight back along its own line of fire" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, LANE_HERO, &.{});
+    const id = harness.spawnAt(g, .cinder_imp, LANE_FOE, true);
+    for ([_]mathx.Dir{ .n, .s, .ne, .se }) |d| g.sim.lv.set(LANE_FOE.add(d.delta()), .wall);
+    game.settle(g);
+    combat.endTurn(g);
+    const imp = g.sim.pool.get(id).?;
+    try std.testing.expect(imp.bolt != null);
+    combat.endTurn(g);
+    try std.testing.expectEqual(LANE_FOE.add(mathx.Dir.e.delta()), imp.at);
 }

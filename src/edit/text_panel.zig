@@ -47,7 +47,8 @@ const NAV_ROW = DETAIL + ROW_PAD;
 const Focus = enum { search, passage };
 const Leave = enum { close, quit };
 const HISTORY = 16;
-const Group = struct { category: []const u8, owner: []const u8, first: usize, end: usize, matches: usize = 0 };
+const Group = struct { category: []const u8, role: []const u8, owner: []const u8, first: usize, end: usize, matches: usize = 0, category_open: bool = false, role_open: bool = false };
+const TreeRow = struct { group: usize, depth: u8, matches: usize };
 const FontKey = struct {
     ordered: bool,
     font: ?rl.Font,
@@ -193,12 +194,19 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
             while (true) {
                 f.starts[lines] = pos;
                 var end = pos;
+                var last_space: ?usize = null;
                 while (end < f.n and f.buf[end] != '\n') {
                     const next = end + 1;
                     @memcpy(buf[0 .. next - pos], f.buf[pos..next]);
                     buf[next - pos] = 0;
                     if (end > pos and displayWidth(face, buf[0 .. next - pos :0]) > width) break;
+                    if (f.buf[end] == ' ') last_space = next;
                     end = next;
+                }
+                if (end < f.n and f.buf[end] != '\n') {
+                    if (last_space) |space| if (space > pos) {
+                        end = space;
+                    };
                 }
                 lines += 1;
                 if (end == f.n) break;
@@ -289,17 +297,20 @@ pub const State = struct {
     list_box: rl.Rectangle = widgets.NO_BOX,
     category: ?[]const u8 = null,
     owner: ?[]const u8 = null,
+    role: ?[]const u8 = null,
     nav_top: usize = 0,
     nav_rows: usize = 1,
     nav_count: usize = 0,
     order: std.ArrayListUnmanaged(usize) = .{},
     groups: std.ArrayListUnmanaged(Group) = .{},
+    tree: std.ArrayListUnmanaged(TreeRow) = .{},
     results: std.ArrayListUnmanaged(usize) = .{},
     view_dirty: bool = true,
 
     pub fn deinit(s: *State, alloc: std.mem.Allocator) void {
         s.order.deinit(alloc);
         s.groups.deinit(alloc);
+        s.tree.deinit(alloc);
         s.results.deinit(alloc);
         if (s.data) |c| {
             c.deinit();
@@ -333,6 +344,7 @@ pub const State = struct {
     fn inScope(s: *const State, e: catalog.Entry) bool {
         if (s.category) |category| if (!std.mem.eql(u8, category, e.category)) return false;
         if (s.owner) |owner| if (!std.mem.eql(u8, owner, e.owner)) return false;
+        if (s.role) |role| if (!std.mem.eql(u8, role, e.role)) return false;
         return true;
     }
 
@@ -342,18 +354,20 @@ pub const State = struct {
         s.results.clearRetainingCapacity();
         s.category = null;
         s.owner = null;
+        s.role = null;
         s.nav_top = 0;
         const c = s.data orelse return;
         const entries = c.entries();
         try s.order.ensureTotalCapacity(alloc, entries.len);
         try s.groups.ensureTotalCapacity(alloc, entries.len);
+        try s.tree.ensureTotalCapacity(alloc, entries.len * 3);
         try s.results.ensureTotalCapacity(alloc, entries.len);
         for (entries, 0..) |_, i| s.order.appendAssumeCapacity(i);
         std.mem.sort(usize, s.order.items, entries, struct {
             fn less(es: []const catalog.Entry, x: usize, y: usize) bool {
                 const a = es[x];
                 const b = es[y];
-                inline for (.{ "category", "owner", "role", "path" }) |field| {
+                inline for (.{ "category", "role", "owner", "path" }) |field| {
                     const cmp = std.mem.order(u8, @field(a, field), @field(b, field));
                     if (cmp != .eq) return cmp == .lt;
                 }
@@ -365,12 +379,12 @@ pub const State = struct {
             const e = entries[index];
             if (s.groups.items.len > 0) {
                 const previous = &s.groups.items[s.groups.items.len - 1];
-                if (std.mem.eql(u8, previous.category, e.category) and std.mem.eql(u8, previous.owner, e.owner)) {
+                if (std.mem.eql(u8, previous.category, e.category) and std.mem.eql(u8, previous.role, e.role) and std.mem.eql(u8, previous.owner, e.owner)) {
                     previous.end = at + 1;
                     continue;
                 }
             }
-            s.groups.appendAssumeCapacity(.{ .category = e.category, .owner = e.owner, .first = at, .end = at + 1 });
+            s.groups.appendAssumeCapacity(.{ .category = e.category, .role = e.role, .owner = e.owner, .first = at, .end = at + 1 });
         }
         s.view_dirty = true;
         s.refresh();
@@ -404,12 +418,55 @@ pub const State = struct {
         const same_category = if (s.category) |previous| if (category) |next| std.mem.eql(u8, previous, next) else false else category == null;
         s.category = category;
         s.owner = owner;
+        s.role = null;
         s.top = 0;
         if (!same_category) s.nav_top = 0;
         s.selected = null;
         s.focus = .search;
         s.view_dirty = true;
         s.note.clear();
+    }
+
+    fn buildTree(s: *State) void {
+        s.tree.clearRetainingCapacity();
+        var category: usize = 0;
+        while (category < s.groups.items.len) {
+            var end = category;
+            var matches: usize = 0;
+            while (end < s.groups.items.len and std.mem.eql(u8, s.groups.items[category].category, s.groups.items[end].category)) : (end += 1) matches += s.groups.items[end].matches;
+            if (matches > 0) {
+                s.tree.appendAssumeCapacity(.{ .group = category, .depth = 0, .matches = matches });
+                if (s.groups.items[category].category_open) {
+                    var role = category;
+                    while (role < end) {
+                        var role_end = role;
+                        var role_matches: usize = 0;
+                        while (role_end < end and std.mem.eql(u8, s.groups.items[role].role, s.groups.items[role_end].role)) : (role_end += 1) role_matches += s.groups.items[role_end].matches;
+                        if (role_matches > 0) {
+                            s.tree.appendAssumeCapacity(.{ .group = role, .depth = 1, .matches = role_matches });
+                            if (s.groups.items[role].role_open) {
+                                for (role..role_end) |i| if (s.groups.items[i].matches > 0) {
+                                    s.tree.appendAssumeCapacity(.{ .group = i, .depth = 2, .matches = s.groups.items[i].matches });
+                                };
+                            }
+                        }
+                        role = role_end;
+                    }
+                }
+            }
+            category = end;
+        }
+    }
+
+    fn selectTree(s: *State, row: TreeRow) void {
+        if (s.dirty()) return s.say("Save or discard this passage before changing its group.", .{});
+        const group = &s.groups.items[row.group];
+        if (row.depth == 0) group.category_open = !group.category_open;
+        if (row.depth == 1) group.role_open = !group.role_open;
+        const top = s.nav_top;
+        s.scope(group.category, if (row.depth == 2) group.owner else null);
+        s.role = if (row.depth > 0) group.role else null;
+        s.nav_top = top;
     }
 
     fn pick(s: *State, i: usize) bool {
@@ -483,15 +540,22 @@ pub fn poseContext(ed: *editor.Editor, context: []const u8) !void {
     for (c.entries(), 0..) |entry, i| {
         if (!std.mem.startsWith(u8, entry.context, context) or !entry.editable) continue;
         s.scope(entry.category, entry.owner);
+        s.role = entry.role;
         _ = s.pick(i);
         s.refresh();
-        var owner_at: usize = 0;
-        for (s.groups.items) |group| {
+        for (s.groups.items) |*group| {
             if (!std.mem.eql(u8, group.category, entry.category)) continue;
-            if (std.mem.eql(u8, group.owner, entry.owner)) break;
-            owner_at += 1;
+            group.category_open = true;
+            if (std.mem.eql(u8, group.role, entry.role)) group.role_open = true;
         }
-        s.nav_top = owner_at -| 2;
+        s.buildTree();
+        for (s.tree.items, 0..) |row, at| {
+            const group = s.groups.items[row.group];
+            if (row.depth == 2 and std.mem.eql(u8, group.category, entry.category) and std.mem.eql(u8, group.role, entry.role) and std.mem.eql(u8, group.owner, entry.owner)) {
+                s.nav_top = at -| 3;
+                break;
+            }
+        }
         s.focus = .passage;
         return;
     }
@@ -616,7 +680,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
     const hit = widgets.hot(ed.controls(), r, true, true, null).hit;
     const x = origin.x;
     const y = origin.y;
-    const width = widgets.insetW(r);
+    const width = widgets.insetW(r) - 8;
     const rows = widgets.rowsIn(@as(i32, @intFromFloat(r.height)) - fieldHeight(0), LINE_H);
     _ = f.layout(width, FontKey.of(&g.face), &g.face);
     const breaks = f.starts[0 .. f.lines + 1];
@@ -630,6 +694,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
     if (f.reveal and focused) f.scroll = mathx.reveal(f.scroll, caret_line, rows);
     f.reveal = false;
     f.scroll = widgets.clampTop(f.scroll, lines, rows);
+    widgets.scrollbarIn(r, f.scroll, rows, lines);
     const first = f.scroll;
     widgets.scissorIn(ed.clip, r);
     defer widgets.reclip(ed.clip);
@@ -664,12 +729,13 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
     return hit;
 }
 
-fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8, count: usize, on: bool) bool {
+fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8, count: usize, on: bool, depth: u8) bool {
     const s = &ed.words;
     if (ordinal < s.nav_top or ordinal >= s.nav_top + s.nav_rows) return false;
-    const x: i32 = @intFromFloat(s.nav_box.x);
+    const indent = @as(i32, depth) * 14;
+    const x: i32 = @as(i32, @intFromFloat(s.nav_box.x)) + indent;
     const y = @as(i32, @intFromFloat(s.nav_box.y)) + @as(i32, @intCast(ordinal - s.nav_top)) * NAV_ROW;
-    const w: i32 = @intFromFloat(s.nav_box.width);
+    const w: i32 = @as(i32, @intFromFloat(s.nav_box.width)) - indent;
     const r = raster.rect(x, y, w - widgets.GAP, NAV_ROW - BUTTON_GAP);
     const h = widgets.plateHit(ed.controls(), r, on, s.leave == null, true, null);
     var buf: [32]u8 = undefined;
@@ -681,59 +747,33 @@ fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8,
 
 fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bottom: i32) void {
     const s = &ed.words;
-    widgets.drawFit(&g.face, if (s.category) |category| category else "Features", TEXT, w, false, x, y, look.UI_GOLD);
+    widgets.drawFit(&g.face, "Text library", TEXT, w, false, x, y, look.UI_GOLD);
     var yy = y + LINE_H;
-    if (button(ed, g, widgets.row(x, yy, w - widgets.GAP), if (s.category != null) "< All features" else "All text", s.category == null, s.leave == null)) s.scope(null, null);
+    if (button(ed, g, widgets.row(x, yy, w - widgets.GAP), "All text", s.category == null, s.leave == null)) s.scope(null, null);
     yy += widgets.ROW_STEP;
-    if (s.category != null) {
-        if (button(ed, g, widgets.row(x, yy, w - widgets.GAP), "All in this feature", s.owner == null, s.leave == null)) s.scope(s.category, null);
-        yy += widgets.ROW_STEP;
-    }
     s.nav_box = raster.rect(x, yy, w, @max(0, bottom - yy));
     s.nav_rows = widgets.rowsIn(bottom - yy, NAV_ROW);
-    var count: usize = 0;
-    var counted = NavEntries{ .groups = s.groups.items, .category = s.category };
-    while (counted.next()) |_| count += 1;
+    s.buildTree();
+    const count = s.tree.items.len;
     s.nav_count = count;
     s.nav_top = widgets.clampTop(s.nav_top, count, s.nav_rows);
-    var entries = NavEntries{ .groups = s.groups.items, .category = s.category };
-    var ordinal: usize = 0;
-    while (entries.next()) |e| : (ordinal += 1) {
-        const category = entries.category orelse {
-            if (navItem(ed, g, ordinal, e.label, e.matches, false)) s.scope(e.label, null);
-            continue;
+    for (s.tree.items, 0..) |row, ordinal| {
+        const group = s.groups.items[row.group];
+        const label = switch (row.depth) {
+            0 => group.category,
+            1 => group.role,
+            else => group.owner,
         };
-        const on = if (s.owner) |owner| std.mem.eql(u8, owner, e.label) else false;
-        if (navItem(ed, g, ordinal, e.label, e.matches, on)) s.scope(category, e.label);
+        const expanded = if (row.depth == 0) group.category_open else group.role_open;
+        var buf: [PAGE_LINE]u8 = undefined;
+        const text = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ if (row.depth == 2) "" else if (expanded) "- " else "+ ", label }) catch "";
+        const on = s.category != null and std.mem.eql(u8, s.category.?, group.category) and
+            (if (row.depth == 0) s.role == null and s.owner == null else s.role != null and std.mem.eql(u8, s.role.?, group.role) and
+                (if (row.depth == 1) s.owner == null else s.owner != null and std.mem.eql(u8, s.owner.?, group.owner)));
+        if (navItem(ed, g, ordinal, text, row.matches, on, row.depth)) s.selectTree(row);
     }
     widgets.scrollbarIn(s.nav_box, s.nav_top, s.nav_rows, s.nav_count);
 }
-
-const NavEntry = struct { label: []const u8, matches: usize };
-
-const NavEntries = struct {
-    groups: []const Group,
-    category: ?[]const u8,
-    at: usize = 0,
-
-    fn next(it: *NavEntries) ?NavEntry {
-        if (it.category) |category| {
-            while (it.at < it.groups.len) {
-                const group = it.groups[it.at];
-                it.at += 1;
-                if (group.matches > 0 and std.mem.eql(u8, category, group.category)) return .{ .label = group.owner, .matches = group.matches };
-            }
-            return null;
-        }
-        while (it.at < it.groups.len) {
-            const category = it.groups[it.at].category;
-            var matches: usize = 0;
-            while (it.at < it.groups.len and std.mem.eql(u8, category, it.groups[it.at].category)) : (it.at += 1) matches += it.groups[it.at].matches;
-            if (matches > 0) return .{ .label = category, .matches = matches };
-        }
-        return null;
-    }
-};
 
 pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.words;
@@ -745,7 +785,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const w = col.inner();
     var y = f.y;
     var buf: [PAGE_LINE]u8 = undefined;
-    widgets.drawFit(&g.face, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
+    widgets.drawFit(&g.face, "Search wording, concern, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
     y += widgets.DETAIL_STEP;
     var tools = widgets.LayEnd{ .right = x + w, .y = y + ROW_INSET, .gap = TOOL_GAP };
     const close_r = tools.take(CLOSE_W);
@@ -848,7 +888,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     };
     if (s.selected == null) {
         widgets.drawFit(&g.face, "Choose a passage", TEXT, right_w, false, right_x, y, look.TEXT);
-        _ = g.face.paragraph("Browse a feature, then its object or screen. Select a named field to see its wording and exact source.", right_x, y + LINE_H + LEAD, right_w, DETAIL, look.DIM);
+        _ = g.face.paragraph("Expand a concern, then a text type and owner. Select a passage to edit its wording.", right_x, y + LINE_H + LEAD, right_w, DETAIL, look.DIM);
     }
     const note = if (s.note.n > 0) s.note.text() else "Saved wording takes effect after rebuilding.";
     widgets.drawFit(&g.face, note, DETAIL, w, false, x, bottom + LEAD, look.UI_GOLD);
@@ -883,8 +923,21 @@ test "text browser groups semantic owners and protects a dirty passage during na
     }) |entry| try c.list.append(c.arena.allocator(), entry);
     const s = &ed.words;
     try s.reindex(alloc);
-    try std.testing.expectEqual(@as(usize, 2), s.groups.items.len);
+    try std.testing.expectEqual(@as(usize, 3), s.groups.items.len);
     try std.testing.expectEqual(@as(usize, 3), s.results.items.len);
+    s.buildTree();
+    try std.testing.expectEqual(@as(usize, 1), s.tree.items.len);
+    s.selectTree(s.tree.items[0]);
+    s.refresh();
+    s.buildTree();
+    try std.testing.expectEqual(@as(usize, 3), s.tree.items.len);
+    s.selectTree(s.tree.items[1]);
+    s.refresh();
+    s.buildTree();
+    try std.testing.expectEqual(@as(usize, 5), s.tree.items.len);
+    try std.testing.expectEqual(@as(u8, 2), s.tree.items[2].depth);
+    try std.testing.expectEqualSlices(usize, &.{ 0, 2 }, s.results.items);
+    s.scope(null, null);
     s.search.set("play.ward");
     s.view_dirty = true;
     s.refresh();

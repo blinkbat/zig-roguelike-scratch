@@ -155,6 +155,7 @@ pub fn listSep(i: usize, n: usize, last: Conjunction) []const u8 {
 
 pub const Menu = struct {
     at: usize = 0,
+    dragging: ?usize = null,
 
     fn clampTo(self: *Menu, n: usize) bool {
         if (n == 0) return false;
@@ -268,7 +269,7 @@ pub const Window = struct {
     }
 };
 
-fn window(screen_h: i32, n: usize, at: usize) Window {
+pub fn window(screen_h: i32, n: usize, at: usize) Window {
     const room: usize = @intCast(@max(1, @divTrunc(screen_h - CHROME_H, ROW_STEP)));
     return Window.of(n, at, room);
 }
@@ -279,7 +280,7 @@ pub fn listWidth(screen: mathx.P) i32 {
     return @min(LIST_W, @max(1, screen.x - 2 * SCREEN_MARGIN));
 }
 
-fn rowBox(screen: mathx.P, win: Window, i: usize) rl.Rectangle {
+pub fn rowBox(screen: mathx.P, win: Window, i: usize) rl.Rectangle {
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(win.len)) * ROW_STEP, 2);
     const width = listWidth(screen);
     return raster.rect(@divTrunc(screen.x - width, 2), top + ROWS_DY + @as(i32, @intCast(i - win.from)) * ROW_STEP - ROW_INSET, width, ROW_STEP);

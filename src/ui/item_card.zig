@@ -42,7 +42,7 @@ const CardLine = union(enum) {
             .damage => |hit| out.say(damage.PHYSICAL_FMT, .{ hit.lo, hit.hi }),
             .unarmed => return "No weapon damage",
             .armour => |n| out.say("{d}% " ++ attr.REDUCTION_LABEL, .{n}),
-            .block => |n| out.say(item_bases.BLOCK_FMT[1..], .{n}),
+            .block => |n| out.say(item_bases.BLOCK_CHANCE_FMT, .{n}),
             .innate => |innate| {
                 out.clear();
                 innate.write(out.writer());
