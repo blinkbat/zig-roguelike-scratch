@@ -9,6 +9,7 @@ const light = @import("../../gfx/light.zig");
 const cinema = @import("../../gfx/cinema.zig");
 const day = @import("../../map/day.zig");
 const fire = @import("../../map/fire.zig");
+const gas = @import("../../map/gas.zig");
 const options_menu = @import("../../ui/options.zig");
 const game = @import("../../game.zig");
 
@@ -59,7 +60,7 @@ fn captureVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
     const reeds = P{ .x = 22, .y = 20 };
     game.harness.grassArena(g, from, &.{foe});
     g.sim.lv.set(reeds, .reeds);
-    fire.lay(&g.sim.lv, reeds, 3, 0);
+    fire.lay(&g.sim.lv, reeds, fire.BURNS, 0);
     const bag = P{ .x = 23, .y = 22 };
     if (!g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = bag })) return error.CaptureLootFull;
     studyAt(g, true, day.NOON);
@@ -94,8 +95,14 @@ fn captureFireSight(g: *game.Game, target: rl.RenderTexture2D) !void {
     fire.lay(&g.sim.lv, at, fire.BURNS, 0);
     game.castSight(g, from);
     game.harness.drawnOut(g);
-    if (!g.sim.lv.isLit(past) or !grid.sightLine(&g.sim.lv, from, past)) return error.FireBlocksSight;
+    if (!g.sim.lv.isLit(past) or !grid.clearLine(&g.sim.lv, from, past)) return error.FireBlocksSight;
     try capture(g, target, CINEMA_DIR ++ "/visibility-pyre-fire.png");
+    var cloud = grid.Cells.around(at, 1);
+    while (cloud.next()) |p| g.sim.lv.release(.smoke, p, gas.SMOKE_BURST);
+    game.castSight(g, from);
+    game.harness.drawnOut(g);
+    if (!g.sim.lv.isLit(past)) return error.SmokeBlocksSight;
+    try capture(g, target, CINEMA_DIR ++ "/visibility-smoke.png");
 }
 
 fn captureEased(g: *game.Game, target: rl.RenderTexture2D, times: []const f32, comptime way: []const u8) !void {

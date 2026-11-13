@@ -82,7 +82,7 @@ pub fn braceTarget(sim: *const Simulation, id: u16, range: i32, sight: i32) ?P {
 
 fn kinInReach(lv: *const grid.Level, healing: actor.Mend, candidate: *const actor.Actor, from: P, within: i32) bool {
     if (!candidate.alive or std.mem.indexOfScalar(actor.Kind, healing.kin, candidate.kind) == null) return false;
-    return mathx.dist(candidate.at, from) <= within and grid.sightLine(lv, from, candidate.at);
+    return mathx.dist(candidate.at, from) <= within and grid.clearLine(lv, from, candidate.at);
 }
 
 pub const Mended = struct { slot: ?actor.ActorSlot };

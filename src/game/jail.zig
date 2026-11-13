@@ -1,32 +1,26 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const zoo = @import("../map/zoo.zig");
 const grid = @import("../map/grid.zig");
 const game = @import("../game.zig");
 const tactics = @import("tactics_exec.zig");
 const rewards = @import("rewards.zig");
 const P = mathx.P;
 
-fn spec(g: *const game.Game) ?zoo.Spec {
-    const map = g.sim.map orelse return null;
-    return map.node[g.sim.node].zoo;
-}
-
 pub fn reached(g: *const game.Game, at: P) bool {
     const from = g.sim.heroAt() orelse return false;
-    const z = spec(g) orelse return false;
+    const z = g.sim.zooNow() orelse return false;
     const t = g.sim.lv.at(at);
     return at.eq(z.door()) and t.closedGate() and game.character.withinReach(from, at) and g.sim.lv.isLit(at);
 }
 
 pub fn beside(g: *const game.Game) ?P {
-    const z = spec(g) orelse return null;
+    const z = g.sim.zooNow() orelse return null;
     return if (reached(g, z.door())) z.door() else null;
 }
 
 pub fn interact(g: *game.Game, at: P) bool {
     if (!reached(g, at)) return false;
-    const z = spec(g).?;
+    const z = g.sim.zooNow().?;
     if (!z.open(&g.sim.lv, &g.sim.pool, &g.sim.inventory)) {
         g.sim.log.say("The jail door is locked. Requires a Small Key.", .{});
         game.holdWalk(g);

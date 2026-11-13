@@ -109,6 +109,10 @@ pub const Kind = enum {
         return spec(k).slots;
     }
 
+    pub fn equippable(k: Kind) bool {
+        return k.slots().len > 0;
+    }
+
     pub fn fits(k: Kind, slot: Slot) bool {
         return std.mem.indexOfScalar(Slot, k.slots(), slot) != null;
     }

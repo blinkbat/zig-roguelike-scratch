@@ -83,8 +83,10 @@ pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) us
     return n;
 }
 
+const SMOKE_MOST: u16 = 19;
+
 pub fn smoulder(lv: *grid.Level, p: P) void {
-    const room = (grid.SMOKE_THICK - 1) -| lv.volumeAt(.smoke, p);
+    const room = SMOKE_MOST -| lv.volumeAt(.smoke, p);
     if (room > 0) lv.release(.smoke, p, @min(SMOKE, room));
 }
 
@@ -280,24 +282,10 @@ test "a burning tile smokes, laid flames on bare floor do not, and a fire of no 
     try std.testing.expect(!lv.burning(AT) and !lv.burning(bare));
 }
 
-test "a field fire's smoke never thickens enough to hide what lies past it" {
-    var rng = mathx.Rng.init(0x5E0);
-    var lv = field(.grass);
-    lay(&lv, AT, BURNS, 3);
-    var turns: usize = 0;
-    while (!std.mem.allEqual(u8, &lv.flames, 0)) : (turns += 1) {
-        try std.testing.expect(turns < NEVER);
-        _ = turn(&lv, &rng, 0, &NONE_KEPT);
-        gas.turn(&lv, &rng);
-        for (0..grid.CELLS) |i| try std.testing.expect(!lv.hidesBeyond(grid.Level.of(i)));
-    }
-}
-
-test "repeated fire bursts cannot build opaque smoke or erase existing smoke cover" {
+test "repeated fire bursts stop adding smoke at their cap and never thin existing smoke" {
     var lv = field(.grass);
     for (0..20) |_| smoulder(&lv, AT);
-    try std.testing.expectEqual(grid.SMOKE_THICK - 1, lv.volumeAt(.smoke, AT));
-    try std.testing.expect(!lv.hidesBeyond(AT));
+    try std.testing.expectEqual(SMOKE_MOST, lv.volumeAt(.smoke, AT));
     lv.release(.smoke, AT, gas.SMOKE_BURST);
     const before = lv.volumeAt(.smoke, AT);
     smoulder(&lv, AT);

@@ -37,7 +37,7 @@ pub const Spec = struct {
     }
 
     pub fn reserves(s: *const Spec, p: P) bool {
-        return s.reserved().holds(p) or (if (s.key) |k| k.eq(p) else false);
+        return s.reserved().holds(p) or s.keyAt(p);
     }
 
     pub fn dir(s: *const Spec) mathx.Dir {
@@ -61,6 +61,10 @@ pub const Spec = struct {
 
     pub fn approach(s: *const Spec) P {
         return s.door().add(s.outward());
+    }
+
+    pub fn keyAt(s: *const Spec, p: P) bool {
+        return if (s.key) |k| k.eq(p) else false;
     }
 
     pub fn valid(s: *const Spec) bool {
@@ -93,7 +97,7 @@ pub const Spec = struct {
         var outside = grid.CellSet.initEmpty();
         for (0..grid.CELLS) |i| {
             const p = grid.Level.of(i);
-            if (!r.holds(p) and lv.walkable(p)) outside.set(i);
+            if (!r.holds(p) and lv.walkable(p) and !s.keyAt(p)) outside.set(i);
         }
         var it = s.reserved().cells();
         const inner = s.inside();
@@ -147,7 +151,7 @@ pub const Spec = struct {
             }
             for (mathx.CARDINALS) |d| {
                 const q = p.add(d);
-                if (!grid.Box.inMap(1).holds(q) or s.room().holds(q)) continue;
+                if (!grid.Box.inMap(1).holds(q) or s.room().holds(q) or s.keyAt(q)) continue;
                 const i = grid.Level.idx(q);
                 if (seen.isSet(i)) continue;
                 seen.set(i);
@@ -221,6 +225,21 @@ test "a zoo accepts any Small Key and consumes one only when a locked gate opens
     lv.set(s.door(), .gate);
     try std.testing.expect(s.open(&lv, &pool, &inventory));
     try std.testing.expectEqual(@as(usize, 1), inventory.n);
+}
+
+test "the key chest never stands in the only way to the gate" {
+    const s = Spec{ .key = .{ .x = 38, .y = 21 } };
+    try std.testing.expect(s.valid());
+    var lv = grid.openFloor();
+    for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 20) {
+        lv.tile[i] = .rock;
+    };
+    s.stamp(&lv);
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
+    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
+    try std.testing.expect(s.keyReachable(&dist));
 }
 
 test "zoo populations support every stocked enemy without exceeding split capacity" {

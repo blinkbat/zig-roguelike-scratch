@@ -65,7 +65,7 @@ pub fn openLeap(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     aiming(run, by, act);
     const ahead = hero.at.add(run.stride.delta());
-    run.mode.aim.mark = if (act == .raise_skeleton and grid.Level.inside(ahead)) ahead else hero.at;
+    run.mode.aim.mark = if (act == .raise_skeleton and grid.Level.inside(ahead) and tactics_exec.validAct(run, act, hero.at, ahead)) ahead else hero.at;
 }
 
 fn openSwing(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {

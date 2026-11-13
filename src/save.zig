@@ -743,20 +743,27 @@ test "legacy zoo key tiles migrate to chests and interchangeable Small Keys once
     const z = w.node[1].zoo.?;
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
-    for (0..4) |phase| {
+    for (0..6) |phase| {
         game.beginMapAt(g, w, .{ .node = 1, .at = z.approach() }, 17);
-        g.sim.lv.set(z.key.?, if (phase == 0) .zoo_key else .key_taken);
+        g.sim.lv.set(z.key.?, if (phase == 0 or phase == 4) .zoo_key else .key_taken);
         if (phase == 2) g.sim.lv.set(z.door(), .open_gate);
-        if (phase == 3) while (g.sim.inventory.add(.{ .kind = .cap })) {};
+        if (phase == 3 or phase == 5) while (g.sim.inventory.add(.{ .kind = .cap })) {};
+        if (phase >= 4) _ = game.harness.spawnAt(g, .rat, z.key.?, false);
         g.sim.visited.set(1);
         g.sim.visits[1] = .{ .lv = g.sim.lv, .pool = g.sim.pool, .ground = g.sim.ground, .facing = g.pic.facing };
         try sealed(g, &buf);
         try read(buf.items, back, into);
         const want: grid.Tile = if (phase == 0 or phase == 3) .chest else .chest_open;
+        if (phase >= 4) try std.testing.expect(back.sim.lv.who(z.key.?) != grid.NO_ONE);
         try std.testing.expectEqual(want, back.sim.lv.at(z.key.?));
-        const count: usize = if (phase == 1) 1 else if (phase == 3) @import("play/inventory.zig").BAG_MAX else 0;
+        const count: usize = if (phase == 1) 1 else if (phase == 3 or phase == 5) @import("play/inventory.zig").BAG_MAX else 0;
         try std.testing.expectEqual(count, back.sim.inventory.n);
         if (phase == 1) try std.testing.expectEqual(@import("play/item_bases.zig").Kind.small_key, back.sim.inventory.bag[0].kind);
+        if (phase >= 4) {
+            const ground = &back.sim.ground;
+            try std.testing.expectEqual(@as(usize, 1), ground.n);
+            try std.testing.expect(ground.drops[0].at.eq(z.key.?) and ground.drops[0].item.kind == .small_key);
+        }
         try sealed(back, &buf);
         try read(buf.items, back, into);
         try std.testing.expectEqual(count, back.sim.inventory.n);

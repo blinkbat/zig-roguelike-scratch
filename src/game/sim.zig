@@ -360,6 +360,11 @@ pub const Simulation = struct {
         return w.node[self.node].outdoor();
     }
 
+    pub fn zooNow(self: *const Simulation) ?atlas.zoo.Spec {
+        const w = self.map orelse return null;
+        return w.node[self.node].zoo;
+    }
+
     fn climateNow(self: *const Simulation) climate.Climate {
         const w = self.map orelse return .{};
         return w.node[self.node].sky();

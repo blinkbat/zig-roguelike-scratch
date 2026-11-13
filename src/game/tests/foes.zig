@@ -1471,7 +1471,7 @@ test "a pyre bloat's fire leaves a body past it visible through its burst" {
     try std.testing.expect(frames > 0 and g.pic.litShown(&g.sim, rat_at));
     harness.drawnOut(g);
     try std.testing.expect(g.pic.drawnAt(&g.sim, actor.Pool.slot(rat)) != null);
-    try std.testing.expect(grid.sightLine(&g.sim.lv, from, rat_at));
+    try std.testing.expect(grid.clearLine(&g.sim.lv, from, rat_at));
 }
 
 test "a pyre bloat bursting on the hero leaves sight clear through its burst" {

@@ -280,23 +280,19 @@ test "steam boiled off a lake clears in a few turns, far sooner than as much hea
     try std.testing.expect(lone.turns < steam.turns);
 }
 
-test "a burst of smoke hides what lies past it for a few turns, then thins to wisps sight passes" {
+test "a burst of smoke spreads, harms nothing and clears" {
     var rng = mathx.Rng.init(0x5E0C);
     var lv = grid.openFloor();
     lv.release(.smoke, OPEN_AT, SMOKE_BURST);
-    var hiding: usize = 0;
     var most: usize = 0;
     var turns: usize = 0;
     while (any(&lv.smoke)) : (turns += 1) {
         try std.testing.expect(turns < NEVER);
         turn(&lv, &rng);
-        var thick: usize = 0;
-        for (0..grid.CELLS) |i| thick += @intFromBool(lv.hidesBeyond(grid.Level.of(i)) and !lv.tile[i].blind());
-        if (thick > 0) hiding += 1;
-        most = @max(most, thick);
+        most = @max(most, grid.CELLS - std.mem.count(u16, &lv.smoke, &.{0}));
         try std.testing.expect(!lv.harmful(OPEN_AT));
     }
-    try std.testing.expect(hiding >= 4 and hiding < turns and most >= 9);
+    try std.testing.expect(most >= 9);
 }
 
 test "steam scalds for a little fire damage, less in water, none to the fireproof" {

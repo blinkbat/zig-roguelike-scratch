@@ -1293,6 +1293,29 @@ test "water banks shade both depths away from the sun without requiring standing
     try std.testing.expect(spans[1] > spans[0] * 1.5);
 }
 
+test "a long wall's shadow grazed by a near-upright sun changes smoothly as the sun turns" {
+    var lv = grid.openFloor();
+    for (5..36) |y| lv.set(.{ .x = 20, .y = @intCast(y) }, .wall);
+    var ray = model.SunRay.of(sky.at(9));
+    ray.rise = 0.6;
+    const at = [2]f32{ 19.95, 30 };
+    const turns = 400;
+    var worst: f32 = 0;
+    var shaded: usize = 0;
+    var was: ?f32 = null;
+    for (0..turns + 1) |i| {
+        const a = 0.04 + 0.03 * @as(f32, @floatFromInt(i)) / turns;
+        ray.u = .{ @sin(a), -@cos(a) };
+        const lit = model.sunlit(&lv, ray, at[0], at[1], 0);
+        if (lit > 0.05 and lit < 0.95) shaded += 1;
+        if (was) |w| worst = @max(worst, @abs(lit - w));
+        was = lit;
+    }
+    std.debug.print("grazed wall shadow: worst step {d:.4} per {d:.6} rad over {d} penumbra samples\n", .{ worst, 0.03 / @as(f32, turns), shaded });
+    try std.testing.expect(shaded > turns / 2);
+    try std.testing.expect(worst < 0.01);
+}
+
 test "the sun throws a thing's shadow its height times the hour's reach, away from the sun, and none on itself" {
     var lv = grid.openFloor();
     const rock = P{ .x = 30, .y = 30 };

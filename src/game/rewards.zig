@@ -60,7 +60,7 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
     const opened = sim.lv.at(at).opened() orelse return .not_closed;
     if (!groundRoom(sim)) return .ground_full;
     sim.lv.set(at, opened);
-    if (sim.map) |map| if (map.node[sim.node].zoo) |z| if (z.key) |key| if (key.eq(at)) {
+    if (sim.zooNow()) |z| if (z.keyAt(at)) {
         dropItem(sim, .{ .item = .{ .kind = .small_key }, .at = at });
         sim.log.push(.loot, "{s} opens the chest: Small Key.", .{sim.name.text()});
         sim.chronicle.mark(.chest);
@@ -265,7 +265,7 @@ pub fn scare(sim: *Simulation, at: P) Frightened {
     for (sim.pool.slice(), 0..) |*foe, slot| {
         const row = actor.row(foe.kind);
         if (!foe.alive or !row.flees) continue;
-        if (mathx.dist(foe.at, at) > actor.FRIGHT_REACH or !grid.sightLine(&sim.lv, foe.at, at)) continue;
+        if (mathx.dist(foe.at, at) > actor.FRIGHT_REACH or !grid.clearLine(&sim.lv, foe.at, at)) continue;
         foe.awake = true;
         if (!foe.frighten(actor.FLEE_TURNS)) continue;
         sim.sayAt(foe.at, actor.FLEES, .{row.name});

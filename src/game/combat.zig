@@ -1076,11 +1076,7 @@ fn reach(g: *game.Game, attacker_id: u16, row: actor.Row, facing_delta: i32, fli
             const outcome = attacks.strikeHero(&g.sim, attacker, blow, weak);
             const hit = switch (outcome) {
                 .blocked, .dodged => {
-                    if (outcome == .blocked) {
-                        g.sim.log.say("{s} blocks the {s}.", .{ g.sim.name.text(), row.name });
-                    } else {
-                        g.sim.log.say("{s} dodges the {s}.", .{ g.sim.name.text(), row.name });
-                    }
+                    g.sim.log.say("{s} {s} the {s}.", .{ g.sim.name.text(), if (outcome == .blocked) "blocks" else "dodges", row.name });
                     g.pic.recordFoeAttack(attacker, .miss, flight);
                     if (row.ranged == null) tactics_exec.counter(g, attacker_id);
                     return false;

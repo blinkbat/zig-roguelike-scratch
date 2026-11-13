@@ -402,7 +402,7 @@ fn followerCell(lv: *const grid.Level, kind: actor.Kind, hero: P) ?P {
     var near = grid.Nearest{ .from = hero };
     var cells = grid.Cells.around(hero, FOLLOWER_REACH);
     while (cells.next()) |p| {
-        if (actor.standsOffDoor(kind, lv, p) and grid.sightLine(lv, hero, p)) near.offer(p);
+        if (actor.standsOffDoor(kind, lv, p) and grid.clearLine(lv, hero, p)) near.offer(p);
     }
     if (near.best) |p| return p;
     var dist: [grid.CELLS]i32 = undefined;
@@ -641,7 +641,6 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
             const ally = if (move == .swap) g.sim.lv.who(to) else grid.NO_ONE;
             const loot = move == .loot or (move == .swap and character.lootReached(g, from, to));
             heroTo(g, to);
-            g.stride = d;
             if (ally != grid.NO_ONE) {
                 g.sim.pool.items[actor.Pool.slot(ally)].at = from;
                 g.sim.lv.stand(from, ally);
@@ -672,6 +671,7 @@ pub fn heroBump(g: *Game, from: P, at: P, late: f32) presentation.Stroke {
 }
 
 pub fn heroTo(g: *Game, to: P) void {
+    if (g.sim.heroAt()) |from| g.stride = mathx.toward(from, to) orelse g.stride;
     g.sim.heroMoved();
     g.sim.pool.move(&g.sim.lv, g.sim.hero, to);
     combat.arrive(g, to);

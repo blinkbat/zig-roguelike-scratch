@@ -81,7 +81,7 @@ pub const Assets = struct {
         return need;
     }
 
-    pub fn beneath(need: *Assets, t: grid.Tile, p: mathx.P) void {
+    fn beneath(need: *Assets, t: grid.Tile, p: mathx.P) void {
         need.decor(t, p);
         if (look.standsOver(t)) if (cutOf(t, null)) |c| need.add(c);
         if (ground.of(t)) |g| need.bed(g);

@@ -299,23 +299,32 @@ pub fn validate(snapshot: *Snapshot) !void {
     if (!std.mem.eql(u8, snapshot.summary.name.text(), run.name.text())) return error.Damaged;
     if (snapshot.summary.hp != body.hp or snapshot.summary.max != body.max or snapshot.summary.gold != run.gold) return error.Damaged;
     if (snapshot.map) |*map| {
-        migrateZooKey(&run.lv, map.node[snapshot.node].zoo, &run.inventory);
+        migrateZooKey(&run.lv, &run.ground, map.node[snapshot.node].zoo, &run.inventory);
         for (&snapshot.visits, 0..) |*visit, node| if (visit.*) |*loaded| {
-            migrateZooKey(&loaded.lv, map.node[node].zoo, if (node == snapshot.node) null else &run.inventory);
+            migrateZooKey(&loaded.lv, &loaded.ground, map.node[node].zoo, if (node == snapshot.node) null else &run.inventory);
         };
     }
 }
 
-fn migrateZooKey(level: *grid.Level, zoo: ?@import("map/zoo.zig").Spec, carried: ?*inventory.Inventory) void {
+fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, zoo: ?atlas.zoo.Spec, carried: ?*inventory.Inventory) void {
     const z = zoo orelse return;
     const at = z.key orelse return;
+    const key = items.Item{ .kind = .small_key };
     switch (level.at(at)) {
-        .zoo_key => level.set(at, .chest),
+        .zoo_key => {
+            if (level.who(at) == grid.NO_ONE) return level.set(at, .chest);
+            level.set(at, .chest_open);
+            if (!ground.add(.{ .item = key, .at = at })) if (carried) |bag| {
+                _ = bag.add(key);
+            };
+        },
         .key_taken => {
             level.set(at, .chest_open);
-            if (level.at(z.door()) == .locked_gate) if (carried) |bag| {
-                if (!bag.add(.{ .kind = .small_key })) level.set(at, .chest);
-            };
+            if (level.at(z.door()) != .locked_gate) return;
+            const bag = carried orelse return;
+            if (bag.add(key)) return;
+            if (level.who(at) == grid.NO_ONE) return level.set(at, .chest);
+            _ = ground.add(.{ .item = key, .at = at });
         },
         else => {},
     }

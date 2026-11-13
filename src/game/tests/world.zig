@@ -652,10 +652,10 @@ test "steam stays transparent and masked scalding reaches mana shield once per t
     try std.testing.expect(paid > 100 and paid < 150);
     g.sim.lv.release(.smoke, at.add(.{ .x = 1, .y = 0 }), gas.SMOKE_BURST);
     game.settle(g);
-    try std.testing.expect(!g.sim.lv.isLit(beyond));
+    try std.testing.expect(g.sim.lv.isLit(beyond));
 }
 
-test "thick smoke hides what lies past its nearest cell, both ways, and thin smoke nothing; it harms nothing and no foe shuns it" {
+test "smoke hides nothing either way, harms nothing, and no foe shuns it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
@@ -663,21 +663,12 @@ test "thick smoke hides what lies past its nearest cell, both ways, and thin smo
     const past = P{ .x = 24, .y = 20 };
     harness.arena(g, from, &.{});
     const rat = harness.spawnAt(g, .rat, past, false);
-    try std.testing.expect(g.sim.lv.isLit(past));
     var cloud = grid.Cells.around(smoke, 1);
-    while (cloud.next()) |p| g.sim.lv.release(.smoke, p, grid.SMOKE_THICK);
+    while (cloud.next()) |p| g.sim.lv.release(.smoke, p, gas.SMOKE_BURST);
     game.castSight(g, from);
-    try std.testing.expect(g.sim.lv.isLit(smoke.add(.{ .x = -1, .y = 0 })) and !g.sim.lv.isLit(smoke) and !g.sim.lv.inLos(past));
-    try std.testing.expect(!fov.sees(&g.sim.lv, past, from, actor.row(.rat).sight));
-    var burst: [grid.CELLS]bool = @splat(false);
-    fov.castInto(&g.sim.lv, from, actor.row(HERO).sight, &burst);
-    try std.testing.expect(burst[grid.Level.idx(past)]);
+    try std.testing.expect(g.sim.lv.isLit(smoke) and g.sim.lv.isLit(past) and g.sim.lv.inLos(past));
+    try std.testing.expect(fov.sees(&g.sim.lv, past, from, actor.row(.rat).sight));
     try std.testing.expect(!g.sim.lv.harmful(smoke));
-    for (&g.sim.lv.smoke) |*v| v.* = @min(v.*, grid.SMOKE_THICK - 1);
-    game.castSight(g, from);
-    try std.testing.expect(g.sim.lv.isLit(past));
-    for (&g.sim.lv.smoke) |*v| v.* = if (v.* > 0) gas.SMOKE_BURST else 0;
-    game.castSight(g, from);
     g.sim.pool.get(rat).?.awake = true;
     harness.use(g, .wait);
     try std.testing.expectEqual(@as(i32, 3), mathx.dist(g.sim.pool.get(rat).?.at, from));

@@ -154,26 +154,61 @@ const CAST_TALLEST: f32 = blk: {
 
 pub fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
     if (sky.upright(ray.flat)) return 1;
-    const ux = ray.u[0];
-    const uy = ray.u[1];
-    const rise = ray.rise;
     const far = ray.far(z);
+    var walk = CellWalk.of(.{ x, y }, ray.u);
     var lit: f32 = 1;
-    var t: f32 = SUN_STEP * 0.5;
-    while (t < far) : (t += SUN_STEP) {
-        const px = x + ux * t;
-        const py = y + uy * t;
-        const c = mathx.cellOf(.{ px, py });
-        if (!grid.Level.inside(c)) break;
-        const k = CASTERS.getPtrConst(lv.at(c)).* orelse continue;
-        var over = (k.h - z - t * rise) / (SUN_SOFT * k.h);
-        if (k.r) |r| over = @min(over, (r - offMiddle(c, .{ px, py })) / SUN_EDGE);
+    while (walk.enter < far) : (walk.next()) {
+        if (!grid.Level.inside(walk.cell)) break;
+        const k = CASTERS.getPtrConst(lv.at(walk.cell)).* orelse continue;
+        const over = if (k.r) |r| roundOver(walk, @min(walk.exit(), far), k.h, r, ray, x, y, z) else ray.over(k.h, z, walk.enter);
         if (over <= 0) continue;
         lit = @min(lit, 1 - smooth(over));
         if (lit <= 0) return 0;
     }
     return lit;
 }
+
+fn roundOver(walk: CellWalk, exit: f32, h: f32, r: f32, ray: SunRay, x: f32, y: f32, z: f32) f32 {
+    var most: f32 = 0;
+    var t = walk.enter + SUN_STEP * 0.5;
+    while (t < exit) : (t += SUN_STEP) {
+        most = @max(most, @min(ray.over(h, z, t), (r - offMiddle(walk.cell, ray.along(x, y, t))) / SUN_EDGE));
+    }
+    return most;
+}
+
+const CellWalk = struct {
+    cell: P,
+    enter: f32 = 0,
+    step: P,
+    to_edge: [2]f32,
+    across: [2]f32,
+
+    fn of(from: [2]f32, u: [2]f32) CellWalk {
+        const cell = mathx.cellOf(from);
+        var w = CellWalk{ .cell = cell, .step = .{ .x = 0, .y = 0 }, .to_edge = @splat(std.math.inf(f32)), .across = @splat(std.math.inf(f32)) };
+        const at = [2]f32{ @floatFromInt(cell.x), @floatFromInt(cell.y) };
+        inline for (0..2) |k| if (u[k] != 0) {
+            const forward = u[k] > 0;
+            const step: i32 = if (forward) 1 else -1;
+            if (k == 0) w.step.x = step else w.step.y = step;
+            w.across[k] = 1 / @abs(u[k]);
+            w.to_edge[k] = (if (forward) at[k] + 1 - from[k] else from[k] - at[k]) * w.across[k];
+        };
+        return w;
+    }
+
+    fn exit(w: CellWalk) f32 {
+        return @min(w.to_edge[0], w.to_edge[1]);
+    }
+
+    fn next(w: *CellWalk) void {
+        const k: usize = if (w.to_edge[0] < w.to_edge[1]) 0 else 1;
+        w.enter = w.to_edge[k];
+        w.to_edge[k] += w.across[k];
+        if (k == 0) w.cell.x += w.step.x else w.cell.y += w.step.y;
+    }
+};
 
 const BANK_FOOT_SHADE: f32 = 0.35;
 const BANK_FOOT_PX: f32 = 3;
@@ -195,7 +230,7 @@ pub fn bankSunlit(lv: *const grid.Level, banks: anytype, ray: SunRay, x: f32, y:
     const far = height / ray.rise;
     var distance: f32 = SUN_STEP * 0.25;
     while (distance < far) : (distance += SUN_STEP * 0.5) {
-        const q = [2]f32{ x + ray.u[0] * distance, y + ray.u[1] * distance };
+        const q = ray.along(x, y, distance);
         const p = mathx.cellOf(q);
         if (!grid.Level.inside(p)) break;
         if (p.y > cell.y) continue;
@@ -208,7 +243,7 @@ pub fn bankSunlit(lv: *const grid.Level, banks: anytype, ray: SunRay, x: f32, y:
         }
         if (!ground.bankAbove(bed.tile(), here)) continue;
         const drop = height - ground.bankHeight(bed.tile());
-        lit = @min(lit, 1 - smooth(std.math.clamp((drop - distance * ray.rise) / (SUN_SOFT * drop), 0, 1)));
+        lit = @min(lit, 1 - smooth(std.math.clamp(ray.over(drop, 0, distance), 0, 1)));
         if (lit == 0) return 0;
     }
     return lit;
@@ -280,6 +315,14 @@ pub const SunRay = struct {
 
     pub fn far(ray: SunRay, z: f32) f32 {
         return @max(0, CAST_TALLEST - z) / ray.rise;
+    }
+
+    pub fn along(ray: SunRay, x: f32, y: f32, t: f32) [2]f32 {
+        return .{ x + ray.u[0] * t, y + ray.u[1] * t };
+    }
+
+    fn over(ray: SunRay, h: f32, z: f32, t: f32) f32 {
+        return (h - z - t * ray.rise) / (SUN_SOFT * h);
     }
 };
 

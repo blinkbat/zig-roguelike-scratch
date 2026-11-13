@@ -48,18 +48,10 @@ const Sight = struct {
     fn mark(s: Sight, p: P) void {
         s.lv.light(p);
     }
-
-    fn stops(_: Sight, lv: *const grid.Level, p: P) bool {
-        return lv.hidesBeyond(p);
-    }
 };
 
 const Into = struct {
     out: *[grid.CELLS]bool,
-
-    fn stops(_: Into, lv: *const grid.Level, p: P) bool {
-        return lv.blocksSight(p);
-    }
 
     fn mark(s: Into, p: P) void {
         if (!grid.Level.inside(p)) return;
@@ -85,7 +77,7 @@ fn scan(lv: *const grid.Level, sink: anytype, q: Quad, row_in: Row, radius: i32)
     const max_col = mathx.roundTiesDown(d * row.end);
     while (col <= max_col) : (col += 1) {
         const p = q.at(row.depth, col);
-        const wall = sink.stops(lv, p);
+        const wall = lv.blocksSight(p);
         if (mathx.reaches(q.origin, p, @floatFromInt(radius))) {
             if (wall or symmetric(row, col)) sink.mark(p);
         }
@@ -112,10 +104,6 @@ pub fn sees(lv: *const grid.Level, watcher: P, hero: P, reach: i32) bool {
         fn mark(self: @This(), p: P) void {
             if (p.eq(self.target)) self.found.* = true;
         }
-
-        fn stops(_: @This(), level: *const grid.Level, p: P) bool {
-            return level.hidesBeyond(p);
-        }
     };
     castWith(lv, hero, @intFromFloat(@ceil(mathx.distEuclid(watcher, hero))), Probe{ .target = watcher, .found = &found });
     return found;
@@ -133,15 +121,13 @@ test "foe sight reads current occluders independently of hero sight and memory" 
     try std.testing.expect(!sees(&lv, watcher, hero, 2));
     try std.testing.expectEqualDeep(before, lv);
     const between = hero.add(.{ .x = 1, .y = 0 });
-    lv.smoke[grid.Level.idx(between)] = grid.SMOKE_THICK;
-    try std.testing.expect(!sees(&lv, watcher, hero, 3));
-    lv.smoke[grid.Level.idx(between)] = grid.SMOKE_THICK - 1;
+    lv.smoke[grid.Level.idx(between)] = std.math.maxInt(u16);
     try std.testing.expect(sees(&lv, watcher, hero, 3));
     lv.set(between, .wall);
     try std.testing.expect(!sees(&lv, watcher, hero, 3));
 }
 
-test "burning foliage passes sight light and targeting while solid cover and thick smoke remain opaque" {
+test "burning foliage and smoke pass sight light and targeting while solid cover stays opaque" {
     const fire = @import("fire.zig");
     const bow = @import("../play/bow.zig");
     const hero = P{ .x = 20, .y = 20 };
@@ -157,16 +143,16 @@ test "burning foliage passes sight light and targeting while solid cover and thi
         cast(&lv, hero, 5);
         try std.testing.expectEqual(visible, lv.isLit(target));
         try std.testing.expectEqual(visible, sees(&lv, target, hero, 5));
-        try std.testing.expectEqual(visible, grid.sightLine(&lv, hero, target));
+        try std.testing.expectEqual(visible, grid.clearLine(&lv, hero, target));
         try std.testing.expectEqual(visible, bow.aimable(&lv, hero, target, 5));
         if (visible) try std.testing.expect(bow.fly(&lv, hero, target).end().?.eq(target));
         var lit: [grid.CELLS]bool = @splat(false);
         castInto(&lv, hero, 5, &lit);
         try std.testing.expectEqual(visible, lit[grid.Level.idx(target)]);
-        lv.smoke[grid.Level.idx(between)] = grid.SMOKE_THICK;
+        lv.smoke[grid.Level.idx(between)] = std.math.maxInt(u16);
         cast(&lv, hero, 5);
-        try std.testing.expect(!lv.isLit(target));
-        try std.testing.expect(!grid.sightLine(&lv, hero, target));
+        try std.testing.expectEqual(visible, lv.isLit(target));
+        try std.testing.expectEqual(visible, sees(&lv, target, hero, 5));
         lv.smoke[grid.Level.idx(between)] = 0;
         var rng = mathx.Rng.init(1);
         _ = fire.douse(&lv, &.{between}, 100, &rng);

@@ -282,7 +282,7 @@ Editor door, foe and start placement preserves these encounter reservations,
 including the replacement start chosen when its node is removed.
 
 The Caravan node places this 21-monster room east of the northbound route, with
-the key chest to its southwest. `--shot-zoo` captures the chest, key loot, closed gate, release and
+the key chest to its southwest. `--shot-zoo` captures the chest, key loot, carried key, closed gate, release and
 packed interior using the real map. Tests cover generation, visibility, all enemy
 kinds, input, map parsing, portable saves and revisits.
 

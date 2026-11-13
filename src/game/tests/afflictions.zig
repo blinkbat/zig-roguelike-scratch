@@ -124,14 +124,10 @@ test "hero blindness does not hide it from unblinded foes beyond adjacent cells"
     defer game.shut(std.testing.allocator, g);
     const ahead = FROM.add(.{ .x = 3, .y = 0 });
     const between = FROM.add(.{ .x = 1, .y = 0 });
-    for (0..3) |obstacle| {
+    for (0..2) |obstacle| {
         harness.arena(g, FROM, &.{});
         const id = harness.spawnAt(g, .rat, ahead, false);
-        if (obstacle == 1) {
-            harness.wallIn(&g.sim.lv, .{ .x = between.x, .y = 0 }, .{ .x = between.x, .y = grid.H - 1 });
-        } else if (obstacle == 2) {
-            for (0..@intCast(grid.H)) |y| g.sim.lv.smoke[grid.Level.idx(.{ .x = between.x, .y = @intCast(y) })] = 60000;
-        }
+        if (obstacle == 1) harness.wallIn(&g.sim.lv, .{ .x = between.x, .y = 0 }, .{ .x = between.x, .y = grid.H - 1 });
         blind.afflict(g.sim.heroActor().?, &g.sim.rng);
         game.castSight(g, FROM);
         try std.testing.expect(!g.sim.lv.inLos(ahead));

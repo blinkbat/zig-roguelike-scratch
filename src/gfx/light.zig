@@ -273,7 +273,7 @@ pub const Light = struct {
 
     pub fn sunBox(ray: model.SunRay, x: f32, y: f32, z: f32) grid.Box {
         const far = ray.far(z);
-        return grid.Box.between(mathx.cellOf(.{ x, y }), mathx.cellOf(.{ x + ray.u[0] * far, y + ray.u[1] * far })).grown(1);
+        return grid.Box.between(mathx.cellOf(.{ x, y }), mathx.cellOf(ray.along(x, y, far))).grown(1);
     }
 
     pub fn castersIn(self: *const Light, box: grid.Box) u16 {

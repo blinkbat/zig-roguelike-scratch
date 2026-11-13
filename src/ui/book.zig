@@ -214,7 +214,7 @@ pub const Book = struct {
                 self.choose(.inventory);
                 break :blk null;
             },
-            .inventory => if (stockAt(view, self.cursor)) |k| .{ .use = k } else if (self.selected(view).?.kind.slots().len > 0) .{ .equip = .{ .index = self.bagIndex(view).?, .slot = self.destination(view) } } else null,
+            .inventory => if (stockAt(view, self.cursor)) |k| .{ .use = k } else if (self.selected(view).?.kind.equippable()) .{ .equip = .{ .index = self.bagIndex(view).?, .slot = self.destination(view) } } else null,
             .stats, .quests => null,
             .passives => if (view.growth.canAllocate(self.cursor)) .{ .passive = self.cursor } else null,
             .skills => blk: {
@@ -406,7 +406,7 @@ pub const Book = struct {
                     .nearby, .loot => character_view.verbOf(.pickup),
                     .stats, .passives, .skills, .quests, .trade => unreachable,
                 };
-                if (self.page != .inventory or chosen == null or chosen.?.kind.slots().len > 0) c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = label });
+                if (self.page != .inventory or chosen == null or chosen.?.kind.equippable()) c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = label });
                 if (self.page == .loot) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = character_view.verbOf(.take_all) });
                 if (self.page == .inventory) if (chosen) |it| {
                     if (it.kind.slots().len > 1) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = slotLabel(self.destination(view)) });
@@ -663,7 +663,7 @@ pub const Book = struct {
             return;
         };
         const slot = if (self.page == .equipment) item_bases.SLOTS[self.cursor] else self.destination(view);
-        if (it.kind.slots().len == 0) return item_card.draw(face, x, y, layout.DETAIL_W, it, slot, view.base, null);
+        if (!it.kind.equippable()) return item_card.draw(face, x, y, layout.DETAIL_W, it, slot, view.base, null);
         const comparing = self.page == .inventory;
         item_card.draw(face, x, y, if (comparing) layout.CARD_W else layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), if (comparing) "SELECTED" else null);
         if (comparing) item_card.draw(face, x + layout.CARD_W + layout.CARD_GAP, y, layout.CARD_W, view.inventory.gear.slots.get(slot), slot, view.inventory.gear.statsWithout(slot, view.base), "EQUIPPED");
