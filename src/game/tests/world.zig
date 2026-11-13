@@ -420,6 +420,25 @@ test "a node's night raiders come in by its raid door, each at its own turn, fro
     try std.testing.expectEqual(@as(u64, atlas.raid.xpOf(progress.xpOf(atlas.raid.RAIDER))), xp);
 }
 
+test "killing a raider pays no life on kill" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    for ([_]bool{ false, true }) |raider| {
+        harness.arena(g, from, &.{});
+        g.sim.inventory.gear.slots.set(.left_ring, harness.harvestRing());
+        const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
+        g.sim.pool.get(id).?.raider = raider;
+        const hero = g.sim.heroActor().?;
+        hero.hp = hero.max - 10;
+        const hp = hero.hp;
+        game.settle(g);
+        harness.kill(g, id, from, 0);
+        try std.testing.expect(g.sim.pool.get(id) == null);
+        try std.testing.expectEqual(if (raider) hp else hp + harness.HARVEST_LIFE, g.sim.heroActor().?.hp);
+    }
+}
+
 test "a caravan guard stays behind when the hero goes through a door" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

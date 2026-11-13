@@ -119,6 +119,27 @@ pub fn writeSnapshot(snapshot: *const Snapshot, out: *std.ArrayList(u8)) !void {
     try encode(out, .{ .summary = &snapshot.summary, .seed = snapshot.seed, .map = map, .node = snapshot.node, .visits = &visits, .run = &run, .portable = &portable });
 }
 
+test "a legacy key cell that was the only way to the gate migrates to an open chest with its key lying out" {
+    var s = atlas.zoo.Spec{};
+    const way = s.approach();
+    s.key = way.add(.{ .x = -1, .y = 0 });
+    try std.testing.expect(s.valid());
+    for ([_]bool{ true, false }) |choke| {
+        var lv = grid.openFloor();
+        for (&lv.tile) |*t| t.* = .rock;
+        lv.set(way, .floor);
+        lv.set(s.key.?, .zoo_key);
+        var it = grid.Box.sized(.{ .x = way.x - 10, .y = way.y - 2 }, 9, 5).cells();
+        while (it.next()) |p| lv.set(p, .floor);
+        if (!choke) lv.set(way.add(.{ .x = -1, .y = 1 }), .floor);
+        var ground = ground_items.Ground{};
+        var bag = inventory.Inventory{};
+        migrateZooKey(&lv, &ground, s, &bag);
+        try std.testing.expectEqual(if (choke) grid.Tile.chest_open else grid.Tile.chest, lv.at(s.key.?));
+        try std.testing.expectEqual(choke, ground.hasItems(s.key.?));
+    }
+}
+
 test "portable autosave snapshots own every byte while the live run changes" {
     const alloc = std.testing.allocator;
     const source = try game.boot(alloc);
@@ -312,7 +333,7 @@ fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, zoo: ?atlas.z
     const key = items.Item{ .kind = .small_key };
     switch (level.at(at)) {
         .zoo_key => {
-            if (level.who(at) == grid.NO_ONE) return level.set(at, .chest);
+            if (level.who(at) == grid.NO_ONE and !severs(level, z, at)) return level.set(at, .chest);
             level.set(at, .chest_open);
             if (!ground.add(.{ .item = key, .at = at })) if (carried) |bag| {
                 _ = bag.add(key);
@@ -323,11 +344,21 @@ fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, zoo: ?atlas.z
             if (level.at(z.door()) != .locked_gate) return;
             const bag = carried orelse return;
             if (bag.add(key)) return;
-            if (level.who(at) == grid.NO_ONE) return level.set(at, .chest);
+            if (level.who(at) == grid.NO_ONE and !severs(level, z, at)) return level.set(at, .chest);
             _ = ground.add(.{ .item = key, .at = at });
         },
         else => {},
     }
+}
+
+fn severs(level: *grid.Level, z: atlas.zoo.Spec, at: @import("core/mathx.zig").P) bool {
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    const reached = grid.distances(level, z.approach(), &dist, &queue);
+    const was = level.at(at);
+    level.set(at, .chest);
+    defer level.set(at, was);
+    return grid.distances(level, z.approach(), &dist, &queue) + 1 < reached;
 }
 
 fn validatePlot(plot: *const @FieldType(data.Portable, "plot"), s: *const atlas.script.Script) !void {

@@ -373,9 +373,9 @@ fn recoverLife(g: *game.Game, n: i32) ?fx.After {
 }
 
 fn slain(g: *game.Game, id: u16) ?fx.After {
-    const killed = g.sim.pool.items[actor.Pool.slot(id)].kind;
+    const killed = g.sim.pool.items[actor.Pool.slot(id)];
     fell(g, id);
-    if (killed.ally()) return null;
+    if (killed.kind.ally() or killed.raider) return null;
     return recoverLife(g, g.sim.inventory.gear.killRecovery());
 }
 

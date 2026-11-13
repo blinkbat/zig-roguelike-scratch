@@ -1530,6 +1530,30 @@ test "a sleeping leech the hero steps beside surfaces as the step lands, and div
     }
 }
 
+test "a leech that surfaces and dies on thorns in one turn is pictured biting and dying" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.inventory.gear.slots.set(.chest, THORNS);
+    const lake = P{ .x = 22, .y = 20 };
+    g.sim.lv.set(lake, .water);
+    const id = harness.spawnAt(g, .bog_leech, lake, true);
+    g.sim.pool.get(id).?.hp = 1;
+    game.settle(g);
+    const slot = actor.Pool.slot(id);
+    try std.testing.expect(g.sim.pool.get(id).?.submerged and harness.undrawn(g, slot));
+    g.sim.rng = harness.foeAttacksRngAt(g, .{ .x = 21, .y = 20 }, &.{.{ .id = id, .lands = true }});
+    harness.nudge(g, .e);
+    try std.testing.expect(g.sim.pool.get(id) == null);
+    var shown = false;
+    var t: f32 = 0;
+    while (t < 1) : (t += harness.TEST_DT) {
+        if (g.pic.bodyAt(&g.sim, slot) != null) shown = true;
+        game.update(g, harness.TEST_DT);
+    }
+    try std.testing.expect(shown and !g.pic.under.isSet(slot));
+}
+
 test "a bolt bursting on a leech in deep water strikes it though the burst spreads over no water" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

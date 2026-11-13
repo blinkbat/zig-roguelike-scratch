@@ -21,9 +21,7 @@ const BEAM_DROP: i32 = menu.TITLE + 16;
 const BEAM_ABOVE: i32 = HEAD_ROOM - BEAM_DROP;
 const PITCH_SPRITES: i32 = 2;
 const INFO_GAP: i32 = 26;
-const BLURB_GAP: i32 = 10;
-const BLURB_LINES: i32 = 3;
-const INFO_H: i32 = INFO_GAP + menu.ROW + BLURB_GAP + BLURB_LINES * (menu.NOTE + font.LEADING);
+const INFO_H: i32 = INFO_GAP + menu.ROW;
 const BESIDE_GAP: i32 = 48;
 
 const SHADE = look.rgb(0x1c1a22);
@@ -152,7 +150,6 @@ const Layout = struct {
     scale: i32,
     size: i32,
     pitch: i32,
-    info_w: i32,
     top: i32,
     feet_y: i32,
     left: i32,
@@ -166,7 +163,6 @@ const Layout = struct {
             .scale = scale,
             .size = size,
             .pitch = pitch,
-            .info_w = @min(INFO_W, pitch - COLUMN_GAP),
             .top = top,
             .feet_y = top + HEAD_ROOM + size,
             .left = @divTrunc(screen.x - pitch * N_I, 2),
@@ -244,7 +240,6 @@ pub const Lineup = struct {
             if (a <= 0) continue;
             const y = feet.y + INFO_GAP;
             face.engravedMid(c.title(), feet.x, y, menu.ROW, look.fade(look.UI_FOCUS, a));
-            _ = face.paragraphWith(font.Face.textMid, c.blurb(), feet.x, y + menu.ROW + BLURB_GAP, lay.info_w, menu.NOTE, look.fade(look.DIM, a));
         }
     }
 };

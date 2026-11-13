@@ -110,8 +110,10 @@ pub const Gear = struct {
     }
 
     pub fn onHit(self: Gear, attack: attrs.Attack) item_bases.WeaponEffect {
-        const held = self.wielded(attack) orelse return .{};
-        var out = item_bases.WeaponEffect{ .penetration = self.sum(.penetration) };
+        const own: i32 = if (self.slots.get(.right_hand)) |w| w.value(.penetration) else 0;
+        var out = item_bases.WeaponEffect{ .penetration = self.sum(.penetration) - own };
+        const held = self.wielded(attack) orelse return out;
+        out.penetration += own;
         for (self.slots.values) |maybe| if (maybe) |it| {
             for (it.mods) |m| if (m) |a| if (a.kind == .imbue) out.imbue(a.element, @intCast(a.value));
         };
@@ -250,6 +252,11 @@ test "rolled combat defenses and recovery modifiers reach equipment consumers" {
     try std.testing.expectEqual(@as(i32, 0), gear.onHit(.melee).penetration);
     try std.testing.expectEqual(@as(i32, 0), gear.forAttack(stats, .spell).physical_bonus);
     try std.testing.expectEqualDeep(passives.Perks{ .mana_regen = 1, .life_flask = 20 }, gear.perks(.{}));
+    gear.slots.set(.gloves, .{ .kind = .gloves, .mods = .{ .{ .kind = .penetration, .value = 7 }, null, null, null } });
+    try std.testing.expectEqual(@as(i32, 37), gear.onHit(.ranged).penetration);
+    try std.testing.expectEqual(@as(i32, 7), gear.onHit(.melee).penetration);
+    gear.slots.set(.right_hand, null);
+    try std.testing.expectEqual(@as(i32, 7), gear.onHit(.melee).penetration);
 }
 
 test "imbued weapons add their element's ailment to that weapon's hits and worn mods sum across slots" {

@@ -133,7 +133,7 @@ pub fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, sc
                 selection.dragging = selection.at;
             }
         } else if (st.walk) |d| {
-            if (d.delta().x != 0) set(c, row, value(c, row) + @as(f32, @floatFromInt(d.delta().x)) * WALK_STEP);
+            if (d.delta().x != 0 and d.delta().y == 0) set(c, row, value(c, row) + @as(f32, @floatFromInt(d.delta().x)) * WALK_STEP);
         } else if (st.hit(menu.CHANGE)) {
             set(c, row, r.default);
         } else if (picked != null) {
@@ -197,6 +197,16 @@ pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *c
     const bottom = raster.top(first) + @as(i32, @intCast(win.len)) * menu.ROW_STEP + 28;
     var count: [24]u8 = undefined;
     face.centred(std.fmt.bufPrintZ(&count, menu.POSITION_FMT, .{ selected + 1, entries.len }) catch "", raster.right(first) - VALUE_INSET, bottom, font.SMALL, look.DIM);
+}
+
+test "a diagonal press moves the visuals cursor without nudging the slider it lands on" {
+    var c: cinema.Cinema = .{};
+    var selection: menu.Menu = .{ .at = 0 };
+    var display: window.Display = .{};
+    const before = c;
+    _ = step(&c, &selection, &.{ .walk = .se }, .{ .x = 1280, .y = 720 }, .visuals, &display);
+    try std.testing.expectEqual(@as(usize, 1), selection.at);
+    try std.testing.expectEqualDeep(before, c);
 }
 
 test "visual sliders clamp, reset and drag without changing other effects" {

@@ -318,6 +318,15 @@ const App = struct {
         app.autosave = null;
     }
 
+    /// False once the app may close; a failed last write stays on the title instead.
+    fn quitRun(app: *App) bool {
+        app.toTitle();
+        app.leaveRun();
+        if (app.undeleted) |e| app.also(save.NOT_DELETED, .{@errorName(e)});
+        app.undeleted = null;
+        return app.note.n > 0;
+    }
+
     fn endDead(app: *App, a: *save.Autosave) void {
         app.undeleted = a.end();
         a.deinit();
@@ -338,8 +347,7 @@ const App = struct {
                 app.scene = .edit;
             }
         } else if (closing and app.scene != .edit) {
-            app.leaveRun();
-            return false;
+            return app.quitRun();
         }
         switch (app.scene) {
             .title => return app.titleFrame(),
@@ -369,10 +377,7 @@ const App = struct {
                         app.scene = .edit;
                         app.ed.?.request(.quit);
                         return app.ed.?.action != .quit;
-                    } else {
-                        app.leaveRun();
-                        return false;
-                    },
+                    } else return app.quitRun(),
                 }
             },
             .edit => {

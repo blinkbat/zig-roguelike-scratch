@@ -86,7 +86,7 @@ pub const Spec = struct {
 
     pub fn keyReachable(s: *const Spec, distances: *const [grid.CELLS]i32) bool {
         const at = s.key orelse return true;
-        for (mathx.CARDINALS) |delta| {
+        for (grid.STEPS) |delta| {
             if (grid.cellOr(i32, distances, at.add(delta), -1) >= 0) return true;
         }
         return false;
@@ -129,6 +129,10 @@ pub const Spec = struct {
 
     fn connectTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet) void {
         if (targets.count() == 0) return;
+        var dist: [grid.CELLS]i32 = undefined;
+        var reach: [grid.CELLS]u32 = undefined;
+        var flood = grid.Flood.init(lv, from, &dist, &reach);
+        while (flood.next()) |p| if (targets.isSet(grid.Level.idx(p))) return;
         var seen = grid.CellSet.initEmpty();
         var back: [grid.CELLS]usize = undefined;
         var queue: [grid.CELLS]P = undefined;
@@ -299,4 +303,40 @@ test "placing a zoo leaves an unrelated sealed room sealed" {
     while (it.next()) |p| if (!sealed.grown(-1).holds(p)) {
         try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
     };
+}
+
+test "a zoo whose ring already meets open ground carves nothing into a nearer sealed room" {
+    const s = Spec{ .side = .e };
+    var lv = grid.openFloor();
+    for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= s.reserved().lo.x) {
+        lv.tile[i] = .rock;
+    };
+    const vault = grid.Box.sized(s.approach().add(.{ .x = 2, .y = -3 }), 5, 7);
+    var it = vault.cells();
+    while (it.next()) |p| lv.set(p, if (vault.grown(-1).holds(p)) .floor else .wall);
+    s.stamp(&lv);
+    it = vault.cells();
+    while (it.next()) |p| if (!vault.grown(-1).holds(p)) {
+        try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
+    };
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
+    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
+}
+
+test "a key chest touching the zoo's ring only at a corner is reachable" {
+    var s = Spec{};
+    const ring = s.reserved();
+    s.key = .{ .x = ring.hi.x, .y = ring.lo.y - 1 };
+    try std.testing.expect(s.valid());
+    var lv = grid.openFloor();
+    for (&lv.tile) |*t| t.* = .rock;
+    var it = grid.Box.sized(.{ .x = 2, .y = grid.H - 8 }, 4, 4).cells();
+    while (it.next()) |p| lv.set(p, .floor);
+    s.stamp(&lv);
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    _ = grid.distances(&lv, s.approach(), &dist, &queue);
+    try std.testing.expect(s.keyReachable(&dist));
 }

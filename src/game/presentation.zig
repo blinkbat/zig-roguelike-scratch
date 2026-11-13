@@ -933,7 +933,7 @@ pub const Presentation = struct {
             }
             if (!a.alive and !self.pictured[i].down()) dying = true;
             if (self.pictured[i].down() or (a.alive and !self.fx.impacts.pending(.fromIndex(i)))) self.masked.unset(i);
-            if (self.dives[i] == null and a.alive) self.under.setValue(i, a.submerged);
+            if (self.dives[i] == null) self.under.setValue(i, a.submerged);
             const from = self.split_from[i] orelse continue;
             if (self.fx.impacts.revealing(.fromIndex(i)) or self.split_from[from] != null) continue;
             self.split_from[i] = null;
@@ -975,7 +975,7 @@ pub const Presentation = struct {
         if (warded) |c| self.recordRecovery(sim, std.mem.max(f32, part[0..sim.pool.n]), c);
         for (sim.pool.constSlice(), 0..) |*a, i| {
             if (!self.glide[i].to.eq(a.at)) self.glide[i] = self.glide[i].toward(a.at, late);
-            if (a.alive and a.submerged != self.under.isSet(i) and self.dives[i] == null) self.dives[i] = part[i];
+            if (a.submerged != self.under.isSet(i) and self.dives[i] == null) self.dives[i] = part[i];
         }
     }
 
@@ -1150,7 +1150,7 @@ pub const Presentation = struct {
             .scorched, .burned => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, .fire, in_view, .{ .slot = timing.slot, .fire_at = mark }),
             .bled => if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, null, in_view, .{ .slot = timing.slot, .drip = drip }),
         };
-        if (timing.body.alive and timing.body.submerged != self.under.isSet(timing.slot.index)) {
+        if (timing.body.submerged != self.under.isSet(timing.slot.index)) {
             const emerges_in = if (timing.staggered) @max(0, timing.starts_at - turn.late) else start;
             self.dives[timing.slot.index] = if (timing.body.submerged or timing.moved) timing.finishes_in else emerges_in;
         }
