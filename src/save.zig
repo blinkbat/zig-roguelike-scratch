@@ -168,7 +168,7 @@ fn inspect(bytes: []const u8) Error!Contents {
     var s: Summary = undefined;
     if (!store.legacy.take(&b, &s)) return error.Short;
     if (!store.legacy.valid(format.Policy, &s)) return error.Damaged;
-    if (!s.name.valid() or !s.place.valid()) return error.Damaged;
+    if (!s.valid()) return error.Damaged;
     if (s.node) |n| {
         if (n >= atlas.MAX_NODES) return error.Damaged;
     }
@@ -659,17 +659,16 @@ const RECORDED_FINGERPRINT: Print = 0x761969bb41088ab3;
 
 test "zoo keys doors populations and visits survive portable saves" {
     const alloc = std.testing.allocator;
-    const w = try atlas.testAtlas();
+    const w = try atlas.testStart();
     defer alloc.destroy(w);
-    try w.load(alloc, atlas.START);
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
     const back = try game.boot(alloc);
     defer game.shut(alloc, back);
     const into = try alloc.create(Map);
     defer alloc.destroy(into);
-    const z = w.node[1].zoo.?;
-    game.beginMapAt(g, w, .{ .node = 1, .at = z.approach() }, 17);
+    const z = w.node[atlas.CARAVAN_NODE].zoo.?;
+    game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, 17);
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     for (0..3) |phase| {
@@ -688,7 +687,7 @@ test "zoo keys doors populations and visits survive portable saves" {
         }
         try sealed(g, &buf);
         try read(buf.items, back, into);
-        try std.testing.expectEqualDeep(z, into.node[1].zoo.?);
+        try std.testing.expectEqualDeep(z, into.node[atlas.CARAVAN_NODE].zoo.?);
         try std.testing.expectEqual(g.sim.lv.at(z.key.?), back.sim.lv.at(z.key.?));
         try std.testing.expectEqual(g.sim.lv.at(z.door()), back.sim.lv.at(z.door()));
         try std.testing.expectEqualSlices(items.Item, g.sim.inventory.bag[0..g.sim.inventory.n], back.sim.inventory.bag[0..back.sim.inventory.n]);
@@ -731,20 +730,19 @@ test "a node saved before zoos defaults to no zoo" {
 
 test "legacy zoo key tiles migrate to chests and interchangeable Small Keys once" {
     const alloc = std.testing.allocator;
-    const w = try atlas.testAtlas();
+    const w = try atlas.testStart();
     defer alloc.destroy(w);
-    try w.load(alloc, atlas.START);
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
     const back = try game.boot(alloc);
     defer game.shut(alloc, back);
     const into = try alloc.create(Map);
     defer alloc.destroy(into);
-    const z = w.node[1].zoo.?;
+    const z = w.node[atlas.CARAVAN_NODE].zoo.?;
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     for (0..6) |phase| {
-        game.beginMapAt(g, w, .{ .node = 1, .at = z.approach() }, 17);
+        game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, 17);
         g.sim.lv.set(z.key.?, if (phase == 0 or phase == 4) .zoo_key else .key_taken);
         if (phase == 2) g.sim.lv.set(z.door(), .open_gate);
         if (phase == 3 or phase == 5) while (g.sim.inventory.add(.{ .kind = .cap })) {};
@@ -768,7 +766,7 @@ test "legacy zoo key tiles migrate to chests and interchangeable Small Keys once
         try read(buf.items, back, into);
         try std.testing.expectEqual(count, back.sim.inventory.n);
     }
-    game.beginMapAt(g, w, .{ .node = 1, .at = z.approach() }, 17);
+    game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, 17);
     g.sim.lv.set(z.key.?, .key_taken);
     g.sim.travel = .{ .node = 0, .door = 0 };
     g.pic.busy = 0;

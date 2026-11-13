@@ -226,15 +226,16 @@ pub const Runtime = struct {
     }
 
     pub fn takeTrading(self: *Runtime) ?u8 {
-        const npc = self.trading orelse return null;
-        self.trading = null;
-        return npc;
+        return taken(&self.trading);
     }
 
     pub fn takeAsked(self: *Runtime) ?u8 {
-        const d = self.asked orelse return null;
-        self.asked = null;
-        return d;
+        return taken(&self.asked);
+    }
+
+    fn taken(slot: *?u8) ?u8 {
+        defer slot.* = null;
+        return slot.*;
     }
 
     /// Opens dialog `d` at its first line, its actions done; refused while one is up, or when a line it reaches has no way to an end.

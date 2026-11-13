@@ -90,11 +90,12 @@ pub const Nearby = union(enum) {
             .supply => |s| wording.titleOf(s.kind),
             .gold => |pile| std.fmt.bufPrintZ(buf, hero.COINS_FMT, .{pile.amount}) catch "Gold",
             .chest => "Treasure chest",
-            .bag => "Item bag",
+            .bag => ITEM_BAG,
             .door => "Door",
         };
     }
 };
+pub const ITEM_BAG = "Item bag";
 pub const Vital = struct { now: i32 = 0, max: i32 = 0 };
 pub const Dealer = struct { who: []const u8, shelf: *const trade.Wares };
 const Defence = struct { dodge: u32, armour: i32 };

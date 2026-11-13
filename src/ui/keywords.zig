@@ -32,6 +32,8 @@ const GAP = 10;
 const WIDTH = 360;
 const MARGIN = 8;
 const HIT_SLOP = 3;
+const UNDERLINE_DROP = 1;
+const LINK_FOOT = 3;
 const LINE = font.SMALL_LINE;
 const Link = struct { term: Term, box: rl.Rectangle };
 
@@ -154,8 +156,9 @@ pub const State = struct {
                 const left = x + face.width(prefix, px);
                 const w = face.width(term.title, px);
                 face.text(term.title, left, y, px, look.UI_FOCUS);
-                rl.drawLine(left, y + px + 1, left + w, y + px + 1, look.UI_GOLD);
-                self.register(term, on.rectOf(raster.rect(left, y, w, px + 3)));
+                const under = y + px + UNDERLINE_DROP;
+                rl.drawLine(left, under, left + w, under, look.UI_GOLD);
+                self.register(term, on.rectOf(raster.rect(left, y, w, px + LINK_FOOT)));
                 from = end;
                 matched = true;
                 break;

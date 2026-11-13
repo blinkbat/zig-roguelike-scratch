@@ -131,6 +131,7 @@ test "missiles move continuously to the existing impact time in every direction"
 
 /// Seconds a firebolt takes over each cell it flies.
 pub const BOLT_CELL_S: f32 = 0.09;
+pub const BOLT_ACT: skillbar.Act = .fireball;
 
 /// A firebolt as drawn: from `from` to `to` over `span` seconds once `t` reaches 0; seen before then if `before`, and after if `after`.
 pub const BoltShown = struct {

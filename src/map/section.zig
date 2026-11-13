@@ -33,6 +33,17 @@ pub fn foeIn(foes: []const Foe, p: P) ?usize {
     return null;
 }
 
+pub fn prune(fits: anytype, store: anytype, p: P) void {
+    for ([_]P{ p, lume.torchWall(p) }) |w| {
+        if (store.torch.has(w) and !fits.torchFits(w)) _ = store.torch.remove(w);
+    }
+    const i = grid.Level.idx(p);
+    if (store.barrel[i] and !fits.barrelFits(p)) store.barrel[i] = false;
+    if (store.foeAt(p)) |f| {
+        if (!fits.foeFits(p, store.foe[f].kind)) store.dropFoe(f);
+    }
+}
+
 pub const Anchor = enum {
     fixed,
     /// Its painted box moves whole to a spot each roll draws, its ring clear of the doors.
@@ -90,13 +101,7 @@ pub const Section = struct {
         const i = grid.Level.idx(p);
         if (std.meta.eql(self.tile[i], t)) return false;
         self.tile[i] = t;
-        for ([_]P{ p, lume.torchWall(p) }) |w| {
-            if (self.torch.has(w) and !self.torchFits(w)) _ = self.torch.remove(w);
-        }
-        if (self.barrel[i] and !self.barrelFits(p)) self.barrel[i] = false;
-        if (self.foeAt(p)) |f| {
-            if (!self.foeFits(p, self.foe[f].kind)) self.dropFoe(f);
-        }
+        prune(self, self, p);
         return true;
     }
 

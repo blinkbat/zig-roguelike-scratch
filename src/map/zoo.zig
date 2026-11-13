@@ -9,8 +9,8 @@ const Inventory = @import("../play/inventory.zig").Inventory;
 const P = mathx.P;
 
 pub const MAX_KINDS = 16;
-pub const SIZE_MIN: u8 = 5;
-pub const SIZE_MAX: u8 = 10;
+const SIZE_MIN: u8 = 5;
+const SIZE_MAX: u8 = 10;
 const MARGIN: i32 = 2;
 pub const Entry = struct { kind: actor.Kind = .rat, weight: u8 = 1 };
 pub const Side = enum { n, e, s, w };
@@ -40,18 +40,29 @@ pub const Spec = struct {
         return s.reserved().holds(p) or s.keyAt(p);
     }
 
-    pub fn dir(s: *const Spec) mathx.Dir {
+    pub fn entries(s: *const Spec) []const Entry {
+        return s.pool[0..s.pool_n];
+    }
+
+    pub fn occupies(s: *const Spec, p: P) bool {
+        return s.room().holds(p) or s.keyAt(p);
+    }
+
+    fn dir(s: *const Spec) mathx.Dir {
         return switch (s.side) {
             inline else => |t| @field(mathx.Dir, @tagName(t)),
         };
     }
 
-    pub fn door(s: *const Spec) P {
-        const r = s.room();
-        return carve.sideAt(r, s.dir(), carve.alongOf(s.dir(), r.centre()));
+    fn along(s: *const Spec) i32 {
+        return carve.alongOf(s.dir(), s.room().centre());
     }
 
-    pub fn outward(s: *const Spec) P {
+    pub fn door(s: *const Spec) P {
+        return carve.sideAt(s.room(), s.dir(), s.along());
+    }
+
+    fn outward(s: *const Spec) P {
         return s.dir().delta();
     }
 
@@ -71,7 +82,7 @@ pub const Spec = struct {
         if (s.width < SIZE_MIN or s.width > SIZE_MAX or s.height < SIZE_MIN or s.height > SIZE_MAX) return false;
         if (s.at.x < MARGIN or s.at.y < MARGIN or s.at.x > grid.W - s.width - MARGIN or s.at.y > grid.H - s.height - MARGIN) return false;
         if (s.pool_n == 0 or s.pool_n > MAX_KINDS) return false;
-        for (s.pool[0..s.pool_n]) |e| if (!e.kind.stocked() or e.weight == 0) return false;
+        for (s.entries()) |e| if (!e.kind.stocked() or e.weight == 0) return false;
         if (s.key) |k| if (!grid.Box.inMap(MARGIN).holds(k) or s.reserved().holds(k)) return false;
         return true;
     }
@@ -97,19 +108,19 @@ pub const Spec = struct {
         var outside = grid.CellSet.initEmpty();
         for (0..grid.CELLS) |i| {
             const p = grid.Level.of(i);
-            if (!r.holds(p) and lv.walkable(p) and !s.keyAt(p)) outside.set(i);
+            if (lv.walkable(p) and !s.occupies(p)) outside.set(i);
         }
         var it = s.reserved().cells();
         const inner = s.inside();
         while (it.next()) |p| {
             lv.set(p, if (r.onEdge(p)) .wall else .floor);
-            lv.barrel[grid.Level.idx(p)] = false;
+            _ = lv.breakBarrel(p);
         }
         const way_in = s.approach();
         s.connectTo(lv, way_in, &outside);
         if (s.key) |k| {
             lv.set(k, .floor);
-            lv.barrel[grid.Level.idx(k)] = false;
+            _ = lv.breakBarrel(k);
             const joined = reachedFrom(lv, way_in);
             s.connectTo(lv, k, &joined);
             lv.set(k, .chest);
@@ -119,7 +130,7 @@ pub const Spec = struct {
                 if (grid.Level.inside(n) and joined.isSet(grid.Level.idx(n)) and !kept.isSet(grid.Level.idx(n))) s.connectTo(lv, n, &kept);
             }
         }
-        const back = carve.sideAt(inner, s.dir().opposite(), carve.alongOf(s.dir(), r.centre()));
+        const back = carve.sideAt(inner, s.dir().opposite(), s.along());
         lv.set(back, .chest);
         lv.set(back.sub(s.dir().across()), .chest);
         lv.set(s.door(), if (s.key != null) .locked_gate else .gate);
@@ -156,16 +167,15 @@ pub const Spec = struct {
                 var at = head;
                 while (true) {
                     const q = queue[at];
-                    const t = lv.at(q);
-                    if (!lv.walkable(q)) lv.set(q, if (t.liquid()) .stone_bridge else .floor);
-                    lv.barrel[grid.Level.idx(q)] = false;
+                    carve.layWith(lv, q, .floor, .stone_bridge);
+                    _ = lv.breakBarrel(q);
                     if (at == 0) return;
                     at = back[at];
                 }
             }
             for (mathx.CARDINALS) |d| {
                 const q = p.add(d);
-                if (!grid.Box.inMap(1).holds(q) or s.room().holds(q) or s.keyAt(q)) continue;
+                if (grid.Level.onRim(q) or s.occupies(q)) continue;
                 const i = grid.Level.idx(q);
                 if (seen.isSet(i)) continue;
                 seen.set(i);
@@ -181,12 +191,12 @@ pub const Spec = struct {
         while (it.next()) |p| {
             if (p.eq(s.threshold()) or !lv.vacant(p)) continue;
             var total: u32 = 0;
-            for (s.pool[0..s.pool_n]) |e| if (pool.hasRoomFor(e.kind)) {
+            for (s.entries()) |e| if (pool.hasRoomFor(e.kind)) {
                 total += e.weight;
             };
             if (total == 0) continue;
             var draw: u32 = @intCast(rng.range(1, @intCast(total)));
-            for (s.pool[0..s.pool_n]) |e| {
+            for (s.entries()) |e| {
                 if (!pool.hasRoomFor(e.kind)) continue;
                 if (draw <= e.weight) {
                     if (actor.row(e.kind).movement == .swimming) lv.set(p, .shallows);

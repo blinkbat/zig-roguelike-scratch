@@ -17,12 +17,12 @@ pub const BASES = blk: {
     break :blk ks[0..ks.len].*;
 };
 
-pub const DROP_PERCENT = 10;
-pub const FOE_GOLD_PERCENT = 50;
+const DROP_PERCENT = 10;
+const FOE_GOLD_PERCENT = 50;
 pub const MAGIC_PERCENT = 20;
 pub const RARE_PERCENT = 5;
-pub const FOE_SUPPLY_PERCENT = 8;
-pub const CHEST_SUPPLY_PERCENT = 50;
+const FOE_SUPPLY_PERCENT = 8;
+const CHEST_SUPPLY_PERCENT = 50;
 
 /// A gold drop's range, both ends inclusive.
 pub const Gold = struct {
@@ -34,9 +34,9 @@ pub const Gold = struct {
     }
 };
 pub const BARREL_GOLD = Gold{ .lo = 3, .hi = 12 };
-pub const BARREL_ITEM_PERCENT = 15;
+const BARREL_ITEM_PERCENT = 15;
 pub const CHEST_GOLD = Gold{ .lo = 18, .hi = 36 };
-pub const FOE_GOLD = Gold{ .lo = 1, .hi = 6 };
+const FOE_GOLD = Gold{ .lo = 1, .hi = 6 };
 
 pub fn qualityChance(base: u32, item_rarity: i32) u32 {
     return @intCast(std.math.clamp(@divTrunc(@as(i64, base) * (mathx.PERCENT + @as(i64, item_rarity)), mathx.PERCENT), 0, mathx.PERCENT));

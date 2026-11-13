@@ -1,5 +1,4 @@
 const std = @import("std");
-const hero = @import("play/hero.zig");
 const progress = @import("play/progress.zig");
 const passives = @import("play/passives.zig");
 const mathx = @import("core/mathx.zig");
@@ -177,16 +176,9 @@ test "an NPC kept before it could stand off a painted cell loads where it stood"
 }
 
 pub const Policy = struct {
-    pub fn restoreStart(state: *progress.State, class: hero.Class) void {
-        state.nodes.set(passives.start(class));
-        for (progress.skills(class)) |skill| if (skill.initial and state.ranks.get(skill.act) == 0) {
-            state.ranks.set(skill.act, 1);
-        };
-    }
-
     pub fn defaults(destination: anytype, seen: anytype) void {
         if (std.meta.Child(@TypeOf(destination)) == data.Tail) {
-            restoreStart(&destination.growth, destination.class);
+            destination.growth.restoreStart(destination.class);
             if (!seen.isSet(std.meta.fieldIndex(data.Tail, "bar").?)) destination.bar = destination.growth.bar(destination.class);
             if (!seen.isSet(std.meta.fieldIndex(data.Tail, "mana").?)) destination.mana = 0;
         }

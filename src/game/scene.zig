@@ -29,6 +29,7 @@ const shaders = @import("../gfx/shaders.zig");
 const hud = @import("../ui/hud.zig");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
+const projectiles = @import("projectile_motion.zig");
 const P = mathx.P;
 
 const LEAN_GLYPH: i32 = game.authored(40);
@@ -207,7 +208,7 @@ pub fn toggleReveal(g: *game.Game) void {
 }
 
 pub fn terrainSeen(g: *const game.Game, p: P) bool {
-    return g.light.remembers(&g.sim.lv, p);
+    return g.light.reveal_map or g.pic.seenShown(&g.sim, p);
 }
 
 pub fn shownAt(g: *game.Game, stood: *const grid.CellSet, p: P) bool {
@@ -642,7 +643,7 @@ pub fn drawMap(g: *game.Game) void {
 
     g.light.bake(ground, lo, hi);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;
-    const flames = g.light.flames(&g.sim.lv, &flame_buf);
+    const flames = g.light.flames(ground, &flame_buf);
     g.cinema.prepare(ground, g.light, view, flames);
     const outer = g.framebuffer;
     const blooming = g.cinema.beginScene(g.screen, outer);
@@ -776,7 +777,7 @@ pub fn drawMap(g: *game.Game) void {
     for (&g.pic.bolts) |*pending| {
         const b = pending.* orelse continue;
         const at = b.view.at orelse continue;
-        fx.drawMissileFaded(at, b.heading, .fireball, g.pic.fx.seconds.at(), o[0], o[1], game.CELL_F, b.view.alpha);
+        fx.drawMissileFaded(at, b.heading, projectiles.BOLT_ACT,g.pic.fx.seconds.at(), o[0], o[1], game.CELL_F, b.view.alpha);
     }
     if (blooming) {
         g.cinema.endScene(outer, o, game.CELL_F, g.light);
@@ -1027,7 +1028,7 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
     for (&g.pic.bolts) |*pending| {
         const b = pending.* orelse continue;
         const at = b.view.at orelse continue;
-        if (fx.missileLight(at, .fireball)) |source| emitFaded(g, ground, source, b.view.alpha);
+        if (fx.missileLight(at, projectiles.BOLT_ACT)) |source| emitFaded(g, ground, source, b.view.alpha);
     }
     for (&g.pic.seen_cells, 0..) |cell, i| {
         const a = cell.flame * cell.alpha;

@@ -61,8 +61,7 @@ const CARRY_FADE: f32 = 0.3;
 pub const CARRY_CEILING: f32 = 0.7;
 pub const CARRY_FACE_WRAP: f32 = 0.6;
 
-/// The light remembered terrain is drawn under, after Brogue's memory colour.
-pub const MEMORY = rgbOf(look.rgb(0x2b2f4e));
+pub const MEMORY = rgbOf(look.MEMORY_LIGHT);
 const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
@@ -94,8 +93,7 @@ comptime {
 }
 
 pub const BODY_LIGHTS: usize = 4;
-/// A pale flash remains visible over red bodies.
-const FLASH_RGB = Rgb{ 0.88, 0.38, 0.30 };
+const FLASH_RGB: Rgb = look.FLASH_RGB;
 /// Texels toward the viewer, for the side-lighting of a body.
 pub const BODY_LIGHT_Z: f32 = 40.0;
 /// The rise is per texel out; the rim reach is in texels.
@@ -146,6 +144,10 @@ comptime {
     }
 }
 
+pub fn casterOf(t: grid.Tile) ?Caster {
+    return CASTERS.getPtrConst(t).*;
+}
+
 const CAST_TALLEST: f32 = blk: {
     var most: f32 = 0;
     for (CASTERS.values) |c| most = @max(most, if (c) |k| k.h else 0);
@@ -159,7 +161,7 @@ pub fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
     var lit: f32 = 1;
     while (walk.enter < far) : (walk.next()) {
         if (!grid.Level.inside(walk.cell)) break;
-        const k = CASTERS.getPtrConst(lv.at(walk.cell)).* orelse continue;
+        const k = casterOf(lv.at(walk.cell)) orelse continue;
         const over = if (k.r) |r| roundOver(walk, @min(walk.exit(), far), k.h, r, ray, x, y, z) else ray.over(k.h, z, walk.enter);
         if (over <= 0) continue;
         lit = @min(lit, 1 - smooth(over));
@@ -243,7 +245,7 @@ pub fn bankSunlit(lv: *const grid.Level, banks: anytype, ray: SunRay, x: f32, y:
         }
         if (!ground.bankAbove(bed.tile(), here)) continue;
         const drop = height - ground.bankHeight(bed.tile());
-        lit = @min(lit, 1 - smooth(std.math.clamp(ray.over(drop, 0, distance), 0, 1)));
+        lit = @min(lit, 1 - smooth(ray.over(drop, 0, distance)));
         if (lit == 0) return 0;
     }
     return lit;
@@ -343,7 +345,7 @@ pub fn sunFacing(sk: sky.Sky, s: Spot) f32 {
 pub const Surface = enum { floor, face, ceiling };
 
 pub fn topOf(t: grid.Tile, cell: P, q: [2]f32) f32 {
-    const k = CASTERS.getPtrConst(t).* orelse return 0;
+    const k = casterOf(t) orelse return 0;
     const r = k.r orelse return k.h;
     return if (offMiddle(cell, q) < r) k.h else 0;
 }
@@ -593,6 +595,9 @@ pub const TONE_FS = shaders.glslConsts(.{ .KNEE = KNEE, .ROLL = ROLL, .FLASH = F
     \\vec3 flashed(vec3 c, float k) {
     \\    return mix(c, FLASH, k);
     \\}
+    \\float wrapped(float c, float wrap) {
+    \\    return max((c + wrap) / (1.0 + wrap), 0.0);
+    \\}
     \\
 ;
 
@@ -719,6 +724,15 @@ pub const DAPPLE_SPAN: f32 = 0.10;
 /// Crowns within this many cells shade a cell's sun, each by this much over one plus its squared distance.
 pub const DAPPLE_REACH = 2;
 pub const DAPPLE_COVER: f32 = 0.3;
+
+pub const Reach = struct {
+    radius: f32,
+    gain: f32,
+
+    pub fn lit(r: Reach, at: [2]f32, col: rl.Color, scale: f32) Emission {
+        return Emission.onBody(at, col, r.radius, r.gain * scale);
+    }
+};
 
 pub const Emission = struct {
     at: [3]f32,

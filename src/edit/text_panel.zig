@@ -42,7 +42,8 @@ const PAGE_LINE: usize = 1024;
 const NAV_INDENT: i32 = 14;
 const NAV_LEAD: usize = 3;
 const SCROLL_ROOM: i32 = 8;
-const KEEP_GROUP = "Save or discard this passage before changing its group.";
+const DISCARD_FIRST = "Save or discard this passage before ";
+const KEEP_GROUP = DISCARD_FIRST ++ "changing its group.";
 const REBUILD = "Saved wording takes effect after rebuilding.";
 
 pub fn fieldHeight(rows: i32) i32 {
@@ -499,7 +500,7 @@ pub const State = struct {
     fn pick(s: *State, i: usize) bool {
         if (s.selected == i) return true;
         if (s.dirty()) {
-            s.say("Save or discard this passage before selecting another.", .{});
+            s.say(DISCARD_FIRST ++ "selecting another.", .{});
             return false;
         }
         s.selected = i;
@@ -539,7 +540,7 @@ pub fn open(ed: *editor.Editor) void {
 
 fn reload(ed: *editor.Editor) void {
     const s = &ed.words;
-    if (s.dirty()) return s.say("Save or discard this passage before reloading.", .{});
+    if (s.dirty()) return s.say(DISCARD_FIRST ++ "reloading.", .{});
     const c = s.data orelse return;
     c.load(@import("assets").source_root) catch |err| {
         s.selected = null;

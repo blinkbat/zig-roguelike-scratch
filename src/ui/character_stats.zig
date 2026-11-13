@@ -201,6 +201,10 @@ const Column = struct {
         column.entry(measure.title(), text.text(), tier, col);
     }
 
+    fn quietStat(column: *Column, measure: Measure, figures: Figures, ink: rl.Color) void {
+        column.stat(measure, figures, .plain, quiet(measure.of(figures), ink));
+    }
+
     fn vital(column: *Column, label: [:0]const u8, view: Vital, col: rl.Color) void {
         var text: menu.Note(32) = .{};
         text.say("{d} / {d}", .{ view.now, view.max });
@@ -210,7 +214,7 @@ const Column = struct {
     fn skill(column: *Column, act: skillbar.Act, hit: progress.Hit, effect: item_bases.WeaponEffect) void {
         var physical: menu.Note(24) = .{};
         var element: menu.Note(40) = .{};
-        if (hit.physical.hi > 0) physical.say("{d}-{d}", .{ hit.physical.lo, hit.physical.hi });
+        if (hit.physical.hi > 0) physical.say(damage.RANGE_FMT,.{ hit.physical.lo, hit.physical.hi });
         if (hit.element) |e| element.say("{d}-{d} {s}", .{ e.lo, e.hi, menu.word(act.element().?) });
         var imbued: menu.Note(24) = .{};
         if (hit.imbued) |f| imbued.say("{d}-{d} {s}", .{ f.lo, f.hi, menu.word(tactics.Imbue.IMBUES) });
@@ -309,13 +313,13 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool, on: menu.Surface
     const attributes = figures.attrs;
     var left = Column.left(face, dry, TIGHT_ROW);
     left.heading("DAMAGE MODIFIERS");
-    for (attr.STYLES) |s| left.stat(.{ .style = s }, figures, .plain, quiet(attributes.increase(s), look.TEXT));
-    left.stat(.physical, figures, .plain, quiet(attributes.physical_bonus, look.PHYSICAL));
-    for (std.enums.values(damage.Element)) |e| left.stat(.{ .element = e }, figures, .plain, quiet(attributes.element_bonus.get(e), look.elementInk(e)));
+    for (attr.STYLES) |s| left.quietStat(.{ .style = s }, figures, look.TEXT);
+    left.quietStat(.physical, figures, look.PHYSICAL);
+    for (std.enums.values(damage.Element)) |e| left.quietStat(.{ .element = e }, figures, look.elementInk(e));
     var text: menu.Note(48) = .{};
     text.say("{d}%", .{attributes.critMulti()});
     left.entry("Critical damage multiplier", text.text(), .plain, look.TEXT);
-    left.stat(.thorns, figures, .plain, quiet(attributes.thorns, look.PHYSICAL));
+    left.quietStat(.thorns, figures, look.PHYSICAL);
     left.y += SECTION_GAP;
     left.heading("RECOVERY AND LOOT");
     const perks = view.inventory.gear.perks(view.growth.perks());
@@ -330,8 +334,8 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool, on: menu.Surface
     left.amount("Life flask recovery", "+{d}%", perks.life_flask, look.LIFE_TEXT);
     left.amount("Mana on kill", "{d}", view.inventory.gear.manaOnKill(), look.MANA_TEXT);
     left.amount("Mana flask recovery", "+{d}%", view.inventory.gear.draughts(perks).mana, look.MANA_TEXT);
-    left.stat(.gold_find, figures, .plain, quiet(attributes.gold_find, look.UI_GOLD));
-    left.stat(.item_rarity, figures, .plain, quiet(attributes.item_rarity, look.MAGIC));
+    left.quietStat(.gold_find, figures, look.UI_GOLD);
+    left.quietStat(.item_rarity, figures, look.MAGIC);
 
     var right = Column.right(face, dry, TIGHT_ROW);
     right.heading("RESISTANCES");

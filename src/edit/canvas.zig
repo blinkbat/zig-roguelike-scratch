@@ -135,7 +135,7 @@ fn drawDoors(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         rl.drawRectangleLinesEx(r, 1, if (d.to == null) WARN else look.DOOR.fg);
         if (ed.px() >= LABEL_PX) {
             const label = std.fmt.bufPrintZ(&buf, "{d}", .{k}) catch "";
-            widgets.drawTag(&g.face, label, .{ .x = @intFromFloat(r.x), .y = @intFromFloat(r.y) }, LABEL_PAD, PANEL_BG, null);
+            widgets.drawTag(&g.face, label, .{ .x = raster.left(r), .y = raster.top(r) }, LABEL_PAD, PANEL_BG, null);
         }
         const pk = ed.pick orelse continue;
         if (pk.eq(.{ .node = ed.node, .door = k })) rl.drawRectangleLinesEx(r, PICK_EDGE, PICKED);
@@ -251,7 +251,7 @@ fn fillCells(ed: *const editor.Editor, c: rl.Rectangle, b: grid.Box, col: rl.Col
 }
 
 fn plaque(g: *game.Game, c: rl.Rectangle, s: [:0]const u8) void {
-    widgets.drawTag(&g.face, s, .{ .x = @as(i32, @intFromFloat(c.x)) + widgets.GAP, .y = @as(i32, @intFromFloat(c.y)) + widgets.GAP }, widgets.GAPS, PLAQUE_BG, null);
+    widgets.drawTag(&g.face, s, .{ .x = raster.left(c) + widgets.GAP, .y = raster.top(c) + widgets.GAP }, widgets.GAPS, PLAQUE_BG, null);
 }
 
 fn outlineCells(ed: *const editor.Editor, c: rl.Rectangle, b: grid.Box, col: rl.Color) void {

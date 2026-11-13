@@ -21,7 +21,7 @@ const Burst = state.Burst;
 pub const Zap = state.Zap;
 const Shimmer = state.Shimmer;
 pub const FLASH_S = impact_queue.FLASH_S;
-pub const DEATH_RGB = impact_queue.DEATH_RGB;
+pub const DEATH_RGB = look.DEATH_RGB;
 pub const OWED_KINDS = impact_queue.OWED_KINDS;
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
@@ -168,12 +168,12 @@ fn forkTip(v: rl.Vector2, w: rl.Vector2, left: bool) rl.Vector2 {
 }
 
 /// A brief light an effect casts: reach in cells, peak gain, and seconds to fade.
-const Glow = struct { radius: f32, gain: f32, life: f32 };
-pub const EMBER_GLOW = Glow{ .radius = 2.2, .gain = 0.8, .life = 0.32 };
-const SHIMMER_GLOW = Glow{ .radius = 2.2, .gain = 0.65, .life = 0.4 };
-const FIRE_BURST_GLOW = Glow{ .radius = 3.5, .gain = 1.4, .life = 0.35 };
-const COLD_BURST_GLOW = Glow{ .radius = 3, .gain = 0.6, .life = 0.35 };
-const ARC_GLOW = Glow{ .radius = 1.8, .gain = 0.85, .life = ARC_S };
+const Glow = struct { reach: light.Reach, life: f32 };
+pub const EMBER_GLOW = Glow{ .reach = .{ .radius = 2.2, .gain = 0.8 }, .life = 0.32 };
+const SHIMMER_GLOW = Glow{ .reach = .{ .radius = 2.2, .gain = 0.65 }, .life = 0.4 };
+const FIRE_BURST_GLOW = Glow{ .reach = .{ .radius = 3.5, .gain = 1.4 }, .life = 0.35 };
+const COLD_BURST_GLOW = Glow{ .reach = .{ .radius = 3, .gain = 0.6 }, .life = 0.35 };
+const ARC_GLOW = Glow{ .reach = .{ .radius = 1.8, .gain = 0.85 }, .life = ARC_S };
 
 const Pulse = struct {
     source: light.Emission = .{ .at = @splat(0), .col = rl.Color.blank, .radius = 0, .gain = 0 },
@@ -217,7 +217,7 @@ const ZAP_MOTES: usize = 5;
 const ZAP_JITTER: f32 = 0.18;
 const EMBERS = Spray{ .col = look.FIRE, .hit = 18, .kill = 18, .along_lo = 0.4, .along_hi = 1.4, .fan = 0, .up_lo = 0.5, .up_hi = 1.5, .grav = 0, .drag = 2, .life_lo = 0.25, .life_hi = 0.55, .r_lo = 1, .r_hi = 2.5, .stains = false, .add = true };
 const SPARKS = Spray{ .col = look.LIGHTNING_CORE, .hit = 16, .kill = 16, .along_lo = 1.5, .along_hi = 3.5, .fan = 1.4, .up_lo = 0.6, .up_hi = 1.8, .grav = 7, .drag = 1.5, .life_lo = 0.16, .life_hi = 0.36, .r_lo = 0.8, .r_hi = 1.6, .stains = false, .bounce = 0.4, .add = true };
-const SPARK_GLOW = Glow{ .radius = 1.6, .gain = 0.9, .life = 0.22 };
+const SPARK_GLOW = Glow{ .reach = .{ .radius = 1.6, .gain = 0.9 }, .life = 0.22 };
 const DRIP_MOTES: usize = 5;
 const WATER_MOTES = [2]u32{ 5, 9 };
 /// Cells below a body's middle its footfall rises from, and how far across and down it spreads.
@@ -261,7 +261,7 @@ const LEVEL_UP_TEXT = "Level up!";
 const LEVEL_IN_S: f32 = 0.12;
 const LEVEL_OUT_S: f32 = 0.65;
 const SHAFT_S: f32 = 1.55;
-const LEVEL_GLOW = Glow{ .radius = 2.5, .gain = 0.65, .life = LEVEL_UP_S };
+const LEVEL_GLOW = light.Reach{ .radius = 2.5, .gain = 0.65 };
 const LEVEL_BODY_GAIN: f32 = 0.18;
 const LEVEL_GLINTS = 18;
 /// Spreads the glints evenly: the golden ratio's fraction, and the golden angle.
@@ -270,6 +270,20 @@ const GOLDEN_ANGLE: f32 = 2.399963;
 /// A glint this bright flashes a cross, at this share of its alpha.
 const GLINT_FLASH: f32 = 0.85;
 const GLINT_CROSS_A: f32 = 0.65;
+const GLINT_CROSS_PX: f32 = 3;
+const GLINT_STAGGER_S: f32 = 0.3;
+const GLINT_SPIN: f32 = 0.3;
+const GLINT_R = [3]f32{ 0.22, 0.24, 0.12 };
+const GLINT_FLAT: f32 = 0.45;
+const GLINT_LIFT = [2]f32{ 0.1, 0.4 };
+const GLINT_CLIMB = [2]f32{ 0.45, 0.4 };
+const GLINT_TWINKLE_RAD_S: f32 = 7;
+const GLINT_TWINKLE_PHASE: f32 = 1.7;
+const GLINT_SHINE = [2]f32{ 0.4, 0.6 };
+const GLINT_R_PX = [2]f32{ 0.7, 0.45 };
+const LEVEL_BEAM_Z: f32 = -0.28;
+const LEVEL_BEAM_TOP_A: f32 = 0.1;
+const LEVEL_TEXT_Z = [2]f32{ 0.85, 0.25 };
 
 const LevelUp = struct {
     life: f32 = 0,
@@ -296,7 +310,7 @@ const LevelUp = struct {
     pub fn drawBeam(self: LevelUp, at: [2]f32, ox: f32, oy: f32, cell: f32) void {
         if (self.life <= 0) return;
         const a = self.alpha() * std.math.clamp((SHAFT_S - self.age()) / LEVEL_OUT_S, 0, 1);
-        const base = screen(.{ at[0], at[1], -0.28 }, ox, oy, cell);
+        const base = screen(.{ at[0], at[1], LEVEL_BEAM_Z }, ox, oy, cell);
         const h: i32 = @intFromFloat(@max(0, base.y));
         if (h == 0 or a <= 0) return;
         const bands = [_]struct { width: f32, alpha: f32 }{
@@ -308,7 +322,7 @@ const LevelUp = struct {
         };
         for (bands) |band| {
             const w: i32 = @intFromFloat(@max(1, cell * band.width));
-            rl.drawRectangleGradientV(@as(i32, @intFromFloat(base.x)) - @divTrunc(w, 2), 0, w, h, look.fade(look.LEVEL_GOLD, a * band.alpha * 0.1), look.fade(look.LEVEL_CORE, a * band.alpha));
+            rl.drawRectangleGradientV(@as(i32, @intFromFloat(base.x)) - @divTrunc(w, 2), 0, w, h, look.fade(look.LEVEL_GOLD, a * band.alpha * LEVEL_BEAM_TOP_A), look.fade(look.LEVEL_CORE, a * band.alpha));
         }
     }
 
@@ -318,26 +332,26 @@ const LevelUp = struct {
         for (0..LEVEL_GLINTS) |i| {
             const seed: f32 = @floatFromInt(i);
             const phase = @mod(seed * GOLDEN_FRACTION, 1);
-            const t = @max(0, self.age() - phase * 0.3);
-            const theta = seed * GOLDEN_ANGLE + t * 0.3;
-            const radius = 0.22 + phase * 0.24 + t * 0.12;
+            const t = @max(0, self.age() - phase * GLINT_STAGGER_S);
+            const theta = seed * GOLDEN_ANGLE + t * GLINT_SPIN;
+            const radius = GLINT_R[0] + phase * GLINT_R[1] + t * GLINT_R[2];
             const spark = screen(.{
                 at[0] + @cos(theta) * radius,
-                at[1] + @sin(theta) * radius * 0.45,
-                0.1 + phase * 0.4 + t * (0.45 + phase * 0.4),
+                at[1] + @sin(theta) * radius * GLINT_FLAT,
+                GLINT_LIFT[0] + phase * GLINT_LIFT[1] + t * (GLINT_CLIMB[0] + phase * GLINT_CLIMB[1]),
             }, ox, oy, cell);
-            const shine = @max(0, @sin(t * 7 + seed * 1.7));
-            const a = self.alpha() * std.math.clamp(t / LEVEL_IN_S, 0, 1) * (0.4 + shine * 0.6);
-            pixel.fleck(spark, 0.7 + phase * 0.45, k, look.fade(look.LEVEL_GOLD, a));
+            const shine = @max(0, @sin(t * GLINT_TWINKLE_RAD_S + seed * GLINT_TWINKLE_PHASE));
+            const a = self.alpha() * std.math.clamp(t / LEVEL_IN_S, 0, 1) * (GLINT_SHINE[0] + shine * GLINT_SHINE[1]);
+            pixel.fleck(spark, GLINT_R_PX[0] + phase * GLINT_R_PX[1], k, look.fade(look.LEVEL_GOLD, a));
             if (shine > GLINT_FLASH) {
-                pixel.cross(spark, 3, k, look.fade(look.LEVEL_CORE, a * GLINT_CROSS_A));
+                pixel.cross(spark, GLINT_CROSS_PX, k, look.fade(look.LEVEL_CORE, a * GLINT_CROSS_A));
             }
         }
     }
 
     pub fn drawText(self: LevelUp, at: [2]f32, face: *const font.Face, ox: f32, oy: f32, cell: f32) void {
         if (self.life <= 0) return;
-        const top = screen(.{ at[0], at[1], 0.85 + self.age() * 0.25 }, ox, oy, cell);
+        const top = screen(.{ at[0], at[1], LEVEL_TEXT_Z[0] + self.age() * LEVEL_TEXT_Z[1] }, ox, oy, cell);
         const x: i32 = @intFromFloat(top.x);
         const y: i32 = @intFromFloat(top.y);
         const size: i32 = @intFromFloat(pxScale(cell) * font.HEAD);
@@ -522,7 +536,7 @@ pub const Fx = struct {
     }
 
     pub fn glow(self: *Fx, at: [2]f32, col: rl.Color, g: Glow) void {
-        claim(Pulse, &self.pulses, &self.pulse_head).* = .{ .source = struck(at, col, g.radius, g.gain), .life = g.life, .max = g.life };
+        claim(Pulse, &self.pulses, &self.pulse_head).* = .{ .source = struck(at, col, g.reach), .life = g.life, .max = g.life };
     }
 
     pub fn trail(self: *Fx, lv: *const grid.Level, at: [2]f32, dir: [2]f32, act: skillbar.Act, age: f32) void {
@@ -635,11 +649,7 @@ pub const Fx = struct {
         const u = mathx.unitToward(from, to);
         const across = [2]f32{ -u[1], u[0] };
         const segments: f32 = @floatFromInt(a.n - 1);
-        for (a.points[1 .. a.n - 1], 1..) |*p, i| {
-            const off = self.rng.spread(ARC_JITTER);
-            const on = mathx.lerp2(from, to, @as(f32, @floatFromInt(i)) / segments);
-            p.* = .{ on[0] + across[0] * off, on[1] + across[1] * off };
-        }
+        for (a.points[1 .. a.n - 1], 1..) |*p, i| p.* = kink(&self.rng, mathx.lerp2(from, to, @as(f32, @floatFromInt(i)) / segments), across);
         a.lefts = 0;
         for (0..@bitSizeOf(Forks)) |i| {
             if (self.rng.coin()) a.lefts |= @as(Forks, 1) << @intCast(i);
@@ -876,12 +886,12 @@ pub const Fx = struct {
                 const alpha = rise * @min(1, a.life / (ARC_S * 0.5)) * grid.cellOr(f32, sight, mathx.cellOf(p), 0);
                 const v = projected(from, ox, oy, cell);
                 const w = projected(p, ox, oy, cell);
-                pixel.gridLine(v, w, .{ ox, oy }, k, look.fade(look.LIGHTNING_CORE, alpha), i > 0);
-                if (i % ARC_FORK == ARC_FORK / 2) {
-                    const tip = forkTip(v, w, a.lefts >> @intCast(i / ARC_FORK) & 1 == 1);
-                    const at = mathx.cellOf(unprojected(tip, ox, oy, cell));
-                    if (lv.isLit(at) and grid.clearLine(lv, mathx.cellOf(p), at)) pixel.gridLine(w, tip, .{ ox, oy }, k, look.fade(look.LIGHTNING, alpha), true);
-                }
+                const tip: ?rl.Vector2 = if (forks(i)) blk: {
+                    const t = forkTip(v, w, a.lefts >> @intCast(i / ARC_FORK) & 1 == 1);
+                    const at = mathx.cellOf(unprojected(t, ox, oy, cell));
+                    break :blk if (lv.isLit(at) and grid.clearLine(lv, mathx.cellOf(p), at)) t else null;
+                } else null;
+                drawBolt(v, w, tip, .{ ox, oy }, k, look.fade(look.LIGHTNING_CORE, alpha), look.fade(look.LIGHTNING, alpha), i > 0);
             }
         }
     }
@@ -996,9 +1006,19 @@ fn unprojected(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
 const pxScale = look.pxScale;
 
 /// By element: a trailed missile's light, its motes' life and rise, its burst's glow, and whether its motes add light.
-const Flare = struct { radius: f32, gain: f32, trail_s: f32, rise: f32, burst: Glow, add: bool };
+const Flare = struct { reach: light.Reach, trail_s: f32, rise: f32, burst: Glow, add: bool };
 
 const Missile = struct { trail_r: [2]f32 = .{ 0.7, 1.7 }, reach: ?f32 = null, ball: bool = false, spark: bool = false };
+const FIREBALL_PUFFS: usize = 6;
+const FIREBALL_GAP_PX: f32 = 4;
+const FIREBALL_WAVE_RAD_S: f32 = 65;
+const FIREBALL_WAVE_PHASE: f32 = 2;
+const FIREBALL_WAVE_PX: f32 = 2;
+const FIREBALL_R_PX: f32 = 5.5;
+const FIREBALL_TAPER_PX: f32 = 0.7;
+const FIREBALL_FADE: f32 = 0.13;
+const FIREBALL_CORE_PX: f32 = 3;
+const FIREBALL_HEART_PX: f32 = 2;
 const FIREBALL = Missile{ .trail_r = .{ 1.5, 3.5 }, .reach = 2.8, .ball = true };
 const SPARK = Missile{ .spark = true };
 
@@ -1015,48 +1035,60 @@ pub fn sparkFlies(act: skillbar.Act) bool {
     return missileOf(act).spark;
 }
 
-/// Cells from head to tail, kinks along it, and the tail's share of the head's alpha.
-const SPARK_LEN: f32 = 0.7;
-const SPARK_KINKS: usize = 4;
-const SPARK_TAIL_A: f32 = 0.3;
+/// A spark is a short piece of a chain arc: its kinks at `ARC_STEP`, and the tail's share of the head's alpha.
+const SPARK_KINKS: usize = 5;
+const SPARK_TAIL_A: f32 = 0.6;
 const SPARK_SEED: u64 = 0x5BA2C;
+const SPARK_LIGHT = light.Reach{ .radius = 1.2, .gain = 0.55 };
 
 fn drawSpark(at: [2]f32, dir: [2]f32, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     const k = pxScale(cell);
     const frame: u64 = @intFromFloat(@max(0, t) / ARC_FLICKER_S);
     var rng = mathx.Rng.init(SPARK_SEED +% frame);
     const across = [2]f32{ -dir[1], dir[0] };
-    const head = projected(at, ox, oy, cell);
-    var prev = head;
+    var prev = projected(at, ox, oy, cell);
     for (1..SPARK_KINKS + 1) |i| {
         const f = @as(f32, @floatFromInt(i)) / SPARK_KINKS;
-        const off = if (i == SPARK_KINKS) 0 else rng.spread(ARC_JITTER);
-        const q = [2]f32{ at[0] - dir[0] * SPARK_LEN * f + across[0] * off, at[1] - dir[1] * SPARK_LEN * f + across[1] * off };
+        const back = ARC_STEP * @as(f32, @floatFromInt(i));
+        const on = [2]f32{ at[0] - dir[0] * back, at[1] - dir[1] * back };
+        const q = if (i == SPARK_KINKS) on else kink(&rng, on, across);
         const w = projected(q, ox, oy, cell);
-        const a = alpha * mathx.lerpF(1, SPARK_TAIL_A, f);
-        pixel.gridLine(prev, w, .{ ox, oy }, k, look.fade(look.LIGHTNING_CORE, a), i > 1);
-        if (i == SPARK_KINKS / 2) pixel.gridLine(w, forkTip(prev, w, rng.coin()), .{ ox, oy }, k, look.fade(look.LIGHTNING, a), true);
+        const ink = look.fade(look.SPARK_CORE, alpha * mathx.lerpF(1, SPARK_TAIL_A, f));
+        drawBolt(prev, w, if (forks(i)) forkTip(prev, w, rng.coin()) else null, .{ ox, oy }, k, ink, ink, i > 1);
         prev = w;
     }
-    pixel.fleck(head, 2, k, look.fade(look.LIGHTNING_CORE, alpha));
+}
+
+fn forks(i: usize) bool {
+    return i % ARC_FORK == ARC_FORK / 2;
+}
+
+fn kink(rng: *mathx.Rng, on: [2]f32, across: [2]f32) [2]f32 {
+    const off = rng.spread(ARC_JITTER);
+    return .{ on[0] + across[0] * off, on[1] + across[1] * off };
+}
+
+fn drawBolt(v: rl.Vector2, w: rl.Vector2, tip: ?rl.Vector2, origin: [2]f32, k: f32, core: rl.Color, fork: rl.Color, from_second: bool) void {
+    pixel.gridLine(v, w, origin, k, core, from_second);
+    if (tip) |t| pixel.gridLine(w, t, origin, k, fork, true);
 }
 
 fn flareOf(element: ?damage.Element) ?Flare {
     return switch (element orelse return null) {
-        .fire => .{ .radius = 1.6, .gain = 0.85, .trail_s = 0.24, .rise = 0.5, .burst = FIRE_BURST_GLOW, .add = true },
-        .cold => .{ .radius = 1.6, .gain = 0.35, .trail_s = 0.18, .rise = 0.12, .burst = COLD_BURST_GLOW, .add = false },
+        .fire => .{ .reach = .{ .radius = 1.6, .gain = 0.85 }, .trail_s = 0.24, .rise = 0.5, .burst = FIRE_BURST_GLOW, .add = true },
+        .cold => .{ .reach = .{ .radius = 1.6, .gain = 0.35 }, .trail_s = 0.18, .rise = 0.12, .burst = COLD_BURST_GLOW, .add = false },
         .chaos, .lightning => null,
     };
 }
 
 pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
-    if (sparkFlies(act)) return struck(at, look.LIGHTNING, SPARK_GLOW.radius, SPARK_GLOW.gain);
+    if (sparkFlies(act)) return struck(at, look.LIGHTNING, SPARK_LIGHT);
     const m = flareOf(act.element()) orelse return null;
-    return struck(at, look.arrowInk(act), missileOf(act).reach orelse m.radius, m.gain);
+    return struck(at, look.arrowInk(act), .{ .radius = missileOf(act).reach orelse m.reach.radius, .gain = m.reach.gain });
 }
 
-fn struck(at: [2]f32, col: rl.Color, radius: f32, gain: f32) light.Emission {
-    return .{ .at = .{ at[0], at[1], STRIKE_Z }, .col = col, .radius = radius, .gain = gain };
+fn struck(at: [2]f32, col: rl.Color, r: light.Reach) light.Emission {
+    return .{ .at = .{ at[0], at[1], STRIKE_Z }, .col = col, .radius = r.radius, .gain = r.gain };
 }
 
 pub fn drawMissileFaded(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
@@ -1066,13 +1098,13 @@ pub fn drawMissileFaded(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: 
     const k = pxScale(cell);
     const col = look.fade(look.arrowInk(act), alpha);
     if (missileOf(act).ball) {
-        for (0..6) |i| {
+        for (0..FIREBALL_PUFFS) |i| {
             const f: f32 = @floatFromInt(i);
-            const w = rl.Vector2{ .x = p.x - dir[0] * f * 4 * k, .y = p.y - dir[1] * f * 4 * k + @sin(t * 65 + f * 2) * 2 * k };
-            pixel.fleck(w, 5.5 - f * 0.7, k, look.fade(look.FIRE, (1 - f * 0.13) * alpha));
+            const w = rl.Vector2{ .x = p.x - dir[0] * f * FIREBALL_GAP_PX * k, .y = p.y - dir[1] * f * FIREBALL_GAP_PX * k + @sin(t * FIREBALL_WAVE_RAD_S + f * FIREBALL_WAVE_PHASE) * FIREBALL_WAVE_PX * k };
+            pixel.fleck(w, FIREBALL_R_PX - f * FIREBALL_TAPER_PX, k, look.fade(look.FIRE, (1 - f * FIREBALL_FADE) * alpha));
         }
-        pixel.fleck(p, 3, k, look.fade(look.FIRE_CORE, alpha));
-        pixel.rect(p, 2, 2, k, look.fade(rl.Color.white, alpha));
+        pixel.fleck(p, FIREBALL_CORE_PX, k, look.fade(look.FIRE_CORE, alpha));
+        pixel.rect(p, FIREBALL_HEART_PX, FIREBALL_HEART_PX, k, look.fade(rl.Color.white, alpha));
         return;
     }
     drawArrow(p, dir, col, .{ ox, oy }, k);

@@ -44,6 +44,15 @@ pub const Befallen = struct { by: usize, after: fx.After };
 /// `was` stands at `at` for `left` seconds more.
 pub const Bursting = struct { at: P, was: grid.Tile, left: f32 };
 
+const SightCells = struct {
+    lit: [grid.CELLS]bool = @splat(false),
+    seen: [grid.CELLS]bool = @splat(false),
+
+    fn of(lv: *const grid.Level) SightCells {
+        return .{ .lit = lv.lit, .seen = lv.seen };
+    }
+};
+
 /// `before` is drawn for `left` seconds; `due` when it was taken ahead of the hold that will keep it.
 pub fn Held(comptime T: type) type {
     return struct {
@@ -148,7 +157,7 @@ pub const SeenCell = struct {
 /// When each `Presentation` field is reset, every field in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
-    pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "lit", "lit_kindled", "tiles", "embers", "burnt", "busy", "lead", "bolt_lands", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
+    pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "sight_held", "lit_kindled", "tiles", "embers", "burnt", "busy", "lead", "bolt_lands", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
     pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
     pub const facing = [_][]const u8{"facing"};
     pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "seen_bodies", "seen_cells", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown" };
@@ -189,7 +198,7 @@ pub const Presentation = struct {
     /// Where the hero stood before the turn's first knockback: its own move ends there.
     knocked_from: ?P = null,
     bursting: ?Bursting = null,
-    lit: Held([grid.CELLS]bool) = .{ .before = @splat(false) },
+    sight_held: Held(SightCells) = .{ .before = .{} },
     lit_kindled: bool = false,
     /// The ground's flames, barrier and caltrops as drawn: the simulation's, but kept as they were while `tiles` holds.
     flames_shown: [grid.CELLS]u8 = @splat(0),
@@ -306,7 +315,7 @@ pub const Presentation = struct {
     pub fn beforeDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
         if (!actor.row(sim.pool.items[target.slot().index].kind).blow.pyre()) return;
         self.tiles.snap(&sim.lv.tile);
-        self.lit.snap(&sim.lv.lit);
+        self.sight_held.snap(&SightCells.of(&sim.lv));
     }
 
     pub fn recordDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId, death: rewards.Death) void {
@@ -361,15 +370,19 @@ pub const Presentation = struct {
         self.owed[by.slot().index].hurled = at;
     }
 
-    /// `was` flown `cells` on to `now` from `wait` seconds on, gone once there if it `lands`; when it gets there.
-    pub fn recordBolt(self: *Presentation, sim: *const Simulation, by: actor.ActorSlot, was: firebolt.Bolt, now: firebolt.Bolt, cells: u8, lands: bool, wait: f32) f32 {
+    /// `was` flown on to `now` from `wait` seconds on, gone once there if it stopped; when it gets there.
+    pub fn recordBolt(self: *Presentation, sim: *const Simulation, by: actor.ActorSlot, was: firebolt.Bolt, now: firebolt.Bolt, flew: firebolt.Flew, wait: f32) f32 {
         const old = self.bolts[by.index];
         const from = if (old) |b| b.to else was.point();
-        const span = @as(f32, @floatFromInt(cells)) * BOLT_CELL_S;
-        self.bolts[by.index] = .{ .view = if (old) |b| b.view else .{}, .from = from, .to = now.point(), .heading = now.heading(), .t = -wait, .span = span, .after = !lands };
+        const span = @as(f32, @floatFromInt(flew.cells)) * BOLT_CELL_S;
+        self.bolts[by.index] = .{ .view = if (old) |b| b.view else .{}, .from = from, .to = now.point(), .heading = now.heading(), .t = -wait, .span = span, .after = flew.stop == null };
         for (was.flown..@as(usize, now.flown) + 1) |k| if (self.litShown(sim, now.cell(k))) {
             self.holdUntil(wait + span);
             break;
+        };
+        if (flew.stop) |stop| switch (stop) {
+            .body, .barrel => self.bolt_lands = @max(self.bolt_lands, wait + span),
+            .wall, .spent => {},
         };
         return wait + span;
     }
@@ -541,6 +554,10 @@ pub const Presentation = struct {
         return self.under.isSet(i) or self.masked.isSet(i);
     }
 
+    fn veiledShown(self: *const Presentation, body: *const actor.Actor, slot: usize, surfacing: bool) bool {
+        return body.disguised or (!surfacing and body.submerged and self.under.isSet(slot));
+    }
+
     pub fn casterAt(self: *const Presentation, sim: *const Simulation, i: usize, area: grid.Box) ?rl.Vector2 {
         const at = self.bodyAt(sim, i) orelse return null;
         return if (area.holds(game.cellUnder(at))) at else null;
@@ -565,7 +582,7 @@ pub const Presentation = struct {
 
     pub fn groundShown(self: *Presentation, sim: *const Simulation) *const grid.Level {
         const reshaped = self.reshapes();
-        const held = self.lit.on();
+        const held = self.sight_held.on();
         if (!reshaped and !held) return &sim.lv;
         self.ground_shown = sim.lv;
         const tiles = &self.ground_shown.tile;
@@ -579,14 +596,15 @@ pub const Presentation = struct {
         if (self.bursting) |b| if (grid.Level.inside(b.at)) {
             tiles[grid.Level.idx(b.at)] = b.was;
         };
-        if (held) for (&self.ground_shown.lit, self.lit.before) |*l, was| {
-            l.* = self.litHeld(l.*, was);
-        };
+        if (held) {
+            self.holdCells(&self.ground_shown.lit, &self.sight_held.before.lit);
+            self.holdCells(&self.ground_shown.seen, &self.sight_held.before.seen);
+        }
         return &self.ground_shown;
     }
 
     pub fn pictureKey(self: *const Presentation) Pictured {
-        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.lit.on(), .tiles_held = self.tiles.on() };
+        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.sight_held.on(), .tiles_held = self.tiles.on() };
     }
 
     pub fn mimicAt(self: *const Presentation, sim: *const Simulation, p: P) bool {
@@ -604,23 +622,35 @@ pub const Presentation = struct {
 
     /// Light gone with the ground stays lit while it holds; light a fire `kindles` stays dark too.
     fn holdLit(self: *Presentation, lv: *const grid.Level, wait: f32, kindles: bool) void {
-        if (!self.lit.on()) self.lit_kindled = false;
-        self.lit.hold(&lv.lit, wait);
+        if (!self.sight_held.on()) self.lit_kindled = false;
+        self.sight_held.hold(&SightCells.of(lv), wait);
         self.lit_kindled = self.lit_kindled or kindles;
     }
 
-    pub fn holdFlames(self: *Presentation, lv: *const grid.Level, wait: f32) void {
+    fn holdTiles(self: *Presentation, lv: *const grid.Level, wait: f32, kindles: bool) void {
         self.tiles.hold(&lv.tile, wait);
-        self.holdLit(lv, wait, false);
+        self.holdLit(lv, wait, kindles);
+    }
+
+    pub fn holdFlames(self: *Presentation, lv: *const grid.Level, wait: f32) void {
+        self.holdTiles(lv, wait, false);
     }
 
     pub fn holdFire(self: *Presentation, lv: *const grid.Level, wait: f32) void {
-        self.tiles.hold(&lv.tile, wait);
-        self.holdLit(lv, wait, true);
+        self.holdTiles(lv, wait, true);
     }
 
     fn litHeld(self: *const Presentation, now: bool, was: bool) bool {
         return was or (now and !self.lit_kindled);
+    }
+
+    fn holdCells(self: *const Presentation, now: *[grid.CELLS]bool, was: *const [grid.CELLS]bool) void {
+        for (now, was) |*n, w| n.* = self.litHeld(n.*, w);
+    }
+
+    fn cellShown(self: *const Presentation, now: bool, was: *const [grid.CELLS]bool, p: P) bool {
+        if (!self.sight_held.on()) return now;
+        return self.litHeld(now, grid.cellOr(bool, was, p, false));
     }
 
     pub fn flamesShown(self: *const Presentation, i: usize) bool {
@@ -671,8 +701,11 @@ pub const Presentation = struct {
     }
 
     pub fn litShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
-        if (!self.lit.on()) return sim.lv.isLit(p);
-        return self.litHeld(sim.lv.isLit(p), grid.cellOr(bool, &self.lit.before, p, false));
+        return self.cellShown(sim.lv.isLit(p), &self.sight_held.before.lit, p);
+    }
+
+    pub fn seenShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
+        return self.cellShown(sim.lv.isSeen(p), &self.sight_held.before.seen, p);
     }
 
     fn flightSeen(self: *const Presentation, sim: *const Simulation, flight: *const bow.Flight) bool {
@@ -793,7 +826,10 @@ pub const Presentation = struct {
             const visible = self.visibleBody(sim, i) != null;
             if (visible) {
                 self.seen_bodies[i] = self.bodyShown(sim, i);
-            } else if (self.seen_bodies[i] == null) {
+            } else if (self.seen_bodies[i]) |b| {
+                if (b.dark > 0 and self.gone(sim, i)) self.seen_bodies[i] = null;
+            }
+            if (!visible and self.seen_bodies[i] == null) {
                 s.* = if (self.figured(sim, i)) 0 else 1;
                 continue;
             }
@@ -847,7 +883,7 @@ pub const Presentation = struct {
         }
         const k = mathx.easing(dt, OCCLUSION_EASE);
         for (tiles, &self.occlusion, 0..) |t, *hidden, i| {
-            hidden.* = if (look.occludes(t)) mathx.ease(hidden.*, if (covered.isSet(i)) 1 else 0, k, k) else 0;
+            hidden.* = if (look.occludes(t)) mathx.easeTo(hidden.*, covered.isSet(i), k) else 0;
         }
     }
 
@@ -867,7 +903,7 @@ pub const Presentation = struct {
     pub fn advance(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.busy -= dt;
         if (self.bursting) |*b| b.left -= dt;
-        self.lit.tick(dt);
+        self.sight_held.tick(dt);
         self.tiles.tick(dt);
         for (&self.embers) |*e| e.* = @max(0, e.* - dt);
         if (!self.tiles.on()) {
@@ -900,7 +936,7 @@ pub const Presentation = struct {
             }
         }
         for (&self.bolts) |*pending| if (pending.*) |*b| if (b.moving()) {
-            if (b.at()) |at| self.fx.trail(&sim.lv, at, b.heading, .fireball, 0);
+            if (b.at()) |at| self.fx.trail(&sim.lv, at, b.heading, projectiles.BOLT_ACT, 0);
         };
         self.stepTurning(dt);
     }
@@ -1006,7 +1042,7 @@ pub const Presentation = struct {
         }
         const attack = owed.foe_hit;
         const at = if (target.value == sim.hero) destination else body.at;
-        const hidden = body.disguised or (body.submerged and self.under.isSet(slot) and attack == null);
+        const hidden = self.veiledShown(body, slot, attack != null);
         const shown = self.litShown(sim, at) and !hidden;
         const visible_origin = !hidden and self.litShown(sim, motion.to);
         const arrow_seen = if (owed.arrow) |*f| owed.struck == null or shown or self.flightSeen(sim, f) else false;
@@ -1180,15 +1216,14 @@ pub const Presentation = struct {
 
     pub fn strike(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, impact: fx.Impact, s: Stroke) void {
         const at = impact.at();
-        const len = mathx.distEuclid(at, s.from);
-        const dir: ?[2]f32 = if (len == 0) null else .{ @as(f32, @floatFromInt(at.x - s.from.x)) / len, @as(f32, @floatFromInt(at.y - s.from.y)) / len };
+        const dir: ?[2]f32 = if (at.eq(s.from)) null else mathx.unitToward(mathx.centre(s.from), mathx.centre(at));
         const body: ?*const actor.Actor = switch (impact) {
             .actor => |a| &sim.pool.items[a.slot.index],
             .barrel => null,
         };
         const kind: ?actor.Kind = if (body) |b| b.kind else null;
         const hero = impact == .actor and sim.isHero(impact.actor.slot.index);
-        const veiled = if (body) |b| b.disguised or (b.submerged and self.under.isSet(impact.actor.slot.index)) else false;
+        const veiled = if (body) |b| self.veiledShown(b, impact.actor.slot.index, false) else false;
         if (hero or (self.litShown(sim, at) and !veiled)) {
             self.fx.strike(s.wait, .{ .impact = impact, .dir = dir, .matter = fx.matterOf(kind), .element = s.element });
             self.flashes(s.wait);

@@ -50,18 +50,10 @@ pub const Blow = struct {
     element: ?damage.Element = null,
 };
 
-const StatusGlow = struct {
-    radius: f32,
-    gain: f32,
-
-    pub fn lit(g: StatusGlow, at: [2]f32, col: rl.Color, flicker: f32) light.Emission {
-        return light.Emission.onBody(at, col, g.radius, g.gain * flicker);
-    }
-};
-const BURN_GLOW = StatusGlow{ .radius = 2, .gain = 0.55 };
-const WARD_GLOW = StatusGlow{ .radius = 1.5, .gain = 0.25 };
-const STUN_GLOW = StatusGlow{ .radius = 1.3, .gain = 0.45 };
-pub const FLAMES_GLOW = StatusGlow{ .radius = @as(f32, @floatFromInt(lume.FIRE_REACH)) + 0.5, .gain = 0.3 };
+const BURN_GLOW = light.Reach{ .radius = 2, .gain = 0.55 };
+const WARD_GLOW = light.Reach{ .radius = 1.5, .gain = 0.25 };
+const STUN_GLOW = light.Reach{ .radius = 1.3, .gain = 0.45 };
+pub const FLAMES_GLOW = light.Reach{ .radius = @as(f32, @floatFromInt(lume.FIRE_REACH)) + 0.5, .gain = 0.3 };
 /// What a body suffers for turns, in the order the hud names them.
 pub const Status = enum {
     stunned,
@@ -127,7 +119,7 @@ pub const Status = enum {
     }
 
     /// The first status a body has, in this order, that glows lights it.
-    pub fn glow(s: Status) ?StatusGlow {
+    pub fn glow(s: Status) ?light.Reach {
         return switch (s) {
             .stunned => STUN_GLOW,
             .burning => BURN_GLOW,

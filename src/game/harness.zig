@@ -159,6 +159,10 @@ pub fn clickAt(g: *game.Game, p: P) void {
     game.update(g, 0);
 }
 
+pub fn clickCell(g: *game.Game, at: P) void {
+    clickAt(g, game.scene.Cam.of(g).mid(at));
+}
+
 pub fn pressInteract(g: *game.Game) void {
     g.st = .{ .interact = true, .pressed = .initOne(CONFIRM), .down = .initOne(CONFIRM) };
     game.update(g, 0);

@@ -336,7 +336,7 @@ pub const Node = struct {
         return self.barrelFits(b, p) and b.foeAt(p) == null;
     }
 
-    pub fn zooReserves(self: *const Node, p: P) bool {
+    fn zooReserves(self: *const Node, p: P) bool {
         return if (self.zoo) |z| z.reserves(p) else false;
     }
 
@@ -346,7 +346,7 @@ pub const Node = struct {
     }
 
     pub fn startFits(self: *const Node, p: P) bool {
-        return grid.Level.inside(p) and (if (self.zoo) |z| !z.room().holds(p) else true);
+        return grid.Level.inside(p) and (if (self.zoo) |z| !z.occupies(p) else true);
     }
 
     pub fn foeFits(self: *const Node, b: *const Bespoke, p: P, k: actor.Kind) bool {
@@ -364,42 +364,45 @@ pub const Node = struct {
     }
 
     pub fn pruneAt(self: *const Node, b: *Bespoke, p: P) void {
-        for ([_]P{ p, lume.torchWall(p) }) |w| {
-            if (grid.Level.inside(w) and !self.torchFits(b, w)) _ = b.torch.remove(w);
-        }
-        const i = grid.Level.idx(p);
-        if (b.barrel[i] and !self.barrelFits(b, p)) b.barrel[i] = false;
-        if (b.foeAt(p)) |f| {
-            if (!self.foeFits(b, p, b.foe[f].kind)) b.dropFoe(f);
-        }
+        const Fits = struct {
+            nd: *const Node,
+            b: *const Bespoke,
+
+            pub fn torchFits(f: @This(), w: P) bool {
+                return f.nd.torchFits(f.b, w);
+            }
+
+            pub fn barrelFits(f: @This(), q: P) bool {
+                return f.nd.barrelFits(f.b, q);
+            }
+
+            pub fn foeFits(f: @This(), q: P, k: actor.Kind) bool {
+                return f.nd.foeFits(f.b, q, k);
+            }
+        };
+        section.prune(Fits{ .nd = self, .b = b }, b, p);
     }
 
     pub fn doorFits(_: *const Node, b: *const Bespoke, p: P) bool {
         return !b.tileAt(p).pieced();
     }
 
-    pub fn doorCells(self: *const Node, out: *[grid.MAX_DOORS]P) []const P {
+    fn doorCells(self: *const Node, out: *[grid.MAX_DOORS]P) []const P {
         for (self.doors(), 0..) |d, i| out[i] = d.at;
         return out[0..self.door_n];
-    }
-
-    /// A procgen node's guards by its carts, then its packs round the hero arriving at `at`, exit packs by its doors.
-    fn placePacks(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P) void {
-        self.packsOff(lv, pool, rng, at, &grid.CellSet.initEmpty());
     }
 
     /// The foes of the section `roll` laid, each on its cell while the pool has room, then the zoo's, then the packs, none on a painted cell.
     pub fn populate(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, roll: u64) void {
         const laid = self.sectionOn(roll);
-        if (laid) |l| for (l.section.foes()) |f| {
-            const s = l.foe(f);
-            if (pool.hasRoomFor(s.kind) and actor.dwells(s.kind, lv, s.at)) _ = pool.spawn(lv, actor.Actor.of(s.kind, s.at));
-        };
+        var buf: [MAX_FOES]Foe = undefined;
+        spawnFoes(lv, pool, self.laidFoes(laid, &buf));
         if (self.zoo) |z| z.populate(lv, pool, rng);
         const painted = if (laid) |l| l.cells() else grid.CellSet.initEmpty();
         self.packsOff(lv, pool, rng, at, &painted);
     }
 
+    /// A procgen node's guards by its carts, then its packs round the hero arriving at `at`, exit packs by its doors, none on `off`.
     fn packsOff(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, off: *const grid.CellSet) void {
         post.place(lv, pool, self.plan.procgen.post);
         var buf: [grid.MAX_DOORS]P = undefined;
@@ -418,7 +421,11 @@ pub const Node = struct {
 
     /// Where the plan stands its foes on `roll`: a bespoke node's as painted, a procgen node's section's where it landed.
     pub fn placedOn(self: *const Node, roll: u64, buf: *[MAX_FOES]Foe) []const Foe {
-        const laid = self.sectionOn(roll) orelse return self.placed();
+        return self.laidFoes(self.sectionOn(roll), buf);
+    }
+
+    fn laidFoes(self: *const Node, on: ?section.Placed, buf: *[MAX_FOES]Foe) []const Foe {
+        const laid = on orelse return self.placed();
         const fs = laid.section.foes();
         for (fs, buf[0..fs.len]) |f, *out| out.* = laid.foe(f);
         return buf[0..fs.len];
@@ -658,7 +665,7 @@ pub const EVERY_NPC = struct {
     }
 }{};
 
-pub fn spotFor(lv: *const grid.Level, spot: script.Spot, avoid: *const grid.CellSet) ?P {
+fn spotFor(lv: *const grid.Level, spot: script.Spot, avoid: *const grid.CellSet) ?P {
     return switch (spot) {
         .at => |p| p,
         .by => |t| beside(lv, t, avoid),
@@ -727,12 +734,14 @@ pub fn landing(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
     return nearest(lv, p, foes);
 }
 
-fn free(lv: *const grid.Level, q: P, foes: []const Foe) bool {
-    if (!lv.vacant(q)) return false;
+pub fn spawnFoes(lv: *grid.Level, pool: *actor.Pool, foes: []const Foe) void {
     for (foes) |f| {
-        if (f.at.eq(q)) return false;
+        if (pool.hasRoomFor(f.kind) and actor.dwells(f.kind, lv, f.at)) _ = pool.spawn(lv, actor.Actor.of(f.kind, f.at));
     }
-    return true;
+}
+
+fn free(lv: *const grid.Level, q: P, foes: []const Foe) bool {
+    return lv.vacant(q) and section.foeIn(foes, q) == null;
 }
 
 fn nearest(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
@@ -752,6 +761,16 @@ pub fn testAtlas() !*Atlas {
     a.* = .{};
     return a;
 }
+
+pub fn testStart() !*Atlas {
+    const a = try testAtlas();
+    errdefer std.testing.allocator.destroy(a);
+    try a.load(std.testing.allocator, START);
+    return a;
+}
+
+/// `START`'s node holding the caravan zoo.
+pub const CARAVAN_NODE: usize = 1;
 
 test "removing a node unlinks the doors into it and renumbers the rest" {
     const a = try testAtlas();
@@ -880,9 +899,8 @@ test "a body lands on the side of a wall it arrived on, however near the far sid
 }
 
 test "the strand: the archer washes up on the beach, trees stand back from the surf, and the exit is reached through them" {
-    const a = try testAtlas();
+    const a = try testStart();
     defer std.testing.allocator.destroy(a);
-    try a.load(std.testing.allocator, START);
     var lv: grid.Level = undefined;
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
@@ -938,9 +956,8 @@ test "the strand: the archer washes up on the beach, trees stand back from the s
 }
 
 test "the strand holds only rats, crossbowmen, pibs, two shamans, two bloats and one beefy pib by the exit" {
-    const a = try testAtlas();
+    const a = try testStart();
     defer std.testing.allocator.destroy(a);
-    try a.load(std.testing.allocator, START);
     var lv: grid.Level = undefined;
     const nd = &a.node[a.start.node];
     const exit = nd.doors()[0].at;
@@ -953,7 +970,7 @@ test "the strand holds only rats, crossbowmen, pibs, two shamans, two bloats and
         const at = landing(&lv, a.start.at, &.{}) orelse return error.NoFloor;
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(seed);
-        nd.placePacks(&lv, &pool, &rng, at);
+        nd.packsOff(&lv, &pool, &rng, at, &grid.CellSet.initEmpty());
         try std.testing.expectEqual(@as(usize, 1), pool.tally(.beefy_pib).total);
         try std.testing.expectEqual(@as(usize, 2), pool.tally(.pib_shaman).total);
         try std.testing.expectEqual(@as(usize, 2), pool.tally(.bloat).total);
@@ -966,9 +983,8 @@ test "the strand holds only rats, crossbowmen, pibs, two shamans, two bloats and
 }
 
 test "the strand's door leads to a tee: the whole caravan camp walks from where the hero comes in, carts and a stone bridge on every roll" {
-    const a = try testAtlas();
+    const a = try testStart();
     defer std.testing.allocator.destroy(a);
-    try a.load(std.testing.allocator, START);
     const link = a.node[a.start.node].doors()[0].to orelse return error.NoLink;
     const nd = &a.node[link.node];
     try std.testing.expect(nd.plan == .procgen and nd.plan.procgen.floor == .tee);
@@ -1005,9 +1021,8 @@ fn besideCart(lv: *const grid.Level, p: P) bool {
 }
 
 test "the caravan posts three guards beside its carts, apart from the merchant, and no foe near a cart, on every roll" {
-    const a = try testAtlas();
+    const a = try testStart();
     defer std.testing.allocator.destroy(a);
-    try a.load(std.testing.allocator, START);
     const link = a.node[a.start.node].doors()[0].to orelse return error.NoLink;
     const nd = &a.node[link.node];
     var lv: grid.Level = undefined;
@@ -1023,7 +1038,7 @@ test "the caravan posts three guards beside its carts, apart from the merchant, 
         var pool = actor.Pool{};
         _ = pool.spawn(&lv, actor.Actor.of(actor.HERO, at));
         var rng = mathx.Rng.init(seed);
-        nd.placePacks(&lv, &pool, &rng, at);
+        nd.packsOff(&lv, &pool, &rng, at, &grid.CellSet.initEmpty());
         var guards: usize = 0;
         for (pool.constSlice()) |g| {
             if (g.foe()) {
@@ -1043,10 +1058,9 @@ test "the caravan posts three guards beside its carts, apart from the merchant, 
 }
 
 test "the caravan zoo fills its grid on every roll and keeps ordinary packs outside" {
-    const a = try testAtlas();
+    const a = try testStart();
     defer std.testing.allocator.destroy(a);
-    try a.load(std.testing.allocator, START);
-    const nd = &a.node[1];
+    const nd = &a.node[CARAVAN_NODE];
     const z = nd.zoo.?;
     for (0..30) |i| {
         const seed = 0x200 +% i *% grid.TEST_SEED_STRIDE;
@@ -1063,7 +1077,7 @@ test "the caravan zoo fills its grid on every roll and keeps ordinary packs outs
             if (!z.inside().holds(body.at)) continue;
             count += 1;
             try std.testing.expect(!body.awake);
-            const selected = for (z.pool[0..z.pool_n]) |e| {
+            const selected = for (z.entries()) |e| {
                 if (e.kind == body.kind) break true;
             } else false;
             try std.testing.expect(selected);
@@ -1077,9 +1091,8 @@ test "the caravan zoo fills its grid on every roll and keeps ordinary packs outs
 }
 
 test "the caravan's merchant stands beside a cart, and the stolen baby pib far up the goblin camp, on every roll" {
-    const a = try testAtlas();
+    const a = try testStart();
     defer std.testing.allocator.destroy(a);
-    try a.load(std.testing.allocator, START);
     const caravan = (a.node[a.start.node].doors()[0].to orelse return error.NoLink).node;
     const north = a.node[caravan].doors()[1].to orelse return error.NoLink;
     const s = &a.script;
@@ -1116,9 +1129,8 @@ test "the caravan's merchant stands beside a cart, and the stolen baby pib far u
 }
 
 test "the strand grows a few glowing plants on every roll" {
-    const a = try testAtlas();
+    const a = try testStart();
     defer std.testing.allocator.destroy(a);
-    try a.load(std.testing.allocator, START);
     var lv: grid.Level = undefined;
     const nd = &a.node[a.start.node];
     var least: usize = grid.CELLS;
@@ -1137,9 +1149,8 @@ test "the strand grows a few glowing plants on every roll" {
 
 test "the strand reconnects side paths and reliably supplies reachable chests and barrels" {
     const branches = @import("branches.zig");
-    const a = try testAtlas();
+    const a = try testStart();
     defer std.testing.allocator.destroy(a);
-    try a.load(std.testing.allocator, START);
     const nd = &a.node[a.start.node];
     const settings = nd.plan.procgen.floor.wilds;
     var buf: [grid.MAX_DOORS]P = undefined;
@@ -1278,9 +1289,7 @@ test "a section's foes stand on their cells wherever it lands, packs keep off it
             try std.testing.expectEqual(f.kind, pool.items[actor.Pool.slot(id)].kind);
         }
         for (pool.constSlice()) |b| {
-            if (!b.foe() or (for (placed) |f| {
-                if (f.at.eq(b.at)) break true;
-            } else false)) continue;
+            if (!b.foe() or section.foeIn(placed, b.at) != null) continue;
             packed_foes += 1;
             if (painted.isSet(grid.Level.idx(b.at))) astray += 1;
         }

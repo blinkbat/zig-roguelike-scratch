@@ -109,7 +109,7 @@ pub const BUMP_PX: f32 = CELL_F * 0.35;
 /// Ease-out-back's overshoot constant: 1.165 carries a slide 5% past its cell (1.70158, the usual one, 10%).
 pub const SLIDE_BACK: f32 = 1.165;
 /// `gen.build` rolls from the bare seed; without the salt the packs replay the floor's rolls.
-const PLAY_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
+const PLAY_SALT = mathx.GOLDEN_GAMMA;
 /// Loot rolls on its own stream, so a drop does not shift the fight's rolls.
 const LOOT_SALT: u64 = 0x10_07_A11;
 pub const INTERACT_REACH: i32 = 1;
@@ -347,11 +347,11 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
         spawnHero(g, to);
         switch (w.node[n].plan) {
             .procgen => w.node[n].populate(&g.sim.lv, &g.sim.pool, &g.sim.rng, to, roll),
-            .bespoke => for (placing) |f| {
-                if (actor.dwells(f.kind, &g.sim.lv, f.at)) _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(f.kind, f.at));
+            .bespoke => {
+                atlas.spawnFoes(&g.sim.lv, &g.sim.pool, placing);
+                if (w.node[n].zoo) |z| z.populate(&g.sim.lv, &g.sim.pool, &g.sim.rng);
             },
         }
-        if (w.node[n].plan == .bespoke) if (w.node[n].zoo) |z| z.populate(&g.sim.lv, &g.sim.pool, &g.sim.rng);
     }
     const h = g.sim.heroActor().?;
     carried.at = h.at;
@@ -534,7 +534,7 @@ pub fn resumeRun(g: *Game) void {
     while (visits.next()) |n| gen.restoreShapes(&g.sim.visits[n].lv);
     toDefaults(g, &(Fields.run ++ Fields.loot ++ Fields.resumed));
     toDefaults(&g.sim, &(SimFields.resumed ++ SimFields.rebuilt));
-    g.sim.unsaved = g.sim.growth.refundBasicRanks();
+    g.sim.unsaved = g.sim.growth.refundExcessRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
     g.sim.clampMana();
     talking.restand(g);

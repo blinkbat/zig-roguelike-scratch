@@ -68,10 +68,10 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
             },
         }
         if (nd.label.n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
-        if (nd.zoo) |z| {
+        if (nd.zoo) |*z| {
             try w.print(says(.zoo) ++ "{d} {d} {d} {d} {s}\n", .{ z.at.x, z.at.y, z.width, z.height, @tagName(z.side) });
             if (z.key) |k| try w.print(says(.zoo_key) ++ "{d} {d}\n", .{ k.x, k.y });
-            for (z.pool[0..z.pool_n]) |e| try w.print(says(.zoo_foe) ++ "{d} {s}\n", .{ e.weight, @tagName(e.kind) });
+            for (z.entries()) |e| try w.print(says(.zoo_foe) ++ "{d} {s}\n", .{ e.weight, @tagName(e.kind) });
         }
         try w.print(says(.at) ++ "{d} {d}\n", .{ nd.pos.x, nd.pos.y });
         for (nd.doors()) |d| {
@@ -265,10 +265,9 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
             .zoo_key => (try lastZoo(self)).key = try cell(&f),
             .zoo_foe => {
                 const z = try lastZoo(self);
-                if (z.pool_n >= atlas.zoo.MAX_KINDS) return error.BadLine;
                 const weight = try int(u8, &f);
                 const kind = try takeValue(actor.Kind, &f);
-                _ = mathx.push(atlas.zoo.Entry, &z.pool, &z.pool_n, .{ .kind = kind, .weight = weight });
+                if (!mathx.push(atlas.zoo.Entry, &z.pool, &z.pool_n, .{ .kind = kind, .weight = weight })) return error.BadLine;
             },
         }
         if (f.next() != null) return error.BadLine;

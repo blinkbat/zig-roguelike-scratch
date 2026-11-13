@@ -327,7 +327,7 @@ pub fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
 }
 
 fn graphAt(ed: *const Editor, c: rl.Rectangle, m: P) P {
-    return m.sub(.{ .x = @intFromFloat(c.x), .y = @intFromFloat(c.y) }).add(.{ .x = @intFromFloat(ed.gcam[0]), .y = @intFromFloat(ed.gcam[1]) });
+    return m.sub(.{ .x = raster.left(c), .y = raster.top(c) }).add(.{ .x = @intFromFloat(ed.gcam[0]), .y = @intFromFloat(ed.gcam[1]) });
 }
 
 /// `anchor` stays over the same cell.

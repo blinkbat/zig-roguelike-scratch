@@ -120,7 +120,7 @@ pub const Book = struct {
     fn count(self: *const Book, view: View) usize {
         return switch (self.page) {
             .equipment => item_bases.SLOTS.len,
-            .inventory => stocked(view) + view.inventory.n,
+            .inventory => view.inventory.carriedCount() + view.inventory.n,
             .stats, .quests => 0,
             .passives => passives.NODES.len,
             .skills => progress.skills(view.class).len,
@@ -186,11 +186,11 @@ pub const Book = struct {
     }
     /// The bag item under the cursor; carried consumables list above the bag.
     fn bagIndex(self: *const Book, view: View) ?usize {
-        const above = stocked(view);
+        const above = view.inventory.carriedCount();
         return if (self.cursor >= above and self.cursor - above < view.inventory.n) self.cursor - above else null;
     }
     fn carriedRow(self: *const Book, view: View) ?consumable.Kind {
-        return if (self.page == .inventory) stockAt(view, self.cursor) else null;
+        return if (self.page == .inventory) view.inventory.carriedAt(self.cursor) else null;
     }
     fn selected(self: *const Book, view: View) ?items.Item {
         return switch (self.page) {
@@ -203,8 +203,8 @@ pub const Book = struct {
     }
     fn destination(self: *const Book, view: View) item_bases.Slot {
         const it = self.selected(view).?;
+        if (!it.kind.equippable()) return .right_hand;
         const slots = it.kind.slots();
-        if (slots.len == 0) return .right_hand;
         return slots[@min(self.destination_index, slots.len - 1)];
     }
     fn select(self: *Book, view: View) ?Command {
@@ -214,7 +214,7 @@ pub const Book = struct {
                 self.choose(.inventory);
                 break :blk null;
             },
-            .inventory => if (stockAt(view, self.cursor)) |k| .{ .use = k } else if (self.selected(view).?.kind.equippable()) .{ .equip = .{ .index = self.bagIndex(view).?, .slot = self.destination(view) } } else null,
+            .inventory => if (view.inventory.carriedAt(self.cursor)) |k| .{ .use = k } else if (self.selected(view).?.kind.equippable()) .{ .equip = .{ .index = self.bagIndex(view).?, .slot = self.destination(view) } } else null,
             .stats, .quests => null,
             .passives => if (view.growth.canAllocate(self.cursor)) .{ .passive = self.cursor } else null,
             .skills => blk: {
@@ -294,8 +294,8 @@ pub const Book = struct {
         };
         if (self.page == .inventory and self.selected(view) != null) {
             if (st.hit(menu.REMOVE)) return .{ .drop = self.bagIndex(view).? };
-            const count_slots = self.selected(view).?.kind.slots().len;
-            if (st.hit(menu.CHANGE) and count_slots > 1) self.destination_index = mathx.wrap(self.destination_index, 1, count_slots);
+            const kind = self.selected(view).?.kind;
+            if (st.hit(menu.CHANGE) and slotChoice(kind)) self.destination_index = mathx.wrap(self.destination_index, 1, kind.slots().len);
         }
         if (self.page == .skills and st.hit(menu.CHANGE)) return .{ .bindings = self.selectedSkill(view) };
         if (self.page == .stats and st.hit(menu.CHANGE)) self.advanced = !self.advanced;
@@ -409,7 +409,7 @@ pub const Book = struct {
                 if (self.page != .inventory or chosen == null or chosen.?.kind.equippable()) c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = label });
                 if (self.page == .loot) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = character_view.verbOf(.take_all) });
                 if (self.page == .inventory) if (chosen) |it| {
-                    if (it.kind.slots().len > 1) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = slotLabel(self.destination(view)) });
+                    if (slotChoice(it.kind)) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = slotLabel(self.destination(view)) });
                     c.add(self.actionBox(menu.REMOVE, view), menu.REMOVE, .{ .label = character_view.verbOf(.drop) });
                 };
             },
@@ -497,7 +497,7 @@ pub const Book = struct {
 
     fn drawDirect(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
         if (self.page == .trade) return self.drawTrade(face, sprites, view);
-        header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else "ITEM BAG");
+        header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else comptime menu.caps(character_view.ITEM_BAG));
         if (self.page == .loot) drawHolding(face, view, null);
         self.drawCells(face, sprites, view);
         if (self.count(view) == 0) return self.drawEmpty(face, EMPTY);
@@ -600,23 +600,21 @@ pub const Book = struct {
                         if (named) face.centred(face.fit(&fitted, worn.name(&name_buf), font.SMALL, inner, false), glyph.x, name_mid, font.SMALL, inkOf(worn));
                     } else line_icons.drawItem(sprites, slotGlyph(slot), side, glyph.x, glyph.y, look.fade(look.DIM, look.FADED_A));
                 },
-                .inventory => if (stockAt(view, i)) |k| {
+                .inventory => if (view.inventory.carriedAt(i)) |k| {
                     var carried: menu.Note(24) = .{};
                     carried.say(item_card.CARRIED_FMT, .{view.inventory.stacks.get(k)});
-                    line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
+                    rowGlyph(sprites, x, row_mid, null, k);
                     listRow(face, x, row_mid, menu.titleOf(k), inkOf(null), carried.text(), look.DIM);
                 } else {
-                    const at = i - stocked(view);
+                    const at = i - view.inventory.carriedCount();
                     const it = view.inventory.bag[at];
                     const slots = it.kind.slots();
-                    line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
-                    listRow(face, x, row_mid, it.name(&name_buf), inkOf(it), if (slots.len == 0) "" else if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name(), look.DIM);
+                    rowGlyph(sprites, x, row_mid, it, null);
+                    listRow(face, x, row_mid, it.name(&name_buf), inkOf(it), if (!it.kind.equippable()) "" else if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slotChoice(it.kind)) menu.titleOf(it.kind) else slots[0].name(), look.DIM);
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];
-                    if (n.item()) |it| {
-                        line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
-                    } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
+                    rowGlyph(sprites, x, row_mid, n.item(), n.supplyOf());
                     listRow(face, x, row_mid, n.label(&name_buf), inkOf(n.item()), if (self.page == .loot) "" else n.command().verb(), look.DIM);
                 },
                 .trade => {
@@ -628,12 +626,12 @@ pub const Book = struct {
                     cost.say(hero.COINS_FMT, .{asked});
                     const label = switch (w) {
                         .item => it.?.name(&name_buf),
-                        .supply => |k| blk: {
-                            line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, inkOf(null));
-                            break :blk std.fmt.bufPrintZ(&name_buf, "{s} ({d})", .{ menu.titleOf(k), s.left(k) }) catch menu.titleOf(k);
-                        },
+                        .supply => |k| std.fmt.bufPrintZ(&name_buf, "{s} ({d})", .{ menu.titleOf(k), s.left(k) }) catch menu.titleOf(k),
                     };
-                    if (it) |held| line_icons.drawItem(sprites, held.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(held));
+                    rowGlyph(sprites, x, row_mid, it, switch (w) {
+                        .supply => |k| k,
+                        .item => null,
+                    });
                     listRow(face, x, row_mid, label, inkOf(it), cost.text(), self.priceInk(view, asked));
                 },
                 .passives, .skills, .stats, .quests => unreachable,
@@ -712,6 +710,11 @@ fn divider(top: i32, foot: i32) void {
 fn header(face: *const font.Face, text: [:0]const u8) void {
     face.engraved(text, layout.LIST_X, font.Face.topFor(layout.HEADER_MID, font.HEAD), font.HEAD, look.TEXT);
 }
+fn rowGlyph(sprites: *const sprite.Sprites, x: i32, mid: i32, it: ?items.Item, supply: ?consumable.Kind) void {
+    if (it) |held| {
+        line_icons.drawItem(sprites, held.kind, .row, x + layout.GLYPH_X, mid, inkOf(held));
+    } else if (supply) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, mid, inkOf(null));
+}
 fn listRow(face: *const font.Face, x: i32, mid: i32, text: [:0]const u8, ink: rl.Color, second: [:0]const u8, second_ink: rl.Color) void {
     var fitted: [items.NAME_MAX]u8 = undefined;
     face.drawMiddle(face.fit(&fitted, text, font.BODY, layout.SECOND_X - layout.TEXT_X - layout.COLUMN_GAP, false), x + layout.TEXT_X, mid, font.BODY, ink);
@@ -772,6 +775,9 @@ const ACTIONS = [_]input.Button{ menu.CONFIRM, menu.CHANGE, menu.REMOVE };
 fn neededAttrs(view: View, it: items.Item, slot: item_bases.Slot) attr.Attrs {
     return view.inventory.gear.wearing(it, slot).statsWithout(slot, view.base);
 }
+fn slotChoice(k: item_bases.Kind) bool {
+    return k.slots().len > 1;
+}
 fn slotLabel(s: item_bases.Slot) [:0]const u8 {
     return switch (s) {
         .left_ring => "L ring",
@@ -831,14 +837,6 @@ fn dependent(view: View, at: usize, slot: item_bases.Slot) ?items.Item {
         if (after.slots.get(s)) |other| if (!after.keepsMet(view.inventory.gear, s, view.base)) return other;
     }
     return null;
-}
-
-fn stocked(view: View) usize {
-    return view.inventory.carriedCount();
-}
-
-fn stockAt(view: View, row: usize) ?consumable.Kind {
-    return view.inventory.carriedAt(row);
 }
 
 fn inkOf(it: ?items.Item) rl.Color {

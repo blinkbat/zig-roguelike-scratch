@@ -326,10 +326,11 @@ const App = struct {
         app.reburied();
     }
 
-    /// False once the app may close; a failed last write stays on the title instead.
+    /// False once the app may close; a failed last write stays on the title instead, until the next close.
     fn quitRun(app: *App) bool {
+        const shown = app.scene == .title and app.note.n > 0;
         app.runToTitle();
-        return app.note.n > 0;
+        return app.note.n > 0 and !shown;
     }
 
     fn endDead(app: *App, a: *save.Autosave) void {
@@ -550,16 +551,12 @@ const App = struct {
                 const page = options_menu.pageOf(app.page);
                 const picked = options_menu.step(&g.cinema, &app.options, &g.st, g.screen, page, &g.display);
                 options_menu.draw(g.face, &g.sprites, g.screen, &g.cinema, app.options.at, page, g.display);
-                if (back) {
-                    if (options_menu.under(page)) |at| {
-                        app.goPage(.options);
-                        app.options = .{ .at = at };
-                    } else app.toTitle();
-                } else if (picked) |pick| switch (pick) {
-                    inline .visuals, .display => |p| {
-                        app.goPage(@field(Page, @tagName(p)));
-                        app.options = .{};
+                if (options_menu.go(page, back, picked)) |to| switch (to) {
+                    .page => |p| {
+                        app.goPage(options_menu.hostPage(Page, p.to));
+                        app.options = .{ .at = p.at };
                     },
+                    .leave => app.toTitle(),
                     .fullscreen => game.syncScreen(g, true),
                     .debug => app.goPage(.debug),
                 };

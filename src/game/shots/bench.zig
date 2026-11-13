@@ -126,7 +126,7 @@ fn benchEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         g.pic.fx.clear();
         for (0..count) |i| {
             const at = mathx.centre(.{ .x = 15 + @as(i32, @intCast(i % 8)), .y = 14 + @as(i32, @intCast(i / 8)) });
-            g.pic.fx.glow(at, look.FIRE, .{ .radius = fx.EMBER_GLOW.radius, .gain = fx.EMBER_GLOW.gain, .life = 1 });
+            g.pic.fx.glow(at, look.FIRE, .{ .reach = fx.EMBER_GLOW.reach, .life = 1 });
         }
         std.debug.print("effects {d}: {d:.3} ms mean draw over {d} frames\n", .{ count, try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
     }

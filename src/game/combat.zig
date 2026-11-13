@@ -773,7 +773,7 @@ fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, a
         if (g.sim.pool.get(w) != null) {
             const hit = bodyBlow(g, id, w, c.blow, c.blow.verb, af.contains(.enfeeble), false);
             g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = if (hit) |a| .{ .actor = a } else null });
-        } else if (smashedBy(g, next, row)) |hit| g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = hit });
+        } else if (smashedBy(g, next, SMASHER, row.name)) |hit| g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = hit });
     }
     crab.stuck = true;
     g.pic.recordWear(&g.sim, .fromInt(id));
@@ -875,15 +875,11 @@ fn flyBolts(g: *game.Game) bool {
         thrower.bolt = if (lands) null else now;
         if (lands) thrower.ready_in = @max(thrower.ready_in, hu.every);
         const kind = thrower.kind;
-        const s = Stroke{ .from = was.at(), .wait = g.pic.recordBolt(&g.sim, .fromIndex(i), was, now, flew.cells, lands, wait), .element = .fire };
+        const s = Stroke{ .from = was.at(), .wait = g.pic.recordBolt(&g.sim, .fromIndex(i), was, now, flew, wait), .element = .fire };
         const stop = flew.stop orelse continue;
-        if (stop == .body or stop == .barrel) g.pic.bolt_lands = @max(g.pic.bolt_lands, s.wait);
         switch (stop) {
             .body => |w| if (!boltHits(g, kind, w, hu, s)) return false,
-            .barrel => |p| if (rewards.barrelLoot(&g.sim, p)) |gold| {
-                g.sim.sayAt(p, "The {s}'s " ++ firebolt.NAME ++ " smashes" ++ BARREL_DROPS, .{ actor.row(kind).name, gold });
-                g.pic.strike(&g.sim, g.cloud, .{ .barrel = p }, s);
-            },
+            .barrel => |p| if (smashedBy(g, p, SMASHER ++ "'s " ++ firebolt.NAME, actor.row(kind).name)) |hit| g.pic.strike(&g.sim, g.cloud, hit, s),
             .wall, .spent => if (g.pic.litShown(&g.sim, now.at())) g.pic.fx.puff(s.wait, .{ .at = now.point(), .ink = look.FIRE }),
         }
     }
@@ -1169,14 +1165,16 @@ fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike, weak: boo
     var swept = game.presentation.Swept{};
     for (cells.slice(), struck[0..cells.n]) |p, w| {
         if (w == g.sim.hero) continue;
-        const hit: fx.Impact = if (w != grid.NO_ONE) .{ .actor = bodyBlow(g, id, w, s, actor.SWEEP_VERB, weak, true) orelse continue } else smashedBy(g, p, row) orelse continue;
+        const hit: fx.Impact = if (w != grid.NO_ONE) .{ .actor = bodyBlow(g, id, w, s, actor.SWEEP_VERB, weak, true) orelse continue } else smashedBy(g, p, SMASHER, row.name) orelse continue;
         _ = mathx.push(fx.Impact, &swept.hit, &swept.n, hit);
     }
     g.pic.owe(.fromInt(id), .swept, swept);
 }
 
-fn smashedBy(g: *game.Game, p: P, by: actor.Row) ?fx.Impact {
+fn smashedBy(g: *game.Game, p: P, comptime subject: []const u8, name: []const u8) ?fx.Impact {
     const gold = rewards.barrelLoot(&g.sim, p) orelse return null;
-    g.sim.sayAt(p, "The {s} smashes" ++ BARREL_DROPS, .{ by.name, gold });
+    g.sim.sayAt(p, subject ++ " smashes" ++ BARREL_DROPS, .{ name, gold });
     return .{ .barrel = p };
 }
+
+const SMASHER = "The {s}";

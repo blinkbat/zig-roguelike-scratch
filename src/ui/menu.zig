@@ -303,7 +303,7 @@ pub fn titleY(first: rl.Rectangle) i32 {
     return raster.top(first) - TITLE_LEAD;
 }
 
-fn noteY(first: rl.Rectangle, count: usize) i32 {
+pub fn noteY(first: rl.Rectangle, count: usize) i32 {
     return rowTextY(first) + @as(i32, @intCast(count)) * ROW_STEP + NOTE_GAP;
 }
 

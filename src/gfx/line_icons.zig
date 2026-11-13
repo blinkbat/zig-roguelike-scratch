@@ -443,12 +443,10 @@ fn stroke(from: rl.Vector2, to: rl.Vector2, scale: f32, col: rl.Color) void {
 }
 
 test "every item and supply glyph keeps its strokes on the grid and differs from every other" {
-    var strokes: usize = 0;
     for (0..ICONS) |i| {
         const own = iconLines(i);
         try std.testing.expect(own.len > 0);
         for (own) |line| for (line) |v| try std.testing.expect(v >= 1 and v <= SKILL_GRID - 1);
         for (0..i) |j| try std.testing.expect(!std.mem.eql(u8, std.mem.sliceAsBytes(own), std.mem.sliceAsBytes(iconLines(j))));
-        strokes += own.len;
     }
 }

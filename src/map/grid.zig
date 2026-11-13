@@ -172,7 +172,7 @@ pub const Tile = enum(u8) {
         return !t.stamped() and !t.pieced();
     }
 
-    pub fn zooPart(t: Tile) bool {
+    fn zooPart(t: Tile) bool {
         return TERRAIN.getPtrConst(t).zoo;
     }
 
@@ -992,7 +992,7 @@ pub const Box = struct {
         return inMap(0).centredIn(w, h);
     }
 
-    pub fn centredIn(outer: Box, w: i32, h: i32) Box {
+    fn centredIn(outer: Box, w: i32, h: i32) Box {
         return sized(outer.lo.add(.{ .x = @divTrunc(outer.width() - w, 2), .y = @divTrunc(outer.height() - h, 2) }), w, h);
     }
 

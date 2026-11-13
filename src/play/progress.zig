@@ -127,11 +127,15 @@ pub const State = struct {
 
     pub fn of(c: hero.Class) State {
         var out = State{};
-        out.nodes.set(start(c));
-        for (skills(c)) |s| if (s.initial) {
-            out.ranks.set(s.act, 1);
-        };
+        out.restoreStart(c);
         return out;
+    }
+
+    pub fn restoreStart(self: *State, c: hero.Class) void {
+        self.nodes.set(start(c));
+        for (skills(c)) |s| if (s.initial and self.ranks.get(s.act) == 0) {
+            self.ranks.set(s.act, 1);
+        };
     }
 
     pub fn versed(c: hero.Class) State {
@@ -144,7 +148,7 @@ pub const State = struct {
         return XP_BASE + @as(u64, self.level - 1) * XP_STEP;
     }
 
-    pub fn levelDue(self: State) bool {
+    fn levelDue(self: State) bool {
         return self.level < std.math.maxInt(u16) and self.xp >= self.needed();
     }
 
@@ -217,14 +221,14 @@ pub const State = struct {
         return true;
     }
 
-    pub fn refundBasicRanks(self: *State) bool {
+    pub fn refundExcessRanks(self: *State) bool {
         var refunded = false;
-        for (std.enums.values(skillbar.Act)) |act| {
-            if (!basic(act)) continue;
-            const extra = self.ranks.get(act) -| 1;
+        for (skillbar.ACTS) |act| {
+            const limit = rankLimit(act);
+            const extra = self.ranks.get(act) -| limit;
             if (extra == 0) continue;
             self.active_points +|= extra;
-            self.ranks.set(act, 1);
+            self.ranks.set(act, limit);
             refunded = true;
         }
         return refunded;

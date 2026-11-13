@@ -61,7 +61,7 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
     if (!groundRoom(sim)) return .ground_full;
     sim.lv.set(at, opened);
     if (sim.zooNow()) |z| if (z.keyAt(at)) {
-        dropItem(sim, .{ .item = .{ .kind = .small_key }, .at = at });
+        dropItem(sim, .{ .item = items.SMALL_KEY, .at = at });
         sim.log.push(.loot, "{s} opens the chest: Small Key.", .{sim.name.text()});
         sim.chronicle.mark(.chest);
         return .opened;

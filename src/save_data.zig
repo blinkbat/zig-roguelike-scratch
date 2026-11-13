@@ -343,6 +343,10 @@ pub const Summary = struct {
         return s;
     }
 
+    pub fn valid(self: *const Summary) bool {
+        return self.name.valid() and self.place.valid();
+    }
+
     pub fn details(self: *const Summary, buf: []u8) [:0]const u8 {
         var at: [atlas.TITLE_MAX]u8 = undefined;
         const where = if (self.node) |n| atlas.titleOf(self.place.text(), n, &at) else "a generated floor";

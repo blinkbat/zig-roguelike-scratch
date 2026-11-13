@@ -224,6 +224,12 @@ pub const Cinema = struct {
     }
 };
 
+comptime {
+    for (std.meta.fields(Cinema.Strengths)) |f| {
+        if (!@hasField(Options, f.name)) @compileError("Cinema.Strengths." ++ f.name ++ " names no Options effect");
+    }
+}
+
 fn setField(p: anytype, field: rl.Texture2D, visibility: rl.Texture2D, view: shaders.MapView) void {
     rl.setShaderValueTexture(p.shader, p.field, field);
     rl.setShaderValueTexture(p.shader, p.visibility, visibility);
@@ -253,18 +259,18 @@ const FIELD_FS = shaders.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\    return texture(field, (floor(p) + 0.5) / CELLS);
     \\}
     \\float liveAt(vec2 p) {
-    \\    return insideMap(p) ? texture(visibility, p / CELLS).a : 0.0;
+    \\    return mapAlpha(visibility, p, 0.0);
     \\}
     \\
 ;
 
-const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .BLOOM_GAIN = BLOOM_GAIN }) ++
+const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.INSET_UV_FS ++ shaders.glslConsts(.{ .BLOOM_GAIN = BLOOM_GAIN }) ++
     \\uniform sampler2D glints;
     \\uniform vec2 direction;
     \\uniform int extract;
     \\uniform float amount;
     \\vec3 sampleLight(vec2 uv) {
-    \\    uv = clamp(uv, 0.5 / screen, vec2(1.0) - 0.5 / screen);
+    \\    uv = insetUv(uv, screen);
     \\    vec3 c = texture(texture0, uv).rgb;
     \\    if (extract == 0) return c;
     \\    vec2 p = cellAtPixel(targetPixel(uv));
@@ -294,7 +300,7 @@ const GRADE_FS = shaders.FS_HEAD ++ shaders.MAP_VIEW_FS ++ shaders.glslConsts(.{
     \\void main() {
     \\    vec4 c = texture(texture0, fragTexCoord);
     \\    vec2 p = cellAtFrag();
-    \\    float live = insideMap(p) ? texture(visibility, p / CELLS).a : 1.0;
+    \\    float live = mapAlpha(visibility, p, 1.0);
     \\    vec3 remembered = mix(c.rgb, vec3(dot(c.rgb, LUMA)), MEMORY_GREY) * MEMORY_BRIGHTNESS;
     \\    finalColor = vec4(mix(remembered, c.rgb, live), c.a);
     \\}

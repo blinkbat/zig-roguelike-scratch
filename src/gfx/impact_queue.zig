@@ -9,8 +9,6 @@ pub const FLASH_GAIN: f32 = 0.75;
 pub const DEATH_S: f32 = 0.22;
 /// Of `DEATH_S`, the first part, over which it darkens wholly before it fades.
 pub const DEATH_DARKEN: f32 = 0.35;
-/// The light left on a wholly darkened body, per channel.
-pub const DEATH_RGB = [3]f32{ 0.65, 0.35, 0.32 };
 
 pub const Dying = struct { dark: f32 = 0, alpha: f32 = 1 };
 
@@ -31,16 +29,22 @@ pub const Event = union(enum) {
     shimmer: state.Shimmer,
     whirl: [2]f32,
 
-    pub fn on(d: *const Event) ?actor.ActorSlot {
+    const Bound = struct { slot: actor.ActorSlot, after: ?state.After };
+
+    fn bound(d: *const Event) ?Bound {
         return switch (d.*) {
             .blow => |*b| switch (b.impact) {
-                .actor => |a| a.slot,
+                .actor => |a| .{ .slot = a.slot, .after = a.after },
                 .barrel => null,
             },
-            .sting => |*s| s.slot,
-            .settle => |*s| s.slot,
+            .sting => |*s| .{ .slot = s.slot, .after = s.after },
+            .settle => |*s| .{ .slot = s.slot, .after = s.after },
             .burst, .zap, .puff, .shimmer, .whirl => null,
         };
+    }
+
+    pub fn on(d: *const Event) ?actor.ActorSlot {
+        return (d.bound() orelse return null).slot;
     }
 
     fn blowOf(d: *const Event) ?*const state.Blow {
@@ -56,15 +60,7 @@ pub const Event = union(enum) {
     }
 
     pub fn after(d: *const Event) ?state.After {
-        return switch (d.*) {
-            .blow => |*b| switch (b.impact) {
-                .actor => |a| a.after,
-                .barrel => null,
-            },
-            .sting => |*s| s.after,
-            .settle => |*s| s.after,
-            .burst, .zap, .puff, .shimmer, .whirl => null,
-        };
+        return (d.bound() orelse return null).after;
     }
 };
 

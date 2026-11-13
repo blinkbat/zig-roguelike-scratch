@@ -117,7 +117,7 @@ fn perspectivePoint(point: mathx.P, screen: mathx.P, strength: f32) mathx.P {
     return .{ .x = @intFromFloat(@floor((x + 0.5 - width * 0.5) / perspectiveScale(y + 0.5, height, strength) + width * 0.5)), .y = point.y };
 }
 
-const FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE, .BLUR_REF_H = @as(f32, @floatFromInt(window.SCREEN_720.y)) }) ++
+const FS = shaders.FS_HEAD ++ shaders.INSET_UV_FS ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE, .BLUR_REF_H = @as(f32, @floatFromInt(window.SCREEN_720.y)) }) ++
     \\uniform vec2 screen;
     \\uniform vec2 direction;
     \\uniform float lens_blur;
@@ -131,7 +131,7 @@ const FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE, 
     \\uniform float sepia;
     \\uniform int finish;
     \\vec4 sampleScene(vec2 uv) {
-    \\    return texture(texture0, clamp(uv, 0.5 / screen, vec2(1.0) - 0.5 / screen));
+    \\    return texture(texture0, insetUv(uv, screen));
     \\}
     \\void main() {
     \\    vec2 uv = fragTexCoord;

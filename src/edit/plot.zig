@@ -365,6 +365,11 @@ fn listRow(ed: *editor.Editor, g: *game.Game, x: i32, w: i32, y: i32, label: []c
     return hit;
 }
 
+fn added(ed: *editor.Editor) void {
+    ed.bank();
+    ed.plot.detail.top = 0;
+}
+
 fn detailPane(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32, bottom: i32, comptime body: fn (*editor.Editor, *game.Game, u8, i32, i32, i32) i32, i: u8) void {
     const area = ed.plot.detail.at(raster.rect(x, top, w, bottom - top));
     const end = body(ed, g, i, x, area.begin(&ed.clip), w - PAD);
@@ -494,7 +499,7 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
     const w = widgets.insetW(r);
     if (now.len == 0) {
         widgets.drawFit(&g.face, blank, TEXT, w, false, x, y, look.DIM);
-    } else if (r.height > @as(f32, @floatFromInt(text_panel.fieldHeight(1)))) {
+    } else if (raster.height(r) > text_panel.fieldHeight(1)) {
         widgets.scissorIn(ed.clip, r);
         var paragraphs = std.mem.splitScalar(u8, now, '\n');
         var down = y;
@@ -532,9 +537,8 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     y += GAP;
     if (listHead(ed, g, f, y, "Dialogs", m.dialog_n, script.MAX_DIALOGS, NEW_W, NEW_LABEL, "A new dialog of one empty line")) {
         if (m.addDialog("")) |d| {
-            ed.bank();
+            added(ed);
             s.pickDialog(d);
-            s.detail.top = 0;
         }
     }
     y += STEP;
@@ -1124,9 +1128,8 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     var y = list.begin(&ed.clip);
     if (listHead(ed, g, f, y, "Triggers", m.trigger_n, script.MAX_TRIGGERS, NEW_W, NEW_LABEL, "A trigger that always holds and does nothing yet")) {
         if (m.addTrigger()) |t| {
-            ed.bank();
+            added(ed);
             s.trigger = t;
-            s.detail.top = 0;
         }
     }
     y += STEP;
@@ -1213,9 +1216,8 @@ fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
     var y = list.begin(&ed.clip);
     if (listHead(ed, g, f, y, "Quests", m.quest_n, script.MAX_QUESTS, NEW_W, NEW_LABEL, "A quest of one blank stage")) {
         if (m.addQuest()) |q| {
-            ed.bank();
+            added(ed);
             s.quest = q;
-            s.detail.top = 0;
         }
     }
     y += STEP;

@@ -21,6 +21,7 @@ pub const carryR = model.carryR;
 pub const Shine = model.Shine;
 pub const Flame = model.Flame;
 pub const Emission = model.Emission;
+pub const Reach = model.Reach;
 pub const Options = model.Options;
 
 /// Each light hung steps its flicker seed on by this from the first's.
@@ -156,7 +157,7 @@ pub const Light = struct {
         self.visibility.reveal(lv, enabled);
     }
 
-    pub fn remembers(self: *const Light, lv: *const grid.Level, p: model.P) bool {
+    fn remembers(self: *const Light, lv: *const grid.Level, p: model.P) bool {
         return self.reveal_map or lv.isSeen(p);
     }
 
@@ -253,7 +254,7 @@ pub const Light = struct {
             var row: u16 = 0;
             self.casting[(y + 1) * w] = 0;
             for (0..grid.COLS) |x| {
-                row += @intFromBool(model.CASTERS.getPtrConst(lv.tile[y * grid.COLS + x]).* != null);
+                row += @intFromBool(model.casterOf(lv.tile[y * grid.COLS + x]) != null);
                 self.casting[(y + 1) * w + x + 1] = self.casting[y * w + x + 1] + row;
             }
         }
@@ -623,13 +624,12 @@ pub const Light = struct {
 
     fn sunOnBody(self: *const Light, s: *Shine, ray: *const model.SunRay, centre: [2]f32, lit: f32) model.Rgb {
         const k = ray.k;
-        const toward = ray.u;
         const sun = self.sunAt(&self.scratch, ray, centre[0], centre[1], BODY_Z);
         const cloud = self.cloudAt(centre);
         const on = model.reaching(sun, self.composedAt(null, centre, cloud));
         if (lit > 0) s.add(.{
-            .drawn = .{ centre[0] + toward[0] * model.SUN_LAMP_D, centre[1] + toward[1] * model.SUN_LAMP_D },
-            .ground = .{ centre[0] + toward[0], centre[1] + toward[1] },
+            .drawn = ray.along(centre[0], centre[1], model.SUN_LAMP_D),
+            .ground = ray.along(centre[0], centre[1], 1),
             .colour = k.key * model.splat(lit * on),
             .casts = !sky.upright(ray.flat),
             .sky = .{ .reach = k.reach(), .depth = model.skyDepth(k, sun * cloud) * lit, .shade = ray.shade },

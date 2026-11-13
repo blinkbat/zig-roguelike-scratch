@@ -62,7 +62,7 @@ pub const Item = struct {
         return same_side < @as(usize, if (self.rarity() == .rare) affixes.RARE_SIDE else affixes.MAGIC_SIDE);
     }
 
-    pub fn allowsRoll(self: Item, a: affixes.AffixRoll) bool {
+    fn allowsRoll(self: Item, a: affixes.AffixRoll) bool {
         return self.allows(a.kind);
     }
 
@@ -97,8 +97,7 @@ pub const Item = struct {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .life_regen, .leech, .area, .pierce, .haste => {},
-            inline else => |k| k.grant(m.value).apply(a),
+            inline else => |k| if (comptime k.granted()) k.grant(m.value).apply(a),
         };
     }
 
@@ -113,6 +112,8 @@ pub const Item = struct {
         return a.meets(item_bases.spec(self.kind).needs);
     }
 };
+
+pub const SMALL_KEY = Item{ .kind = .small_key };
 
 pub fn baseName(k: item_bases.Kind, buf: []u8) [:0]const u8 {
     return (Item{ .kind = k }).name(buf);

@@ -19,6 +19,10 @@ pub fn stocked(s: *const Stacks) usize {
     return n;
 }
 
+pub fn mend(s: *Stacks) void {
+    for (&s.values) |*n| n.* = @min(n.*, STACK_MAX);
+}
+
 pub fn stockedAt(s: *const Stacks, row: usize) ?Kind {
     var left = row;
     for (KINDS) |k| if (s.get(k) > 0) {

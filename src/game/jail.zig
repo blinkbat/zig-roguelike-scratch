@@ -35,15 +35,8 @@ pub fn interact(g: *game.Game, at: P) bool {
     return true;
 }
 
-const CARAVAN = 1;
-
-fn startAtlas() !*@import("../map/atlas.zig").Atlas {
-    const atlas = @import("../map/atlas.zig");
-    const map = try atlas.testAtlas();
-    errdefer std.testing.allocator.destroy(map);
-    try map.load(std.testing.allocator, atlas.START);
-    return map;
-}
+const CARAVAN = @import("../map/atlas.zig").CARAVAN_NODE;
+const startAtlas = @import("../map/atlas.zig").testStart;
 
 test "the caravan zoo opens by bump or interact and only spends a turn after unlocking" {
     const h = game.harness;
@@ -114,7 +107,7 @@ test "a chest holds a Small Key and keyboard controller and mouse can release th
                 g.st.interact = true;
                 game.update(g, 0);
             },
-            .mouse => game.harness.clickAt(g, game.scene.Cam.of(g).mid(z.door())),
+            .mouse => game.harness.clickCell(g, z.door()),
         }
         try std.testing.expectEqual(grid.Tile.open_gate, g.sim.lv.at(z.door()));
         try std.testing.expectEqual(@as(usize, 0), g.sim.inventory.n);

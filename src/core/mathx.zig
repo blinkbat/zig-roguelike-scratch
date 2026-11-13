@@ -110,6 +110,7 @@ pub fn roundCell(x: f32, y: f32) P {
     return .{ .x = @intFromFloat(@round(x)), .y = @intFromFloat(@round(y)) };
 }
 
+pub const GOLDEN_GAMMA: u64 = 0x9E37_79B9_7F4A_7C15;
 pub const PERCENT = 100;
 pub const MILLE = 1000;
 pub const BASIS_POINTS = PERCENT * PERCENT;

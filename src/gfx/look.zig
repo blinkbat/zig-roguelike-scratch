@@ -134,6 +134,12 @@ pub const FLAME_FILL = rgb(0xff5a14);
 pub const LEVEL_GOLD = rgb(0xe6c57c);
 pub const LEVEL_CORE = rgb(0xffedbd);
 pub const LEVEL_BODY_TINT = [3]f32{ 1, 0.72, 0.28 };
+/// The light left on a wholly darkened body, per channel.
+pub const DEATH_RGB = [3]f32{ 0.65, 0.35, 0.32 };
+/// A pale flash remains visible over red bodies.
+pub const FLASH_RGB = [3]f32{ 0.88, 0.38, 0.30 };
+/// The light remembered terrain is drawn under, after Brogue's memory colour.
+pub const MEMORY_LIGHT = rgb(0x2b2f4e);
 pub const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
 pub const UI_GOLD = rgb(0xbca06b);
@@ -155,9 +161,10 @@ pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32
 const JAIL_STONE = rgb(0x625b55);
 const JAIL_IRON = rgb(0x99948b);
 const JAIL_DARK = rgb(0x292528);
+const JAIL_GRID = 32;
 
 fn jailTile(t: grid.Tile, cx: i32, cy: i32, size: i32) void {
-    const u = @max(1, @divTrunc(size + 16, 32));
+    const u = @max(1, @divTrunc(size + JAIL_GRID / 2, JAIL_GRID));
     if (t == .zoo_key) {
         rl.drawRectangle(cx - 9 * u, cy - 5 * u, 10 * u, 10 * u, GOLD);
         rl.drawRectangle(cx - 6 * u, cy - 2 * u, 4 * u, 4 * u, BG);
@@ -167,9 +174,9 @@ fn jailTile(t: grid.Tile, cx: i32, cy: i32, size: i32) void {
         return;
     }
     const left = cx - 15 * u;
-    const top = cy - 16 * u;
-    rl.drawRectangle(left, top, 3 * u, 32 * u, JAIL_STONE);
-    rl.drawRectangle(cx + 12 * u, top, 3 * u, 32 * u, JAIL_STONE);
+    const top = cy - JAIL_GRID / 2 * u;
+    rl.drawRectangle(left, top, 3 * u, JAIL_GRID * u, JAIL_STONE);
+    rl.drawRectangle(cx + 12 * u, top, 3 * u, JAIL_GRID * u, JAIL_STONE);
     rl.drawRectangle(left, top, 30 * u, 3 * u, JAIL_STONE);
     if (t == .open_gate) {
         rl.drawRectangle(left + 3 * u, top + 3 * u, 3 * u, 29 * u, JAIL_IRON);
@@ -457,6 +464,7 @@ pub fn elementInk(e: damage.Element) rl.Color {
 
 pub const LIGHTNING = rgb(0xf4e872);
 pub const LIGHTNING_CORE = FIRE_CORE;
+pub const SPARK_CORE = rgb(0xf6f8ff);
 pub const PHYSICAL = ARROW;
 pub const LIFE_TEXT = rgb(0xe0645a);
 pub const MANA_TEXT = rgb(0x6e9ce8);

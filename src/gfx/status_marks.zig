@@ -8,7 +8,9 @@ const pxScale = look.pxScale;
 
 pub const Mark = struct { x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color, alpha: f32, stacks: u8 };
 const BLEED_DROPS = 4;
+const BLEED_HZ: f32 = 0.9;
 const CHILL_FLAKES = 5;
+const CHILL_ARM: f32 = 0.07;
 const BURN_FLAMES = 7;
 const TORCH_FLAMES = 7;
 const FLAME_HZ: f32 = 1.7;
@@ -46,8 +48,8 @@ comptime {
     std.debug.assert(TORCH_RISE_PX + TORCH_FLECK_PX <= TORCH_TOP_PX);
 }
 
-fn flameAge(t: f32, phase: f32, seed: f32) f32 {
-    return @mod(t * FLAME_HZ + phase + seed, 1);
+fn cycleAge(t: f32, hz: f32, phase: f32, seed: f32) f32 {
+    return @mod(t * hz + phase + seed, 1);
 }
 
 fn seedOf(m: Mark) f32 {
@@ -102,7 +104,7 @@ pub const Renderer = struct {
         const t = self.seconds;
         for (0..BLEED_DROPS) |i| {
             const phase = @as(f32, @floatFromInt(i)) / BLEED_DROPS;
-            const age = @mod(t * 0.9 + phase + seedOf(m) * 0.23, 1);
+            const age = cycleAge(t, BLEED_HZ, phase, seedOf(m) * 0.23);
             const at = rl.Vector2{ .x = m.x + m.cell * (0.3 + phase * 0.4), .y = m.y + m.cell * (0.45 + age * 0.4) };
             const r = look.SPRITE_PX * (0.022 + age * 0.012);
             pixel.oval(at, r, r * 1.8, pxScale(m.cell), look.fade(m.ink, (1 - age * age) * 0.9));
@@ -115,7 +117,7 @@ pub const Renderer = struct {
             const phase = @as(f32, @floatFromInt(i)) / CHILL_FLAKES;
             const cx = m.x + m.cell * across(phase);
             const cy = m.y + m.cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
-            const arm = @as(f32, look.SPRITE_PX) * 0.07;
+            const arm = @as(f32, look.SPRITE_PX) * CHILL_ARM;
             const col = look.fade(m.ink, 0.7 + @sin(t * 3 + phase) * 0.2);
             pixel.cross(.{ .x = cx, .y = cy }, arm, pxScale(m.cell), col);
         }
@@ -198,7 +200,7 @@ pub const Renderer = struct {
 
     fn drawEnfeebled(self: *const Renderer, m: Mark) void {
         const k = pxScale(m.cell);
-        const sink = @mod(self.seconds * ENFEEBLE_HZ + seedOf(m) * 0.31, 1);
+        const sink = cycleAge(self.seconds, ENFEEBLE_HZ, 0, seedOf(m) * 0.31);
         const tip = rl.Vector2{ .x = m.x + m.cell * ENFEEBLE_X, .y = m.y + m.cell * (HALO_Y + 0.08 + sink * 0.08) };
         const arm = m.cell * MARK_ARM;
         const col = look.fade(m.ink, 0.9 - sink * 0.5);
@@ -224,7 +226,7 @@ pub const Renderer = struct {
         const t = self.seconds;
         for (0..BURN_FLAMES) |i| {
             const phase = @as(f32, @floatFromInt(i)) / BURN_FLAMES;
-            const age = flameAge(t, phase, @as(f32, @floatFromInt(seed)) * 0.17);
+            const age = cycleAge(t, FLAME_HZ, phase, @as(f32, @floatFromInt(seed)) * 0.17);
             const sway = @sin(t * 6 + phase * mathx.TAU) * 0.04;
             const at = rl.Vector2{ .x = x + cell * (across(phase) + sway), .y = y + cell * (0.82 - age * 0.65) };
             const r = look.SPRITE_PX * (0.065 - age * 0.045);
@@ -240,7 +242,7 @@ pub const Renderer = struct {
         const t = self.seconds;
         for (0..TORCH_FLAMES) |i| {
             const f: f32 = @floatFromInt(i);
-            const age = flameAge(t, f / TORCH_FLAMES, seed);
+            const age = cycleAge(t, FLAME_HZ, f / TORCH_FLAMES, seed);
             const p = rl.Vector2{ .x = x + @sin(t * 7 + f * 3 + seed) * (1 + age * 2) * k, .y = y - age * TORCH_RISE_PX * k };
             pixel.fleck(p, TORCH_FLECK_PX - age * 2.8, k, look.fade(look.FIRE, (1 - age) * lit));
             pixel.rect(p, 2 - age, 3 - age * 2, k, look.fade(look.FIRE_CORE, (1 - age) * lit));

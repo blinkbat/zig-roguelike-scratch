@@ -721,8 +721,12 @@ const Trail = struct {
 };
 
 fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
+    layWith(lv, p, path, SPAN);
+}
+
+pub fn layWith(lv: *grid.Level, p: P, path: grid.Tile, span: grid.Tile) void {
     const t = lv.at(p);
-    if (t.solid()) lv.set(p, paved(t, path, SPAN));
+    if (t.solid()) lv.set(p, paved(t, path, span));
 }
 
 fn paved(t: grid.Tile, put: grid.Tile, span: grid.Tile) grid.Tile {

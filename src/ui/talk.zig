@@ -145,7 +145,7 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
         if (r.height == 0) continue;
         const on = i == v.cursor;
         menu.boxed(r, look.fade(if (on) look.UI_GOLD else look.BG, if (on) ROW_ON_A else ROW_OFF_A), look.fade(if (on) look.UI_GOLD else look.EDGE, ROW_EDGE_A));
-        if (on) rl.drawRectangle(raster.left(r), raster.top(r), ROW_BAR_W, @intFromFloat(r.height), look.UI_GOLD);
+        if (on) rl.drawRectangle(raster.left(r), raster.top(r), ROW_BAR_W, raster.height(r), look.UI_GOLD);
         face.text(std.fmt.bufPrintZ(&buf, "{d}.", .{i + 1}) catch "", l.text_x, raster.top(r) + ROW_RISE, BODY, look.UI_GOLD);
         drawPassage(face, label, l.text_x + NUMBER_W, l.text_w - NUMBER_W, l.starts[i], l, if (on) look.UI_FOCUS else look.TEXT);
     }

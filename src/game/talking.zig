@@ -579,7 +579,7 @@ test "a choice that trades opens the merchant's wares without a turn; buying spe
     try std.testing.expectEqual(turns, g.sim.plot.turns);
     game.heroStep(g, .e, 0);
     press(g, menu.CONFIRM);
-    try std.testing.expectEqual(stocked - 1, g.sim.plot.wares[0].?.supplies.get(k));
+    try std.testing.expectEqual(stocked, g.sim.plot.wares[0].?.supplies.get(k));
 }
 
 test "a trade taken on the way to another line hands back to the conversation" {

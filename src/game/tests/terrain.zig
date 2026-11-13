@@ -236,6 +236,26 @@ test "light a fire kindles stays dark, and light a douse puts out stays lit, unt
     }
 }
 
+test "ground a fire first reveals stays unexplored until the blow lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 23, .y = 20 };
+    const glow = grid.Level.idx(at.add(.{ .x = 2, .y = 0 }));
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    game.settle(g);
+    g.sim.lv.lit[glow] = false;
+    g.sim.lv.seen[glow] = false;
+    g.pic.advance(&g.sim, 1);
+    combat.fireLands(g, at, 0, .{ .chance = 0 }, 0.3);
+    g.sim.lv.lit[glow] = true;
+    g.sim.lv.seen[glow] = true;
+    try std.testing.expect(!g.pic.seenShown(&g.sim, grid.Level.of(glow)));
+    try std.testing.expect(!g.pic.groundShown(&g.sim).seen[glow]);
+    try std.testing.expect(!game.scene.terrainSeen(g, grid.Level.of(glow)));
+    g.pic.advance(&g.sim, 0.4);
+    try std.testing.expect(g.pic.seenShown(&g.sim, grid.Level.of(glow)));
+}
+
 test "inspection includes visible actors beside the HUD and excludes actors beyond the screen" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -355,11 +375,11 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
     try std.testing.expectEqualDeep(before, state);
     state.ranks.set(.shoot, 3);
     try std.testing.expectEqual(@as(i32, 0), state.damageBonus(.shoot));
-    try std.testing.expect(state.refundBasicRanks());
+    try std.testing.expect(state.refundExcessRanks());
     try std.testing.expectEqual(@as(u16, 12), state.active_points);
     try std.testing.expectEqual(@as(u8, 1), state.ranks.get(.shoot));
     const refunded = state;
-    try std.testing.expect(!state.refundBasicRanks());
+    try std.testing.expect(!state.refundExcessRanks());
     try std.testing.expectEqualDeep(refunded, state);
     harness.arena(g, from, &.{});
     g.sim.growth = state;

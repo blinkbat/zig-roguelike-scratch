@@ -64,9 +64,7 @@ pub const Scene = struct {
         var rng = mathx.Rng.init(self.roll);
         switch (nd.plan) {
             .bespoke => if (nd.zoo) |z| {
-                for (placing) |f| if (self.rolled_foes.hasRoomFor(f.kind) and actor.dwells(f.kind, &self.lv, f.at)) {
-                    _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(f.kind, f.at));
-                };
+                atlas.spawnFoes(&self.lv, &self.rolled_foes, placing);
                 z.populate(&self.lv, &self.rolled_foes, &rng);
             },
             .procgen => {
@@ -213,17 +211,16 @@ test "preview selection invalidation and rerolls never mutate the authored map" 
 
 test "zoo previews show the encounter without marking its locked interior unreachable" {
     const alloc = std.testing.allocator;
-    const map = try atlas.testAtlas();
+    const map = try atlas.testStart();
     defer alloc.destroy(map);
-    try map.load(alloc, atlas.START);
     const before = try alloc.create(atlas.Atlas);
     defer alloc.destroy(before);
     before.* = map.*;
     const scene = try alloc.create(Scene);
     defer alloc.destroy(scene);
     scene.* = .{};
-    scene.ensure(map, 1);
-    const z = map.node[1].zoo.?;
+    scene.ensure(map, atlas.CARAVAN_NODE);
+    const z = map.node[atlas.CARAVAN_NODE].zoo.?;
     var count: usize = 0;
     for (scene.shownFoes()) |f| if (z.inside().holds(f.at)) {
         count += 1;

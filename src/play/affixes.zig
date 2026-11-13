@@ -125,7 +125,7 @@ pub const Mod = enum {
             .physical_damage => weapon,
             .spell_damage => s.caster or slot == .amulet,
             .crit => weapon or slot == .gloves or ring,
-            .armour => armour or k == .shield or k == .buckler,
+            .armour => armour or k.blocks(),
             .dodge => slot == .boots or slot == .gloves or ring,
             .resistance => armour or slot == .left_hand or ring or slot == .amulet,
             .mana_regen => s.caster or k == .circlet or ring or slot == .amulet,

@@ -171,7 +171,7 @@ pub const Gear = struct {
     }
 
     /// An item cannot fund its own requirement.
-    pub fn wornMeets(self: Gear, slot: item_bases.Slot, base: attrs.Attrs) bool {
+    fn wornMeets(self: Gear, slot: item_bases.Slot, base: attrs.Attrs) bool {
         const it = self.slots.get(slot) orelse return true;
         return it.meets(self.statsWithout(slot, base));
     }

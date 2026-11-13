@@ -39,7 +39,7 @@ pub const Mana = struct {
     }
 };
 
-pub fn manaOf(bonus: i32) i32 {
+fn manaOf(bonus: i32) i32 {
     return mathx.percentOf(MANA_GAIN, mathx.PERCENT + bonus);
 }
 
@@ -73,6 +73,12 @@ pub const Flask = struct {
         self.left -= n;
         self.turns -= 1;
         return n;
+    }
+
+    pub fn mend(self: *Flask) void {
+        self.charges = @min(self.charges, CHARGES);
+        self.turns = @min(self.turns, TURNS);
+        if (self.turns == 0) self.left = 0;
     }
 
     pub fn fill(self: *Flask, n: u8) void {

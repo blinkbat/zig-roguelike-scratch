@@ -217,7 +217,7 @@ fn deal(g: *game.Game, command: book.Command) void {
     const shelf = &(g.sim.plot.wares[g.character.dealer] orelse return);
     const done = switch (command) {
         .buy => |row| trade.buy(shelf, row, &g.sim.inventory, &g.sim.gold),
-        .sell => |row| trade.sell(row, &g.sim.inventory, &g.sim.gold),
+        .sell => |row| trade.sell(shelf, row, &g.sim.inventory, &g.sim.gold),
         else => unreachable,
     } catch |err| {
         g.character.message.say("{s}", .{trade.caption(err)});
@@ -478,17 +478,16 @@ pub fn pauseStep(g: *game.Game) void {
     switch (g.pause_page) {
         .options, .visuals, .display => {
             const page = options.pageOf(g.pause_page);
-            if (menu.backedAt(&g.st, g.screen)) {
-                const under = options.under(page);
-                g.pause_page = if (under == null) .main else .options;
-                g.pause_menu = .{ .at = under orelse game.rowAt(game.PauseRow.options) };
-                return;
-            }
-            const pick = options.step(&g.cinema, &g.pause_menu, &g.st, g.screen, page, &g.display) orelse return;
-            switch (pick) {
-                inline .visuals, .display => |p| {
-                    g.pause_page = @field(@TypeOf(g.pause_page), @tagName(p));
-                    g.pause_menu = .{};
+            const back = menu.backedAt(&g.st, g.screen);
+            const pick = if (back) null else options.step(&g.cinema, &g.pause_menu, &g.st, g.screen, page, &g.display);
+            switch (options.go(page, back, pick) orelse return) {
+                .page => |p| {
+                    g.pause_page = options.hostPage(@TypeOf(g.pause_page), p.to);
+                    g.pause_menu = .{ .at = p.at };
+                },
+                .leave => {
+                    g.pause_page = .main;
+                    g.pause_menu = .{ .at = game.rowAt(game.PauseRow.options) };
                 },
                 .fullscreen => game.syncScreen(g, true),
                 .debug => game.debugging.open(g, .main),

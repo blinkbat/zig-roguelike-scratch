@@ -37,6 +37,7 @@ pub const Inventory = struct {
     pub fn mend(self: *Inventory) void {
         for (self.bag[0..self.n]) |*it| it.mend();
         for (&self.gear.slots.values) |*worn| if (worn.*) |*it| it.mend();
+        consumable.mend(&self.stacks);
     }
 
     pub fn stock(self: *Inventory, k: consumable.Kind) bool {

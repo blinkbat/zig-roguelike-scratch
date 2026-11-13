@@ -46,8 +46,8 @@ Atlas nodes default a missing `zoo` to none. Small Keys use ordinary saved items
 chests and gates retain their level tiles, and occupants use the ordinary actor
 pool. Legacy loose zoo keys become closed key chests. A taken legacy key for a
 still-locked gate becomes a carried Small Key, or returns to its chest if the bag
-is full; opened gates grant no key. A chest cell with a body standing on it opens
-instead, with the key lying in it. Active and visited levels migrate once, without
+is full; opened gates grant no key. A chest cell with a body standing on it, or one
+that would close the only way to the gate, opens instead, with the key lying in it. Active and visited levels migrate once, without
 duplicating the active level's older visit snapshot. Existing
 portable runs keep their saved maps; new encounters in authored map files appear
 when starting a new run.

@@ -64,7 +64,7 @@ const BODY_FS = MIRROR_HEAD ++ shaders.glslConsts(.{
     \\        if (i >= count) break;
     \\        vec3 l = lpos[i] - vec3(p, 0.0);
     \\        l.z = max(l.z, length(l.xy) * RISE);
-    \\        float diffuse = max((dot(n, normalize(l)) + WRAP) / (1.0 + WRAP), 0.0);
+    \\        float diffuse = wrapped(dot(n, normalize(l)), WRAP);
     \\        vec2 toward = normalize(l.xy) * RIM_REACH;
     \\        toward.x *= flip;
     \\        float rim = c.a * (1.0 - alphaAt(px + toward));
@@ -95,7 +95,7 @@ const RECEIVER_FS = shaders.FS_HEAD ++ shaders.MAP_VIEW_FS ++
     \\uniform sampler2D lightmap;
     \\void main() {
     \\    vec2 p = cellAtPixel(targetPixel(fragTexCoord));
-    \\    float sight = texture(lightmap, p / CELLS).a * float(insideMap(p));
+    \\    float sight = mapAlpha(lightmap, p, 0.0);
     \\    vec3 shadow = texture(texture0, fragTexCoord).rgb;
     \\    finalColor = vec4(mix(vec3(1.0), shadow, sight), 1.0);
     \\}

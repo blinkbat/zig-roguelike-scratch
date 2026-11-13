@@ -14,8 +14,7 @@ const N = hero.CLASSES.len;
 const N_I: i32 = N;
 
 const SCALE_STEP: i32 = 240;
-const INFO_W: i32 = 340;
-const COLUMN_GAP: i32 = 48;
+const PITCH_MIN: i32 = 388;
 const HEAD_ROOM: i32 = menu.TITLE + 56;
 const BEAM_DROP: i32 = menu.TITLE + 16;
 const BEAM_ABOVE: i32 = HEAD_ROOM - BEAM_DROP;
@@ -157,7 +156,7 @@ const Layout = struct {
     fn of(screen: mathx.P) Layout {
         const scale = scaleFor(screen);
         const size = look.SPRITE_PX * scale;
-        const pitch = @min(@max(INFO_W + COLUMN_GAP, PITCH_SPRITES * size), @divTrunc(screen.x - 2 * menu.PANEL_PAD, N_I));
+        const pitch = @min(@max(PITCH_MIN, PITCH_SPRITES * size), @divTrunc(screen.x - 2 * menu.PANEL_PAD, N_I));
         const top = @divTrunc(screen.y - (HEAD_ROOM + size + INFO_H), 2);
         return .{
             .scale = scale,

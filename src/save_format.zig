@@ -15,7 +15,6 @@ const progress = @import("play/progress.zig");
 const log = @import("play/log.zig");
 const skillbar = @import("play/skillbar.zig");
 const flask = @import("play/flask.zig");
-const consumable = @import("play/consumable.zig");
 const sunder = @import("play/sunder.zig");
 const glacial = @import("play/glacial.zig");
 const day = @import("map/day.zig");
@@ -251,22 +250,12 @@ pub fn validate(snapshot: *Snapshot) !void {
     run.clock = day.Clock.at(run.clock.hour());
     run.mana_recovery = @mod(run.mana_recovery, hero.MANA_REGEN_TURNS);
     snapshot.portable.life_recovery = @mod(snapshot.portable.life_recovery, hero.LIFE_REGEN_TURNS);
-    Policy.restoreStart(&run.growth, run.class);
-    for (skillbar.ACTS) |act| {
-        const rank = run.growth.ranks.get(act);
-        const limit = progress.rankLimit(act);
-        if (rank > limit) {
-            run.growth.active_points +|= rank - limit;
-            run.growth.ranks.set(act, limit);
-        }
-    }
+    run.growth.restoreStart(run.class);
+    _ = run.growth.refundExcessRanks();
     for (&run.flasks.values) |*bottle| {
-        bottle.charges = @min(bottle.charges, flask.CHARGES);
-        bottle.turns = @min(bottle.turns, flask.TURNS);
         if (bottle.left < 0) return error.Damaged;
-        if (bottle.turns == 0) bottle.left = 0;
+        bottle.mend();
     }
-    for (&run.inventory.stacks.values) |*carried| carried.* = @min(carried.*, consumable.STACK_MAX);
     if (run.inventory.n > inventory.BAG_MAX) return error.Damaged;
     run.inventory.mend();
     for (&snapshot.portable.plot.wares) |*shelf| if (shelf.*) |*w| {
@@ -314,7 +303,7 @@ pub fn validate(snapshot: *Snapshot) !void {
         try validateDoors(&run.lv, null);
         try validatePlot(&snapshot.portable.plot, &.{});
     }
-    if (!snapshot.summary.name.valid() or !snapshot.summary.place.valid()) return error.Damaged;
+    if (!snapshot.summary.valid()) return error.Damaged;
     if (snapshot.summary.node != (if (snapshot.map != null) @as(?usize, snapshot.node) else null)) return error.Damaged;
     if (snapshot.map) |*map| if (!std.mem.eql(u8, snapshot.summary.place.text(), map.node[snapshot.node].label.text())) return error.Damaged;
     if (!std.mem.eql(u8, snapshot.summary.name.text(), run.name.text())) return error.Damaged;
@@ -330,10 +319,10 @@ pub fn validate(snapshot: *Snapshot) !void {
 fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, zoo: ?atlas.zoo.Spec, carried: ?*inventory.Inventory) void {
     const z = zoo orelse return;
     const at = z.key orelse return;
-    const key = items.Item{ .kind = .small_key };
+    const key = items.SMALL_KEY;
     switch (level.at(at)) {
         .zoo_key => {
-            if (level.who(at) == grid.NO_ONE and !severs(level, z, at)) return level.set(at, .chest);
+            if (chestable(level, z, at)) return level.set(at, .chest);
             level.set(at, .chest_open);
             if (!ground.add(.{ .item = key, .at = at })) if (carried) |bag| {
                 _ = bag.add(key);
@@ -344,11 +333,15 @@ fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, zoo: ?atlas.z
             if (level.at(z.door()) != .locked_gate) return;
             const bag = carried orelse return;
             if (bag.add(key)) return;
-            if (level.who(at) == grid.NO_ONE and !severs(level, z, at)) return level.set(at, .chest);
+            if (chestable(level, z, at)) return level.set(at, .chest);
             _ = ground.add(.{ .item = key, .at = at });
         },
         else => {},
     }
+}
+
+fn chestable(level: *grid.Level, z: atlas.zoo.Spec, at: @import("core/mathx.zig").P) bool {
+    return level.who(at) == grid.NO_ONE and !severs(level, z, at);
 }
 
 fn severs(level: *grid.Level, z: atlas.zoo.Spec, at: @import("core/mathx.zig").P) bool {

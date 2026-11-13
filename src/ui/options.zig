@@ -31,10 +31,28 @@ pub fn pageOf(host: anytype) Page {
     return std.meta.stringToEnum(Page, @tagName(host)) orelse .main;
 }
 
-pub fn under(page: Page) ?usize {
+pub fn hostPage(comptime Host: type, p: Page) Host {
+    return switch (p) {
+        .main => .options,
+        inline else => |q| @field(Host, @tagName(q)),
+    };
+}
+
+fn under(page: Page) ?usize {
     return switch (page) {
         .main => null,
         inline .visuals, .display => |p| index(.main, @field(Row, @tagName(p))),
+    };
+}
+
+pub const Go = union(enum) { page: struct { to: Page, at: usize = 0 }, leave, fullscreen, debug };
+
+pub fn go(page: Page, back: bool, picked: ?Pick) ?Go {
+    if (back) return if (under(page)) |at| .{ .page = .{ .to = .main, .at = at } } else .leave;
+    return switch (picked orelse return null) {
+        inline .visuals, .display => |p| .{ .page = .{ .to = @field(Page, @tagName(p)) } },
+        .fullscreen => .fullscreen,
+        .debug => .debug,
     };
 }
 
@@ -46,6 +64,10 @@ const GRAB_SLACK: f32 = 8;
 pub const WALK_STEP: f32 = 0.05;
 const VALUE_INSET: i32 = 48;
 const LABEL_GAP: i32 = 16;
+const LABEL_DROP: i32 = 4;
+const GRIP_HALF_W: f32 = 3;
+const GRIP_RISE: f32 = 4;
+const GRIP_H: f32 = 14;
 
 fn range(row: Row) ?Range {
     var out: Range = switch (row) {
@@ -116,11 +138,11 @@ fn drag(c: *cinema.Cinema, row: Row, box: rl.Rectangle, x: i32) void {
 pub fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, screen: mathx.P, page: Page, display: *window.Display) ?Pick {
     const entries = rows(page);
     if (!st.left_down or st.pointer == null or !st.focused or st.walk != null or st.scroll != 0) selection.dragging = null;
+    const win = menu.window(screen.y, entries.len, @min(selection.at, entries.len - 1));
     if (selection.dragging) |i| {
-        drag(c, entries[i], menu.rowBox(screen, menu.window(screen.y, entries.len, selection.at), i), st.pointer.?.x);
+        drag(c, entries[i], menu.rowBox(screen, win, i), st.pointer.?.x);
         return null;
     }
-    const win = menu.window(screen.y, entries.len, @min(selection.at, entries.len - 1));
     const picked = selection.stepAt(st, entries.len, screen);
     const row = entries[selection.at];
     if (range(row)) |r| {
@@ -180,21 +202,21 @@ pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *c
         };
         var fitted: [96]u8 = undefined;
         const text_width = if (range(row) != null) @as(i32, @intFromFloat(track(box).x)) - x - LABEL_GAP else raster.width(box) - (x - raster.left(box)) - LABEL_GAP;
-        face.text(face.fit(&fitted, label, font.BODY, text_width, false), x, menu.rowTextY(box) + 4, font.BODY, ink);
+        face.text(face.fit(&fitted, label, font.BODY, text_width, false), x, menu.rowTextY(box) + LABEL_DROP, font.BODY, ink);
         if (range(row)) |r| {
             const amount = value(c, row);
             const rail = track(box);
             const t = (amount - r.min) / (r.max - r.min);
             rl.drawRectangleRec(rail, look.EDGE);
             rl.drawRectangleRec(.{ .x = rail.x, .y = rail.y, .width = rail.width * t, .height = rail.height }, ink);
-            rl.drawRectangleRec(.{ .x = rail.x + rail.width * t - 3, .y = rail.y - 4, .width = 6, .height = 14 }, ink);
+            rl.drawRectangleRec(.{ .x = rail.x + rail.width * t - GRIP_HALF_W, .y = rail.y - GRIP_RISE, .width = 2 * GRIP_HALF_W, .height = GRIP_H }, ink);
             var buf: [24]u8 = undefined;
             const number = std.fmt.bufPrintZ(&buf, "{d:.0}%", .{amount * 100}) catch "";
             face.centred(number, raster.right(box) - VALUE_INSET, raster.middleAt(box).y, font.SMALL, ink);
         }
     }
     if (page != .visuals) return;
-    const bottom = raster.top(first) + @as(i32, @intCast(win.len)) * menu.ROW_STEP + 28;
+    const bottom = menu.noteY(first, win.len);
     var count: [24]u8 = undefined;
     face.centred(std.fmt.bufPrintZ(&count, menu.POSITION_FMT, .{ selected + 1, entries.len }) catch "", raster.right(first) - VALUE_INSET, bottom, font.SMALL, look.DIM);
 }

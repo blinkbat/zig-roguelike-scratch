@@ -144,6 +144,16 @@ pub const MAP_VIEW_FS =
     \\bool insideMap(vec2 c) {
     \\    return all(greaterThanEqual(c, vec2(0.0))) && all(lessThan(c, CELLS));
     \\}
+    \\float mapAlpha(sampler2D m, vec2 p, float outside) {
+    \\    return insideMap(p) ? texture(m, p / CELLS).a : outside;
+    \\}
+    \\
+;
+
+pub const INSET_UV_FS =
+    \\vec2 insetUv(vec2 uv, vec2 size) {
+    \\    return clamp(uv, 0.5 / size, vec2(1.0) - 0.5 / size);
+    \\}
     \\
 ;
 

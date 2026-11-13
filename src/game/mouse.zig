@@ -243,9 +243,7 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
     return null;
 }
 
-fn clickCell(g: *game.Game, at: P) void {
-    game.harness.clickAt(g, game.scene.Cam.of(g).mid(at));
-}
+const clickCell = game.harness.clickCell;
 
 test "mouse walking stops on harm despite healing or mana shielding" {
     const g = try game.boot(std.testing.allocator);

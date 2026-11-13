@@ -389,9 +389,11 @@ fn included(path: []const u8) bool {
 }
 
 const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
-const EFFECT_SOURCES = [_][]const u8{ "gfx/fx.zig", "gfx/effect_state.zig", "gfx/impact_queue.zig" };
+const FX_SOURCE = "gfx/fx.zig";
+const EFFECT_SOURCES = [_][]const u8{ FX_SOURCE, "gfx/effect_state.zig", "gfx/impact_queue.zig" };
 const LOOK_SOURCES = [_][]const u8{ "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig" };
-const LONE_SOURCES = [_][]const u8{ "app.zig", "game.zig", "save.zig", SAVE_SOURCE, "gfx/look.zig" } ++ EFFECT_SOURCES ++ LOOK_SOURCES;
+const APP_SOURCE = "app.zig";
+const LONE_SOURCES = [_][]const u8{ APP_SOURCE, "game.zig", "save.zig", SAVE_SOURCE, "gfx/look.zig" } ++ EFFECT_SOURCES ++ LOOK_SOURCES;
 const EXCLUDED_DIRS = [_][]const u8{ "tests/", "game/shots/" };
 const EXCLUDED_SOURCES = [_][]const u8{ "game/harness.zig", "map/atlas_text.zig", "map/script_text.zig", "edit/text_catalog.zig", "edit/text_panel.zig" };
 const SKILLBAR_SOURCE = "play/skillbar.zig";
@@ -403,12 +405,16 @@ const LOG_SOURCES = [_][]const u8{ "play/log.zig", "ui/journal.zig" };
 const DIALOGUE_SOURCES = [_][]const u8{ "ui/talk.zig", "game/talking.zig", "map/script.zig", "play/trigger.zig" };
 const QUESTS_SOURCE = "ui/quests.zig";
 const ITEM_TEXT_SOURCES = [_][]const u8{ "ui/item_card.zig", "play/trade.zig", "play/consumable.zig" };
-const CHARACTER_SOURCES = [_][]const u8{ "game/character.zig", "play/attrs.zig", "play/progress.zig", "play/hero.zig", "ui/book.zig" };
+const HERO_SOURCE = "play/hero.zig";
+const CHARACTER_SOURCES = [_][]const u8{ "game/character.zig", "play/attrs.zig", "play/progress.zig", HERO_SOURCE, "ui/book.zig" };
 const SKILL_TEXT_SOURCES = [_][]const u8{ "play/passives.zig", "ui/trees.zig", "game/skills.zig" };
 const BINDING_SOURCES = [_][]const u8{ "game/binds.zig", KEYBOARD_SOURCE };
 const HUD_SOURCES = [_][]const u8{ "ui/hud.zig", "game/overlay.zig" };
 const ACTOR_SOURCE = "play/actor.zig";
-const STATUS_SOURCES = [_][]const u8{ "play/burning.zig", "play/bleeding.zig", "play/blind.zig", "play/shock.zig", "play/glacial.zig", "play/juke.zig", "play/resilience.zig", "play/pinning.zig" };
+const BURNING_SOURCE = "play/burning.zig";
+const BLEEDING_SOURCE = "play/bleeding.zig";
+const JUKE_SOURCE = "play/juke.zig";
+const STATUS_SOURCES = [_][]const u8{ BURNING_SOURCE, BLEEDING_SOURCE, "play/blind.zig", "play/shock.zig", "play/glacial.zig", JUKE_SOURCE, "play/resilience.zig", "play/pinning.zig" };
 const CATEGORY_SOURCES = LOG_SOURCES ++ DIALOGUE_SOURCES ++ [_][]const u8{ QUESTS_SOURCE, ACTOR_SOURCE } ++ ITEM_TEXT_SOURCES ++ CHARACTER_SOURCES ++ SKILL_TEXT_SOURCES ++ BINDING_SOURCES ++ HUD_SOURCES ++ STATUS_SOURCES;
 const KEYBOARD_DECL = "LETTERS";
 const TECHNICAL_DECLS = [_][]const u8{ "SYMBOLS", "TTF", "DATA_TTF" };
@@ -416,16 +422,16 @@ const SPOKEN_DECLS = [_][]const u8{ "NAME", "NUMBERS", FRIGHT_WORDS };
 const DECL_SOURCES = [_][2][]const u8{
     .{ KEYBOARD_SOURCE, KEYBOARD_DECL },
     .{ "map/biome/site.zig", "SYMBOLS" },
-    .{ "gfx/font.zig", "TTF" },
-    .{ "gfx/font.zig", "DATA_TTF" },
+    .{ FONT_SOURCE, "TTF" },
+    .{ FONT_SOURCE, "DATA_TTF" },
     .{ "map/gas.zig", "NAME" },
-    .{ "play/hero.zig", "NUMBERS" },
-    .{ "gfx/fx.zig", FRIGHT_WORDS },
+    .{ HERO_SOURCE, "NUMBERS" },
+    .{ FX_SOURCE, FRIGHT_WORDS },
     .{ "play/bow.zig", "VERB" },
-    .{ "play/juke.zig", "DONE" },
-    .{ "play/burning.zig", "TAKES" },
-    .{ "play/bleeding.zig", "RETAKES" },
-    .{ "play/actor.zig", "SWEEP_VERB" },
+    .{ JUKE_SOURCE, "DONE" },
+    .{ BURNING_SOURCE, "TAKES" },
+    .{ BLEEDING_SOURCE, "RETAKES" },
+    .{ ACTOR_SOURCE, "SWEEP_VERB" },
 };
 
 comptime {
@@ -441,18 +447,31 @@ comptime {
     }
     for (FN_SOURCES) |d| {
         if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "fn " ++ d[1] ++ "(") == null) @compileError(d[0] ++ " no longer defines " ++ d[1]);
+        for (TECHNICAL_FNS ++ TEXT_FNS) |name| {
+            if (std.mem.eql(u8, d[1], name)) break;
+        } else @compileError(d[1] ++ " is checked but never read");
+    }
+    for (TECHNICAL_FNS ++ TEXT_FNS) |name| {
+        for (FN_SOURCES) |d| {
+            if (std.mem.eql(u8, d[1], name)) break;
+        } else @compileError(name ++ " has no source to check");
     }
 }
 
+const FONT_SOURCE = "gfx/font.zig";
+const EDITOR_SOURCE = "edit/editor.zig";
+const WIDGETS_SOURCE = "edit/widgets.zig";
 const FN_SOURCES = [_][2][]const u8{
-    .{ "app.zig", "capturePage" },
-    .{ "edit/editor.zig", "capture" },
-    .{ "edit/editor.zig", "snap" },
-    .{ "edit/widgets.zig", "button" },
-    .{ "edit/widgets.zig", "buttonOn" },
-    .{ "edit/widgets.zig", "drawFit" },
-    .{ "gfx/font.zig", "drawMid" },
+    .{ APP_SOURCE, "capturePage" },
+    .{ EDITOR_SOURCE, "capture" },
+    .{ EDITOR_SOURCE, "snap" },
+    .{ WIDGETS_SOURCE, "button" },
+    .{ WIDGETS_SOURCE, "buttonOn" },
+    .{ WIDGETS_SOURCE, "drawFit" },
+    .{ FONT_SOURCE, "drawMid" },
 };
+const TECHNICAL_FNS = [_][]const u8{ "capture", "snap", "capturePage" };
+const TEXT_FNS = [_][]const u8{ "drawMid", "drawFit", "button", "buttonOn" };
 
 fn inputSource(path: []const u8) bool {
     return std.mem.startsWith(u8, path, SRC) and contains(&INPUT_SOURCES, path[SRC.len..]);
@@ -572,7 +591,7 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (contains(&STATUS_SOURCES, rel)) return "Status effects";
         if (std.mem.startsWith(u8, rel, "play/")) return "Combat";
         if (std.mem.startsWith(u8, rel, "game/")) return "Gameplay";
-        if (std.mem.eql(u8, rel, "app.zig")) return "Interface";
+        if (std.mem.eql(u8, rel, APP_SOURCE)) return "Interface";
         if (std.mem.eql(u8, rel, "game.zig")) return "Gameplay";
         if (std.mem.startsWith(u8, rel, "save")) return "Save";
     }
@@ -789,9 +808,12 @@ fn forbiddenBuiltin(name: []const u8) bool {
     return contains(&.{ "@import", "@embedFile", "@field", "@hasField", "@hasDecl", "@compileError", "@compileLog", "@panic", "@export", "@extern" }, name);
 }
 
+const TECHNICAL_CALLS = [_][]const u8{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "loadShaderFromMemory", "has", "declares" } ++ TECHNICAL_FNS;
+const CONTEXT_NAMES = [_][]const u8{ "name", "label", "title", "description", "desc", "tip", "note", "caption", "say", "push", "draw", "put", "text", "line", "bufPrint", "bufPrintZ", "comptimePrint", "verb", "slain" } ++ TEXT_FNS;
+
 fn technicalCall(bytes: []const u8, ts: []const Token, i: usize) bool {
     const name = slice(bytes, ts[i]);
-    if (contains(&.{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "loadShaderFromMemory", "capture", "snap", "capturePage", "has", "declares" }, name)) return true;
+    if (contains(&TECHNICAL_CALLS, name)) return true;
     if (std.mem.eql(u8, name, "print") and i >= 2 and std.mem.eql(u8, slice(bytes, ts[i - 2]), "debug")) return true;
     return false;
 }
@@ -816,7 +838,7 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     for (ts[from..i]) |token| {
         if (token.tag != .identifier) continue;
         const name = slice(bytes, token);
-        if (contains(&.{ "name", "label", "title", "description", "desc", "tip", "note", "caption", "say", "push", "draw", "drawMid", "drawFit", "button", "buttonOn", "put", "text", "line", "bufPrint", "bufPrintZ", "comptimePrint", "verb", "slain" }, name)) context = true;
+        if (contains(&CONTEXT_NAMES, name)) context = true;
     }
     if (context) return true;
     if (std.mem.indexOfScalar(u8, text, ' ') != null and letters >= 3) return true;
