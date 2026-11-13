@@ -27,7 +27,7 @@ Run from the repository root; wrappers select and verify Zig 0.14.1. Setup: [REA
 - `./build.cmd`: Debug build without launching; finish code/art handoffs with it. If the executable is locked, use `--prefix zig-out-dev`. Release: `./build-release.cmd`.
 - Never launch interactive play for verification. `run.cmd`/`edit.cmd` are owner-facing and kill existing `cistern.exe` processes.
 - Tests must not write saves/maps. Full procgen tests take minutes; check CPU before declaring a stall. Keep the direct test runner in `build.zig`: raylib stdout deadlocks Zig's `--listen=-` test protocol.
-- Every `src/**/*.zig` except `main.zig` must appear in its `test {}` imports and be at least 512 bytes. Builds enforce this and dependency boundaries through `tools/source_rules.zig`.
+- Every `src/**/*.zig` except `main.zig` must appear in its `test {}` imports. Builds reject invalid syntax and modules without declarations, and enforce dependency boundaries through `tools/source_rules.zig`.
 - For visual changes, inspect actual headless PNGs. Build into `zig-out-dev`; copy `maps/` and the executable (with a distinct basename) into a fresh `%TEMP%` directory, then run there. Captures write `shots/` under the working directory; do not run `shot.cmd` from the repo.
 - Capture flags: `--shot` (general/maps), `--shot-ui`, `--shot-editor`, `--shot-debug`, `--shot-trees`, `--shot-water-cliffs`, `--shot-cinema`, `--shot-zoo`; `--bench` measures CPU/draw/resource costs. Coverage lives in `src/game/shots/` (one file per flag, shared helpers in `capture.zig`), dispatch in `src/app.zig`.
 

@@ -4,6 +4,7 @@ const zoo = @import("../map/zoo.zig");
 const grid = @import("../map/grid.zig");
 const game = @import("../game.zig");
 const tactics = @import("tactics_exec.zig");
+const rewards = @import("rewards.zig");
 const P = mathx.P;
 
 fn spec(g: *const game.Game) ?zoo.Spec {
@@ -26,8 +27,8 @@ pub fn beside(g: *const game.Game) ?P {
 pub fn interact(g: *game.Game, at: P) bool {
     if (!reached(g, at)) return false;
     const z = spec(g).?;
-    if (!z.open(&g.sim.lv, &g.sim.pool)) {
-        g.sim.log.say("The jail door is locked. Find its key.", .{});
+    if (!z.open(&g.sim.lv, &g.sim.pool, &g.sim.inventory)) {
+        g.sim.log.say("The jail door is locked. Requires a Small Key.", .{});
         game.holdWalk(g);
         return true;
     }
@@ -38,13 +39,6 @@ pub fn interact(g: *game.Game, at: P) bool {
     game.castSight(g, g.sim.heroAt().?);
     game.combat.endTurn(g);
     return true;
-}
-
-pub fn arrive(g: *game.Game, at: P) void {
-    const z = spec(g) orelse return;
-    if (!z.collect(&g.sim.lv, at)) return;
-    g.sim.log.say("{s} takes the jail key.", .{g.sim.name.text()});
-    g.sim.unsaved = true;
 }
 
 const CARAVAN = 1;
@@ -72,7 +66,7 @@ test "the caravan zoo opens by bump or interact and only spends a turn after unl
     try std.testing.expectEqualDeep(before, g.sim.clock);
     try std.testing.expectEqual(grid.Tile.locked_gate, g.sim.lv.at(z.door()));
     try std.testing.expect(h.logged(g, "locked"));
-    try std.testing.expect(z.collect(&g.sim.lv, z.key.?));
+    try std.testing.expect(g.sim.inventory.add(.{ .kind = .small_key }));
     try std.testing.expect(interact(g, z.door()));
     try std.testing.expectEqual(grid.Tile.open_gate, g.sim.lv.at(z.door()));
     try std.testing.expect(!std.meta.eql(before, g.sim.clock));
@@ -98,7 +92,7 @@ test "interact beside a locked jail gate still reaches a bag lying in reach" {
     try std.testing.expect(!game.harness.logged(g, "locked"));
 }
 
-test "zoo keys collect on arrival and keyboard controller and mouse can release the room" {
+test "a chest holds a Small Key and keyboard controller and mouse can release the room" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const map = try startAtlas();
@@ -106,9 +100,17 @@ test "zoo keys collect on arrival and keyboard controller and mouse can release 
     const z = map.node[CARAVAN].zoo.?;
     const Mode = enum { bump, interact, mouse };
     for (std.enums.values(Mode)) |mode| {
-        game.beginMapAt(g, map, .{ .node = CARAVAN, .at = z.key.? }, 77);
-        try std.testing.expectEqual(grid.Tile.key_taken, g.sim.lv.at(z.key.?));
-        try std.testing.expect(game.harness.logged(g, "takes the jail key"));
+        game.beginMapAt(g, map, .{ .node = CARAVAN, .at = z.key.?.add(.{ .x = 0, .y = 1 }) }, 77);
+        try std.testing.expectEqual(grid.Tile.chest, g.sim.lv.at(z.key.?));
+        try std.testing.expectEqual(@as(usize, 0), g.sim.inventory.n);
+        try std.testing.expectEqual(rewards.Chest.opened, rewards.openChest(&g.sim, z.key.?));
+        try std.testing.expectEqual(@as(usize, 1), g.sim.ground.n);
+        try std.testing.expectEqual(@import("../play/item_bases.zig").Kind.small_key, g.sim.ground.drops[0].item.kind);
+        try std.testing.expectEqual(rewards.Chest.not_closed, rewards.openChest(&g.sim, z.key.?));
+        game.character.openLoot(g, z.key.?);
+        game.harness.press(g, @import("../ui/menu.zig").CONFIRM);
+        game.harness.drawnOut(g);
+        try std.testing.expectEqual(@as(usize, 1), g.sim.inventory.n);
         game.heroTo(g, z.approach());
         game.settle(g);
         const before = g.sim.clock;
@@ -121,6 +123,7 @@ test "zoo keys collect on arrival and keyboard controller and mouse can release 
             .mouse => game.harness.clickAt(g, game.scene.Cam.of(g).mid(z.door())),
         }
         try std.testing.expectEqual(grid.Tile.open_gate, g.sim.lv.at(z.door()));
+        try std.testing.expectEqual(@as(usize, 0), g.sim.inventory.n);
         try std.testing.expectEqualDeep(game.harness.turned(before, 1), g.sim.clock);
     }
 }

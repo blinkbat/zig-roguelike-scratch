@@ -64,7 +64,8 @@ pub fn rememberTarget(run: *game.Game) void {
 pub fn openLeap(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     aiming(run, by, act);
-    run.mode.aim.mark = hero.at;
+    const ahead = hero.at.add(run.stride.delta());
+    run.mode.aim.mark = if (act == .raise_skeleton and grid.Level.inside(ahead)) ahead else hero.at;
 }
 
 fn openSwing(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {

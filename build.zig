@@ -186,7 +186,6 @@ fn embedded(name: []const u8) bool {
     return false;
 }
 
-const MIN_SRC: u64 = 512;
 const READ_MAX = 1 << 20;
 
 fn checkScriptsName(b: *std.Build) void {
@@ -215,13 +214,10 @@ fn checkTestRoster(b: *std.Build) void {
         if (std.mem.eql(u8, ent.path, std.fs.path.basename(ROOT))) continue;
         const slashed = b.allocator.dupe(u8, ent.path) catch @panic("OOM in the roster check");
         std.mem.replaceScalar(u8, slashed, '\\', '/');
-        const st = ent.dir.statFile(ent.basename) catch |e|
-            std.debug.panic(SRC ++ "/{s} could not be stat'd ({s})", .{ slashed, @errorName(e) });
-        if (st.size < MIN_SRC) std.debug.panic(SRC ++ "/{s} is {d} bytes — a truncated file, not a module", .{ slashed, st.size });
         const source = ent.dir.readFileAllocOptions(b.allocator, ent.basename, READ_MAX, null, @alignOf(u8), 0) catch |e|
             std.debug.panic(SRC ++ "/{s} could not be read ({s})", .{ slashed, @errorName(e) });
         if (source_rules.check(b.allocator, slashed, source) catch |e|
-            std.debug.panic(SRC ++ "/{s}: source boundary check failed ({s})", .{ slashed, @errorName(e) })) |violation|
+            std.debug.panic(SRC ++ "/{s}: source validation failed ({s})", .{ slashed, @errorName(e) })) |violation|
             std.debug.panic(SRC ++ "/{s}:{d}: {s} crosses this module's dependency boundary; see docs/ARCHITECTURE.md", .{ slashed, violation.line, violation.imported });
         const want = b.fmt("@import(\"{s}\")", .{slashed});
         if (!named(root, want)) {

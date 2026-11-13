@@ -201,6 +201,49 @@ pub fn foeBlow(sim: *Simulation, attacker: *const actor.Actor, target: *actor.Ac
     return .{ .rolled = rolled, .dealt = dealt_ };
 }
 
+pub const HeroStrike = union(enum) {
+    blocked,
+    dodged,
+    hit: struct {
+        damage: simulation.DamageResult,
+        hp_before: i32,
+        maximum_roll: bool,
+        bled: ?[]const u8 = null,
+        stunned: bool = false,
+        chilled: bool = false,
+    },
+};
+
+pub fn strikeHero(sim: *Simulation, attacker_id: actor.ActorId, strike: actor.Strike, weak: bool) HeroStrike {
+    const hero = sim.heroActor().?;
+    const attacker = sim.pool.get(attacker_id.value).?;
+    if (sim.heroBlocks()) return .blocked;
+    const blow = foeBlow(sim, attacker, hero, strike, weak) orelse return .dodged;
+    const hp_before = hero.hp;
+    const defended = sim.combatStats(hero);
+    const harm = sim.resolveDamage(.fromInt(sim.hero), blow.dealt);
+    var outcome = HeroStrike{ .hit = .{
+        .damage = harm,
+        .hp_before = hp_before,
+        .maximum_roll = blow.rolled == strike.hit.hi,
+    } };
+    if (harm.lethal or harm.dmg <= 0) return outcome;
+    if (sim.procStatus(hero, .bleed, strike.bleeds)) {
+        outcome.hit.bled = hero.bleed.said();
+        hero.bleed.start();
+    }
+    if (sim.procStatus(hero, .stun, strike.stuns)) {
+        hero.clock.stun();
+        outcome.hit.stunned = true;
+    }
+    const chill_chance = damage.resistedChance(strike.chills, defended.elements.get(glacial.ELEMENT));
+    if (sim.procStatus(hero, glacial.AILMENT, chill_chance)) {
+        hero.chill.apply();
+        outcome.hit.chilled = true;
+    }
+    return outcome;
+}
+
 pub const Hit = struct {
     damage: simulation.DamageResult,
     roll: Roll,

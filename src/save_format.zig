@@ -298,6 +298,27 @@ pub fn validate(snapshot: *Snapshot) !void {
     if (snapshot.map) |*map| if (!std.mem.eql(u8, snapshot.summary.place.text(), map.node[snapshot.node].label.text())) return error.Damaged;
     if (!std.mem.eql(u8, snapshot.summary.name.text(), run.name.text())) return error.Damaged;
     if (snapshot.summary.hp != body.hp or snapshot.summary.max != body.max or snapshot.summary.gold != run.gold) return error.Damaged;
+    if (snapshot.map) |*map| {
+        migrateZooKey(&run.lv, map.node[snapshot.node].zoo, &run.inventory);
+        for (&snapshot.visits, 0..) |*visit, node| if (visit.*) |*loaded| {
+            migrateZooKey(&loaded.lv, map.node[node].zoo, if (node == snapshot.node) null else &run.inventory);
+        };
+    }
+}
+
+fn migrateZooKey(level: *grid.Level, zoo: ?@import("map/zoo.zig").Spec, carried: ?*inventory.Inventory) void {
+    const z = zoo orelse return;
+    const at = z.key orelse return;
+    switch (level.at(at)) {
+        .zoo_key => level.set(at, .chest),
+        .key_taken => {
+            level.set(at, .chest_open);
+            if (level.at(z.door()) == .locked_gate) if (carried) |bag| {
+                if (!bag.add(.{ .kind = .small_key })) level.set(at, .chest);
+            };
+        },
+        else => {},
+    }
 }
 
 fn validatePlot(plot: *const @FieldType(data.Portable, "plot"), s: *const atlas.script.Script) !void {

@@ -4,6 +4,11 @@ Burning reeds and crops stop blocking sight immediately while alight. Hero and
 foe visibility, light propagation and projectile targeting share the level's
 current terrain-opacity rule. Dousing surviving foliage restores its cover;
 walls and other nonflammable cover still block, as does independently thick smoke.
+Smoke produced by fire, including pyre bloat bursts, stays below the opacity
+threshold even when several fires overlap.
+
+Locked jail gates consume one carried Small Key. Small Keys are interchangeable;
+the encounter's outside chest contains one, collected through ordinary chest loot.
 
 Terrain modifiers belong to `src/play/terrain.zig`. Its typed table covers hit chance,
 dodge, every elemental resistance and every harmful status resistance, with neutral defaults

@@ -34,6 +34,11 @@ test "terrain follows every actor across movement and leaves base and saved buil
         const base = a;
         g.sim.lv.set(at, .floor);
         const normal = g.sim.combatStats(&a);
+        try std.testing.expectEqual(@as(u32, switch (kind) {
+            .beefy_pib => 80,
+            .slime, .slime_half, .slime_quarter => 90,
+            else => 100,
+        }), normal.hit);
         for ([_]grid.Tile{ .reeds, .grass, .tall_grass, .water, .shallows }) |tile| {
             g.sim.lv.set(at, tile);
             try std.testing.expectEqualDeep(normal.onRained(tile, 0), g.sim.combatStats(&a));

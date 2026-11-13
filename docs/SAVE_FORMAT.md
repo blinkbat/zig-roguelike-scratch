@@ -42,9 +42,12 @@ Autosave copies owned snapshot data on the frame; the existing worker performs
 encoding, checksum calculation and atomic writing. Snapshot and byte buffers are
 reused only after worker completion, and failed encodes or writes rearm dirty state.
 
-Atlas nodes default a missing `zoo` to none. Zoo key collection and gate state
-are stored as level tiles, and occupants use the ordinary actor pool, so active
-levels and visits retain opened doors, taken keys and killed monsters. Existing
+Atlas nodes default a missing `zoo` to none. Small Keys use ordinary saved items;
+chests and gates retain their level tiles, and occupants use the ordinary actor
+pool. Legacy loose zoo keys become closed key chests. A taken legacy key for a
+still-locked gate becomes a carried Small Key, or returns to its chest if the bag
+is full; opened gates grant no key. Active and visited levels migrate once, without
+duplicating the active level's older visit snapshot. Existing
 portable runs keep their saved maps; new encounters in authored map files appear
 when starting a new run.
 
@@ -54,6 +57,8 @@ The zoo node field and gate/key tile names change the raw-layout fingerprint;
 pre-zoo raw saves are not claimed as compatible. So does the clock's `stunned`
 flag; portable saves without it load unstunned. Portable saves retain named-value
 compatibility, including absent zoo definitions.
+The Small Key item identity also changes the raw fingerprint; portable item
+identities remain compatible by name.
 
 A raw file loads only when its ABI/type/tree fingerprint matches this exact build.
 The fingerprint names every enum member reachable from the raw layout, so adding a

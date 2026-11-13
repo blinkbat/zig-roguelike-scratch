@@ -4,6 +4,7 @@ const grid = @import("../../map/grid.zig");
 const carve = @import("../../map/carve.zig");
 const gen = @import("../../map/gen.zig");
 const gas = @import("../../map/gas.zig");
+const fire = @import("../../map/fire.zig");
 const menu = @import("../../ui/menu.zig");
 const actor = @import("../../play/actor.zig");
 const bow = @import("../../play/bow.zig");
@@ -1296,7 +1297,7 @@ test "a pyre bloat bursts into flame, setting the bodies beside it burning and n
     try std.testing.expect(g.sim.pool.get(near).?.burn.turns > 0);
     try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(far).?.burn.turns);
     try std.testing.expect(!g.sim.lv.gassy(at) and !g.sim.lv.scalding(at));
-    try std.testing.expectEqual(gas.SMOKE_BURST, g.sim.lv.volumeAt(.smoke, at));
+    try std.testing.expectEqual(fire.SMOKE, g.sim.lv.volumeAt(.smoke, at));
 }
 
 test "a pyre bloat bursting over a lake boils the water beside it into steam and none further" {
@@ -1452,7 +1453,7 @@ fn litUntilDown(g: *game.Game, slot: usize, at: P) !usize {
     return frames;
 }
 
-test "a pyre bloat's smoke hides a body past it only as its burst lands" {
+test "a pyre bloat's fire leaves a body past it visible through its burst" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
@@ -1465,12 +1466,15 @@ test "a pyre bloat's smoke hides a body past it only as its burst lands" {
     combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0.3 });
     combat.endTurn(g);
     game.update(g, 0);
-    try std.testing.expect(!g.sim.lv.isLit(rat_at));
+    try std.testing.expect(g.sim.lv.isLit(rat_at));
     const frames = try litUntilDown(g, actor.Pool.slot(bloat), rat_at);
-    try std.testing.expect(frames > 0 and !g.pic.litShown(&g.sim, rat_at));
+    try std.testing.expect(frames > 0 and g.pic.litShown(&g.sim, rat_at));
+    harness.drawnOut(g);
+    try std.testing.expect(g.pic.drawnAt(&g.sim, actor.Pool.slot(rat)) != null);
+    try std.testing.expect(grid.sightLine(&g.sim.lv, from, rat_at));
 }
 
-test "a pyre bloat bursting on the hero on its own turn hides a body past its smoke only as the burst lands" {
+test "a pyre bloat bursting on the hero leaves sight clear through its burst" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
@@ -1481,10 +1485,12 @@ test "a pyre bloat bursting on the hero on its own turn hides a body past its sm
     game.settle(g);
     try std.testing.expect(g.sim.lv.isLit(rat_at));
     harness.use(g, .wait);
-    try std.testing.expect(g.sim.pool.get(bloat) == null and !g.sim.lv.isLit(rat_at));
+    try std.testing.expect(g.sim.pool.get(bloat) == null and g.sim.lv.isLit(rat_at));
     g.st = .{};
     const frames = try litUntilDown(g, actor.Pool.slot(bloat), rat_at);
-    try std.testing.expect(frames > 0 and !g.pic.litShown(&g.sim, rat_at));
+    try std.testing.expect(frames > 0 and g.pic.litShown(&g.sim, rat_at));
+    harness.drawnOut(g);
+    try std.testing.expect(g.sim.lv.isLit(rat_at));
 }
 
 test "a leech swimming unseen holds neither the stagger nor the walk" {

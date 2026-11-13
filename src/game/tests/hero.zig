@@ -137,6 +137,133 @@ test "chosen attacks reactions and status ticks retain recorded seeded outcomes"
     }
 }
 
+test "incoming strike rules apply statuses only after surviving health damage and leave the picture untouched" {
+    const actor = @import("../../play/actor.zig");
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]struct { hp: i32, mana: i32 }{
+        .{ .hp = 100, .mana = 0 },
+        .{ .hp = 100, .mana = 10 },
+        .{ .hp = 1, .mana = 0 },
+    }) |case| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
+        const hero = g.sim.heroActor().?;
+        harness.setLife(hero, case.hp, case.hp);
+        hero.ward.turns = 3;
+        g.sim.mana = case.mana;
+        game.settle(g);
+        const pictured = g.pic.heroShown(&g.sim).?;
+        const loot_rng = g.sim.loot_rng;
+        g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = harness.foeId(0), .lands = true }});
+        var strike = actor.row(.rat).blow.strike;
+        strike.hit = .{ .lo = 10, .hi = 10 };
+        strike.bleeds = 100;
+        strike.stuns = 100;
+        strike.chills = 100;
+        const outcome = attacks.strikeHero(&g.sim, .fromInt(harness.foeId(0)), strike, false);
+        try std.testing.expect(outcome == .hit);
+        const hit = outcome.hit;
+        try std.testing.expectEqual(case.hp, hit.hp_before);
+        try std.testing.expect(hit.maximum_roll);
+        try std.testing.expectEqual(@as(i32, 10) - case.mana, hit.damage.dmg);
+        try std.testing.expectEqual(case.mana, hit.damage.mana);
+        try std.testing.expectEqual(case.hp == 1, hit.damage.lethal);
+        const afflicted = case.hp == 100 and case.mana == 0;
+        try std.testing.expectEqual(afflicted, hit.bled != null);
+        try std.testing.expectEqual(afflicted, hit.stunned);
+        try std.testing.expectEqual(afflicted, hit.chilled);
+        try std.testing.expectEqual(afflicted, hero.bleed.turns > 0);
+        try std.testing.expectEqual(afflicted, hero.clock.owes());
+        try std.testing.expectEqual(afflicted, hero.chill.turns > 0);
+        try std.testing.expectEqualDeep(pictured, g.pic.heroShown(&g.sim).?);
+        try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+        try std.testing.expectEqualDeep(loot_rng, g.sim.loot_rng);
+    }
+}
+
+test "incoming strikes retain recorded seeded outcomes through statuses reactions and death" {
+    const actor = @import("../../play/actor.zig");
+    const cases = [_]struct {
+        kind: actor.Kind,
+        seed: u64,
+        hp: i32 = 100,
+        thorns: bool = false,
+        hp_after: i32,
+        foe_hp: i32,
+        bleed: u8 = 0,
+        chill: u8 = 0,
+        hero_x: i32 = 20,
+        rng: [4]u64,
+    }{
+        .{ .kind = .pib, .seed = 42, .hp_after = 98, .foe_hp = 10, .bleed = 5, .rng = .{ 14724789073754520473, 2590629650289322887, 7959817307922065030, 9375168587437865237 } },
+        .{ .kind = .beefy_pib, .seed = 11, .hp_after = 94, .foe_hp = 40, .rng = .{ 862564402851664045, 4794504947867443746, 7755685727112513350, 12536992963963539506 } },
+        .{ .kind = .frost_wisp, .seed = 113, .hp_after = 98, .foe_hp = 8, .chill = 3, .rng = .{ 4410175173307694628, 1620366555190407232, 5054763941814804829, 38094909334747344 } },
+        .{ .kind = .bandit_shieldbearer, .seed = 42, .thorns = true, .hp_after = 97, .foe_hp = 0, .hero_x = 19, .rng = .{ 14724789073754520473, 2590629650289322887, 7959817307922065030, 9375168587437865237 } },
+        .{ .kind = .rat, .seed = 42, .hp = 1, .hp_after = 0, .foe_hp = 6, .rng = .{ 11321038696294968131, 2570630787131477249, 11331932227193638341, 8279914124659105243 } },
+    };
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for (cases) |case| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        const hero = g.sim.heroActor().?;
+        harness.setLife(hero, case.hp, case.hp);
+        const attacker_id = harness.spawnAt(g, case.kind, .{ .x = 21, .y = 20 }, true);
+        if (case.thorns) {
+            g.sim.inventory.gear.slots.set(.chest, harness.affixed(.leather, .{ .kind = .thorns, .value = 50 }));
+            g.sim.pool.get(attacker_id).?.hp = 1;
+        }
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(case.seed);
+        const loot_rng = g.sim.loot_rng;
+        combat.endTurn(g);
+        try std.testing.expectEqual(case.hp_after, hero.hp);
+        try std.testing.expectEqual(case.bleed, hero.bleed.turns);
+        try std.testing.expect(!hero.clock.owes());
+        try std.testing.expectEqual(case.chill, hero.chill.turns);
+        try std.testing.expectEqual(case.hero_x, hero.at.x);
+        try std.testing.expectEqual(case.foe_hp, g.sim.pool.items[actor.Pool.slot(attacker_id)].hp);
+        try std.testing.expectEqual(case.hp_after == 0, g.mode == .dead);
+        try std.testing.expectEqualDeep(case.rng, g.sim.rng.impl.s);
+        if (case.thorns) {
+            try std.testing.expectEqualDeep([_]u64{ 10008818694051377343, 3453364446215938070, 799525589816268207, 6856219865700028973 }, g.sim.loot_rng.impl.s);
+        } else try std.testing.expectEqualDeep(loot_rng, g.sim.loot_rng);
+        try std.testing.expectEqual(case.hp, g.pic.heroShown(&g.sim).?.hp);
+    }
+}
+
+test "one frame crossing several incoming impacts settles the latest health and all mana debt" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 21, .y = 20 }, .{ .x = 19, .y = 20 }, .{ .x = 20, .y = 21 } });
+    harness.wakeFoes(g);
+    const hero = g.sim.heroActor().?;
+    harness.toughen(hero);
+    hero.ward.turns = 3;
+    g.sim.mana = 2;
+    game.settle(g);
+    const before_hp = hero.hp;
+    g.sim.rng = harness.foeAttacksRng(g, &.{
+        .{ .id = harness.foeId(0), .lands = true },
+        .{ .id = harness.foeId(1), .lands = true },
+        .{ .id = harness.foeId(2), .lands = true },
+    });
+    harness.use(g, .wait);
+    try std.testing.expect(hero.hp < before_hp);
+    try std.testing.expectEqual(before_hp, g.pic.heroShown(&g.sim).?.hp);
+    try std.testing.expect(g.pic.mana_held > 0);
+    const rng = g.sim.rng;
+    const clock = g.sim.clock;
+    g.st = .{};
+    game.update(g, g.pic.busy + 0.01);
+    try std.testing.expectEqual(hero.hp, g.pic.heroShown(&g.sim).?.hp);
+    try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+    try std.testing.expect(g.pic.quiet());
+    game.update(g, 0.1);
+    try std.testing.expectEqualDeep(rng, g.sim.rng);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+}
+
 test "hero post-action death prevents gas spread and foe actions while clearing turn tracking" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

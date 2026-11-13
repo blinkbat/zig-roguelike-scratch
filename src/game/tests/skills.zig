@@ -2025,3 +2025,17 @@ test "caltrops and an arcane barrier are drawn as their cast lands, not as it be
     harness.drawnOut(g);
     try std.testing.expectEqualSlices(u8, &g.sim.lv.barrier, &g.pic.barrier_shown);
 }
+
+test "raise skeleton's cursor opens a tile off the hero the way it last stepped" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    for ([_]mathx.Dir{ .s, .nw }) |d| {
+        game.heroStep(g, d, 0);
+        game.settle(g);
+        skills.openLeap(g, .x, .raise_skeleton);
+        const hero = g.sim.heroAt().?;
+        try std.testing.expectEqual(hero.add(d.delta()), g.mode.aim.mark);
+        skills.closeAim(g);
+    }
+}

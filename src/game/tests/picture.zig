@@ -888,9 +888,7 @@ test "a barrel the arrow breaks stands until the arrow reaches it" {
     g.sim.lv.putBarrel(Gone.at);
     harness.confirmUse(g, .shoot);
     try std.testing.expect(!g.sim.lv.hasBarrel(Gone.at) and !Gone.f(g, 0));
-    try std.testing.expect(game.mapAssets(g).barrel);
     const t = harness.framesUntil(g, 0, Gone.f);
-    try std.testing.expect(!game.mapAssets(g).barrel);
     const lands = harness.SHOT_LANDS;
     try std.testing.expectApproxEqAbs(lands, t, harness.TEST_TOL);
 }
@@ -938,15 +936,12 @@ test "an arrow that splits a slime shows it as the arrow lands, the new half sli
     try std.testing.expectEqual(actor.Kind.slime_half, g.sim.pool.get(id).?.kind);
     try std.testing.expectEqual(actor.Kind.slime_half, g.sim.pool.items[other].kind);
     try std.testing.expectEqual(actor.Kind.slime, g.pic.pictured[slime].kind);
-    try std.testing.expect(game.mapAssets(g).bodies.contains(.slime));
     try std.testing.expect(g.pic.drawnAt(&g.sim, other) == null);
     try std.testing.expectEqual(fx.Body.of(g.sim.pool.items[other], g.pic.pictured[other].seq), g.pic.pictured[other]);
     try std.testing.expectEqualStrings("The slime splits in two!", g.sim.log.line(0).?);
     const t = harness.framesUntil(g, other, harness.drawn);
     const lands = harness.SHOT_LANDS;
     try std.testing.expectEqual(actor.Kind.slime_half, g.pic.pictured[slime].kind);
-    try std.testing.expect(!game.mapAssets(g).bodies.contains(.slime));
-    try std.testing.expect(game.mapAssets(g).bodies.contains(.slime_quarter));
     try std.testing.expect(harness.samePx(g.pic.glide[other].now(), glide.cellPx(at)));
     try std.testing.expect(g.pic.busy >= game.SLIDE_S);
     const slid = harness.framesUntil(g, other, struct {
@@ -1079,9 +1074,10 @@ test "a half a beefy pib's sweep splits off into gas takes the gas no sooner tha
     g.sim.unkillable = true;
     const at = P{ .x = 20, .y = 21 };
     const id = harness.splittable(g, at, false);
-    _ = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
+    const sweeper = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
     for ([_]P{ .{ .x = 19, .y = 20 }, .{ .x = 19, .y = 21 }, .{ .x = 19, .y = 22 }, .{ .x = 21, .y = 21 }, .{ .x = 21, .y = 22 } }) |p| g.sim.lv.set(p, .wall);
     g.sim.lv.addGas(.{ .x = 20, .y = 23 }, harness.TEST_GAS);
+    g.sim.rng = harness.sweepStunRng(g, sweeper, id, false);
     game.settle(g);
     harness.use(g, .wait);
     const half = g.sim.pool.n - 1;

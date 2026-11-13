@@ -33,6 +33,11 @@ is suppressed while a foe is visible. Deliberate Interact browses a sole bag/ope
 chest for free. Multiple nearby objects offer a choice; doors always keep that
 choice so queued input cannot immediately return through an arrival door.
 
+Small Keys are unequippable inventory items. A compatible locked gate consumes
+one on a successful unlock; an unlocked or already open gate consumes none.
+The jail encounter places its Small Key in the outside chest, using ordinary
+loot collection. Keys do not roll as equipment or receive affixes.
+
 Loot shows only the selected cell. Take item affects its selected row; Take all
 fills available inventory space and leaves excess items. All items and supplies
 taken during one visit cost one turn together when loot closes, including Back

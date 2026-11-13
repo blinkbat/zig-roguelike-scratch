@@ -17,8 +17,18 @@ pub fn captureZoo(g: *game.Game) !void {
     game.settle(g);
     const target = try capture.renderTarget(g);
     defer rl.unloadRenderTexture(target);
-    try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-key.png");
-    game.heroTo(g, z.key.?);
+    try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-key-chest.png");
+    if (!game.combat.openChest(g, z.key.?)) return error.KeyChestDidNotOpen;
+    game.harness.drawnOut(g);
+    game.character.openLoot(g, z.key.?);
+    try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-small-key-loot.png");
+    game.harness.press(g, @import("../../ui/menu.zig").CONFIRM);
+    game.harness.drawnOut(g);
+    if (g.sim.inventory.n != 1 or g.sim.inventory.bag[0].kind != .small_key) return error.KeyNotCollected;
+    game.character.openCharacter(g);
+    g.character.choose(.inventory);
+    try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-small-key-inventory.png");
+    game.toPlay(g);
     game.heroTo(g, z.approach());
     game.settle(g);
     try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-closed.png");
@@ -28,7 +38,7 @@ pub fn captureZoo(g: *game.Game) !void {
 
     game.beginMapAt(g, w, .{ .node = 1, .at = z.approach() }, capture.SHOT_SEED);
     g.sim.clock = day.Clock.at(day.NOON);
-    if (!z.collect(&g.sim.lv, z.key.?) or !z.open(&g.sim.lv, &g.sim.pool)) return error.DoorDidNotOpen;
+    if (!g.sim.inventory.add(.{ .kind = .small_key }) or !z.open(&g.sim.lv, &g.sim.pool, &g.sim.inventory)) return error.DoorDidNotOpen;
     game.heroTo(g, z.threshold());
     game.settle(g);
     try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-reveal.png");

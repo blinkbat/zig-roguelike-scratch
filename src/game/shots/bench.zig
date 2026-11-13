@@ -4,6 +4,7 @@ const mathx = @import("../../core/mathx.zig");
 const atlas = @import("../../map/atlas.zig");
 const look = @import("../../gfx/look.zig");
 const fx = @import("../../gfx/fx.zig");
+const sprite_assets = @import("../../gfx/sprite_assets.zig");
 const day = @import("../../map/day.zig");
 const game = @import("../../game.zig");
 const SHOT_BIOME = @import("capture.zig").SHOT_BIOME;
@@ -141,7 +142,7 @@ fn benchAssets(g: *game.Game) !void {
         var t = try std.time.Timer.start();
         game.prepare(g);
         const loaded = t.read();
-        if (!std.meta.eql(game.mapAssets(g), g.sprites.resident())) return error.MissingMapAsset;
+        if (!std.meta.eql(sprite_assets.Assets.everything(), g.sprites.resident())) return error.MissingMapAsset;
         const held = g.sprites;
         g.art = .stale;
         t.reset();

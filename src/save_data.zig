@@ -124,6 +124,7 @@ const UNSAVED = .{
         "rain",
         "inspecting",
         "inspect_scroll",
+        "stride",
         "keywords",
         "perf",
     },

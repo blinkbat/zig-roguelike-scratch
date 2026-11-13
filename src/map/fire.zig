@@ -83,7 +83,7 @@ pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) us
     return n;
 }
 
-fn smoulder(lv: *grid.Level, p: P) void {
+pub fn smoulder(lv: *grid.Level, p: P) void {
     const room = (grid.SMOKE_THICK - 1) -| lv.volumeAt(.smoke, p);
     if (room > 0) lv.release(.smoke, p, @min(SMOKE, room));
 }
@@ -291,6 +291,17 @@ test "a field fire's smoke never thickens enough to hide what lies past it" {
         gas.turn(&lv, &rng);
         for (0..grid.CELLS) |i| try std.testing.expect(!lv.hidesBeyond(grid.Level.of(i)));
     }
+}
+
+test "repeated fire bursts cannot build opaque smoke or erase existing smoke cover" {
+    var lv = field(.grass);
+    for (0..20) |_| smoulder(&lv, AT);
+    try std.testing.expectEqual(grid.SMOKE_THICK - 1, lv.volumeAt(.smoke, AT));
+    try std.testing.expect(!lv.hidesBeyond(AT));
+    lv.release(.smoke, AT, gas.SMOKE_BURST);
+    const before = lv.volumeAt(.smoke, AT);
+    smoulder(&lv, AT);
+    try std.testing.expectEqual(before, lv.volumeAt(.smoke, AT));
 }
 
 test "dousing puts out only burning cells, by its chance, and leaves their tiles unburnt" {

@@ -334,6 +334,7 @@ const ITEM_LINES = std.EnumArray(item_bases.Kind, []const [4]f32).init(.{
     .sapphire_ring = &(RING_BAND ++ closed(&.{ .{ 12, 5 }, .{ 20, 5 }, .{ 20, 13 }, .{ 12, 13 } })),
     .life_flask = skillLines(.life_flask),
     .mana_flask = skillLines(.mana_flask),
+    .small_key = &.{ .{ 4, 7, 12, 7 }, .{ 12, 7, 12, 15 }, .{ 12, 15, 4, 15 }, .{ 4, 15, 4, 7 }, .{ 12, 11, 27, 11 }, .{ 21, 11, 21, 19 }, .{ 27, 11, 27, 17 } },
 });
 
 pub const SKILL_PX: i32 = 30;

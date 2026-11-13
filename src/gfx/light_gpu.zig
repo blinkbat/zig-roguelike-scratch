@@ -72,7 +72,8 @@ const BODY_FS = MIRROR_HEAD ++ shaders.glslConsts(.{
     \\        sheen += lcol[i] * rim * SHEEN;
     \\    }
     \\    light = knee(light);
-    \\    finalColor = vec4(flashed(c.rgb * light + sheen + emission, flash), c.a) * fragColor;
+    \\    vec3 surface = min(c.rgb * light + sheen, c.rgb);
+    \\    finalColor = vec4(flashed(surface + emission, flash), c.a) * fragColor;
     \\    finalColor.a *= mirrorFade();
     \\}
 ;

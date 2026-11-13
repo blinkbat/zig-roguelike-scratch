@@ -219,7 +219,7 @@ pub const Bide = struct {
 pub const RaiseSkeleton = struct {
     pub const COST: i32 = 6;
     pub const COOLDOWN: u8 = 4;
-    pub const RANGE: i32 = 3;
+    pub const RANGE: i32 = 2;
     pub const DESCRIPTION = "Raise a skeleton on visible open ground. It fights the foes you see and follows you through doors. Past your limit, the oldest crumbles.";
     /// Cells from the hero a skeleton keeps to when there is nothing to fight.
     pub const FOLLOW: i32 = 2;

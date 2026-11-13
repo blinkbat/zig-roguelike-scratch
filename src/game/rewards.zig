@@ -60,6 +60,12 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
     const opened = sim.lv.at(at).opened() orelse return .not_closed;
     if (!groundRoom(sim)) return .ground_full;
     sim.lv.set(at, opened);
+    if (sim.map) |map| if (map.node[sim.node].zoo) |z| if (z.key) |key| if (key.eq(at)) {
+        dropItem(sim, .{ .item = .{ .kind = .small_key }, .at = at });
+        sim.log.push(.loot, "{s} opens the chest: Small Key.", .{sim.name.text()});
+        sim.chronicle.mark(.chest);
+        return .opened;
+    };
     const rolled = loot.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
     dropItem(sim, .{ .item = rolled.item.?, .at = at });
     const gold = rolled.gold;
@@ -129,7 +135,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
             .fire => {
                 caught = ignite(sim, fallen.at, actor.row(fallen.kind).name);
                 if (fireRound(sim, fallen.at, PYRE_REACH, PYRE_KINDLE).steeped) |steeped| caught.setUnion(steeped);
-                sim.lv.release(.smoke, fallen.at, gas.SMOKE_BURST);
+                fire.smoulder(&sim.lv, fallen.at);
             },
         },
         .strike => {},

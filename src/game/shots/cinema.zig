@@ -53,6 +53,7 @@ pub fn captureCinema(g: *game.Game) !void {
 }
 
 fn captureVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
+    try captureFireSight(g, target);
     const from = P{ .x = 20, .y = 20 };
     const foe = P{ .x = 24, .y = 20 };
     const reeds = P{ .x = 22, .y = 20 };
@@ -80,6 +81,21 @@ fn captureVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
     try captureEased(g, target, &.{ 0.05, 0.12, 0.25, 0.60 }, "out");
     for (&g.sim.lv.lit, g.sim.lv.seen) |*lit, seen| lit.* = seen;
     try captureEased(g, target, &.{ 0.05, 0.12, 0.25 }, "in");
+}
+
+fn captureFireSight(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 23, .y = 21 };
+    const past = P{ .x = 26, .y = 22 };
+    game.harness.grassArena(g, from, &.{past});
+    const bloat = game.harness.spawnAt(g, .pyre_bloat, at, false);
+    studyAt(g, true, day.NOON);
+    game.combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, game.combat.SHOOT, .{ .from = from, .wait = 0.3 });
+    fire.lay(&g.sim.lv, at, fire.BURNS, 0);
+    game.castSight(g, from);
+    game.harness.drawnOut(g);
+    if (!g.sim.lv.isLit(past) or !grid.sightLine(&g.sim.lv, from, past)) return error.FireBlocksSight;
+    try capture(g, target, CINEMA_DIR ++ "/visibility-pyre-fire.png");
 }
 
 fn captureEased(g: *game.Game, target: rl.RenderTexture2D, times: []const f32, comptime way: []const u8) !void {

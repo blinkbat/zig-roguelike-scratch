@@ -655,7 +655,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0x33ba8f7ff4e8479f;
+const RECORDED_FINGERPRINT: Print = 0x761969bb41088ab3;
 
 test "zoo keys doors populations and visits survive portable saves" {
     const alloc = std.testing.allocator;
@@ -673,9 +673,12 @@ test "zoo keys doors populations and visits survive portable saves" {
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     for (0..3) |phase| {
-        if (phase == 1) try std.testing.expect(z.collect(&g.sim.lv, z.key.?));
+        if (phase == 1) {
+            try std.testing.expectEqual(@import("game/rewards.zig").Chest.opened, @import("game/rewards.zig").openChest(&g.sim, z.key.?));
+            try std.testing.expect(g.sim.ground.take(0, &g.sim.inventory));
+        }
         if (phase == 2) {
-            try std.testing.expect(z.open(&g.sim.lv, &g.sim.pool));
+            try std.testing.expect(z.open(&g.sim.lv, &g.sim.pool, &g.sim.inventory));
             for (g.sim.pool.slice(), 0..) |body, i| {
                 if (body.livingFoe() and z.inside().holds(body.at)) {
                     _ = g.sim.pool.damage(&g.sim.lv, actor.Pool.idOf(i), body.hp);
@@ -688,6 +691,7 @@ test "zoo keys doors populations and visits survive portable saves" {
         try std.testing.expectEqualDeep(z, into.node[1].zoo.?);
         try std.testing.expectEqual(g.sim.lv.at(z.key.?), back.sim.lv.at(z.key.?));
         try std.testing.expectEqual(g.sim.lv.at(z.door()), back.sim.lv.at(z.door()));
+        try std.testing.expectEqualSlices(items.Item, g.sim.inventory.bag[0..g.sim.inventory.n], back.sim.inventory.bag[0..back.sim.inventory.n]);
         try std.testing.expectEqualDeep(g.sim.pool.constSlice(), back.sim.pool.constSlice());
     }
     g.sim.travel = .{ .node = 0, .door = 0 };
@@ -701,7 +705,7 @@ test "zoo keys doors populations and visits survive portable saves" {
     game.update(back, 0);
     try std.testing.expectEqual(@as(usize, 1), back.sim.node);
     try std.testing.expectEqual(grid.Tile.open_gate, back.sim.lv.at(z.door()));
-    try std.testing.expectEqual(grid.Tile.key_taken, back.sim.lv.at(z.key.?));
+    try std.testing.expectEqual(grid.Tile.chest_open, back.sim.lv.at(z.key.?));
     var living: usize = 0;
     for (back.sim.pool.constSlice()) |body| if (body.livingFoe() and z.inside().holds(body.at)) {
         living += 1;
@@ -723,6 +727,50 @@ test "a node saved before zoos defaults to no zoo" {
     try format.TestRecord.change(&older, bytes.items, &.{"zoo"}, null);
     try Code.read(older.items, node);
     try std.testing.expect(node.zoo == null);
+}
+
+test "legacy zoo key tiles migrate to chests and interchangeable Small Keys once" {
+    const alloc = std.testing.allocator;
+    const w = try atlas.testAtlas();
+    defer alloc.destroy(w);
+    try w.load(alloc, atlas.START);
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    const back = try game.boot(alloc);
+    defer game.shut(alloc, back);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    const z = w.node[1].zoo.?;
+    var buf = std.ArrayList(u8).init(alloc);
+    defer buf.deinit();
+    for (0..4) |phase| {
+        game.beginMapAt(g, w, .{ .node = 1, .at = z.approach() }, 17);
+        g.sim.lv.set(z.key.?, if (phase == 0) .zoo_key else .key_taken);
+        if (phase == 2) g.sim.lv.set(z.door(), .open_gate);
+        if (phase == 3) while (g.sim.inventory.add(.{ .kind = .cap })) {};
+        g.sim.visited.set(1);
+        g.sim.visits[1] = .{ .lv = g.sim.lv, .pool = g.sim.pool, .ground = g.sim.ground, .facing = g.pic.facing };
+        try sealed(g, &buf);
+        try read(buf.items, back, into);
+        const want: grid.Tile = if (phase == 0 or phase == 3) .chest else .chest_open;
+        try std.testing.expectEqual(want, back.sim.lv.at(z.key.?));
+        const count: usize = if (phase == 1) 1 else if (phase == 3) @import("play/inventory.zig").BAG_MAX else 0;
+        try std.testing.expectEqual(count, back.sim.inventory.n);
+        if (phase == 1) try std.testing.expectEqual(@import("play/item_bases.zig").Kind.small_key, back.sim.inventory.bag[0].kind);
+        try sealed(back, &buf);
+        try read(buf.items, back, into);
+        try std.testing.expectEqual(count, back.sim.inventory.n);
+    }
+    game.beginMapAt(g, w, .{ .node = 1, .at = z.approach() }, 17);
+    g.sim.lv.set(z.key.?, .key_taken);
+    g.sim.travel = .{ .node = 0, .door = 0 };
+    g.pic.busy = 0;
+    game.update(g, 0);
+    try sealed(g, &buf);
+    try read(buf.items, back, into);
+    try std.testing.expectEqual(@as(usize, 0), back.sim.node);
+    try std.testing.expectEqual(@as(usize, 1), back.sim.inventory.n);
+    try std.testing.expectEqual(grid.Tile.chest_open, back.sim.visits[1].lv.at(z.key.?));
 }
 
 fn sealed(g: *game.Game, buf: *std.ArrayList(u8)) !void {

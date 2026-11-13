@@ -55,6 +55,8 @@ fn allowed(owner: []const u8, target: []const u8) bool {
     }
     if (domain(owner)) {
         if (!std.mem.endsWith(u8, target, ".zig")) return !std.mem.eql(u8, target, "raylib");
+        if (std.mem.eql(u8, owner, "game/attacks.zig") and gameRules(target))
+            return std.mem.eql(u8, target, "game/sim.zig");
         return std.mem.startsWith(u8, target, "core/") or std.mem.startsWith(u8, target, "play/") or
             std.mem.startsWith(u8, target, "map/") or
             (gameRules(owner) and gameRules(target));
@@ -66,10 +68,11 @@ fn allowed(owner: []const u8, target: []const u8) bool {
 }
 
 pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) !?Violation {
-    if (!domain(owner) and !listed(&INDEPENDENT, owner) and !std.mem.eql(u8, owner, INTERACTION)) return null;
     var tree = try std.zig.Ast.parse(alloc, source, .zig);
     defer tree.deinit(alloc);
     if (tree.errors.len != 0) return error.InvalidSyntax;
+    if (tree.rootDecls().len == 0) return error.EmptyModule;
+    if (!domain(owner) and !listed(&INDEPENDENT, owner) and !std.mem.eql(u8, owner, INTERACTION)) return null;
     const tags = tree.tokens.items(.tag);
     tokens: for (tags, 0..) |tag, i| {
         const token: u32 = @intCast(i);
@@ -92,6 +95,23 @@ pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) 
         if (!allowed(owner, target)) return .{ .line = tree.tokenLocation(0, token).line + 1, .imported = literal };
     }
     return null;
+}
+
+test "source validation accepts small modules and rejects empty or truncated source in every layer" {
+    const alloc = std.testing.allocator;
+    for ([_][]const u8{ "play/items.zig", "game/combat.zig", "ui/book.zig" }) |owner| {
+        try std.testing.expect((try check(alloc, owner, "pub const answer = 42;")) == null);
+        try std.testing.expectError(error.EmptyModule, check(alloc, owner, ""));
+        try std.testing.expectError(error.EmptyModule, check(alloc, owner, "// padding\n" ** 60));
+        try std.testing.expectError(error.InvalidSyntax, check(alloc, owner, "// padding\n" ** 60 ++ "pub fn broken() void {"));
+    }
+}
+
+test "attack resolution cannot import death rewards or foe turn coordination" {
+    const alloc = std.testing.allocator;
+    try std.testing.expect((try check(alloc, "game/attacks.zig", "const sim = @import(\"sim.zig\");")) == null);
+    try std.testing.expect((try check(alloc, "game/attacks.zig", "const rewards = @import(\"rewards.zig\");")) != null);
+    try std.testing.expect((try check(alloc, "game/attacks.zig", "const foes = @import(\"foe_rules.zig\");")) != null);
 }
 
 test "source boundaries reject rendering and application imports in domain code" {

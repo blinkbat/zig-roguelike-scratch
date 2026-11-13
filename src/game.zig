@@ -189,6 +189,7 @@ pub const Game = struct {
     target: ?u16 = null,
     inspecting: Spot = .{ .slot = 0 },
     inspect_scroll: usize = 0,
+    stride: mathx.Dir = .e,
     keywords: keywords.State = .{},
     /// Map pixels, eased toward the hero. Nothing in the simulation reads it.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
@@ -262,7 +263,7 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
 /// Every unsaved `Game` field is in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     pub const loot = [_][]const u8{ "character", "looted", "loot_gold" };
-    pub const run = [_][]const u8{ "mode", "epitaph" };
+    pub const run = [_][]const u8{ "mode", "epitaph", "stride" };
     /// Reset as a saved run resumes, besides `run` and `loot`.
     pub const resumed = [_][]const u8{"exit"};
     pub const turn = [_][]const u8{ "pending", "target", "inspecting", "inspect_scroll", "keywords" };
@@ -640,6 +641,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
             const ally = if (move == .swap) g.sim.lv.who(to) else grid.NO_ONE;
             const loot = move == .loot or (move == .swap and character.lootReached(g, from, to));
             heroTo(g, to);
+            g.stride = d;
             if (ally != grid.NO_ONE) {
                 g.sim.pool.items[actor.Pool.slot(ally)].at = from;
                 g.sim.lv.stand(from, ally);
@@ -1016,28 +1018,10 @@ pub fn unloadGraphics(g: *Game) void {
 pub fn prepare(g: *Game) void {
     if (!g.graphics_ready) loadGraphics(g);
     if (g.art == .play) return;
-    const need = mapAssets(g);
-    g.sprites.sync(need);
+    g.sprites.sync(sprite_assets.Assets.everything());
     const figures = g.sprites.figures();
     g.light.syncFigures(&figures);
     g.art = .play;
-}
-
-pub fn mapAssets(g: *Game) sprite_assets.Assets {
-    var need = sprite_assets.Assets.of(&g.sim.lv);
-    need.barrel = need.barrel or g.pic.fx.impacts.hasBarrels();
-    if (g.sim.map) |w| for (w.script.npcs()) |f| {
-        if (f.node == g.sim.node) if (f.looks) |k| need.body(k);
-    };
-    for (g.sim.pool.slice(), 0..) |a, i| {
-        const posing = a.alive and a.disguised;
-        if (a.alive) need.body(a.kind);
-        if (posing) need.beneath(a.under, a.at);
-        if (!g.pic.gone(&g.sim, i)) need.body(g.pic.pictured[i].kind);
-        if (g.pic.sighted[i] > 0) if (g.pic.seen_bodies[i]) |last| need.body(last.pic.kind);
-        if (posing or g.pic.masked.isSet(i)) need.mimic_closed = true;
-    }
-    return need;
 }
 
 pub fn syncScreen(g: *Game, toggle: bool) void {

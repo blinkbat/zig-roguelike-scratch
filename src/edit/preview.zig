@@ -123,7 +123,7 @@ pub const Scene = struct {
             while (f.next()) |_| {}
             if (nd.zoo) |z| {
                 const approach = z.approach();
-                const key_reached = if (z.key) |k| self.reach_dist[grid.Level.idx(k)] >= 0 else true;
+                const key_reached = z.keyReachable(&self.reach_dist);
                 if (self.reach_dist[grid.Level.idx(approach)] >= 0 and key_reached) {
                     f.seed(z.threshold());
                     while (f.next()) |_| {}

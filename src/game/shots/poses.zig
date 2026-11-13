@@ -385,6 +385,7 @@ fn captureEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         .{ .class = heroes.Class.wizard, .act = skillbar.Act.frost_nova },
         .{ .class = heroes.Class.wizard, .act = skillbar.Act.blink },
         .{ .class = heroes.Class.wizard, .act = skillbar.Act.mana_shield },
+        .{ .class = heroes.Class.wizard, .act = skillbar.Act.raise_skeleton },
         .{ .class = heroes.Class.archer, .act = skillbar.Act.burning_arrow },
         .{ .class = heroes.Class.archer, .act = skillbar.Act.glacial_shot },
     }) |study| {
@@ -401,9 +402,11 @@ fn captureEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         const directory = SHOTS_DIR ++ "/fx-" ++ @tagName(act);
         try std.fs.cwd().makePath(directory);
         try capture(g, target, directory ++ "/before.png");
+        if (g.bar.slotOf(act) == null) g.bar.bind(g.bar.firstEmpty().?, act);
+        if (g.sim.growth.ranks.get(act) == 0) g.sim.growth.ranks.set(act, 1);
         skills.useSkill(g, game.harness.boundTo(g, act));
         if (act.reticle()) |reticle| {
-            g.mode.aim.mark = if (reticle == .leap) .{ .x = 22, .y = 20 } else .{ .x = 23, .y = 20 };
+            g.mode.aim.mark = if (reticle == .leap or act == .raise_skeleton) .{ .x = 22, .y = 20 } else .{ .x = 23, .y = 20 };
             skills.confirmAim(g);
         }
         g.st = .{};

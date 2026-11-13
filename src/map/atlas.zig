@@ -983,7 +983,7 @@ test "the strand's door leads to a tee: the whole caravan camp walks from where 
         nd.stamp(&lv, 0xCA2A +% i *% grid.TEST_SEED_STRIDE);
         const z = nd.zoo.?;
         _ = grid.distances(&lv, door, &dist, &queue);
-        try std.testing.expect(dist[grid.Level.idx(z.key.?)] >= 0);
+        try std.testing.expect(z.keyReachable(&dist));
         try std.testing.expect(dist[grid.Level.idx(z.approach())] >= 0);
         try std.testing.expect(dist[grid.Level.idx(z.threshold())] < 0);
         try std.testing.expect(dist[grid.Level.idx(nd.door[1].at)] >= 0);
@@ -1222,8 +1222,9 @@ test "every map in the maps folder parses, and each procgen node rolls its groun
             nd.stamp(&lv, 0x5EED +% n);
             if (nd.zoo) |z| {
                 var pool = actor.Pool{};
-                if (z.key) |k| try std.testing.expect(z.collect(&lv, k));
-                try std.testing.expect(z.open(&lv, &pool));
+                var inventory = @import("../play/inventory.zig").Inventory{};
+                try std.testing.expect(inventory.add(.{ .kind = .small_key }));
+                try std.testing.expect(z.open(&lv, &pool, &inventory));
             }
             const at = landing(&lv, if (a.start.node == n) a.start.at else grid.MIDDLE, &.{}) orelse return error.NoFloor;
             const open = lv.openCount();

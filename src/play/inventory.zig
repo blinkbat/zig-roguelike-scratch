@@ -62,6 +62,15 @@ pub const Inventory = struct {
         return it;
     }
 
+    pub fn takeSmallKey(self: *Inventory) bool {
+        for (self.bag[0..self.n], 0..) |it, i| {
+            if (it.kind != .small_key) continue;
+            _ = self.remove(i);
+            return true;
+        }
+        return false;
+    }
+
     /// The loadout with bag item `at` worn in `slot`, before requirements are checked.
     pub fn swapped(self: *const Inventory, at: usize, slot: item_bases.Slot) Failure!Gear {
         if (at >= self.n) return error.Missing;
@@ -120,6 +129,16 @@ test "flasks start worn in their own slots, never roll as loot, and come off and
         try std.testing.expect(inv.gear.holds(k));
     }
     try std.testing.expectEqual(@as(usize, 0), inv.n);
+}
+
+test "Small Keys have no equipment slots or affixes and stay out of equipment rolls" {
+    const key = item_bases.Kind.small_key;
+    try std.testing.expectEqual(@as(usize, 0), key.slots().len);
+    for (@import("affixes.zig").MODS) |mod| try std.testing.expect(!mod.allows(key));
+    try std.testing.expect(std.mem.indexOfScalar(item_bases.Kind, &@import("loot.zig").BASES, key) == null);
+    var inv = Inventory{};
+    try std.testing.expect(inv.add(.{ .kind = key }));
+    try std.testing.expectError(error.WrongSlot, inv.swapped(0, .right_hand));
 }
 
 test "equipment swaps preserve both hands, reject self-funded requirements and keep dependent gear valid" {

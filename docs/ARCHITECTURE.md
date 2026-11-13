@@ -57,6 +57,8 @@ cells stay fully covered. Wall-adjacent feather widths interpolate continuously
 to keep narrow corridors clear. Automatic chest/bag opening is
 suppressed while a foe is visible; deliberate interaction still works.
 
+Body lighting, including rim sheen, is capped at the authored sprite colour so
+nearby torches cannot bleach its highlights. Emission and hit flashes remain separate.
 Shadow casters sample light independently of fog; receiver visibility fades the
 landed mask. Culling includes silhouettes and blur beyond the camera, and actor
 birth/death timing follows presentation. Bind the receiver shader's light-map
@@ -66,7 +68,9 @@ scenery, preserve source visibility and compensate for the terrain lighting pass
 
 Runtime imports in `play/`, `map/`, `game/sim.zig`, `game/attacks.zig`,
 `game/rewards.zig`, `game/foe_rules.zig`, `edit/plot_fields.zig` and `edit/preview.zig` are limited to core, play and map modules. The game rule
-modules may also depend on each other. They cannot import raylib, UI, rendering,
+modules may also depend on each other, except `attacks.zig` can import only
+`sim.zig` from that group: rewards and foe-turn coordination remain outside attack
+resolution. They cannot import raylib, UI, rendering,
 editor coordination or the application. Use `core/wording.zig` for display names,
 `core/text.zig` for bounded text and `play/log.zig` for event history;
 `ui/journal.zig` only renders that history.
@@ -78,7 +82,9 @@ Editor interaction may import Editor, but cannot import Game or the application.
 The build checks actual Zig import tokens and normalizes relative paths. Test
 bodies may import other layers to verify integration contracts. These are direct
 source dependency checks; `core/input.zig` still owns device access and its shared
-input types.
+input types. Every rostered module must parse and contain a declaration; there is
+no byte minimum. Syntax and empty-module validation catch incomplete source without
+requiring padding in small modules; the compiler checks references and types.
 
 Sprite asset selection and shader definitions cannot import the sprite renderer.
 Effect payloads and the impact queue cannot import the particle-effects coordinator.
@@ -126,6 +132,11 @@ screen, window-size and run/turn resets. Gameplay rules never read it.
 - Combat consumes the outcome once: damage consequences, log, snapshot/split, death rewards, then impact and recovery.
 - Hero rolls and weapon status resolution stay here; animation, input and death transitions stay in their adapters.
 - `chosenBlow` rolls armour and status before damage, preserving opportunity bonuses and split inheritance.
+- `strikeHero` returns blocked, dodged, or a hit with resolved damage and applied
+  statuses. It rolls block before hit/damage, applies guard/bide and consumes shock
+  through `foeBlow`, then resolves health/mana damage before bleed, stun and chill in that
+  order. Lethal or fully absorbed hits roll no statuses. It cannot award deaths or
+  schedule presentation.
 
 `game/foe_rules.zig`
 - Owns enemy turn ordering, target queries, path-distance caching and ranged reposition selection from Simulation alone.
@@ -149,6 +160,31 @@ screen, window-size and run/turn resets. Gameplay rules never read it.
 - A braced foe (`Actor.braced`) acts down its locked line on its next action; any skipped action drops the brace. A firebolt (`Actor.bolt`) flies on after its thrower dies and freezes with its level when the hero leaves; `Presentation.bolts` is rebuilt from it.
 - Consumed ticks and displacement clear even when hero death interrupts the turn.
 - Split children inherit consumed ticks, so they cannot repeat their parent's harm that turn.
+
+## Resolution and picture ordering
+
+The adapter must finish recording one resolution before beginning another. Actor
+identities (`ActorId`, persisted as integers) name bodies; `ActorSlot` names pool
+storage. Neither snapshot sequencing nor a picture deadline may consume simulation
+RNG. Combat rolls use `Simulation.rng`; drops use `loot_rng`; particles use cosmetic
+RNG in `Fx`.
+
+| Flow | State and RNG order | Snapshot and picture order | Regression coverage |
+| --- | --- | --- | --- |
+| Hero hit | `attacks.resolve`: hit check, armour/elements, statuses, `Simulation.resolveDamage`, recovery roll | `combat.woundAt`: damage debt/log, `afterBlow` split and snapshot, then recovery and `recordAttack` | `hero`: attack resolution isolation and recorded chosen/reaction/status outcomes; `picture`: each bite and arrow HP at impact |
+| Incoming strike | `combat.reach` resolves any sweep victims first, then `attacks.strikeHero` owns block, hit, damage and surviving-hit statuses | `reach` records damage debt/logs and the hero snapshot before melee thorns, then death or counter, then surviving knockback. A thorn-killed attacker still knocks back; a blocked/dodged melee still permits a counter | `hero`: recorded incoming-strike RNG and isolated rule outcomes; `foes`: thorns, status rates and thorn-killed shieldbearer knockback |
+| Killing hit | Damage removes the living body; `rewards.defeat` then applies XP, loot RNG, flask/mana recovery, burst terrain and fright | `landBlow` captures the dead body before `fell`; `beforeDeath` captures affected surroundings before rewards; `recordDeath` holds drops and burst effects until impact | `hero`: kill flask refill; `picture`: arrow death; `foes`: mimic loot and pyre neighbours at impact |
+| Chain or reaction | `chainHit` captures target identities before any hit; each target resolves in sequence. `tactics_exec.counter` rolls its chance before the reaction's attack rolls | Every `woundAt` captures its result before the next hit. Chain delays accumulate per jump; a missed reaction still occupies its animation time | `hero`: missed reaction attribution and projectile timing; `skills`: chain and area attacks; `tactics_exec`: reaction timing |
+| Status damage and splitting | `harmAfter` visits gas, steam, healing gas, ground fire, burn, bleed. Consumed ticks are marked before damage; split children inherit them before entry effects run | Each `harmTick` captures its own body/split before death rewards and the next tick. `Presentation.scheduleHarm` follows that body's action and reactions; newborn harm waits for its reveal | `picture`: burning/gassed halves and quarters; `foes`: sweep stun paid once by both halves |
+| Interrupted turn | `passTurn` always defers `Simulation.finishTurn`. Hero post-action death stops gas/clocks; a killing projectile stops foe actions; a killing foe stops even its own post-action harm | Already recorded impacts remain queued; death mode and epitaph are immediate, while the body and death veil wait for the pictured impact/turn | `hero`: post-action death clears turn tracking; `picture`: killer spared gas and only the lethal bite kills |
+
+`Presentation.stepGlide` schedules motion, blows/mending, reactions, knockback,
+then status harm. Its `starts_at`/`next_at` are relative to the turn origin;
+`impact_in`/`finishes_in` are remaining seconds from the current frame. `late`
+converts between them. When one frame crosses several deadlines, the impact queue
+uses snapshot sequence to prevent old health/status from replacing newer state,
+and releases every event's mana debt once. This is covered by the queue's overdue
+impact test and `hero`'s multiple incoming impacts in one frame.
 
 ## Adding a skill
 
@@ -207,10 +243,12 @@ identity changes. Source wording and attribution remain separate transactions in
 ## Monster zoos
 
 `map/zoo.zig` owns a reusable encounter; either kind of atlas node can hold one
-optional `zoo`. `game/jail.zig` adapts its key pickup and door interaction to turns,
+optional `zoo`. `game/jail.zig` adapts its door interaction to turns,
 logging and presentation. The local gate blocks movement and sight and is separate
 from atlas travel doors. Opening it spends a turn and wakes the surviving room
-occupants; it stays open for retreat. Trying a locked gate spends no turn.
+occupants; it stays open for retreat. A locked gate consumes one carried Small Key.
+Trying a locked gate without one spends no turn. Keys from any compatible source
+work; `game/rewards.zig` puts one in the encounter's outside chest.
 
 Author an encounter in that node's map text:
 
@@ -224,7 +262,8 @@ zoo_foe 1 bandit_netter
 ```
 
 The first line is x, y, outer width, outer height and entrance side (`n/e/s/w`).
-Omitting `zoo_key` leaves the closed door unlocked. Each `zoo_foe` supplies a positive
+`zoo_key` positions the Small Key chest; omitting it leaves the closed door unlocked.
+Each `zoo_foe` supplies a positive
 relative weight and a stocked enemy kind; the pool is independent of ordinary
 packs. Dimensions are 5–10 cells, with one clear inner threshold and two chests
 against the far wall. Every remaining inner cell gets a weighted enemy while actor
@@ -232,8 +271,8 @@ capacity permits, including reserves for slime splitting. Swimmers receive shall
 water under their cells; mimics reveal and restore their ground when released.
 
 The room is stamped after terrain generation, with a walkable perimeter and
-short connections for its approach and key that stay outside its walls. Unrelated
-sealed rooms remain sealed. The key is outside the perimeter and is
+short connections for its approach and key chest that stay outside its walls. Unrelated
+sealed rooms remain sealed. The chest is outside the perimeter and is
 connected before the door is sealed. Ordinary packs and derived NPC placements
 avoid the encounter. Authored foes, travel doors and fixed painted sections cannot
 overlap it; roaming painted sections cannot share its node. The editor previews
@@ -243,7 +282,7 @@ Editor door, foe and start placement preserves these encounter reservations,
 including the replacement start chosen when its node is removed.
 
 The Caravan node places this 21-monster room east of the northbound route, with
-the key to its southwest. `--shot-zoo` captures the key, closed gate, release and
+the key chest to its southwest. `--shot-zoo` captures the chest, key loot, closed gate, release and
 packed interior using the real map. Tests cover generation, visibility, all enemy
 kinds, input, map parsing, portable saves and revisits.
 

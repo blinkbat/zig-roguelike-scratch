@@ -111,6 +111,7 @@ fn footOf(lines: usize, mods: usize) i32 {
 
 pub fn height(face: *const font.Face, width: i32, maybe: ?items.Item, slot: item_bases.Slot) i32 {
     const item = maybe orelse return SLOT_Y + font.LABEL;
+    if (item.kind.slots().len == 0) return CARD_NAME + font.BODY_LINE;
     var shown: Mods = undefined;
     var rows: usize = 0;
     var text: CardText = .{};
@@ -184,6 +185,7 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     const ink = look.itemInk(item.rarity());
     var name_buf: [items.NAME_MAX]u8 = undefined;
     _ = face.paragraph(item.name(&name_buf), x, y + CARD_NAME, width, font.BODY, ink);
+    if (spec.slots.len == 0) return;
     var base_buf: [items.NAME_MAX]u8 = undefined;
     if (item.rarity() == .rare) face.draw(items.baseName(item.kind, &base_buf), x, y + CARD_NAME + font.BODY_LINE, font.LABEL, look.TEXT);
     var metadata: menu.Note(100) = .{};

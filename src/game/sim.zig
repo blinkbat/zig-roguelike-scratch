@@ -247,7 +247,7 @@ pub const Simulation = struct {
     }
 
     pub fn combatStatsOn(self: *const Simulation, a: *const actor.Actor, tile: grid.Tile, buildup: resilience.State, sundered: sunder.Sunder) terrain.Stats {
-        var base = terrain.Stats{ .elements = a.resists, .armour = if (a.stuck) 0 else actor.row(a.kind).armour };
+        var base = terrain.Stats{ .hit = actor.row(a.kind).hit, .elements = a.resists, .armour = if (a.stuck) 0 else actor.row(a.kind).armour };
         if (a.kind.hero()) {
             const by = self.heroAttrs();
             base.dodge = by.dodge();

@@ -204,6 +204,7 @@ pub const Book = struct {
     fn destination(self: *const Book, view: View) item_bases.Slot {
         const it = self.selected(view).?;
         const slots = it.kind.slots();
+        if (slots.len == 0) return .right_hand;
         return slots[@min(self.destination_index, slots.len - 1)];
     }
     fn select(self: *Book, view: View) ?Command {
@@ -213,7 +214,7 @@ pub const Book = struct {
                 self.choose(.inventory);
                 break :blk null;
             },
-            .inventory => if (stockAt(view, self.cursor)) |k| .{ .use = k } else .{ .equip = .{ .index = self.bagIndex(view).?, .slot = self.destination(view) } },
+            .inventory => if (stockAt(view, self.cursor)) |k| .{ .use = k } else if (self.selected(view).?.kind.slots().len > 0) .{ .equip = .{ .index = self.bagIndex(view).?, .slot = self.destination(view) } } else null,
             .stats, .quests => null,
             .passives => if (view.growth.canAllocate(self.cursor)) .{ .passive = self.cursor } else null,
             .skills => blk: {
@@ -293,7 +294,8 @@ pub const Book = struct {
         };
         if (self.page == .inventory and self.selected(view) != null) {
             if (st.hit(menu.REMOVE)) return .{ .drop = self.bagIndex(view).? };
-            if (st.hit(menu.CHANGE)) self.destination_index = mathx.wrap(self.destination_index, 1, self.selected(view).?.kind.slots().len);
+            const count_slots = self.selected(view).?.kind.slots().len;
+            if (st.hit(menu.CHANGE) and count_slots > 1) self.destination_index = mathx.wrap(self.destination_index, 1, count_slots);
         }
         if (self.page == .skills and st.hit(menu.CHANGE)) return .{ .bindings = self.selectedSkill(view) };
         if (self.page == .stats and st.hit(menu.CHANGE)) self.advanced = !self.advanced;
@@ -404,7 +406,7 @@ pub const Book = struct {
                     .nearby, .loot => character_view.verbOf(.pickup),
                     .stats, .passives, .skills, .quests, .trade => unreachable,
                 };
-                c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = label });
+                if (self.page != .inventory or chosen == null or chosen.?.kind.slots().len > 0) c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = label });
                 if (self.page == .loot) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = character_view.verbOf(.take_all) });
                 if (self.page == .inventory) if (chosen) |it| {
                     if (it.kind.slots().len > 1) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = slotLabel(self.destination(view)) });
@@ -608,7 +610,7 @@ pub const Book = struct {
                     const it = view.inventory.bag[at];
                     const slots = it.kind.slots();
                     line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
-                    listRow(face, x, row_mid, it.name(&name_buf), inkOf(it), if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name(), look.DIM);
+                    listRow(face, x, row_mid, it.name(&name_buf), inkOf(it), if (slots.len == 0) "" else if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name(), look.DIM);
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];
@@ -661,6 +663,7 @@ pub const Book = struct {
             return;
         };
         const slot = if (self.page == .equipment) item_bases.SLOTS[self.cursor] else self.destination(view);
+        if (it.kind.slots().len == 0) return item_card.draw(face, x, y, layout.DETAIL_W, it, slot, view.base, null);
         const comparing = self.page == .inventory;
         item_card.draw(face, x, y, if (comparing) layout.CARD_W else layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), if (comparing) "SELECTED" else null);
         if (comparing) item_card.draw(face, x + layout.CARD_W + layout.CARD_GAP, y, layout.CARD_W, view.inventory.gear.slots.get(slot), slot, view.inventory.gear.statsWithout(slot, view.base), "EQUIPPED");
@@ -876,6 +879,18 @@ test "character actions need one press and tabs are directly reachable" {
     book.zoom = trees.ZOOM_MIN;
     book.open();
     try std.testing.expectEqual(trees.ZOOM_START, book.zoom);
+}
+
+test "Small Keys can be carried and dropped without equipment actions" {
+    var inv = inventory.Inventory{};
+    try std.testing.expect(inv.add(.{ .kind = .small_key }));
+    const growth = progress.State.of(.wizard);
+    const view = testView(&inv, &growth);
+    var book = Book{ .page = .inventory };
+    const screen = display.WINDOW;
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view) == null);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CHANGE) }, screen, view) == null);
+    try std.testing.expectEqual(@as(usize, 0), book.step(&.{ .pressed = .initOne(menu.REMOVE) }, screen, view).?.drop);
 }
 
 test "stats change between main and advanced by button and by click, and back still closes" {

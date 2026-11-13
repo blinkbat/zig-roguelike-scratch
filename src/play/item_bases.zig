@@ -103,6 +103,7 @@ pub const Kind = enum {
     sapphire_ring,
     life_flask,
     mana_flask,
+    small_key,
 
     pub fn slots(k: Kind) []const Slot {
         return spec(k).slots;
@@ -259,6 +260,7 @@ const SPECS = std.EnumArray(Kind, Spec).init(.{
     .sapphire_ring = .{ .name = "Sapphire ring", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.mana, 2) },
     .life_flask = .{ .name = "Life flask", .slots = &.{.life_flask}, .innate = .{ .flask = .life } },
     .mana_flask = .{ .name = "Mana flask", .slots = &.{.mana_flask}, .innate = .{ .flask = .mana } },
+    .small_key = .{ .name = "Small Key", .slots = &.{} },
 });
 
 pub fn spec(k: Kind) Spec {

@@ -12,7 +12,7 @@ const ground_items = @import("ground_items.zig");
 pub const BASES = blk: {
     var ks: []const item_bases.Kind = &.{};
     for (std.enums.values(item_bases.Kind)) |k| {
-        if (k.flaskOf() == null) ks = ks ++ &[_]item_bases.Kind{k};
+        if (k.flaskOf() == null and k.slots().len > 0) ks = ks ++ &[_]item_bases.Kind{k};
     }
     break :blk ks[0..ks.len].*;
 };

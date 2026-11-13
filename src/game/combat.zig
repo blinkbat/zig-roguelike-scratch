@@ -303,7 +303,6 @@ pub fn collectGold(g: *game.Game, at: P) void {
 }
 
 pub fn arrive(g: *game.Game, at: P) void {
-    game.jail.arrive(g, at);
     if (rewards.coinDrop(&g.sim, at)) collectGold(g, at);
     rewards.noticeItems(&g.sim, at);
 }
@@ -1062,59 +1061,59 @@ fn fleeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
     return actor.flee(&g.sim.lv, at, id, foes.flowTo(&g.sim, hero));
 }
 
-/// `af`: what the turn it strikes on was worn under; whether a strike landed on the hero.
-fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, af: actor.Afflicted) bool {
-    g.pic.turnLater(.fromInt(id), dx);
-    const i = actor.Pool.slot(id);
-    const kind = g.sim.pool.items[i].kind;
+/// Whether a strike landed on the hero; afflictions are those worn under this action.
+fn reach(g: *game.Game, attacker_id: u16, row: actor.Row, facing_delta: i32, flight: ?bow.Flight, afflictions: actor.Afflicted) bool {
+    const attacker = actor.ActorId.fromInt(attacker_id);
+    const attacker_slot = attacker.slot();
+    g.pic.turnLater(attacker, facing_delta);
+    const kind = g.sim.pool.items[attacker_slot.index].kind;
     switch (row.blow) {
-        .strike => |s| {
-            const sweeps = sweepReady(g, id, row);
-            const weak = af.contains(.enfeeble);
-            if (sweeps) sweepRound(g, id, row, s, weak);
-            const verb = if (sweeps) actor.SWEEP_VERB else s.verb;
-            const hero = g.sim.heroActor().?;
-            const attacker = &g.sim.pool.items[i];
-            const blocked = g.sim.heroBlocks();
-            const blow = (if (blocked) null else attacks.foeBlow(&g.sim, attacker, hero, s, weak)) orelse {
-                if (blocked) g.sim.log.say("{s} blocks the {s}.", .{ g.sim.name.text(), row.name }) else g.sim.log.say("{s} dodges the {s}.", .{ g.sim.name.text(), row.name });
-                g.pic.recordFoeAttack(.fromInt(id), .miss, flight);
-                if (row.ranged == null) tactics_exec.counter(g, id);
-                return false;
+        .strike => |blow| {
+            const sweeps = sweepReady(g, attacker_id, row);
+            const weak = afflictions.contains(.enfeeble);
+            if (sweeps) sweepRound(g, attacker_id, row, blow, weak);
+            const verb = if (sweeps) actor.SWEEP_VERB else blow.verb;
+            const outcome = attacks.strikeHero(&g.sim, attacker, blow, weak);
+            const hit = switch (outcome) {
+                .blocked, .dodged => {
+                    if (outcome == .blocked) {
+                        g.sim.log.say("{s} blocks the {s}.", .{ g.sim.name.text(), row.name });
+                    } else {
+                        g.sim.log.say("{s} dodges the {s}.", .{ g.sim.name.text(), row.name });
+                    }
+                    g.pic.recordFoeAttack(attacker, .miss, flight);
+                    if (row.ranged == null) tactics_exec.counter(g, attacker_id);
+                    return false;
+                },
+                .hit => |hit| hit,
             };
-            const before = hero.hp;
-            const defended = g.sim.combatStats(hero);
-            const h = game.hurt(g, .fromInt(g.sim.hero), blow.dealt);
-            const lethal = h.lethal;
-            g.sim.log.push(.danger, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), h.dmg });
-            g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = kind }, .dmg = h.dmg, .before = before, .best = blow.rolled == s.hit.hi } });
-            const wounded = !lethal and h.dmg > 0;
-            if (wounded and g.sim.procStatus(hero, .bleed, s.bleeds)) {
-                g.sim.log.push(.danger, "{s} {s}!", .{ g.sim.name.text(), hero.bleed.said() });
-                hero.bleed.start();
-            }
-            if (wounded and g.sim.procStatus(hero, .stun, s.stuns)) {
-                hero.clock.stun();
+            const harm = hit.damage;
+            const hero = &g.sim.pool.items[harm.target.slot().index];
+            game.presentDamage(g, harm);
+            g.sim.log.push(.danger, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), harm.dmg });
+            g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = kind }, .dmg = harm.dmg, .before = hit.hp_before, .best = hit.maximum_roll } });
+            if (hit.bled) |said| g.sim.log.push(.danger, "{s} {s}!", .{ g.sim.name.text(), said });
+            if (hit.stunned) {
                 g.sim.sayTakes(g.sim.heroSlot().?, hero, turn_clock.STUNNED);
                 g.sim.chronicle.note(.{ .stunned = kind });
             }
-            const chills = damage.resistedChance(s.chills, defended.elements.get(glacial.ELEMENT));
-            if (wounded and g.sim.procStatus(hero, glacial.AILMENT, chills)) {
-                hero.chill.apply();
-                g.sim.sayTakes(g.sim.heroSlot().?, hero, glacial.TAKES);
+            if (hit.chilled) g.sim.sayTakes(g.sim.heroSlot().?, hero, glacial.TAKES);
+            const after = afterBlow(g, g.sim.hero, harm);
+            g.pic.recordFoeAttack(attacker, if (harm.lethal) .{ .kill = after } else .{ .hurt = after }, flight);
+            if (row.ranged == null) returnThorns(g, attacker_id, hero.at);
+            if (harm.lethal) {
+                heroDies(g);
+            } else if (row.ranged == null) {
+                tactics_exec.counter(g, attacker_id);
             }
-            const after = afterBlow(g, g.sim.hero, h);
-            g.pic.recordFoeAttack(.fromInt(id), if (lethal) .{ .kill = after } else .{ .hurt = after }, flight);
-            if (row.ranged == null) returnThorns(g, id, hero.at);
-            if (lethal) heroDies(g) else if (row.ranged == null) tactics_exec.counter(g, id);
-            if (!lethal and s.knocks) knockHero(g, id);
+            if (!harm.lethal and blow.knocks) knockHero(g, attacker_id);
             return true;
         },
         .burst => |b| {
             if (b == .gas) g.sim.chronicle.note(.burst);
-            _ = g.sim.pool.damage(&g.sim.lv, id, g.sim.pool.get(id).?.hp);
-            g.pic.recordFoeAttack(.fromInt(id), .{ .burst = g.pic.afterOf(&g.sim, .fromIndex(i)) }, flight);
-            fell(g, id);
+            _ = g.sim.pool.damage(&g.sim.lv, attacker_id, g.sim.pool.get(attacker_id).?.hp);
+            g.pic.recordFoeAttack(attacker, .{ .burst = g.pic.afterOf(&g.sim, attacker_slot) }, flight);
+            fell(g, attacker_id);
             return false;
         },
     }

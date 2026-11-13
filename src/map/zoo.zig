@@ -5,6 +5,7 @@ const gen = @import("gen.zig");
 const carve = @import("carve.zig");
 const lume = @import("lume.zig");
 const actor = @import("../play/actor.zig");
+const Inventory = @import("../play/inventory.zig").Inventory;
 const P = mathx.P;
 
 pub const MAX_KINDS = 16;
@@ -79,6 +80,14 @@ pub const Spec = struct {
         return out;
     }
 
+    pub fn keyReachable(s: *const Spec, distances: *const [grid.CELLS]i32) bool {
+        const at = s.key orelse return true;
+        for (mathx.CARDINALS) |delta| {
+            if (grid.cellOr(i32, distances, at.add(delta), -1) >= 0) return true;
+        }
+        return false;
+    }
+
     pub fn stamp(s: *const Spec, lv: *grid.Level) void {
         const r = s.room();
         var outside = grid.CellSet.initEmpty();
@@ -108,7 +117,7 @@ pub const Spec = struct {
         lv.set(back, .chest);
         lv.set(back.sub(s.dir().across()), .chest);
         lv.set(s.door(), if (s.key != null) .locked_gate else .gate);
-        if (s.key) |k| lv.set(k, .zoo_key);
+        if (s.key) |k| lv.set(k, .chest);
         grid.mendProps(&lv.tile);
         gen.reshape(lv);
         lv.addTorch(lume.torchOver(inner, inner.lo.x));
@@ -171,20 +180,10 @@ pub const Spec = struct {
         }
     }
 
-    pub fn collect(s: *const Spec, lv: *grid.Level, at: P) bool {
-        const k = s.key orelse return false;
-        if (!k.eq(at) or lv.at(k) != .zoo_key) return false;
-        lv.set(k, .key_taken);
-        return true;
-    }
-
-    pub fn open(s: *const Spec, lv: *grid.Level, pool: *actor.Pool) bool {
+    pub fn open(s: *const Spec, lv: *grid.Level, pool: *actor.Pool, inventory: *Inventory) bool {
         const t = lv.at(s.door());
         if (!t.closedGate()) return false;
-        if (t == .locked_gate) {
-            const k = s.key orelse return false;
-            if (lv.at(k) != .key_taken) return false;
-        }
+        if (t == .locked_gate and !inventory.takeSmallKey()) return false;
         lv.set(s.door(), .open_gate);
         for (pool.slice()) |*a| {
             if (a.livingFoe() and s.inside().holds(a.at)) {
@@ -197,25 +196,31 @@ pub const Spec = struct {
     }
 };
 
-test "a zoo stays sealed until its own key is taken and opens into a packed room" {
+test "a zoo accepts any Small Key and consumes one only when a locked gate opens" {
     const s = Spec{ .key = .{ .x = 32, .y = 28 } };
     try std.testing.expect(s.valid());
     var lv = grid.openFloor();
     s.stamp(&lv);
     var pool = actor.Pool{};
+    var inventory = Inventory{};
     var rng = mathx.Rng.init(3);
     s.populate(&lv, &pool, &rng);
     try std.testing.expectEqual(@as(usize, 21), pool.n);
     try std.testing.expect(!lv.walkable(s.door()) and lv.blocksSight(s.door()));
-    try std.testing.expect(!s.open(&lv, &pool));
+    try std.testing.expect(!s.open(&lv, &pool, &inventory));
     for (pool.constSlice()) |a| try std.testing.expect(!a.awake);
-    try std.testing.expect(!s.collect(&lv, s.threshold()));
-    try std.testing.expect(s.collect(&lv, s.key.?));
-    try std.testing.expect(!s.collect(&lv, s.key.?));
-    try std.testing.expect(s.open(&lv, &pool));
+    try std.testing.expectEqual(grid.Tile.chest, lv.at(s.key.?));
+    for (0..2) |_| try std.testing.expect(inventory.add(.{ .kind = .small_key }));
+    try std.testing.expect(s.open(&lv, &pool, &inventory));
+    try std.testing.expectEqual(@as(usize, 1), inventory.n);
+    try std.testing.expectEqual(grid.Tile.chest, lv.at(s.key.?));
     try std.testing.expect(lv.walkable(s.door()) and !lv.blocksSight(s.door()));
     for (pool.constSlice()) |a| try std.testing.expect(a.awake);
-    try std.testing.expect(!s.open(&lv, &pool));
+    try std.testing.expect(!s.open(&lv, &pool, &inventory));
+    try std.testing.expectEqual(@as(usize, 1), inventory.n);
+    lv.set(s.door(), .gate);
+    try std.testing.expect(s.open(&lv, &pool, &inventory));
+    try std.testing.expectEqual(@as(usize, 1), inventory.n);
 }
 
 test "zoo populations support every stocked enemy without exceeding split capacity" {
@@ -228,7 +233,8 @@ test "zoo populations support every stocked enemy without exceeding split capaci
         var rng = mathx.Rng.init(8);
         s.populate(&lv, &pool, &rng);
         try std.testing.expect(pool.n > 0 and pool.eventual() <= actor.MAX);
-        try std.testing.expect(s.open(&lv, &pool));
+        var inventory = Inventory{};
+        try std.testing.expect(s.open(&lv, &pool, &inventory));
         for (pool.constSlice()) |a| {
             try std.testing.expectEqual(kind, a.kind);
             try std.testing.expect(a.awake and !a.disguised and !a.submerged);
@@ -252,7 +258,8 @@ test "every zoo entrance keeps its walls and room hidden before opening" {
             if (!s.inside().holds(p) and !p.eq(s.door())) try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
         }
         var pool = actor.Pool{};
-        try std.testing.expect(s.open(&lv, &pool));
+        var inventory = Inventory{};
+        try std.testing.expect(s.open(&lv, &pool, &inventory));
         @memset(&seen, false);
         fov.castInto(&lv, s.threshold(), 12, &seen);
         it = s.inside().cells();

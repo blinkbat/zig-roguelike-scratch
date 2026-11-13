@@ -226,13 +226,13 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .frost_wisp = null,
     .pyre_bloat = @embedFile("pyre-bloat.png"),
     .pib_shaman = @embedFile("pib-shaman.png"),
-    .bog_leech = null,
+    .bog_leech = @embedFile("bog-leech.png"),
     .mimic = @embedFile("mimic-open.png"),
     .goblin = null,
     .sluice_crab = null,
     .chain_gaoler = null,
     .cinder_imp = null,
-    .skeleton = null,
+    .skeleton = @embedFile("skeleton.png"),
     .caravan_guard = @embedFile("bandit-crossbowman.png"),
 });
 

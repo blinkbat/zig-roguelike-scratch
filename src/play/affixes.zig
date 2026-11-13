@@ -116,6 +116,7 @@ pub const Mod = enum {
     }
     pub fn allows(m: Mod, k: item_bases.Kind) bool {
         const s = item_bases.spec(k);
+        if (s.slots.len == 0) return false;
         const slot = s.slots[0];
         const weapon = s.damage != null;
         const ring = k.fits(.left_ring);
