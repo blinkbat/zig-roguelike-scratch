@@ -165,7 +165,7 @@ pub const Game = struct {
     died_in: Mode = .play,
     pause_menu: menu.Menu = .{},
     pause_page: PausePage = .main,
-    display: @import("core/window.zig").Display = .{},
+    display: window.Display = .{},
     debug: debugging.State = .{},
     character: book.Book = .{},
     /// Something was taken from the open loot menu; closing it spends the one turn.
@@ -571,7 +571,7 @@ pub fn heroMove(g: *Game, d: mathx.Dir) Move {
 pub fn moveOf(g: *const Game, lv: *const grid.Level, from: P, d: mathx.Dir, occupied: bool) Move {
     const to = from.add(d.delta());
     const there = lv.at(to);
-    if (there == .gate or there == .locked_gate) return .gate;
+    if (there.closedGate()) return .gate;
     if (there.opened() != null) return if (foesNear(g)) .blocked else .open;
     if (there.bursts()) return .burst;
     if (!lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
@@ -778,7 +778,10 @@ fn stunnedTurn(g: *Game) bool {
     if (!g.pic.quiet() or g.sim.travel != null) return false;
     if (g.mode != .play and !characterShown(g)) return false;
     const h = g.sim.heroActor() orelse return false;
-    if (!h.clock.owes()) return false;
+    if (!h.clock.owes()) {
+        h.clock.stunned = false;
+        return false;
+    }
     h.clock.pass(turn_clock.TURN);
     combat.passTurn(g);
     return true;
@@ -787,10 +790,9 @@ fn stunnedTurn(g: *Game) bool {
 /// Advance presentation before new actions so their effects start at the correct delay.
 pub fn update(g: *Game, dt: f32) void {
     if (!g.st.focused) holdWalk(g);
-    if (!g.keywords.screen.eq(g.screen)) g.keywords = .{};
+    g.keywords.resized(g.screen);
     const keyword_input = g.keywords.step(&g.st);
-    if (keyword_input) holdWalk(g);
-    mouseControls.prepare(g);
+    if (keyword_input) holdWalk(g) else mouseControls.prepare(g);
     if (!keyword_input and mouseControls.clickable(modeShown(g)) and overLog(g) and g.st.scroll != 0) g.sim.log.move(g.st.scroll);
     const death_drawn = deathShown(g);
     g.pic.advance(&g.sim, dt);

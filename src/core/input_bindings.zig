@@ -192,12 +192,8 @@ pub const TreeKeys = struct {
     pub const PAD_ZOOM_OUT = walkPad(.s);
     pub const PAD_OVERVIEW: Button = .inspect;
     pub const PAN_KEYS = SHIFT_KEYS;
-    pub const PAN_CAPTION = keyName(PAN_KEYS[0]);
     pub const PAGE_IN: rl.KeyboardKey = .page_up;
     pub const PAGE_OUT: rl.KeyboardKey = .page_down;
-    pub const BROWSE_CAPTION = letters(&WALKS);
-    pub const ZOOM_IN_CAPTION = keyName(ZOOM_IN_KEYS[0]);
-    pub const ZOOM_OUT_CAPTION = keyName(ZOOM_OUT_KEYS[0]);
     pub const OVERVIEW_CAPTION = keyName(OVERVIEW_KEY);
 };
 

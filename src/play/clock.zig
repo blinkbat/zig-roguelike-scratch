@@ -5,6 +5,7 @@ const mathx = @import("../core/mathx.zig");
 pub const TURN: i32 = 100;
 const STUN: i32 = TURN;
 pub const STUNNED = "is stunned";
+pub const STATUS = "Loses its next action.";
 
 pub fn stunNote(comptime pc: u32) []const u8 {
     return std.fmt.comptimePrint("{d}% chance to stun", .{pc});
@@ -14,6 +15,7 @@ pub fn stunNote(comptime pc: u32) []const u8 {
 pub const Clock = struct {
     ticks: i32 = 0,
     stalled: bool = false,
+    stunned: bool = false,
 
     pub fn delay(self: *Clock, ticks: i32) void {
         self.ticks += @max(0, ticks);
@@ -21,6 +23,7 @@ pub const Clock = struct {
 
     pub fn stun(self: *Clock) void {
         self.delay(STUN);
+        self.stunned = true;
     }
 
     pub fn stunBeforeAction(self: *Clock, pace: i32) void {
@@ -38,7 +41,9 @@ pub const Clock = struct {
     pub fn pass(self: *Clock, pace: i32) void {
         self.ticks -= TURN;
         self.stalled = self.ticks >= 0;
-        if (!self.stalled) self.ticks += pace;
+        if (self.stalled) return;
+        self.ticks += pace;
+        self.stunned = false;
     }
 };
 
@@ -71,6 +76,21 @@ test "a stun costs the next turn, delay costs a turn for each whole turn of tick
     try std.testing.expectEqual(@as(usize, 3), lost(&c, TURN, 10));
     var slow = Clock{};
     try std.testing.expectEqual(@as(usize, 5), lost(&slow, TURN * 2, 10));
+}
+
+test "a stunned body shows stunned through every turn it loses, until it next acts" {
+    for ([_]i32{ TURN, TURN * 2 }) |pace| {
+        var c = Clock{};
+        c.pass(pace);
+        c.stun();
+        try std.testing.expect(c.stunned);
+        c.pass(pace);
+        try std.testing.expect(c.stalled and c.stunned);
+        while (c.stalled) c.pass(pace);
+        try std.testing.expect(!c.stunned);
+        c.stunBeforeAction(pace);
+        try std.testing.expect(c.stalled and c.stunned);
+    }
 }
 
 test "stunning a pending action cancels its prepaid pace without double-paying an existing stall" {

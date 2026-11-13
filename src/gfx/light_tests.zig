@@ -160,7 +160,7 @@ test "effect reach bounds preserve lighting at fractional positions and map edge
 test "cell effect culling preserves floor wall and water lighting" {
     var lv = litFloor();
     for (18..25) |x| lv.set(.{ .x = @intCast(x), .y = 21 }, .wall);
-    @import("../map/procgen.zig").reshape(&lv);
+    gen.reshape(&lv);
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     const radii = [_]f32{ 0.6, 1.6, 2.8, 4 };

@@ -6,6 +6,8 @@ const font = @import("../gfx/font.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const fx = @import("../gfx/fx.zig");
+const menu = @import("menu.zig");
+const keywords = @import("keywords.zig");
 
 pub const WIDTH: i32 = 640;
 const HEIGHT: i32 = 160;
@@ -242,11 +244,9 @@ const TIP_VALUE_DX = 24;
 const TIP_VALUE_X = @divTrunc(TIP_W, 2) + TIP_VALUE_DX;
 
 /// Returns the first line shown.
-pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize, words: ?*@import("keywords.zig").State) usize {
+pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize, words: ?*keywords.State) usize {
     var buf: [TIP_LINES_MAX][font.WRAP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
-    var wrapped: font.Wrapped = undefined;
-    var parts: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
     var n: usize = 0;
     var rows = std.mem.splitScalar(u8, body, '\n');
     while (rows.next()) |r| {
@@ -257,14 +257,7 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
             buf[n][len] = 0;
             lines[n] = buf[n][0..len :0];
             n += 1;
-        } else {
-            const count = font.wrap(face, r, font.SMALL, TIP_W - 2 * TIP_PAD, &wrapped, &parts);
-            for (parts[0..@min(count, TIP_LINES_MAX - n)]) |part| {
-                @memcpy(buf[n][0 .. part.len + 1], part[0 .. part.len + 1]);
-                lines[n] = buf[n][0..part.len :0];
-                n += 1;
-            }
-        }
+        } else n = font.wrapAppend(face, r, font.SMALL, TIP_W - 2 * TIP_PAD, &buf, &lines, n);
     }
     const limit: usize = @intCast(@max(1, @divTrunc(screen.y - 2 * TIP_MARGIN - TIP_BODY_Y - TIP_PAD, TIP_LINE)));
     const shown = @min(n, limit);
@@ -281,7 +274,7 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
             y = onScreen(raster.top(over) - @divTrunc(h, 2), h, screen.y);
         }
     }
-    sprite.layeredBacking(sprites, x, y, TIP_W, h, 1);
+    sprite.layeredBacking(sprites, x, y, TIP_W, h, .menu);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
     for (lines[first .. first + shown], first..) |l, i| {
         const top = y + TIP_BODY_Y + @as(i32, @intCast(i - first)) * TIP_LINE;
@@ -292,9 +285,8 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
             face.text(buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM);
             face.text(buf[i][split + 1 .. l.len :0], x + TIP_VALUE_X, top, font.SMALL, look.TEXT);
         } else if (words) |links| {
-            const keywords = @import("keywords.zig");
             const before = links.n;
-            links.text(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, &keywords.STATUS_TERMS, keywords.IDENTITY);
+            links.text(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, &keywords.STATUS_TERMS, menu.Surface.IDENTITY);
             if (links.n > before) links.root = raster.rect(x, y, TIP_W, h);
         } else face.text(l, x + TIP_PAD, top, font.SMALL, look.TEXT);
     }
@@ -306,7 +298,7 @@ pub fn prompt(face: *const font.Face, sprites: *const sprite.Sprites, screen: ma
     const h = font.BODY + 2 * TIP_PAD;
     const x = centredOver(over, w, screen);
     const y = above(raster.top(over), h);
-    sprite.layeredBacking(sprites, x, y, w, h, 1);
+    sprite.layeredBacking(sprites, x, y, w, h, .menu);
     face.text(text, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
 }
 
@@ -352,6 +344,12 @@ const SWIRL_STEPS = 14;
 fn statusIcon(status: fx.Status, x: i32, y: i32) void {
     const colour = status.ink();
     switch (status) {
+        .stunned => {
+            rl.drawEllipseLines(x, y + 2, 8, 3, colour);
+            rl.drawLine(x, y - 8, x, y + 2, colour);
+            rl.drawLine(x - 5, y - 3, x + 5, y - 3, colour);
+            rl.drawCircle(x, y - 3, 2, look.LIGHTNING_CORE);
+        },
         .bleeding => {
             rl.drawCircle(x, y + 3, 5, colour);
             rl.drawTriangle(.{ .x = @floatFromInt(x), .y = @floatFromInt(y - 7) }, .{ .x = @floatFromInt(x - 5), .y = @floatFromInt(y + 3) }, .{ .x = @floatFromInt(x + 5), .y = @floatFromInt(y + 3) }, colour);

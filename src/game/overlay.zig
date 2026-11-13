@@ -239,7 +239,7 @@ pub fn drawBinds(g: *game.Game) void {
             var label: menu.Note(100) = .{};
             label.say("{d}-{d} of {d}", .{ picker.first() + 1, picker.end(), picker.picks });
             g.face.draw(label.text(), picker.x, picker.y - font.LABEL - BIND_POP_DY, font.LABEL, look.DIM);
-            sprite.layeredBackingIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)), 1);
+            sprite.layeredBackingIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)), .menu);
             for (picker.first()..picker.end()) |i| {
                 const r = picker.cell(i);
                 const x: i32 = @intFromFloat(r.x);
@@ -333,7 +333,7 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     return out[0..n];
 }
 
-fn spotAt(spots: []const Part, s: game.Spot) ?Part {
+pub fn spotAt(spots: []const Part, s: game.Spot) ?Part {
     for (spots) |x| {
         if (std.meta.eql(x.spot, s)) return x;
     }
@@ -422,7 +422,7 @@ pub fn drawTips(g: *game.Game) void {
 }
 
 fn drawTip(g: *game.Game, here: Part) void {
-    if (g.mode == .play) g.inspecting = here.spot;
+    if (g.mode == .play or g.mode == .aim) g.inspecting = here.spot;
     hud.focus(here.box, round(here.spot));
     var title_buf: [TIP_TITLE_MAX]u8 = undefined;
     var body_buf: [TIP_BODY_MAX]u8 = undefined;
@@ -475,10 +475,10 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             break :blk .{ .title = if (rank > 0 and !progress.basic(act)) std.fmt.bufPrintZ(title_buf, "{s} - Rank {d}", .{ act.name(), rank }) catch act.name() else act.name(), .body = body.getWritten() };
         },
         .status => |st| blk: {
+            var body = std.io.fixedBufferStream(body_buf);
+            const w = body.writer();
+            w.writeAll(st.about()) catch {};
             if (st == .resistant) {
-                var body = std.io.fixedBufferStream(body_buf);
-                const w = body.writer();
-                w.writeAll(st.about()) catch {};
                 if (g.pic.heroShown(&g.sim)) |h| for (std.enums.values(resilience.Kind)) |kind| {
                     const m = h.resilience.meters.get(kind);
                     if (m.turns > 0) w.print("\n{s}: {d}% resistance, {d} turns", .{ menu.named(kind), m.percent, m.turns }) catch {};
@@ -486,9 +486,6 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
                 break :blk .{ .title = st.title(), .body = body.getWritten() };
             }
             const turns = if (g.pic.heroShown(&g.sim)) |h| h.status.get(st) else 0;
-            var body = std.io.fixedBufferStream(body_buf);
-            const w = body.writer();
-            w.writeAll(st.about()) catch {};
             if (st.ailment()) |kind| writeStatusTags(kind, w);
             break :blk .{
                 .title = std.fmt.bufPrintZ(title_buf, "{s}, {d} turn{s}", .{ st.title(), turns, plural(turns) }) catch st.title(),

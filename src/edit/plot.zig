@@ -7,6 +7,7 @@ const atlas = @import("../map/atlas.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
+const font = @import("../gfx/font.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
@@ -14,9 +15,11 @@ const editor = @import("editor.zig");
 const widgets = @import("widgets.zig");
 const fields = @import("plot_fields.zig");
 const text_panel = @import("text_panel.zig");
+const text_catalog = @import("text_catalog.zig");
 const modals = @import("modals.zig");
 const interaction = @import("interaction.zig");
 const talk = @import("../ui/talk.zig");
+const Desk = @import("../core/input.zig").Desk;
 const Script = script.Script;
 
 const PAD = widgets.PAD;
@@ -62,6 +65,7 @@ const KIND_MIN_W: i32 = 150;
 const KIND_MAX_W: i32 = 200;
 const SILENT = "(says nothing)";
 const SAY_ROWS: i32 = 6;
+const ASK_ROWS: i32 = 3;
 const WHEEL_NOTCH: i32 = 2;
 
 pub const Page = enum {
@@ -87,11 +91,9 @@ pub const Page = enum {
 };
 
 const LineAt = fields.LineAt;
-const StageAt = fields.StageAt;
 const ChoiceAt = fields.ChoiceAt;
-const TableAt = fields.TableAt;
 const ActAt = fields.ActAt;
-const Focus = fields.Focus;
+pub const Focus = fields.Focus;
 pub const Pick = union(enum) { none, npc: u8, dialog: u8 };
 
 pub const State = struct {
@@ -105,6 +107,7 @@ pub const State = struct {
     list: widgets.Scrolled = .{},
     detail: widgets.Scrolled = .{},
     lines: widgets.Scrolled = .{},
+    reveal_line: bool = false,
     field_box: rl.Rectangle = widgets.NO_BOX,
     /// The script's lists as the page last drew them; a picked index means nothing once they changed elsewhere.
     seen: Seen = .{},
@@ -112,9 +115,22 @@ pub const State = struct {
     preview: ?LineAt = null,
     preview_cursor: usize = 0,
 
+    fn showPreview(s: *State, at: ?LineAt) void {
+        s.preview = at;
+        s.preview_cursor = 0;
+    }
+
+    pub fn focusOn(s: *State, m: *Script, f: Focus) void {
+        const words_ = target(m, f).?.words;
+        s.focus = f;
+        s.field.limit(words_.most());
+        s.field.set(words_.text());
+    }
+
     fn pickDialog(s: *State, d: u8) void {
         s.pick = .{ .dialog = d };
         s.line = 0;
+        s.lines.top = 0;
     }
 
     fn fit(s: *State, m: *const Script) void {
@@ -142,7 +158,7 @@ pub const Seen = struct {
     triggers: usize = 0,
     quests: usize = 0,
 
-    pub fn of(m: *const script.Script) Seen {
+    pub fn of(m: *const Script) Seen {
         return .{ .npcs = m.npc_n, .dialogs = m.dialog_n, .triggers = m.trigger_n, .quests = m.quest_n };
     }
 };
@@ -157,6 +173,7 @@ pub fn open(ed: *editor.Editor, p: Page) void {
     ed.plot.preview = null;
     ed.plot.detail.top = 0;
     ed.plot.list.top = 0;
+    ed.plot.lines.top = 0;
     if (!std.meta.eql(ed.plot.seen, Seen.of(&ed.map.script))) {
         ed.plot.pick = .none;
         ed.plot.trigger = null;
@@ -184,7 +201,8 @@ pub fn keys(ed: *editor.Editor) void {
     }
     if (d.wheel != 0) {
         const by = d.notch() * WHEEL_NOTCH;
-        if (s.focus != null and raster.holds(s.field_box, d.mouse)) {
+        const scrolls = if (s.focus) |f| f.multiline() else false;
+        if (scrolls and raster.holds(s.field_box, d.mouse)) {
             s.field.scroll = widgets.scrollTop(s.field.scroll, by, s.field.lines, s.field.rows);
             s.field.reveal = false;
         } else {
@@ -194,12 +212,12 @@ pub fn keys(ed: *editor.Editor) void {
         }
     }
     if (s.focus) |f| {
-        const multiline = f == .say or f == .ask;
+        const multiline = f.multiline();
         const t = (if (d.back or (d.enter and !multiline)) null else target(&ed.map.script, f)) orelse {
             s.focus = null;
             return;
         };
-        return typed(ed, t);
+        return typed(ed, t, multiline);
     }
     if (interaction.backed(d)) close(ed);
 }
@@ -209,10 +227,9 @@ fn close(ed: *editor.Editor) void {
     ed.closeModal();
 }
 
-fn typed(ed: *editor.Editor, t: Target) void {
+fn typed(ed: *editor.Editor, t: Target, multiline: bool) void {
     const s = &ed.plot;
-    const multiline = t.words == .say or t.words == .ask;
-    if (!s.field.feed(&ed.desk, multiline)) return ed.say("Text does not fit: {d} characters at most", .{s.field.cap});
+    if (!s.field.feed(&ed.desk, multiline)) return refused(ed, multiline);
     const now = std.mem.trim(u8, s.field.text(), " ");
     const was = t.words.text();
     if (std.mem.eql(u8, now, was)) return;
@@ -221,13 +238,18 @@ fn typed(ed: *editor.Editor, t: Target) void {
     ed.say("{s}", .{if (t.unique != null) "A name is letters, digits, _ or -, not taken, " ++ std.fmt.comptimePrint("{d}", .{script.NAME_MAX}) ++ " at most" else "That is as long as it can be"});
 }
 
+fn refused(ed: *editor.Editor, multiline: bool) void {
+    const s = ed.desk.paste_text orelse ed.desk.text();
+    if (!multiline and !text_catalog.oneLine(s)) return ed.say("This text goes on one line", .{});
+    for (s) |c| if (!fields.plainChar(c)) return ed.say("Plain ASCII letters, digits and punctuation only", .{});
+    ed.say("Text does not fit: {d} characters at most", .{ed.plot.field.cap});
+}
+
 const Field = text_panel.FieldOf(fields.WORDS_MAX, fields.plainChar);
 const Target = fields.Target;
 const target = fields.target;
 const put = fields.put;
-const tableName = fields.tableName;
 const lineOf = fields.lineOf;
-const choiceOf = fields.choiceOf;
 const listOf = fields.listOf;
 const actOf = fields.actOf;
 
@@ -260,8 +282,8 @@ fn drawPreview(ed: *editor.Editor, g: *game.Game, at: LineAt, clicked: bool) voi
     const speaker = speakerOf(m, at.d);
     ed.plot.preview_cursor = @min(ed.plot.preview_cursor, ln.choice_n -| 1);
     if (ed.desk.nav != 0 and ln.choice_n > 0) ed.plot.preview_cursor = mathx.wrap(ed.plot.preview_cursor, ed.desk.nav, ln.choice_n);
-    var view = talk.View{ .who = ln.speakerOr(speaker), .say = ln.say.text(), .choices = labels[0..ln.choice_n], .cursor = ed.plot.preview_cursor, .prompt = prompt_icon.Prompt.menuOn(.keys, menu.CONFIRM) };
-    if (speaker) |n| view.figure = talk.Figure.of(&g.sprites, n, ln);
+    const figure = if (speaker) |n| talk.Figure.of(&g.sprites, n, ln) else null;
+    var view = talk.View.ofLine(ln, ln.speakerOr(speaker), labels[0..ln.choice_n], ed.plot.preview_cursor, prompt_icon.Prompt.menuOn(.keys, menu.CONFIRM), figure);
     var l: talk.Layout = .{};
     l.of(&g.face, g.screen, view);
     const row = l.rowAt(ed.desk.mouse);
@@ -275,8 +297,7 @@ fn drawPreview(ed: *editor.Editor, g: *game.Game, at: LineAt, clicked: bool) voi
     const chosen = if (clicked and row != null) row else if (action and ln.choice_n > 0) view.cursor else null;
     if (chosen == null and !(ln.choice_n == 0 and action)) return;
     const next = if (chosen) |r| ln.choice[r].next else ln.then;
-    ed.plot.preview = if (next) |n| .{ .d = at.d, .l = n } else null;
-    ed.plot.preview_cursor = 0;
+    ed.plot.showPreview(if (next) |n| .{ .d = at.d, .l = n } else null);
     if (next) |n| ed.plot.line = n;
 }
 
@@ -459,7 +480,7 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
     const s = &ed.plot;
     const on = if (s.focus) |now| std.meta.eql(now, f) else false;
     if (on) {
-        s.field_box = r;
+        s.field_box = if (ed.clip) |c| rl.getCollisionRec(r, c) else r;
         const shown = if (ed.clip) |c| ed.mouseIn(c) else true;
         if (text_panel.drawField(ed, g, &s.field, r, true, true) or (shown and ed.mouseIn(r))) s.claimed = true;
         return;
@@ -478,15 +499,13 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
         var paragraphs = std.mem.splitScalar(u8, now, '\n');
         var down = y;
         while (paragraphs.next()) |paragraph| {
-            if (down >= raster.top(r) + @as(i32, @intFromFloat(r.height))) break;
-            down = @max(down + TEXT + 4, g.face.paragraph(paragraph, x, down, w, TEXT, look.TEXT));
+            if (down >= raster.bottom(r)) break;
+            down = @max(down + font.HEAD_LINE, g.face.paragraph(paragraph, x, down, w, TEXT, look.TEXT));
         }
         widgets.reclip(ed.clip);
     } else widgets.drawFit(&g.face, now, TEXT, w, false, x, y, look.TEXT);
     if (h.hit) {
-        s.focus = f;
-        s.field.limit(words_.most());
-        s.field.set(now);
+        s.focusOn(&ed.map.script, f);
         s.claimed = true;
     }
 }
@@ -705,11 +724,16 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     }
     const tools_w = lines_w - GAP;
     line_area.close(&ed.clip, y, 0);
+    if (s.reveal_line) {
+        s.reveal_line = false;
+        line_area.reveal(STEP * (@as(i32, s.line) + 1), STEP);
+    }
     y = bottom - STEP;
     if (button(ed, g, widgets.slotOf(lx, tools_w, y, 0, 3), "+ Line", false, d.line_n < script.MAX_LINES, "Another line, reached by a choice or a then")) {
         if (d.addLine()) |l| {
             ed.bank();
             s.line = l;
+            s.reveal_line = true;
         }
     }
     if (button(ed, g, widgets.slotOf(lx, tools_w, y, 1, 3), "Up", false, s.line > 0, "Earlier in the list; the first is where it opens")) {
@@ -736,10 +760,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
     var y = top;
     wordsRow(ed, g, x, y, w, "Line", .{ .line = at }, "");
     y += STEP;
-    if (nameRow(ed, g, x, y, w, "Speaker", .{ .who = at }, "Preview in game", true, "This line as the game draws it; click a choice to follow it, Esc to come back", "(blank: whoever is spoken to)")) {
-        ed.plot.preview = at;
-        ed.plot.preview_cursor = 0;
-    }
+    if (nameRow(ed, g, x, y, w, "Speaker", .{ .who = at }, "Preview in game", true, "This line as the game draws it; click a choice to follow it, " ++ Desk.BACK_CAPTION ++ " to come back", "(blank: whoever is spoken to)")) ed.plot.showPreview(at);
     y += STEP;
     caption(g, x, y, w, std.fmt.bufPrint(&buf, "Speech   {d} / {d}", .{ ln.say.n, script.SAY_MAX }) catch "", look.TEXT);
     y += STEP;
@@ -759,7 +780,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
         caption(g, x, y, w - DROP_W, std.fmt.bufPrint(&buf, "Reply {d}   {d} / {d}", .{ c + 1, ch.ask.n, script.ASK_MAX }) catch "", look.TEXT);
         if (dropRow(ed, g, x + w, y, "Take this choice away", script.Choice, &ln.choice, &ln.choice_n, c)) break;
         y += STEP;
-        const ask_h = text_panel.fieldHeight(3);
+        const ask_h = text_panel.fieldHeight(ASK_ROWS);
         words(ed, g, raster.rect(x, y, w, ask_h), .{ .ask = cat }, "(what the hero says)");
         y += ask_h + GAP;
         caption(g, x + SUB_X, y, SUB_W, "goes to", look.DIM);
@@ -964,9 +985,9 @@ fn dialogStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, slot: *u8) voi
 fn tableStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, t: script.Table, slot: *u8) void {
     const m = &ed.map.script;
     const all = m.names(t);
-    const w: i32 = @intFromFloat(r.width);
-    const x: i32 = @intFromFloat(r.x);
-    const y: i32 = @intFromFloat(r.y);
+    const w = raster.width(r);
+    const x = raster.left(r);
+    const y = raster.top(r);
     indexStep(ed, g, widgets.row(x, y, w - widgets.STEP_W - GAP), all[slot.*].text(), slot, all.len, "Which one; names are kept in the Script page");
     if (rightButton(ed, g, x + w, y, widgets.STEP_W, widgets.MORE, all.len < Script.tableMax(t), "A new one, named for its kind; rename it in the Script page")) {
         if (m.coin(t)) |i| {

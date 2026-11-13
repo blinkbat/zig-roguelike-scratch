@@ -143,11 +143,18 @@ const ARROW = rgb(0xe6dcb4);
 pub const VEIL = fade(BG, 0.72);
 
 pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32) void {
-    if (t == .key_taken) return;
-    if (t == .gate or t == .locked_gate or t == .open_gate or t == .zoo_key) return jailTile(t, cx, cy, size);
+    switch (t) {
+        .key_taken => return,
+        .gate, .locked_gate, .open_gate, .zoo_key => return jailTile(t, cx, cy, size),
+        else => {},
+    }
     const l = TILES.getPtrConst(t);
     face.symbol(l.sym, l.ch, cx, cy, size, l.fg);
 }
+
+const JAIL_STONE = rgb(0x625b55);
+const JAIL_IRON = rgb(0x99948b);
+const JAIL_DARK = rgb(0x292528);
 
 fn jailTile(t: grid.Tile, cx: i32, cy: i32, size: i32) void {
     const u = @max(1, @divTrunc(size + 16, 32));
@@ -161,20 +168,18 @@ fn jailTile(t: grid.Tile, cx: i32, cy: i32, size: i32) void {
     }
     const left = cx - 15 * u;
     const top = cy - 16 * u;
-    const stone = rgb(0x625b55);
-    const iron = rgb(0x99948b);
-    rl.drawRectangle(left, top, 3 * u, 32 * u, stone);
-    rl.drawRectangle(cx + 12 * u, top, 3 * u, 32 * u, stone);
-    rl.drawRectangle(left, top, 30 * u, 3 * u, stone);
+    rl.drawRectangle(left, top, 3 * u, 32 * u, JAIL_STONE);
+    rl.drawRectangle(cx + 12 * u, top, 3 * u, 32 * u, JAIL_STONE);
+    rl.drawRectangle(left, top, 30 * u, 3 * u, JAIL_STONE);
     if (t == .open_gate) {
-        rl.drawRectangle(left + 3 * u, top + 3 * u, 3 * u, 29 * u, iron);
+        rl.drawRectangle(left + 3 * u, top + 3 * u, 3 * u, 29 * u, JAIL_IRON);
         return;
     }
-    rl.drawRectangle(left + 3 * u, top + 3 * u, 24 * u, 29 * u, rgb(0x292528));
+    rl.drawRectangle(left + 3 * u, top + 3 * u, 24 * u, 29 * u, JAIL_DARK);
     var x = left + 5 * u;
-    while (x < cx + 12 * u) : (x += 5 * u) rl.drawRectangle(x, top + 3 * u, 2 * u, 29 * u, iron);
-    rl.drawRectangle(left + 3 * u, cy - 8 * u, 24 * u, 2 * u, iron);
-    rl.drawRectangle(left + 3 * u, cy + 8 * u, 24 * u, 2 * u, iron);
+    while (x < cx + 12 * u) : (x += 5 * u) rl.drawRectangle(x, top + 3 * u, 2 * u, 29 * u, JAIL_IRON);
+    rl.drawRectangle(left + 3 * u, cy - 8 * u, 24 * u, 2 * u, JAIL_IRON);
+    rl.drawRectangle(left + 3 * u, cy + 8 * u, 24 * u, 2 * u, JAIL_IRON);
     if (t == .locked_gate) {
         rl.drawRectangle(cx - 3 * u, cy - 3 * u, 7 * u, 8 * u, GOLD);
         rl.drawRectangle(cx, cy - u, u, 4 * u, BG);
@@ -591,10 +596,13 @@ pub fn premultiplied(c: sky.Rgb, a: f32) rl.Color {
 }
 
 const BACKING_A: f32 = 0.7;
-pub const BACKING = backingAt(0);
-pub fn backingAt(depth: u8) rl.Color {
-    const opacity = [_]f32{ BACKING_A, 0.92, 0.99, 1 };
-    return fade(rgb(0x101114), opacity[@min(depth, opacity.len - 1)]);
+const BACKING_INK = rgb(0x101114);
+/// Panels stacked over one another: HUD, then menus and tooltips, then keyword definitions.
+pub const Depth = enum { hud, menu, definition };
+const BACKING_DEPTHS = std.EnumArray(Depth, f32).init(.{ .hud = BACKING_A, .menu = 0.92, .definition = 0.99 });
+pub const BACKING = backingAt(.hud);
+pub fn backingAt(depth: Depth) rl.Color {
+    return fade(BACKING_INK, BACKING_DEPTHS.get(depth));
 }
 pub const MINI_BG = fade(FOG, BACKING_A);
 pub const MINI_HERO = rgb(0x9cf08a);

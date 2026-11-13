@@ -39,6 +39,11 @@ const LIST_PARTS: i32 = 4;
 const WHEEL_ROWS: i32 = 3;
 const HINT_GAP: i32 = 4;
 const PAGE_LINE: usize = 1024;
+const NAV_INDENT: i32 = 14;
+const NAV_LEAD: usize = 3;
+const SCROLL_ROOM: i32 = 8;
+const KEEP_GROUP = "Save or discard this passage before changing its group.";
+const REBUILD = "Saved wording takes effect after rebuilding.";
 
 pub fn fieldHeight(rows: i32) i32 {
     return rows * LINE_H + 2 * widgets.GAP;
@@ -47,8 +52,30 @@ const NAV_ROW = DETAIL + ROW_PAD;
 const Focus = enum { search, passage };
 const Leave = enum { close, quit };
 const HISTORY = 16;
-const Group = struct { category: []const u8, role: []const u8, owner: []const u8, first: usize, end: usize, matches: usize = 0, category_open: bool = false, role_open: bool = false };
-const TreeRow = struct { group: usize, depth: u8, matches: usize };
+const Group = struct {
+    category: []const u8,
+    role: []const u8,
+    owner: []const u8,
+    first: usize,
+    end: usize,
+    matches: usize = 0,
+    category_open: bool = false,
+    role_open: bool = false,
+
+    fn holds(g: Group, e: catalog.Entry) bool {
+        return std.mem.eql(u8, g.category, e.category) and std.mem.eql(u8, g.role, e.role) and std.mem.eql(u8, g.owner, e.owner);
+    }
+};
+const Depth = enum(u8) { category, role, owner };
+const TreeRow = struct { group: usize, depth: Depth, matches: usize };
+const Run = struct { end: usize, matches: usize };
+
+fn runOf(groups: []const Group, start: usize, end: usize, comptime field: []const u8) Run {
+    var at = start;
+    var matches: usize = 0;
+    while (at < end and std.mem.eql(u8, @field(groups[start], field), @field(groups[at], field))) : (at += 1) matches += groups[at].matches;
+    return .{ .end = at, .matches = matches };
+}
 const FontKey = struct {
     ordered: bool,
     font: ?rl.Font,
@@ -360,7 +387,7 @@ pub const State = struct {
         const entries = c.entries();
         try s.order.ensureTotalCapacity(alloc, entries.len);
         try s.groups.ensureTotalCapacity(alloc, entries.len);
-        try s.tree.ensureTotalCapacity(alloc, entries.len * 3);
+        try s.tree.ensureTotalCapacity(alloc, entries.len * std.enums.values(Depth).len);
         try s.results.ensureTotalCapacity(alloc, entries.len);
         for (entries, 0..) |_, i| s.order.appendAssumeCapacity(i);
         std.mem.sort(usize, s.order.items, entries, struct {
@@ -379,7 +406,7 @@ pub const State = struct {
             const e = entries[index];
             if (s.groups.items.len > 0) {
                 const previous = &s.groups.items[s.groups.items.len - 1];
-                if (std.mem.eql(u8, previous.category, e.category) and std.mem.eql(u8, previous.role, e.role) and std.mem.eql(u8, previous.owner, e.owner)) {
+                if (previous.holds(e)) {
                     previous.end = at + 1;
                     continue;
                 }
@@ -414,7 +441,7 @@ pub const State = struct {
     }
 
     fn scope(s: *State, category: ?[]const u8, owner: ?[]const u8) void {
-        if (s.dirty()) return s.say("Save or discard this passage before changing its group.", .{});
+        if (s.dirty()) return s.say(KEEP_GROUP, .{});
         const same_category = if (s.category) |previous| if (category) |next| std.mem.eql(u8, previous, next) else false else category == null;
         s.category = category;
         s.owner = owner;
@@ -429,43 +456,43 @@ pub const State = struct {
 
     fn buildTree(s: *State) void {
         s.tree.clearRetainingCapacity();
+        const groups = s.groups.items;
         var category: usize = 0;
-        while (category < s.groups.items.len) {
-            var end = category;
-            var matches: usize = 0;
-            while (end < s.groups.items.len and std.mem.eql(u8, s.groups.items[category].category, s.groups.items[end].category)) : (end += 1) matches += s.groups.items[end].matches;
-            if (matches > 0) {
-                s.tree.appendAssumeCapacity(.{ .group = category, .depth = 0, .matches = matches });
-                if (s.groups.items[category].category_open) {
+        while (category < groups.len) {
+            const in_category = runOf(groups, category, groups.len, "category");
+            if (in_category.matches > 0) {
+                s.tree.appendAssumeCapacity(.{ .group = category, .depth = .category, .matches = in_category.matches });
+                if (groups[category].category_open) {
                     var role = category;
-                    while (role < end) {
-                        var role_end = role;
-                        var role_matches: usize = 0;
-                        while (role_end < end and std.mem.eql(u8, s.groups.items[role].role, s.groups.items[role_end].role)) : (role_end += 1) role_matches += s.groups.items[role_end].matches;
-                        if (role_matches > 0) {
-                            s.tree.appendAssumeCapacity(.{ .group = role, .depth = 1, .matches = role_matches });
-                            if (s.groups.items[role].role_open) {
-                                for (role..role_end) |i| if (s.groups.items[i].matches > 0) {
-                                    s.tree.appendAssumeCapacity(.{ .group = i, .depth = 2, .matches = s.groups.items[i].matches });
+                    while (role < in_category.end) {
+                        const in_role = runOf(groups, role, in_category.end, "role");
+                        if (in_role.matches > 0) {
+                            s.tree.appendAssumeCapacity(.{ .group = role, .depth = .role, .matches = in_role.matches });
+                            if (groups[role].role_open) {
+                                for (role..in_role.end) |i| if (groups[i].matches > 0) {
+                                    s.tree.appendAssumeCapacity(.{ .group = i, .depth = .owner, .matches = groups[i].matches });
                                 };
                             }
                         }
-                        role = role_end;
+                        role = in_role.end;
                     }
                 }
             }
-            category = end;
+            category = in_category.end;
         }
     }
 
     fn selectTree(s: *State, row: TreeRow) void {
-        if (s.dirty()) return s.say("Save or discard this passage before changing its group.", .{});
+        if (s.dirty()) return s.say(KEEP_GROUP, .{});
         const group = &s.groups.items[row.group];
-        if (row.depth == 0) group.category_open = !group.category_open;
-        if (row.depth == 1) group.role_open = !group.role_open;
+        switch (row.depth) {
+            .category => group.category_open = !group.category_open,
+            .role => group.role_open = !group.role_open,
+            .owner => {},
+        }
         const top = s.nav_top;
-        s.scope(group.category, if (row.depth == 2) group.owner else null);
-        s.role = if (row.depth > 0) group.role else null;
+        s.scope(group.category, if (row.depth == .owner) group.owner else null);
+        s.role = if (row.depth != .category) group.role else null;
         s.nav_top = top;
     }
 
@@ -525,7 +552,7 @@ fn reload(ed: *editor.Editor) void {
         s.say("Could not organize project text: out of memory.", .{});
         return;
     };
-    if (c.warning.len > 0) s.say("{s}", .{c.warning}) else s.say("Loaded {d} passages. Saved wording takes effect after rebuilding.", .{c.entries().len});
+    if (c.warning.len > 0) s.say("{s}", .{c.warning}) else s.say("Loaded {d} passages. " ++ REBUILD, .{c.entries().len});
 }
 
 pub fn pose(ed: *editor.Editor) !void {
@@ -550,9 +577,8 @@ pub fn poseContext(ed: *editor.Editor, context: []const u8) !void {
         }
         s.buildTree();
         for (s.tree.items, 0..) |row, at| {
-            const group = s.groups.items[row.group];
-            if (row.depth == 2 and std.mem.eql(u8, group.category, entry.category) and std.mem.eql(u8, group.role, entry.role) and std.mem.eql(u8, group.owner, entry.owner)) {
-                s.nav_top = at -| 3;
+            if (row.depth == .owner and s.groups.items[row.group].holds(entry)) {
+                s.nav_top = at -| NAV_LEAD;
                 break;
             }
         }
@@ -674,14 +700,13 @@ fn widthTo(face: anytype, buf: []u8, n: usize) i32 {
     return displayWidth(face, buf[0..n :0]);
 }
 
-/// Whether it was clicked.
 pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle, focused: bool, editable: bool) bool {
     const origin = widgets.well(r, focused);
     const hit = widgets.hot(ed.controls(), r, true, true, null).hit;
     const x = origin.x;
     const y = origin.y;
-    const width = widgets.insetW(r) - 8;
-    const rows = widgets.rowsIn(@as(i32, @intFromFloat(r.height)) - fieldHeight(0), LINE_H);
+    const width = widgets.insetW(r) - SCROLL_ROOM;
+    const rows = widgets.rowsIn(raster.height(r) - fieldHeight(0), LINE_H);
     _ = f.layout(width, FontKey.of(&g.face), &g.face);
     const breaks = f.starts[0 .. f.lines + 1];
     const lines = f.lines;
@@ -729,13 +754,13 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
     return hit;
 }
 
-fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8, count: usize, on: bool, depth: u8) bool {
+fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8, count: usize, on: bool, depth: Depth) bool {
     const s = &ed.words;
     if (ordinal < s.nav_top or ordinal >= s.nav_top + s.nav_rows) return false;
-    const indent = @as(i32, depth) * 14;
-    const x: i32 = @as(i32, @intFromFloat(s.nav_box.x)) + indent;
-    const y = @as(i32, @intFromFloat(s.nav_box.y)) + @as(i32, @intCast(ordinal - s.nav_top)) * NAV_ROW;
-    const w: i32 = @as(i32, @intFromFloat(s.nav_box.width)) - indent;
+    const indent = @as(i32, @intFromEnum(depth)) * NAV_INDENT;
+    const x = raster.left(s.nav_box) + indent;
+    const y = raster.top(s.nav_box) + @as(i32, @intCast(ordinal - s.nav_top)) * NAV_ROW;
+    const w = raster.width(s.nav_box) - indent;
     const r = raster.rect(x, y, w - widgets.GAP, NAV_ROW - BUTTON_GAP);
     const h = widgets.plateHit(ed.controls(), r, on, s.leave == null, true, null);
     var buf: [32]u8 = undefined;
@@ -760,16 +785,16 @@ fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bot
     for (s.tree.items, 0..) |row, ordinal| {
         const group = s.groups.items[row.group];
         const label = switch (row.depth) {
-            0 => group.category,
-            1 => group.role,
-            else => group.owner,
+            .category => group.category,
+            .role => group.role,
+            .owner => group.owner,
         };
-        const expanded = if (row.depth == 0) group.category_open else group.role_open;
+        const expanded = if (row.depth == .category) group.category_open else group.role_open;
         var buf: [PAGE_LINE]u8 = undefined;
-        const text = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ if (row.depth == 2) "" else if (expanded) "- " else "+ ", label }) catch "";
+        const text = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ if (row.depth == .owner) "" else if (expanded) "- " else "+ ", label }) catch "";
         const on = s.category != null and std.mem.eql(u8, s.category.?, group.category) and
-            (if (row.depth == 0) s.role == null and s.owner == null else s.role != null and std.mem.eql(u8, s.role.?, group.role) and
-                (if (row.depth == 1) s.owner == null else s.owner != null and std.mem.eql(u8, s.owner.?, group.owner)));
+            (if (row.depth == .category) s.role == null and s.owner == null else s.role != null and std.mem.eql(u8, s.role.?, group.role) and
+                (if (row.depth == .role) s.owner == null else s.owner != null and std.mem.eql(u8, s.owner.?, group.owner)));
         if (navItem(ed, g, ordinal, text, row.matches, on, row.depth)) s.selectTree(row);
     }
     widgets.scrollbarIn(s.nav_box, s.nav_top, s.nav_rows, s.nav_count);
@@ -791,7 +816,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const close_r = tools.take(CLOSE_W);
     const reload_r = tools.take(RELOAD_W);
     const clear_r = tools.take(CLEAR_W);
-    if (drawField(ed, g, &s.search, raster.rect(x, y, @as(i32, @intFromFloat(clear_r.x)) - PAD - x, fieldHeight(1)), s.focus == .search, true)) s.focus = .search;
+    if (drawField(ed, g, &s.search, raster.rect(x, y, raster.left(clear_r) - PAD - x, fieldHeight(1)), s.focus == .search, true)) s.focus = .search;
     if (button(ed, g, clear_r, "Clear", false, s.search.n > 0)) {
         s.search.set("");
         s.searched();
@@ -890,7 +915,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         widgets.drawFit(&g.face, "Choose a passage", TEXT, right_w, false, right_x, y, look.TEXT);
         _ = g.face.paragraph("Expand a concern, then a text type and owner. Select a passage to edit its wording.", right_x, y + LINE_H + LEAD, right_w, DETAIL, look.DIM);
     }
-    const note = if (s.note.n > 0) s.note.text() else "Saved wording takes effect after rebuilding.";
+    const note = if (s.note.n > 0) s.note.text() else REBUILD;
     widgets.drawFit(&g.face, note, DETAIL, w, false, x, bottom + LEAD, look.UI_GOLD);
 }
 
@@ -935,7 +960,7 @@ test "text browser groups semantic owners and protects a dirty passage during na
     s.refresh();
     s.buildTree();
     try std.testing.expectEqual(@as(usize, 5), s.tree.items.len);
-    try std.testing.expectEqual(@as(u8, 2), s.tree.items[2].depth);
+    try std.testing.expectEqual(Depth.owner, s.tree.items[2].depth);
     try std.testing.expectEqualSlices(usize, &.{ 0, 2 }, s.results.items);
     s.scope(null, null);
     s.search.set("play.ward");

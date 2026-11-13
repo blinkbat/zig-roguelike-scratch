@@ -206,7 +206,7 @@ fn arrow(from: rl.Rectangle, to: rl.Rectangle, ink: rl.Color) void {
     rl.drawLineEx(.{ .x = b.x + ARROW_HEAD.x, .y = b.y - ARROW_HEAD.y }, b, 1, ink);
 }
 
-pub const SkillState = enum {
+const SkillState = enum {
     learned,
     available,
     locked,

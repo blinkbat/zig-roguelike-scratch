@@ -15,6 +15,7 @@ const consumable = @import("../play/consumable.zig");
 const trade = @import("../play/trade.zig");
 const wording = @import("../core/wording.zig");
 const quest_log = @import("quests.zig");
+const keywords = @import("keywords.zig");
 const P = mathx.P;
 
 pub const Page = enum {
@@ -108,7 +109,7 @@ pub const View = struct {
     loot_gold: i32 = 0,
     nearby: []const Nearby = &.{},
     device: input.Device = .keys,
-    keywords: ?*@import("keywords.zig").State = null,
+    keywords: ?*keywords.State = null,
     chest: bool = false,
     life: Vital = .{},
     mana: Vital = .{},

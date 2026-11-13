@@ -127,14 +127,15 @@ pub fn throwNet(sim: *Simulation, id: u16, net: actor.Net) ?NetThrow {
     const flight = bow.clearShot(&sim.lv, thrower.at, hero.at, net.range, sim.hero) orelse return null;
     thrower.ready_in = net.every;
     const name = actor.row(thrower.kind).name;
+    const facing_delta = hero.at.x - thrower.at.x;
     if (sim.combatStats(thrower).misses(sim.combatStats(hero), &sim.rng)) {
         sim.log.say("{s} dodges the {s}'s net.", .{ sim.name.text(), name });
-        return .{ .flight = flight, .facing_delta = hero.at.x - thrower.at.x, .landed = false };
+        return .{ .flight = flight, .facing_delta = facing_delta, .landed = false };
     }
     if (sim.pinFor(hero, net.pins)) {
         sim.log.push(.danger, "The {s} nets {s}!", .{ name, sim.name.text() });
     } else sim.log.say("{s} shrugs off the {s}'s net.", .{ sim.name.text(), name });
-    return .{ .flight = flight, .facing_delta = hero.at.x - thrower.at.x, .landed = true };
+    return .{ .flight = flight, .facing_delta = facing_delta, .landed = true };
 }
 
 pub fn repositionStep(sim: *Simulation, id: u16, hurl: actor.Hurl) ?mathx.Dir {

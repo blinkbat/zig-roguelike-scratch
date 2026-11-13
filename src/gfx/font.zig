@@ -431,6 +431,19 @@ pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, l
     return if (len > 0) @min(n + 1, WRAP_LINES_MAX) else n;
 }
 
+pub fn wrapAppend(face: anytype, row: []const u8, size: i32, w: i32, buf: [][WRAP_COLS_MAX + 1]u8, lines: [][:0]const u8, n: usize) usize {
+    var wrapped: Wrapped = undefined;
+    var parts: [WRAP_LINES_MAX][:0]const u8 = undefined;
+    const count = wrap(face, row, size, w, &wrapped, &parts);
+    var at = n;
+    for (parts[0..@min(count, lines.len - n)]) |part| {
+        @memcpy(buf[at][0 .. part.len + 1], part[0 .. part.len + 1]);
+        lines[at] = buf[at][0..part.len :0];
+        at += 1;
+    }
+    return at;
+}
+
 pub fn lineCount(face: anytype, body: []const u8, size: i32, w: i32) usize {
     var buf: Wrapped = undefined;
     var lines: [WRAP_LINES_MAX][:0]const u8 = undefined;

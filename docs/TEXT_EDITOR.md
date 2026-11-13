@@ -7,7 +7,7 @@ subgroups and individual message owners. Branches show matching passage counts a
 stay in the tree when another branch expands. Passages identify their
 purpose, such as Name, Description, Flavor or Tooltip, before showing the wording. The
 inspector keeps the owner, purpose, exact source declaration and file/line visible above
-the draft. Search matches wording, feature, owner, purpose and source identifiers. Clear
+the draft. Search matches wording, concern, owner, purpose and source identifiers. Clear
 the query or select All text to broaden the results. The tree, passage list and writing
 field scroll independently; writing fields show a scrollbar and reveal the caret after navigation.
 

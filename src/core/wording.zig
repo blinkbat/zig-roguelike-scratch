@@ -23,7 +23,6 @@ pub const TYPES = [_]Registration{
     .{ .name = "play.actor.FoeType" },
     .{ .name = "play.actor.Movement" },
     .{ .name = "ui.character_view.Page", .saved_name = "ui.book.Page" },
-    .{ .name = "ui.trees.SkillState" },
     .{ .name = "edit.editor.View" },
     .{ .name = "edit.tool_catalog.Family" },
     .{ .name = "edit.editor.Inspect" },

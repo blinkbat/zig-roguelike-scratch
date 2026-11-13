@@ -397,6 +397,17 @@ pub fn toward(a: P, b: P) ?Dir {
     return stepDir(b.sub(a).sign());
 }
 
+/// The way from `a` to `b` when `b` lies on one of the eight straight lines through it.
+pub fn lineDir(a: P, b: P) ?Dir {
+    const d = b.sub(a);
+    if (d.x != 0 and d.y != 0 and @abs(d.x) != @abs(d.y)) return null;
+    return toward(a, b);
+}
+
+pub fn easeTo(v: f32, on: bool, k: f32) f32 {
+    return ease(v, if (on) 1 else 0, k, k);
+}
+
 /// 0 is north, growing clockwise.
 pub fn headingOf(dx: f32, dy: f32) f32 {
     const a = std.math.atan2(dx, -dy);

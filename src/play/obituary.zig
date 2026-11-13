@@ -146,7 +146,7 @@ fn hurtFrom(ctx: *const Context, from: usize) bool {
 fn unused(ctx: *const Context, comptime field: std.meta.FieldEnum(chronicle.Start), act: skillbar.Act, comptime low: bool) bool {
     for (ctx.turns, 0..) |*turn, i| {
         const s = turn.start;
-        if (!@field(s, @tagName(field)) or (low and s.hp * LOW_SHARE > s.max)) continue;
+        if (!@field(s, @tagName(field)) or (low and @as(i64, s.hp) * LOW_SHARE > s.max)) continue;
         if (!used(ctx, i, act) and hurtFrom(ctx, i)) return true;
     }
     return false;

@@ -61,16 +61,15 @@ pub const Scene = struct {
             .procgen => nd.stamp(&self.lv, self.roll),
         }
         map.stampNpcs(node, &self.lv, self.roll, &self.npc_at, atlas.EVERY_NPC);
+        var rng = mathx.Rng.init(self.roll);
         switch (nd.plan) {
             .bespoke => if (nd.zoo) |z| {
-                var rng = mathx.Rng.init(self.roll);
                 for (placing) |f| if (self.rolled_foes.hasRoomFor(f.kind) and actor.dwells(f.kind, &self.lv, f.at)) {
                     _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(f.kind, f.at));
                 };
                 z.populate(&self.lv, &self.rolled_foes, &rng);
             },
             .procgen => {
-                var rng = mathx.Rng.init(self.roll);
                 const from = arrival(map, node);
                 const at = atlas.landing(&self.lv, from, placing) orelse from;
                 _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
@@ -123,7 +122,7 @@ pub const Scene = struct {
         if (flood) |*f| {
             while (f.next()) |_| {}
             if (nd.zoo) |z| {
-                const approach = z.door().add(z.outward());
+                const approach = z.approach();
                 const key_reached = if (z.key) |k| self.reach_dist[grid.Level.idx(k)] >= 0 else true;
                 if (self.reach_dist[grid.Level.idx(approach)] >= 0 and key_reached) {
                     f.seed(z.threshold());

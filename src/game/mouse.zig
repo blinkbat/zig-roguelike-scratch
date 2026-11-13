@@ -40,7 +40,7 @@ const CORNER = [_]Corner{
     .{ .button = menu.CHARACTER, .label = "Character" },
 };
 
-pub fn buttonBox(screen: P, button: input.Button) rl.Rectangle {
+fn buttonBox(screen: P, button: input.Button) rl.Rectangle {
     const row = for (CORNER, 0..) |c, k| {
         if (c.button == button) break k;
     } else unreachable;
@@ -64,7 +64,7 @@ pub fn clickable(mode: game.Mode) bool {
     return mode == .play or mode == .aim or mode == .inspect;
 }
 
-pub fn overUi(g: *const game.Game, p: P) bool {
+fn overUi(g: *const game.Game, p: P) bool {
     const layout = game.overlay.hudLayout(g);
     return raster.holds(raster.rect(layout.left, layout.top, hud.WIDTH, hud.COVER), p) or
         raster.holds(journal.box(g.screen), p) or raster.holds(game.scene.miniFrame(g.screen.x), p) or
@@ -135,10 +135,6 @@ pub fn aim(g: *game.Game) bool {
     return g.st.click or dropped;
 }
 
-fn danger(g: *const game.Game) bool {
-    return game.foesNear(g);
-}
-
 fn attack(g: *game.Game, at: P) bool {
     const h = g.sim.heroActor() orelse return false;
     const set = skills.activeSet(g);
@@ -163,7 +159,7 @@ pub fn step(g: *game.Game) bool {
         g.mouse.stop();
         return false;
     };
-    if (!g.mouse.fresh and danger(g)) {
+    if (!g.mouse.fresh and game.foesNear(g)) {
         g.mouse.stop();
         return true;
     }
@@ -204,7 +200,7 @@ pub fn step(g: *game.Game) bool {
         return true;
     };
     g.mouse.fresh = false;
-    if (danger(g) or h.at.add(d.delta()).eq(at)) g.mouse.stop();
+    if (game.foesNear(g) or h.at.add(d.delta()).eq(at)) g.mouse.stop();
     game.heroStep(g, d, 0);
     return true;
 }
@@ -233,7 +229,7 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
             visited.set(i);
             const end = q.eq(to);
             const t = g.sim.lv.at(q);
-            if (!g.sim.lv.walkable(q) and !(end and (t.opened() != null or t == .gate or t == .locked_gate))) continue;
+            if (!g.sim.lv.walkable(q) and !(end and (t.opened() != null or t.closedGate()))) continue;
             if ((g.sim.lv.barrelSeen(q) or g.sim.lv.npcAt(q) != null) and !end) continue;
             if (g.sim.lv.isLit(q) and ((g.sim.lv.taken(q) and !end and !g.sim.allyAt(q)) or g.sim.lv.harmful(q))) continue;
             if (!end and g.sim.leadsTo(q) != null) continue;
@@ -288,9 +284,7 @@ test "combat mouse clicks only queue at the tail of the turn" {
         g.st = .{};
         game.update(g, g.pic.busy + mathx.FRAME_DT);
         try std.testing.expectEqual(if (tail) start.add(mathx.Dir.w.delta()) else start, g.sim.heroActor().?.at);
-        var next_clock = clock;
-        if (tail) _ = next_clock.turn();
-        try std.testing.expectEqual(next_clock, g.sim.clock);
+        try std.testing.expectEqual(game.harness.turned(clock, @intFromBool(tail)), g.sim.clock);
         try std.testing.expect(g.mouse.target == null);
     }
 }

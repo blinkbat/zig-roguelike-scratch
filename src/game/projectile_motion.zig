@@ -12,13 +12,27 @@ pub const ZAP_S: f32 = 0.08;
 pub const MotionView = struct {
     at: ?[2]f32 = null,
     alpha: f32 = 0,
+    fresh: bool = true,
 
     pub fn step(self: *MotionView, at: ?[2]f32, visible: bool, k: f32) void {
         if (visible) self.at = at;
-        self.alpha = mathx.ease(self.alpha, if (visible) 1 else 0, k, k);
+        const first = self.fresh and at != null;
+        if (at != null) self.fresh = false;
+        self.alpha = if (first and visible) 1 else mathx.easeTo(self.alpha, visible, k);
         if (self.alpha == 0) self.at = null;
     }
 };
+
+test "a projectile seen from its first position is drawn whole, and one leaving the dark fades in" {
+    var seen = MotionView{};
+    seen.step(null, false, 0.25);
+    seen.step(.{ 4.5, 6.5 }, true, 0.25);
+    try std.testing.expectEqual(@as(f32, 1), seen.alpha);
+    var dark = MotionView{};
+    dark.step(.{ 4.5, 6.5 }, false, 0.25);
+    dark.step(.{ 5.5, 6.5 }, true, 0.25);
+    try std.testing.expect(dark.alpha > 0 and dark.alpha < 1);
+}
 
 test "hidden projectile motion retains its last visible position until fully faded" {
     var view = MotionView{};
@@ -69,6 +83,14 @@ pub const Shot = struct {
         return mathx.lerp2(a, b, k);
     }
 
+    pub fn started(self: *const Shot) bool {
+        return self.t >= 0;
+    }
+
+    pub fn now(self: *const Shot) ?[2]f32 {
+        return if (self.started()) self.position(self.t) else null;
+    }
+
     pub fn direction(self: *const Shot) [2]f32 {
         return mathx.unitToward(mathx.centre(self.from), self.position(self.ends()));
     }
@@ -84,7 +106,7 @@ pub const Shot = struct {
     }
 
     pub fn zapInto(self: *const Shot, effects: *fx.Fx) void {
-        if (self.act.element() != .lightning) return;
+        if (self.act.element() != .lightning or fx.sparkFlies(self.act)) return;
         const to = self.flight.end() orelse return;
         effects.zap(@max(0, self.lands() - ZAP_S), .{ .from = mathx.centre(self.from), .to = mathx.centre(to) });
     }

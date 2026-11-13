@@ -106,7 +106,7 @@ pub fn buttonBackEdged(r: rl.Rectangle, live: bool, edge: rl.Color) void {
 
 pub fn flatButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, ink: rl.Color, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     const h = plateHit(controls, r, on, live, modal, tip);
-    drawFit(face, label, DETAIL, insetW(r), false, textX(r), @as(i32, @intFromFloat(r.y)) + DETAIL_DY, ink);
+    drawFit(face, label, DETAIL, insetW(r), false, textX(r), raster.top(r) + DETAIL_DY, ink);
     return h.hit;
 }
 
@@ -115,7 +115,7 @@ pub fn midIn(top: i32, h: i32, size: i32) i32 {
 }
 
 pub fn midY(r: rl.Rectangle, size: i32) i32 {
-    return midIn(@intFromFloat(r.y), @intFromFloat(r.height), size);
+    return midIn(raster.top(r), raster.height(r), size);
 }
 
 pub fn rowText(face: *const font.Face, s: []const u8, size: i32, x: i32, y: i32, w: i32, col: rl.Color) void {
@@ -140,9 +140,9 @@ pub const PAGE_ARROWS = Arrows{ .less = "<", .more = ">", .size = DETAIL, .modal
 
 /// Arrows either side of `value`: -1 or 1 as one is pressed, `SHIFT_STEP` times that when `shift`; 0 otherwise.
 pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, value: []const u8, arrows: Arrows, steps: [2]Step, shift: bool) i32 {
-    const x: i32 = @intFromFloat(r.x);
-    const y: i32 = @intFromFloat(r.y);
-    const w: i32 = @intFromFloat(r.width);
+    const x = raster.left(r);
+    const y = raster.top(r);
+    const w = raster.width(r);
     var by: i32 = 0;
     if (buttonOn(controls, face, row(x, y, STEP_W), arrows.less, false, steps[0].live, arrows.modal, steps[0].tip)) by = -1;
     if (buttonOn(controls, face, row(x + w - STEP_W, y, STEP_W), arrows.more, false, steps[1].live, arrows.modal, steps[1].tip)) by = 1;
@@ -163,11 +163,11 @@ pub fn stepValue(r: rl.Rectangle) rl.Rectangle {
 }
 
 pub fn insetW(r: rl.Rectangle) i32 {
-    return @as(i32, @intFromFloat(r.width)) - 2 * GAP;
+    return raster.width(r) - 2 * GAP;
 }
 
 pub fn textX(r: rl.Rectangle) i32 {
-    return @as(i32, @intFromFloat(r.x)) + GAP;
+    return raster.left(r) + GAP;
 }
 
 pub fn fitBefore(face: *const font.Face, buf: []u8, fit_buf: []u8, s: []const u8, suffix: [:0]const u8, max: i32) [:0]const u8 {
@@ -178,7 +178,7 @@ pub fn fitBefore(face: *const font.Face, buf: []u8, fit_buf: []u8, s: []const u8
 pub fn well(r: rl.Rectangle, focused: bool) P {
     rl.drawRectangleRec(r, PANEL_BG);
     rl.drawRectangleLinesEx(r, 1, if (focused) look.UI_FOCUS else look.EDGE);
-    return .{ .x = textX(r), .y = @as(i32, @intFromFloat(r.y)) + GAP };
+    return .{ .x = textX(r), .y = raster.top(r) + GAP };
 }
 
 pub fn plate(r: rl.Rectangle, on: bool, hot_: bool) void {
@@ -307,15 +307,15 @@ pub const Scroll = struct {
         clip.* = s.box;
         scissor(s.box);
         s.top.* = std.math.clamp(s.top.*, 0, s.most.*);
-        return @as(i32, @intFromFloat(s.box.y)) - s.top.*;
+        return raster.top(s.box) - s.top.*;
     }
 
     pub fn shown(s: Scroll) i32 {
-        return @max(0, @as(i32, @intFromFloat(s.box.height)));
+        return @max(0, raster.height(s.box));
     }
 
     fn fit(s: Scroll, bottom: i32, margin: i32) void {
-        s.most.* = @max(0, bottom + margin + s.top.* - @as(i32, @intFromFloat(s.box.y)) - s.shown());
+        s.most.* = @max(0, bottom + margin + s.top.* - raster.top(s.box) - s.shown());
     }
 
     pub fn reveal(s: Scroll, at: i32, h: i32) void {

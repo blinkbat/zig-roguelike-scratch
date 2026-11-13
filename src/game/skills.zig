@@ -393,8 +393,8 @@ pub fn nudgeAim(run: *game.Game, d: mathx.Dir) void {
         if (targetToward(run, hero.at, d)) |at| return markAim(run, hero.at, at);
     }
     var to = run.mode.aim.mark.add(d.delta());
-    switch (run.mode.aim.act().reticle().?) {
-        .leap, .rush, .ground => if (!juke.inReach(hero.at, to, run.sim.reachOf(run.mode.aim.act())) or !grid.Level.inside(to)) return,
+    switch (act.reticle().?) {
+        .leap, .rush, .ground => if (!juke.inReach(hero.at, to, run.sim.reachOf(act)) or !grid.Level.inside(to)) return,
         .bow => {
             if (to.eq(hero.at)) to = to.add(d.delta());
             if (!aimable(run, hero.at, to)) return;

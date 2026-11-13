@@ -9,6 +9,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
 const menu = @import("../ui/menu.zig");
+const options = @import("../ui/options.zig");
 const book = @import("../ui/book.zig");
 const resilience = @import("../play/resilience.zig");
 const look = @import("../gfx/look.zig");
@@ -78,7 +79,7 @@ fn takeable(g: *const game.Game, from: P, laid: anytype) bool {
     return if (g.character.page == .loot) inLoot(g, from, g.character.loot_at, laid) else laidReached(g, from, laid);
 }
 
-fn withinReach(from: P, p: P) bool {
+pub fn withinReach(from: P, p: P) bool {
     return mathx.dist(from, p) <= game.INTERACT_REACH;
 }
 
@@ -235,9 +236,12 @@ fn deal(g: *game.Game, command: book.Command) void {
 }
 
 pub fn openNearby(g: *game.Game) bool {
-    if (game.jail.beside(g)) |at| return game.jail.interact(g, at);
     var buf: game.NearbyBuf = undefined;
     const nearby = nearbyOf(g, &buf);
+    const only_doors = for (nearby) |n| {
+        if (n != .door) break false;
+    } else true;
+    if (only_doors) if (game.jail.beside(g)) |at| return game.jail.interact(g, at);
     if (nearby.len == 0) return false;
     openCharacter(g);
     g.character.choose(.nearby);
@@ -473,26 +477,21 @@ fn spendTurn(g: *game.Game) void {
 pub fn pauseStep(g: *game.Game) void {
     switch (g.pause_page) {
         .options, .visuals, .display => {
-            const options = @import("../ui/options.zig");
-            const page: options.Page = switch (g.pause_page) {
-                .visuals => .visuals,
-                .display => .display,
-                else => .main,
-            };
+            const page = options.pageOf(g.pause_page);
             if (menu.backedAt(&g.st, g.screen)) {
-                g.pause_page = if (page == .main) .main else .options;
-                g.pause_menu = .{ .at = if (page == .main) game.rowAt(game.PauseRow.options) else options.index(.main, if (page == .visuals) .visuals else .display) };
+                const under = options.under(page);
+                g.pause_page = if (under == null) .main else .options;
+                g.pause_menu = .{ .at = under orelse game.rowAt(game.PauseRow.options) };
                 return;
             }
-            const row = options.step(&g.cinema, &g.pause_menu, &g.st, g.screen, page, &g.display) orelse return;
-            switch (row) {
-                .visuals, .display => {
-                    g.pause_page = if (row == .visuals) .visuals else .display;
+            const pick = options.step(&g.cinema, &g.pause_menu, &g.st, g.screen, page, &g.display) orelse return;
+            switch (pick) {
+                inline .visuals, .display => |p| {
+                    g.pause_page = @field(@TypeOf(g.pause_page), @tagName(p));
                     g.pause_menu = .{};
                 },
                 .fullscreen => game.syncScreen(g, true),
                 .debug => game.debugging.open(g, .main),
-                else => unreachable,
             }
         },
         .character => {
@@ -548,12 +547,7 @@ pub fn drawPause(g: *game.Game) void {
     veil(g);
     switch (g.pause_page) {
         .options, .visuals, .display => {
-            const page: @import("../ui/options.zig").Page = switch (g.pause_page) {
-                .visuals => .visuals,
-                .display => .display,
-                else => .main,
-            };
-            @import("../ui/options.zig").draw(g.face, &g.sprites, g.screen, &g.cinema, g.pause_menu.at, &g.st, page, g.display);
+            options.draw(g.face, &g.sprites, g.screen, &g.cinema, g.pause_menu.at, options.pageOf(g.pause_page), g.display);
             menu.drawBack(&g.face, g.screen, &g.st);
         },
         .character => {

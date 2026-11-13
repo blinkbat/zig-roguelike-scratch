@@ -67,6 +67,12 @@ pub fn keepTorches(lv: *grid.Level) void {
     lv.torch.keep(@as(*const grid.Level, lv), bearsTorch);
 }
 
+/// Walls shaped afresh and the torches they no longer bear dropped, so a buried torch frees its slot.
+pub fn reshape(lv: *grid.Level) void {
+    shapeWalls(lv);
+    keepTorches(lv);
+}
+
 pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floor {
     std.debug.assert(doors.len <= grid.MAX_DOORS);
     const pm = params.fit();

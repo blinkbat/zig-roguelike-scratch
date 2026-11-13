@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const raster = @import("raster.zig");
 const shaders = @import("shaders.zig");
+const window = @import("../core/window.zig");
 
 pub const Options = struct {
     lens_blur: f32 = 0.10,
@@ -52,7 +53,7 @@ pub const Lens = struct {
         const scene = self.scene.?.texture;
         rl.setTextureFilter(scene, .bilinear);
         var source = scene;
-        if (self.options.lens_blur > 0 and raster.beginTarget(&self.spread, .{ .x = scene.width, .y = scene.height }, outer, rl.Color.black)) {
+        if (self.options.lens_blur > 0 and raster.beginTarget(&self.spread, raster.extentOf(scene), outer, rl.Color.black)) {
             self.draw(scene, .{ 1, 0 }, false);
             raster.endTarget(outer);
             source = self.spread.?.texture;
@@ -75,22 +76,30 @@ pub const Lens = struct {
     }
 
     pub fn sourcePoint(self: *const Lens, point: mathx.P, screen: mathx.P) mathx.P {
-        if (self.options.perspective == 0 or self.program == null or self.scene == null) return point;
+        if (!self.warps()) return point;
         return perspectivePoint(point, screen, self.options.perspective);
     }
 
     pub fn screenBox(self: *const Lens, box: rl.Rectangle, screen: mathx.P) rl.Rectangle {
-        if (self.options.perspective == 0 or self.program == null or self.scene == null) return box;
+        if (!self.warps()) return box;
         return perspectiveBox(box, screen, self.options.perspective);
     }
+
+    fn warps(self: *const Lens) bool {
+        return self.options.perspective != 0 and self.program != null and self.scene != null;
+    }
 };
+
+fn perspectiveScale(y: f32, height: f32, strength: f32) f32 {
+    return 1 + PERSPECTIVE * strength * y / height;
+}
 
 fn perspectiveBox(box: rl.Rectangle, screen: mathx.P, strength: f32) rl.Rectangle {
     const middle = @as(f32, @floatFromInt(screen.x)) * 0.5;
     var lo = std.math.inf(f32);
     var hi = -std.math.inf(f32);
     for ([_]f32{ box.y, box.y + box.height }) |y| {
-        const scale = 1 + PERSPECTIVE * strength * y / @as(f32, @floatFromInt(screen.y));
+        const scale = perspectiveScale(y, @floatFromInt(screen.y), strength);
         for ([_]f32{ box.x, box.x + box.width }) |x| {
             const projected = (x - middle) * scale + middle;
             lo = @min(lo, projected);
@@ -105,10 +114,10 @@ fn perspectivePoint(point: mathx.P, screen: mathx.P, strength: f32) mathx.P {
     const height: f32 = @floatFromInt(screen.y);
     const x: f32 = @floatFromInt(point.x);
     const y: f32 = @floatFromInt(point.y);
-    return .{ .x = @intFromFloat(@floor((x + 0.5 - width * 0.5) / (1 + PERSPECTIVE * strength * (y + 0.5) / height) + width * 0.5)), .y = point.y };
+    return .{ .x = @intFromFloat(@floor((x + 0.5 - width * 0.5) / perspectiveScale(y + 0.5, height, strength) + width * 0.5)), .y = point.y };
 }
 
-const FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE }) ++
+const FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE, .BLUR_REF_H = @as(f32, @floatFromInt(window.SCREEN_720.y)) }) ++
     \\uniform vec2 screen;
     \\uniform vec2 direction;
     \\uniform float lens_blur;
@@ -130,7 +139,7 @@ const FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE }
     \\    if (finish != 0) uv.x = (uv.x - 0.5) / (1.0 + PERSPECTIVE * perspective * y) + 0.5;
     \\    float farBlur = 1.0 - smoothstep(0.03, 0.36, y);
     \\    float nearBlur = smoothstep(0.64, 0.98, y);
-    \\    float radius = (farBlur * 4.0 + nearBlur * 1.6) * lens_blur * screen.y / 720.0;
+    \\    float radius = (farBlur * 4.0 + nearBlur * 1.6) * lens_blur * screen.y / BLUR_REF_H;
     \\    vec4 c = sampleScene(uv);
     \\    if (radius > 0.01) {
     \\        float spacing = max(1.0, radius / 6.0);
@@ -174,7 +183,7 @@ test "perspective pointer mapping matches the projected source at multiple sizes
             for ([_]i32{ 0, @divTrunc(screen.y, 2), screen.y - 1 }) |y| {
                 for ([_]i32{ 0, @divTrunc(screen.x, 2), screen.x - 1 }) |x| {
                     const source = perspectivePoint(.{ .x = x, .y = y }, screen, strength);
-                    const scale = 1 + PERSPECTIVE * strength * (@as(f32, @floatFromInt(y)) + 0.5) / @as(f32, @floatFromInt(screen.y));
+                    const scale = perspectiveScale(@as(f32, @floatFromInt(y)) + 0.5, @floatFromInt(screen.y), strength);
                     const middle = @as(f32, @floatFromInt(screen.x)) * 0.5;
                     const projected = (@as(f32, @floatFromInt(source.x)) + 0.5 - middle) * scale + middle;
                     try std.testing.expect(@abs(projected - (@as(f32, @floatFromInt(x)) + 0.5)) <= scale);

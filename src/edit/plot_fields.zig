@@ -24,6 +24,10 @@ pub const Focus = union(enum) {
     quest: u8,
     title: u8,
     stage: StageAt,
+
+    pub fn multiline(f: Focus) bool {
+        return f == .say or f == .ask;
+    }
 };
 pub const Target = struct { words: Words, unique: ?Unique = null };
 
@@ -84,7 +88,7 @@ pub fn put(m: *Script, t: Target, s: []const u8) bool {
     };
 }
 
-pub fn tableName(m: *Script, at: TableAt) *script.Name {
+fn tableName(m: *Script, at: TableAt) *script.Name {
     return switch (at.t) {
         inline else => |t| &@field(m.*, @tagName(t))[at.i],
     };
@@ -95,7 +99,7 @@ pub fn lineOf(m: *Script, at: LineAt) ?*script.Line {
     return &m.dialog[at.d].line[at.l];
 }
 
-pub fn choiceOf(m: *Script, at: ChoiceAt) ?*script.Choice {
+fn choiceOf(m: *Script, at: ChoiceAt) ?*script.Choice {
     const ln = lineOf(m, .{ .d = at.d, .l = at.l }) orelse return null;
     return if (at.c < ln.choice_n) &ln.choice[at.c] else null;
 }

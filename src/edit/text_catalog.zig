@@ -398,6 +398,18 @@ const SKILLBAR_SOURCE = "play/skillbar.zig";
 const ITEMS_SOURCES = [_][]const u8{ "play/items.zig", "play/item_bases.zig", "play/affixes.zig", "play/loot.zig", "play/gear.zig", "play/inventory.zig", "play/ground_items.zig" };
 const SAVE_SOURCE = "save_data.zig";
 const KEYBOARD_SOURCE = "ui/naming.zig";
+const LOG_LINES = "Log lines";
+const LOG_SOURCES = [_][]const u8{ "play/log.zig", "ui/journal.zig" };
+const DIALOGUE_SOURCES = [_][]const u8{ "ui/talk.zig", "game/talking.zig", "map/script.zig", "play/trigger.zig" };
+const QUESTS_SOURCE = "ui/quests.zig";
+const ITEM_TEXT_SOURCES = [_][]const u8{ "ui/item_card.zig", "play/trade.zig", "play/consumable.zig" };
+const CHARACTER_SOURCES = [_][]const u8{ "game/character.zig", "play/attrs.zig", "play/progress.zig", "play/hero.zig", "ui/book.zig" };
+const SKILL_TEXT_SOURCES = [_][]const u8{ "play/passives.zig", "ui/trees.zig", "game/skills.zig" };
+const BINDING_SOURCES = [_][]const u8{ "game/binds.zig", KEYBOARD_SOURCE };
+const HUD_SOURCES = [_][]const u8{ "ui/hud.zig", "game/overlay.zig" };
+const ACTOR_SOURCE = "play/actor.zig";
+const STATUS_SOURCES = [_][]const u8{ "play/burning.zig", "play/bleeding.zig", "play/blind.zig", "play/shock.zig", "play/glacial.zig", "play/juke.zig", "play/resilience.zig", "play/pinning.zig" };
+const CATEGORY_SOURCES = LOG_SOURCES ++ DIALOGUE_SOURCES ++ [_][]const u8{ QUESTS_SOURCE, ACTOR_SOURCE } ++ ITEM_TEXT_SOURCES ++ CHARACTER_SOURCES ++ SKILL_TEXT_SOURCES ++ BINDING_SOURCES ++ HUD_SOURCES ++ STATUS_SOURCES;
 const KEYBOARD_DECL = "LETTERS";
 const TECHNICAL_DECLS = [_][]const u8{ "SYMBOLS", "TTF", "DATA_TTF" };
 const SPOKEN_DECLS = [_][]const u8{ "NAME", "NUMBERS", FRIGHT_WORDS };
@@ -418,7 +430,7 @@ const DECL_SOURCES = [_][2][]const u8{
 
 comptime {
     @setEvalBranchQuota(100_000);
-    for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES ++ [_][]const u8{SKILLBAR_SOURCE} ++ ITEMS_SOURCES) |p| _ = @embedFile("../" ++ p);
+    for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES ++ [_][]const u8{SKILLBAR_SOURCE} ++ ITEMS_SOURCES ++ CATEGORY_SOURCES) |p| _ = @embedFile("../" ++ p);
     for (DECL_SOURCES) |d| {
         if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "const " ++ d[1] ++ " ") == null) @compileError(d[0] ++ " no longer declares " ++ d[1]);
     }
@@ -541,24 +553,23 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (inputSource(path)) return "Input";
     if (std.mem.startsWith(u8, path, SRC)) {
         const rel = path[SRC.len..];
-        if (std.mem.eql(u8, rel, SAVE_SOURCE)) return "Save";
-        if (contains(&.{ "play/log.zig", "ui/journal.zig" }, rel)) return "Log lines";
-        if (contains(&.{ "ui/talk.zig", "game/talking.zig", "map/script.zig", "play/trigger.zig" }, rel)) return "Dialogue";
-        if (std.mem.eql(u8, rel, "ui/quests.zig")) return "Quests";
+        if (contains(&LOG_SOURCES, rel)) return LOG_LINES;
+        if (contains(&DIALOGUE_SOURCES, rel)) return "Dialogue";
+        if (std.mem.eql(u8, rel, QUESTS_SOURCE)) return "Quests";
         if (std.mem.startsWith(u8, rel, "edit/")) return "Editor";
         if (std.mem.startsWith(u8, rel, "map/")) return "Maps";
-        if (contains(&.{ "ui/item_card.zig", "play/trade.zig", "play/consumable.zig" }, rel)) return "Items";
-        if (std.mem.startsWith(u8, rel, "ui/character") or contains(&.{ "game/character.zig", "play/attrs.zig", "play/progress.zig", "play/hero.zig", "ui/book.zig" }, rel)) return "Character";
-        if (contains(&.{ "play/passives.zig", "ui/trees.zig", "game/skills.zig" }, rel)) return "Skills";
-        if (contains(&.{ "game/binds.zig", "ui/naming.zig" }, rel)) return "Input";
-        if (contains(&.{ "ui/hud.zig", "game/overlay.zig" }, rel)) return "HUD";
+        if (contains(&ITEM_TEXT_SOURCES, rel)) return "Items";
+        if (std.mem.startsWith(u8, rel, "ui/character") or contains(&CHARACTER_SOURCES, rel)) return "Character";
+        if (contains(&SKILL_TEXT_SOURCES, rel)) return "Skills";
+        if (contains(&BINDING_SOURCES, rel)) return "Input";
+        if (contains(&HUD_SOURCES, rel)) return "HUD";
         if (std.mem.startsWith(u8, rel, "ui/")) return "Interface";
         if (contains(&ITEMS_SOURCES, rel)) return "Items";
         if (std.mem.eql(u8, rel, SKILLBAR_SOURCE)) return "Skills";
         if (contains(&EFFECT_SOURCES, rel)) return "Effects";
         if (contains(&LOOK_SOURCES, rel)) return "Look";
-        if (std.mem.eql(u8, rel, "play/actor.zig")) return "Characters";
-        if (contains(&.{ "play/burning.zig", "play/bleeding.zig", "play/blind.zig", "play/shock.zig", "play/glacial.zig", "play/stagger.zig", "play/juke.zig", "play/resilience.zig", "play/pinning.zig", "play/status.zig" }, rel)) return "Status effects";
+        if (std.mem.eql(u8, rel, ACTOR_SOURCE)) return "Characters";
+        if (contains(&STATUS_SOURCES, rel)) return "Status effects";
         if (std.mem.startsWith(u8, rel, "play/")) return "Combat";
         if (std.mem.startsWith(u8, rel, "game/")) return "Gameplay";
         if (std.mem.eql(u8, rel, "app.zig")) return "Interface";
@@ -717,7 +728,7 @@ const ContextScan = struct {
             if (std.mem.indexOf(u8, name, "log.") != null or
                 (std.mem.eql(u8, s.module, "play.log") and (std.mem.eql(u8, name, "say") or std.mem.eql(u8, name, "add"))))
             {
-                category = "Log lines";
+                category = LOG_LINES;
                 const dot = std.mem.lastIndexOfScalar(u8, s.module, '.');
                 role = try humanize(s.a, s.module[if (dot) |at| at + 1 else 0..]);
             }

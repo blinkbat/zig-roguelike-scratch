@@ -51,7 +51,7 @@ pub fn chainHit(g: *game.Game, comptime act: skillbar.Act, first: u16, s: Stroke
             g.pic.fx.zap(wait, .{ .from = mathx.centre(from), .to = mathx.centre(at) });
             wait += game.ZAP_S;
         }
-        skillHit(g, id, attacks.heroBlow(&g.sim, act), act, .{ .from = from, .wait = wait });
+        skillHit(g, id, attacks.heroBlow(&g.sim, act), act, .{ .from = from, .wait = wait, .element = s.element });
         from = at;
     }
     g.pic.leadUntil(wait);
@@ -789,7 +789,7 @@ fn hookTurn(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, braced: ?mat
     }
     const hero = foes.braceTarget(&g.sim, id, hk.range, sight) orelse return false;
     const r = g.sim.pool.get(id).?;
-    const d = windup.lineTo(r.at, hero) orelse return false;
+    const d = mathx.lineDir(r.at, hero) orelse return false;
     if (!windup.lane(&g.sim.lv, r.at, d, hk.range).has(hero)) return false;
     brace(g, id, d, "The {s} swings its hook.");
     return true;
@@ -876,7 +876,7 @@ fn flyBolts(g: *game.Game) bool {
         thrower.bolt = if (lands) null else now;
         if (lands) thrower.ready_in = @max(thrower.ready_in, hu.every);
         const kind = thrower.kind;
-        const s = Stroke{ .from = was.at(), .wait = g.pic.recordBolt(&g.sim, .fromIndex(i), was, now, flew.cells, lands, wait), .fire = true };
+        const s = Stroke{ .from = was.at(), .wait = g.pic.recordBolt(&g.sim, .fromIndex(i), was, now, flew.cells, lands, wait), .element = .fire };
         const stop = flew.stop orelse continue;
         if (stop == .body or stop == .barrel) g.pic.bolt_lands = @max(g.pic.bolt_lands, s.wait);
         switch (stop) {

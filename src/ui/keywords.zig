@@ -26,14 +26,14 @@ pub const STATUS_TERMS = blk: {
     break :blk out;
 };
 
-pub const IDENTITY = menu.Surface{ .scale = 1, .offset = .{ .x = 0, .y = 0 } };
-pub const MAX: usize = 32;
+const MAX: usize = 32;
 const PAD = 14;
 const GAP = 10;
 const WIDTH = 360;
 const MARGIN = 8;
+const HIT_SLOP = 3;
 const LINE = font.SMALL_LINE;
-pub const Link = struct { term: Term, box: rl.Rectangle };
+const Link = struct { term: Term, box: rl.Rectangle };
 
 pub const State = struct {
     links: [MAX]Link = undefined,
@@ -46,15 +46,24 @@ pub const State = struct {
     keep_root: bool = false,
     screen: mathx.P = .{ .x = 0, .y = 0 },
 
-    pub fn beginFrame(self: *State, st: *const input.State, screen: mathx.P) void {
+    pub fn resized(self: *State, screen: mathx.P) void {
         if (!self.screen.eq(screen)) self.* = .{};
+    }
+
+    fn shut(self: *State) void {
+        self.hover = null;
+        self.popup = null;
+    }
+
+    pub fn beginFrame(self: *State, st: *const input.State, screen: mathx.P) void {
+        self.resized(screen);
         self.screen = screen;
         self.keep_root = self.keepsRoot(st);
         self.n = 0;
         self.root = null;
     }
 
-    pub fn keepsRoot(self: *const State, st: *const input.State) bool {
+    fn keepsRoot(self: *const State, st: *const input.State) bool {
         if (self.root == null) return false;
         if (self.focus != null) return true;
         if (st.device.pad()) return false;
@@ -70,7 +79,7 @@ pub const State = struct {
         var i = self.n;
         while (i > 0) {
             i -= 1;
-            if (raster.holds(raster.grown(self.links[i].box, 3), p)) return i;
+            if (raster.holds(raster.grown(self.links[i].box, HIT_SLOP), p)) return i;
         }
         return null;
     }
@@ -78,8 +87,7 @@ pub const State = struct {
     pub fn step(self: *State, st: *const input.State) bool {
         if (!st.focused) {
             self.focus = null;
-            self.hover = null;
-            self.popup = null;
+            self.shut();
             return false;
         }
         if (self.n == 0) {
@@ -87,11 +95,10 @@ pub const State = struct {
             return false;
         }
         if (self.focus != null) {
-            if (menu.backed(st) or st.hit(.inspect)) {
+            if (menu.backed(st) or st.hit(menu.INSPECT)) {
                 self.dismissed = self.focus;
                 self.focus = null;
-                self.hover = null;
-                self.popup = null;
+                self.shut();
                 return true;
             }
             if (st.pointing()) {
@@ -108,7 +115,7 @@ pub const State = struct {
             }
             return true;
         }
-        if (st.hit(.inspect)) {
+        if (st.hit(menu.INSPECT)) {
             self.dismissed = null;
             self.focus = 0;
             self.hover = null;
@@ -116,8 +123,7 @@ pub const State = struct {
         }
         if (self.popup != null and menu.backed(st)) {
             self.dismissed = self.hover;
-            self.hover = null;
-            self.popup = null;
+            self.shut();
             return true;
         }
         if (!st.device.pad()) if (st.pointer) |p| {
@@ -149,7 +155,7 @@ pub const State = struct {
                 const w = face.width(term.title, px);
                 face.text(term.title, left, y, px, look.UI_FOCUS);
                 rl.drawLine(left, y + px + 1, left + w, y + px + 1, look.UI_GOLD);
-                self.register(term, transformed(on, raster.rect(left, y, w, px + 3)));
+                self.register(term, on.rectOf(raster.rect(left, y, w, px + 3)));
                 from = end;
                 matched = true;
                 break;
@@ -161,8 +167,7 @@ pub const State = struct {
     pub fn draw(self: *State, face: *const font.Face, sprites: *const sprite.Sprites, screen: mathx.P, st: *const input.State) void {
         if (self.n == 0) {
             self.focus = null;
-            self.hover = null;
-            self.popup = null;
+            self.shut();
             return;
         }
         if (self.focus) |i| self.focus = @min(i, self.n - 1);
@@ -175,8 +180,7 @@ pub const State = struct {
         }
         const i = selected orelse {
             self.dismissed = null;
-            self.hover = null;
-            self.popup = null;
+            self.shut();
             return;
         };
         if (self.dismissed == i) {
@@ -185,13 +189,12 @@ pub const State = struct {
         }
         self.dismissed = null;
         if (i >= self.n) {
-            self.hover = null;
-            self.popup = null;
+            self.shut();
             return;
         }
         self.hover = i;
         const link = self.links[i];
-        rl.drawRectangleLinesEx(raster.grown(link.box, 3), 1, look.UI_FOCUS);
+        rl.drawRectangleLinesEx(raster.grown(link.box, HIT_SLOP), 1, look.UI_FOCUS);
         var wrapped: font.Wrapped = undefined;
         var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
         const width = @min(WIDTH, screen.x - 2 * MARGIN);
@@ -201,7 +204,7 @@ pub const State = struct {
         self.popup = box;
         const x = raster.left(box);
         const y = raster.top(box);
-        sprite.layeredBacking(sprites, x, y, width, height, 2);
+        sprite.layeredBacking(sprites, x, y, width, height, .definition);
         face.text(link.term.title, x + PAD, y + PAD, font.BODY, look.UI_FOCUS);
         var top = y + PAD + font.BODY + GAP;
         for (lines[0..n]) |line| {
@@ -219,21 +222,10 @@ fn wrapBody(face: anytype, body: []const u8, width: i32, buf: *font.Wrapped, lin
     var n: usize = 0;
     var rows = std.mem.splitScalar(u8, body, '\n');
     while (rows.next()) |row| {
-        var wrapped: font.Wrapped = undefined;
-        var parts: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
-        const count = font.wrap(face, row, font.SMALL, width, &wrapped, &parts);
-        for (parts[0..@min(count, font.WRAP_LINES_MAX - n)]) |part| {
-            @memcpy(buf[n][0 .. part.len + 1], part[0 .. part.len + 1]);
-            lines[n] = buf[n][0..part.len :0];
-            n += 1;
-        }
+        n = font.wrapAppend(face, row, font.SMALL, width, buf, lines, n);
         if (n == font.WRAP_LINES_MAX) break;
     }
     return n;
-}
-
-pub fn transformed(on: menu.Surface, box: rl.Rectangle) rl.Rectangle {
-    return .{ .x = on.offset.x + box.x * on.scale, .y = on.offset.y + box.y * on.scale, .width = box.width * on.scale, .height = box.height * on.scale };
 }
 
 fn popupBox(screen: mathx.P, anchor: rl.Rectangle, width: i32, height: i32) rl.Rectangle {
@@ -248,7 +240,7 @@ test "keyword focus consumes navigation and dismissal while preserving its host"
     var state = State{};
     state.register(STATUS_TERMS[0], raster.rect(100, 100, 60, 20));
     state.register(STATUS_TERMS[1], raster.rect(200, 100, 60, 20));
-    try std.testing.expect(state.step(&.{ .pressed = .initOne(.inspect) }));
+    try std.testing.expect(state.step(&.{ .pressed = .initOne(menu.INSPECT) }));
     try std.testing.expectEqual(@as(?usize, 0), state.focus);
     try std.testing.expect(state.step(&.{ .walk = .e, .pressed = .initOne(.a) }));
     try std.testing.expectEqual(@as(?usize, 1), state.focus);
@@ -260,7 +252,7 @@ test "keyword focus consumes navigation and dismissal while preserving its host"
 test "keyword hit regions follow scaled panels and popups remain inside the screen" {
     const on = menu.Surface{ .scale = 1.25, .offset = .{ .x = 160, .y = 40 } };
     var state = State{};
-    const box = transformed(on, raster.rect(100, 100, 60, 20));
+    const box = on.rectOf(raster.rect(100, 100, 60, 20));
     state.register(STATUS_TERMS[0], box);
     try std.testing.expectEqual(@as(?usize, 0), state.at(raster.middleAt(box)));
     try std.testing.expectEqual(@as(?usize, null), state.at(.{ .x = 110, .y = 110 }));

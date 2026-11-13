@@ -534,18 +534,18 @@ pub fn hudPanelIn(sprites: *const Sprites, r: rl.Rectangle, fill: rl.Color, tint
 }
 
 pub fn backing(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32) void {
-    hudPanel(sprites, x, y, width, height, look.BACKING, look.LIT);
+    layeredBacking(sprites, x, y, width, height, .hud);
 }
 
 pub fn backingIn(sprites: *const Sprites, r: rl.Rectangle) void {
-    hudPanelIn(sprites, r, look.BACKING, look.LIT);
+    layeredBackingIn(sprites, r, .hud);
 }
 
-pub fn layeredBacking(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, depth: u8) void {
+pub fn layeredBacking(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, depth: look.Depth) void {
     hudPanel(sprites, x, y, width, height, look.backingAt(depth), look.LIT);
 }
 
-pub fn layeredBackingIn(sprites: *const Sprites, r: rl.Rectangle, depth: u8) void {
+pub fn layeredBackingIn(sprites: *const Sprites, r: rl.Rectangle, depth: look.Depth) void {
     hudPanelIn(sprites, r, look.backingAt(depth), look.LIT);
 }
 

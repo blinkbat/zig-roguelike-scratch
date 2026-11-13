@@ -7,6 +7,7 @@ const areas = @import("../play/area.zig");
 const resilience = @import("../play/resilience.zig");
 const sunder = @import("../play/sunder.zig");
 const ward = @import("../play/ward.zig");
+const clock = @import("../play/clock.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("look.zig");
 const light = @import("light.zig");
@@ -46,7 +47,7 @@ pub const Blow = struct {
     /// Unit travel direction; null scatters a directionless hit such as gas.
     dir: ?[2]f32,
     matter: Matter,
-    fire: bool = false,
+    element: ?damage.Element = null,
 };
 
 const StatusGlow = struct {
@@ -59,9 +60,11 @@ const StatusGlow = struct {
 };
 const BURN_GLOW = StatusGlow{ .radius = 2, .gain = 0.55 };
 const WARD_GLOW = StatusGlow{ .radius = 1.5, .gain = 0.25 };
+const STUN_GLOW = StatusGlow{ .radius = 1.3, .gain = 0.45 };
 pub const FLAMES_GLOW = StatusGlow{ .radius = @as(f32, @floatFromInt(lume.FIRE_REACH)) + 0.5, .gain = 0.3 };
 /// What a body suffers for turns, in the order the hud names them.
 pub const Status = enum {
+    stunned,
     bleeding,
     burning,
     chilled,
@@ -95,6 +98,7 @@ pub const Status = enum {
 
     pub fn ailment(s: Status) ?resilience.Kind {
         return switch (s) {
+            .stunned => .stun,
             .bleeding => .bleed,
             .burning => .burn,
             .chilled => .chill,
@@ -118,13 +122,14 @@ pub const Status = enum {
             .overwatch => .overwatch,
             .imbued => .imbue,
             .biding => .bide,
-            .bleeding, .burning, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .exposed, .warded, .resistant => null,
+            .stunned, .bleeding, .burning, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .exposed, .warded, .resistant => null,
         };
     }
 
     /// The first status a body has, in this order, that glows lights it.
     pub fn glow(s: Status) ?StatusGlow {
         return switch (s) {
+            .stunned => STUN_GLOW,
             .burning => BURN_GLOW,
             .warded => WARD_GLOW,
             .bleeding, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .exposed, .resistant, .guarding, .unyielding, .steady, .overwatch, .imbued, .biding => null,
@@ -146,6 +151,7 @@ pub const Status = enum {
 
     pub fn about(s: Status) []const u8 {
         return switch (s) {
+            .stunned => clock.STATUS,
             .resistant => resilience.ABOUT,
             .frightened => actor.FRIGHT_STATUS,
             .exposed => actor.EXPOSED_STATUS,
@@ -157,13 +163,14 @@ pub const Status = enum {
         if (comptime s.stance() != null) @compileError("about names " ++ @tagName(s) ++ "'s skill's text");
         return switch (s) {
             .warded => ward,
-            .frightened, .exposed, .resistant => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
+            .stunned, .frightened, .exposed, .resistant => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
             else => resilience.module(comptime s.ailment().?).?,
         };
     }
 
     fn field(comptime s: Status) []const u8 {
         return switch (s) {
+            .stunned => "clock",
             .warded => "ward",
             .resistant => "resilience",
             .exposed => "stuck",
@@ -173,6 +180,7 @@ pub const Status = enum {
 
     fn turnsOf(s: Status, a: actor.Actor) u8 {
         return switch (s) {
+            .stunned => @intFromBool(a.clock.stunned),
             .resistant => a.resilience.peak().turns,
             .guarding => @intFromBool(a.tactics.guard > 0),
             .unyielding => @intFromBool(a.tactics.unyielding),
@@ -254,3 +262,13 @@ pub const Burst = struct { at: mathx.P, area: areas.Burst, element: damage.Eleme
 pub const Zap = struct { from: [2]f32, to: [2]f32 };
 
 pub const Shimmer = struct { at: [2]f32, col: rl.Color };
+
+test "the hero and foes picture a stun alike, with a mark over the body" {
+    for ([_]actor.Kind{ actor.HERO, .rat }) |k| {
+        var a = actor.Actor.of(k, .{ .x = 4, .y = 4 });
+        try std.testing.expectEqual(@as(u8, 0), Body.of(a, 0).status.get(.stunned));
+        a.clock.stun();
+        try std.testing.expectEqual(@as(u8, 1), Body.of(a, 0).status.get(.stunned));
+    }
+    try std.testing.expect(@import("status_marks.zig").Renderer.marks(.stunned));
+}

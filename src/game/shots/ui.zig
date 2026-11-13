@@ -19,9 +19,12 @@ const actor = @import("../../play/actor.zig");
 const burning = @import("../../play/burning.zig");
 const bleeding = @import("../../play/bleeding.zig");
 const glacial = @import("../../play/glacial.zig");
+const resilience = @import("../../play/resilience.zig");
 const juke = @import("../../play/juke.zig");
 const skillbar = @import("../../play/skillbar.zig");
 const look = @import("../../gfx/look.zig");
+const raster = @import("../../gfx/raster.zig");
+const keywords = @import("../../ui/keywords.zig");
 const prompt_icon = @import("../../gfx/prompt_icon.zig");
 const day = @import("../../map/day.zig");
 const game = @import("../../game.zig");
@@ -153,11 +156,8 @@ fn captureInspect(g: *game.Game) !void {
                 g.inspecting = spot;
                 g.keywords = .{};
                 if (!device.pad()) {
-                    const overlay = @import("../overlay.zig");
-                    var parts: [overlay.SPOTS_MAX]overlay.Part = undefined;
-                    for (overlay.spotsOf(g, &parts)) |part| {
-                        if (std.meta.eql(part.spot, spot)) g.st.pointer = @import("../../gfx/raster.zig").middleAt(part.box);
-                    }
+                    var parts: [game.overlay.SPOTS_MAX]game.overlay.Part = undefined;
+                    if (game.overlay.spotAt(game.overlay.spotsOf(g, &parts), spot)) |part| g.st.pointer = raster.middleAt(part.box);
                 }
                 try capture(g, target, SHOTS_DIR ++ "/status-tags-" ++ @tagName(status) ++ "-" ++ @tagName(device) ++ "-" ++ suffix ++ ".png");
                 if (status == .chilled or status == .maimed or status == .confused) {
@@ -174,9 +174,9 @@ fn captureInspect(g: *game.Game) !void {
             g.keywords = .{};
             const prefix = SHOTS_DIR ++ "/keyword-stats-" ++ @tagName(device) ++ "-" ++ suffix;
             try capture(g, target, prefix ++ "-base.png");
-            if (g.keywords.n != @import("../../ui/keywords.zig").STATUS_TERMS.len) return error.MissingKeywordLinks;
-            try captureKeyword(g, target, 0, prefix ++ "-wounds.png");
-            try captureKeyword(g, target, 3, prefix ++ "-elemental.png");
+            if (g.keywords.n != keywords.STATUS_TERMS.len) return error.MissingKeywordLinks;
+            try captureKeyword(g, target, @intFromEnum(resilience.Tag.wounds), prefix ++ "-wounds.png");
+            try captureKeyword(g, target, @intFromEnum(resilience.Tag.elemental), prefix ++ "-elemental.png");
         }
         g.keywords = .{};
         g.st = .{ .device = .keys };
@@ -185,7 +185,6 @@ fn captureInspect(g: *game.Game) !void {
 }
 
 fn captureKeyword(g: *game.Game, target: rl.RenderTexture2D, index: usize, path: [:0]const u8) !void {
-    const raster = @import("../../gfx/raster.zig");
     if (index >= g.keywords.n) return error.MissingKeywordLink;
     if (g.st.device.pad()) {
         if (g.keywords.focus == null) _ = g.keywords.step(&.{ .device = g.st.device, .pressed = .initOne(.inspect) });
@@ -745,7 +744,7 @@ pub fn captureHud(g: *game.Game) !void {
         g.pic.settleResources(&g.sim);
         g.pic.xp_shown = study.xp;
         if (study.ailing) {
-            body.status = .initDefault(0, .{ .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1, .shocked = 2, .sundered = 3, .blinded = 1, .confused = 2, .enfeebled = 2, .maimed = 3 });
+            body.status = .initDefault(0, .{ .stunned = 1, .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1, .shocked = 2, .sundered = 3, .blinded = 1, .confused = 2, .enfeebled = 2, .maimed = 3 });
             body.resilience.meters.set(.stun, .{ .percent = 75, .turns = 4 });
             body.resilience.meters.set(.bleed, .{ .percent = 25, .turns = 5 });
             body.status.set(.resistant, 5);

@@ -120,10 +120,10 @@ const Mote = struct {
     terrain: bool = true,
     /// Of its radius, how much wider it has grown by the end of its life.
     grow: f32 = 0,
-    vapor: bool = false,
-    leaf: bool = false,
-    droplet: bool = false,
+    shape: Shape = .fleck,
 };
+
+const Shape = enum { fleck, vapor, leaf, droplet };
 
 const STATUS_FLICKER: f32 = 0.1;
 const STATUS_FLICKER_RAD_S: f32 = 11;
@@ -148,15 +148,27 @@ const ARC_JITTER: f32 = 0.16;
 const ARC_FORK = 6;
 const ARC_GLOW_EVERY: f32 = 2;
 const ARC_POINTS = 96;
+/// Seconds between re-jags, cells over which an arc's base fades in, and a fork's reach as a share of its kink.
+const ARC_FLICKER_S: f32 = 0.035;
+const ARC_BASE_FADE: f32 = 1;
+const FORK_REACH: f32 = 1.8;
+const Forks = std.meta.Int(.unsigned, ARC_POINTS / ARC_FORK + 1);
 const Arc = struct {
     points: [ARC_POINTS][2]f32 = undefined,
     n: usize = 0,
     life: f32 = 0,
+    flicker: f32 = 0,
+    /// Bit `i` set: the `i`th fork leaves to the left.
+    lefts: Forks = 0,
 };
+
+fn forkTip(v: rl.Vector2, w: rl.Vector2, left: bool) rl.Vector2 {
+    const side: f32 = if (left) 1 else -1;
+    return .{ .x = w.x + (w.y - v.y) * FORK_REACH * side, .y = w.y - (w.x - v.x) * FORK_REACH * side };
+}
 
 /// A brief light an effect casts: reach in cells, peak gain, and seconds to fade.
 const Glow = struct { radius: f32, gain: f32, life: f32 };
-pub const Mark = status_marks.Mark;
 pub const EMBER_GLOW = Glow{ .radius = 2.2, .gain = 0.8, .life = 0.32 };
 const SHIMMER_GLOW = Glow{ .radius = 2.2, .gain = 0.65, .life = 0.4 };
 const FIRE_BURST_GLOW = Glow{ .radius = 3.5, .gain = 1.4, .life = 0.35 };
@@ -204,6 +216,8 @@ const ZAP_MOTES: usize = 5;
 /// How far a zap's motes stray off its line, in cells.
 const ZAP_JITTER: f32 = 0.18;
 const EMBERS = Spray{ .col = look.FIRE, .hit = 18, .kill = 18, .along_lo = 0.4, .along_hi = 1.4, .fan = 0, .up_lo = 0.5, .up_hi = 1.5, .grav = 0, .drag = 2, .life_lo = 0.25, .life_hi = 0.55, .r_lo = 1, .r_hi = 2.5, .stains = false, .add = true };
+const SPARKS = Spray{ .col = look.LIGHTNING_CORE, .hit = 16, .kill = 16, .along_lo = 1.5, .along_hi = 3.5, .fan = 1.4, .up_lo = 0.6, .up_hi = 1.8, .grav = 7, .drag = 1.5, .life_lo = 0.16, .life_hi = 0.36, .r_lo = 0.8, .r_hi = 1.6, .stains = false, .bounce = 0.4, .add = true };
+const SPARK_GLOW = Glow{ .radius = 1.6, .gain = 0.9, .life = 0.22 };
 const DRIP_MOTES: usize = 5;
 const WATER_MOTES = [2]u32{ 5, 9 };
 /// Cells below a body's middle its footfall rises from, and how far across and down it spreads.
@@ -217,6 +231,8 @@ const RIPPLE_S: f32 = 0.9;
 const RIPPLE_R = [2]f32{ 2, 20 };
 const RIPPLE_FLAT: f32 = 0.45;
 const STEP_DUST = [2]u32{ 3, 6 };
+const WOOD_DUST = [2]u32{ 1, 2 };
+const LEAF_MOTES = [2]u32{ 1, 3 };
 pub const TORCH_TOP_PX = status_marks.TORCH_TOP_PX;
 
 const SHIMMER_MOTES = 24;
@@ -445,7 +461,14 @@ pub const Fx = struct {
     pub fn step(self: *Fx, lv: *const grid.Level, dt: f32) void {
         self.seconds.step(dt);
         self.level_up.life = @max(0, self.level_up.life - dt);
-        for (&self.arcs) |*a| a.life = @max(0, a.life - dt);
+        for (&self.arcs) |*a| {
+            a.life = @max(0, a.life - dt);
+            if (a.life <= 0) continue;
+            a.flicker += dt;
+            if (a.flicker < ARC_FLICKER_S) continue;
+            a.flicker = 0;
+            self.jag(a);
+        }
         for (&self.pulses) |*p| p.life = @max(0, p.life - dt);
         for (&self.ripples) |*r| r.t = @min(RIPPLE_S, r.t + dt);
         self.impacts.advance(dt);
@@ -457,7 +480,11 @@ pub const Fx = struct {
 
     fn land(self: *Fx, b: Blow) void {
         const at = mathx.centre(b.impact.at());
-        if (b.fire) self.embers(at);
+        if (b.element) |e| switch (e) {
+            .fire => self.embers(at),
+            .lightning => self.sparks(at, b.dir),
+            .cold, .chaos => {},
+        };
         self.emit(.{ .p = .{ at[0], at[1], STRIKE_Z }, .v = .{ 0, 0, 0 }, .life = CONTACT_S, .r = CONTACT_R * (if (b.impact.lethal()) KILL_POP else 1), .col = look.CONTACT, .add = true });
         const s = sprayOf(b.matter);
         self.spray(at, b.dir, s, if (b.impact.lethal()) s.kill else s.hit);
@@ -489,8 +516,13 @@ pub const Fx = struct {
         self.glow(at, look.FIRE, EMBER_GLOW);
     }
 
+    fn sparks(self: *Fx, at: [2]f32, dir: ?[2]f32) void {
+        self.spray(at, dir, SPARKS, SPARKS.hit);
+        self.glow(at, look.LIGHTNING, SPARK_GLOW);
+    }
+
     pub fn glow(self: *Fx, at: [2]f32, col: rl.Color, g: Glow) void {
-        claim(Pulse, &self.pulses, &self.pulse_head).* = .{ .source = .{ .at = .{ at[0], at[1], STRIKE_Z }, .col = col, .radius = g.radius, .gain = g.gain }, .life = g.life, .max = g.life };
+        claim(Pulse, &self.pulses, &self.pulse_head).* = .{ .source = struck(at, col, g.radius, g.gain), .life = g.life, .max = g.life };
     }
 
     pub fn trail(self: *Fx, lv: *const grid.Level, at: [2]f32, dir: [2]f32, act: skillbar.Act, age: f32) void {
@@ -549,15 +581,18 @@ pub const Fx = struct {
                 .drag = 1.6,
                 .terrain = false,
                 .grow = 0.9,
-                .vapor = true,
+                .shape = .vapor,
             });
         }
     }
 
     /// A status's mark over a body whose cell's top-left is `m.x`, `m.y`.
-    pub fn drawStatus(self: *const Fx, s: Status, m: Mark) void {
-        const renderer = status_marks.Renderer{ .seconds = self.seconds.at() };
-        renderer.drawStatus(s, m);
+    pub fn drawStatus(self: *const Fx, s: Status, m: status_marks.Mark) void {
+        self.marker().drawStatus(s, m);
+    }
+
+    fn marker(self: *const Fx) status_marks.Renderer {
+        return .{ .seconds = self.seconds.at() };
     }
 
     pub const marks = status_marks.Renderer.marks;
@@ -594,19 +629,33 @@ pub const Fx = struct {
         }
     }
 
+    fn jag(self: *Fx, a: *Arc) void {
+        const from = a.points[0];
+        const to = a.points[a.n - 1];
+        const u = mathx.unitToward(from, to);
+        const across = [2]f32{ -u[1], u[0] };
+        const segments: f32 = @floatFromInt(a.n - 1);
+        for (a.points[1 .. a.n - 1], 1..) |*p, i| {
+            const off = self.rng.spread(ARC_JITTER);
+            const on = mathx.lerp2(from, to, @as(f32, @floatFromInt(i)) / segments);
+            p.* = .{ on[0] + across[0] * off, on[1] + across[1] * off };
+        }
+        a.lefts = 0;
+        for (0..@bitSizeOf(Forks)) |i| {
+            if (self.rng.coin()) a.lefts |= @as(Forks, 1) << @intCast(i);
+        }
+    }
+
     fn arc(self: *Fx, z: Zap) void {
         const a = claim(Arc, &self.arcs, &self.arc_head);
         a.life = ARC_S;
+        a.flicker = 0;
         const span = mathx.len(z.to[0] - z.from[0], z.to[1] - z.from[1]);
-        const across: [2]f32 = if (span > 0) .{ -(z.to[1] - z.from[1]) / span, (z.to[0] - z.from[0]) / span } else .{ 0, 0 };
         const segments: usize = @intFromFloat(std.math.clamp(@round(span / ARC_STEP), 1, ARC_POINTS - 1));
         a.n = segments + 1;
-        for (a.points[0..a.n], 0..) |*p, i| {
-            const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(segments));
-            const off = if (i == 0 or i == segments) 0 else self.rng.spread(ARC_JITTER);
-            const on = mathx.lerp2(z.from, z.to, t);
-            p.* = .{ on[0] + across[0] * off, on[1] + across[1] * off };
-        }
+        a.points[0] = z.from;
+        a.points[segments] = z.to;
+        self.jag(a);
         const glows: usize = @intFromFloat(@max(1, @round(span / ARC_GLOW_EVERY)));
         for (0..glows) |i| self.glow(mathx.lerp2(z.from, z.to, (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(glows))), look.LIGHTNING, ARC_GLOW);
         const len = @max(1, span);
@@ -627,13 +676,11 @@ pub const Fx = struct {
     }
 
     pub fn drawBurning(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, alpha: f32) void {
-        const renderer = status_marks.Renderer{ .seconds = self.seconds.at() };
-        renderer.drawBurning(x, y, cell, seed, alpha);
+        self.marker().drawBurning(x, y, cell, seed, alpha);
     }
 
     pub fn drawTorch(self: *const Fx, x: f32, y: f32, cell: f32, seed: f32, lit: f32, memory: f32) void {
-        const renderer = status_marks.Renderer{ .seconds = self.seconds.at() };
-        renderer.drawTorch(x, y, cell, seed, lit, memory);
+        self.marker().drawTorch(x, y, cell, seed, lit, memory);
     }
 
     fn footfallCount(self: *Fx, bounds: [2]u32) usize {
@@ -658,7 +705,7 @@ pub const Fx = struct {
                 .col = look.fade(look.WATER_DROP, self.rng.between(0.6, 1)),
                 .grav = 9,
                 .drag = 2,
-                .droplet = true,
+                .shape = .droplet,
             });
         }
         claim(Ripple, &self.ripples, &self.ripple_head).* = .{ .at = .{ at[0], at[1] + SPLASH_FOOT }, .t = 0 };
@@ -669,7 +716,7 @@ pub const Fx = struct {
     }
 
     pub fn woodDust(self: *Fx, at: [2]f32) void {
-        self.dustCount(at, look.fade(look.DIRT_DUST, 0.65), .{ 1, 2 });
+        self.dustCount(at, look.fade(look.DIRT_DUST, 0.65), WOOD_DUST);
     }
 
     fn dustCount(self: *Fx, at: [2]f32, col: rl.Color, count: [2]u32) void {
@@ -689,17 +736,17 @@ pub const Fx = struct {
     }
 
     pub fn leaves(self: *Fx, at: [2]f32) void {
-        for (0..self.footfallCount(.{ 1, 2 })) |_| {
+        for (0..self.footfallCount(LEAF_MOTES)) |_| {
             const spot = self.footSpot(at, 0.6);
             self.emit(.{
                 .p = .{ spot.p[0] + spot.dir[0] * 0.12, spot.p[1], spot.p[2] },
                 .v = .{ spot.dir[0] * self.rng.between(0.3, 0.6), spot.dir[1] * 0.15, self.rng.between(0.35, 0.65) },
-                .life = self.rng.between(0.3, 0.45),
-                .r = self.rng.between(1, 1.7),
-                .col = look.fade(look.GRASS_LEAF, self.rng.between(0.4, 0.6)),
+                .life = self.rng.between(0.36, 0.54),
+                .r = self.rng.between(1.2, 2),
+                .col = look.fade(look.GRASS_LEAF, self.rng.between(0.5, 0.75)),
                 .grav = 3.5,
                 .drag = 1.5,
-                .leaf = true,
+                .shape = .leaf,
             });
         }
     }
@@ -793,17 +840,16 @@ pub const Fx = struct {
             const age = 1 - m.life / m.max;
             const at = screen(m.p, ox, oy, cell);
             const r = m.r * (1 + m.grow * age);
-            if (m.vapor) {
-                pixel.haze(at, r, k, @as(f32, @floatFromInt(i)) * 1.7 + age * 1.2, look.fade(m.col, a));
-            } else if (m.leaf) {
-                const turn = @as(f32, @floatFromInt(i)) * 2.4 + age * 4;
-                const dx = @cos(turn) * r * k;
-                const dy = @sin(turn) * r * k;
-                pixel.line(.{ .x = at.x - dx, .y = at.y - dy }, .{ .x = at.x + dx, .y = at.y + dy }, 1, k, look.fade(m.col, a));
-            } else if (m.stains or m.droplet) {
-                pixel.oval(at, r * 2, r * 2, k, look.fade(m.col, a));
-            } else {
-                pixel.fleck(at, r, k, look.fade(m.col, a));
+            switch (m.shape) {
+                .vapor => pixel.haze(at, r, k, @as(f32, @floatFromInt(i)) * 1.7 + age * 1.2, look.fade(m.col, a)),
+                .leaf => {
+                    const turn = @as(f32, @floatFromInt(i)) * 2.4 + age * 4;
+                    const dx = @cos(turn) * r * k;
+                    const dy = @sin(turn) * r * k;
+                    pixel.line(.{ .x = at.x - dx, .y = at.y - dy }, .{ .x = at.x + dx, .y = at.y + dy }, 1, k, look.fade(m.col, a));
+                },
+                .droplet => pixel.oval(at, r * 2, r * 2, k, look.fade(m.col, a)),
+                .fleck => if (m.stains) pixel.oval(at, r * 2, r * 2, k, look.fade(m.col, a)) else pixel.fleck(at, r, k, look.fade(m.col, a)),
             }
         }
     }
@@ -822,14 +868,16 @@ pub const Fx = struct {
         }
         for (&self.arcs) |*a| {
             if (a.life <= 0) continue;
+            const base = a.points[0];
             for (a.points[1..a.n], a.points[0 .. a.n - 1], 0..) |p, from, i| {
                 if (!lv.isLit(mathx.cellOf(p)) or !lv.isLit(mathx.cellOf(from))) continue;
-                const alpha = @min(1, a.life / (ARC_S * 0.5)) * grid.cellOr(f32, sight, mathx.cellOf(p), 0);
+                const rise = @min(1, mathx.len(p[0] - base[0], p[1] - base[1]) / ARC_BASE_FADE);
+                const alpha = rise * @min(1, a.life / (ARC_S * 0.5)) * grid.cellOr(f32, sight, mathx.cellOf(p), 0);
                 const v = projected(from, ox, oy, cell);
                 const w = projected(p, ox, oy, cell);
                 pixel.gridLine(v, w, .{ ox, oy }, k, look.fade(look.LIGHTNING_CORE, alpha), i > 0);
                 if (i % ARC_FORK == ARC_FORK / 2) {
-                    const tip = rl.Vector2{ .x = w.x + (w.y - v.y) * 1.8, .y = w.y - (w.x - v.x) * 1.8 };
+                    const tip = forkTip(v, w, a.lefts >> @intCast(i / ARC_FORK) & 1 == 1);
                     const at = mathx.cellOf(unprojected(tip, ox, oy, cell));
                     if (lv.isLit(at) and grid.clearLine(lv, mathx.cellOf(p), at)) pixel.gridLine(w, tip, .{ ox, oy }, k, look.fade(look.LIGHTNING, alpha), true);
                 }
@@ -949,11 +997,47 @@ const pxScale = look.pxScale;
 /// By element: a trailed missile's light, its motes' life and rise, its burst's glow, and whether its motes add light.
 const Flare = struct { radius: f32, gain: f32, trail_s: f32, rise: f32, burst: Glow, add: bool };
 
-const Missile = struct { trail_r: [2]f32 = .{ 0.7, 1.7 }, reach: ?f32 = null, ball: bool = false };
+const Missile = struct { trail_r: [2]f32 = .{ 0.7, 1.7 }, reach: ?f32 = null, ball: bool = false, spark: bool = false };
 const FIREBALL = Missile{ .trail_r = .{ 1.5, 3.5 }, .reach = 2.8, .ball = true };
+const SPARK = Missile{ .spark = true };
 
 fn missileOf(act: skillbar.Act) Missile {
-    return if (act == .fireball) FIREBALL else .{};
+    return switch (act) {
+        .fireball => FIREBALL,
+        .spark => SPARK,
+        else => .{},
+    };
+}
+
+/// A spark flies itself; other lightning shows only as the arc it leaves.
+pub fn sparkFlies(act: skillbar.Act) bool {
+    return missileOf(act).spark;
+}
+
+/// Cells from head to tail, kinks along it, and the tail's share of the head's alpha.
+const SPARK_LEN: f32 = 0.7;
+const SPARK_KINKS: usize = 4;
+const SPARK_TAIL_A: f32 = 0.3;
+const SPARK_SEED: u64 = 0x5BA2C;
+
+fn drawSpark(at: [2]f32, dir: [2]f32, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
+    const k = pxScale(cell);
+    const frame: u64 = @intFromFloat(@max(0, t) / ARC_FLICKER_S);
+    var rng = mathx.Rng.init(SPARK_SEED +% frame);
+    const across = [2]f32{ -dir[1], dir[0] };
+    const head = projected(at, ox, oy, cell);
+    var prev = head;
+    for (1..SPARK_KINKS + 1) |i| {
+        const f = @as(f32, @floatFromInt(i)) / SPARK_KINKS;
+        const off = if (i == SPARK_KINKS) 0 else rng.spread(ARC_JITTER);
+        const q = [2]f32{ at[0] - dir[0] * SPARK_LEN * f + across[0] * off, at[1] - dir[1] * SPARK_LEN * f + across[1] * off };
+        const w = projected(q, ox, oy, cell);
+        const a = alpha * mathx.lerpF(1, SPARK_TAIL_A, f);
+        pixel.gridLine(prev, w, .{ ox, oy }, k, look.fade(look.LIGHTNING_CORE, a), i > 1);
+        if (i == SPARK_KINKS / 2) pixel.gridLine(w, forkTip(prev, w, rng.coin()), .{ ox, oy }, k, look.fade(look.LIGHTNING, a), true);
+        prev = w;
+    }
+    pixel.fleck(head, 2, k, look.fade(look.LIGHTNING_CORE, alpha));
 }
 
 fn flareOf(element: ?damage.Element) ?Flare {
@@ -965,20 +1049,17 @@ fn flareOf(element: ?damage.Element) ?Flare {
 }
 
 pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
+    if (sparkFlies(act)) return struck(at, look.LIGHTNING, SPARK_GLOW.radius, SPARK_GLOW.gain);
     const m = flareOf(act.element()) orelse return null;
-    return .{
-        .at = .{ at[0], at[1], STRIKE_Z },
-        .col = look.arrowInk(act),
-        .radius = missileOf(act).reach orelse m.radius,
-        .gain = m.gain,
-    };
+    return struck(at, look.arrowInk(act), missileOf(act).reach orelse m.radius, m.gain);
 }
 
-pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, oy: f32, cell: f32) void {
-    drawMissileFaded(at, dir, act, t, ox, oy, cell, 1);
+fn struck(at: [2]f32, col: rl.Color, radius: f32, gain: f32) light.Emission {
+    return .{ .at = .{ at[0], at[1], STRIKE_Z }, .col = col, .radius = radius, .gain = gain };
 }
 
 pub fn drawMissileFaded(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
+    if (sparkFlies(act)) return drawSpark(at, dir, t, ox, oy, cell, alpha);
     if (act.element() == .lightning) return;
     const p = projected(at, ox, oy, cell);
     const k = pxScale(cell);
@@ -997,10 +1078,6 @@ pub fn drawMissileFaded(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: 
 }
 
 /// A chain run out from `from` to a barbed head at `at`, pointing `dir`.
-pub fn drawHook(from: [2]f32, at: [2]f32, dir: [2]f32, ox: f32, oy: f32, cell: f32) void {
-    drawHookFaded(from, at, dir, ox, oy, cell, 1);
-}
-
 pub fn drawHookFaded(from: [2]f32, at: [2]f32, dir: [2]f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     const a = projected(from, ox, oy, cell);
     const p = projected(at, ox, oy, cell);
@@ -1022,10 +1099,6 @@ const HOOK_BARB: f32 = 5;
 const NET_SPIN: f32 = 14;
 const NET_R: f32 = 8;
 
-pub fn drawNet(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32) void {
-    drawNetFaded(at, t, ox, oy, cell, 1);
-}
-
 pub fn drawNetFaded(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     const p = projected(at, ox, oy, cell);
     const k = pxScale(cell);
@@ -1041,16 +1114,17 @@ pub fn drawNetFaded(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32)
         }
     };
     const m = Mesh{ .p = p, .c = c, .s = s, .k = k };
+    const ink = look.fade(look.NET, alpha);
     for ([_]f32{ -NET_R, 0, NET_R }) |o| {
-        pixel.line(m.knot(-NET_R, o), m.knot(NET_R, o), 1, k, look.fade(look.NET, alpha));
-        pixel.line(m.knot(o, -NET_R), m.knot(o, NET_R), 1, k, look.fade(look.NET, alpha));
+        pixel.line(m.knot(-NET_R, o), m.knot(NET_R, o), 1, k, ink);
+        pixel.line(m.knot(o, -NET_R), m.knot(o, NET_R), 1, k, ink);
     }
 }
 
 /// On the art-pixel grid `k` screen pixels a side from `origin`.
 pub fn drawArrow(p: rl.Vector2, dir: [2]f32, col: rl.Color, origin: [2]f32, k: f32) void {
     const tail = rl.Vector2{ .x = p.x - dir[0] * 16 * k, .y = p.y - dir[1] * 16 * k };
-    pixel.gridLine(tail, p, origin, k, look.fade(look.SPLINTER, @as(f32, @floatFromInt(col.a)) / 255), false);
+    pixel.gridLine(tail, p, origin, k, look.fade(look.SPLINTER, look.alphaOf(col)), false);
     const back = rl.Vector2{ .x = p.x - dir[0] * 4 * k, .y = p.y - dir[1] * 4 * k };
     for ([_]f32{ -2, -1, 0, 1, 2 }) |side| {
         pixel.gridLine(p, .{ .x = back.x - dir[1] * side * k, .y = back.y + dir[0] * side * k }, origin, k, col, false);

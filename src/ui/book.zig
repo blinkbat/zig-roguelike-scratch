@@ -498,18 +498,10 @@ pub const Book = struct {
         header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else "ITEM BAG");
         if (self.page == .loot) drawHolding(face, view, null);
         self.drawCells(face, sprites, view);
-        if (self.count(view) == 0) {
-            face.draw(EMPTY, layout.LIST_X + layout.TEXT_X, self.directTop(), font.BODY, look.DIM);
-            return;
-        }
-        if (self.selected(view)) |it| {
-            const slot = self.destination(view);
-            item_card.draw(face, layout.DETAIL_X, layout.LOOT_TOP, layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), null);
-        } else if (view.nearby[self.cursor].supplyOf()) |k| {
-            item_card.drawSupply(face, layout.DETAIL_X, layout.LOOT_TOP, layout.DETAIL_W, k, view.inventory.stacks.get(k), null);
-        }
+        if (self.count(view) == 0) return self.drawEmpty(face, EMPTY);
+        self.drawCard(face, view, layout.LOOT_TOP, view.nearby[self.cursor].supplyOf());
         const note_y = self.noteY(view);
-        if (self.message.n > 0) face.draw(self.message.text(), layout.LIST_X, note_y, font.SMALL, look.TEXT);
+        self.drawNote(face, note_y);
         const position_x = self.drawPosition(face, view, note_y);
         if (self.page == .loot and view.loot_gold > 0) {
             var coins: menu.Note(32) = .{};
@@ -526,30 +518,38 @@ pub const Book = struct {
         drawHolding(face, view, if (self.selling) YOUR_GOODS else THEIR_WARES);
         self.drawCells(face, sprites, view);
         const note_y = self.noteY(view);
-        if (self.message.n > 0) face.draw(self.message.text(), layout.LIST_X, note_y, font.SMALL, look.TEXT);
-        if (self.count(view) == 0) {
-            face.draw(if (self.selling) NOTHING_TO_SELL else SOLD_OUT, layout.LIST_X + layout.TEXT_X, self.directTop(), font.BODY, look.DIM);
-            return;
-        }
+        self.drawNote(face, note_y);
+        if (self.count(view) == 0) return self.drawEmpty(face, if (self.selling) NOTHING_TO_SELL else SOLD_OUT);
         _ = self.drawPosition(face, view, note_y);
         const w = s.at(self.cursor).?;
         const asked = s.asked(w);
         var cost: menu.Note(40) = .{};
         cost.say("{s}  " ++ hero.COINS_FMT, .{ if (self.selling) "Sells for" else "Price", asked });
         face.draw(cost.text(), layout.DETAIL_X, layout.LOOT_TOP, font.BODY, self.priceInk(view, asked));
-        const card_y = tradeCardY();
+        self.drawCard(face, view, TRADE_CARD_Y, switch (w) {
+            .supply => |k| k,
+            .item => null,
+        });
+    }
+
+    fn drawNote(self: *const Book, face: *const font.Face, note_y: i32) void {
+        if (self.message.n > 0) face.draw(self.message.text(), layout.LIST_X, note_y, font.SMALL, look.TEXT);
+    }
+
+    fn drawEmpty(self: *const Book, face: *const font.Face, text: [:0]const u8) void {
+        face.draw(text, layout.LIST_X + layout.TEXT_X, self.directTop(), font.BODY, look.DIM);
+    }
+
+    fn drawCard(self: *const Book, face: *const font.Face, view: View, y: i32, supply: ?consumable.Kind) void {
         if (self.selected(view)) |it| {
             const slot = self.destination(view);
-            item_card.draw(face, layout.DETAIL_X, card_y, layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), null);
-        } else switch (w) {
-            .supply => |k| item_card.drawSupply(face, layout.DETAIL_X, card_y, layout.DETAIL_W, k, view.inventory.stacks.get(k), null),
-            .item => {},
-        }
+            item_card.draw(face, layout.DETAIL_X, y, layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), null);
+        } else if (supply) |k| item_card.drawSupply(face, layout.DETAIL_X, y, layout.DETAIL_W, k, view.inventory.stacks.get(k), null);
     }
 
     fn positionOf(self: *const Book, view: View) menu.Note(50) {
         var out: menu.Note(50) = .{};
-        out.say("{d} / {d}", .{ if (self.count(view) > 0) self.cursor + 1 else 0, self.count(view) });
+        out.say(menu.POSITION_FMT, .{ if (self.count(view) > 0) self.cursor + 1 else 0, self.count(view) });
         return out;
     }
 
@@ -695,9 +695,7 @@ const Controls = struct {
     }
 };
 
-fn tradeCardY() i32 {
-    return layout.LOOT_TOP + font.BODY_LINE;
-}
+const TRADE_CARD_Y = layout.LOOT_TOP + font.BODY_LINE;
 
 fn pageStep(st: *const input.State) ?i32 {
     if (st.hit(menu.PAGE_PREV)) return -1;
@@ -1026,7 +1024,7 @@ test "trade lists the shelf or the bag, swaps them on change, and the priced car
     try std.testing.expectEqual(@as(usize, 0), book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).?.sell);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
     const fullest = items.Item{ .kind = .greatsword, .rare_name = .{ .first = .Spine, .last = .Crusher }, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 }, .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .life_on_kill, .value = 2 } } };
-    try std.testing.expect(tradeCardY() + item_card.height(&.{}, layout.DETAIL_W, fullest, .right_hand) <= layout.LOOT_FOOT_Y);
+    try std.testing.expect(TRADE_CARD_Y + item_card.height(&.{}, layout.DETAIL_W, fullest, .right_hand) <= layout.LOOT_FOOT_Y);
 }
 
 test "the inventory list scrolls back when the bag shrinks" {

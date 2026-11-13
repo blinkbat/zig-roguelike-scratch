@@ -335,8 +335,8 @@ fn drawList(ed: *editor.Editor, g: *game.Game, v: *Viewer, box: rl.Rectangle) vo
         scroll.reveal(rowTop(v.at), widgets.ROW_H);
     }
     const top = scroll.begin(&ed.clip);
-    const x: i32 = @intFromFloat(box.x);
-    const w: i32 = @intFromFloat(box.width);
+    const x = raster.left(box);
+    const w = raster.width(box);
     var last: ?Group = null;
     for (SAMPLES, 0..) |s, i| {
         const y = top + rowTop(i);
@@ -391,7 +391,7 @@ fn drawStage(g: *game.Game, v: *Viewer, stage: rl.Rectangle, cell: f32) void {
         .hit, .embers, .drip, .shimmer, .whirl, .arc, .missile, .net, .wisps, .glowbulb, .splash, .dust, .juke, .fire_wall => {},
     }
     v.effects.drawGlow(&v.lv, &v.sight, o[0], o[1], cell);
-    if (v.shot) |*sh| if (sh.t >= 0) game.scene.drawFlight(sh, o, cell);
+    if (v.shot) |*sh| if (sh.started()) game.scene.drawFlight(sh, o, cell);
     switch (s) {
         .mark => |st| v.effects.drawStatus(st, .{ .x = body.x, .y = body.y, .cell = cell, .seed = 0, .ink = st.ink(), .alpha = 1, .stacks = sunder.MOST }),
         .level_up => {

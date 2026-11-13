@@ -703,7 +703,7 @@ test "offscreen shadows retain the last visible body then fade with it" {
     harness.ease(g, mathx.FRAME_DT);
     try std.testing.expect(g.pic.casterAt(&g.sim, i, cast) != null);
     try std.testing.expect(g.pic.sighted[i] > 0 and g.pic.sighted[i] < 1);
-    harness.ease(g, 0.6);
+    harness.ease(g, harness.FADED_S);
     try std.testing.expect(g.pic.casterAt(&g.sim, i, cast) == null);
     g.pic.split_from[i] = null;
     g.sim.pool.items[i].alive = false;
@@ -732,7 +732,7 @@ test "bodies fade both ways and hidden motion never moves the fading picture" {
     harness.ease(g, dt);
     try std.testing.expectEqualDeep(last, g.pic.bodyShown(&g.sim, i));
     try std.testing.expectEqual(last.at, g.pic.bodyAt(&g.sim, i).?);
-    harness.ease(g, 0.6);
+    harness.ease(g, harness.FADED_S);
     try std.testing.expectEqual(@as(f32, 0), g.pic.sighted[i]);
     try std.testing.expect(g.pic.bodyAt(&g.sim, i) == null);
     g.pic.glide[i] = .rest(&g.sim.pool.items[i]);
@@ -780,7 +780,7 @@ test "loot hazards NPCs and missiles fade from their last visible state only" {
     try std.testing.expect(hidden.bag and hidden.barrier and hidden.caltrops and hidden.flame == 1 and hidden.npc == 0);
     try std.testing.expectEqual(missile.at, g.pic.shot.?.view.at);
     try std.testing.expect(g.pic.shot.?.view.alpha > 0 and g.pic.shot.?.view.alpha < 1);
-    harness.ease(g, 0.6);
+    harness.ease(g, harness.FADED_S);
     try std.testing.expectEqual(@as(f32, 0), g.pic.cellAlpha(p));
     try std.testing.expect(g.pic.shot.?.view.at == null);
     g.sim.lv.light(p);
@@ -1275,9 +1275,7 @@ test "combat walk taps and repeats only queue at the tail of the turn" {
             game.update(g, g.pic.busy + mathx.FRAME_DT);
             const expected = if (tail) stepped.add(mathx.Dir.w.delta()) else stepped;
             try std.testing.expectEqual(expected, g.sim.heroActor().?.at);
-            var next = clock;
-            if (tail) _ = next.turn();
-            try std.testing.expectEqual(next, g.sim.clock);
+            try std.testing.expectEqual(harness.turned(clock, @intFromBool(tail)), g.sim.clock);
             try std.testing.expect(g.pending == null);
         }
     }
@@ -1304,9 +1302,7 @@ test "combat skills discard early presses and retain tail presses ahead of held 
         game.update(g, g.pic.busy + mathx.FRAME_DT);
         try std.testing.expectEqual(flask.CHARGES / flask.USE - @as(u8, if (tail) 1 else 0), g.sim.flasks.get(.life).uses());
         try std.testing.expectEqual(at, g.sim.heroActor().?.at);
-        var next = clock;
-        if (tail) _ = next.turn();
-        try std.testing.expectEqual(next, g.sim.clock);
+        try std.testing.expectEqual(harness.turned(clock, @intFromBool(tail)), g.sim.clock);
     }
 }
 
@@ -1325,8 +1321,7 @@ test "a flask pressed mid-walk is drunk once the step is drawn, ahead of the hel
     g.st = .{ .walk = .e };
     game.update(g, 0);
     try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);
-    var next = g.sim.clock;
-    _ = next.turn();
+    const next = harness.turned(g.sim.clock, 1);
     g.st = .{ .walk = .e };
     game.update(g, game.GLIDE_S + mathx.FRAME_DT);
     try std.testing.expect(g.pending == null);

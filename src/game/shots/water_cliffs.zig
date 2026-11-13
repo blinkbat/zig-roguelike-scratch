@@ -20,6 +20,7 @@ const drawInto = @import("capture.zig").drawInto;
 const exportImage = @import("capture.zig").exportImage;
 const exportTarget = @import("capture.zig").exportTarget;
 const intoTarget = @import("capture.zig").intoTarget;
+const neutralLens = @import("capture.zig").neutralLens;
 const outOfTarget = @import("capture.zig").outOfTarget;
 const pixels = @import("capture.zig").pixels;
 const readTarget = @import("capture.zig").readTarget;
@@ -110,9 +111,8 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
 }
 
 fn captureWaterVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
-    const lens = g.cinema.lens.options;
+    const lens = neutralLens(g);
     defer g.cinema.lens.options = lens;
-    g.cinema.lens.options = .neutral;
     game.harness.grassArena(g, .{ .x = 24, .y = 19 }, &.{});
     @memset(&g.sim.lv.tile, .water);
     studyLit(g, true, day.NOON);
@@ -132,7 +132,7 @@ fn captureWaterVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
         g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{});
         intoTarget(g, target);
         rl.clearBackground(rl.Color.black);
-        g.cinema.drawAir(g.light, .{ @floatFromInt(-c.x), @floatFromInt(-c.y) }, game.CELL_F, g.screen, 0);
+        g.cinema.drawAir(g.light, c.origin(), game.CELL_F, g.screen, 0);
         outOfTarget(g);
         img.* = try readTarget(target);
         air_n += 1;
@@ -528,9 +528,8 @@ pub fn checkWaterSurface(g: *game.Game) !void {
 }
 
 pub fn checkMapEdge(g: *game.Game, target: rl.RenderTexture2D) !void {
-    const lens = g.cinema.lens.options;
+    const lens = neutralLens(g);
     defer g.cinema.lens.options = lens;
-    g.cinema.lens.options = .neutral;
     game.harness.grassArena(g, .{ .x = 24, .y = grid.H - 4 }, &.{});
     for (0..grid.W) |x| g.sim.lv.set(.{ .x = @intCast(x), .y = grid.H - 1 }, .grass);
     studyLit(g, true, day.NOON);

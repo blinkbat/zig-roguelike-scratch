@@ -2,7 +2,6 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
-const bow = @import("bow.zig");
 
 const P = mathx.P;
 
@@ -83,7 +82,7 @@ pub fn fly(b: *Bolt, lv: *const grid.Level, h: Hurl) Flew {
         }
         const w = lv.who(c);
         const t = lv.at(c);
-        if (w == grid.NO_ONE and !lv.hasBarrel(c) and bow.walled(t)) {
+        if (w == grid.NO_ONE and !lv.hasBarrel(c) and t.walled()) {
             out.stop = .wall;
             return out;
         }

@@ -15,37 +15,43 @@ fn gameRules(path: []const u8) bool {
     return listed(&GAME_RULES, path);
 }
 
+const DOMAIN_EDIT = [_][]const u8{ "edit/preview.zig", "edit/plot_fields.zig" };
+
 fn domain(path: []const u8) bool {
     return std.mem.startsWith(u8, path, "play/") or std.mem.startsWith(u8, path, "map/") or
-        gameRules(path) or std.mem.eql(u8, path, "edit/preview.zig") or std.mem.eql(u8, path, "edit/plot_fields.zig");
+        gameRules(path) or listed(&DOMAIN_EDIT, path);
 }
 
 const INTERACTION = "edit/interaction.zig";
 
-const SPLIT_FROM = [_]struct { owners: [2][]const u8, parent: []const u8 }{
-    .{ .owners = .{ "gfx/sprite_assets.zig", "gfx/sprite_materials.zig" }, .parent = "gfx/sprites.zig" },
-    .{ .owners = .{ "gfx/impact_queue.zig", "gfx/effect_state.zig" }, .parent = "gfx/fx.zig" },
-    .{ .owners = .{ "core/input_bindings.zig", "core/input_names.zig" }, .parent = "core/input.zig" },
-    .{ .owners = .{ "gfx/light_model.zig", "gfx/light_gpu.zig" }, .parent = "gfx/light.zig" },
+const SPLIT_FROM = [_]struct { owners: []const []const u8, parent: []const u8 }{
+    .{ .owners = &.{ "gfx/sprite_assets.zig", "gfx/sprite_materials.zig" }, .parent = "gfx/sprites.zig" },
+    .{ .owners = &.{ "gfx/impact_queue.zig", "gfx/effect_state.zig", "gfx/status_marks.zig" }, .parent = "gfx/fx.zig" },
+    .{ .owners = &.{ "core/input_bindings.zig", "core/input_names.zig" }, .parent = "core/input.zig" },
+    .{ .owners = &.{ "gfx/light_model.zig", "gfx/light_gpu.zig" }, .parent = "gfx/light.zig" },
 };
 
 const INDEPENDENT = [_][]const u8{
-    "gfx/status_marks.zig",   "game/projectile_motion.zig",
-    "edit/widgets.zig",       "edit/thumbnails.zig",
-    "edit/tool_catalog.zig",  "edit/name_field.zig",
-    "edit/history.zig",       "edit/text_catalog.zig",
-    "ui/character_view.zig",  "ui/character_layout.zig",
-    "ui/character_stats.zig", "ui/item_card.zig",
+    "game/projectile_motion.zig",
+    "edit/widgets.zig",
+    "edit/thumbnails.zig",
+    "edit/tool_catalog.zig",
+    "edit/name_field.zig",
+    "edit/history.zig",
+    "edit/text_catalog.zig",
+    "ui/character_view.zig",
+    "ui/character_layout.zig",
+    "ui/character_stats.zig",
+    "ui/item_card.zig",
 } ++ blk: {
-    var owners: [2 * SPLIT_FROM.len][]const u8 = undefined;
-    for (SPLIT_FROM, 0..) |split, i| owners[2 * i ..][0..2].* = split.owners;
-    break :blk owners;
+    var owners: []const []const u8 = &.{};
+    for (SPLIT_FROM) |split| owners = owners ++ split.owners;
+    break :blk owners[0..owners.len].*;
 };
 
 fn allowed(owner: []const u8, target: []const u8) bool {
-    if (std.mem.eql(u8, owner, "gfx/status_marks.zig") and std.mem.eql(u8, target, "gfx/fx.zig")) return false;
     for (SPLIT_FROM) |split| {
-        if (listed(&split.owners, owner) and std.mem.eql(u8, target, split.parent)) return false;
+        if (listed(split.owners, owner) and std.mem.eql(u8, target, split.parent)) return false;
     }
     if (domain(owner)) {
         if (!std.mem.endsWith(u8, target, ".zig")) return !std.mem.eql(u8, target, "raylib");
@@ -90,7 +96,7 @@ pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) 
 
 test "source boundaries reject rendering and application imports in domain code" {
     const alloc = std.testing.allocator;
-    for (GAME_RULES ++ [_][]const u8{ "play/items.zig", "play/item_bases.zig", "play/affixes.zig", "play/loot.zig", "play/gear.zig", "play/inventory.zig", "play/ground_items.zig", "map/atlas.zig", "edit/preview.zig", "edit/plot_fields.zig" }) |owner| {
+    for (GAME_RULES ++ DOMAIN_EDIT ++ [_][]const u8{ "play/items.zig", "play/item_bases.zig", "play/affixes.zig", "play/loot.zig", "play/gear.zig", "play/inventory.zig", "play/ground_items.zig", "map/atlas.zig" }) |owner| {
         for ([_][:0]const u8{
             "const bad = @import(\"../ui/menu.zig\");",
             "const bad = @import(\"../gfx/look.zig\");",
@@ -103,7 +109,6 @@ test "source boundaries reject rendering and application imports in domain code"
         try std.testing.expect((try check(alloc, owner, "const ok = @import(\"../core/wording.zig\");")) == null);
     }
     try std.testing.expect((try check(alloc, "game/attacks.zig", "const sim = @import(\"sim.zig\");")) == null);
-    try std.testing.expect((try check(alloc, "gfx/status_marks.zig", "const bad = @import(\"fx.zig\");")) != null);
     try std.testing.expect((try check(alloc, "game/projectile_motion.zig", "const bad = @import(\"presentation.zig\");")) != null);
     try std.testing.expect((try check(alloc, "edit/plot_fields.zig", "const bad = @import(\"plot.zig\");")) != null);
     for (SPLIT_FROM) |split| for (split.owners) |owner| {

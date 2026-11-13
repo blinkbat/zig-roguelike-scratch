@@ -8,11 +8,15 @@ const hud = @import("../../ui/hud.zig");
 const light = @import("../../gfx/light.zig");
 const cinema = @import("../../gfx/cinema.zig");
 const day = @import("../../map/day.zig");
+const fire = @import("../../map/fire.zig");
+const options_menu = @import("../../ui/options.zig");
 const game = @import("../../game.zig");
 
 const P = mathx.P;
 const CINEMA_DIR = @import("capture.zig").CINEMA_DIR;
 const capture = @import("capture.zig").capture;
+const differentPixels = @import("capture.zig").differentPixels;
+const neutralLens = @import("capture.zig").neutralLens;
 const drawInto = @import("capture.zig").drawInto;
 const dropAtlas = @import("capture.zig").dropAtlas;
 const heapAtlas = @import("capture.zig").heapAtlas;
@@ -54,7 +58,7 @@ fn captureVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
     const reeds = P{ .x = 22, .y = 20 };
     game.harness.grassArena(g, from, &.{foe});
     g.sim.lv.set(reeds, .reeds);
-    @import("../../map/fire.zig").lay(&g.sim.lv, reeds, 3, 0);
+    fire.lay(&g.sim.lv, reeds, 3, 0);
     const bag = P{ .x = 23, .y = 22 };
     if (!g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = bag })) return error.CaptureLootFull;
     studyAt(g, true, day.NOON);
@@ -73,21 +77,19 @@ fn captureVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
     for (&g.sim.lv.lit, 0..) |*lit, i| if (grid.Level.of(i).x > 21) {
         lit.* = false;
     };
+    try captureEased(g, target, &.{ 0.05, 0.12, 0.25, 0.60 }, "out");
+    for (&g.sim.lv.lit, g.sim.lv.seen) |*lit, seen| lit.* = seen;
+    try captureEased(g, target, &.{ 0.05, 0.12, 0.25 }, "in");
+}
+
+fn captureEased(g: *game.Game, target: rl.RenderTexture2D, times: []const f32, comptime way: []const u8) !void {
     var path: [160]u8 = undefined;
     var elapsed: f32 = 0;
-    for ([_]f32{ 0.05, 0.12, 0.25, 0.60 }) |t| {
+    for (times) |t| {
         game.harness.ease(g, t - elapsed);
         g.light.step(&g.sim.lv, t - elapsed);
         elapsed = t;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/visibility-out-{d:.0}ms.png", .{t * 1000}));
-    }
-    for (&g.sim.lv.lit, g.sim.lv.seen) |*lit, seen| lit.* = seen;
-    elapsed = 0;
-    for ([_]f32{ 0.05, 0.12, 0.25 }) |t| {
-        game.harness.ease(g, t - elapsed);
-        g.light.step(&g.sim.lv, t - elapsed);
-        elapsed = t;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/visibility-in-{d:.0}ms.png", .{t * 1000}));
+        try capture(g, target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/visibility-" ++ way ++ "-{d:.0}ms.png", .{t * 1000}));
     }
 }
 
@@ -112,7 +114,7 @@ fn captureLens(g: *game.Game) !void {
             try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-{s}.png", .{ size.y, field.name }));
             const image = try readTarget(shot.target);
             defer rl.unloadImage(image);
-            if (@import("capture.zig").differentPixels(base, image) == 0) return error.LensDidNotChangeFrame;
+            if (differentPixels(base, image) == 0) return error.LensDidNotChangeFrame;
             if (comptime std.mem.eql(u8, field.name, "lens_blur")) {
                 var points = grid.Cells.of(.{ .x = 0, .y = @divTrunc(size.y * 40, 100) }, .{ .x = size.x, .y = @divTrunc(size.y * 60, 100) });
                 while (points.next()) |p| {
@@ -122,11 +124,11 @@ fn captureLens(g: *game.Game) !void {
         }
         lens.options = .{ .lens_blur = 1, .perspective = 1, .vignette = 1, .saturation = 1.2, .warmth = 0.3 };
         try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-all.png", .{size.y}));
-        const on_ms = try meanDraw(g, shot.target, 12, CINEMA_FRAMES);
+        const on_ms = try meanDraw(g, shot.target, CINEMA_WARM, CINEMA_FRAMES);
         if (lens.scene.?.texture.width != size.x or lens.scene.?.texture.height != size.y or lens.spread.?.texture.width != size.x or lens.spread.?.texture.height != size.y) return error.LensResizeFailed;
         lens.options = .neutral;
         if (try redrawnDiff(g, shot.target, base) != 0) return error.LensOffChangedFrame;
-        std.debug.print("lens {d}p: off {d:.3} ms, all {d:.3} ms mean headless draw\n", .{ size.y, try meanDraw(g, shot.target, 12, CINEMA_FRAMES), on_ms });
+        std.debug.print("lens {d}p: off {d:.3} ms, all {d:.3} ms mean headless draw\n", .{ size.y, try meanDraw(g, shot.target, CINEMA_WARM, CINEMA_FRAMES), on_ms });
         std.debug.print("lens {d}p: independent effects, sharp middle, resize and exact restoration checked\n", .{size.y});
         lens.options = .{};
         try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-defaults.png", .{size.y}));
@@ -134,7 +136,7 @@ fn captureLens(g: *game.Game) !void {
         g.pause_page = .visuals;
         g.pause_menu.at = 0;
         try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-options.png", .{size.y}));
-        g.pause_menu.at = @import("../../ui/options.zig").index(.visuals, .set_all_to_0);
+        g.pause_menu.at = options_menu.index(.visuals, .set_all_to_0);
         try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-filters-menu.png", .{size.y}));
         g.pause_page = .display;
         g.pause_menu = .{};
@@ -152,8 +154,7 @@ pub fn cinemaWater(g: *game.Game, target: rl.RenderTexture2D) !void {
 }
 
 pub fn captureCinemaScene(g: *game.Game, target: rl.RenderTexture2D, comptime name: []const u8) !void {
-    const lens_options = g.cinema.lens.options;
-    g.cinema.lens.options = .neutral;
+    const lens_options = neutralLens(g);
     defer g.cinema.lens.options = lens_options;
     const options = g.cinema.options;
     defer g.cinema.options = options;
@@ -211,6 +212,7 @@ pub fn captureCinemaScene(g: *game.Game, target: rl.RenderTexture2D, comptime na
 }
 
 const CINEMA_FRAMES = 120;
+const CINEMA_WARM = 12;
 
 fn checkCinema(g: *game.Game, target: rl.RenderTexture2D) !void {
     g.pic.fx.zap(0, POSE_ZAP);
@@ -219,7 +221,7 @@ fn checkCinema(g: *game.Game, target: rl.RenderTexture2D) !void {
     defer g.cinema.options = options;
     for ([_]bool{ false, true }) |enabled| {
         g.cinema.options = if (enabled) .{} else cinema.Options.off;
-        std.debug.print("cinema {s}: {d:.3} ms mean headless draw over {d} frames\n", .{ if (enabled) "on" else "off", try meanDraw(g, target, 12, CINEMA_FRAMES), CINEMA_FRAMES });
+        std.debug.print("cinema {s}: {d:.3} ms mean headless draw over {d} frames\n", .{ if (enabled) "on" else "off", try meanDraw(g, target, CINEMA_WARM, CINEMA_FRAMES), CINEMA_FRAMES });
     }
     for ([_]P{ game.SCREEN_720, game.SCREEN_1080, g.screen }) |size| {
         const resized = try targetAt(g, size);

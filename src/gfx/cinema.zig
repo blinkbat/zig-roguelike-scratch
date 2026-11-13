@@ -147,7 +147,7 @@ pub const Cinema = struct {
     pub fn endScene(self: *Cinema, outer: u32, origin: [2]f32, cell: f32, l: *light.Light) void {
         raster.endTarget(outer);
         const scene = self.scene.?.texture;
-        const size = mathx.P{ .x = scene.width, .y = scene.height };
+        const size = raster.extentOf(scene);
         const visibility = l.mapTexture();
         const glints = l.glintTexture();
         const view = shaders.MapView{ .origin = origin, .cell = cell, .screen = raster.sizeOf(scene) };

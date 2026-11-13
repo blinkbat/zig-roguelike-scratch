@@ -34,8 +34,7 @@ test "a bandage stops bleeding for a turn and one from the stack, and none left 
     const h = g.sim.heroActor().?;
     h.bleed.startWith(3);
     const hp = h.hp;
-    var next = g.sim.clock;
-    _ = next.turn();
+    const next = harness.turned(g.sim.clock, 1);
     harness.use(g, .bandage);
     try std.testing.expectEqual(next, g.sim.clock);
     try std.testing.expectEqual(@as(u8, 0), h.bleed.turns);
@@ -77,8 +76,7 @@ test "a frost vial thrown from the bag splashes cold on every foe round its mark
     try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
     try std.testing.expect(g.bar.slotOf(.frost_vial) == null and g.mode.aim.by == null);
     try std.testing.expectEqual(@as(u8, 2), g.sim.inventory.stacks.get(.frost_vial));
-    var next = g.sim.clock;
-    _ = next.turn();
+    const next = harness.turned(g.sim.clock, 1);
     harness.press(g, menu.CONFIRM);
     try std.testing.expectEqual(next, g.sim.clock);
     try std.testing.expectEqual(@as(u8, 1), g.sim.inventory.stacks.get(.frost_vial));
@@ -433,8 +431,7 @@ test "a flask drink spends a turn, recovers on it and the next two, and kills re
     const h = g.sim.heroActor().?;
     h.hp = 1;
     g.sim.mana = 0;
-    var next = g.sim.clock;
-    _ = next.turn();
+    const next = harness.turned(g.sim.clock, 1);
     harness.use(g, .life_flask);
     try std.testing.expectEqual(next, g.sim.clock);
     const per = firstLifeTick(h.max);
@@ -483,8 +480,7 @@ test "each flask drink is a whole turn: foes, ailments, cooldowns, regeneration 
         const other: flask.Kind = if (kind == .life) .mana else .life;
         g.sim.flasks.getPtr(other).drink(9);
         const other_before = g.sim.flasks.get(other);
-        var next = g.sim.clock;
-        _ = next.turn();
+        const next = harness.turned(g.sim.clock, 1);
         const rng = g.sim.rng;
         g.sim.unsaved = false;
         g.pic.catchUp(&g.sim);
@@ -822,4 +818,20 @@ test "a Skewering shot through its one foe into a barrel strikes both" {
     harness.aimAt(g, .shoot, .{ .x = 22, .y = 20 });
     try std.testing.expect(harness.foes(g)[0].hp < harness.TEST_HP);
     try std.testing.expect(!g.sim.lv.hasBarrel(barrel));
+}
+
+test "a stunned hero shows stunned through the turn it loses and not once it can act" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const h = g.sim.heroActor().?;
+    h.clock.stun();
+    const minute = g.sim.clock.minute;
+    game.update(g, 0);
+    try std.testing.expect(g.sim.clock.minute != minute);
+    try std.testing.expect(h.clock.stunned);
+    game.settle(g);
+    game.update(g, 0);
+    try std.testing.expect(!h.clock.stunned);
+    try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[g.sim.heroSlot().?].status.get(.stunned));
 }

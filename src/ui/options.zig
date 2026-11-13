@@ -24,19 +24,43 @@ pub fn rows(page: Page) []const Row {
 pub fn index(page: Page, row: Row) usize {
     return std.mem.indexOfScalar(Row, rows(page), row).?;
 }
-const Range = struct { min: f32 = 0, max: f32 = 2, default: f32 = 0 };
+
+pub const Pick = enum { visuals, display, fullscreen, debug };
+
+pub fn pageOf(host: anytype) Page {
+    return std.meta.stringToEnum(Page, @tagName(host)) orelse .main;
+}
+
+pub fn under(page: Page) ?usize {
+    return switch (page) {
+        .main => null,
+        inline .visuals, .display => |p| index(.main, @field(Row, @tagName(p))),
+    };
+}
+
+const Range = struct { min: f32 = 0, max: f32 = 2, default: f32 = 0, alt: ?f32 = null };
+const TRACK_AT: f32 = 0.52;
+const TRACK_W: f32 = 0.32;
+const TRACK_H: f32 = 6;
+const GRAB_SLACK: f32 = 8;
+pub const WALK_STEP: f32 = 0.05;
+const VALUE_INSET: i32 = 48;
+const LABEL_GAP: i32 = 16;
 
 fn range(row: Row) ?Range {
     var out: Range = switch (row) {
         .visuals, .display, .fullscreen, .vsync, .frame_limit, .reset_to_defaults, .set_all_to_0, .debug => return null,
-        .bloom, .atmosphere, .depth_of_field, .saturation => .{ .default = 1 },
-        .warmth => .{ .min = -1, .max = 1 },
+        .lens_blur, .perspective, .vignette, .bloom, .atmosphere, .depth_of_field, .saturation => .{},
+        .warmth => .{ .min = -1, .max = 1, .alt = 0.5 },
         .sepia, .film_grain, .scanlines, .chromatic_aberration => .{ .max = 1 },
-        else => .{},
     };
-    const defaults: lens.Options = .{};
+    const lens_defaults: lens.Options = .{};
     inline for (std.meta.fields(lens.Options)) |f| {
-        if (row == @field(Row, f.name)) out.default = @field(defaults, f.name);
+        if (row == @field(Row, f.name)) out.default = @field(lens_defaults, f.name);
+    }
+    const strengths: cinema.Cinema.Strengths = .{};
+    inline for (std.meta.fields(cinema.Cinema.Strengths)) |f| {
+        if (row == @field(Row, f.name)) out.default = @field(strengths, f.name);
     }
     return out;
 }
@@ -80,7 +104,7 @@ pub fn zero(c: *cinema.Cinema) void {
 }
 
 fn track(box: rl.Rectangle) rl.Rectangle {
-    return .{ .x = box.x + box.width * 0.52, .y = box.y + box.height / 2 - 3, .width = box.width * 0.32, .height = 6 };
+    return .{ .x = box.x + box.width * TRACK_AT, .y = box.y + box.height / 2 - TRACK_H / 2, .width = box.width * TRACK_W, .height = TRACK_H };
 }
 
 fn drag(c: *cinema.Cinema, row: Row, box: rl.Rectangle, x: i32) void {
@@ -89,7 +113,7 @@ fn drag(c: *cinema.Cinema, row: Row, box: rl.Rectangle, x: i32) void {
     set(c, row, r.min + std.math.clamp((@as(f32, @floatFromInt(x)) - rail.x) / rail.width, 0, 1) * (r.max - r.min));
 }
 
-pub fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, screen: mathx.P, page: Page, display: *window.Display) ?Row {
+pub fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, screen: mathx.P, page: Page, display: *window.Display) ?Pick {
     const entries = rows(page);
     if (!st.left_down or st.pointer == null or !st.focused or st.walk != null or st.scroll != 0) selection.dragging = null;
     if (selection.dragging) |i| {
@@ -104,46 +128,45 @@ pub fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, sc
             const box = menu.rowBox(screen, win, selection.at);
             const rail = track(box);
             const p = st.pointer.?;
-            if (@as(f32, @floatFromInt(p.x)) >= rail.x - 8) {
+            if (@as(f32, @floatFromInt(p.x)) >= rail.x - GRAB_SLACK) {
                 drag(c, row, box, p.x);
                 selection.dragging = selection.at;
             }
         } else if (st.walk) |d| {
-            if (d.delta().x != 0) set(c, row, value(c, row) + @as(f32, @floatFromInt(d.delta().x)) * 0.05);
+            if (d.delta().x != 0) set(c, row, value(c, row) + @as(f32, @floatFromInt(d.delta().x)) * WALK_STEP);
         } else if (st.hit(menu.CHANGE)) {
             set(c, row, r.default);
         } else if (picked != null) {
-            set(c, row, if (value(c, row) != r.default) r.default else if (row == .saturation) 0 else if (row == .warmth) 0.5 else if (r.default > 0) 0 else 1);
+            set(c, row, if (value(c, row) != r.default) r.default else r.alt orelse if (r.default > 0) 0 else 1);
         }
         return null;
     }
     if (picked == null) return null;
-    if (row == .reset_to_defaults) {
-        reset(c);
-        return null;
+    switch (row) {
+        .reset_to_defaults => reset(c),
+        .set_all_to_0 => zero(c),
+        .vsync => {
+            display.vsync = !display.vsync;
+            display.sync();
+        },
+        .frame_limit => {
+            display.limit = mathx.wrap(display.limit, 1, window.Display.LIMITS.len);
+            display.sync();
+        },
+        inline .visuals, .display, .fullscreen, .debug => |r| return @field(Pick, @tagName(r)),
+        .lens_blur, .perspective, .vignette, .bloom, .atmosphere, .depth_of_field, .saturation, .warmth, .sepia, .film_grain, .scanlines, .chromatic_aberration => unreachable,
     }
-    if (row == .set_all_to_0) {
-        zero(c);
-        return null;
-    }
-    if (row == .vsync or row == .frame_limit) {
-        if (row == .vsync) display.vsync = !display.vsync else display.limit = mathx.wrap(display.limit, 1, window.Display.LIMITS.len);
-        display.sync();
-        return null;
-    }
-    return row;
+    return null;
 }
 
-pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *const cinema.Cinema, selected: usize, _: *const input.State, page: Page, display: window.Display) void {
+pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *const cinema.Cinema, selected: usize, page: Page, display: window.Display) void {
     const entries = rows(page);
-    const win = menu.window(screen.y, entries.len, selected);
-    const first = menu.rowBox(screen, win, win.from);
-    menu.pageHeading(face, screen, switch (page) {
+    const win = menu.listFrame(face, art, screen, switch (page) {
         .main => "OPTIONS",
-        .visuals => "VISUALS",
-        .display => "DISPLAY",
-    }, menu.titleY(first));
-    menu.listPanel(art, .{ .x = first.x, .y = first.y, .width = first.width, .height = @floatFromInt(win.len * menu.ROW_STEP) });
+        .visuals => comptime menu.caps(menu.named(Row.visuals)),
+        .display => comptime menu.caps(menu.named(Row.display)),
+    }, entries.len, selected);
+    const first = menu.rowBox(screen, win, win.from);
     for (entries[win.from..][0..win.len], win.from..) |row, i| {
         const box = menu.rowBox(screen, win, i);
         const ink = menu.rowInk(i == selected);
@@ -156,7 +179,7 @@ pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *c
             inline else => |r| menu.named(r),
         };
         var fitted: [96]u8 = undefined;
-        const text_width = if (range(row) != null) @as(i32, @intFromFloat(track(box).x)) - x - 16 else raster.width(box) - (x - raster.left(box)) - 16;
+        const text_width = if (range(row) != null) @as(i32, @intFromFloat(track(box).x)) - x - LABEL_GAP else raster.width(box) - (x - raster.left(box)) - LABEL_GAP;
         face.text(face.fit(&fitted, label, font.BODY, text_width, false), x, menu.rowTextY(box) + 4, font.BODY, ink);
         if (range(row)) |r| {
             const amount = value(c, row);
@@ -167,13 +190,13 @@ pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *c
             rl.drawRectangleRec(.{ .x = rail.x + rail.width * t - 3, .y = rail.y - 4, .width = 6, .height = 14 }, ink);
             var buf: [24]u8 = undefined;
             const number = std.fmt.bufPrintZ(&buf, "{d:.0}%", .{amount * 100}) catch "";
-            face.centred(number, raster.right(box) - 48, raster.middleAt(box).y, font.SMALL, ink);
+            face.centred(number, raster.right(box) - VALUE_INSET, raster.middleAt(box).y, font.SMALL, ink);
         }
     }
     if (page != .visuals) return;
     const bottom = raster.top(first) + @as(i32, @intCast(win.len)) * menu.ROW_STEP + 28;
     var count: [24]u8 = undefined;
-    face.centred(std.fmt.bufPrintZ(&count, "{d} / {d}", .{ selected + 1, entries.len }) catch "", raster.right(first) - 48, bottom, font.SMALL, look.DIM);
+    face.centred(std.fmt.bufPrintZ(&count, menu.POSITION_FMT, .{ selected + 1, entries.len }) catch "", raster.right(first) - VALUE_INSET, bottom, font.SMALL, look.DIM);
 }
 
 test "visual sliders clamp, reset and drag without changing other effects" {

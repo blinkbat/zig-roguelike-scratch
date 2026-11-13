@@ -9,6 +9,7 @@ const ice = @import("../map/ice.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const firebolt = @import("../play/firebolt.zig");
+const damage = @import("../play/damage.zig");
 const ground_items = @import("../play/ground_items.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -26,8 +27,8 @@ const P = mathx.P;
 
 const projectiles = @import("projectile_motion.zig");
 pub const Shot = projectiles.Shot;
-pub const BoltShown = projectiles.BoltShown;
-pub const MotionView = projectiles.MotionView;
+const BoltShown = projectiles.BoltShown;
+const MotionView = projectiles.MotionView;
 pub const flown = projectiles.flown;
 const BOLT_CELL_S = projectiles.BOLT_CELL_S;
 
@@ -264,7 +265,7 @@ pub const Presentation = struct {
     pub fn recordProjectile(self: *Presentation, from: P, act: skillbar.Act, flight: bow.Flight) Stroke {
         self.shot = .{ .flight = flight, .from = from, .act = act };
         const loosed = self.loose(self.shot.?);
-        const stroke = Stroke{ .from = from, .wait = loosed.lands, .fire = act.element() == .fire };
+        const stroke = Stroke{ .from = from, .wait = loosed.lands, .element = act.element() };
         self.shot.?.zapInto(&self.fx);
         self.lead = stroke.wait;
         return stroke;
@@ -362,9 +363,10 @@ pub const Presentation = struct {
 
     /// `was` flown `cells` on to `now` from `wait` seconds on, gone once there if it `lands`; when it gets there.
     pub fn recordBolt(self: *Presentation, sim: *const Simulation, by: actor.ActorSlot, was: firebolt.Bolt, now: firebolt.Bolt, cells: u8, lands: bool, wait: f32) f32 {
-        const from = if (self.bolts[by.index]) |b| b.to else was.point();
+        const old = self.bolts[by.index];
+        const from = if (old) |b| b.to else was.point();
         const span = @as(f32, @floatFromInt(cells)) * BOLT_CELL_S;
-        self.bolts[by.index] = .{ .from = from, .to = now.point(), .heading = now.heading(), .t = -wait, .span = span, .after = !lands };
+        self.bolts[by.index] = .{ .view = if (old) |b| b.view else .{}, .from = from, .to = now.point(), .heading = now.heading(), .t = -wait, .span = span, .after = !lands };
         for (was.flown..@as(usize, now.flown) + 1) |k| if (self.litShown(sim, now.cell(k))) {
             self.holdUntil(wait + span);
             break;
@@ -654,7 +656,7 @@ pub const Presentation = struct {
     }
 
     fn goneOut(self: *Presentation, lv: *const grid.Level) void {
-        for (self.flames_shown, lv.flames, self.tiles_drawn, lv.tile, 0..) |was, now, before, after, i| {
+        for (&self.flames_shown, &lv.flames, &self.tiles_drawn, &lv.tile, 0..) |was, now, before, after, i| {
             if (was == 0 or now > 0) continue;
             self.embers[i] = EMBER_S;
             self.burnt[i] = if (before != after and fire.burntDown(before, after)) before else null;
@@ -780,17 +782,22 @@ pub const Presentation = struct {
 
     fn stepSighted(self: *Presentation, sim: *const Simulation, dt: f32) void {
         const k = mathx.easing(dt, visibility.REVEAL);
-        if (self.shot) |*s| self.stepProjectileView(sim, &s.view, if (s.t >= 0) s.position(s.t) else null, k);
+        if (self.shot) |*s| self.stepProjectileView(sim, &s.view, s.now(), k);
         for (&self.foe_shots) |*pending| if (pending.*) |*s| {
-            self.stepProjectileView(sim, &s.view, if (s.t >= 0) s.position(s.t) else null, k);
+            self.stepProjectileView(sim, &s.view, s.now(), k);
         };
         for (&self.bolts) |*pending| if (pending.*) |*b| {
             self.stepProjectileView(sim, &b.view, b.at(), k);
         };
         for (self.sighted[0..sim.pool.n], 0..) |*s, i| {
             const visible = self.visibleBody(sim, i) != null;
-            if (visible) self.seen_bodies[i] = self.bodyShown(sim, i);
-            s.* = if (self.seen_bodies[i] == null) 0 else mathx.ease(s.*, if (visible) 1 else 0, k, k);
+            if (visible) {
+                self.seen_bodies[i] = self.bodyShown(sim, i);
+            } else if (self.seen_bodies[i] == null) {
+                s.* = if (self.figured(sim, i)) 0 else 1;
+                continue;
+            }
+            s.* = mathx.easeTo(s.*, visible, k);
         }
     }
 
@@ -803,7 +810,7 @@ pub const Presentation = struct {
         for (&self.seen_cells, 0..) |*v, i| {
             const p = grid.Level.of(i);
             const visible = self.litShown(sim, p);
-            v.alpha = mathx.ease(v.alpha, if (visible) 1 else 0, k, k);
+            v.alpha = mathx.easeTo(v.alpha, visible, k);
             if (!visible) continue;
             v.bag = false;
             v.coins = 0;
@@ -833,7 +840,7 @@ pub const Presentation = struct {
         var covered = grid.CellSet.initEmpty();
         if (sim.heroSlot()) |h| if (self.occluding(sim, h)) |at| self.cover(tiles, at, &covered);
         for (0..sim.pool.n) |i| if (!sim.isHero(i)) if (self.occluding(sim, i)) |at| self.cover(tiles, at, &covered);
-        for (self.npc_shown, 0..) |f, i| {
+        for (&self.npc_shown, 0..) |f, i| {
             if (f == grid.NO_NPC) continue;
             const p = grid.Level.of(i);
             if (self.litShown(sim, p)) self.cover(tiles, glide.cellPx(p), &covered);
@@ -1051,7 +1058,7 @@ pub const Presentation = struct {
 
     fn scheduleBlows(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming) void {
         if (owed.foe_hit) |b| switch (b) {
-            .hurt, .kill => |after| self.strikeBody(sim, gas, .fromIndex(sim.heroSlot().?), timing.hero_at, b == .kill, after, .{ .from = timing.body.at, .wait = timing.impact_in }),
+            .hurt, .kill => |after| self.strikeBody(sim, gas, .fromIndex(sim.heroSlot().?), timing.hero_at, b == .kill, after, .{ .from = timing.body.at, .wait = timing.impact_in, .element = strikeElement(timing.body.kind) }),
             .burst => |after| self.strikeBody(sim, gas, timing.slot, timing.body.at, true, after, .{ .from = timing.hero_at, .wait = timing.impact_in }),
             .snare => |held| if (held) |after| self.recordRecovery(sim, timing.impact_in, after),
             .miss => {},
@@ -1139,9 +1146,9 @@ pub const Presentation = struct {
         inline for (comptime std.enums.values(simulation.Tick)) |t| switch (t) {
             .worn => {},
             .healed => if (owed.healed) |after| self.fx.settle(timing.finishes_in, .{ .slot = timing.slot, .after = after, .puff = fx.Puff.over(mark, look.gasInk(comptime t.gas().?)) }),
-            .gassed, .scalded => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .puff = fx.Puff.over(mark, look.gasInk(comptime t.gas().?)) }),
-            .scorched, .burned => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, true, in_view, .{ .slot = timing.slot, .fire_at = mark }),
-            .bled => if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, false, in_view, .{ .slot = timing.slot, .drip = drip }),
+            .gassed, .scalded => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, null, in_view, .{ .slot = timing.slot, .puff = fx.Puff.over(mark, look.gasInk(comptime t.gas().?)) }),
+            .scorched, .burned => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, .fire, in_view, .{ .slot = timing.slot, .fire_at = mark }),
+            .bled => if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, null, in_view, .{ .slot = timing.slot, .drip = drip }),
         };
         if (timing.body.alive and timing.body.submerged != self.under.isSet(timing.slot.index)) {
             const emerges_in = if (timing.staggered) @max(0, timing.starts_at - turn.late) else start;
@@ -1160,10 +1167,10 @@ pub const Presentation = struct {
         return t;
     }
 
-    fn harmShown(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, at: P, lands: f32, h: Harm, fiery: bool, in_view: bool, s: fx.Sting) void {
+    fn harmShown(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, at: P, lands: f32, h: Harm, element: ?damage.Element, in_view: bool, s: fx.Sting) void {
         if (h.recovery) |after| self.recordRecovery(sim, lands, after);
         if (h.kill) {
-            self.strikeBody(sim, gas, s.slot, at, true, h.after, .{ .from = at, .wait = lands, .fire = fiery });
+            self.strikeBody(sim, gas, s.slot, at, true, h.after, .{ .from = at, .wait = lands, .element = element });
         } else if (in_view) {
             var shown = s;
             shown.after = h.after;
@@ -1183,7 +1190,7 @@ pub const Presentation = struct {
         const hero = impact == .actor and sim.isHero(impact.actor.slot.index);
         const veiled = if (body) |b| b.disguised or (b.submerged and self.under.isSet(impact.actor.slot.index)) else false;
         if (hero or (self.litShown(sim, at) and !veiled)) {
-            self.fx.strike(s.wait, .{ .impact = impact, .dir = dir, .matter = fx.matterOf(kind), .fire = s.fire });
+            self.fx.strike(s.wait, .{ .impact = impact, .dir = dir, .matter = fx.matterOf(kind), .element = s.element });
             self.flashes(s.wait);
         } else switch (impact) {
             .actor => |a| if (a.after) |after| self.fx.settle(s.wait, .{ .slot = a.slot, .after = after }),
@@ -1227,7 +1234,7 @@ pub const Presentation = struct {
 pub const Stroke = struct {
     from: P,
     wait: f32,
-    fire: bool = false,
+    element: ?damage.Element = null,
 
     pub fn along(s: Stroke, step: usize, cells: usize) Stroke {
         var out = s;
@@ -1279,6 +1286,13 @@ const TurnTiming = struct {
     next_at: f32,
     hero_cell: P,
 };
+
+fn strikeElement(k: actor.Kind) ?damage.Element {
+    return switch (actor.row(k).blow) {
+        .strike => |s| s.element,
+        .burst => null,
+    };
+}
 
 const BodyTiming = struct {
     slot: actor.ActorSlot,

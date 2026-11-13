@@ -62,7 +62,7 @@ pub const Wares = struct {
     }
 
     pub fn count(self: *const Wares) usize {
-        return consumable.stocked(&self.supplies) + self.item_n;
+        return rowsOf(&self.supplies, self.item_n);
     }
 
     /// Supplies first, in `consumable.KINDS` order, then the items.
@@ -86,7 +86,7 @@ pub const Wares = struct {
 
 /// The hero's goods as a merchant lists them: carried supplies, then the bag; worn gear is not for sale.
 pub fn carried(inv: *const inventory.Inventory) usize {
-    return inv.carriedCount() + inv.n;
+    return rowsOf(&inv.stacks, inv.n);
 }
 
 pub fn carriedAt(inv: *const inventory.Inventory, row: usize) ?Ware {
@@ -95,6 +95,10 @@ pub fn carriedAt(inv: *const inventory.Inventory, row: usize) ?Ware {
 
 pub fn worth(inv: *const inventory.Inventory, w: Ware) i32 {
     return offered(asking(w, inv.bag[0..inv.n]));
+}
+
+fn rowsOf(stacks: *const consumable.Stacks, n: usize) usize {
+    return consumable.stocked(stacks) + n;
 }
 
 fn rowOf(stacks: *const consumable.Stacks, n: usize, row: usize) ?Ware {

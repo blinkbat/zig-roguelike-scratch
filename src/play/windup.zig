@@ -10,9 +10,6 @@ pub const Lane = grid.Bounded(P, LONGEST);
 /// The nearest a hero is braced at; beside it, it strikes instead.
 pub const NEAREST: i32 = 2;
 
-/// The way from `from` to `to` when `to` lies on one of the eight straight lines through it.
-pub const lineTo = @import("charge.zig").wayTo;
-
 /// The cells along `d` from `from`, `reach` at most, stopping short of the first a step cannot enter.
 pub fn lane(lv: *const grid.Level, from: P, d: mathx.Dir, reach: i32) Lane {
     std.debug.assert(reach <= LONGEST);
@@ -28,7 +25,7 @@ pub fn lane(lv: *const grid.Level, from: P, d: mathx.Dir, reach: i32) Lane {
 
 /// `lane`, ending on `to` with nothing standing in the cells before it.
 pub fn openTo(lv: *const grid.Level, from: P, to: P, reach: i32) ?mathx.Dir {
-    const d = lineTo(from, to) orelse return null;
+    const d = mathx.lineDir(from, to) orelse return null;
     const l = lane(lv, from, d, reach);
     for (l.slice()) |p| {
         if (p.eq(to)) return d;
@@ -39,10 +36,10 @@ pub fn openTo(lv: *const grid.Level, from: P, to: P, reach: i32) ?mathx.Dir {
 
 test "only the eight straight lines lead anywhere, and a wall shortens the lane" {
     const from = P{ .x = 10, .y = 10 };
-    try std.testing.expectEqual(@as(?mathx.Dir, .e), lineTo(from, .{ .x = 14, .y = 10 }));
-    try std.testing.expectEqual(@as(?mathx.Dir, .nw), lineTo(from, .{ .x = 7, .y = 7 }));
-    try std.testing.expectEqual(@as(?mathx.Dir, null), lineTo(from, .{ .x = 13, .y = 11 }));
-    try std.testing.expectEqual(@as(?mathx.Dir, null), lineTo(from, from));
+    try std.testing.expectEqual(@as(?mathx.Dir, .e), mathx.lineDir(from, .{ .x = 14, .y = 10 }));
+    try std.testing.expectEqual(@as(?mathx.Dir, .nw), mathx.lineDir(from, .{ .x = 7, .y = 7 }));
+    try std.testing.expectEqual(@as(?mathx.Dir, null), mathx.lineDir(from, .{ .x = 13, .y = 11 }));
+    try std.testing.expectEqual(@as(?mathx.Dir, null), mathx.lineDir(from, from));
     var lv = grid.openFloor();
     try std.testing.expectEqual(@as(usize, 5), lane(&lv, from, .s, 5).n);
     lv.set(.{ .x = 10, .y = 13 }, .wall);

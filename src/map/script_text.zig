@@ -33,8 +33,19 @@ fn says(comptime w: Word) []const u8 {
     return firstWord(w);
 }
 
+const MORE = '|';
+
+fn multiline(s: []const u8) bool {
+    return std.mem.indexOfScalar(u8, s, '\n') != null;
+}
+
+fn putLines(w: anytype, comptime word: Word, text: []const u8) !void {
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |line| try w.print(says(word) ++ "{c}{s}\n", .{ MORE, line });
+}
+
 fn appendLine(words: anytype, raw: []const u8, started: *bool) Error!void {
-    if (raw.len == 0 or raw[0] != '|') return error.BadLine;
+    if (raw.len == 0 or raw[0] != MORE) return error.BadLine;
     const line = raw[1..];
     if (!script.plain(line) or words.n + @as(usize, @intFromBool(started.*)) + line.len > @TypeOf(words.*).MAX) return error.BadLine;
     if (started.*) {
@@ -83,18 +94,14 @@ pub fn write(s: *const Script, w: anytype) !void {
         for (d.lines()) |*l| {
             try w.print(says(.line) ++ "{s}\n", .{l.name.text()});
             if (l.who.n > 0) try w.print(says(.who) ++ "{s}\n", .{l.who.text()});
-            if (std.mem.indexOfScalar(u8, l.say.text(), '\n') != null) {
-                var lines = std.mem.splitScalar(u8, l.say.text(), '\n');
-                while (lines.next()) |line| try w.print(says(.say_more) ++ "|{s}\n", .{line});
+            if (multiline(l.say.text())) {
+                try putLines(w, .say_more, l.say.text());
             } else if (l.say.n > 0) try w.print(says(.say) ++ "{s}\n", .{l.say.text()});
             for (l.acts()) |*a| try putAct(w, s, .act, a);
             for (l.choices()) |*c| {
-                const multiline = std.mem.indexOfScalar(u8, c.ask.text(), '\n') != null;
-                try w.print(says(.ask) ++ "{s}" ++ ARROW ++ "{s}\n", .{ if (multiline) "" else c.ask.text(), target(d, c.next) });
-                if (multiline) {
-                    var lines = std.mem.splitScalar(u8, c.ask.text(), '\n');
-                    while (lines.next()) |line| try w.print(says(.ask_more) ++ "|{s}\n", .{line});
-                }
+                const long = multiline(c.ask.text());
+                try w.print(says(.ask) ++ "{s}" ++ ARROW ++ "{s}\n", .{ if (long) "" else c.ask.text(), target(d, c.next) });
+                if (long) try putLines(w, .ask_more, c.ask.text());
                 if (c.gate) |*g| try putCond(w, s, .need, g);
                 for (c.acts()) |*a| try putAct(w, s, .gets, a);
             }

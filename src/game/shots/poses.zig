@@ -9,7 +9,6 @@ const fire = @import("../../map/fire.zig");
 const atlas = @import("../../map/atlas.zig");
 const listing = @import("../../map/listing.zig");
 const playground = @import("../../map/playground.zig");
-const procgen = @import("../../map/procgen.zig");
 const editor = @import("../../edit/editor.zig");
 const menu = @import("../../ui/menu.zig");
 const heroes = @import("../../play/hero.zig");
@@ -394,7 +393,7 @@ fn captureEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         game.harness.heroArena(g, study.class, from, &.{});
         carve.box(&g.sim.lv, .{ .lo = .{ .x = 13, .y = 13 }, .hi = .{ .x = 33, .y = 28 } }, .grass);
         game.harness.wallRow(&g.sim.lv, 17, 18, 29);
-        procgen.reshape(&g.sim.lv);
+        gen.reshape(&g.sim.lv);
         for ([_]P{ .{ .x = 23, .y = 20 }, .{ .x = 24, .y = 19 }, .{ .x = 24, .y = 21 }, .{ .x = 22, .y = 21 } }) |at| _ = game.harness.spawnAt(g, .slime, at, false);
         game.harness.toughenFoes(g);
         g.sim.clock = day.Clock.at(day.DEAD_OF_NIGHT);
@@ -414,6 +413,11 @@ fn captureEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
             previous = t;
             try capture(g, target, directory ++ "/" ++ std.fmt.comptimePrint("{d}", .{i}) ++ ".png");
         }
+        if (act == .spark) {
+            for (g.sim.pool.slice()) |*a| if (a.alive and a.foe()) a.clock.stun();
+            game.settle(g);
+            try capture(g, target, directory ++ "/stunned.png");
+        }
     }
     g.sim.class = heroes.DEFAULT;
     g.bar = skillbar.Bar.of(g.sim.class);
@@ -427,15 +431,23 @@ fn captureParticleShapes() !void {
     const cell: f32 = 256;
     rl.beginTextureMode(target);
     rl.clearBackground(.{ .r = 32, .g = 35, .b = 38, .a = 255 });
-    for ([_][:0]const u8{ "Blood", "Ooze", "Ichor", "Water", "Leaves" }, 0..) |label, column| {
+    const Shape = union(enum) { drip: fx.Matter, splash, leaves };
+    const shapes = [_]struct { label: [:0]const u8, shape: Shape }{
+        .{ .label = "Blood", .shape = .{ .drip = .blood } },
+        .{ .label = "Ooze", .shape = .{ .drip = .ooze } },
+        .{ .label = "Ichor", .shape = .{ .drip = .ichor } },
+        .{ .label = "Water", .shape = .splash },
+        .{ .label = "Leaves", .shape = .leaves },
+    };
+    for (shapes, 0..) |s, column| {
         const x: f32 = 100 + @as(f32, @floatFromInt(column)) * 200;
-        rl.drawText(label, @intFromFloat(x - 45), 12, 20, rl.Color.white);
+        rl.drawText(s.label, @intFromFloat(x - 45), 12, 20, rl.Color.white);
         for ([_]f32{ 0.05, 0.55 }, 0..) |age, row| {
             var effects = fx.Fx{};
-            switch (column) {
-                0, 1, 2 => effects.sting(0, .{ .slot = .fromIndex(0), .drip = .{ .at = at, .matter = ([_]fx.Matter{ .blood, .ooze, .ichor })[column] } }),
-                3 => effects.splash(at),
-                else => effects.leaves(at),
+            switch (s.shape) {
+                .drip => |matter| effects.sting(0, .{ .slot = .fromIndex(0), .drip = .{ .at = at, .matter = matter } }),
+                .splash => effects.splash(at),
+                .leaves => effects.leaves(at),
             }
             effects.step(&level, age);
             const y: f32 = 180 + @as(f32, @floatFromInt(row)) * 200;
@@ -737,7 +749,7 @@ fn poseHiddenShadows(g: *game.Game, hour: ?f32) void {
     g.pic.snapSight(&g.sim);
     for (0..grid.CELLS) |i| {
         const visible = grid.Level.of(i).x < x;
-        g.sim.lv.seen[i] = visible;
+        g.sim.lv.seen[i] = true;
         g.sim.lv.lit[i] = visible;
     }
     g.light.settle(&g.sim.lv);

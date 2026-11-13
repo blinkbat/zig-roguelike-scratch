@@ -137,10 +137,9 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const chrome = widgets.MODAL_HEAD + widgets.PAD + widgets.ROW_STEP;
     const pitch = @min(VIEW_CELL, @divTrunc(g.screen.y - chrome, widgets.rowsOf(editor.SEEN.len, VIEW_COLS)));
     const grid_w = @as(i32, VIEW_COLS) * pitch;
-    const title = OBJECTS_TITLE;
     var cells = panel.Tiles{ .x = 0, .y = 0, .cols = VIEW_COLS, .pitch = pitch, .size = pitch - widgets.GAP };
     const cells_h = cells.height(editor.SEEN.len);
-    const f = widgets.modalFrame(&g.face, g.screen, VIEW_W, chrome + cells_h, title, false);
+    const f = widgets.modalFrame(&g.face, g.screen, VIEW_W, chrome + cells_h, OBJECTS_TITLE, false);
     const x = f.x;
     const w = f.w;
     const y = f.y;

@@ -266,7 +266,7 @@ pub fn drawGraph(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         rl.drawRectangleRec(b, PANEL_BG);
         const picture = thumbRect(b);
         if (thumb(ed, n, picture, c)) |t| widgets.sprite(t, picture);
-        panel.drawNodeTitle(ed, g, n, b, @as(i32, @intFromFloat(b.y)) + editor.TITLE_DY);
+        panel.drawNodeTitle(ed, g, n, b, raster.top(b) + editor.TITLE_DY);
         rl.drawRectangleLinesEx(b, 1, if (n == ed.node) ON else look.EDGE);
     }
     for (ed.map.nodes(), 0..) |*nd, n| {

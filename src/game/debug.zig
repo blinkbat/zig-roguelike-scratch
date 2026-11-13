@@ -5,6 +5,7 @@ const game = @import("../game.zig");
 const window = @import("../core/window.zig");
 const mathx = @import("../core/mathx.zig");
 const menu = @import("../ui/menu.zig");
+const options = @import("../ui/options.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
@@ -102,7 +103,7 @@ pub fn rows(page: Page) []const Row {
     };
 }
 
-pub fn pageOf(row: Row) Page {
+fn pageOf(row: Row) Page {
     for (std.enums.values(Page)) |page| {
         for (rows(page)) |r| if (r == row) return page;
     }
@@ -186,7 +187,7 @@ pub fn step(g: *game.Game) void {
     if (menu.backed(&state) or (g.debug.page != .diagnostics and menu.backedAt(&state, g.screen))) {
         if (g.debug.page == .main) {
             g.pause_page = g.debug.parent;
-            g.pause_menu.at = if (g.pause_page == .options) @import("../ui/options.zig").index(.main, .debug) else game.rowAt(game.PauseRow.debug);
+            g.pause_menu.at = if (g.pause_page == .options) options.index(.main, .debug) else game.rowAt(game.PauseRow.debug);
         } else {
             const row: Row = switch (g.debug.page) {
                 .main => unreachable,
@@ -215,10 +216,7 @@ pub fn step(g: *game.Game) void {
     }
 }
 
-pub const LABEL_MAX: usize = 64;
-
-pub fn label(g: *game.Game, comptime row: Row, buf: []u8) [:0]const u8 {
-    _ = buf;
+pub fn label(g: *game.Game, comptime row: Row) [:0]const u8 {
     const name = comptime menu.titleOf(row);
     if (option(g, row)) |on| return menu.toggle(name, on.*);
     return switch (row) {
@@ -231,9 +229,8 @@ pub fn draw(g: *game.Game) void {
     if (g.debug.page == .diagnostics) return drawDiagnostics(g);
     const entries = rows(g.debug.page);
     var labels: [std.meta.fields(Row).len][]const u8 = undefined;
-    var buf: [LABEL_MAX]u8 = undefined;
     for (entries, 0..) |row, i| labels[i] = switch (row) {
-        inline else => |r| label(g, r, &buf),
+        inline else => |r| label(g, r),
     };
     const title = switch (g.debug.page) {
         .main => "DEBUG",
@@ -263,11 +260,11 @@ const STATS_Y: i32 = 222;
 const LINE_STEP: i32 = 26;
 const BACK_Y: i32 = 352;
 
-pub fn toggleBox() rl.Rectangle {
+fn toggleBox() rl.Rectangle {
     return raster.rect(PAD, TOGGLE_Y, INNER_W, TOGGLE_H);
 }
 
-pub fn backBox() rl.Rectangle {
+fn backBox() rl.Rectangle {
     return raster.rect(PAD, BACK_Y, menu.ACTION_WIDE.x, menu.ACTION_WIDE.y);
 }
 
@@ -280,9 +277,8 @@ fn drawDiagnostics(g: *game.Game) void {
     surface.beginPanel(&g.sprites, PANEL);
     defer rl.endMode2D();
     const face = surface.faceFor(g.face);
-    var buf: [LABEL_MAX]u8 = undefined;
     face.draw("GRAPHICS DIAGNOSTICS", PAD, TITLE_Y, menu.ROW, look.UI_GOLD);
-    menu.action(&face, toggleBox(), prompt_icon.Prompt.menuOf(&g.st, menu.CONFIRM), label(g, .performance_overlay, &buf));
+    menu.action(&face, toggleBox(), prompt_icon.Prompt.menuOf(&g.st, menu.CONFIRM), label(g, .performance_overlay));
     var line: menu.Note(512) = .{};
     for ([_]struct { name: []const u8, id: c_uint }{
         .{ .name = "Vendor", .id = GL_VENDOR },

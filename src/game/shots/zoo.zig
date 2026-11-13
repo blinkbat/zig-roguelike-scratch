@@ -19,14 +19,14 @@ pub fn captureZoo(g: *game.Game) !void {
     defer rl.unloadRenderTexture(target);
     try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-key.png");
     game.heroTo(g, z.key.?);
-    game.heroTo(g, z.door().add(z.outward()));
+    game.heroTo(g, z.approach());
     game.settle(g);
     try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-closed.png");
     if (!game.jail.interact(g, z.door())) return error.DoorDidNotOpen;
     game.harness.drawnOut(g);
     try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-rush.png");
 
-    game.beginMapAt(g, w, .{ .node = 1, .at = z.door().add(z.outward()) }, capture.SHOT_SEED);
+    game.beginMapAt(g, w, .{ .node = 1, .at = z.approach() }, capture.SHOT_SEED);
     g.sim.clock = day.Clock.at(day.NOON);
     if (!z.collect(&g.sim.lv, z.key.?) or !z.open(&g.sim.lv, &g.sim.pool)) return error.DoorDidNotOpen;
     game.heroTo(g, z.threshold());

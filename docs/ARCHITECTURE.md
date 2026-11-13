@@ -90,7 +90,7 @@ view, which retains the last visible position during a fade.
 ## Lifetimes
 
 `ui/keywords.zig` owns underlined keyword text, screen-space hit regions and one
-definition layer. Hosts call `step` before handling input, `beginFrame` before
+definition layer. Hosts call `resized` then `step` before handling input, `beginFrame` before
 drawing, register terms through `text` with the actual `menu.Surface`, then draw
 the definition last. Term strings come from stable definitions. Game menus and
 title menus share this routing; HUD cards retain their source while the pointer

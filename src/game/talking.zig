@@ -132,8 +132,7 @@ fn shownOf(g: *game.Game, s: *const script.Script, out: *Shown) bool {
     var picks: [script.MAX_CHOICES]u8 = undefined;
     const offered = rt.offered(s, g.sim.world(), &picks);
     for (offered, 0..) |c, i| out.labels[i] = ln.choice[c].ask.text();
-    out.view = .{ .who = rt.speaker(s), .say = ln.say.text(), .choices = out.labels[0..offered.len], .cursor = rt.talk.?.cursor, .prompt = prompt_icon.Prompt.menuOf(&g.st, menu.CONFIRM), .figure = figureOf(g, s, ln) };
-    out.view.ending = ln.then == null;
+    out.view = panel.View.ofLine(ln, rt.speaker(s), out.labels[0..offered.len], rt.talk.?.cursor, prompt_icon.Prompt.menuOf(&g.st, menu.CONFIRM), figureOf(g, s, ln));
     out.layout.of(&g.face, g.screen, out.view);
     return true;
 }

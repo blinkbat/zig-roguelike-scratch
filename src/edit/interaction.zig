@@ -192,6 +192,7 @@ fn playHere(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (ed.view != .map or !grid.Level.inside(p) or !over) {
         return ed.say("{s} plays from the cell under the cursor on a map", .{Desk.PLAY_HERE_CAPTION});
     }
+    if (!ed.here().startFits(p)) return ed.say("{s} cannot start inside the jail", .{Desk.PLAY_HERE_CAPTION});
     ed.action = .{ .play = .{ .node = ed.node, .at = p } };
 }
 

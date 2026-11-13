@@ -249,13 +249,7 @@ fn settle(lv: *grid.Level) void {
     }
     grid.mendProps(&lv.tile);
     carve.unbar(lv);
-    reshape(lv);
-}
-
-/// Walls shaped afresh and the torches they no longer bear dropped, so a buried torch frees its slot.
-pub fn reshape(lv: *grid.Level) void {
-    gen.shapeWalls(lv);
-    gen.keepTorches(lv);
+    gen.reshape(lv);
 }
 
 const TEST_RUNS: usize = 12;

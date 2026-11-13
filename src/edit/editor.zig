@@ -939,7 +939,7 @@ pub fn popupScrolls(w: Which) bool {
 
 pub fn popupRow(box: rl.Rectangle, which: Which, k: usize) rl.Rectangle {
     const shape = popupShape(which);
-    return raster.rect(@intFromFloat(box.x), @as(i32, @intFromFloat(box.y)) + @as(i32, @intCast(k)) * shape.row_h, @intFromFloat(box.width), shape.row_h - shape.inset);
+    return raster.rect(raster.left(box), raster.top(box) + @as(i32, @intCast(k)) * shape.row_h, raster.width(box), shape.row_h - shape.inset);
 }
 
 pub fn popupShown(ed: *const Editor, w: Which, screen_h: i32) usize {
@@ -965,10 +965,10 @@ pub fn openPopup(ed: *Editor, slot: rl.Rectangle, which: Which, chosen: usize, s
 fn drawPopup(ed: *Editor, g: *game.Game) void {
     const p = ed.popup.?;
     const box = popupRect(ed, p, g.screen.y);
-    const y: i32 = @intFromFloat(box.y);
-    const x: i32 = @intFromFloat(box.x);
-    const w: i32 = @intFromFloat(box.width);
-    widgets.framed(x, y, w, @intFromFloat(box.height));
+    const y = raster.top(box);
+    const x = raster.left(box);
+    const w = raster.width(box);
+    widgets.framed(x, y, w, raster.height(box));
     const len = popupLen(ed, p.which);
     const shown = popupShown(ed, p.which, g.screen.y);
     ed.popup_top = widgets.clampTop(ed.popup_top, len, shown);
@@ -1101,17 +1101,18 @@ pub fn capture(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8
                 ed.plot.pick = .{ .dialog = 0 };
                 ed.plot.line = 0;
                 try snapAs(ed, g, target, "{s}/edit-dialog.png", .{dir});
-                ed.plot.focus = .{ .say = .{ .d = 0, .l = 0 } };
-                ed.plot.field.set(ed.map.script.dialog[0].line[0].say.text());
+                const speech: plot.Focus = .{ .say = .{ .d = 0, .l = 0 } };
+                const first_line = &ed.map.script.dialog[0].line[0];
+                ed.plot.focusOn(&ed.map.script, speech);
                 try snapAs(ed, g, target, "{s}/edit-dialog-typing.png", .{dir});
-                const old_speech = ed.map.script.dialog[0].line[0].say;
-                _ = ed.map.script.dialog[0].line[0].say.set("The road remembers every traveller who followed it north. " ** 80 ++ "\n\nAt the end of the story, the gate finally opens.");
-                ed.plot.field.set(ed.map.script.dialog[0].line[0].say.text());
+                const old_speech = first_line.say;
+                _ = first_line.say.set("The road remembers every traveller who followed it north. " ** 80 ++ "\n\nAt the end of the story, the gate finally opens.");
+                ed.plot.focusOn(&ed.map.script, speech);
                 try snapAs(ed, g, target, "{s}/edit-dialog-long-end.png", .{dir});
                 ed.plot.field.scroll = 0;
                 ed.plot.field.reveal = false;
                 try snapAs(ed, g, target, "{s}/edit-dialog-long-start.png", .{dir});
-                ed.map.script.dialog[0].line[0].say = old_speech;
+                first_line.say = old_speech;
                 ed.plot.focus = null;
                 ed.plot.preview = .{ .d = 0, .l = 0 };
                 try snapAs(ed, g, target, "{s}/edit-dialog-preview.png", .{dir});

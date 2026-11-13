@@ -20,11 +20,7 @@ pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
 
 pub const knocked = bash.knocked;
 
-pub fn wayTo(from: P, to: P) ?mathx.Dir {
-    const d = to.sub(from);
-    if (d.x != 0 and d.y != 0 and @abs(d.x) != @abs(d.y)) return null;
-    return mathx.toward(from, to);
-}
+pub const wayTo = mathx.lineDir;
 
 pub fn stop(from: P, to: P) P {
     return to.sub(wayTo(from, to).?.delta());

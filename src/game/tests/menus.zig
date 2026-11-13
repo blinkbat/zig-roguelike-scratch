@@ -10,6 +10,8 @@ const playground = @import("../../map/playground.zig");
 const menu = @import("../../ui/menu.zig");
 const hud = @import("../../ui/hud.zig");
 const book = @import("../../ui/book.zig");
+const keywords = @import("../../ui/keywords.zig");
+const resilience = @import("../../play/resilience.zig");
 const actor = @import("../../play/actor.zig");
 const bleeding = @import("../../play/bleeding.zig");
 const skillbar = @import("../../play/skillbar.zig");
@@ -441,7 +443,7 @@ test "Options sliders are independent and return through their parent without a 
         for ([_]mathx.Dir{ .e, .w }) |direction| {
             harness.nudge(g, direction);
             inline for (std.meta.fields(@TypeOf(g.cinema.lens.options))) |other| {
-                const adjustment: f32 = if (direction == .e and std.mem.eql(u8, field.name, other.name)) 0.05 else 0;
+                const adjustment: f32 = if (direction == .e and std.mem.eql(u8, field.name, other.name)) options.WALK_STEP else 0;
                 try std.testing.expectApproxEqAbs(@field(defaults, other.name) + adjustment, @field(g.cinema.lens.options, other.name), 0.0001);
             }
         }
@@ -559,7 +561,6 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
 }
 
 test "status inspection explains overlapping tags without changing the simulation" {
-    const keywords = @import("../../ui/keywords.zig");
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
@@ -573,8 +574,8 @@ test "status inspection explains overlapping tags without changing the simulatio
     try std.testing.expect(std.mem.startsWith(u8, tip.body, @import("../../play/glacial.zig").STATUS));
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "\nSlows, Elemental") != null);
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "Tags:") == null);
-    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS[1].body, "\nStun, Chill, Pin, Maim.") != null);
-    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS[3].body, "\nBurn, Chill, Shock.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS[@intFromEnum(resilience.Tag.slows)].body, "\nStun, Chill, Pin, Maim.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS[@intFromEnum(resilience.Tag.elemental)].body, "\nBurn, Chill, Shock.") != null);
     const enfeebled = overlay.tipOf(g, .{ .status = .enfeebled }, &title, &body).?;
     try std.testing.expect(std.mem.endsWith(u8, enfeebled.body, "\nWounds"));
     const guarding = overlay.tipOf(g, .{ .status = .guarding }, &title, &body).?;
@@ -584,7 +585,6 @@ test "status inspection explains overlapping tags without changing the simulatio
 }
 
 test "keyword inspection sits above character menus and HUD inspection without spending turns" {
-    const keywords = @import("../../ui/keywords.zig");
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
@@ -612,6 +612,21 @@ test "keyword inspection sits above character menus and HUD inspection without s
         try std.testing.expectEqual(game.Spot{ .status = .chilled }, g.inspecting);
         try std.testing.expectEqualDeep(clock, g.sim.clock);
     }
+}
+
+test "a keyword clicked over the map neither walks the hero nor spends a turn" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const clock = g.sim.clock;
+    const over = game.scene.Cam.of(g).mid(.{ .x = 22, .y = 20 });
+    g.keywords = .{ .screen = g.screen };
+    g.keywords.register(keywords.STATUS_TERMS[0], raster.rect(over.x - 30, over.y - 10, 60, 20));
+    harness.clickAt(g, over);
+    try std.testing.expect(g.mouse.target == null);
+    g.st = .{ .device = .keys };
+    game.update(g, 0);
+    try std.testing.expectEqualDeep(clock, g.sim.clock);
 }
 
 test "inspect forgets the body it was on once the hero enters a node" {
@@ -668,8 +683,10 @@ test "actor inspection follows the perspective shown on screen" {
         lens.options.perspective = strength;
         const y = 480;
         const x: f32 = 1000 + game.CELL_F - 5;
-        const scale = 1 + 0.10 * strength * (y + 0.5) / 720;
-        g.st = .{ .device = .keys, .pointer = .{ .x = @intFromFloat(@floor((x + 0.5 - 640) * scale + 640)), .y = y }, .mouse_moved = true };
+        const height: f32 = @floatFromInt(game.SCREEN_720.y);
+        const middle: f32 = @floatFromInt(@divExact(game.SCREEN_720.x, 2));
+        const scale = 1 + 0.10 * strength * (y + 0.5) / height;
+        g.st = .{ .device = .keys, .pointer = .{ .x = @intFromFloat(@floor((x + 0.5 - middle) * scale + middle)), .y = y }, .mouse_moved = true };
         g.mode = .play;
         const part = overlay.hovered(g).?;
         try std.testing.expectEqual(game.Spot{ .actor = g.sim.hero }, part.spot);

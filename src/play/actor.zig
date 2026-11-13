@@ -230,7 +230,7 @@ pub fn braceReach(k: Kind) ?i32 {
     return null;
 }
 
-pub const EXPOSED_STATUS = "Loses its next action. No physical damage reduction until then.";
+pub const EXPOSED_STATUS = clock.STATUS ++ " No physical damage reduction until then.";
 
 pub const Row = struct {
     armour: i32 = 0,

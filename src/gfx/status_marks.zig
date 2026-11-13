@@ -20,6 +20,11 @@ const SHOCK_SPARKS = 4;
 const EXPOSED_CRACKS = @import("../play/sunder.zig").MOST;
 const SHOCK_HZ: f32 = 9;
 const CONFUSION_DOTS = 3;
+const STUN_STARS = 3;
+const STUN_RAD_S: f32 = 5;
+const STUN_R: f32 = 0.28;
+const STUN_Y: f32 = 0.04;
+const STUN_ARM: f32 = 0.12;
 const HALO_Y: f32 = 0.1;
 const HALO_R: f32 = 0.2;
 const ENFEEBLE_X: f32 = 0.2;
@@ -34,6 +39,8 @@ const WARD_R: f32 = 0.46;
 const WARD_RAD_S: f32 = 2.4;
 const MARKS_FROM: f32 = 0.22;
 const MARKS_SPAN: f32 = 0.56;
+const MARK_ARM: f32 = 0.05;
+const ORBIT_FLAT: f32 = 0.35;
 
 comptime {
     std.debug.assert(TORCH_RISE_PX + TORCH_FLECK_PX <= TORCH_TOP_PX);
@@ -41,6 +48,18 @@ comptime {
 
 fn flameAge(t: f32, phase: f32, seed: f32) f32 {
     return @mod(t * FLAME_HZ + phase + seed, 1);
+}
+
+fn seedOf(m: Mark) f32 {
+    return @floatFromInt(m.seed);
+}
+
+fn across(phase: f32) f32 {
+    return MARKS_FROM + phase * MARKS_SPAN;
+}
+
+fn orbit(m: Mark, a: f32, r: f32, y: f32) rl.Vector2 {
+    return .{ .x = m.x + m.cell * (0.5 + @cos(a) * r), .y = m.y + m.cell * (y + @sin(a) * r * ORBIT_FLAT) };
 }
 
 pub const Renderer = struct {
@@ -57,6 +76,7 @@ pub const Renderer = struct {
 
     fn markOf(s: Status) ?*const fn (*const Renderer, Mark) void {
         return switch (s) {
+            .stunned => &drawStunned,
             .bleeding => &drawBleeding,
             .burning => &markBurning,
             .chilled => &drawChilled,
@@ -82,7 +102,7 @@ pub const Renderer = struct {
         const t = self.seconds;
         for (0..BLEED_DROPS) |i| {
             const phase = @as(f32, @floatFromInt(i)) / BLEED_DROPS;
-            const age = @mod(t * 0.9 + phase + @as(f32, @floatFromInt(m.seed)) * 0.23, 1);
+            const age = @mod(t * 0.9 + phase + seedOf(m) * 0.23, 1);
             const at = rl.Vector2{ .x = m.x + m.cell * (0.3 + phase * 0.4), .y = m.y + m.cell * (0.45 + age * 0.4) };
             const r = look.SPRITE_PX * (0.022 + age * 0.012);
             pixel.oval(at, r, r * 1.8, pxScale(m.cell), look.fade(m.ink, (1 - age * age) * 0.9));
@@ -90,14 +110,14 @@ pub const Renderer = struct {
     }
 
     fn drawChilled(self: *const Renderer, m: Mark) void {
-        const t = self.seconds + @as(f32, @floatFromInt(m.seed));
+        const t = self.seconds + seedOf(m);
         for (0..CHILL_FLAKES) |i| {
             const phase = @as(f32, @floatFromInt(i)) / CHILL_FLAKES;
-            const cx = m.x + m.cell * (MARKS_FROM + phase * MARKS_SPAN);
+            const cx = m.x + m.cell * across(phase);
             const cy = m.y + m.cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
-            const across = @as(f32, look.SPRITE_PX) * 0.07;
+            const arm = @as(f32, look.SPRITE_PX) * 0.07;
             const col = look.fade(m.ink, 0.7 + @sin(t * 3 + phase) * 0.2);
-            pixel.cross(.{ .x = cx, .y = cy }, across, pxScale(m.cell), col);
+            pixel.cross(.{ .x = cx, .y = cy }, arm, pxScale(m.cell), col);
         }
     }
 
@@ -120,13 +140,13 @@ pub const Renderer = struct {
     }
 
     fn drawShocked(self: *const Renderer, m: Mark) void {
-        const t = self.seconds * SHOCK_HZ + @as(f32, @floatFromInt(m.seed)) * 0.37;
+        const t = self.seconds * SHOCK_HZ + seedOf(m) * 0.37;
         const k = pxScale(m.cell);
-        const arm = m.cell * 0.05;
+        const arm = m.cell * MARK_ARM;
         for (0..SHOCK_SPARKS) |i| {
             const phase = @as(f32, @floatFromInt(i)) / SHOCK_SPARKS;
             if (@mod(t + phase * 3.7, 1) > 0.45) continue;
-            const at = rl.Vector2{ .x = m.x + m.cell * (MARKS_FROM + phase * MARKS_SPAN), .y = m.y + m.cell * (0.35 + @mod(phase * 2.3 + @floor(t) * 0.17, 0.4)) };
+            const at = rl.Vector2{ .x = m.x + m.cell * across(phase), .y = m.y + m.cell * (0.35 + @mod(phase * 2.3 + @floor(t) * 0.17, 0.4)) };
             const bend = rl.Vector2{ .x = at.x + arm * 0.3, .y = at.y };
             pixel.bend(.{ .x = at.x - arm, .y = at.y - arm }, bend, .{ .x = at.x - arm * 0.3, .y = at.y + arm * 1.2 }, 1, k, m.ink);
         }
@@ -152,23 +172,35 @@ pub const Renderer = struct {
         const k = pxScale(m.cell);
         const lid = m.y + m.cell * HALO_Y;
         pixel.line(.{ .x = m.x + m.cell * 0.38, .y = lid }, .{ .x = m.x + m.cell * 0.62, .y = lid }, 1, k, m.ink);
-        for ([_]f32{ 0.42, 0.5, 0.58 }) |across| pixel.line(.{ .x = m.x + m.cell * across, .y = lid }, .{ .x = m.x + m.cell * across, .y = lid + m.cell * 0.04 }, 1, k, m.ink);
+        for ([_]f32{ 0.42, 0.5, 0.58 }) |lash| pixel.line(.{ .x = m.x + m.cell * lash, .y = lid }, .{ .x = m.x + m.cell * lash, .y = lid + m.cell * 0.04 }, 1, k, m.ink);
     }
 
     fn drawConfused(self: *const Renderer, m: Mark) void {
-        const t = self.seconds * 3 + @as(f32, @floatFromInt(m.seed));
+        const t = self.seconds * 3 + seedOf(m);
         for (0..CONFUSION_DOTS) |i| {
             const a = t + mathx.spoke(@floatFromInt(i), CONFUSION_DOTS);
-            const at = rl.Vector2{ .x = m.x + m.cell * (0.5 + @cos(a) * HALO_R), .y = m.y + m.cell * (HALO_Y + @sin(a) * HALO_R * 0.35) };
+            const at = orbit(m, a, HALO_R, HALO_Y);
             pixel.rect(at, 2, 2, pxScale(m.cell), look.fade(m.ink, 0.65 + 0.3 * @sin(a)));
+        }
+    }
+
+    fn drawStunned(self: *const Renderer, m: Mark) void {
+        const k = pxScale(m.cell);
+        const t = self.seconds * STUN_RAD_S + seedOf(m);
+        for (0..STUN_STARS) |i| {
+            const a = t + mathx.spoke(@floatFromInt(i), STUN_STARS);
+            const at = orbit(m, a, STUN_R, STUN_Y);
+            const near = 0.5 + 0.5 * @sin(a);
+            pixel.cross(at, look.SPRITE_PX * STUN_ARM, k, look.fade(look.LIGHTNING, (0.55 + 0.45 * near) * m.alpha));
+            pixel.rect(at, 2, 2, k, look.fade(look.LIGHTNING_CORE, near * m.alpha));
         }
     }
 
     fn drawEnfeebled(self: *const Renderer, m: Mark) void {
         const k = pxScale(m.cell);
-        const sink = @mod(self.seconds * ENFEEBLE_HZ + @as(f32, @floatFromInt(m.seed)) * 0.31, 1);
+        const sink = @mod(self.seconds * ENFEEBLE_HZ + seedOf(m) * 0.31, 1);
         const tip = rl.Vector2{ .x = m.x + m.cell * ENFEEBLE_X, .y = m.y + m.cell * (HALO_Y + 0.08 + sink * 0.08) };
-        const arm = m.cell * 0.05;
+        const arm = m.cell * MARK_ARM;
         const col = look.fade(m.ink, 0.9 - sink * 0.5);
         pixel.bend(.{ .x = tip.x - arm, .y = tip.y - arm }, tip, .{ .x = tip.x + arm, .y = tip.y - arm }, 1, k, col);
     }
@@ -182,7 +214,7 @@ pub const Renderer = struct {
 
     fn drawFrightened(self: *const Renderer, m: Mark) void {
         const k = pxScale(m.cell);
-        const shake = @sin(self.seconds * FRIGHT_RAD_S + @as(f32, @floatFromInt(m.seed))) * FRIGHT_SHAKE;
+        const shake = @sin(self.seconds * FRIGHT_RAD_S + seedOf(m)) * FRIGHT_SHAKE;
         const top = rl.Vector2{ .x = m.x + m.cell * (FRIGHT_X + shake), .y = m.y + m.cell * HALO_Y };
         pixel.rect(top, 2, 6, k, m.ink);
         pixel.rect(.{ .x = top.x, .y = top.y + 6 * k }, 2, 2, k, m.ink);
@@ -194,7 +226,7 @@ pub const Renderer = struct {
             const phase = @as(f32, @floatFromInt(i)) / BURN_FLAMES;
             const age = flameAge(t, phase, @as(f32, @floatFromInt(seed)) * 0.17);
             const sway = @sin(t * 6 + phase * mathx.TAU) * 0.04;
-            const at = rl.Vector2{ .x = x + cell * (MARKS_FROM + phase * MARKS_SPAN + sway), .y = y + cell * (0.82 - age * 0.65) };
+            const at = rl.Vector2{ .x = x + cell * (across(phase) + sway), .y = y + cell * (0.82 - age * 0.65) };
             const r = look.SPRITE_PX * (0.065 - age * 0.045);
             pixel.fleck(at, r, pxScale(cell), look.fade(Status.burning.ink(), (1 - age) * 0.85 * alpha));
             pixel.rect(at, r, r * 1.5, pxScale(cell), look.fade(look.FIRE_CORE, (1 - age) * 0.9 * alpha));

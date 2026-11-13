@@ -494,8 +494,16 @@ pub fn drawnOut(g: *game.Game) void {
     _ = framesWhile(g, DRAWN_OUT_CAP_S, Settled{});
 }
 
+pub const FADED_S: f32 = 0.6;
+
 pub fn ease(g: *game.Game, dt: f32) void {
     g.pic.easeOver(&g.sim, g.pic.groundShown(&g.sim), dt);
+}
+
+pub fn turned(clock: day.Clock, n: usize) day.Clock {
+    var next = clock;
+    for (0..n) |_| _ = next.turn();
+    return next;
 }
 
 fn turningAny(g: *game.Game) bool {

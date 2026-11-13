@@ -14,6 +14,7 @@ const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
 const hud = @import("hud.zig");
+const keywords = @import("keywords.zig");
 const layout = @import("character_layout.zig");
 const character_view = @import("character_view.zig");
 const View = character_view.View;
@@ -99,6 +100,7 @@ const SECTION_GAP = 12;
 const CRIT_GAP = 20;
 const ROW_GAP = 16;
 const CHANCE_GAP = 18;
+const GROUP_GAP = 18;
 const LEFT_FOOT = layout.FOOT_Y;
 const RIGHT_FOOT = layout.ACTION_Y - SECTION_GAP;
 
@@ -237,6 +239,20 @@ const Column = struct {
         column.fits(at - CHANCE_GAP - column.x);
         column.y += CHANCE_ROW;
     }
+
+    fn groups(column: *Column, links: ?*keywords.State, on: menu.Surface) void {
+        var x = column.x;
+        for (keywords.STATUS_TERMS) |term| {
+            if (!column.dry) {
+                if (links) |l| {
+                    l.text(column.face, term.title, x, column.y, font.SMALL, look.UI_FOCUS, &.{term}, on);
+                } else column.face.text(term.title, x, column.y, font.SMALL, look.UI_FOCUS);
+            }
+            x += column.face.width(term.title, font.SMALL) + GROUP_GAP;
+        }
+        column.fits(x - column.x);
+        column.y += font.SMALL;
+    }
 };
 
 /// Each ailment a hit may bring, the skill's own roll first and the weapon's only if that missed, as combat rolls them.
@@ -288,7 +304,7 @@ fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     return .{ left, right };
 }
 
-fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
+fn advancedSheet(face: *const font.Face, view: View, dry: bool, on: menu.Surface) [2]Column {
     const figures = Figures.of(view);
     const attributes = figures.attrs;
     var left = Column.left(face, dry, TIGHT_ROW);
@@ -327,10 +343,7 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
         if (measure.turns > 0) text.say("{d}%, {d} turn{s}", .{ measure.percent, measure.turns, mathx.plural(measure.turns) }) else text.say("{d}%", .{measure.percent});
         right.entry(resistanceLabel(k), text.text(), .plain, quiet(measure.percent, look.ailmentInk(k)));
     }
-    var groups_width: i32 = 0;
-    for (@import("keywords.zig").STATUS_TERMS) |term| groups_width += face.width(term.title, font.SMALL) + 18;
-    right.fits(groups_width);
-    right.y += font.SMALL;
+    right.groups(view.keywords, on);
     return .{ left, right };
 }
 
@@ -345,16 +358,7 @@ pub fn draw(face: *const font.Face, view: View) void {
 }
 
 pub fn drawAdvanced(face: *const font.Face, view: View, on: menu.Surface) void {
-    const keywords = @import("keywords.zig");
-    const cols = advancedSheet(face, view, false);
-    const y = cols[1].y - font.SMALL;
-    var x = cols[1].x;
-    for (keywords.STATUS_TERMS) |term| {
-        if (view.keywords) |links| {
-            links.text(face, term.title, x, y, font.SMALL, look.UI_FOCUS, &.{term}, on);
-        } else face.text(term.title, x, y, font.SMALL, look.UI_FOCUS);
-        x += face.width(term.title, font.SMALL) + 18;
-    }
+    _ = advancedSheet(face, view, false, on);
 }
 
 pub fn verify(face: *const font.Face) !void {
@@ -368,7 +372,7 @@ pub fn verify(face: *const font.Face) !void {
         view.life = .{ .now = 999, .max = 999 };
         view.mana = .{ .now = 999, .max = 999 };
         for (std.enums.values(resilience.Kind)) |k| view.status_resist.set(k, .{ .percent = 100, .turns = resilience.EXPIRY });
-        for ([_][2]Column{ sheet(face, view, true), advancedSheet(face, view, true) }) |cols| {
+        for ([_][2]Column{ sheet(face, view, true), advancedSheet(face, view, true, menu.Surface.IDENTITY) }) |cols| {
             for (cols) |col| {
                 if (col.cramped or col.y > col.foot) {
                     std.debug.print("stats overflow {s}: column at x {d} reaches {d} of {d}, cramped {}\n", .{ @tagName(class), col.x, col.y, col.foot, col.cramped });

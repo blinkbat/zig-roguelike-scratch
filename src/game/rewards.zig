@@ -158,7 +158,7 @@ fn lootOf(sim: *Simulation, fallen: actor.Actor) loot.Loot {
 }
 
 const PYRE_REACH: i32 = 1;
-const PYRE_KINDLE =fire.Kindle{ .chance = 40 };
+const PYRE_KINDLE = fire.Kindle{ .chance = 40 };
 comptime {
     std.debug.assert(PYRE_REACH <= areas.BURST_MAX);
 }

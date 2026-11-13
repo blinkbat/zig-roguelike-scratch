@@ -2,10 +2,15 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
 const gen = @import("gen.zig");
+const carve = @import("carve.zig");
+const lume = @import("lume.zig");
 const actor = @import("../play/actor.zig");
 const P = mathx.P;
 
 pub const MAX_KINDS = 16;
+pub const SIZE_MIN: u8 = 5;
+pub const SIZE_MAX: u8 = 10;
+const MARGIN: i32 = 2;
 pub const Entry = struct { kind: actor.Kind = .rat, weight: u8 = 1 };
 pub const Side = enum { n, e, s, w };
 pub const Spec = struct {
@@ -26,35 +31,43 @@ pub const Spec = struct {
         return s.room().grown(-1);
     }
 
+    pub fn reserved(s: *const Spec) grid.Box {
+        return s.room().grown(1);
+    }
+
     pub fn reserves(s: *const Spec, p: P) bool {
-        return s.room().grown(1).holds(p) or (if (s.key) |k| k.eq(p) else false);
+        return s.reserved().holds(p) or (if (s.key) |k| k.eq(p) else false);
+    }
+
+    pub fn dir(s: *const Spec) mathx.Dir {
+        return switch (s.side) {
+            inline else => |t| @field(mathx.Dir, @tagName(t)),
+        };
     }
 
     pub fn door(s: *const Spec) P {
         const r = s.room();
-        const c = r.centre();
-        return switch (s.side) {
-            .n => .{ .x = c.x, .y = r.lo.y },
-            .s => .{ .x = c.x, .y = r.hi.y - 1 },
-            .w => .{ .x = r.lo.x, .y = c.y },
-            .e => .{ .x = r.hi.x - 1, .y = c.y },
-        };
+        return carve.sideAt(r, s.dir(), carve.alongOf(s.dir(), r.centre()));
     }
 
     pub fn outward(s: *const Spec) P {
-        return std.meta.stringToEnum(mathx.Dir, @tagName(s.side)).?.delta();
+        return s.dir().delta();
     }
 
     pub fn threshold(s: *const Spec) P {
         return s.door().sub(s.outward());
     }
 
+    pub fn approach(s: *const Spec) P {
+        return s.door().add(s.outward());
+    }
+
     pub fn valid(s: *const Spec) bool {
-        if (s.width < 5 or s.width > 10 or s.height < 5 or s.height > 10) return false;
-        if (s.at.x < 2 or s.at.y < 2 or s.at.x > grid.W - s.width - 2 or s.at.y > grid.H - s.height - 2) return false;
+        if (s.width < SIZE_MIN or s.width > SIZE_MAX or s.height < SIZE_MIN or s.height > SIZE_MAX) return false;
+        if (s.at.x < MARGIN or s.at.y < MARGIN or s.at.x > grid.W - s.width - MARGIN or s.at.y > grid.H - s.height - MARGIN) return false;
         if (s.pool_n == 0 or s.pool_n > MAX_KINDS) return false;
         for (s.pool[0..s.pool_n]) |e| if (!e.kind.stocked() or e.weight == 0) return false;
-        if (s.key) |k| if (!grid.Box.inMap(2).holds(k) or s.room().grown(1).holds(k)) return false;
+        if (s.key) |k| if (!grid.Box.inMap(MARGIN).holds(k) or s.reserved().holds(k)) return false;
         return true;
     }
 
@@ -66,42 +79,39 @@ pub const Spec = struct {
         return out;
     }
 
-    pub fn stamp(s: *const Spec, lv: *grid.Level, _: u64) void {
+    pub fn stamp(s: *const Spec, lv: *grid.Level) void {
+        const r = s.room();
         var outside = grid.CellSet.initEmpty();
         for (0..grid.CELLS) |i| {
             const p = grid.Level.of(i);
-            if (!s.room().holds(p) and lv.walkable(p)) outside.set(i);
+            if (!r.holds(p) and lv.walkable(p)) outside.set(i);
         }
-        var it = s.room().grown(1).cells();
+        var it = s.reserved().cells();
         const inner = s.inside();
         while (it.next()) |p| {
-            lv.set(p, if (s.room().holds(p) and !inner.holds(p)) .wall else .floor);
+            lv.set(p, if (r.onEdge(p)) .wall else .floor);
             lv.barrel[grid.Level.idx(p)] = false;
         }
-        const approach = s.door().add(s.outward());
-        s.connectTo(lv, approach, &outside);
+        const way_in = s.approach();
+        s.connectTo(lv, way_in, &outside);
         if (s.key) |k| {
             lv.set(k, .floor);
             lv.barrel[grid.Level.idx(k)] = false;
             var dist: [grid.CELLS]i32 = undefined;
             var queue: [grid.CELLS]u32 = undefined;
-            _ = grid.distances(lv, approach, &dist, &queue);
+            var flood = grid.Flood.init(lv, way_in, &dist, &queue);
             var reached = grid.CellSet.initEmpty();
-            for (dist, 0..) |d, i| if (d >= 0) {
-                reached.set(i);
-            };
+            while (flood.next()) |p| reached.set(grid.Level.idx(p));
             s.connectTo(lv, k, &reached);
         }
-        const back = s.door().sub(.{ .x = s.outward().x * (s.width - 2), .y = s.outward().y * (s.height - 2) });
-        const across = if (s.side == .w or s.side == .e) P{ .x = 0, .y = -1 } else P{ .x = -1, .y = 0 };
+        const back = carve.sideAt(inner, s.dir().opposite(), carve.alongOf(s.dir(), r.centre()));
         lv.set(back, .chest);
-        lv.set(back.add(across), .chest);
+        lv.set(back.sub(s.dir().across()), .chest);
         lv.set(s.door(), if (s.key != null) .locked_gate else .gate);
         if (s.key) |k| lv.set(k, .zoo_key);
         grid.mendProps(&lv.tile);
-        gen.shapeWalls(lv);
-        gen.keepTorches(lv);
-        _ = lv.torch.add(.{ .x = inner.lo.x, .y = s.at.y });
+        gen.reshape(lv);
+        lv.addTorch(lume.torchOver(inner, inner.lo.x));
     }
 
     fn connectTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet) void {
@@ -170,7 +180,7 @@ pub const Spec = struct {
 
     pub fn open(s: *const Spec, lv: *grid.Level, pool: *actor.Pool) bool {
         const t = lv.at(s.door());
-        if (t != .gate and t != .locked_gate) return false;
+        if (!t.closedGate()) return false;
         if (t == .locked_gate) {
             const k = s.key orelse return false;
             if (lv.at(k) != .key_taken) return false;
@@ -191,7 +201,7 @@ test "a zoo stays sealed until its own key is taken and opens into a packed room
     const s = Spec{ .key = .{ .x = 32, .y = 28 } };
     try std.testing.expect(s.valid());
     var lv = grid.openFloor();
-    s.stamp(&lv, 1);
+    s.stamp(&lv);
     var pool = actor.Pool{};
     var rng = mathx.Rng.init(3);
     s.populate(&lv, &pool, &rng);
@@ -213,7 +223,7 @@ test "zoo populations support every stocked enemy without exceeding split capaci
         var s = Spec{};
         s.pool[0].kind = kind;
         var lv = grid.openFloor();
-        s.stamp(&lv, 5);
+        s.stamp(&lv);
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(8);
         s.populate(&lv, &pool, &rng);
@@ -232,9 +242,9 @@ test "every zoo entrance keeps its walls and room hidden before opening" {
     for (std.enums.values(Side)) |side| {
         const s = Spec{ .side = side };
         var lv = grid.openFloor();
-        s.stamp(&lv, 3);
+        s.stamp(&lv);
         var seen: [grid.CELLS]bool = @splat(false);
-        fov.castInto(&lv, s.door().add(s.outward()), 12, &seen);
+        fov.castInto(&lv, s.approach(), 12, &seen);
         var it = s.inside().cells();
         while (it.next()) |p| try std.testing.expect(!seen[grid.Level.idx(p)]);
         it = s.room().cells();
@@ -258,7 +268,7 @@ test "placing a zoo leaves an unrelated sealed room sealed" {
     while (it.next()) |p| if (!sealed.grown(-1).holds(p)) {
         lv.set(p, .wall);
     };
-    s.stamp(&lv, 1);
+    s.stamp(&lv);
     it = sealed.cells();
     while (it.next()) |p| if (!sealed.grown(-1).holds(p)) {
         try std.testing.expectEqual(grid.Tile.wall, lv.at(p));

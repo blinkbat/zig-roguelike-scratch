@@ -237,7 +237,7 @@ pub const Node = struct {
                 for (b.foes()) |f| if (z.reserves(f.at)) return false;
             },
             .procgen => |*pg| {
-                var it = z.room().grown(1).cells();
+                var it = z.reserved().cells();
                 while (it.next()) |p| if (pg.section.tileAt(p) != null) return false;
                 if (z.key) |k| if (pg.section.tileAt(k) != null) return false;
                 if (!pg.section.empty() and pg.section.anchor != .fixed) return false;
@@ -336,8 +336,12 @@ pub const Node = struct {
         return self.barrelFits(b, p) and b.foeAt(p) == null;
     }
 
+    pub fn zooReserves(self: *const Node, p: P) bool {
+        return if (self.zoo) |z| z.reserves(p) else false;
+    }
+
     pub fn takesDoor(self: *const Node, p: P) bool {
-        if (self.zoo) |z| if (z.reserves(p)) return false;
+        if (self.zooReserves(p)) return false;
         return self.door_n < grid.MAX_DOORS and self.doorAt(p) == null and grid.Level.inside(p);
     }
 
@@ -346,7 +350,7 @@ pub const Node = struct {
     }
 
     pub fn foeFits(self: *const Node, b: *const Bespoke, p: P, k: actor.Kind) bool {
-        if (self.zoo) |z| if (z.reserves(p)) return false;
+        if (self.zooReserves(p)) return false;
         if (self.doorAt(p) != null or b.barrelAt(p)) return false;
         return actor.groundFits(k, b.tileAt(p));
     }
@@ -384,15 +388,15 @@ pub const Node = struct {
         self.packsOff(lv, pool, rng, at, &grid.CellSet.initEmpty());
     }
 
-    /// The foes of the section `roll` laid, each on its cell while the pool has room, then `placePacks` with no pack on a painted cell.
+    /// The foes of the section `roll` laid, each on its cell while the pool has room, then the zoo's, then the packs, none on a painted cell.
     pub fn populate(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, roll: u64) void {
-        if (self.zoo) |z| z.populate(lv, pool, rng);
-        const laid = self.sectionOn(roll) orelse return self.placePacks(lv, pool, rng, at);
-        for (laid.section.foes()) |f| {
-            const s = laid.foe(f);
+        const laid = self.sectionOn(roll);
+        if (laid) |l| for (l.section.foes()) |f| {
+            const s = l.foe(f);
             if (pool.hasRoomFor(s.kind) and actor.dwells(s.kind, lv, s.at)) _ = pool.spawn(lv, actor.Actor.of(s.kind, s.at));
-        }
-        const painted = laid.cells();
+        };
+        if (self.zoo) |z| z.populate(lv, pool, rng);
+        const painted = if (laid) |l| l.cells() else grid.CellSet.initEmpty();
         self.packsOff(lv, pool, rng, at, &painted);
     }
 
@@ -430,13 +434,13 @@ pub const Node = struct {
                 lv.tile = b.tile;
                 self.markDoors(lv);
                 lv.torch = b.torch;
-                procgen.reshape(lv);
+                gen.reshape(lv);
                 for (0..grid.CELLS) |i| {
                     if (b.barrel[i] and self.barrelFits(b, grid.Level.of(i))) lv.barrel[i] = true;
                 }
             },
         }
-        if (self.zoo) |z| z.stamp(lv, roll);
+        if (self.zoo) |z| z.stamp(lv);
     }
 
     pub fn sketch(self: *const Node, lv: *grid.Level) void {
@@ -471,7 +475,7 @@ pub const Atlas = struct {
     pub fn npcFits(self: *const Atlas, n: usize, p: P) bool {
         if (n >= self.node_n or !grid.Level.inside(p)) return false;
         const nd = &self.node[n];
-        if (nd.zoo) |z| if (z.reserves(p)) return false;
+        if (nd.zooReserves(p)) return false;
         return switch (nd.plan) {
             .bespoke => |*b| b.floorAt(p) and nd.doorAt(p) == null and !b.barrelAt(p) and b.foeAt(p) == null,
             .procgen => false,
@@ -552,8 +556,7 @@ pub const Atlas = struct {
         } else {
             self.start = .{};
             if (self.node_n > 0 and !self.node[0].startFits(self.start.at)) {
-                const z = self.node[0].zoo.?;
-                self.start.at = z.door().add(z.outward());
+                self.start.at = self.node[0].zoo.?.approach();
             }
         }
     }
@@ -981,7 +984,7 @@ test "the strand's door leads to a tee: the whole caravan camp walks from where 
         const z = nd.zoo.?;
         _ = grid.distances(&lv, door, &dist, &queue);
         try std.testing.expect(dist[grid.Level.idx(z.key.?)] >= 0);
-        try std.testing.expect(dist[grid.Level.idx(z.door().add(z.outward()))] >= 0);
+        try std.testing.expect(dist[grid.Level.idx(z.approach())] >= 0);
         try std.testing.expect(dist[grid.Level.idx(z.threshold())] < 0);
         try std.testing.expect(dist[grid.Level.idx(nd.door[1].at)] >= 0);
         lv.set(z.door(), .open_gate);

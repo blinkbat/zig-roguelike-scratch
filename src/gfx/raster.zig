@@ -16,6 +16,10 @@ pub fn sizeOf(t: rl.Texture2D) [2]f32 {
     return .{ @floatFromInt(t.width), @floatFromInt(t.height) };
 }
 
+pub fn extentOf(t: rl.Texture2D) mathx.P {
+    return .{ .x = t.width, .y = t.height };
+}
+
 pub fn uvOf(t: rl.Texture2D, r: rl.Rectangle) [4]f32 {
     const w, const h = sizeOf(t);
     return .{ r.x / w, r.y / h, r.width / w, r.height / h };

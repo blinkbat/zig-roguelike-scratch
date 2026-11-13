@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../../core/mathx.zig");
 const grid = @import("../../map/grid.zig");
 const atlas = @import("../../map/atlas.zig");
+const lens = @import("../../gfx/lens.zig");
 const game = @import("../../game.zig");
 
 pub const SHOT_SEED: u64 = 0x5EED_1234;
@@ -43,6 +44,12 @@ pub fn heapAtlas() !*atlas.Atlas {
 pub fn dropAtlas(g: *game.Game, w: *atlas.Atlas) void {
     g.sim.map = null;
     std.heap.c_allocator.destroy(w);
+}
+
+pub fn neutralLens(g: *game.Game) lens.Options {
+    const was = g.cinema.lens.options;
+    g.cinema.lens.options = .neutral;
+    return was;
 }
 
 pub fn differentPixels(a: rl.Image, b: rl.Image) usize {

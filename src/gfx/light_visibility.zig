@@ -10,6 +10,7 @@ pub const REVEAL: f32 = 14.0;
 const FORGET: f32 = 12.0;
 const VOID_FADE: f32 = 1.5;
 const SIGHT_FADE: f32 = 1.0;
+const WALL_SIGHT_FADE: f32 = 0.4;
 pub const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
 const VOID_SPAN: usize = @intCast(grid.Cells.span(VOID_REACH));
 pub const View = struct { sight: f32, memory: f32, lit: f32 };
@@ -276,7 +277,7 @@ pub const Visibility = struct {
             var adjacent = grid.Cells.of(vertex.sub(.{ .x = 1, .y = 1 }), vertex.add(.{ .x = 1, .y = 1 }));
             while (adjacent.next()) |p| {
                 if (grid.cellOr(f32, &self.see_through, p, 0) == 0) {
-                    width.* = 0.4;
+                    width.* = WALL_SIGHT_FADE;
                     break;
                 }
             }

@@ -169,14 +169,23 @@ pub const Tile = enum(u8) {
     }
 
     pub fn single(t: Tile) bool {
-        return !t.isOpened() and !t.pieced() and !t.zooPart();
+        return !t.stamped() and !t.pieced();
     }
 
     pub fn zooPart(t: Tile) bool {
-        return switch (t) {
-            .gate, .locked_gate, .open_gate, .zoo_key, .key_taken => true,
-            else => false,
-        };
+        return TERRAIN.getPtrConst(t).zoo;
+    }
+
+    pub fn stamped(t: Tile) bool {
+        return t.isOpened() or t.zooPart();
+    }
+
+    pub fn closedGate(t: Tile) bool {
+        return t == .gate or t == .locked_gate;
+    }
+
+    pub fn walled(t: Tile) bool {
+        return t.solid() and t.blind();
     }
 
     pub fn letter(t: Tile) u8 {
@@ -324,6 +333,7 @@ const Terrain = struct {
     wide: u8 = 1,
     part: bool = false,
     piece: ?Tile = null,
+    zoo: bool = false,
 };
 const OPEN = Terrain{ .solid = false, .blind = false };
 const BARE = Terrain{ .solid = false, .blind = false, .rewards = true };
@@ -337,6 +347,8 @@ const TALL_PROP = Terrain{ .solid = true, .blind = true, .ground = .grass };
 const LOW_PROP = Terrain{ .solid = true, .blind = false, .ground = .grass };
 const CART = Terrain{ .solid = true, .blind = true, .ground = .grass, .wide = 2, .piece = .caravan_part };
 const CART_PART = Terrain{ .solid = true, .blind = true, .ground = .grass, .part = true };
+const GATE = Terrain{ .solid = true, .blind = true, .ground = .floor, .zoo = true };
+const PEN_FLOOR = Terrain{ .solid = false, .blind = false, .ground = .floor, .zoo = true };
 
 const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .wall = .{ .solid = true, .blind = true, .shaped = true },
@@ -371,11 +383,11 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .caravan = CART,
     .caravan_part = CART_PART,
     .stone_bridge = .{ .solid = false, .blind = false, .spans = true },
-    .gate = .{ .solid = true, .blind = true, .ground = .floor },
-    .locked_gate = .{ .solid = true, .blind = true, .ground = .floor },
-    .open_gate = .{ .solid = false, .blind = false, .ground = .floor },
-    .zoo_key = .{ .solid = false, .blind = false, .ground = .floor },
-    .key_taken = .{ .solid = false, .blind = false, .ground = .floor },
+    .gate = GATE,
+    .locked_gate = GATE,
+    .open_gate = PEN_FLOOR,
+    .zoo_key = PEN_FLOOR,
+    .key_taken = PEN_FLOOR,
 });
 
 const WHOLES = blk: {

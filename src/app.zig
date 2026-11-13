@@ -405,7 +405,7 @@ const App = struct {
 
     fn titleStep(app: *App) bool {
         const g = app.g;
-        if (!g.keywords.screen.eq(g.screen)) g.keywords = .{};
+        g.keywords.resized(g.screen);
         const controls = g.st;
         const explaining = g.keywords.step(&controls);
         if (explaining) g.st = .{ .device = controls.device, .focused = controls.focused };
@@ -543,28 +543,26 @@ const App = struct {
                 if (back or app.hall.n == 0) app.goPage(.ossuary);
             },
             .options, .visuals, .display => {
-                const page: options_menu.Page = switch (app.page) { .visuals => .visuals, .display => .display, else => .main };
+                const page = options_menu.pageOf(app.page);
                 const picked = options_menu.step(&g.cinema, &app.options, &g.st, g.screen, page, &g.display);
-                options_menu.draw(g.face, &g.sprites, g.screen, &g.cinema, app.options.at, &g.st, page, g.display);
+                options_menu.draw(g.face, &g.sprites, g.screen, &g.cinema, app.options.at, page, g.display);
                 if (back) {
-                    if (page == .main) app.toTitle() else {
+                    if (options_menu.under(page)) |at| {
                         app.goPage(.options);
-                        app.options = .{ .at = options_menu.index(.main, if (page == .visuals) .visuals else .display) };
-                    }
-                } else if (picked) |row| switch (row) {
-                    .visuals, .display => {
-                        app.goPage(if (row == .visuals) .visuals else .display);
+                        app.options = .{ .at = at };
+                    } else app.toTitle();
+                } else if (picked) |pick| switch (pick) {
+                    inline .visuals, .display => |p| {
+                        app.goPage(@field(Page, @tagName(p)));
                         app.options = .{};
                     },
                     .fullscreen => game.syncScreen(g, true),
                     .debug => app.goPage(.debug),
-                    else => unreachable,
                 };
             },
             .debug => {
                 var rows: [DEBUG_ROWS.len][]const u8 = undefined;
-                var bufs: [DEBUG_ROWS.len][game.debugging.LABEL_MAX]u8 = undefined;
-                inline for (DEBUG_ROWS, &rows, &bufs) |d, *l, *b| l.* = game.debugging.label(g, d.row, b);
+                inline for (DEBUG_ROWS, &rows) |d, *l| l.* = game.debugging.label(g, d.row);
                 const picked = app.debugs.stepAt(&g.st, rows.len, g.screen);
                 menu.draw(g.face, &g.sprites, g.screen, comptime menu.caps(menu.named(OptionRow.debug)), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note);
                 if (back) {
@@ -683,9 +681,8 @@ test "every type whose words the player may rename is registered under its own n
         @import("play/skillbar.zig").Act,   @import("play/item_bases.zig").Kind,   @import("play/attrs.zig").Attr,
         @import("play/damage.zig").Element, @import("play/resilience.zig").Kind,   @import("play/resilience.zig").Tag,
         @import("play/flask.zig").Kind,     @import("play/consumable.zig").Kind,   actor.FoeType,
-        actor.Movement,                     @import("ui/character_view.zig").Page, @import("ui/trees.zig").SkillState,
-        editor.View,                        editor.Family,                         editor.Inspect,
-        @import("map/grid.zig").Tile,
+        actor.Movement,                     @import("ui/character_view.zig").Page, editor.View,
+        editor.Family,                      editor.Inspect,                        @import("map/grid.zig").Tile,
     };
     const wording = @import("core/wording.zig");
     try std.testing.expectEqual(wording.TYPES.len, types.len);

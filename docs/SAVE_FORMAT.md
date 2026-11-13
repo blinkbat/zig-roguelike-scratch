@@ -51,7 +51,8 @@ when starting a new run.
 ## Legacy files
 
 The zoo node field and gate/key tile names change the raw-layout fingerprint;
-pre-zoo raw saves are not claimed as compatible. Portable saves retain named-value
+pre-zoo raw saves are not claimed as compatible. So does the clock's `stunned`
+flag; portable saves without it load unstunned. Portable saves retain named-value
 compatibility, including absent zoo definitions.
 
 A raw file loads only when its ABI/type/tree fingerprint matches this exact build.

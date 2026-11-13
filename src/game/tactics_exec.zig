@@ -245,7 +245,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     const ids = skills.foesIn(g, area);
     var raw = attacks.rawElementFor(&g.sim, act);
     raw.elements.getPtr(Skill.ELEMENT).* += Skill.FUEL_DAMAGE * fuel;
-    const s = game.presentation.Stroke{ .from = from, .wait = game.CAST_S, .fire = Skill.ELEMENT == .fire };
+    const s = game.presentation.Stroke{ .from = from, .wait = game.CAST_S, .element = Skill.ELEMENT };
     g.pic.fx.burst(s.wait, .{ .at = at, .area = area, .element = Skill.ELEMENT });
     for (ids.slice()) |id| {
         const a = g.sim.pool.get(id) orelse continue;

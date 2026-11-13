@@ -24,7 +24,7 @@ pub const MAGIC = "cistern-save\n";
 const VERSION: u64 = 2;
 /// Runs saved before flasks were worn as items.
 const FLASKLESS: u64 = 1;
-const Code = wire.Codec(Policy);
+pub const Code = wire.Codec(Policy);
 pub const FILE_CAP = blk: {
     @setEvalBranchQuota(100_000);
     break :blk @max(64 << 20, store.head(MAGIC) + Code.maxSize(Snapshot) + store.SUM);

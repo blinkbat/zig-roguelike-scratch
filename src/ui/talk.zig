@@ -24,13 +24,25 @@ const FIGURE_GLYPH: i32 = 96;
 const FIGURE_WELL_A: f32 = 0.7;
 /// The prose keeps this much width, or the figure is left out.
 const TEXT_MIN_W: i32 = 420;
+const HEADER_GAP: i32 = 24;
+const FOOTER_GAP: i32 = 20;
+const RAISE_MIN: i32 = 104;
+const RAISE_DIV: i32 = 8;
+const WHO_RULE_GAP: i32 = 10;
+const WHO_RESERVE: i32 = 110;
+const ROW_INSET: i32 = 10;
+const ROW_RISE: i32 = 4;
+const ROW_FOOT: i32 = 2;
+const ROW_BAR_W: i32 = 3;
+const PANEL_A: f32 = 0.96;
+const ROW_ON_A: f32 = 0.12;
+const ROW_OFF_A: f32 = 0.35;
+const ROW_EDGE_A: f32 = 0.65;
 
-/// Whom the hero is speaking with, drawn beside the words.
 pub const Figure = struct {
     tex: ?rl.Texture2D = null,
     glyph: look.Look = look.NPC,
 
-    /// The NPC spoken to, unless the line names another speaker.
     pub fn of(art: *const sprite.Sprites, npc: *const script.Npc, ln: *const script.Line) ?Figure {
         if (ln.who.n > 0 and !ln.who.eql(npc.called())) return null;
         const k = npc.looks orelse return .{};
@@ -46,6 +58,10 @@ pub const View = struct {
     prompt: prompt_icon.Prompt,
     figure: ?Figure = null,
     ending: bool = false,
+
+    pub fn ofLine(ln: *const script.Line, who: []const u8, choices: []const []const u8, cursor: usize, prompt: prompt_icon.Prompt, figure: ?Figure) View {
+        return .{ .who = who, .say = ln.say.text(), .choices = choices, .cursor = cursor, .prompt = prompt, .figure = figure, .ending = ln.then == null };
+    }
 };
 
 pub const Layout = struct {
@@ -70,36 +86,37 @@ pub const Layout = struct {
         const pictured = v.figure != null and w - 2 * PAD - FIGURE_BOX - FIGURE_GAP >= TEXT_MIN_W;
         const column: i32 = if (pictured) FIGURE_BOX + FIGURE_GAP else 0;
         self.text_w = w - 2 * PAD - column;
-        self.line_n = countLines(face, v.say, self.text_w);
         self.row_n = @min(v.choices.len, script.MAX_CHOICES);
-        const header: i32 = font.HEAD_LINE + 24;
-        const footer: i32 = 20 + menu.ACTION_BOX.y;
+        const header: i32 = font.HEAD_LINE + HEADER_GAP;
+        const footer: i32 = FOOTER_GAP + menu.ACTION_BOX.y;
         const cap_h = @min(@divTrunc(screen.y * 2, 3), screen.y - 2 * MARGIN);
         const capacity: usize = @intCast(@max(1, @divTrunc(cap_h - 2 * PAD - header - footer, LEADING)));
+        const counted = capacity + 1;
+        self.line_n = countLines(face, v.say, self.text_w, counted);
         var total = self.line_n;
         if (self.row_n > 0) total += 1;
         for (v.choices[0..self.row_n], 0..) |label, i| {
             self.starts[i] = total;
-            total += @max(1, countLines(face, label, self.text_w - NUMBER_W));
+            total += @max(1, countLines(face, label, self.text_w - NUMBER_W, counted -| total));
             self.ends[i] = total;
         }
         self.last = @min(total, capacity);
         const visible: i32 = @intCast(@min(@max(total, 3), capacity));
         const h = 2 * PAD + header + visible * LEADING + footer;
         const x = @divTrunc(screen.x - w, 2);
-        const y = @max(MARGIN, screen.y - @max(104, @divTrunc(screen.y, 8)) - h);
+        const y = @max(MARGIN, screen.y - @max(RAISE_MIN, @divTrunc(screen.y, RAISE_DIV)) - h);
         self.panel = raster.rect(x, y, w, h);
         self.figure = if (pictured) raster.rect(x + PAD, y + PAD, FIGURE_BOX, FIGURE_BOX) else null;
         self.text_x = x + PAD + column;
         self.who_y = y + PAD;
-        self.who_rule_y = self.who_y + font.HEAD_LINE + 10;
+        self.who_rule_y = self.who_y + font.HEAD_LINE + WHO_RULE_GAP;
         self.text_y = y + PAD + header;
-        self.content = raster.rect(self.text_x - 10, self.text_y - 4, self.text_w + 20, visible * LEADING + 8);
+        self.content = raster.rect(self.text_x - ROW_INSET, self.text_y - ROW_RISE, self.text_w + 2 * ROW_INSET, visible * LEADING + 2 * ROW_RISE);
         for (0..self.row_n) |i| {
             const start = self.starts[i];
             const end = @min(self.last, self.ends[i]);
             self.rows[i] = if (end > start)
-                raster.rect(self.text_x - 10, self.text_y + @as(i32, @intCast(start)) * LEADING - 4, self.text_w + 20, @as(i32, @intCast(end - start)) * LEADING - 2)
+                raster.rect(self.text_x - ROW_INSET, self.text_y + @as(i32, @intCast(start)) * LEADING - ROW_RISE, self.text_w + 2 * ROW_INSET, @as(i32, @intCast(end - start)) * LEADING - ROW_FOOT)
             else
                 raster.rect(0, 0, 0, 0);
         }
@@ -117,19 +134,19 @@ pub const Layout = struct {
 pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v: View, l: *const Layout) void {
     var buf: [script.WHO_MAX + 32]u8 = undefined;
     rl.drawRectangle(0, 0, screen.x, screen.y, TALK_VEIL);
-    rl.drawRectangleRec(l.panel, look.fade(look.BG, 0.96));
+    rl.drawRectangleRec(l.panel, look.fade(look.BG, PANEL_A));
     sprite.backingIn(sprites, l.panel);
     if (l.figure) |r| drawFigure(face, r, v.figure.?);
     const who = if (v.who.len > 0) v.who else "Conversation";
-    face.engraved(face.fit(&buf, who, font.HEAD, l.text_w - 110, false), l.text_x, l.who_y, font.HEAD, look.UI_GOLD);
+    face.engraved(face.fit(&buf, who, font.HEAD, l.text_w - WHO_RESERVE, false), l.text_x, l.who_y, font.HEAD, look.UI_GOLD);
     rl.drawRectangle(l.text_x, l.who_rule_y, l.text_w, 1, look.fade(look.UI_GOLD, look.FADED_A));
     drawPassage(face, v.say, l.text_x, l.text_w, 0, l, look.TEXT);
     for (l.rows[0..l.row_n], v.choices[0..l.row_n], 0..) |r, label, i| {
         if (r.height == 0) continue;
         const on = i == v.cursor;
-        menu.boxed(r, look.fade(if (on) look.UI_GOLD else look.BG, if (on) 0.12 else 0.35), look.fade(if (on) look.UI_GOLD else look.EDGE, 0.65));
-        if (on) rl.drawRectangle(raster.left(r), raster.top(r), 3, @intFromFloat(r.height), look.UI_GOLD);
-        face.text(std.fmt.bufPrintZ(&buf, "{d}.", .{i + 1}) catch "", l.text_x, raster.top(r) + 4, BODY, look.UI_GOLD);
+        menu.boxed(r, look.fade(if (on) look.UI_GOLD else look.BG, if (on) ROW_ON_A else ROW_OFF_A), look.fade(if (on) look.UI_GOLD else look.EDGE, ROW_EDGE_A));
+        if (on) rl.drawRectangle(raster.left(r), raster.top(r), ROW_BAR_W, @intFromFloat(r.height), look.UI_GOLD);
+        face.text(std.fmt.bufPrintZ(&buf, "{d}.", .{i + 1}) catch "", l.text_x, raster.top(r) + ROW_RISE, BODY, look.UI_GOLD);
         drawPassage(face, label, l.text_x + NUMBER_W, l.text_w - NUMBER_W, l.starts[i], l, if (on) look.UI_FOCUS else look.TEXT);
     }
     menu.action(face, l.action, v.prompt, if (l.row_n > 0) "Reply" else if (v.ending) "Leave" else "Continue");
@@ -145,18 +162,18 @@ fn drawPassage(face: *const font.Face, body: []const u8, x: i32, w: i32, start: 
     }
 }
 
-fn countLines(face: anytype, body: []const u8, w: i32) usize {
+fn countLines(face: anytype, body: []const u8, w: i32, most: usize) usize {
     var offset: usize = 0;
     var n: usize = 0;
     var buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
-    while (nextLine(face, body, &offset, w, &buf) != null) n += 1;
+    while (n < most and nextLine(face, body, &offset, w, &buf) != null) n += 1;
     return n;
 }
 
 fn nextLine(face: anytype, body: []const u8, offset: *usize, w: i32, buf: *[font.WRAP_COLS_MAX + 1]u8) ?[:0]const u8 {
     if (offset.* >= body.len) return null;
     const rest = body[offset.*..];
-    const newline = std.mem.indexOfScalar(u8, rest, '\n') orelse rest.len;
+    const newline = std.mem.indexOfScalar(u8, rest[0..@min(rest.len, font.WRAP_COLS_MAX + 1)], '\n') orelse rest.len;
     const cap = @min(newline, font.WRAP_COLS_MAX);
     @memcpy(buf[0..cap], rest[0..cap]);
     buf[cap] = 0;
@@ -186,7 +203,6 @@ fn nextLine(face: anytype, body: []const u8, offset: *usize, w: i32, buf: *[font
     return buf[0..n :0];
 }
 
-/// Pixel art at a whole multiple of its size, as large as the well takes.
 fn drawFigure(face: *const font.Face, r: rl.Rectangle, f: Figure) void {
     menu.boxed(r, look.fade(look.BG, FIGURE_WELL_A), look.EDGE);
     const inner = FIGURE_BOX - 2 * FIGURE_INSET;
@@ -214,8 +230,7 @@ test "an oversized line clips inside the raised panel rather than splitting into
             l.of(&face, screen, .{ .who = "w" ** script.WHO_MAX, .say = longest, .choices = &asks, .cursor = 0, .prompt = .{ .key = "Enter" }, .figure = figure });
             try std.testing.expect(l.panel.y >= 0 and l.panel.y + l.panel.height <= @as(f32, @floatFromInt(screen.y)));
             try std.testing.expect(l.action.y + l.action.height <= l.panel.y + l.panel.height);
-            try std.testing.expect(l.line_n > l.last);
-            try std.testing.expect(l.line_n > font.WRAP_LINES_MAX);
+            try std.testing.expectEqual(l.last + 1, l.line_n);
             try std.testing.expect(l.panel.y + l.panel.height <= @as(f32, @floatFromInt(screen.y - 100)));
             for (l.rows[0..l.row_n]) |r| if (r.height > 0) {
                 try std.testing.expect(r.y >= l.content.y and r.y + r.height <= l.action.y);
@@ -226,11 +241,11 @@ test "an oversized line clips inside the raised panel rather than splitting into
 }
 
 test "a narrow face fills the panel's width before it wraps" {
-    const narrow: i32 = 10;
     const w: i32 = 700;
-    var wrapped: font.Wrapped = undefined;
-    var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
-    const n = font.wrap(menu.TestFace{}, "ab " ** 200, narrow, w, &wrapped, &lines);
-    try std.testing.expect(n > 1);
-    try std.testing.expect(menu.TestFace.width(.{}, lines[0], narrow) > w - 3 * @divTrunc(narrow, 2));
+    const body = "ab " ** 200;
+    var offset: usize = 0;
+    var buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
+    const first = nextLine(menu.TestFace{}, body, &offset, w, &buf).?;
+    try std.testing.expect(countLines(menu.TestFace{}, body, w, std.math.maxInt(usize)) > 1);
+    try std.testing.expect(menu.TestFace.width(.{}, first, BODY) > w - 3 * @divTrunc(BODY, 2));
 }

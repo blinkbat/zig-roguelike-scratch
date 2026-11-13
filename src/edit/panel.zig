@@ -435,7 +435,7 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     backPanel(col, band, col.x);
     const slot = nodeSlot(g);
     widgets.heading(&g.face, "Node", col.left(), band.top + widgets.PAD);
-    var y: i32 = @intFromFloat(slot.y);
+    var y = raster.top(slot);
     if (ed.renaming or ed.renamed) {
         modals.fieldRow(ed, g, slot);
     } else if (nodeDropdown(ed, g, slot)) editor.openPopup(ed, slot, .node, ed.node, g.screen.y);
@@ -485,7 +485,7 @@ const DROP_CARET = "v";
 
 pub fn nodeRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, n: usize, modal: bool) bool {
     const h = widgets.plateHit(ed.controls(), r, n == ed.node, true, modal, "Open this node");
-    const y: i32 = @intFromFloat(r.y);
+    const y = raster.top(r);
     drawNodeTitle(ed, g, n, r, y + editor.TITLE_DY);
     drawNodeDetail(g, &ed.map.node[n], widgets.textX(r), y + editor.TITLE_DY + editor.NODE_DETAIL_DY);
     return h.hit;

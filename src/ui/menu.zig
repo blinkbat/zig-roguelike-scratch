@@ -20,6 +20,7 @@ pub const REMOVE = input.Button.y;
 pub const RUB = input.Button.x;
 pub const PAGE_PREV = input.Button.lb;
 pub const PAGE_NEXT = input.Button.rb;
+pub const INSPECT = input.Button.inspect;
 
 pub const TITLE: i32 = 54;
 pub const ROW: i32 = 28;
@@ -39,6 +40,7 @@ const CHROME_H: i32 = 2 * @as(i32, @max(ABOVE, BELOW));
 pub const NOTE_MAX: usize = 160;
 pub const SEP = "   ";
 pub const CARET = "_";
+pub const POSITION_FMT = "{d} / {d}";
 
 const SURFACE_MARGIN: i32 = 16;
 const GROWTH: f32 = 0.5;
@@ -47,6 +49,8 @@ const SCALE_MAX: f32 = 1.25;
 pub const Surface = struct {
     scale: f32,
     offset: rl.Vector2,
+
+    pub const IDENTITY = Surface{ .scale = 1, .offset = .{ .x = 0, .y = 0 } };
 
     pub fn of(screen: mathx.P, size: mathx.P) Surface {
         const fit = @min(@as(f32, @floatFromInt(@max(1, screen.x - 2 * SURFACE_MARGIN))) / @as(f32, @floatFromInt(size.x)), @as(f32, @floatFromInt(@max(1, screen.y - 2 * SURFACE_MARGIN))) / @as(f32, @floatFromInt(size.y)));
@@ -81,7 +85,7 @@ pub const Surface = struct {
 
     pub fn beginPanel(self: Surface, sprites: *const sprite.Sprites, size: mathx.P) void {
         self.begin();
-        sprite.layeredBacking(sprites, 0, 0, size.x, size.y, 1);
+        sprite.layeredBacking(sprites, 0, 0, size.x, size.y, .menu);
     }
 
     /// `f` as this surface draws it: scaled, from the mipmapped atlas rather than the native-size ones.
@@ -89,8 +93,13 @@ pub const Surface = struct {
         return if (self.scale != 1) f.mipmapped() else f;
     }
 
+    pub fn rectOf(self: Surface, r: rl.Rectangle) rl.Rectangle {
+        return .{ .x = self.offset.x + r.x * self.scale, .y = self.offset.y + r.y * self.scale, .width = r.width * self.scale, .height = r.height * self.scale };
+    }
+
     pub fn clip(self: Surface, r: rl.Rectangle) void {
-        rl.beginScissorMode(@intFromFloat(@floor(self.offset.x + r.x * self.scale)), @intFromFloat(@floor(self.offset.y + r.y * self.scale)), @intFromFloat(@ceil(r.width * self.scale)), @intFromFloat(@ceil(r.height * self.scale)));
+        const t = self.rectOf(r);
+        rl.beginScissorMode(@intFromFloat(@floor(t.x)), @intFromFloat(@floor(t.y)), @intFromFloat(@ceil(t.width)), @intFromFloat(@ceil(t.height)));
     }
 };
 
@@ -298,14 +307,18 @@ fn noteY(first: rl.Rectangle, count: usize) i32 {
     return rowTextY(first) + @as(i32, @intCast(count)) * ROW_STEP + NOTE_GAP;
 }
 
-pub fn draw(face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, title: [:0]const u8, all: []const []const u8, at: usize, note: ?[:0]const u8) void {
-    const win = window(screen.y, all.len, at);
-    const rows = all[win.from..][0..win.len];
+pub fn listFrame(face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, title: [:0]const u8, n: usize, at: usize) Window {
+    const win = window(screen.y, n, at);
     const first = rowBox(screen, win, win.from);
     pageHeading(face, screen, title, titleY(first));
-    if (rows.len > 0) {
-        listPanel(sprites, .{ .x = first.x, .y = first.y, .width = first.width, .height = @floatFromInt(rows.len * ROW_STEP) });
-    }
+    if (win.len > 0) listPanel(sprites, .{ .x = first.x, .y = first.y, .width = first.width, .height = @floatFromInt(win.len * ROW_STEP) });
+    return win;
+}
+
+pub fn draw(face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, title: [:0]const u8, all: []const []const u8, at: usize, note: ?[:0]const u8) void {
+    const win = listFrame(face, sprites, screen, title, all.len, at);
+    const rows = all[win.from..][0..win.len];
+    const first = rowBox(screen, win, win.from);
     const inset = markInset(face);
     const widest = raster.width(first) - 2 * inset;
     var fit_buf: [NOTE_MAX + 1]u8 = undefined;
@@ -319,7 +332,7 @@ pub fn draw(face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, ti
 }
 
 pub fn listPanel(sprites: *const sprite.Sprites, rows: rl.Rectangle) void {
-    sprite.layeredBackingIn(sprites, raster.grown(rows, @floatFromInt(sprite.HUD_BORDER_CUT)), 1);
+    sprite.layeredBackingIn(sprites, raster.grown(rows, @floatFromInt(sprite.HUD_BORDER_CUT)), .menu);
 }
 
 fn markInset(face: font.Face) i32 {

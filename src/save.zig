@@ -575,8 +575,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
 
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
-    try write(g, &buf);
-    seal(&buf);
+    try sealed(g, &buf);
 
     const back = try game.boot(alloc);
     defer game.shut(alloc, back);
@@ -640,8 +639,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
     _ = try @import("play/trade.zig").buy(shelf, shelf.count() - 1, &g.sim.inventory, &g.sim.gold);
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
-    try write(g, &buf);
-    seal(&buf);
+    try sealed(g, &buf);
     const back = try game.boot(alloc);
     defer game.shut(alloc, back);
     const into = try alloc.create(Map);
@@ -652,14 +650,12 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
     try std.testing.expectEqualDeep(g.sim.plot.wares[0].?.supplies, back.sim.plot.wares[0].?.supplies);
     try std.testing.expect(back.sim.plot.wares[1] == null);
     g.sim.plot.wares[1] = g.sim.plot.wares[0];
-    buf.clearRetainingCapacity();
-    try write(g, &buf);
-    seal(&buf);
+    try sealed(g, &buf);
     try std.testing.expectError(error.Damaged, read(buf.items, back, into));
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0x978e19811f425a63;
+const RECORDED_FINGERPRINT: Print = 0x33ba8f7ff4e8479f;
 
 test "zoo keys doors populations and visits survive portable saves" {
     const alloc = std.testing.allocator;
@@ -673,7 +669,7 @@ test "zoo keys doors populations and visits survive portable saves" {
     const into = try alloc.create(Map);
     defer alloc.destroy(into);
     const z = w.node[1].zoo.?;
-    game.beginMapAt(g, w, .{ .node = 1, .at = z.door().add(z.outward()) }, 17);
+    game.beginMapAt(g, w, .{ .node = 1, .at = z.approach() }, 17);
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     for (0..3) |phase| {
@@ -687,9 +683,7 @@ test "zoo keys doors populations and visits survive portable saves" {
                 }
             }
         }
-        buf.clearRetainingCapacity();
-        try write(g, &buf);
-        seal(&buf);
+        try sealed(g, &buf);
         try read(buf.items, back, into);
         try std.testing.expectEqualDeep(z, into.node[1].zoo.?);
         try std.testing.expectEqual(g.sim.lv.at(z.key.?), back.sim.lv.at(z.key.?));
@@ -700,9 +694,7 @@ test "zoo keys doors populations and visits survive portable saves" {
     g.pic.busy = 0;
     game.update(g, 0);
     try std.testing.expectEqual(@as(usize, 0), g.sim.node);
-    buf.clearRetainingCapacity();
-    try write(g, &buf);
-    seal(&buf);
+    try sealed(g, &buf);
     try read(buf.items, back, into);
     back.sim.travel = .{ .node = 1, .door = 0 };
     back.pic.busy = 0;
@@ -718,9 +710,9 @@ test "zoo keys doors populations and visits survive portable saves" {
 }
 
 test "a node saved before zoos defaults to no zoo" {
-    const Code = @import("core/wire.zig").Codec(format.Policy);
+    const Code = format.Code;
     const alloc = std.testing.allocator;
-    const node = try alloc.create(atlas.Node);
+    const node =try alloc.create(atlas.Node);
     defer alloc.destroy(node);
     node.* = .{ .plan = .{ .procgen = .{} }, .zoo = .{} };
     var bytes = std.ArrayList(u8).init(alloc);
@@ -731,6 +723,12 @@ test "a node saved before zoos defaults to no zoo" {
     try format.TestRecord.change(&older, bytes.items, &.{"zoo"}, null);
     try Code.read(older.items, node);
     try std.testing.expect(node.zoo == null);
+}
+
+fn sealed(g: *game.Game, buf: *std.ArrayList(u8)) !void {
+    buf.clearRetainingCapacity();
+    try write(g, buf);
+    seal(buf);
 }
 
 fn fixture(g: *game.Game, w: *const Map) !void {
@@ -771,8 +769,7 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     const snapshot = try alloc.create(format.Snapshot);
     defer alloc.destroy(snapshot);
     try format.capture(g, snapshot);
-    try write(g, &first);
-    seal(&first);
+    try sealed(g, &first);
 
     const back = try game.boot(alloc);
     defer game.shut(alloc, back);
@@ -800,8 +797,7 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     }
     var again = std.ArrayList(u8).init(alloc);
     defer again.deinit();
-    try write(back, &again);
-    seal(&again);
+    try sealed(back, &again);
     try std.testing.expectEqualDeep(try peek(first.items), try peek(again.items));
     try std.testing.expectEqualSlices(u8, first.items, again.items);
     try std.testing.expectEqual(RECORDED_FINGERPRINT, FINGERPRINT);
@@ -823,8 +819,7 @@ test "a braced line, a stuck turn and a firebolt in flight survive a portable sa
     game.settle(g);
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
-    try write(g, &buf);
-    seal(&buf);
+    try sealed(g, &buf);
     const back = try game.boot(alloc);
     defer game.shut(alloc, back);
     const into = try alloc.create(Map);
@@ -840,9 +835,7 @@ test "a braced line, a stuck turn and a firebolt in flight survive a portable sa
     }
     try std.testing.expectEqual(bolt.point(), back.pic.bolts[actor.Pool.slot(imp)].?.at().?);
     g.sim.pool.get(crab).?.bolt = bolt;
-    buf.clearRetainingCapacity();
-    try write(g, &buf);
-    seal(&buf);
+    try sealed(g, &buf);
     try std.testing.expectError(error.Damaged, read(buf.items, back, into));
 }
 
@@ -1094,9 +1087,7 @@ test "a generated run reloads every class without retaining the previous run's t
         _ = g.sim.growth.gain(100);
         _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 3);
         const map_hash = store.sum(std.mem.asBytes(into));
-        buf.clearRetainingCapacity();
-        try write(g, &buf);
-        seal(&buf);
+        try sealed(g, &buf);
         try fixture(back, into);
         back.mode = .{ .aim = game.Aim.of(.x, .shoot, .{ .x = 20, .y = 20 }) };
         back.exit = .quit;
@@ -1127,8 +1118,7 @@ test "a generated run reloads every class without retaining the previous run's t
 }
 
 test "a procgen plan carries its section through a portable save, and one saved before sections loads with none" {
-    const wire = @import("core/wire.zig");
-    const Code = wire.Codec(format.Policy);
+    const Code = format.Code;
     const alloc = std.testing.allocator;
     const plan = try alloc.create(atlas.Procgen);
     defer alloc.destroy(plan);
