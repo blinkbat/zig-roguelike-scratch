@@ -623,6 +623,18 @@ test "a node added is named as it is added, one undo for both" {
     try std.testing.expectEqual(before, ed.map.node_n);
 }
 
+test "a right-click mid rename drops it like Esc" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const kept = ed.map.node[0].label;
+    ed.startRename();
+    ed.field.set("Pit", atlas.NAME_MAX);
+    ed.desk = .{ .erase_hit = true };
+    interaction.step(ed, TEST_CANVAS, 720, 0);
+    try std.testing.expect(!ed.renaming);
+    try std.testing.expectEqualStrings(kept.text(), ed.map.node[0].name());
+}
+
 test "an undo the same frame a rename starts drops the rename instead of naming another node" {
     const ed = try testBespoke();
     defer ed.destroy();

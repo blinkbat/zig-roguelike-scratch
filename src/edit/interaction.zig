@@ -33,7 +33,7 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
     if (ed.renaming) {
         ed.field.feed(desk);
         if (desk.back or desk.enter or desk.clicked()) {
-            if (desk.back) ed.renaming = false else ed.commitRename();
+            if (backed(desk)) ed.renaming = false else ed.commitRename();
             ed.renamed = desk.clicked();
         }
         if (ed.renaming or !desk.clicked() or over_canvas) return;

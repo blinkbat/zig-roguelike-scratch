@@ -186,7 +186,7 @@ pub const Queue = struct {
         return self.due_n;
     }
 
-    pub fn hasBarrels(self: *const Queue) bool {
+    fn hasBarrels(self: *const Queue) bool {
         return self.barrels_due > 0;
     }
 

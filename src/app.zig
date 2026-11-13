@@ -318,12 +318,17 @@ const App = struct {
         app.autosave = null;
     }
 
-    /// False once the app may close; a failed last write stays on the title instead.
-    fn quitRun(app: *App) bool {
+    fn runToTitle(app: *App) void {
         app.toTitle();
         app.leaveRun();
         if (app.undeleted) |e| app.also(save.NOT_DELETED, .{@errorName(e)});
         app.undeleted = null;
+        app.reburied();
+    }
+
+    /// False once the app may close; a failed last write stays on the title instead.
+    fn quitRun(app: *App) bool {
+        app.runToTitle();
         return app.note.n > 0;
     }
 
@@ -347,7 +352,7 @@ const App = struct {
                 app.scene = .edit;
             }
         } else if (closing and app.scene != .edit) {
-            return app.quitRun();
+            if (!app.quitRun()) return false;
         }
         switch (app.scene) {
             .title => return app.titleFrame(),
@@ -364,13 +369,7 @@ const App = struct {
                 g.exit = null;
                 switch (exit) {
                     .back => switch (g.back) {
-                        .title => {
-                            app.toTitle();
-                            app.leaveRun();
-                            if (app.undeleted) |e| app.also(save.NOT_DELETED, .{@errorName(e)});
-                            app.undeleted = null;
-                            app.reburied();
-                        },
+                        .title => app.runToTitle(),
                         .editor => app.scene = .edit,
                     },
                     .quit => if (g.back == .editor) {

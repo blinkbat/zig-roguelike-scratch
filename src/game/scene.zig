@@ -418,11 +418,10 @@ pub fn shadowPass(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.B
 fn drawShadows(g: *game.Game, c: Cam, ground: *const grid.Level, cast: grid.Box, bags: *const grid.CellSet) void {
     var props = cast.cells();
     while (props.next()) |p| {
-        if (!terrainSeen(g, p)) continue;
         const kind = ground.at(p);
-        if (looseBag(kind, bags, p)) propShadow(g, c, p, g.sprites.item_bag, g.pic.cellAlpha(p));
-        if (g.pic.barrelPresent(&g.sim, p)) propShadow(g, c, p, g.sprites.barrel, 1);
-        if (!look.castsPicture(kind)) continue;
+        if (terrainSeen(g, p) and looseBag(kind, bags, p)) propShadow(g, c, p, g.sprites.item_bag, g.pic.cellAlpha(p));
+        if (barrelShownAt(g, p)) propShadow(g, c, p, g.sprites.barrel, 1);
+        if (!look.castsPicture(kind) or !footprintSeen(g, p, kind)) continue;
         const forest = sprite_assets.forestAt(ground, p);
         const t = tileTexture(g, ground, kind, p, bags) orelse continue;
         const pr = Prop.over(g, c, p, kind);

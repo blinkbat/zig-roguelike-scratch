@@ -840,16 +840,17 @@ pub const Fx = struct {
             const age = 1 - m.life / m.max;
             const at = screen(m.p, ox, oy, cell);
             const r = m.r * (1 + m.grow * age);
+            const ink = look.fade(m.col, a);
             switch (m.shape) {
-                .vapor => pixel.haze(at, r, k, @as(f32, @floatFromInt(i)) * 1.7 + age * 1.2, look.fade(m.col, a)),
+                .vapor => pixel.haze(at, r, k, @as(f32, @floatFromInt(i)) * 1.7 + age * 1.2, ink),
                 .leaf => {
                     const turn = @as(f32, @floatFromInt(i)) * 2.4 + age * 4;
                     const dx = @cos(turn) * r * k;
                     const dy = @sin(turn) * r * k;
-                    pixel.line(.{ .x = at.x - dx, .y = at.y - dy }, .{ .x = at.x + dx, .y = at.y + dy }, 1, k, look.fade(m.col, a));
+                    pixel.line(.{ .x = at.x - dx, .y = at.y - dy }, .{ .x = at.x + dx, .y = at.y + dy }, 1, k, ink);
                 },
-                .droplet => pixel.oval(at, r * 2, r * 2, k, look.fade(m.col, a)),
-                .fleck => if (m.stains) pixel.oval(at, r * 2, r * 2, k, look.fade(m.col, a)) else pixel.fleck(at, r, k, look.fade(m.col, a)),
+                .droplet => pixel.oval(at, r * 2, r * 2, k, ink),
+                .fleck => if (m.stains) pixel.oval(at, r * 2, r * 2, k, ink) else pixel.fleck(at, r, k, ink),
             }
         }
     }

@@ -110,21 +110,31 @@ pub const Spec = struct {
         if (s.key) |k| {
             lv.set(k, .floor);
             lv.barrel[grid.Level.idx(k)] = false;
-            var dist: [grid.CELLS]i32 = undefined;
-            var queue: [grid.CELLS]u32 = undefined;
-            var flood = grid.Flood.init(lv, way_in, &dist, &queue);
-            var reached = grid.CellSet.initEmpty();
-            while (flood.next()) |p| reached.set(grid.Level.idx(p));
-            s.connectTo(lv, k, &reached);
+            const joined = reachedFrom(lv, way_in);
+            s.connectTo(lv, k, &joined);
+            lv.set(k, .chest);
+            const kept = reachedFrom(lv, way_in);
+            for (grid.STEPS) |d| {
+                const n = k.add(d);
+                if (grid.Level.inside(n) and joined.isSet(grid.Level.idx(n)) and !kept.isSet(grid.Level.idx(n))) s.connectTo(lv, n, &kept);
+            }
         }
         const back = carve.sideAt(inner, s.dir().opposite(), carve.alongOf(s.dir(), r.centre()));
         lv.set(back, .chest);
         lv.set(back.sub(s.dir().across()), .chest);
         lv.set(s.door(), if (s.key != null) .locked_gate else .gate);
-        if (s.key) |k| lv.set(k, .chest);
         grid.mendProps(&lv.tile);
         gen.reshape(lv);
         lv.addTorch(lume.torchOver(inner, inner.lo.x));
+    }
+
+    fn reachedFrom(lv: *const grid.Level, from: P) grid.CellSet {
+        var dist: [grid.CELLS]i32 = undefined;
+        var queue: [grid.CELLS]u32 = undefined;
+        var flood = grid.Flood.init(lv, from, &dist, &queue);
+        var out = grid.CellSet.initEmpty();
+        while (flood.next()) |p| out.set(grid.Level.idx(p));
+        return out;
     }
 
     fn connectTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet) void {
@@ -239,6 +249,23 @@ test "the key chest never stands in the only way to the gate" {
         lv.tile[i] = .rock;
     };
     s.stamp(&lv);
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
+    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
+    try std.testing.expect(s.keyReachable(&dist));
+}
+
+test "a key chest on the only corridor to the gate leaves the gate reachable" {
+    const s = Spec{ .key = .{ .x = 30, .y = 21 } };
+    try std.testing.expect(s.valid());
+    var lv = grid.openFloor();
+    for (0..grid.CELLS) |i| {
+        const p = grid.Level.of(i);
+        if (p.x >= 20 and !(p.y == 21 and p.x <= 38)) lv.tile[i] = .rock;
+    }
+    s.stamp(&lv);
+    try std.testing.expectEqual(grid.Tile.chest, lv.at(s.key.?));
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
