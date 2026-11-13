@@ -10,7 +10,7 @@ const menu = @import("menu.zig");
 const keywords = @import("keywords.zig");
 
 pub const WIDTH: i32 = 640;
-const HEIGHT: i32 = 160;
+const HEIGHT: i32 = 180;
 pub const EDGE: i32 = 12;
 const BOTTOM: i32 = EDGE;
 pub const COVER: i32 = BOTTOM + HEIGHT;
@@ -18,10 +18,10 @@ const ORB_R: i32 = 48;
 const FILL_INSET: i32 = 8;
 const FILL_R: i32 = ORB_R - FILL_INSET;
 const ORB_INSET: i32 = 60;
-const ORB_Y: i32 = 101;
+const ORB_Y: i32 = 121;
 const ORB_GAP: i32 = 12;
 pub const SKILLS_MAX_W: i32 = WIDTH - 2 * (ORB_INSET + ORB_R + ORB_GAP);
-const PLATE_Y: i32 = 54;
+const PLATE_Y: i32 = 74;
 pub const PLATE_PAD: i32 = 8;
 pub const PLATE_H: i32 = 94;
 const SHADOW_DROP: i32 = 3;
@@ -44,6 +44,7 @@ const COUNT_INSET = mathx.P{ .x = 7, .y = 6 };
 
 comptime {
     std.debug.assert(STATUS_Y + STATUS_PX < PLATE_Y);
+    std.debug.assert(STATUS_Y + STATUS_PX < ORB_Y - ORB_R - LABEL_RISE);
     std.debug.assert(ORB_Y - ORB_R <= PLATE_Y and PLATE_Y + PLATE_H < ORB_Y + ORB_R);
     std.debug.assert(ORB_Y + ORB_R + ORB_SHADOW_DY + ORB_SHADOW_GROW <= HEIGHT);
 }

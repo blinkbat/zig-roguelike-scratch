@@ -107,8 +107,9 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   movement and range limits. Free aim stays free until the reticle lands on a legal enemy again; suggestions never
   pull it back from empty ground. This applies to projectile, melee and rush targeting.
   Projectile aiming opens without an enemy and accepts empty or dark cells within range and geometric line of sight.
-  Previews and automatic suggestions ignore unseen bodies and barrels. Confirmation fires even without a visible target;
-  nonpiercing flight stops at the first collision, including unseen interceptors.
+  Previews and automatic suggestions ignore unseen bodies and barrels. If the preview has no visible target, the first
+  confirmation asks without spending a turn or mana; confirming again at the same cell fires. Nonpiercing flight stops
+  at the first collision, including unseen interceptors.
   Leap destinations remain freely aimed. Selecting or replacing a target spends nothing and never fires automatically;
   the normal confirmation is still required. A direct mouse click on an enemy is explicit targeting and confirmation.
   Target memory clears on level changes, restarts and save loads.

@@ -26,6 +26,7 @@ The live HUD omits the hero-name label, enemy counters, gold tally and permanent
 
 - Target a 640-pixel-wide assembly, horizontally centered from `Game.screen`. Its width does not grow on a wider display.
 - Two matching 96-pixel orb frames flank the seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs cover its ends. The plate is 94px tall, at 70% opacity with a 25% shadow.
+- Keep the status row above the life and mana labels so long rows cannot cover resource values.
 - The minimap background uses the shared fog gray at 70% opacity. Unexplored texture cells are transparent so they do not obscure that background; terrain and markers retain their contrast.
 - Keep the log 12px from the left and bottom edges, 360px tall. Its width follows the free gutter beside the HUD, capped at 330px. It has no heading; text, background and border fade together to 10% of their base opacity at the top. Tooltips and item comparisons follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md): effects and properties lead, with no flavor text, and separate selected and equipped item cards.
 - Mount the assembly close to the bottom edge. Draw the map behind it and at both sides instead of reserving a full-width black footer.
