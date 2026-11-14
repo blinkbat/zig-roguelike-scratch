@@ -369,6 +369,7 @@ pub const BankPiece = enum(u8) {
     right,
 
     pub const COUNT = std.enums.values(BankPiece).len;
+    pub const SIDES = 2;
 
     pub fn of(west: bool, east: bool) ?BankPiece {
         return if (west) (if (east) .repeat else .right) else if (east) .left else null;
@@ -471,7 +472,7 @@ fn bankProfile(lv: *const grid.Level, q: [2]f32, comptime heights: Heights) ?f32
 
 const BankShape = struct {
     water: Ground,
-    pieces: [2]BankPiece,
+    pieces: [BankPiece.SIDES]BankPiece,
 
     fn of(lv: *const grid.Level, c: P) ?BankShape {
         const bank = bankAt(lv, c) orelse return null;

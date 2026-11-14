@@ -430,10 +430,7 @@ fn fires(lv: *const grid.Level) grid.CellSet {
 fn widened(cells: grid.CellSet, r: i32) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     var it = cells.iterator(.{});
-    while (it.next()) |i| {
-        var round = grid.Cells.around(grid.Level.of(i), r);
-        while (round.next()) |q| if (grid.Level.inside(q)) out.set(grid.Level.idx(q));
-    }
+    while (it.next()) |i| grid.markBox(&out, grid.Box.around(grid.Level.of(i), r));
     return out;
 }
 

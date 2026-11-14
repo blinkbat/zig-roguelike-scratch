@@ -126,7 +126,12 @@ pub const FS_HEAD =
     \\uniform sampler2D texture0;
     \\out vec4 finalColor;
     \\
-++ glslConsts(.{ .CLEAR_A = look.CLEAR_A, .CELLS = [2]f32{ grid.W, grid.H }, .LUMA = sky.LUMA });
+++ glslConsts(.{ .CLEAR_A = look.CLEAR_A, .CELLS = [2]f32{ grid.W, grid.H }, .LUMA = sky.LUMA }) ++
+    \\vec3 saturated(vec3 c, float s) {
+    \\    return mix(vec3(dot(c, LUMA)), c, s);
+    \\}
+    \\
+;
 
 pub const MAP_VIEW_FS =
     \\uniform vec2 origin;
@@ -193,7 +198,9 @@ pub const MapView = struct {
 };
 
 pub fn setMapView(p: anytype, v: MapView) void {
-    setUniform(p.shader, p.origin, v.origin);
-    setUniform(p.shader, p.cell, v.cell);
-    setUniform(p.shader, p.screen, v.screen);
+    setFields(p, v);
+}
+
+pub fn setFields(p: anytype, v: anytype) void {
+    inline for (std.meta.fields(@TypeOf(v))) |f| setUniform(p.shader, @field(p, f.name), @field(v, f.name));
 }

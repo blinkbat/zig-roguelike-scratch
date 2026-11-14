@@ -355,19 +355,26 @@ pub const Simulation = struct {
         return w.door(.{ .node = self.node, .door = k }).to;
     }
 
+    pub fn nodeHere(self: *const Simulation) ?*const atlas.Node {
+        const w = self.map orelse return null;
+        return &w.node[self.node];
+    }
+
+    pub fn script(self: *const Simulation) ?*const atlas.script.Script {
+        const w = self.map orelse return null;
+        return &w.script;
+    }
+
     pub fn outdoorsNow(self: *const Simulation) bool {
-        const w = self.map orelse return false;
-        return w.node[self.node].outdoor();
+        return (self.nodeHere() orelse return false).outdoor();
     }
 
     pub fn zooNow(self: *const Simulation) ?atlas.zoo.Spec {
-        const w = self.map orelse return null;
-        return w.node[self.node].zoo;
+        return (self.nodeHere() orelse return null).zoo;
     }
 
     fn climateNow(self: *const Simulation) climate.Climate {
-        const w = self.map orelse return .{};
-        return w.node[self.node].sky();
+        return (self.nodeHere() orelse return .{}).sky();
     }
 
     pub fn weatherNow(self: *const Simulation) climate.Now {

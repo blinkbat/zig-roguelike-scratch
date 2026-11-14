@@ -592,8 +592,7 @@ test "baked water sun samples preserve ground glints and raised surfaces across 
                         const q = light.Light.texelCentre(tx, ty);
                         const i = ty * light.Light.TEXELS_W + tx;
                         const c = mathx.cellOf(q);
-                        const corner = @as(usize, @intCast(c.y)) * grid.CORNERS_W + @as(usize, @intCast(c.x));
-                        const cloud = if (ray != null) model.cloudIn(.{ l.clouds[corner], l.clouds[corner + 1], l.clouds[corner + grid.CORNERS_W], l.clouds[corner + grid.CORNERS_W + 1] }, c, q) else 1;
+                        const cloud = if (ray != null) model.cloudIn(l.heldCorners(c), c, q) else 1;
                         const expected = l.waterGlint(&.{}, .initEmpty(), q, i, if (ray) |*r| r else null, cloud);
                         try std.testing.expectEqual(look.colourOf(expected, 1), l.texels.getPtrConst(.glints)[i]);
                         try std.testing.expectEqual(model.texelOf(l.at(&lv, &.{}, q), l.viewAt(q).lit), l.texels.getPtrConst(.map)[i]);

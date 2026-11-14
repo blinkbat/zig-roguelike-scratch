@@ -553,8 +553,7 @@ pub fn setLife(a: *actor.Actor, hp: i32, max: i32) void {
 }
 
 pub fn corridor(b: *atlas.Bespoke) void {
-    var x: i32 = 2;
-    while (x <= 12) : (x += 1) b.tile[grid.Level.idx(.{ .x = x, .y = 5 })] = .floor;
+    b.fill(grid.Box.between(.{ .x = 2, .y = 5 }, .{ .x = 12, .y = 5 }), .floor);
 }
 
 pub fn twoRooms(w: *atlas.Atlas) usize {

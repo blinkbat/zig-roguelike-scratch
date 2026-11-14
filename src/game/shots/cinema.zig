@@ -6,6 +6,7 @@ const grid = @import("../../map/grid.zig");
 const atlas = @import("../../map/atlas.zig");
 const hud = @import("../../ui/hud.zig");
 const light = @import("../../gfx/light.zig");
+const raster = @import("../../gfx/raster.zig");
 const cinema = @import("../../gfx/cinema.zig");
 const day = @import("../../map/day.zig");
 const fire = @import("../../map/fire.zig");
@@ -16,6 +17,8 @@ const game = @import("../../game.zig");
 const P = mathx.P;
 const CINEMA_DIR = @import("capture.zig").CINEMA_DIR;
 const capture = @import("capture.zig").capture;
+const capturef = @import("capture.zig").capturef;
+const SIZES = @import("capture.zig").SIZES;
 const differentPixels = @import("capture.zig").differentPixels;
 const neutralLens = @import("capture.zig").neutralLens;
 const drawInto = @import("capture.zig").drawInto;
@@ -106,13 +109,12 @@ fn captureFireSight(g: *game.Game, target: rl.RenderTexture2D) !void {
 }
 
 fn captureEased(g: *game.Game, target: rl.RenderTexture2D, times: []const f32, comptime way: []const u8) !void {
-    var path: [160]u8 = undefined;
     var elapsed: f32 = 0;
     for (times) |t| {
         game.harness.ease(g, t - elapsed);
         g.light.step(&g.sim.lv, t - elapsed);
         elapsed = t;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/visibility-" ++ way ++ "-{d:.0}ms.png", .{t * 1000}));
+        try capturef(g, target, CINEMA_DIR ++ "/visibility-" ++ way ++ "-{d:.0}ms.png", .{t * 1000});
     }
 }
 
@@ -121,7 +123,7 @@ fn captureLens(g: *game.Game) !void {
     const before = lens.options;
     defer lens.options = before;
     if (lens.program == null) return error.LensShaderMissing;
-    for ([_]P{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
+    for (SIZES) |size| {
         const shot = try targetAt(g, size);
         defer shot.close(g);
         poseWaterMirrors(g, day.NOON, true);
@@ -129,12 +131,11 @@ fn captureLens(g: *game.Game) !void {
         drawInto(g, shot.target);
         const base = try readTarget(shot.target);
         defer rl.unloadImage(base);
-        var path: [160]u8 = undefined;
-        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-off.png", .{size.y}));
+        try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-off.png", .{size.y});
         inline for (std.meta.fields(@TypeOf(lens.options))) |field| {
             lens.options = .neutral;
             @field(lens.options, field.name) = if (comptime std.mem.eql(u8, field.name, "saturation")) 0 else 1;
-            try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-{s}.png", .{ size.y, field.name }));
+            try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-{s}.png", .{ size.y, field.name });
             const image = try readTarget(shot.target);
             defer rl.unloadImage(image);
             if (differentPixels(base, image) == 0) return error.LensDidNotChangeFrame;
@@ -146,24 +147,24 @@ fn captureLens(g: *game.Game) !void {
             }
         }
         lens.options = .{ .lens_blur = 1, .perspective = 1, .vignette = 1, .saturation = 1.2, .warmth = 0.3 };
-        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-all.png", .{size.y}));
+        try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-all.png", .{size.y});
         const on_ms = try meanDraw(g, shot.target, CINEMA_WARM, CINEMA_FRAMES);
-        if (lens.scene.?.texture.width != size.x or lens.scene.?.texture.height != size.y or lens.spread.?.texture.width != size.x or lens.spread.?.texture.height != size.y) return error.LensResizeFailed;
+        if (!sizedTo(lens.scene.?, lens.spread.?, size)) return error.LensResizeFailed;
         lens.options = .neutral;
         if (try redrawnDiff(g, shot.target, base) != 0) return error.LensOffChangedFrame;
         std.debug.print("lens {d}p: off {d:.3} ms, all {d:.3} ms mean headless draw\n", .{ size.y, try meanDraw(g, shot.target, CINEMA_WARM, CINEMA_FRAMES), on_ms });
         std.debug.print("lens {d}p: independent effects, sharp middle, resize and exact restoration checked\n", .{size.y});
         lens.options = .{};
-        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-defaults.png", .{size.y}));
+        try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-defaults.png", .{size.y});
         game.character.openPause(g);
         g.pause_page = .visuals;
         g.pause_menu.at = 0;
-        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-options.png", .{size.y}));
+        try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-options.png", .{size.y});
         g.pause_menu.at = options_menu.index(.visuals, .set_all_to_0);
-        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-filters-menu.png", .{size.y}));
+        try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-filters-menu.png", .{size.y});
         g.pause_page = .display;
         g.pause_menu = .{};
-        try capture(g, shot.target, try std.fmt.bufPrintZ(&path, CINEMA_DIR ++ "/lens-{d}-display-menu.png", .{size.y}));
+        try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-display-menu.png", .{size.y});
         g.mode = .play;
     }
 }
@@ -250,7 +251,11 @@ fn checkCinema(g: *game.Game, target: rl.RenderTexture2D) !void {
         const resized = try targetAt(g, size);
         defer resized.close(g);
         drawInto(g, resized.target);
-        if (g.cinema.scene.?.texture.width != size.x or g.cinema.scene.?.texture.height != size.y or g.cinema.spread.?.texture.width != size.x or g.cinema.spread.?.texture.height != size.y) return error.CinemaResizeFailed;
+        if (!sizedTo(g.cinema.scene.?, g.cinema.spread.?, size)) return error.CinemaResizeFailed;
     }
     std.debug.print("cinema targets: 720p, 1080p and restored dimensions checked\n", .{});
+}
+
+fn sizedTo(scene: rl.RenderTexture2D, spread: rl.RenderTexture2D, size: P) bool {
+    return raster.extentOf(scene.texture).eq(size) and raster.extentOf(spread.texture).eq(size);
 }

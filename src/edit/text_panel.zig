@@ -140,6 +140,11 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
             f.cap = @min(cap, N);
         }
 
+        pub fn wheel(f: *Self, by: i32) void {
+            f.scroll = mathx.scrollTop(f.scroll, by, f.lines, f.rows);
+            f.reveal = false;
+        }
+
         fn revision(f: *const Self) Revision {
             return .{ .buf = f.buf, .n = f.n, .cursor = f.cursor, .anchor = f.anchor };
         }
@@ -431,7 +436,7 @@ pub const State = struct {
                 if (s.inScope(e)) s.results.appendAssumeCapacity(index);
             }
         }
-        s.top = widgets.clampTop(s.top, s.results.items.len, s.rows);
+        s.top = mathx.clampTop(s.top, s.results.items.len, s.rows);
         s.view_dirty = false;
     }
 
@@ -664,11 +669,10 @@ pub fn keys(ed: *editor.Editor) void {
     if (d.wheel != 0) {
         const by = WHEEL_ROWS * d.notch();
         if (raster.holds(s.passage_box, d.mouse)) {
-            s.draft.scroll = widgets.scrollTop(s.draft.scroll, by, s.draft.lines, s.draft.rows);
-            s.draft.reveal = false;
+            s.draft.wheel(by);
         } else if (raster.holds(s.nav_box, d.mouse)) {
-            s.nav_top = widgets.scrollTop(s.nav_top, by, s.nav_count, s.nav_rows);
-        } else if (raster.holds(s.list_box, d.mouse)) s.top = widgets.scrollTop(s.top, by, n, s.rows);
+            s.nav_top = mathx.scrollTop(s.nav_top, by, s.nav_count, s.nav_rows);
+        } else if (raster.holds(s.list_box, d.mouse)) s.top = mathx.scrollTop(s.top, by, n, s.rows);
     }
     if (d.nav != 0 and s.focus == .search and n > 0) {
         const at = if (s.selected) |sel| std.mem.indexOfScalar(usize, s.results.items, sel) else null;
@@ -719,7 +723,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
     f.rows = rows;
     if (f.reveal and focused) f.scroll = mathx.reveal(f.scroll, caret_line, rows);
     f.reveal = false;
-    f.scroll = widgets.clampTop(f.scroll, lines, rows);
+    f.scroll = mathx.clampTop(f.scroll, lines, rows);
     widgets.scrollbarIn(r, f.scroll, rows, lines);
     const first = f.scroll;
     widgets.scissorIn(ed.clip, r);
@@ -782,7 +786,7 @@ fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bot
     s.buildTree();
     const count = s.tree.items.len;
     s.nav_count = count;
-    s.nav_top = widgets.clampTop(s.nav_top, count, s.nav_rows);
+    s.nav_top = mathx.clampTop(s.nav_top, count, s.nav_rows);
     for (s.tree.items, 0..) |row, ordinal| {
         const group = s.groups.items[row.group];
         const label = switch (row.depth) {
@@ -836,7 +840,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     widgets.drawFit(&g.face, "Passages", TEXT, list_w, false, list_x, y, look.UI_GOLD);
     const list_y = y + LINE_H;
     s.rows = widgets.rowsIn(bottom - list_y - DETAIL - LEAD, ENTRY_H);
-    s.top = widgets.clampTop(s.top, s.results.items.len, s.rows);
+    s.top = mathx.clampTop(s.top, s.results.items.len, s.rows);
     s.list_box = raster.rect(list_x, list_y, list_w, @as(i32, @intCast(s.rows)) * ENTRY_H);
     if (s.data) |c| {
         const entry_w = list_w - ROW_PAD;

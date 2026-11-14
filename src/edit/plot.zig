@@ -203,8 +203,7 @@ pub fn keys(ed: *editor.Editor) void {
         const by = d.notch() * WHEEL_NOTCH;
         const scrolls = if (s.focus) |f| f.multiline() else false;
         if (scrolls and raster.holds(s.field_box, d.mouse)) {
-            s.field.scroll = widgets.scrollTop(s.field.scroll, by, s.field.lines, s.field.rows);
-            s.field.reveal = false;
+            s.field.wheel(by);
         } else {
             s.list.wheel(d.mouse, by);
             s.lines.wheel(d.mouse, by);

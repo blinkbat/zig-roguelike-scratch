@@ -109,25 +109,20 @@ pub const Scene = struct {
         var is = Issues{ .unlinked = nd.unlinked() };
         const s = map.start;
         if (s.node == node) is.start_walled = !self.lv.walkable(s.at);
-        var flood: ?grid.Flood = null;
-        if (self.start_at) |at| flood = grid.Flood.init(&self.lv, at, &self.reach_dist, &self.reach_queue);
-        for (nd.doors()) |d| {
-            if (!self.lv.walkable(d.at)) continue;
-            if (flood) |*f| {
-                f.seed(d.at);
-            } else flood = grid.Flood.init(&self.lv, d.at, &self.reach_dist, &self.reach_queue);
-        }
-        if (flood) |*f| {
-            while (f.next()) |_| {}
+        var f = grid.Flood.empty(&self.lv, &self.reach_dist, &self.reach_queue);
+        if (self.start_at) |at| f.seed(at);
+        for (nd.doors()) |d| if (self.lv.walkable(d.at)) f.seed(d.at);
+        if (f.tail > 0) {
+            _ = f.drain();
             if (nd.zoo) |z| {
-                const approach = z.approach();
+                const approach = grid.Level.idx(z.approach());
                 const key_reached = z.keyReachable(&self.reach_dist);
-                if (self.reach_dist[grid.Level.idx(approach)] >= 0 and key_reached) {
+                if (self.reach_dist[approach] >= 0 and key_reached) {
                     f.seed(z.threshold());
-                    while (f.next()) |_| {}
+                    _ = f.drain();
                 }
             }
-        } else @memset(&self.reach_dist, -1);
+        }
         for (0..grid.CELLS) |i| {
             if (!self.cutOff(i)) continue;
             is.cut_off += 1;

@@ -18,7 +18,7 @@ comptime {
 }
 
 pub const Foe = struct { kind: actor.Kind, at: P };
-const NO_FOE = Foe{ .kind = std.enums.values(actor.Kind)[0], .at = ORIGIN };
+pub const NO_FOE = Foe{ .kind = std.enums.values(actor.Kind)[0], .at = ORIGIN };
 
 pub fn bodiesOf(foes: []const Foe) usize {
     var n = actor.most(actor.HERO);
@@ -77,15 +77,11 @@ pub const Section = struct {
     }
 
     pub fn box(self: *const Section) ?grid.Box {
-        var lo = grid.SIZE;
-        var hi = ORIGIN;
-        for (self.tile, 0..) |t, i| {
-            if (t == null) continue;
-            const p = grid.Level.of(i);
-            lo = lo.min(p);
-            hi = hi.max(p.add(.{ .x = 1, .y = 1 }));
-        }
-        return if (lo.x < hi.x) .{ .lo = lo, .hi = hi } else null;
+        return grid.boundsWhere(self, painted);
+    }
+
+    fn painted(self: *const Section, i: usize) bool {
+        return self.tile[i] != null;
     }
 
     pub fn empty(self: *const Section) bool {

@@ -72,13 +72,14 @@ pub const Cloud = struct {
         self.held = @max(self.held, s);
     }
 
-    pub fn step(self: *Cloud, lv: *const grid.Level, dt: f32) void {
+    /// `seen` is the lit the picture shows, which may lag `lv.lit`.
+    pub fn step(self: *Cloud, lv: *const grid.Level, seen: *const [grid.CELLS]bool, dt: f32) void {
         self.t.step(dt);
         self.held -= dt;
         if (self.held > 0) return;
         self.held = 0;
         const k = mathx.easing(dt, EASE);
-        for (&lv.lit, 0..) |lit, i| {
+        for (seen, 0..) |lit, i| {
             if (!lit) continue;
             inline for (comptime std.enums.values(grid.Gas)) |kind| {
                 const t = &self.tint.getPtr(kind)[i];
@@ -158,12 +159,12 @@ pub const Cloud = struct {
 
     /// Whether any gas is drawn over `box`, which must cover every cell a baked texel reads.
     fn tinted(self: *const Cloud, box: grid.Box) bool {
-        const lo: usize = @intCast(@max(0, box.lo.x));
-        const hi: usize = @intCast(@min(grid.W, box.hi.x));
-        if (hi <= lo) return false;
-        const top = @max(0, box.lo.y);
-        const bottom = @min(grid.H, box.hi.y);
-        if (bottom <= top) return false;
+        const clip = box.grown(0);
+        if (clip.hi.x <= clip.lo.x or clip.hi.y <= clip.lo.y) return false;
+        const lo: usize = @intCast(clip.lo.x);
+        const hi: usize = @intCast(clip.hi.x);
+        const top = clip.lo.y;
+        const bottom = clip.hi.y;
         if (lo == 0 and hi == grid.W) {
             const start: usize = @intCast(top * grid.W);
             const end: usize = @intCast(bottom * grid.W);
@@ -321,16 +322,16 @@ test "the drawn cloud eases to the gas in sight, and out of sight keeps what was
     lv.lit[i] = true;
     const dt = mathx.TEST_DT;
     var t: f32 = 0;
-    while (shown[i] < tintOf(40) * 0.95) : (t += dt) c.step(&lv, dt);
-    for (0..240) |_| c.step(&lv, dt);
+    while (shown[i] < tintOf(40) * 0.95) : (t += dt) c.step(&lv, &lv.lit, dt);
+    for (0..240) |_| c.step(&lv, &lv.lit, dt);
     try std.testing.expect(t > 0.2 and t < 0.6);
     try std.testing.expectEqual(tintOf(40), shown[i]);
     lv.lit[i] = false;
     lv.gas[i] = 0;
-    for (0..240) |_| c.step(&lv, dt);
+    for (0..240) |_| c.step(&lv, &lv.lit, dt);
     try std.testing.expectEqual(tintOf(40), shown[i]);
     lv.lit[i] = true;
-    for (0..480) |_| c.step(&lv, dt);
+    for (0..480) |_| c.step(&lv, &lv.lit, dt);
     try std.testing.expectEqual(@as(f32, 0), shown[i]);
 }
 

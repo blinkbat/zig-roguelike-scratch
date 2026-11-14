@@ -16,6 +16,7 @@ const MIN_PIXELS = @import("capture.zig").MIN_PIXELS;
 const SHOTS_DIR = @import("capture.zig").SHOTS_DIR;
 const WATER_CLIFFS_DIR = SHOTS_DIR ++ "/water-cliffs";
 const capture = @import("capture.zig").capture;
+const capturef = @import("capture.zig").capturef;
 const drawInto = @import("capture.zig").drawInto;
 const exportImage = @import("capture.zig").exportImage;
 const exportTarget = @import("capture.zig").exportTarget;
@@ -68,8 +69,7 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
     for (lands, 0..) |land, n| {
         game.harness.retile(&g.sim.lv, if (n == 0) .dirt else lands[n - 1], land);
         studyLit(g, true, day.NOON);
-        var path: [128]u8 = undefined;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/{s}-day.png", .{@tagName(land)}));
+        try capturef(g, target, WATER_CLIFFS_DIR ++ "/{s}-day.png", .{@tagName(land)});
     }
     for (&g.sim.lv.tile, 0..) |*t, i| if (t.* == .crop) {
         t.* = if (grid.Level.of(i).x < 21) .grass else .dirt;
@@ -78,11 +78,10 @@ pub fn captureWaterCliffs(g: *game.Game) !void {
     try capture(g, target, WATER_CLIFFS_DIR ++ "/mixed-day.png");
     for ([_]struct { hour: f32, name: []const u8 }{ .{ .hour = MORNING, .name = "morning" }, .{ .hour = EVENING, .name = "evening" } }) |sun| {
         studyLit(g, true, sun.hour);
-        var path: [128]u8 = undefined;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/sun-{s}.png", .{sun.name}));
+        try capturef(g, target, WATER_CLIFFS_DIR ++ "/sun-{s}.png", .{sun.name});
         g.light.options.shadows = false;
         g.light.settle(&g.sim.lv);
-        try capture(g, target, try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/sun-{s}-off.png", .{sun.name}));
+        try capturef(g, target, WATER_CLIFFS_DIR ++ "/sun-{s}-off.png", .{sun.name});
         g.light.options.shadows = true;
         g.light.settle(&g.sim.lv);
     }
@@ -168,8 +167,7 @@ fn captureFootfalls(g: *game.Game, target: rl.RenderTexture2D) !void {
         var motes: usize = 0;
         for (g.pic.fx.motes) |m| motes += @intFromBool(m.life > 0);
         if (motes == 0) return error.FootfallParticlesMissing;
-        var path: [128]u8 = undefined;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/footfall-{s}.png", .{@tagName(tile)}));
+        try capturef(g, target, WATER_CLIFFS_DIR ++ "/footfall-{s}.png", .{@tagName(tile)});
     }
 }
 
@@ -363,8 +361,7 @@ pub fn captureWater(g: *game.Game, target: rl.RenderTexture2D) !void {
     const minute = g.sim.clock;
     for (0..FRAMES) |i| {
         for (0..EVERY) |_| game.update(g, mathx.FRAME_DT);
-        var path: [80]u8 = undefined;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-reflections/{d:0>2}.png", .{i}));
+        try capturef(g, target, SHOTS_DIR ++ "/water-reflections/{d:0>2}.png", .{i});
     }
     const elapsed = g.light.t.at() - before;
     if (elapsed < FRAMES * EVERY * mathx.FRAME_DT - 0.01 or !std.meta.eql(minute, g.sim.clock)) return error.WaterIdleClock;

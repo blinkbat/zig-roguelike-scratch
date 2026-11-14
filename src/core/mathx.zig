@@ -6,6 +6,18 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
+pub fn lerpFields(comptime T: type, a: T, b: T, t: f32) T {
+    var out: T = undefined;
+    inline for (std.meta.fields(T)) |f| {
+        const k: f.type = switch (@typeInfo(f.type)) {
+            .vector => @splat(t),
+            else => t,
+        };
+        @field(out, f.name) = @field(a, f.name) + (@field(b, f.name) - @field(a, f.name)) * k;
+    }
+    return out;
+}
+
 pub fn spoke(at: f32, n: anytype) f32 {
     return at * TAU / @as(f32, @floatFromInt(n));
 }
@@ -190,6 +202,14 @@ pub fn reveal(top: usize, at: usize, rows: usize) usize {
     if (at < top) return at;
     if (at >= top + rows) return at + 1 - rows;
     return top;
+}
+
+pub fn scrollTop(top: usize, by: i32, n: usize, rows: usize) usize {
+    return nudge(top, by, (n -| rows) + 1);
+}
+
+pub fn clampTop(top: usize, n: usize, rows: usize) usize {
+    return @min(top, n -| rows);
 }
 
 /// The value `by` places on from `v` in `list`, wrapping round; counted from `missing` when `v` is not in it.
@@ -602,6 +622,10 @@ pub fn unitOf(h: u64) f32 {
 pub fn cellHash(seed: u64, p: P) u64 {
     const coordinates = [2]i32{ p.x, p.y };
     return std.hash.Wyhash.hash(seed, std.mem.asBytes(&coordinates));
+}
+
+pub fn cellRoll(seed: u64, in: u64, p: P) u64 {
+    return cellHash(seed, p) % in;
 }
 
 pub fn cycle(comptime T: type, v: T, by: i32) T {

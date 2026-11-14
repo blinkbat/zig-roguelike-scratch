@@ -299,13 +299,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
                 for (0..h) |yy| {
                     for (0..w) |xx| {
                         const q = P{ .x = x + @as(i32, @intCast(xx)), .y = y + @as(i32, @intCast(yy)) };
-                        const t: grid.Tile = switch (grid.Tile.ofLetter(SYMBOLS[out[yy * w + xx]]).?) {
-                            .wall => if (rng.percent(p.decay)) .rubble else .wall,
-                            .grass => pal.open,
-                            .floor => .floor,
-                            else => unreachable,
-                        };
-                        lv.set(q, t);
+                        const t = grid.Tile.ofLetter(SYMBOLS[out[yy * w + xx]]).?;
+                        lv.set(q, if (t == .wall) (if (rng.percent(p.decay)) .rubble else .wall) else if (t == .grass) pal.open else t);
                     }
                 }
             }

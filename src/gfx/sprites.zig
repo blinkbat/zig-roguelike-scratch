@@ -136,7 +136,7 @@ pub const Sprites = struct {
     fn alternateAt(self: *const Sprites, g: ground.Ground, p: mathx.P) ?rl.Texture2D {
         switch (g) {
             inline else => |k| if (comptime sprite_assets.GROUND_ALTERNATES.get(k)) |alts| {
-                const roll = sprite_assets.rollIn(alts.seed, alts.in, p);
+                const roll = mathx.cellRoll(alts.seed, alts.in, p);
                 inline for (alts.fields, 0..) |name, i| {
                     if (roll == i) return @field(self, name);
                 }
@@ -246,7 +246,7 @@ pub const Sprites = struct {
         while (points.next()) |p| {
             const piece = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
             const at = cellAt(origin, p, px);
-            for (0..2) |side| {
+            for (0..ground.BankPiece.SIDES) |side| {
                 const depth = beds.ground(piece.wetAt(p, side)) orelse continue;
                 const tex = self.cliffOf(depth, false) orelse continue;
                 if (face) |f| {
@@ -304,7 +304,7 @@ pub const Sprites = struct {
         while (points.next()) |p| {
             const piece = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
             const at = cellAt(origin, p, px);
-            for (0..2) |side| {
+            for (0..ground.BankPiece.SIDES) |side| {
                 const north = p.add(ground.AROUND[ground.NW_AT + side * ground.ACROSS].d);
                 const gr = beds.ground(north) orelse continue;
                 const depth = beds.ground(piece.wetAt(p, side)) orelse continue;
@@ -314,7 +314,7 @@ pub const Sprites = struct {
                 raster.blit(fill.piece.tex, fill.lowerQuarter(side), quarterRect(at, px, side), look.LIT);
                 if (reflective) rl.endShaderMode();
             }
-            for (0..2) |side| {
+            for (0..ground.BankPiece.SIDES) |side| {
                 const land = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = if (piece.outside(side)) 0 else -1 });
                 const depth = beds.ground(piece.wetAt(p, side)) orelse continue;
                 const cap = self.cliffOf(depth, true) orelse continue;
@@ -616,9 +616,9 @@ const WaterBand = enum {
 };
 
 comptime {
-    const size = mathx.P{ .x = std.enums.values(WaterBand).len * ground.COLS * look.SPRITE_PX, .y = ground.ROWS * look.SPRITE_PX };
+    const size = sprite_assets.sheetSize(std.enums.values(WaterBand).len * ground.COLS, ground.ROWS);
     for (sprite_assets.WATER_EDGES) |e| std.debug.assert(std.meta.eql(sprite_assets.pngSize(@field(sprite_assets.SOURCES, e.name)), size));
-    std.debug.assert(std.meta.eql(sprite_assets.pngSize(sprite_assets.SOURCES.shallows_water_cap), mathx.P{ .x = ground.BankPiece.COUNT * look.SPRITE_PX, .y = look.SPRITE_PX }));
+    std.debug.assert(std.meta.eql(sprite_assets.pngSize(sprite_assets.SOURCES.shallows_water_cap), sprite_assets.sheetSize(ground.BankPiece.COUNT, 1)));
 }
 test "the hud border's size and corner cut are the ones its export script checks" {
     const path = "tools/hud_art/export_border.lua";

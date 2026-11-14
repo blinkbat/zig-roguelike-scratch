@@ -69,8 +69,7 @@ pub const Occlusion = struct {
     hidden: f32 = 0,
 
     pub fn set(self: Occlusion, p: anytype) void {
-        shaders.setUniform(p.shader, p.body, self.body);
-        shaders.setUniform(p.shader, p.hidden, self.hidden);
+        shaders.setFields(p, self);
     }
 };
 
@@ -509,8 +508,7 @@ pub const Focused = struct {
     pub const sharp: Focused = .{};
 
     pub fn set(self: Focused, p: anytype) void {
-        shaders.setUniform(p.shader, p.texel, self.texel);
-        shaders.setUniform(p.shader, p.strength, self.strength);
+        shaders.setFields(p, self);
     }
 };
 
@@ -549,7 +547,7 @@ pub const LOOT_GLOW: f32 = 0.1;
 const SHINE_SEED: u64 = 0x5417E;
 const SHINE_PHASES = 1000;
 pub fn shineSweep(seconds: f32, p: mathx.P) ?f32 {
-    const phase = mathx.cellHash(SHINE_SEED, p) % SHINE_PHASES;
+    const phase = mathx.cellRoll(SHINE_SEED, SHINE_PHASES, p);
     const t = @mod(seconds + @as(f32, @floatFromInt(phase)) / SHINE_PHASES * SHINE_PERIOD_S, SHINE_PERIOD_S);
     if (t >= SHINE_WIPE_S) return null;
     return mathx.lerpF(-SHINE_WIDTH, 1 + SHINE_WIDTH, t / SHINE_WIPE_S);

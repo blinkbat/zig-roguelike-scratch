@@ -313,6 +313,8 @@ pub const Autosave = struct {
     slot: usize,
     bytes: std.ArrayList(u8),
     snapshot: ?*format.Snapshot = null,
+    /// The run's map, fixed for an autosave's life, that `snapshot.map` already copies.
+    mapped: ?*const atlas.Atlas = null,
     since: f32 = GAP_S,
     /// Copy the run on the frame, then write the snapshot off-thread.
     writer: ?std.Thread = null,
@@ -364,10 +366,11 @@ pub const Autosave = struct {
                 return;
             };
         }
-        format.capture(g, self.snapshot.?) catch |e| {
+        format.captureOver(g, self.snapshot.?, g.sim.map != null and self.mapped == g.sim.map) catch |e| {
             self.failed = e;
             return;
         };
+        self.mapped = g.sim.map;
         self.finished.store(false, .release);
         self.writer = std.Thread.spawn(.{}, writeOff, .{self}) catch blk: {
             writeOff(self);

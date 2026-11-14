@@ -20,6 +20,8 @@ const areas = @import("../../play/area.zig");
 const shock = @import("../../play/shock.zig");
 const fireball = @import("../../play/fireball.zig");
 const heroes = @import("../../play/hero.zig");
+const day = @import("../../map/day.zig");
+const scene = @import("../scene.zig");
 const P = mathx.P;
 
 test "terrain follows every actor across movement and leaves base and saved buildup unchanged" {
@@ -458,6 +460,32 @@ test "grass burning out while a fireball flies stays drawn as grass under its he
         try std.testing.expectEqual(grid.Tile.grass, g.pic.tileShown(&g.sim, old));
         harness.drawnOut(g);
         try std.testing.expectEqual(fire.ASH, g.pic.tileShown(&g.sim, old));
+    }
+    try std.testing.expect(held > 0);
+}
+
+test "a remembered barrel a fireball breaks in the dark stays drawn until the blast lands, though its flames light the cell first" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const barrel = P{ .x = 26, .y = 20 };
+    var held: usize = 0;
+    for (0..harness.TRIES) |seed| {
+        harness.heroArena(g, .wizard, from, &.{});
+        carve.box(&g.sim.lv, grid.Box.around(barrel, 3), .grass);
+        g.sim.lv.putBarrel(barrel);
+        g.sim.clock = day.Clock.at(day.NOON);
+        game.settle(g);
+        g.sim.clock = day.Clock.at(day.DEAD_OF_NIGHT);
+        game.castSight(g, from);
+        try std.testing.expect(g.sim.lv.inLos(barrel) and !g.sim.lv.isLit(barrel) and scene.barrelShownAt(g, barrel));
+        g.sim.rng = mathx.Rng.init(seed);
+        harness.aimAt(g, .fireball, barrel);
+        if (g.sim.lv.barrelSeen(barrel) or !g.sim.lv.isLit(barrel)) continue;
+        held += 1;
+        try std.testing.expect(scene.barrelShownAt(g, barrel));
+        harness.drawnOut(g);
+        try std.testing.expect(!scene.barrelShownAt(g, barrel));
     }
     try std.testing.expect(held > 0);
 }

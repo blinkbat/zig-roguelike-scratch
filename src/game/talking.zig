@@ -11,13 +11,8 @@ const panel = @import("../ui/talk.zig");
 const game = @import("../game.zig");
 const P = mathx.P;
 
-fn scriptOf(g: *const game.Game) ?*const script.Script {
-    const w = g.sim.map orelse return null;
-    return &w.script;
-}
-
 pub fn afterTurn(g: *game.Game) void {
-    const s = scriptOf(g) orelse return;
+    const s = g.sim.script() orelse return;
     if (g.mode == .dead) return;
     g.sim.plot.turn(s, g.sim.world(), &g.sim.log);
     restand(g);
@@ -25,7 +20,7 @@ pub fn afterTurn(g: *game.Game) void {
 
 /// On arriving at a node, no time passing.
 pub fn arrived(g: *game.Game) void {
-    const s = scriptOf(g) orelse return;
+    const s = g.sim.script() orelse return;
     g.sim.plot.evaluate(s, g.sim.world(), &g.sim.log);
     restand(g);
     g.pic.showPlot(&g.sim);
@@ -70,7 +65,7 @@ pub fn restand(g: *game.Game) void {
 }
 
 pub fn beside(g: *game.Game) ?usize {
-    const s = scriptOf(g) orelse return null;
+    const s = g.sim.script() orelse return null;
     const at = g.sim.heroAt() orelse return null;
     var cells = grid.Cells.around(at, game.INTERACT_REACH);
     while (cells.next()) |p| {
@@ -82,7 +77,7 @@ pub fn beside(g: *game.Game) ?usize {
 }
 
 pub fn speak(g: *game.Game, npc: usize) void {
-    const s = scriptOf(g) orelse return;
+    const s = g.sim.script() orelse return;
     if (npc >= s.npc_n) return;
     const who = &s.npc[npc];
     if (g.sim.heroAt()) |at| if (g.sim.plot.spotOf(s, npc)) |there| g.pic.turnHero(&g.sim, there.x - at.x);
@@ -111,7 +106,7 @@ pub fn due(g: *game.Game) bool {
         return true;
     }
     if (g.sim.plot.asked == null or !g.pic.quiet() or g.sim.travel != null) return false;
-    const s = scriptOf(g) orelse {
+    const s = g.sim.script() orelse {
         g.sim.plot.asked = null;
         return false;
     };
@@ -142,7 +137,7 @@ fn figureOf(g: *const game.Game, s: *const script.Script, ln: *const script.Line
 }
 
 pub fn step(g: *game.Game) void {
-    const s = scriptOf(g) orelse return finished(g);
+    const s = g.sim.script() orelse return finished(g);
     var shown: Shown = .{ .view = undefined };
     if (!shownOf(g, s, &shown)) return finished(g);
     const w = g.sim.world();
@@ -173,7 +168,7 @@ fn finished(g: *game.Game) void {
 }
 
 pub fn draw(g: *game.Game) void {
-    const s = scriptOf(g) orelse return;
+    const s = g.sim.script() orelse return;
     var shown: Shown = .{ .view = undefined };
     if (!shownOf(g, s, &shown)) return;
     panel.draw(&g.face, &g.sprites, g.screen, shown.view, &shown.layout);
@@ -189,11 +184,7 @@ const trade = @import("../play/trade.zig");
 fn testWorld(text: []const u8) !*atlas.Atlas {
     const w = try atlas.testAtlas();
     errdefer std.testing.allocator.destroy(w);
-    const n = w.add(.{ .bespoke = .{} }).?;
-    const b = &w.node[n].plan.bespoke;
-    var floor = grid.Box.sized(.{ .x = 2, .y = 2 }, 20, 12).cells();
-    while (floor.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
-    w.start = .{ .node = n, .at = .{ .x = 5, .y = 5 } };
+    _ = w.oneRoom(grid.Box.sized(.{ .x = 2, .y = 2 }, 20, 12), .{ .x = 5, .y = 5 });
     try script_text.readAlone(text, &w.script, w.node_n);
     return w;
 }
@@ -268,7 +259,7 @@ test "a choice clicked while confirm is pressed is one pick" {
     game.heroStep(g, .e, 0);
     try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
     var shown: Shown = .{ .view = undefined };
-    try std.testing.expect(shownOf(g, scriptOf(g).?, &shown));
+    try std.testing.expect(shownOf(g, g.sim.script().?, &shown));
     g.st = .{ .device = .keys, .click = true, .pointer = raster.middleAt(shown.layout.rows[0]), .pressed = .initOne(menu.CONFIRM) };
     game.update(g, 0);
     try std.testing.expectEqual(@as(u8, 1), g.sim.plot.talk.?.line);

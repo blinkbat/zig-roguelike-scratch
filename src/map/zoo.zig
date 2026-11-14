@@ -29,7 +29,7 @@ pub const Spec = struct {
     }
 
     pub fn inside(s: *const Spec) grid.Box {
-        return s.room().grown(-1);
+        return s.room().inner();
     }
 
     pub fn reserved(s: *const Spec) grid.Box {
@@ -89,8 +89,7 @@ pub const Spec = struct {
 
     pub fn cells(s: *const Spec) grid.CellSet {
         var out = grid.CellSet.initEmpty();
-        var it = s.room().cells();
-        while (it.next()) |p| out.set(grid.Level.idx(p));
+        grid.markBox(&out, s.room());
         if (s.key) |k| out.set(grid.Level.idx(k));
         return out;
     }
@@ -315,7 +314,7 @@ test "every zoo entrance keeps its walls and room hidden before opening" {
         while (it.next()) |p| try std.testing.expect(!seen[grid.Level.idx(p)]);
         it = s.room().cells();
         while (it.next()) |p| {
-            if (!s.inside().holds(p) and !p.eq(s.door())) try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
+            if (s.room().onEdge(p) and !p.eq(s.door())) try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
         }
         var pool = actor.Pool{};
         var inventory = Inventory{};
@@ -332,12 +331,12 @@ test "placing a zoo leaves an unrelated sealed room sealed" {
     var lv = grid.openFloor();
     const sealed = grid.Box.sized(.{ .x = 10, .y = 10 }, 7, 7);
     var it = sealed.cells();
-    while (it.next()) |p| if (!sealed.grown(-1).holds(p)) {
+    while (it.next()) |p| if (sealed.onEdge(p)) {
         lv.set(p, .wall);
     };
     s.stamp(&lv);
     it = sealed.cells();
-    while (it.next()) |p| if (!sealed.grown(-1).holds(p)) {
+    while (it.next()) |p| if (sealed.onEdge(p)) {
         try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
     };
 }
@@ -350,10 +349,10 @@ test "a zoo whose ring already meets open ground carves nothing into a nearer se
     };
     const vault = grid.Box.sized(s.approach().add(.{ .x = 2, .y = -3 }), 5, 7);
     var it = vault.cells();
-    while (it.next()) |p| lv.set(p, if (vault.grown(-1).holds(p)) .floor else .wall);
+    while (it.next()) |p| lv.set(p, if (vault.onEdge(p)) .wall else .floor);
     s.stamp(&lv);
     it = vault.cells();
-    while (it.next()) |p| if (!vault.grown(-1).holds(p)) {
+    while (it.next()) |p| if (vault.onEdge(p)) {
         try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
     };
     var dist: [grid.CELLS]i32 = undefined;

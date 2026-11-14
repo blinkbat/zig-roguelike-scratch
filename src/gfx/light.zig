@@ -279,11 +279,12 @@ pub const Light = struct {
 
     pub fn castersIn(self: *const Light, box: grid.Box) u16 {
         const w = grid.CORNERS_W;
-        const a: usize = @intCast(std.math.clamp(box.lo.x, 0, grid.W));
-        const b: usize = @intCast(std.math.clamp(box.lo.y, 0, grid.H));
-        const c: usize = @intCast(std.math.clamp(box.hi.x, 0, grid.W));
-        const d: usize = @intCast(std.math.clamp(box.hi.y, 0, grid.H));
-        if (c <= a or d <= b) return 0;
+        const clip = box.grown(0);
+        if (clip.hi.x <= clip.lo.x or clip.hi.y <= clip.lo.y) return 0;
+        const a: usize = @intCast(clip.lo.x);
+        const b: usize = @intCast(clip.lo.y);
+        const c: usize = @intCast(clip.hi.x);
+        const d: usize = @intCast(clip.hi.y);
         return self.casting[d * w + c] + self.casting[b * w + a] - self.casting[b * w + c] - self.casting[d * w + a];
     }
 
@@ -390,18 +391,25 @@ pub const Light = struct {
 
     /// `cloud` is the share of the sky's light the clouds let through, read only with a `ray`.
     pub fn shade(self: *const Light, lv: *const grid.Level, torches: []const model.TorchIx, effects: model.EffectSet, q: [2]f32, map_at: ?usize, v: View, ray: ?*const model.SunRay, cloud: f32) model.Rgb {
-        return self.shadeWithSun(lv, dual.LiveBanks{ .lv = lv }, torches, effects, q, map_at, v, ray, cloud).colour;
+        return self.shadeWithSun(lv, dual.LiveBanks{ .lv = lv }, torches, effects, q, map_at, v, ray, cloud, self.floors()).colour;
     }
 
     const Shaded = struct { colour: model.Rgb, sun: ?f32 = null };
 
-    fn shadeWithSun(self: *const Light, lv: *const grid.Level, banks: anytype, torches: []const model.TorchIx, effects: model.EffectSet, q: [2]f32, map_at: ?usize, v: View, ray: ?*const model.SunRay, cloud: f32) Shaded {
+    const Floors = struct { memory: model.Rgb, view: model.Rgb };
+
+    fn floors(self: *const Light) Floors {
+        const memory = self.memoryFloor();
+        return .{ .memory = memory, .view = @max(memory, self.ambientOf()) };
+    }
+
+    fn shadeWithSun(self: *const Light, lv: *const grid.Level, banks: anytype, torches: []const model.TorchIx, effects: model.EffectSet, q: [2]f32, map_at: ?usize, v: View, ray: ?*const model.SunRay, cloud: f32, under: Floors) Shaded {
         const sight = v.sight;
         const memory = v.memory;
         if (memory <= model.FAINT) return .{ .colour = @splat(0) };
         var sun: ?f32 = null;
-        const floor = self.memoryFloor();
-        var view = @max(floor, self.ambientOf());
+        const floor = under.memory;
+        var view = under.view;
         if (sight > model.FAINT) {
             const s = model.Spot.of(lv, q);
             view += self.carried(s);
@@ -449,10 +457,11 @@ pub const Light = struct {
         const c0 = model.P{ .x = @divFloor(t0.x, SUB), .y = @divFloor(t0.y, SUB) };
         if (ray != null) self.cloudsOver(c0, .{ .x = std.math.divCeil(i32, t1.x, SUB) catch unreachable, .y = std.math.divCeil(i32, t1.y, SUB) catch unreachable });
         const same_terrain = std.mem.eql(grid.Tile, &lv.tile, &self.scratch.tile);
+        const under = self.floors();
         var c = model.P{ .x = 0, .y = c0.y };
         while (c.y * SUB < t1.y) : (c.y += 1) {
             c.x = c0.x;
-            while (c.x * SUB < t1.x) : (c.x += 1) self.bakeCell(lv, torches, c, t0, t1, ray, same_terrain);
+            while (c.x * SUB < t1.x) : (c.x += 1) self.bakeCell(lv, torches, c, t0, t1, ray, same_terrain, under);
         }
     }
 
@@ -491,12 +500,12 @@ pub const Light = struct {
         };
     }
 
-    fn heldCorners(self: *const Light, c: model.P) [4]f32 {
+    pub fn heldCorners(self: *const Light, c: model.P) [4]f32 {
         const k = cornerAt(c);
         return .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + grid.CORNERS_W], self.clouds[k + grid.CORNERS_W + 1] };
     }
 
-    fn bakeCell(self: *Light, lv: *const grid.Level, torches: []const model.TorchIx, c: model.P, t0: model.P, t1: model.P, ray: ?model.SunRay, same_terrain: bool) void {
+    fn bakeCell(self: *Light, lv: *const grid.Level, torches: []const model.TorchIx, c: model.P, t0: model.P, t1: model.P, ray: ?model.SunRay, same_terrain: bool, under: Floors) void {
         const fade = self.visibility.fadeOf(c);
         const dark = if (fade.flat) |v| v == 0 else false;
         const x0 = @max(t0.x, c.x * SUB);
@@ -538,7 +547,7 @@ pub const Light = struct {
                 const v = fade.view(patch.sightAt(ground, q[0], q[1]), q);
                 fog[i] = look.fade(rl.Color.white, 1 - v.memory);
                 const cloud = if (ray != null) model.cloudIn(corners, c, q) else 1;
-                const shaded = self.shadeWithSun(lv, &self.banks, torches, effects, q, i, v, if (ray) |*r| r else null, cloud);
+                const shaded = self.shadeWithSun(lv, &self.banks, torches, effects, q, i, v, if (ray) |*r| r else null, cloud, under);
                 map[i] = model.texelOf(shaded.colour, v.lit);
                 if (self.options.water_glints and wet and v.lit > model.FAINT)
                     glints[i] = look.colourOf(self.waterGlintWithSun(torches, effects, q, i, if (ray) |*r| r else null, cloud, if (same_terrain) shaded.sun else null), 1);

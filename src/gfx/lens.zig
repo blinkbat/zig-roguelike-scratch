@@ -27,6 +27,9 @@ pub const Options = struct {
 };
 
 const PERSPECTIVE: f32 = 0.10;
+const BLUR_SIGMAS: f32 = 3;
+const BLUR_TAPS_PER_SIGMA: f32 = 6;
+const BLUR_TAPS_MAX: i32 = @intFromFloat(BLUR_SIGMAS * BLUR_TAPS_PER_SIGMA);
 const Program = struct { shader: rl.Shader, screen: i32, direction: i32, lens_blur: i32, perspective: i32, vignette: i32, saturation: i32, warmth: i32, film_grain: i32, scanlines: i32, chromatic_aberration: i32, sepia: i32, finish: i32 };
 
 pub const Lens = struct {
@@ -68,7 +71,7 @@ pub const Lens = struct {
         rl.beginShaderMode(p.shader);
         shaders.setUniform(p.shader, p.screen, raster.sizeOf(source));
         shaders.setUniform(p.shader, p.direction, direction);
-        inline for (std.meta.fields(Options)) |f| shaders.setUniform(p.shader, @field(p, f.name), @field(self.options, f.name));
+        shaders.setFields(p, self.options);
         shaders.setUniform(p.shader, p.finish, finish);
         raster.drawTarget(source);
         rl.endShaderMode();
@@ -117,7 +120,7 @@ fn perspectivePoint(point: mathx.P, screen: mathx.P, strength: f32) mathx.P {
     return .{ .x = @intFromFloat(@floor((x + 0.5 - width * 0.5) / perspectiveScale(y + 0.5, height, strength) + width * 0.5)), .y = point.y };
 }
 
-const FS = shaders.FS_HEAD ++ shaders.INSET_UV_FS ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE, .BLUR_REF_H = @as(f32, @floatFromInt(window.SCREEN_720.y)) }) ++
+const FS = shaders.FS_HEAD ++ shaders.INSET_UV_FS ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE, .BLUR_REF_H = @as(f32, @floatFromInt(window.SCREEN_720.y)), .BLUR_SIGMAS = BLUR_SIGMAS, .BLUR_TAPS_PER_SIGMA = BLUR_TAPS_PER_SIGMA, .BLUR_TAPS_MAX = BLUR_TAPS_MAX }) ++
     \\uniform vec2 screen;
     \\uniform vec2 direction;
     \\uniform float lens_blur;
@@ -142,11 +145,11 @@ const FS = shaders.FS_HEAD ++ shaders.INSET_UV_FS ++ shaders.glslConsts(.{ .PERS
     \\    float radius = (farBlur * 4.0 + nearBlur * 1.6) * lens_blur * screen.y / BLUR_REF_H;
     \\    vec4 c = sampleScene(uv);
     \\    if (radius > 0.01) {
-    \\        float spacing = max(1.0, radius / 6.0);
+    \\        float spacing = max(1.0, radius / BLUR_TAPS_PER_SIGMA);
     \\        vec2 d = direction * spacing / screen;
     \\        float total = 1.0;
-    \\        int taps = int(ceil(radius * 3.0 / spacing));
-    \\        for (int i = 1; i <= 18; ++i) {
+    \\        int taps = int(ceil(radius * BLUR_SIGMAS / spacing));
+    \\        for (int i = 1; i <= BLUR_TAPS_MAX; ++i) {
     \\            if (i > taps) break;
     \\            float offset = float(i);
     \\            float weight = exp(-0.5 * pow(offset * spacing / radius, 2.0));
@@ -162,8 +165,7 @@ const FS = shaders.FS_HEAD ++ shaders.INSET_UV_FS ++ shaders.glslConsts(.{ .PERS
     \\            c.r = mix(c.r, sampleScene(uv + shift).r, chromatic_aberration);
     \\            c.b = mix(c.b, sampleScene(uv - shift).b, chromatic_aberration);
     \\        }
-    \\        float lum = dot(c.rgb, LUMA);
-    \\        c.rgb = mix(vec3(lum), c.rgb, saturation);
+    \\        c.rgb = saturated(c.rgb, saturation);
     \\        c.rgb *= vec3(1.0 + warmth * 0.18, 1.0 + warmth * 0.03, 1.0 - warmth * 0.18);
     \\        vec3 antique = vec3(dot(c.rgb, vec3(0.393, 0.769, 0.189)), dot(c.rgb, vec3(0.349, 0.686, 0.168)), dot(c.rgb, vec3(0.272, 0.534, 0.131)));
     \\        c.rgb = mix(c.rgb, antique, sepia);

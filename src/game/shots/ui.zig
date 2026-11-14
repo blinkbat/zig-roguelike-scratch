@@ -47,6 +47,7 @@ const renderTarget = @import("capture.zig").renderTarget;
 const sameRgb = @import("capture.zig").sameRgb;
 const target720 = @import("capture.zig").target720;
 const targetAt = @import("capture.zig").targetAt;
+const SIZES = @import("capture.zig").SIZES;
 const TACTICS_DIR = SHOTS_DIR ++ "/tactics";
 const LEVEL_UP_DIR = SHOTS_DIR ++ "/level-up";
 const NIGHT = @import("poses.zig").NIGHT;
@@ -93,7 +94,7 @@ fn captureQuests(g: *game.Game) !void {
     const growth = progress.State.of(heroes.DEFAULT);
     var b = book.Book{};
     b.choose(.quests);
-    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
+    inline for (SIZES) |size| {
         const view = book.View{ .class = heroes.DEFAULT, .name = "Archer", .inventory = &carried, .growth = &growth, .base = growth.attributes(heroes.DEFAULT), .quests = book.journalOn(size, g.face, &entries) };
         const target = try rl.loadRenderTexture(size.x, size.y);
         defer rl.unloadRenderTexture(target);
@@ -109,7 +110,7 @@ fn captureQuests(g: *game.Game) !void {
 }
 
 fn captureInspect(g: *game.Game) !void {
-    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
+    inline for (SIZES) |size| {
         const suffix = std.fmt.comptimePrint("{d}", .{size.y});
         const shot = try targetAt(g, size);
         defer shot.close(g);
@@ -208,13 +209,9 @@ fn captureKeyword(g: *game.Game, target: rl.RenderTexture2D, index: usize, path:
 fn captureTalk(g: *game.Game) !void {
     const w = try heapAtlas();
     defer dropAtlas(g, w);
-    w.* = .{};
-    const n = w.add(.{ .bespoke = .{} }).?;
-    var floor = grid.Box.sized(.{ .x = 6, .y = 4 }, 20, 10).cells();
-    while (floor.next()) |p| w.node[n].plan.bespoke.tile[grid.Level.idx(p)] = .floor;
-    w.start = .{ .node = n, .at = .{ .x = 12, .y = 8 } };
+    _ = w.oneRoom(grid.Box.sized(.{ .x = 6, .y = 4 }, 20, 10), .{ .x = 12, .y = 8 });
     try script_text.readAlone(editor.SHOT_SCRIPT, &w.script, w.node_n);
-    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
+    inline for (SIZES) |size| {
         const suffix = std.fmt.comptimePrint("{d}", .{size.y});
         const shot = try targetAt(g, size);
         defer shot.close(g);

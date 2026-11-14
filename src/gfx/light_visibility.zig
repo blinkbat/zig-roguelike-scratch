@@ -36,6 +36,10 @@ pub fn fieldUv(o: P, x: f32, y: f32) [2]f32 {
     return .{ x - @as(f32, @floatFromInt(o.x)) - 0.5, y - @as(f32, @floatFromInt(o.y)) - 0.5 };
 }
 
+pub fn cornerLerp(corners: [4]f32, c: P, q: [2]f32) f32 {
+    return mathx.bilerp(corners, q[0] - @as(f32, @floatFromInt(c.x)), q[1] - @as(f32, @floatFromInt(c.y)));
+}
+
 const SightField = enum { soft, weight, open };
 
 fn sightOf(sees: anytype, ground: bool, x: f32, y: f32) f32 {
@@ -128,7 +132,7 @@ const Fade = struct {
 
     fn at(f: *const Fade, x: f32, y: f32, sight: f32) f32 {
         if (f.flat) |v| return v;
-        const width = mathx.bilerp(f.sight_fade, x - @as(f32, @floatFromInt(f.origin.x)), y - @as(f32, @floatFromInt(f.origin.y)));
+        const width = cornerLerp(f.sight_fade, f.origin, .{ x, y });
         const reach = mathx.lerpF(VOID_FADE, width, sight);
         var v: f32 = 1;
         var across: f32 = 1;

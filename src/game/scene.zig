@@ -199,7 +199,7 @@ fn fillLit(g: *const game.Game, c: Cam, cells: []const P, col: rl.Color) void {
 pub fn barrelShownAt(g: *game.Game, p: P) bool {
     if (!terrainSeen(g, p)) return false;
     if (g.pic.litShown(&g.sim, p) or !g.sim.lv.isSeen(p)) return g.pic.barrelPresent(&g.sim, p);
-    return g.sim.lv.barrelSeen(p);
+    return g.pic.barrelSeenShown(&g.sim, p);
 }
 
 pub fn toggleReveal(g: *game.Game) void {
@@ -733,7 +733,7 @@ pub fn drawMap(g: *game.Game) void {
         const i = cell.npc orelse continue;
         if (cell.alpha <= 0) continue;
         const f = Prop.at(g, c, p, false);
-        const body = if (g.sim.map) |w| if (i < w.script.npc_n) w.script.npc[i].looks else null else null;
+        const body = if (g.sim.script()) |s| if (i < s.npc_n) s.npc[i].looks else null else null;
         const tex = if (body) |k| g.sprites.body(k) else null;
         const l = if (body) |k| look.body(k) else look.NPC;
         drawFigure(g, tex, l, f.s, false, f.mid, &f.shine, 0, cell.alpha);
@@ -777,7 +777,7 @@ pub fn drawMap(g: *game.Game) void {
     for (&g.pic.bolts) |*pending| {
         const b = pending.* orelse continue;
         const at = b.view.at orelse continue;
-        fx.drawMissileFaded(at, b.heading, projectiles.BOLT_ACT,g.pic.fx.seconds.at(), o[0], o[1], game.CELL_F, b.view.alpha);
+        fx.drawMissileFaded(at, b.heading, projectiles.BOLT_ACT, g.pic.fx.seconds.at(), o[0], o[1], game.CELL_F, b.view.alpha);
     }
     if (blooming) {
         g.cinema.endScene(outer, o, game.CELL_F, g.light);
@@ -1030,8 +1030,8 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
         const at = b.view.at orelse continue;
         if (fx.missileLight(at, projectiles.BOLT_ACT)) |source| emitFaded(g, ground, source, b.view.alpha);
     }
-    for (&g.pic.seen_cells, 0..) |cell, i| {
-        const a = cell.flame * cell.alpha;
+    for (0..grid.CELLS) |i| {
+        const a = flameAlpha(g, i);
         if (a <= 0) continue;
         const mid = mathx.centre(grid.Level.of(i));
         emitFaded(g, ground, fx.FLAMES_GLOW.lit(mid, look.FIRE, g.pic.fx.statusFlicker(@floatFromInt(i))), a);

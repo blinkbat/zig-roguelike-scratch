@@ -86,7 +86,8 @@ Spoils supplies separate gold and item-rarity bonuses. Gold scales once on picku
 with probabilistic fractional rounding. Rarity changes quality rather than drop
 count and uses equipment at the time foes/chests roll items. Both rarity thresholds
 scale and cap independently; the rare threshold is nested inside magic-or-rare.
-Values and rounding implementation live in `play/loot.zig`.
+Rarity values live in `play/loot.zig`; gold scaling and rounding in
+`attrs.Attrs.collectedGold`.
 
 Reach, area, penetration, recovery and cooldown modifiers must reach aiming,
 previews, resolution and inspection through their shared simulation/progression
@@ -135,11 +136,10 @@ travel and saves preserve them. Terrain and rain modifiers are resolved at the
 occupied tile, as described in [TERRAIN.md](TERRAIN.md). Duration, stacking and
 proc values remain in the owning status modules.
 
-The overlapping status tags in `play/resilience.zig` are Wounds (bleed, sunder,
-enfeeble, maim), Slows (stun, chill, pin, maim), Mental (blind, confusion, fright),
-and Elemental (burn, chill, shock). Tags provide family selection for future
-effects and modifiers; they do not share resistance buildup or alter damage
-resistance. Tag membership is derived metadata, not saved actor state.
+Statuses carry overlapping tags; `resilience.tags` owns membership. Tags provide
+family selection for future effects and modifiers; they do not share resistance
+buildup or alter damage resistance. Tag membership is derived metadata, not saved
+actor state.
 
 ## Presentation
 

@@ -804,7 +804,7 @@ pub fn update(g: *Game, dt: f32) void {
         drawnTurn(g);
         character.settleLoot(g);
     }
-    g.cloud.step(&g.sim.lv, dt);
+    g.cloud.step(&g.sim.lv, g.pic.litCells(&g.sim), dt);
     g.pic.stepMotion(&g.sim, dt);
     var late: f32 = 0;
     const was = screenOf(g);

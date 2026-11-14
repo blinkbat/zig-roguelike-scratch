@@ -23,6 +23,13 @@ pub fn mend(s: *Stacks) void {
     for (&s.values) |*n| n.* = @min(n.*, STACK_MAX);
 }
 
+pub fn stock(s: *Stacks, k: Kind) bool {
+    const n = s.getPtr(k);
+    if (n.* >= STACK_MAX) return false;
+    n.* += 1;
+    return true;
+}
+
 pub fn stockedAt(s: *const Stacks, row: usize) ?Kind {
     var left = row;
     for (KINDS) |k| if (s.get(k) > 0) {

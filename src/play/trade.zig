@@ -159,8 +159,7 @@ pub fn sell(shelf: *Wares, row: usize, inv: *inventory.Inventory, gold: *i32) Fa
     const deal: Deal = switch (w) {
         .supply => |k| blk: {
             inv.stacks.getPtr(k).* -= 1;
-            const stack = shelf.supplies.getPtr(k);
-            stack.* = @min(stack.* +| 1, consumable.STACK_MAX);
+            _ = consumable.stock(&shelf.supplies, k);
             break :blk .{ .ware = .{ .supply = k }, .gold = paid };
         },
         .item => |i| blk: {

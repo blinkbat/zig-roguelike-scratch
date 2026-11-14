@@ -91,11 +91,18 @@ fn refer(into: anytype, from: anytype) void {
 }
 
 pub fn capture(g: *game.Game, snapshot: *Snapshot) !void {
+    return captureOver(g, snapshot, false);
+}
+
+/// `map_held` when `snapshot.map` already holds this run's map.
+pub fn captureOver(g: *game.Game, snapshot: *Snapshot, map_held: bool) !void {
     snapshot.summary = data.Summary.of(g) orelse return error.Damaged;
     snapshot.seed = g.sim.seed;
     snapshot.node = g.sim.node;
-    snapshot.map = null;
-    if (g.sim.map) |map| snapshot.map = map.*;
+    if (!map_held) {
+        snapshot.map = null;
+        if (g.sim.map) |map| snapshot.map = map.*;
+    }
     for (&snapshot.visits, 0..) |*visit, node| {
         visit.* = null;
         if (g.sim.visited.isSet(node)) visit.* = g.sim.visits[node];
@@ -133,10 +140,31 @@ test "a legacy key cell that was the only way to the gate migrates to an open ch
         if (!choke) lv.set(way.add(.{ .x = -1, .y = 1 }), .floor);
         var ground = ground_items.Ground{};
         var bag = inventory.Inventory{};
-        migrateZooKey(&lv, &ground, s, &bag);
+        migrateZooKey(&lv, &ground, &.{}, s, &bag);
         try std.testing.expectEqual(if (choke) grid.Tile.chest_open else grid.Tile.chest, lv.at(s.key.?));
         try std.testing.expectEqual(choke, ground.hasItems(s.key.?));
     }
+}
+
+test "a legacy key that would crowd out the drops still to come goes in the bag, not on the ground" {
+    var s = atlas.zoo.Spec{};
+    const way = s.approach();
+    s.key = way.add(.{ .x = -1, .y = 0 });
+    var lv = grid.openFloor();
+    for (&lv.tile) |*t| t.* = .rock;
+    lv.set(way, .floor);
+    lv.set(s.key.?, .zoo_key);
+    var it = grid.Box.sized(.{ .x = way.x - 10, .y = way.y - 2 }, 9, 5).cells();
+    while (it.next()) |p| lv.set(p, .floor);
+    const pool = actor.Pool{};
+    var ground = ground_items.Ground{};
+    while (ground.room(deathsToCome(&pool))) _ = ground.add(.{ .item = items.SMALL_KEY, .at = way });
+    const full = ground.n;
+    var bag = inventory.Inventory{};
+    migrateZooKey(&lv, &ground, &pool, s, &bag);
+    try std.testing.expectEqual(grid.Tile.chest_open, lv.at(s.key.?));
+    try std.testing.expectEqual(full, ground.n);
+    try std.testing.expectEqual(@as(usize, 1), bag.n);
 }
 
 test "portable autosave snapshots own every byte while the live run changes" {
@@ -309,22 +337,23 @@ pub fn validate(snapshot: *Snapshot) !void {
     if (!std.mem.eql(u8, snapshot.summary.name.text(), run.name.text())) return error.Damaged;
     if (snapshot.summary.hp != body.hp or snapshot.summary.max != body.max or snapshot.summary.gold != run.gold) return error.Damaged;
     if (snapshot.map) |*map| {
-        migrateZooKey(&run.lv, &run.ground, map.node[snapshot.node].zoo, &run.inventory);
+        migrateZooKey(&run.lv, &run.ground, &run.pool, map.node[snapshot.node].zoo, &run.inventory);
         for (&snapshot.visits, 0..) |*visit, node| if (visit.*) |*loaded| {
-            migrateZooKey(&loaded.lv, &loaded.ground, map.node[node].zoo, if (node == snapshot.node) null else &run.inventory);
+            migrateZooKey(&loaded.lv, &loaded.ground, &loaded.pool, map.node[node].zoo, if (node == snapshot.node) null else &run.inventory);
         };
     }
 }
 
-fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, zoo: ?atlas.zoo.Spec, carried: ?*inventory.Inventory) void {
+fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, pool: *const actor.Pool, zoo: ?atlas.zoo.Spec, carried: ?*inventory.Inventory) void {
     const z = zoo orelse return;
     const at = z.key orelse return;
     const key = items.SMALL_KEY;
+    const grounded = ground.room(deathsToCome(pool));
     switch (level.at(at)) {
         .zoo_key => {
             if (chestable(level, z, at)) return level.set(at, .chest);
             level.set(at, .chest_open);
-            if (!ground.add(.{ .item = key, .at = at })) if (carried) |bag| {
+            if (!grounded or !ground.add(.{ .item = key, .at = at })) if (carried) |bag| {
                 _ = bag.add(key);
             };
         },
@@ -334,7 +363,7 @@ fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, zoo: ?atlas.z
             const bag = carried orelse return;
             if (bag.add(key)) return;
             if (chestable(level, z, at)) return level.set(at, .chest);
-            _ = ground.add(.{ .item = key, .at = at });
+            if (grounded) _ = ground.add(.{ .item = key, .at = at });
         },
         else => {},
     }

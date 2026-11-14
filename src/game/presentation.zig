@@ -47,9 +47,10 @@ pub const Bursting = struct { at: P, was: grid.Tile, left: f32 };
 const SightCells = struct {
     lit: [grid.CELLS]bool = @splat(false),
     seen: [grid.CELLS]bool = @splat(false),
+    barrel_seen: [grid.CELLS]bool = @splat(false),
 
     fn of(lv: *const grid.Level) SightCells {
-        return .{ .lit = lv.lit, .seen = lv.seen };
+        return .{ .lit = lv.lit, .seen = lv.seen, .barrel_seen = lv.barrel_seen };
     }
 };
 
@@ -248,6 +249,10 @@ pub const Presentation = struct {
     pub fn leadUntil(self: *Presentation, t: f32) void {
         self.holdUntil(t);
         self.lead = t;
+    }
+
+    pub fn leadNow(self: *const Presentation) f32 {
+        return self.lead orelse 0;
     }
 
     pub fn deferDamage(self: *Presentation, result: simulation.DamageResult) void {
@@ -648,6 +653,13 @@ pub const Presentation = struct {
         for (now, was) |*n, w| n.* = self.litHeld(n.*, w);
     }
 
+    pub fn litCells(self: *Presentation, sim: *const Simulation) *const [grid.CELLS]bool {
+        if (!self.sight_held.on()) return &sim.lv.lit;
+        self.ground_shown.lit = sim.lv.lit;
+        self.holdCells(&self.ground_shown.lit, &self.sight_held.before.lit);
+        return &self.ground_shown.lit;
+    }
+
     fn cellShown(self: *const Presentation, now: bool, was: *const [grid.CELLS]bool, p: P) bool {
         if (!self.sight_held.on()) return now;
         return self.litHeld(now, grid.cellOr(bool, was, p, false));
@@ -667,22 +679,16 @@ pub const Presentation = struct {
 
     /// Null while no tile is still fading from a fire.
     pub fn burntShown(self: *Presentation, ground: *const grid.Level) ?*const grid.Level {
-        var lo = P{ .x = grid.W, .y = grid.H };
-        var hi = P{ .x = 0, .y = 0 };
-        var any = false;
-        for (0..grid.CELLS) |i| if (self.fadingBurnt(i) != null) {
-            const p = grid.Level.of(i);
-            lo = lo.min(p);
-            hi = hi.max(p);
-            any = true;
-        };
-        if (!any) return null;
-        self.burnt_box = grid.Box.between(lo, hi).grown(1);
+        self.burnt_box = (grid.boundsWhere(@as(*const Presentation, self), burntAt) orelse return null).grown(1);
         self.burnt_ground = ground.*;
         for (&self.burnt_ground.tile, 0..) |*t, i| if (self.fadingBurnt(i)) |was| {
             t.* = was;
         };
         return &self.burnt_ground;
+    }
+
+    fn burntAt(self: *const Presentation, i: usize) bool {
+        return self.fadingBurnt(i) != null;
     }
 
     fn goneOut(self: *Presentation, lv: *const grid.Level) void {
@@ -706,6 +712,11 @@ pub const Presentation = struct {
 
     pub fn seenShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
         return self.cellShown(sim.lv.isSeen(p), &self.sight_held.before.seen, p);
+    }
+
+    pub fn barrelSeenShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
+        if (!self.sight_held.on()) return sim.lv.barrelSeen(p);
+        return grid.cellOr(bool, &self.sight_held.before.barrel_seen, p, false);
     }
 
     fn flightSeen(self: *const Presentation, sim: *const Simulation, flight: *const bow.Flight) bool {
@@ -995,7 +1006,7 @@ pub const Presentation = struct {
         const hero = sim.heroSlot().?;
         const warded = self.owed[hero].worn;
         self.owed[hero].worn = null;
-        const hero_done = @max(self.stagger(sim, gas, .fromInt(sim.hero), self.lead orelse 0, &turn), self.bolt_lands);
+        const hero_done = @max(self.stagger(sim, gas, .fromInt(sim.hero), self.leadNow(), &turn), self.bolt_lands);
         if (self.bolt_lands > 0) turn.next_at = @max(turn.next_at, self.bolt_lands + late + game.STAGGER_S);
         self.lead = null;
         self.bolt_lands = 0;

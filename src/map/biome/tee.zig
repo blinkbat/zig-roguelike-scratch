@@ -269,14 +269,7 @@ fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lo
     var m = carve.Meander.init(a, b, wander).within(above);
     while (m.next(rng)) |c| {
         carve.disc(lv, c, r, TRAIL, null);
-        keep(kept, grid.Box.around(c, clear));
-    }
-}
-
-fn keep(kept: *grid.CellSet, b: grid.Box) void {
-    var cells = b.cells();
-    while (cells.next()) |q| {
-        if (grid.Level.inside(q)) kept.set(grid.Level.idx(q));
+        grid.markBox(kept, grid.Box.around(c, clear));
     }
 }
 
@@ -492,7 +485,7 @@ fn goblinCamps(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *g
     for (0..p.camps) |_| {
         const at = CAMP_BOX.rollForWhere(rng, size.x, size.y, SITE_TRIES, site, Site.campFits) orelse continue;
         setpiece.place(lv, at, CAMP_ART, PAL);
-        keep(kept, grid.Box.sizedP(at, size).grown(1));
+        grid.markBox(kept, grid.Box.sizedP(at, size).grown(1));
     }
 }
 

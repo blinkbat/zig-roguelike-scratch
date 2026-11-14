@@ -97,7 +97,19 @@ pub const Gear = struct {
 
     /// Percent chance an action spends no turn.
     pub fn haste(self: Gear) u32 {
-        return @intCast(std.math.clamp(self.sum(.haste), 0, mathx.PERCENT));
+        return @intCast(self.percent(.haste));
+    }
+
+    pub fn masked(self: Gear) i32 {
+        return self.percent(.masked);
+    }
+
+    pub fn opportunist(self: Gear) i32 {
+        return self.floored(.opportunist);
+    }
+
+    fn percent(self: Gear, kind: affixes.Mod) i32 {
+        return std.math.clamp(self.sum(kind), 0, mathx.PERCENT);
     }
 
     /// Each flask's recovery bonus: life from `held`, which already counts worn grants; mana from worn mods alone.

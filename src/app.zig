@@ -106,9 +106,16 @@ const App = struct {
     unread: ?anyerror = null,
     bones: menu.Menu = .{},
     note: menu.Note(LINE) = .{},
+    quit_warned: bool = false,
 
     fn say(app: *App, comptime fmt: []const u8, args: anytype) void {
         app.note.say(fmt, args);
+        app.quit_warned = false;
+    }
+
+    fn unsay(app: *App) void {
+        app.note.clear();
+        app.quit_warned = false;
     }
 
     fn also(app: *App, comptime fmt: []const u8, args: anytype) void {
@@ -125,7 +132,7 @@ const App = struct {
     fn goPage(app: *App, p: Page) void {
         game.holdWalk(app.g);
         app.g.keywords = .{};
-        app.note.clear();
+        app.unsay();
         app.page = p;
     }
 
@@ -174,7 +181,7 @@ const App = struct {
         }
         if (app.loads.at != was) {
             app.armed = null;
-            app.note.clear();
+            app.unsay();
         }
         if (st.hit(DELETE) and app.list[app.loads.at] != .empty) action = .{ .remove = app.loads.at };
         return action;
@@ -328,9 +335,10 @@ const App = struct {
 
     /// False once the app may close; a failed last write stays on the title instead, until the next close.
     fn quitRun(app: *App) bool {
-        const shown = app.scene == .title and app.note.n > 0;
+        const shown = app.scene == .title and app.quit_warned;
         app.runToTitle();
-        return app.note.n > 0 and !shown;
+        app.quit_warned = app.note.n > 0 and !shown;
+        return app.quit_warned;
     }
 
     fn endDead(app: *App, a: *save.Autosave) void {

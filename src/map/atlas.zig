@@ -65,6 +65,7 @@ pub const Link = struct {
 };
 
 pub const Door = struct { at: P, to: ?Link = null };
+const BLANK_DOOR = Door{ .at = .{ .x = 0, .y = 0 } };
 
 pub const Foe = section.Foe;
 
@@ -125,7 +126,7 @@ pub const Bespoke = struct {
     tile: [grid.CELLS]grid.Tile = [_]grid.Tile{grid.OFF_MAP} ** grid.CELLS,
     barrel: [grid.CELLS]bool = [_]bool{false} ** grid.CELLS,
     torch: grid.Torches = .{},
-    foe: [MAX_FOES]Foe = undefined,
+    foe: [MAX_FOES]Foe = @splat(section.NO_FOE),
     foe_n: usize = 0,
 
     pub fn tileAt(self: *const Bespoke, p: P) grid.Tile {
@@ -173,6 +174,7 @@ pub const Bespoke = struct {
 
     pub fn dropFoe(self: *Bespoke, i: usize) void {
         _ = mathx.swapRemove(Foe, &self.foe, &self.foe_n, i);
+        self.foe[self.foe_n] = section.NO_FOE;
     }
 };
 
@@ -207,7 +209,7 @@ pub const Label = struct {
 
     /// Trimmed. Whether it changed; null when refused.
     pub fn set(self: *Label, s: []const u8) ?bool {
-        const t = script.fitText(s, NAME_MAX) orelse return null;
+        const t = fitText(s, NAME_MAX) orelse return null;
         if (std.mem.eql(u8, t, self.text())) return false;
         @memcpy(self.buf[0..t.len], t);
         self.n = t.len;
@@ -219,10 +221,15 @@ pub const Label = struct {
     }
 };
 
+fn fitText(s: []const u8, max: usize) ?[]const u8 {
+    const t = std.mem.trim(u8, s, " ");
+    return if (t.len <= max and plain(t)) t else null;
+}
+
 pub const Node = struct {
     pub const COUNTED = .{.{ "door", "door_n" }};
     plan: Plan,
-    door: [grid.MAX_DOORS]Door = undefined,
+    door: [grid.MAX_DOORS]Door = @splat(BLANK_DOOR),
     door_n: usize = 0,
     label: Label = .{},
     pos: P = .{ .x = 0, .y = 0 },
@@ -577,7 +584,7 @@ pub const Atlas = struct {
     pub fn removeDoor(self: *Atlas, at: Link) void {
         self.unlink(at);
         const nd = &self.node[at.node];
-        mathx.removeAt(Door, &nd.door, &nd.door_n, at.door, null);
+        mathx.removeAt(Door, &nd.door, &nd.door_n, at.door, BLANK_DOOR);
         if (nd.plan == .procgen) {
             const r = &nd.plan.procgen.raid;
             if (script.renumbered(r.raid_door, at.door)) |door_index| {
@@ -698,14 +705,13 @@ fn beside(lv: *const grid.Level, t: grid.Tile, avoid: *const grid.CellSet) ?P {
 fn farFromDoors(lv: *const grid.Level, avoid: *const grid.CellSet) ?P {
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
-    var doors: ?grid.Flood = null;
+    var flood = grid.Flood.empty(lv, &dist, &queue);
     for (0..grid.CELLS) |i| {
         const d = grid.Level.of(i);
-        if (lv.doorAt(d) == null) continue;
-        if (doors) |*f| f.seed(d) else doors = grid.Flood.init(lv, d, &dist, &queue);
+        if (lv.doorAt(d) != null) flood.seed(d);
     }
-    var flood = doors orelse grid.Flood.init(lv, lv.firstOpen() orelse return null, &dist, &queue);
-    while (flood.next()) |_| {}
+    if (flood.tail == 0) flood.seed(lv.firstOpen() orelse return null);
+    _ = flood.drain();
     var best: ?P = null;
     var most: i32 = -1;
     for (dist, 0..) |d, i| {

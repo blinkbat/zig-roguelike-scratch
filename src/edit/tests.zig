@@ -43,6 +43,19 @@ test "editor input gives modal and view changes priority over canvas gestures" {
     try std.testing.expectEqual(history_at, ed.history.at);
 }
 
+test "a tool hotkey leaves Select the way clicking the tool's row does" {
+    const ed = try editor.Editor.create(std.testing.allocator);
+    defer ed.destroy();
+    const i = for (editor.TOOLS, 0..) |t, k| {
+        if (!t.eql(ed.tool) and t.fits(ed.here())) break k;
+    } else unreachable;
+    ed.shape = .select;
+    ed.desk = .{ .tool = i };
+    interaction.step(ed, raster.rect(0, 0, 800, 600), 720, 0);
+    try std.testing.expect(ed.tool.eql(editor.TOOLS[i]));
+    try std.testing.expect(ed.shape != .select);
+}
+
 test "editor panels leave a useful map between them and shape hit targets do not overlap" {
     try std.testing.expectEqual(@as(i32, 24), widgets.TEXT);
     try std.testing.expect(widgets.DETAIL >= 20);

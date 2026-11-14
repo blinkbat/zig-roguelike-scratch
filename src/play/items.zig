@@ -97,7 +97,11 @@ pub const Item = struct {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            inline else => |k| if (comptime k.granted()) k.grant(m.value).apply(a),
+            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .life_regen, .leech, .area, .pierce, .haste => {},
+            inline else => |k| {
+                if (comptime !k.granted()) @compileError("Item.apply: say where " ++ @tagName(k) ++ " takes effect");
+                k.grant(m.value).apply(a);
+            },
         };
     }
 

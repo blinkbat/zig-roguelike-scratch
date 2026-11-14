@@ -230,9 +230,9 @@ fn useSupply(run: *game.Game, comptime act: skillbar.Act, comptime k: consumable
 
 pub fn recover(run: *game.Game) void {
     run.sim.gainMana(accrue(&run.sim.mana_recovery, run.sim.manaRegen(), heroes.MANA_REGEN_TURNS));
-    combat.heal(run, accrue(&run.sim.life_recovery, run.sim.lifeRegen(), heroes.LIFE_REGEN_TURNS), run.pic.lead orelse 0);
+    combat.heal(run, accrue(&run.sim.life_recovery, run.sim.lifeRegen(), heroes.LIFE_REGEN_TURNS), run.pic.leadNow());
     if (run.sim.playground) run.sim.gainMana(run.sim.manaMax());
-    for (std.enums.values(flask.Kind)) |k| recoverFlask(run, k, run.pic.lead orelse 0);
+    for (std.enums.values(flask.Kind)) |k| recoverFlask(run, k, run.pic.leadNow());
 }
 
 fn accrue(banked: *i32, regen: i32, turns: i32) i32 {

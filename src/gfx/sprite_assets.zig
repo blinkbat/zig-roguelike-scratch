@@ -203,7 +203,7 @@ pub const GROUND_SHEETS = blk: {
     var s = ground.Grounds.initEmpty();
     for (std.enums.values(ground.Ground)) |g| {
         const png = GROUND_PNGS.get(g) orelse continue;
-        std.debug.assert(std.meta.eql(pngSize(png), mathx.P{ .x = ground.COLS * look.SPRITE_PX, .y = ground.ROWS * look.SPRITE_PX }));
+        std.debug.assert(std.meta.eql(pngSize(png), sheetSize(ground.COLS, ground.ROWS)));
         s.insert(g);
     }
     break :blk s;
@@ -262,7 +262,7 @@ const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const
 
 comptime {
     std.debug.assert(TILE_PNGS.get(.wall) == null);
-    std.debug.assert(std.meta.eql(pngSize(TILE_PNGS.get(.large_tree).?), mathx.P{ .x = look.SPRITE_PX, .y = 2 * look.SPRITE_PX }));
+    std.debug.assert(std.meta.eql(pngSize(TILE_PNGS.get(.large_tree).?), sheetSize(1, 2)));
     for (std.enums.values(grid.Tile)) |t| {
         if (!look.standsOver(t)) continue;
         const size = pngSize(TILE_PNGS.get(t) orelse continue);
@@ -334,7 +334,7 @@ const GrassDecor = enum { brush, flowers };
 
 pub fn grassDecor(t: grid.Tile, p: mathx.P) ?GrassDecor {
     if (t != .grass) return null;
-    const roll = rollIn(DECOR_SEED, DECOR_IN, p);
+    const roll = mathx.cellRoll(DECOR_SEED, DECOR_IN, p);
     if (roll < BRUSH_IN) return .brush;
     return if (roll == BRUSH_IN) .flowers else null;
 }
@@ -343,12 +343,8 @@ fn loneClump(p: mathx.P) bool {
     return oneIn(LONE_CLUMP_SEED, LONE_CLUMP_IN, p);
 }
 
-pub fn rollIn(seed: u64, in: u64, p: mathx.P) u64 {
-    return mathx.cellHash(seed, p) % in;
-}
-
 fn oneIn(seed: u64, in: u64, p: mathx.P) bool {
-    return rollIn(seed, in, p) == 0;
+    return mathx.cellRoll(seed, in, p) == 0;
 }
 
 pub fn forestAt(lv: *const grid.Level, p: mathx.P) bool {
@@ -400,6 +396,10 @@ pub fn wallCell(sheet: rl.Image, i: usize) ?rl.Image {
 
 pub fn sheetCell(col: i32, row: i32) rl.Rectangle {
     return raster.rect(col * look.SPRITE_PX, row * look.SPRITE_PX, look.SPRITE_PX, look.SPRITE_PX);
+}
+
+pub fn sheetSize(cols: i32, rows: i32) mathx.P {
+    return .{ .x = cols * look.SPRITE_PX, .y = rows * look.SPRITE_PX };
 }
 
 test "map assets include unseen shapes, ground under props and future slime forms" {

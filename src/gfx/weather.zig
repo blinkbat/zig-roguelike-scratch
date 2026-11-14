@@ -15,10 +15,7 @@ const HEAVIEST = Fall{ .drops = 520, .speed = 1150, .drift = 320, .len = 30, .wi
 
 fn fallOf(rain: f32) ?Fall {
     if (rain <= 0) return null;
-    const k = @min(rain, 1);
-    var f: Fall = undefined;
-    inline for (std.meta.fields(Fall)) |field| @field(f, field.name) = mathx.lerpF(@field(LIGHTEST, field.name), @field(HEAVIEST, field.name), k);
-    return f;
+    return mathx.lerpFields(Fall, LIGHTEST, HEAVIEST, @min(rain, 1));
 }
 
 const AREA_AT = window.SCREEN_1080;

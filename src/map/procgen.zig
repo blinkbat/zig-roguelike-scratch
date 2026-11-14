@@ -180,14 +180,14 @@ fn takesLots(comptime m: type) bool {
     return false;
 }
 
-comptime {
+pub const LOTS_MAX: usize = blk: {
     var most: usize = 0;
     for (std.meta.fieldNames(@TypeOf(FEATURES))) |name| {
         const m = @field(FEATURES, name);
         if (takesLots(m)) most = @max(most, m.COUNT_MAX);
     }
-    std.debug.assert(buildings.LOTS_MAX >= MAX_FEATURES * most + buildings.SECTION_LOTS);
-}
+    break :blk MAX_FEATURES * most + buildings.SECTION_LOTS;
+};
 
 /// Reproducible from the seed, the doors and the plan; the edge sealed, then every open cell joined, each door too.
 pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features: []const Feature) void {

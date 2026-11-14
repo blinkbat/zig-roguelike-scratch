@@ -91,11 +91,6 @@ pub const Ask = Text(ASK_MAX, true);
 pub const Note = Words(NOTE_MAX);
 pub const Title = Words(TITLE_MAX);
 
-pub fn fitText(s: []const u8, max: usize) ?[]const u8 {
-    const t = std.mem.trim(u8, s, " ");
-    return if (t.len <= max and plain(t)) t else null;
-}
-
 pub fn plain(s: []const u8) bool {
     for (s) |c| {
         if (!std.ascii.isPrint(c)) return false;

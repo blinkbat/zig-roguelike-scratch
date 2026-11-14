@@ -114,15 +114,11 @@ fn thinning(kind: grid.Gas) ?u32 {
 /// The high corner exclusive.
 fn reach(vol: *const [grid.CELLS]u16) ?grid.Box {
     if (!any(vol)) return null;
-    var lo = grid.SIZE;
-    var hi = P{ .x = -1, .y = -1 };
-    for (vol, 0..) |v, i| {
-        if (v == 0) continue;
-        const p = grid.Level.of(i);
-        lo = lo.min(p);
-        hi = hi.max(p);
-    }
-    return grid.Box.between(lo, hi).grown(1);
+    return grid.boundsWhere(vol, held).?.grown(1);
+}
+
+fn held(vol: *const [grid.CELLS]u16, i: usize) bool {
+    return vol[i] > 0;
 }
 
 const Life = struct { turns: usize = 0, most: usize = 0 };

@@ -141,7 +141,7 @@ pub const Book = struct {
     fn settledTop(self: *const Book, view: View) usize {
         if (self.page == .quests) return @min(self.top, view.quests.last_top);
         const visible = self.visibleRows();
-        return @min(mathx.reveal(self.top, self.cursor, visible), self.count(view) -| visible);
+        return mathx.clampTop(mathx.reveal(self.top, self.cursor, visible), self.count(view), visible);
     }
     fn listed(self: *const Book) bool {
         return self.page == .inventory or self.direct();

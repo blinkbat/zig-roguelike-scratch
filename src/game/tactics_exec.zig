@@ -287,7 +287,7 @@ pub fn bideTurn(g: *game.Game) void {
     if (h.tactics.bide > 0) return;
     const dmg = tactics.Bide.released(h.tactics.bided);
     h.tactics.bided = 0;
-    const s = game.presentation.Stroke{ .from = h.at, .wait = (g.pic.lead orelse 0) + game.CAST_S };
+    const s = game.presentation.Stroke{ .from = h.at, .wait = g.pic.leadNow() + game.CAST_S };
     g.pic.leadUntil(s.wait);
     g.pic.settleHero(&g.sim, s.wait);
     if (dmg == 0) return g.sim.log.say("{s}'s Bide ends.", .{g.sim.name.text()});

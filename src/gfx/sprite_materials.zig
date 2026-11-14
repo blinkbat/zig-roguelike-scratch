@@ -144,7 +144,7 @@ pub const WATER_FS = shaders.FS_HEAD ++ WATER_FADE_FS ++ shaders.glslConsts(.{
     \\    float shallow = shallowOf(depth);
     \\    float strength = mix(MIRROR_DEEP, MIRROR_SHALLOW, shallow);
     \\    vec3 shine = reflected.rgb * MIRROR_TINT * strength;
-    \\    shine = mix(vec3(dot(shine, LUMA)), shine, SATURATION);
+    \\    shine = saturated(shine, SATURATION);
     \\    shine += texture(glints, at / CELLS).rgb * light.a;
     \\    vec3 base = art.rgb * (1.0 - reflected.a * strength);
     \\    if (shimmer != 0) base *= 1.0 + SHIMMER * smoothstep(HIGHLIGHT.x, HIGHLIGHT.y, dot(art.rgb / depth, LUMA)) * swell(at) * light.a;

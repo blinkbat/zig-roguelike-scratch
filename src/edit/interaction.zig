@@ -53,7 +53,7 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
     if (desk.erase_hit and (ed.drag != null or ed.linking != null)) return ed.dismiss();
     if (ed.modal != .none or ed.renaming) return;
     if (ed.popup) |pp| {
-        if (editor.popupScrolls(pp.which) and desk.wheel != 0) ed.popup_top = widgets.scrollTop(ed.popup_top, desk.notch(), editor.popupLen(ed, pp.which), editor.popupShown(ed, pp.which, screen_height));
+        if (editor.popupScrolls(pp.which) and desk.wheel != 0) ed.popup_top = mathx.scrollTop(ed.popup_top, desk.notch(), editor.popupLen(ed, pp.which), editor.popupShown(ed, pp.which, screen_height));
         if (desk.clicked() and !ed.mouseIn(editor.popupRect(ed, pp, screen_height))) {
             ed.dismiss();
         } else if (desk.clicked()) ed.gesture();
@@ -78,7 +78,7 @@ fn shortcuts(ed: *Editor, bounds: rl.Rectangle, over_canvas: bool) void {
     if (desk.reroll) editor.reroll(ed);
     if (desk.smaller) ed.stepBrush(-1);
     if (desk.bigger) ed.stepBrush(1);
-    if (desk.tool) |i| ed.setTool(editor.TOOLS[i]);
+    if (desk.tool) |i| ed.takeTool(editor.TOOLS[i]);
     if (desk.shape) |i| ed.setShape(editor.SHAPES[i]);
     if (ed.view == .map) {
         if (desk.fit) fitView(ed, bounds);
@@ -165,7 +165,7 @@ pub fn modalKeys(ed: *Editor) void {
                     if (d.enter) ed.named();
                 },
                 .open => {
-                    if (d.wheel != 0) ed.listed_top = widgets.scrollTop(ed.listed_top, d.notch(), ed.listing.n, widgets.MODAL_ROWS);
+                    if (d.wheel != 0) ed.listed_top = mathx.scrollTop(ed.listed_top, d.notch(), ed.listing.n, widgets.MODAL_ROWS);
                     if (d.nav != 0 and ed.listing.n > 0) {
                         ed.listed_at = mathx.wrap(ed.listed_at, d.nav, ed.listing.n);
                         ed.listed_top = mathx.reveal(ed.listed_top, ed.listed_at, widgets.MODAL_ROWS);

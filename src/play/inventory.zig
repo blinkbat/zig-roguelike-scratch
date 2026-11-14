@@ -41,10 +41,7 @@ pub const Inventory = struct {
     }
 
     pub fn stock(self: *Inventory, k: consumable.Kind) bool {
-        const n = self.stacks.getPtr(k);
-        if (n.* >= consumable.STACK_MAX) return false;
-        n.* += 1;
-        return true;
+        return consumable.stock(&self.stacks, k);
     }
 
     /// Kinds carried, in `consumable.KINDS` order.

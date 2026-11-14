@@ -31,9 +31,9 @@ pub fn turnStart(g: *const game.Game) chronicle.Start {
 const IN = "in ";
 
 fn placeOf(g: *const game.Game, out: *[IN.len + atlas.TITLE_MAX]u8) []const u8 {
-    const w = g.sim.map orelse return "on a nameless floor";
+    const nd = g.sim.nodeHere() orelse return "on a nameless floor";
     var title: [atlas.TITLE_MAX]u8 = undefined;
-    const t = w.node[g.sim.node].title(g.sim.node, &title);
+    const t = nd.title(g.sim.node, &title);
     const s = std.fmt.bufPrint(out, IN ++ "{s}", .{t}) catch unreachable;
     if (std.mem.startsWith(u8, t, "The ")) s[IN.len] = 't';
     return s;

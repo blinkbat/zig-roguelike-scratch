@@ -292,7 +292,7 @@ test "same-node travel keeps followers that cannot fit in the destination chambe
     const source = P{ .x = 2, .y = 5 };
     const destination = P{ .x = 30, .y = 30 };
     const b = &w.node[node].plan.bespoke;
-    for (2..7) |x| b.tile[grid.Level.idx(.{ .x = @intCast(x), .y = 5 })] = .floor;
+    b.fill(grid.Box.between(source, .{ .x = 6, .y = 5 }), .floor);
     b.tile[grid.Level.idx(destination)] = .floor;
     const west = w.addDoor(node, source).?;
     const east = w.addDoor(node, destination).?;

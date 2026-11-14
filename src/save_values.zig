@@ -71,7 +71,7 @@ const SavedProgress = struct {
 
     fn of(value: progress.State) SavedProgress {
         var result = SavedProgress{};
-        copyKept(progress.State, carried, &result, value);
+        copyAllBut(progress.State, BY_IDENTITY, &result, value);
         var allocated = value.nodes.iterator(.{});
         while (allocated.next()) |index| {
             result.allocations[result.n] = NodeKey.of(passives.NODES[index]);
@@ -82,7 +82,7 @@ const SavedProgress = struct {
 
     fn live(stored: SavedProgress) wire.Error!progress.State {
         var result = progress.State{};
-        copyKept(progress.State, carried, &result, stored);
+        copyAllBut(progress.State, BY_IDENTITY, &result, stored);
         for (stored.allocations[0..stored.n], 0..) |key, index| {
             for (stored.allocations[0..index]) |previous| if (std.meta.eql(key, previous)) return error.Damaged;
             for (passives.NODES, 0..) |node, current| {
@@ -97,9 +97,7 @@ const SavedProgress = struct {
 };
 
 /// `nodes` is kept by identity in `allocations`.
-fn carried(comptime name: []const u8) bool {
-    return !std.mem.eql(u8, name, "nodes");
-}
+const BY_IDENTITY = "nodes";
 
 comptime {
     @setEvalBranchQuota(100_000);
@@ -107,9 +105,9 @@ comptime {
     for (passives.NODES, 0..) |node, index| for (passives.NODES[0..index]) |other| {
         if (std.meta.eql(NodeKey.of(node), NodeKey.of(other))) @compileError("passive save identities must be unique");
     };
+    keepsAllBut(SavedProgress, progress.State, BY_IDENTITY);
     for (std.meta.fields(progress.State)) |f| {
-        if (!carried(f.name)) continue;
-        if (!@hasField(SavedProgress, f.name) or @FieldType(SavedProgress, f.name) != f.type) @compileError("SavedProgress does not keep progress.State." ++ f.name);
+        if (std.mem.eql(u8, f.name, BY_IDENTITY)) continue;
         if (!std.meta.eql(@field(SavedProgress{}, f.name), f.defaultValue().?)) @compileError("SavedProgress defaults progress.State." ++ f.name ++ " differently");
     }
 }
@@ -128,31 +126,33 @@ const SavedNpc = struct {
 
     fn of(value: script.Npc) SavedNpc {
         var result = SavedNpc{ .spot = value.spot };
-        copyKept(script.Npc, npcKept, &result, value);
+        copyAllBut(script.Npc, PLACED, &result, value);
         return result;
     }
 
     fn live(stored: SavedNpc) wire.Error!script.Npc {
         var npc = script.Npc{ .spot = stored.spot orelse .{ .at = stored.at } };
-        copyKept(script.Npc, npcKept, &npc, stored);
+        copyAllBut(script.Npc, PLACED, &npc, stored);
         return npc;
     }
 };
-fn npcKept(comptime name: []const u8) bool {
-    return !std.mem.eql(u8, name, "spot");
+const PLACED = "spot";
+
+fn copyAllBut(comptime T: type, comptime except: []const u8, into: anytype, from: anytype) void {
+    inline for (std.meta.fields(T)) |f| {
+        if (comptime !std.mem.eql(u8, f.name, except)) @field(into, f.name) = @field(from, f.name);
+    }
 }
 
-fn copyKept(comptime T: type, comptime kept: anytype, into: anytype, from: anytype) void {
-    inline for (std.meta.fields(T)) |f| {
-        if (comptime kept(f.name)) @field(into, f.name) = @field(from, f.name);
+fn keepsAllBut(comptime Saved: type, comptime Live: type, comptime except: []const u8) void {
+    for (std.meta.fields(Live)) |f| {
+        if (std.mem.eql(u8, f.name, except)) continue;
+        if (!@hasField(Saved, f.name) or @FieldType(Saved, f.name) != f.type) @compileError(@typeName(Saved) ++ " does not keep " ++ @typeName(Live) ++ "." ++ f.name);
     }
 }
 
 comptime {
-    for (std.meta.fields(script.Npc)) |f| {
-        if (!npcKept(f.name)) continue;
-        if (@FieldType(SavedNpc, f.name) != f.type) @compileError("SavedNpc does not keep script.Npc." ++ f.name);
-    }
+    keepsAllBut(SavedNpc, script.Npc, PLACED);
 }
 
 test "an NPC kept before it could stand off a painted cell loads where it stood" {

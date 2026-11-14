@@ -328,11 +328,7 @@ pub const SunRay = struct {
     }
 };
 
-pub fn cloudIn(corners: [4]f32, c: P, q: [2]f32) f32 {
-    const u = q[0] - @as(f32, @floatFromInt(c.x));
-    const v = q[1] - @as(f32, @floatFromInt(c.y));
-    return mathx.bilerp(corners, u, v);
-}
+pub const cloudIn = visibility.cornerLerp;
 
 /// Ignores what stands in the way.
 pub fn sunFacing(sk: sky.Sky, s: Spot) f32 {

@@ -971,7 +971,7 @@ fn drawPopup(ed: *Editor, g: *game.Game) void {
     widgets.framed(x, y, w, raster.height(box));
     const len = popupLen(ed, p.which);
     const shown = popupShown(ed, p.which, g.screen.y);
-    ed.popup_top = widgets.clampTop(ed.popup_top, len, shown);
+    ed.popup_top = mathx.clampTop(ed.popup_top, len, shown);
     const top = ed.popup_top;
     switch (p.which) {
         .file => panel.fileRows(ed, g, box),

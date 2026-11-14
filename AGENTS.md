@@ -29,7 +29,7 @@ Run from the repository root; wrappers select and verify Zig 0.14.1. Setup: [REA
 - Tests must not write saves/maps. Full procgen tests take minutes; check CPU before declaring a stall. Keep the direct test runner in `build.zig`: raylib stdout deadlocks Zig's `--listen=-` test protocol.
 - Every `src/**/*.zig` except `main.zig` must appear in its `test {}` imports. Builds reject invalid syntax and modules without declarations, and enforce dependency boundaries through `tools/source_rules.zig`.
 - For visual changes, inspect actual headless PNGs. Build into `zig-out-dev`; copy `maps/` and the executable (with a distinct basename) into a fresh `%TEMP%` directory, then run there. Captures write `shots/` under the working directory; do not run `shot.cmd` from the repo.
-- Capture flags: `--shot` (general/maps), `--shot-ui`, `--shot-editor`, `--shot-debug`, `--shot-trees`, `--shot-water-cliffs`, `--shot-cinema`, `--shot-zoo`; `--bench` measures CPU/draw/resource costs. Coverage lives in `src/game/shots/` (one file per flag, shared helpers in `capture.zig`), dispatch in `src/app.zig`.
+- Capture flags: `--shot` (general/maps), `--shot-ui`, `--shot-editor`, `--shot-debug`, `--shot-trees`, `--shot-water-cliffs`, `--shot-cinema`, `--shot-zoo`; `--bench` measures CPU/draw/resource costs. Coverage lives in `src/game/shots/` (`--shot` in `poses.zig`, `--shot-ui`/`--shot-editor` in `ui.zig`, otherwise one file per flag; shared helpers in `capture.zig`), dispatch in `src/app.zig`.
 
 ## Task routing
 
@@ -58,7 +58,7 @@ Tests live beside their owners; integration tests are in `src/game/tests/` by do
 
 - Simulation owns rules, RNG and saved state; presentation follows resolved impacts. Simulation never reads rendering/UI. HUD, deaths, drops and statuses follow the pictured timing. Idle frames/free actions do not age simulation.
 - Preview and resolution share legality, geometry, costs and scaling; previews never expose hidden targets. Preserve seeded outcomes and save identities. Read ARCHITECTURE/SAVE_FORMAT before lifecycle changes.
-- `core/input.zig` alone polls devices. Controller is primary; keyboard mirrors actions. Show controls as device-aware glyphs (`gfx/prompt_icon.zig`, editor `prompt_text.zig`).
+- `core/input.zig` alone polls devices. Controller is primary; keyboard mirrors actions. Show controls as device-aware glyphs (`gfx/prompt_icon.zig`, editor `gfx/prompt_text.zig`).
 - UI shows relevant facts once, with units, effects before metrics, and no flavor text. Use the hero's name in logs/death text. Preserve shared typography, layout and muted-gold styling.
 - `map/grid.zig` owns terrain rules, `gfx/look.zig` appearance; `map/fov.zig`/`map/lume.zig` own gameplay visibility. Rendering must not reveal hidden bodies or change exploration.
 - Editor gestures are one undo transaction; cancel restores without consuming history. Derived previews must not mutate authored maps.

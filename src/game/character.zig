@@ -29,10 +29,10 @@ const P = mathx.P;
 const PAUSE = menu.PAUSE;
 
 pub fn questEntries(g: *const game.Game, out: *[script.MAX_QUESTS]quest_log.Entry) []const quest_log.Entry {
-    const w = g.sim.map orelse return out[0..0];
+    const s = g.sim.script() orelse return out[0..0];
     var n: usize = 0;
     for ([_]script.QuestState{ .active, .done }) |state| {
-        for (w.script.quests(), 0..) |*q, i| {
+        for (s.quests(), 0..) |*q, i| {
             const at = g.pic.quests_shown[i];
             if (at.state != state) continue;
             _ = mathx.push(quest_log.Entry, out, &n, .{ .title = q.titled(), .asks = q.asks(at.stage), .done = state == .done });
@@ -189,17 +189,17 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
 }
 
 fn dealerOf(g: *const game.Game) ?book.Dealer {
-    const w = g.sim.map orelse return null;
+    const s = g.sim.script() orelse return null;
     const npc = g.character.dealer;
-    if (npc >= w.script.npc_n) return null;
+    if (npc >= s.npc_n) return null;
     const shelf = &(g.sim.plot.wares[npc] orelse return null);
-    return .{ .who = w.script.npc[npc].called(), .shelf = shelf };
+    return .{ .who = s.npc[npc].called(), .shelf = shelf };
 }
 
 /// The conversation stays open beneath, and is back once the trade is done.
 pub fn openTrade(g: *game.Game, npc: u8) void {
-    const w = g.sim.map orelse return;
-    if (npc >= w.script.npc_n) return;
+    const s = g.sim.script() orelse return;
+    if (npc >= s.npc_n) return;
     _ = g.sim.plot.shelf(npc, g.sim.seed);
     openCharacter(g);
     g.character.choose(.trade);
@@ -212,13 +212,14 @@ fn closeBook(g: *game.Game) void {
     game.holdWalk(g);
 }
 
-fn deal(g: *game.Game, command: book.Command) void {
+const Deal = enum { buy, sell };
+
+fn deal(g: *game.Game, comptime side: Deal, row: usize) void {
     if (!drawnFor(g)) return;
     const shelf = &(g.sim.plot.wares[g.character.dealer] orelse return);
-    const done = switch (command) {
-        .buy => |row| trade.buy(shelf, row, &g.sim.inventory, &g.sim.gold),
-        .sell => |row| trade.sell(shelf, row, &g.sim.inventory, &g.sim.gold),
-        else => unreachable,
+    const done = switch (side) {
+        .buy => trade.buy(shelf, row, &g.sim.inventory, &g.sim.gold),
+        .sell => trade.sell(shelf, row, &g.sim.inventory, &g.sim.gold),
     } catch |err| {
         g.character.message.say("{s}", .{trade.caption(err)});
         return;
@@ -228,7 +229,7 @@ fn deal(g: *game.Game, command: book.Command) void {
         .item => |it| it.spoken(&name),
         .supply => |k| consumable.phrase(k),
     };
-    const verb = if (command == .buy) "Bought" else "Sold";
+    const verb = if (side == .buy) "Bought" else "Sold";
     g.sim.log.push(.loot, "{s} {s} for " ++ hero.COINS_FMT ++ ".", .{ verb, what, done.gold });
     g.character.message.say("{s} for " ++ hero.COINS_FMT, .{ verb, done.gold });
     g.pic.gold_shown = g.sim.gold;
@@ -324,7 +325,8 @@ pub fn characterCommand(g: *game.Game, command: book.Command) void {
     defer settleLoot(g);
     switch (command) {
         .close => closeBook(g),
-        .buy, .sell => deal(g, command),
+        .buy => |row| deal(g, .buy, row),
+        .sell => |row| deal(g, .sell, row),
         .bindings => |act| {
             binds.openBinds(g);
             if (g.sim.growth.unlocked(act)) g.binds.assigning = act;

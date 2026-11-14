@@ -7,6 +7,7 @@ const raster = @import("../gfx/raster.zig");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const listing = @import("../map/listing.zig");
+const menu = @import("../ui/menu.zig");
 pub const SHIFT_STEP: i32 = 5;
 const P = mathx.P;
 
@@ -100,8 +101,7 @@ pub fn buttonBack(r: rl.Rectangle, live: bool) void {
 }
 
 pub fn buttonBackEdged(r: rl.Rectangle, live: bool, edge: rl.Color) void {
-    rl.drawRectangleRec(r, if (live) LIVE_FILL else DEAD_FILL);
-    rl.drawRectangleLinesEx(r, 1, edge);
+    menu.boxed(r, if (live) LIVE_FILL else DEAD_FILL, edge);
 }
 
 pub fn flatButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, ink: rl.Color, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
@@ -176,8 +176,7 @@ pub fn fitBefore(face: *const font.Face, buf: []u8, fit_buf: []u8, s: []const u8
 }
 
 pub fn well(r: rl.Rectangle, focused: bool) P {
-    rl.drawRectangleRec(r, PANEL_BG);
-    rl.drawRectangleLinesEx(r, 1, if (focused) look.UI_FOCUS else look.EDGE);
+    menu.boxed(r, PANEL_BG, if (focused) look.UI_FOCUS else look.EDGE);
     return .{ .x = textX(r), .y = raster.top(r) + GAP };
 }
 
@@ -284,14 +283,6 @@ pub fn scissorIn(clip: ?rl.Rectangle, r: rl.Rectangle) void {
 
 pub fn reclip(clip: ?rl.Rectangle) void {
     if (clip) |c| scissor(c) else rl.endScissorMode();
-}
-
-pub fn scrollTop(top: usize, by: i32, n: usize, rows: usize) usize {
-    return mathx.nudge(top, by, (n -| rows) + 1);
-}
-
-pub fn clampTop(top: usize, n: usize, rows: usize) usize {
-    return @min(top, n -| rows);
 }
 
 fn scrollBy(top: *i32, most: i32, by: i32) void {

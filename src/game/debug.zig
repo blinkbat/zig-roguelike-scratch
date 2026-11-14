@@ -78,7 +78,6 @@ pub const State = struct {
     performance_overlay: bool = true,
 };
 
-
 fn rowOf(comptime page: Page) Row {
     return @field(Row, @tagName(page));
 }
@@ -221,7 +220,8 @@ pub fn label(g: *game.Game, comptime row: Row) [:0]const u8 {
     if (option(g, row)) |on| return menu.toggle(name, on.*);
     return switch (row) {
         .reveal_map => menu.toggle(name, g.light.reveal_map),
-        else => name,
+        .restart_map => name,
+        inline else => |r| if (comptime switched(r) or opens(r) != null) name else @compileError("Debug row " ++ @tagName(r) ++ " has no label"),
     };
 }
 

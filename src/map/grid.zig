@@ -1113,11 +1113,29 @@ pub fn cellOr(comptime T: type, cells: *const [CELLS]T, p: P, outside: T) T {
     return cells[i];
 }
 
+pub fn boundsWhere(ctx: anytype, comptime has: fn (@TypeOf(ctx), usize) bool) ?Box {
+    var lo = SIZE;
+    var hi = P{ .x = 0, .y = 0 };
+    for (0..CELLS) |i| {
+        if (!has(ctx, i)) continue;
+        const p = Level.of(i);
+        lo = lo.min(p);
+        hi = hi.max(p.add(.{ .x = 1, .y = 1 }));
+    }
+    return if (lo.x < hi.x) .{ .lo = lo, .hi = hi } else null;
+}
+
+pub fn markBox(set: *CellSet, b: Box) void {
+    var cells = b.cells();
+    while (cells.next()) |q| {
+        if (Level.inside(q)) set.set(Level.idx(q));
+    }
+}
+
 /// Terrain only; -1 where nothing reaches. How many cells it reached.
 pub fn distances(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32) usize {
     var flood = Flood.init(lv, from, out, queue);
-    while (flood.next()) |_| {}
-    return flood.tail;
+    return flood.drain();
 }
 
 pub const TEST_SEED_STRIDE = 7919;
@@ -1134,10 +1152,19 @@ pub const Flood = struct {
     tail: usize = 0,
 
     pub fn init(lv: *const Level, from: P, dist: *[CELLS]i32, queue: *[CELLS]u32) Flood {
-        @memset(dist, -1);
-        var f = Flood{ .lv = lv, .dist = dist, .queue = queue };
+        var f = empty(lv, dist, queue);
         f.seed(from);
         return f;
+    }
+
+    pub fn empty(lv: *const Level, dist: *[CELLS]i32, queue: *[CELLS]u32) Flood {
+        @memset(dist, -1);
+        return .{ .lv = lv, .dist = dist, .queue = queue };
+    }
+
+    pub fn drain(self: *Flood) usize {
+        while (self.next()) |_| {}
+        return self.tail;
     }
 
     pub fn seed(self: *Flood, from: P) void {

@@ -386,7 +386,7 @@ fn landBlow(g: *game.Game, id: u16, h: Hurt) fx.After {
 }
 
 fn landedImpact(g: *game.Game, id: u16, at: P, h: Hurt) fx.ActorImpact {
-    return .{ .slot = actor.ActorId.fromInt(id).slot(), .at = at, .lethal = h.lethal, .after = landBlow(g, id, h) };
+    return .{ .slot = .fromIndex(actor.Pool.slot(id)), .at = at, .lethal = h.lethal, .after = landBlow(g, id, h) };
 }
 
 fn afterBlow(g: *game.Game, id: u16, h: Hurt) fx.After {
@@ -473,8 +473,7 @@ fn beginTurn(g: *game.Game, from: P) void {
 }
 
 fn raiders(g: *game.Game) void {
-    const w = g.sim.map orelse return;
-    const nd = &w.node[g.sim.node];
+    const nd = g.sim.nodeHere() orelse return;
     const door = nd.raidDoor() orelse return;
     const r = nd.plan.procgen.raid;
     const now = g.sim.clock.since(g.sim.days);
@@ -483,7 +482,7 @@ fn raiders(g: *game.Game) void {
         const at = atlas.landing(&g.sim.lv, door, &.{}) orelse return;
         var body = actor.Actor.of(atlas.raid.RAIDER, at);
         body.raider = true;
-        const id = tactics_exec.rise(g, body, tactics_exec.spentSlot(g), g.pic.lead orelse 0);
+        const id = tactics_exec.rise(g, body, tactics_exec.spentSlot(g), g.pic.leadNow());
         g.sim.sayAt(at, "A {s} raider comes in from the dark.", .{actor.row(atlas.raid.RAIDER).name});
         tactics_exec.landed(g, id);
     }
@@ -561,7 +560,7 @@ fn gasTick(g: *game.Game, id: u16, comptime tick: game.simulation.Tick, comptime
 }
 
 fn masked(g: *game.Game, id: u16, dmg: i32) i32 {
-    const share = if (id == g.sim.hero) std.math.clamp(g.sim.inventory.gear.sum(.masked), 0, mathx.PERCENT) else 0;
+    const share = if (id == g.sim.hero) g.sim.inventory.gear.masked() else 0;
     if (share == 0 or dmg <= 0) return dmg;
     return @intCast(mathx.percentRound(@as(i64, dmg) * (mathx.PERCENT - share), &g.sim.rng));
 }
@@ -850,7 +849,7 @@ fn hurl(g: *game.Game, id: u16, hu: actor.Hurl) bool {
     r.ready_in = hu.every;
     g.pic.turnLater(.fromInt(id), hero.x - r.at.x);
     g.sim.sayOf(r, "The {s} hurls a " ++ firebolt.NAME ++ ".", .{actor.row(r.kind).name});
-    g.pic.recordHurl(.fromInt(id), b, hero, g.pic.lead orelse 0);
+    g.pic.recordHurl(.fromInt(id), b, hero, g.pic.leadNow());
     return true;
 }
 
@@ -888,7 +887,7 @@ fn flyBolts(g: *game.Game) bool {
 
 /// Bolts fly once the hero's own step this turn is drawn.
 fn boltsWait(g: *const game.Game) f32 {
-    const lead = g.pic.lead orelse 0;
+    const lead = g.pic.leadNow();
     const at = g.pic.knocked_from orelse g.sim.heroAt() orelse return lead;
     const step = g.pic.glide[actor.Pool.slot(g.sim.hero)];
     if (step.to.eq(at)) return lead;

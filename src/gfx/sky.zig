@@ -190,10 +190,7 @@ const OVERCAST = Look{ .key = 0.3, .sky = 1.75, .grey = 0.55, .tint = .{ 0.92, 0
 const LIGHTNING = Rgb{ 0.62, 0.68, 0.85 };
 
 fn lookAt(overcast: f32) Look {
-    const k = std.math.clamp(overcast, 0, 1);
-    var l: Look = undefined;
-    inline for (std.meta.fields(Look)) |field| @field(l, field.name) = if (field.type == Rgb) mix(@field(CLEAR, field.name), @field(OVERCAST, field.name), k) else mathx.lerpF(@field(CLEAR, field.name), @field(OVERCAST, field.name), k);
-    return l;
+    return mathx.lerpFields(Look, CLEAR, OVERCAST, std.math.clamp(overcast, 0, 1));
 }
 
 /// Rec. 709's weights of red, green and blue in what the eye reads as brightness.

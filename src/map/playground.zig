@@ -133,8 +133,7 @@ test "the playground lays every placeable terrain, barrels and a bank, all reach
     defer alloc.destroy(dist);
     const queue = try alloc.create([grid.CELLS]u32);
     defer alloc.destroy(queue);
-    var flood = grid.Flood.init(lv, HERO, dist, queue);
-    while (flood.next()) |_| {}
+    _ = grid.distances(lv, HERO, dist, queue);
     var unreached: usize = 0;
     for (0..PATCHES.len) |i| {
         const b = boxOf(i);

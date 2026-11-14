@@ -43,7 +43,7 @@ pub const Params = struct {
 const Box = grid.Box;
 
 pub const SECTION_LOTS: usize = 1;
-pub const LOTS_MAX: usize = @import("../procgen.zig").MAX_FEATURES * COUNT_MAX + SECTION_LOTS;
+pub const LOTS_MAX: usize = @import("../procgen.zig").LOTS_MAX;
 
 /// Every lot a floor's features take, so no feature raises one over another's.
 pub const Lots = struct {

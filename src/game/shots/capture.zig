@@ -11,6 +11,8 @@ pub const SHOTS_DIR = "shots";
 pub const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
 pub const MOUSE_DIR = SHOTS_DIR ++ "/mouse";
 pub const CINEMA_DIR = SHOTS_DIR ++ "/cinema";
+pub const SIZES = [_]mathx.P{ game.SCREEN_720, game.SCREEN_1080 };
+const PATH_MAX = 256;
 
 pub fn renderTarget(g: *game.Game) !rl.RenderTexture2D {
     return rl.loadRenderTexture(g.screen.x, g.screen.y);
@@ -97,6 +99,11 @@ pub const sameRgb = game.harness.sameRgb;
 pub fn capture(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {
     drawInto(g, target);
     try exportTarget(target, path);
+}
+
+pub fn capturef(g: *game.Game, target: rl.RenderTexture2D, comptime fmt: []const u8, args: anytype) !void {
+    var path: [PATH_MAX]u8 = undefined;
+    try capture(g, target, try std.fmt.bufPrintZ(&path, fmt, args));
 }
 
 /// The target's pixels, top row first; the caller unloads it.

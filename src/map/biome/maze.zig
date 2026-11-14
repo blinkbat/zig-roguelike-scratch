@@ -81,9 +81,9 @@ const Plan = struct {
     size: i32,
     origin: P,
     /// Each slot's open sides; null where no room stands.
-    mask: [COLS_MAX * ROWS_MAX]?u4 = @splat(null),
+    mask: [COLS_MAX * ROWS_MAX]?Opened = @splat(null),
 
-    fn at(self: *const Plan, c: usize, r: usize) ?u4 {
+    fn at(self: *const Plan, c: usize, r: usize) ?Opened {
         return self.mask[self.slot(.{ .x = @intCast(c), .y = @intCast(r) }).?];
     }
 
@@ -101,10 +101,11 @@ const Plan = struct {
     }
 };
 
-const SIDES = [_]mathx.Dir{ .w, .e, .s, .n };
+const OPENINGS = [_]mathx.Dir{ .w, .e, .s, .n };
+const Opened = std.meta.Int(.unsigned, OPENINGS.len);
 
-fn bitOf(d: mathx.Dir) u4 {
-    return @as(u4, 1) << @intCast(std.mem.indexOfScalar(mathx.Dir, &SIDES, d).?);
+fn bitOf(d: mathx.Dir) Opened {
+    return @as(Opened, 1) << @intCast(std.mem.indexOfScalar(mathx.Dir, &OPENINGS, d).?);
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
@@ -125,13 +126,13 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     var tries: usize = 0;
     while (n < p.rooms and tries < TRIES) : (tries += 1) {
         const from = rng.pick(usize, placed[0..n]);
-        const side = rng.pick(mathx.Dir, &SIDES);
+        const side = rng.pick(mathx.Dir, &OPENINGS);
         const cr = Plan.place(from).add(side.delta());
         const k = pl.slot(cr) orelse continue;
         if (pl.mask[k] != null) continue;
         pl.mask[k] = bitOf(side.opposite());
         pl.mask[from].? |= bitOf(side);
-        for (SIDES) |s| {
+        for (OPENINGS) |s| {
             const o = pl.slot(cr.add(s.delta())) orelse continue;
             if (o == from or pl.mask[o] == null or !rng.perMille(p.merge)) continue;
             pl.mask[k].? |= bitOf(s);
@@ -149,7 +150,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
 }
 
 /// The cell beyond each opening is the next room's.
-fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal: carve.Palette, lo: P, size: i32, mask: u4) void {
+fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal: carve.Palette, lo: P, size: i32, mask: Opened) void {
     const whole = grid.Box.sized(lo, size, size);
     const mid = whole.centre();
     const inside = whole.inner();
@@ -158,7 +159,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
     } else {
         carve.blobIn(lv, noise, mid, @as(f32, @floatFromInt(size)) / 2 - 1, carve.CAVE_SCALE, CAVE_LO, CAVE_SPAN, pal.open, inside, null);
     }
-    for (SIDES) |s| {
+    for (OPENINGS) |s| {
         if (mask & bitOf(s) == 0) continue;
         const step = s.delta();
         const edge = mid.add(step.scaled(@divTrunc(size, 2)));
