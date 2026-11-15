@@ -170,6 +170,9 @@ line root
 say Well met, traveller.
 ask Show me your wares. -> grief
 need flag pib_home off
+ask Show me your wares. -> end
+need flag pib_home on
+gets trade
 ask You look troubled. What happened? -> trouble
 need quest stolen_pib unstarted
 ask I have your baby pib. -> thanks

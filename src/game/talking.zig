@@ -573,6 +573,61 @@ test "a choice that trades opens the merchant's wares without a turn; buying spe
     try std.testing.expectEqual(stocked, g.sim.plot.wares[0].?.supplies.get(k));
 }
 
+test "the caravan merchant trades only after the stolen pib is returned" {
+    const w = try atlas.testStart();
+    defer std.testing.allocator.destroy(w);
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const s = &w.script;
+    const merchant_dialog = s.findDialog("merchant").?;
+    const baby_dialog = s.findDialog("baby_pib").?;
+    const merchant = for (s.npcs(), 0..) |npc, i| {
+        if (npc.dialog == merchant_dialog) break i;
+    } else return error.NoMerchant;
+    const baby = for (s.npcs(), 0..) |npc, i| {
+        if (npc.dialog == baby_dialog) break i;
+    } else return error.NoBabyPib;
+    game.beginMapAt(g, w, .{ .node = s.npc[merchant].node, .at = grid.MIDDLE }, SEED);
+    const turns = g.sim.plot.turns;
+    const Pick = struct {
+        fn reply(run: *game.Game, label: []const u8) !void {
+            const plot = &run.sim.plot;
+            const script_ = run.sim.script().?;
+            const line = plot.lineOf(script_) orelse return error.NoConversation;
+            var choices: [script.MAX_CHOICES]u8 = undefined;
+            var row: ?u8 = null;
+            for (plot.offered(script_, run.sim.world(), &choices), 0..) |choice, i| {
+                if (!std.mem.eql(u8, line.choice[choice].ask.text(), label)) continue;
+                try std.testing.expect(row == null);
+                row = @intCast(i);
+            }
+            plot.talk.?.cursor = row orelse return error.MissingReply;
+            press(run, menu.CONFIRM);
+        }
+    };
+    speak(g, merchant);
+    try Pick.reply(g, "Show me your wares.");
+    try std.testing.expectEqual(s.dialog[merchant_dialog].findLine("grief").?, g.sim.plot.talk.?.line);
+    try std.testing.expect(g.sim.plot.wares[merchant] == null);
+    try Pick.reply(g, "What happened to it?");
+    try Pick.reply(g, "I will find it.");
+    press(g, menu.CONFIRM);
+    speak(g, baby);
+    try Pick.reply(g, "Untie it and carry it home.");
+    speak(g, merchant);
+    try Pick.reply(g, "I have your baby pib.");
+    try std.testing.expectEqual(script.QuestState.done, g.sim.plot.quests[s.findQuest("stolen_pib").?].state);
+    press(g, menu.CONFIRM);
+    speak(g, merchant);
+    try Pick.reply(g, "Show me your wares.");
+    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
+    try std.testing.expectEqual(book.Page.trade, g.character.page);
+    try std.testing.expect(g.sim.plot.wares[merchant] != null);
+    try std.testing.expectEqual(turns, g.sim.plot.turns);
+    press(g, menu.BACK);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+}
+
 test "a trade taken on the way to another line hands back to the conversation" {
     const w = try testWorld(MERCHANT);
     defer std.testing.allocator.destroy(w);

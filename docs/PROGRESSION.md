@@ -20,15 +20,18 @@ transaction rules and integration behavior.
 Inventory is a list without weight or stash. Equipment has main hand, offhand,
 helm, chest, belt, gloves, boots, two rings, amulet and two flask slots.
 A main-hand item allows an offhand unless it occupies both hands; a quiver goes
-beside a ranged weapon, two-handed included, or an empty main hand. The resulting
-loadout must satisfy every requirement; an item cannot fund its own requirement.
+beside a ranged weapon, two-handed included, or an empty main hand. Newly equipped
+items must meet their requirements, and changes cannot make another item's met
+requirements unmet; an item cannot fund its own requirement. Unchanged gear whose
+requirements were already unmet on load does not block changes to other slots.
 
 Any class may equip any base whose requirements it meets, and loot and merchant
 shelves roll every base. Each class starts wearing its own weapons
 (`hero.Class.arms`). A skill needs its weapon in hand (`skillbar.Act.arms`):
 melee skills a melee weapon, ranged skills a ranged weapon, spells a wand or
 staff and Shield Bash a shield; flasks and supplies need nothing. Without it the
-skill is dimmed and refused. A bump still strikes with the class's own blow.
+skill is dimmed and refused. A bump uses an equipped melee weapon, falling back to
+the class's own blow when none is equipped.
 
 Successful equip, unequip and drop each spend a turn. Raising maximum life through
 equipment or allocation does not heal current HP. Death loses run equipment,
