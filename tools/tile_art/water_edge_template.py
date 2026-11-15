@@ -12,8 +12,10 @@ OUTPUT = DESKTOP / 'water-cliff-edge.aseprite'
 WORK = Path(tempfile.mkdtemp(prefix='cistern-water-cliff-'))
 SIZE = (512, 512)
 parser = argparse.ArgumentParser()
+parser.add_argument('--output', type=Path, default=OUTPUT)
 parser.add_argument('--replace-blank', action='store_true')
 args = parser.parse_args()
+OUTPUT = args.output.resolve()
 if OUTPUT.exists() and not args.replace_blank:
     raise SystemExit(f'Refusing to overwrite editable artwork: {OUTPUT}')
 
@@ -85,20 +87,8 @@ layers = [
     ('Labels - hide before export', labels, 255),
     ('64x64 grid - hide before export', grid, 180),
 ]
-quote = lambda value: json.dumps(str(value).replace('\\', '/'))
-lua = []
-if args.replace_blank:
-    lua.extend([
-        f'if app.fs.isFile({quote(OUTPUT)}) then',
-        f'local old=assert(app.open({quote(OUTPUT)}))',
-        'assert((#old.layers==6 or #old.layers==7) and #old.frames==1,"Unexpected edits: preserve existing file")',
-        'local paint=old.layers[#old.layers]',
-        'assert(paint.name=="Draw here" and (not paint:cel(1) or paint:cel(1).image:isEmpty()),"Preserving owner painting")',
-        f'old:saveCopyAs({quote(WORK / "previous-template.aseprite")})', 'old:close()', 'end',
-    ])
-else:
-    lua.append(f'assert(not app.fs.isFile({quote(OUTPUT)}),"Refusing to overwrite editable artwork")')
-lua.extend([f'local s=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local initial=s.layers[1]', 'local expected={}'])
+quote = lambda value: json.dumps(str(value).replace('\\', '/'), ensure_ascii=False)
+lua = [f'local s=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local initial=s.layers[1]', 'local expected={}']
 for index, (name, image, opacity) in enumerate(layers):
     path = WORK / f'layer-{index}.png'
     image.save(path)
@@ -112,6 +102,37 @@ lua.extend(['s:deleteLayer(initial)', 'local paint=s:newLayer()', 'paint.name="D
 for name, x, y in slices:
     lua.extend(['do', f'local slice=s:newSlice(Rectangle({x},{y},64,64))',
                 f'slice.name={quote(name)}', 'end'])
+if args.replace_blank:
+    lua.extend([
+        f'if app.fs.isFile({quote(OUTPUT)}) then',
+        f'local old=assert(app.open({quote(OUTPUT)}))',
+        'assert(old.width==s.width and old.height==s.height and old.colorMode==s.colorMode and #old.frames==1 and #old.layers==#s.layers and #old.slices==#s.slices,"Preserving changed template")',
+        'for i,want in ipairs(expected) do',
+        'local l=old.layers[i]',
+        'assert(l.isImage and l.name==want.name and l.opacity==want.opacity,"Preserving changed guide")',
+        'local c=assert(l:cel(1),"Preserving missing guide")',
+        'assert(c.opacity==255,"Preserving changed guide opacity")',
+        'for pixel in c.image:pixels() do',
+        'local x,y=pixel.x+c.position.x,pixel.y+c.position.y',
+        'assert((x>=0 and x<s.width and y>=0 and y<s.height) or app.pixelColor.rgbaA(pixel())==0,"Preserving off-canvas painting")',
+        'end',
+        'local actual=Image(s.width,s.height,ColorMode.RGB)',
+        'actual:drawImage(c.image,c.position)',
+        'assert(actual:isEqual(want.image),"Preserving changed guide pixels")',
+        'end',
+        'local paint=old.layers[#old.layers]',
+        'assert(paint.isImage and paint.name=="Draw here" and (not paint:cel(1) or paint:cel(1).image:isEmpty()),"Preserving owner painting")',
+        'local names={}',
+        'for _,slice in ipairs(s.slices) do names[slice.name]=slice.bounds end',
+        'for _,slice in ipairs(old.slices) do',
+        'local want=assert(names[slice.name],"Preserving changed slices")',
+        'local b=slice.bounds',
+        'assert(b.x==want.x and b.y==want.y and b.width==want.width and b.height==want.height,"Preserving moved slice")',
+        'names[slice.name]=nil', 'end',
+        f'old:saveCopyAs({quote(WORK / "previous-template.aseprite")})', 'old:close()', 'end',
+    ])
+else:
+    lua.append(f'assert(not app.fs.isFile({quote(OUTPUT)}),"Refusing to overwrite editable artwork")')
 lua.extend([
     's.data="Six independent 64px water cliff tiles: left, repeat, right at x12/108/204; shallow y104, deep y232. Lip at local y16; bottom y28 shallow, y40 deep (exclusive). Paint both depths on Draw here. Locked water references at x324/420 are unchanged 64px crops of runtime shallows-ground.png and water-ground.png, masks 12 and 3. No runtime integration."',
     f's:saveAs({quote(OUTPUT)})', 's:close()', f'local saved=assert(app.open({quote(OUTPUT)}))',

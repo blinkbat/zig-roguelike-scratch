@@ -261,7 +261,7 @@ pub fn fireLands(g: *game.Game, at: P, range: i32, kindle: fire.Kindle, wait: f3
 pub fn areaHit(g: *game.Game, comptime act: skillbar.Act, at: P, area: areas.Burst, s: Stroke, direct: ?u16, prop: bool) void {
     var struck = skills.foesIn(g, area);
     if (direct) |id| if (!struck.has(id)) struck.push(id);
-    g.pic.fx.burst(s.wait, .{ .at = at, .area = area, .element = act.element().? });
+    g.pic.recordBurst(&g.sim, s.wait, .{ .at = at, .area = area, .element = act.element().? });
     const raw = if (direct != null) attacks.rawFor(&g.sim, act) else attacks.rawElementFor(&g.sim, act);
     if (prop) smash(g, at, barrelVerb(act), s);
     for (struck.slice()) |id| {

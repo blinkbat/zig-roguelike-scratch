@@ -1,5 +1,17 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local path=app.params.source or 'C:/Users/DavidBennett/Desktop/forest-tree-walls.aseprite'
+local canonical=root..'assets/source/forest-tree-walls.aseprite'
+local function bytesOf(file)
+  local input=assert(io.open(file,'rb'))
+  local bytes,read_error=input:read('*a')
+  local closed,close_error=input:close()
+  assert(bytes,read_error)
+  assert(closed,close_error)
+  return bytes
+end
+if app.params.install=='yes' and app.fs.isFile(canonical) then
+  assert(bytesOf(canonical)==bytesOf(path),'Preserving divergent canonical source; inspect owner edits before installing')
+end
 local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
 app.fs.makeAllDirectories(work)
 local backups=root..'assets/backup/'
@@ -76,7 +88,7 @@ drawing.stackIndex=#sprite.layers
 app.layer=extension
 local destination=app.params.install=='yes' and path or work..'forest-tree-walls-draft.aseprite'
 sprite:saveAs(destination)
-if app.params.install=='yes' then sprite:saveCopyAs(root..'assets/source/forest-tree-walls.aseprite') end
+if app.params.install=='yes' then sprite:saveCopyAs(canonical) end
 sprite:saveCopyAs(work..'forest-tree-walls-sheet.png')
 sprite:close()
 local reopened=assert(app.open(destination))

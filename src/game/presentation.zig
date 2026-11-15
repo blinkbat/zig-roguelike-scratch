@@ -292,6 +292,16 @@ pub const Presentation = struct {
         return after;
     }
 
+    pub fn recordBurst(self: *Presentation, sim: *const Simulation, wait: f32, burst: fx.Burst) void {
+        var shown = burst;
+        shown.area = .{};
+        shown.density_cells = burst.density_cells orelse burst.area.n;
+        for (burst.area.slice()) |p| {
+            if (self.litShown(sim, p)) shown.area.push(p);
+        }
+        if (shown.area.n > 0 or self.litShown(sim, burst.at)) self.fx.burst(wait, shown);
+    }
+
     pub fn recordSplit(self: *Presentation, sim: *const Simulation, parent: actor.ActorId, child: actor.ActorId) void {
         const i = parent.slot().index;
         const o = child.slot().index;
@@ -946,16 +956,17 @@ pub const Presentation = struct {
 
     pub fn stepMotion(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.footfalls(sim);
+        const lit = self.litCells(sim);
         if (self.shot) |*s| {
-            if (!s.fly(&self.fx, &sim.lv, dt)) self.shot = null;
+            if (!s.fly(&self.fx, &sim.lv, lit, dt)) self.shot = null;
         }
         for (&self.foe_shots) |*pending| {
             if (pending.*) |*s| {
-                if (!s.fly(&self.fx, &sim.lv, dt)) pending.* = null;
+                if (!s.fly(&self.fx, &sim.lv, lit, dt)) pending.* = null;
             }
         }
         for (&self.bolts) |*pending| if (pending.*) |*b| if (b.moving()) {
-            if (b.at()) |at| self.fx.trail(&sim.lv, at, b.heading, projectiles.BOLT_ACT, 0);
+            if (b.at()) |at| self.fx.trail(&sim.lv, lit, at, b.heading, projectiles.BOLT_ACT, 0);
         };
         self.stepTurning(dt);
     }
@@ -1255,7 +1266,7 @@ pub const Presentation = struct {
                 .fire => {
                     gas.hold(s.wait);
                     self.holdFire(&sim.lv, s.wait);
-                    if (self.litShown(sim, at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
+                    if (self.litShown(sim, at)) self.recordBurst(sim, s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
                 },
             },
             .strike => {},

@@ -6,6 +6,7 @@ const grid = @import("../../map/grid.zig");
 const hud = @import("../../ui/hud.zig");
 const actor = @import("../../play/actor.zig");
 const bow = @import("../../play/bow.zig");
+const areas = @import("../../play/area.zig");
 const burning = @import("../../play/burning.zig");
 const flask = @import("../../play/flask.zig");
 const skillbar = @import("../../play/skillbar.zig");
@@ -20,6 +21,179 @@ const game = @import("../../game.zig");
 const glide = @import("../glide.zig");
 const P = mathx.P;
 const HERO = actor.HERO;
+
+test "projectile trails do not expose cold motion across remembered darkness" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const to = P{ .x = 24, .y = 20 };
+    for ([_]skillbar.Act{ .glacial_shot, .frost_vial }) |act| {
+        harness.arena(g, from, &.{});
+        @memset(&g.sim.lv.seen, true);
+        @memset(&g.sim.lv.lit, false);
+        _ = g.pic.recordProjectile(from, act, bow.fly(&g.sim.lv, from, to));
+        g.pic.stepMotion(&g.sim, g.pic.shot.?.lands());
+        try std.testing.expectEqual(@as(usize, 0), harness.liveMotes(g, harness.AnyMote{}));
+    }
+}
+
+test "projectile trails stop emitting beyond sight and retain previously visible motes" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const to = P{ .x = 24, .y = 20 };
+    harness.arena(g, from, &.{});
+    @memset(&g.sim.lv.seen, true);
+    for (&g.sim.lv.lit, 0..) |*lit, i| lit.* = grid.Level.of(i).x < 22;
+    _ = g.pic.recordProjectile(from, .glacial_shot, bow.fly(&g.sim.lv, from, to));
+    g.pic.stepMotion(&g.sim, g.pic.shot.?.lands());
+    try std.testing.expect(harness.liveMotes(g, harness.AnyMote{}) > 0);
+    for (g.pic.fx.motes) |m| {
+        if (m.life > 0) try std.testing.expect(m.p[0] < 23);
+    }
+    harness.arena(g, from, &.{});
+    @memset(&g.sim.lv.lit, true);
+    _ = g.pic.recordProjectile(from, .glacial_shot, bow.fly(&g.sim.lv, from, to));
+    g.pic.stepMotion(&g.sim, 0.02);
+    const count = harness.liveMotes(g, harness.AnyMote{});
+    try std.testing.expect(count > 0);
+    const first = g.pic.fx.motes[0];
+    @memset(&g.sim.lv.lit, false);
+    g.pic.stepMotion(&g.sim, 0.02);
+    try std.testing.expectEqual(count, harness.liveMotes(g, harness.AnyMote{}));
+    try std.testing.expectEqualDeep(first, g.pic.fx.motes[0]);
+}
+
+test "projectile trails follow held sight before fire changes land" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const to = P{ .x = 24, .y = 20 };
+    for ([_]bool{ false, true }) |was_lit| {
+        harness.arena(g, from, &.{});
+        @memset(&g.sim.lv.seen, true);
+        @memset(&g.sim.lv.lit, was_lit);
+        if (was_lit) g.pic.holdFlames(&g.sim.lv, 1) else g.pic.holdFire(&g.sim.lv, 1);
+        @memset(&g.sim.lv.lit, !was_lit);
+        _ = g.pic.recordProjectile(from, .glacial_shot, bow.fly(&g.sim.lv, from, to));
+        g.pic.stepMotion(&g.sim, g.pic.shot.?.lands());
+        try std.testing.expectEqual(was_lit, harness.liveMotes(g, harness.AnyMote{}) > 0);
+        for (g.sim.lv.lit) |lit| try std.testing.expectEqual(!was_lit, lit);
+    }
+}
+
+test "cold bursts do not expose a projectile's collision with an unseen body" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 24, .y = 20 };
+    harness.arena(g, from, &.{at});
+    harness.toughenFoes(g);
+    @memset(&g.sim.lv.seen, true);
+    @memset(&g.sim.lv.lit, false);
+    g.sim.lv.light(from);
+    const id = harness.foeId(0);
+    combat.burstHit(g, .glacial_shot, .{ .body = id }, at, .{ .from = from, .wait = 0.2 });
+    try std.testing.expect(g.sim.pool.get(id).?.hp < harness.TEST_HP);
+    g.pic.advance(&g.sim, 0.21);
+    try std.testing.expectEqual(@as(usize, 0), harness.liveMotes(g, harness.AnyMote{}));
+}
+
+test "cold bursts keep the visible splash of a hidden impact at its original density" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 24, .y = 20 };
+    const visible = at.add(.{ .x = 1, .y = 0 });
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    @memset(&g.sim.lv.seen, true);
+    @memset(&g.sim.lv.lit, false);
+    g.sim.lv.light(visible);
+    const burst = fx.Burst{ .at = at, .area = areas.patch(&g.sim.lv, at, areas.BURST_MAX), .element = .cold };
+    const before = burst.area;
+    var full = fx.Fx{};
+    full.burst(0, burst);
+    var expected: usize = 0;
+    for (full.motes) |m| {
+        if (m.life > 0 and mathx.cellOf(.{ m.p[0], m.p[1] }).eq(visible)) expected += 1;
+    }
+    try std.testing.expect(expected > 0);
+    combat.areaHit(g, .glacial_shot, at, burst.area, .{ .from = .{ .x = 20, .y = 20 }, .wait = 0 }, null, false);
+    try std.testing.expectEqual(expected, harness.liveMotes(g, harness.AnyMote{}));
+    for (g.pic.fx.motes) |m| {
+        if (m.life > 0) try std.testing.expect(mathx.cellOf(.{ m.p[0], m.p[1] }).eq(visible));
+    }
+    try std.testing.expectEqualSlices(P, before.slice(), burst.area.slice());
+}
+
+test "cold bursts follow held sight when scheduled before fire changes land" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 24, .y = 20 };
+    for ([_]bool{ false, true }) |was_lit| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        @memset(&g.sim.lv.seen, true);
+        @memset(&g.sim.lv.lit, was_lit);
+        if (was_lit) g.pic.holdFlames(&g.sim.lv, 1) else g.pic.holdFire(&g.sim.lv, 1);
+        @memset(&g.sim.lv.lit, !was_lit);
+        g.pic.recordBurst(&g.sim, 0.2, .{ .at = at, .area = areas.patch(&g.sim.lv, at, 1), .element = .cold });
+        try std.testing.expectEqual(@as(usize, 0), harness.liveMotes(g, harness.AnyMote{}));
+        g.pic.advance(&g.sim, 0.21);
+        try std.testing.expectEqual(was_lit, harness.liveMotes(g, harness.AnyMote{}) > 0);
+    }
+}
+
+test "cold bursts preserve a visible impact glow over water without ground particles" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 24, .y = 20 };
+    for ([_]bool{ false, true }) |visible| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        var water = grid.Cells.around(at, 1);
+        while (water.next()) |p| g.sim.lv.set(p, .water);
+        @memset(&g.sim.lv.lit, visible);
+        const area = areas.patch(&g.sim.lv, at, 1);
+        try std.testing.expectEqual(@as(usize, 0), area.n);
+        g.pic.recordBurst(&g.sim, 0.2, .{ .at = at, .area = area, .element = .cold });
+        g.pic.advance(&g.sim, 0.21);
+        try std.testing.expectEqual(@as(usize, 0), harness.liveMotes(g, harness.AnyMote{}));
+        var lights: [fx.PULSES]@import("../../gfx/light.zig").Emission = undefined;
+        try std.testing.expectEqual(@as(usize, @intFromBool(visible)), g.pic.fx.pulseLights(&lights).len);
+    }
+}
+
+test "a braced gaoler hidden by reeds can send its hook into visible ground" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const origin = P{ .x = 24, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.lv.set(.{ .x = 22, .y = 21 }, .reeds);
+    const id = harness.spawnAt(g, .chain_gaoler, origin, true);
+    game.settle(g);
+    combat.endTurn(g);
+    harness.drawnOut(g);
+    try std.testing.expectEqual(@as(?mathx.Dir, .w), g.sim.pool.get(id).?.braced);
+    harness.nudge(g, .se);
+    g.st = .{};
+    try std.testing.expectEqual(P{ .x = 21, .y = 21 }, g.sim.heroAt().?);
+    try std.testing.expect(!g.pic.litShown(&g.sim, origin));
+    const slot = actor.Pool.slot(id);
+    var saw_head = false;
+    for (0..120) |_| {
+        const shot = g.pic.foe_shots[slot] orelse break;
+        if (shot.view.at) |at| {
+            if (shot.view.alpha > 0) {
+                try std.testing.expect(shot.hook);
+                try std.testing.expectEqual(origin, shot.from);
+                try std.testing.expect(g.pic.litShown(&g.sim, mathx.cellOf(at)));
+                try std.testing.expect(!g.pic.litShown(&g.sim, shot.from));
+                saw_head = true;
+                break;
+            }
+        }
+        game.update(g, mathx.TEST_DT);
+    }
+    try std.testing.expect(saw_head);
+}
 
 fn expectFadeAndRestore(g: *game.Game, i: usize, away: P) !void {
     harness.ease(g, 0);

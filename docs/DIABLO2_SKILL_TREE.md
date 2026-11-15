@@ -61,7 +61,7 @@ remain available through the binding picker. Page navigation and glyphs follow
 
 ## Verification
 
-Inspect all three classes with `--shot-trees` and relevant `--shot-ui` captures,
+Inspect all three classes with the skill-tree captures from `--shot-ui`,
 using [AGENTS.md](../AGENTS.md#verification). Check prerequisite edges, rank
 badges, blocked/no-point/maximum states, truthful damage and upgrade previews,
 and fitting text at the smallest supported size. Directional and pointer targets

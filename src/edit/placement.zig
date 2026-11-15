@@ -288,6 +288,7 @@ pub fn place(ed: *Editor, p: P) void {
         .start => {
             if (!ed.here().startFits(p)) return;
             if (ed.map.start.node == ed.node and ed.map.start.at.eq(p)) return;
+            ed.thumbnails.invalidate(ed.map.start.node);
             ed.map.start = .{ .node = ed.node, .at = p };
             ed.changed();
         },

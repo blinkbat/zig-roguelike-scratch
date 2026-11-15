@@ -96,12 +96,12 @@ pub const Shot = struct {
     }
 
     /// false once it has ended.
-    pub fn fly(self: *Shot, effects: *fx.Fx, lv: *const grid.Level, dt: f32) bool {
+    pub fn fly(self: *Shot, effects: *fx.Fx, lv: *const grid.Level, lit: *const [grid.CELLS]bool, dt: f32) bool {
         self.t += dt;
         const end = @min(self.t, self.lands());
         const gap = self.lands() / @as(f32, @floatFromInt(@max(1, self.flight.len * TRAIL_PER_CELL)));
         const heading = self.direction();
-        while (self.trail_t < end) : (self.trail_t += gap) effects.trail(lv, self.position(self.trail_t), heading, self.act, self.t - self.trail_t);
+        while (self.trail_t < end) : (self.trail_t += gap) effects.trail(lv, lit, self.position(self.trail_t), heading, self.act, self.t - self.trail_t);
         return self.t < self.ends();
     }
 

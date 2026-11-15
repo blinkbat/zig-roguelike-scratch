@@ -249,7 +249,7 @@ pub const Sting = struct { slot: actor.ActorSlot, after: ?After = null, fire_at:
 
 pub const Settle = struct { slot: actor.ActorSlot, after: After, puff: ?Puff = null };
 
-pub const Burst = struct { at: mathx.P, area: areas.Burst, element: damage.Element };
+pub const Burst = struct { at: mathx.P, area: areas.Burst, element: damage.Element, density_cells: ?usize = null };
 
 pub const Zap = struct { from: [2]f32, to: [2]f32 };
 

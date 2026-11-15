@@ -148,5 +148,5 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
 ## Verification
 
 Mapping/state tests and rendered captures do not substitute for physical controller
-testing. Use `--shot-ui` for Character, loot, HUD and binding, and `--shot-trees`
-for trees, following [AGENTS.md](../AGENTS.md#verification). Keep previews in TEMP.
+testing. Use `--shot-ui` for Character, skill trees, loot, HUD and binding,
+following [AGENTS.md](../AGENTS.md#verification). Keep previews in TEMP.

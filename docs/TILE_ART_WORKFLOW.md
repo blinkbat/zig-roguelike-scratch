@@ -101,9 +101,15 @@ block regeneration. Keep original cels and strokes crossing cell boundaries inta
 The port validates palette/alpha, empty mask 0, fill, corner cores and all 128
 legal adjacent pairs; inspect its connected preview as well.
 
+For `port_ground.lua`, `port_forest.lua` and `port_bridge.lua`, `install=yes`
+also requires any existing canonical source to match the input file byte for byte
+before either is changed. Verify this preflight with
+`python -B tools/tile_art/test_port_sources.py --aseprite <aseprite.exe>`; fixtures stay in TEMP.
+
 Deep water is derived by `deepen_water.lua` from the shallow sheet with a 60% RGB
 transform, retaining alpha, geometry and positions. Export the existing deep
-source for later edits rather than repeating the derivation.
+source for later edits rather than repeating the derivation. `install=yes` requires
+both editable destinations to be absent; use `out=` to choose a new working path.
 
 Bridge's original `Draw here` remains hidden; `Bridge extensions` holds its
 connected plank field. `port_bridge.lua` protects existing extensions through
@@ -165,7 +171,10 @@ Inspect `source`, `baseline`, `original`, `output`, `preview` and
 For new templates, `--shot-water-cliffs` exports three native game renders.
 `water_cliff_connected.py <shot-folder>` prepares a TEMP Aseprite assembly;
 replacement backs up existing outputs. `water_edge_template.py` supplies the
-original six-piece paint kit and refuses painted replacement. Connected flat
+original six-piece paint kit; `--replace-blank` requires unchanged guide pixels,
+layers and slices as well as a blank paint layer. Use `--output` for a new path.
+Verify with `python -B tools/tile_art/test_water_edge_template.py --aseprite <aseprite.exe>`.
+Connected flat
 edits require export/porting; they are not automatically loaded by the game.
 Keep dimensions and tile positions fixed, and never bake lighting into art.
 

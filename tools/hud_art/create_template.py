@@ -113,7 +113,7 @@ def source_rgb(source, name):
 
 LIFE = (source_rgb(hud_source, 'LIFE_CORE'), source_rgb(hud_source, 'LIFE_EDGE'))
 MANA = (source_rgb(hud_source, 'MANA_CORE'), source_rgb(hud_source, 'MANA_EDGE'))
-PLATE = source_rgb((ROOT / 'src/gfx/look.zig').read_text(encoding='utf-8'), 'BACKING')
+PLATE = source_rgb((ROOT / 'src/gfx/look.zig').read_text(encoding='utf-8'), 'BACKING_INK')
 WELL = source_rgb(hud_source, 'WELL')
 
 
@@ -215,7 +215,7 @@ if args.guides_only:
 
 
 def quote(value):
-    return json.dumps(str(value).replace('\\', '/'))
+    return json.dumps(str(value).replace('\\', '/'), ensure_ascii=False)
 
 
 lua = [f'for _,path in ipairs({{{quote(OUTPUT)},{quote(SOURCE)}}}) do', 'assert(not app.fs.isFile(path),"Refusing to overwrite editable artwork: "..path)', 'end', f'local sprite=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local expected={}']

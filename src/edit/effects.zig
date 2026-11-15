@@ -214,7 +214,7 @@ pub const Viewer = struct {
             v.fire(v.sample());
         }
         if (v.shot) |*sh| {
-            if (!sh.fly(&v.effects, &v.lv, dt)) v.shot = null;
+            if (!sh.fly(&v.effects, &v.lv, &v.lv.lit, dt)) v.shot = null;
         }
         v.effects.step(&v.lv, dt);
         v.t += dt;

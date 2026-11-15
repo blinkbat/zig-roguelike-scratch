@@ -114,11 +114,47 @@ pub const Spec = struct {
     }
 
     pub fn stamp(s: *const Spec, lv: *grid.Level) void {
+        s.stampAround(lv, null);
+    }
+
+    pub fn stampAround(s: *const Spec, lv: *grid.Level, authored: ?*const grid.CellSet) void {
+        s.stampToward(lv, authored, null);
+    }
+
+    pub fn stampToward(s: *const Spec, lv: *grid.Level, authored: ?*const grid.CellSet, entrance: ?P) void {
         const r = s.room();
         var outside = grid.CellSet.initEmpty();
-        for (0..grid.CELLS) |i| {
-            const p = grid.Level.of(i);
-            if (lv.walkable(p) and !s.occupies(p)) outside.set(i);
+        var protected = grid.CellSet.initEmpty();
+        var stretches: carve.Stretches = undefined;
+        if (stretches.label(lv) > 0) {
+            @memset(stretches.size[0..stretches.n], 0);
+            for (0..grid.CELLS) |i| {
+                const p = grid.Level.of(i);
+                if (lv.walkable(p) and !s.occupies(p)) stretches.size[stretches.region[i]] += 1;
+            }
+            var main = stretches.biggest();
+            if (entrance) |from| {
+                var near = grid.Nearest{ .from = from };
+                for (0..grid.CELLS) |i| {
+                    const p = grid.Level.of(i);
+                    if (lv.walkable(p) and !s.occupies(p)) near.offer(p);
+                }
+                if (near.best) |p| main = stretches.of(p);
+            }
+            var related = grid.CellSet.initEmpty();
+            if (s.key) |k| {
+                var beside_key = grid.Cells.around(k, 1);
+                while (beside_key.next()) |p| if (lv.walkable(p)) related.set(stretches.of(p));
+            }
+            var ring = s.reserved().grown(1).cells();
+            while (ring.next()) |p| if (lv.walkable(p)) related.set(stretches.of(p));
+            for (0..grid.CELLS) |i| {
+                const p = grid.Level.of(i);
+                if (!lv.walkable(p) or s.occupies(p)) continue;
+                if (stretches.region[i] == main) {
+                    outside.set(i);
+                } else if (!related.isSet(stretches.region[i])) grid.markBox(&protected, grid.Box.around(p, 1));
+            }
         }
         var it = s.reserved().cells();
         const inner = s.inside();
@@ -127,17 +163,17 @@ pub const Spec = struct {
             _ = lv.breakBarrel(p);
         }
         const way_in = s.approach();
-        s.connectTo(lv, way_in, &outside);
+        s.connectTo(lv, way_in, &outside, &protected, authored);
         if (s.key) |k| {
             lv.set(k, .floor);
             _ = lv.breakBarrel(k);
             const joined = grid.reached(lv, way_in);
-            s.connectTo(lv, k, &joined);
+            s.connectTo(lv, k, &joined, &protected, authored);
             lv.set(k, .chest);
             const kept = grid.reached(lv, way_in);
             for (grid.STEPS) |d| {
                 const n = k.add(d);
-                if (grid.Level.inside(n) and joined.isSet(grid.Level.idx(n)) and !kept.isSet(grid.Level.idx(n))) s.connectTo(lv, n, &kept);
+                if (grid.Level.inside(n) and joined.isSet(grid.Level.idx(n)) and !kept.isSet(grid.Level.idx(n))) s.connectTo(lv, n, &kept, &protected, authored);
             }
         }
         const back = carve.sideAt(inner, s.dir().opposite(), s.along());
@@ -153,39 +189,65 @@ pub const Spec = struct {
         return set.isSet(grid.Level.idx(p));
     }
 
-    fn connectTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet) void {
+    fn connectTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet, protected: *const grid.CellSet, authored: ?*const grid.CellSet) void {
         if (targets.count() == 0) return;
         var dist: [grid.CELLS]i32 = undefined;
         var reach: [grid.CELLS]u32 = undefined;
         var flood = grid.Flood.init(lv, from, &dist, &reach);
         if (flood.first(targets, inSet) != null) return;
+        var destinations = targets.*;
+        var target = targets.iterator(.{});
+        while (target.next()) |i| {
+            const p = grid.Level.of(i);
+            if (!grid.Level.onRim(p)) continue;
+            for (grid.STEPS) |delta| {
+                const q = p.add(delta);
+                if (!grid.Level.onRim(q)) destinations.set(grid.Level.idx(q));
+            }
+        }
         var seen = grid.CellSet.initEmpty();
         var back: [grid.CELLS]usize = undefined;
         var queue: [grid.CELLS]P = undefined;
+        var walls: [grid.CELLS]struct { at: P, parent: usize } = undefined;
         var head: usize = 0;
         var tail: usize = 1;
         queue[0] = from;
         seen.set(grid.Level.idx(from));
-        while (head < tail) : (head += 1) {
-            const p = queue[head];
-            if (targets.isSet(grid.Level.idx(p))) {
-                var at = head;
-                while (true) {
-                    const q = queue[at];
-                    carve.layWith(lv, q, .floor, .stone_bridge);
-                    _ = lv.breakBarrel(q);
-                    if (at == 0) return;
-                    at = back[at];
+        while (head < tail) {
+            var walled: usize = 0;
+            while (head < tail) : (head += 1) {
+                const p = queue[head];
+                if (destinations.isSet(grid.Level.idx(p))) {
+                    var at = head;
+                    while (true) {
+                        const q = queue[at];
+                        carve.layWith(lv, q, .floor, .stone_bridge);
+                        _ = lv.breakBarrel(q);
+                        if (at == 0) return;
+                        at = back[at];
+                    }
+                }
+                for (mathx.CARDINALS) |d| {
+                    const q = p.add(d);
+                    if (grid.Level.onRim(q) or s.occupies(q)) continue;
+                    const i = grid.Level.idx(q);
+                    if (seen.isSet(i) or protected.isSet(i)) continue;
+                    seen.set(i);
+                    if (authored) |painted| {
+                        if (painted.isSet(i) and lv.tile[i].solid()) {
+                            walls[walled] = .{ .at = q, .parent = head };
+                            walled += 1;
+                            continue;
+                        }
+                    }
+                    back[tail] = head;
+                    queue[tail] = q;
+                    tail += 1;
                 }
             }
-            for (mathx.CARDINALS) |d| {
-                const q = p.add(d);
-                if (grid.Level.onRim(q) or s.occupies(q)) continue;
-                const i = grid.Level.idx(q);
-                if (seen.isSet(i)) continue;
-                seen.set(i);
-                back[tail] = head;
-                queue[tail] = q;
+            for (walls[0..walled]) |wall| {
+                back[tail] = wall.parent;
+                queue[tail] = wall.at;
                 tail += 1;
             }
         }
@@ -228,6 +290,31 @@ pub const Spec = struct {
         return true;
     }
 };
+
+test "a zoo connects an isolated map edge entrance without opening other rim cells" {
+    const s = Spec{};
+    const entrances = [_]P{
+        .{ .x = 0, .y = 21 },
+        .{ .x = grid.W - 1, .y = 21 },
+        .{ .x = 20, .y = 0 },
+        .{ .x = 20, .y = grid.H - 1 },
+        .{ .x = 0, .y = 0 },
+        .{ .x = grid.W - 1, .y = 0 },
+        .{ .x = 0, .y = grid.H - 1 },
+        .{ .x = grid.W - 1, .y = grid.H - 1 },
+    };
+    for (entrances) |entrance| {
+        var lv = grid.Level.blank();
+        @memset(&lv.tile, .rock);
+        lv.set(entrance, .floor);
+        s.stampToward(&lv, null, entrance);
+        try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(s.approach())));
+        for (0..grid.CELLS) |i| {
+            const p = grid.Level.of(i);
+            if (grid.Level.onRim(p) and !p.eq(entrance)) try std.testing.expectEqual(grid.Tile.rock, lv.at(p));
+        }
+    }
+}
 
 test "zoo validation rejects extreme coordinates before computing room bounds" {
     for ([_]i32{ std.math.minInt(i32), std.math.maxInt(i32) }) |edge| {
@@ -374,6 +461,106 @@ test "a zoo whose ring already meets open ground carves nothing into a nearer se
     var queue: [grid.CELLS]u32 = undefined;
     _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
     try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
+}
+
+test "a zoo in rock connects to the main floor around a nearer sealed room" {
+    const s = Spec{ .key = .{ .x = 38, .y = 26 } };
+    var lv = grid.openFloor();
+    for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 20) {
+        lv.tile[i] = .rock;
+    };
+    const vault = grid.Box.sized(.{ .x = 31, .y = 18 }, 5, 7);
+    var it = vault.cells();
+    while (it.next()) |p| lv.set(p, if (vault.onEdge(p)) .wall else .floor);
+    s.stamp(&lv);
+    it = vault.cells();
+    while (it.next()) |p| {
+        try std.testing.expectEqual(if (vault.onEdge(p)) grid.Tile.wall else grid.Tile.floor, lv.at(p));
+    }
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
+    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
+    try std.testing.expect(s.keyReachable(&dist));
+    try std.testing.expect(dist[grid.Level.idx(vault.inner().lo)] < 0);
+}
+
+test "a zoo connects a key deliberately placed inside a separate room" {
+    const s = Spec{ .key = .{ .x = 33, .y = 21 } };
+    for ([_]grid.Tile{ .floor, .chest, .rock, .wall }) |key_ground| {
+        var lv = grid.openFloor();
+        for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 20) {
+            lv.tile[i] = .rock;
+        };
+        const vault = grid.Box.sized(.{ .x = 31, .y = 18 }, 5, 7);
+        var it = vault.cells();
+        while (it.next()) |p| lv.set(p, if (vault.onEdge(p)) .wall else .floor);
+        lv.set(s.key.?, key_ground);
+        s.stamp(&lv);
+        var dist: [grid.CELLS]i32 = undefined;
+        var queue: [grid.CELLS]u32 = undefined;
+        _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
+        try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
+        try std.testing.expect(s.keyReachable(&dist));
+    }
+}
+
+test "a zoo on an isolated floor pocket still connects to the main floor" {
+    const s = Spec{};
+    var lv = grid.openFloor();
+    for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 20) {
+        lv.tile[i] = .rock;
+    };
+    lv.set(s.approach().add(s.outward()), .floor);
+    const vault = grid.Box.sized(.{ .x = 31, .y = 18 }, 5, 7);
+    var it = vault.cells();
+    while (it.next()) |p| lv.set(p, if (vault.onEdge(p)) .wall else .floor);
+    s.stamp(&lv);
+    const reached = grid.reached(&lv, .{ .x = 5, .y = 5 });
+    try std.testing.expect(reached.isSet(grid.Level.idx(s.approach())));
+    it = vault.cells();
+    while (it.next()) |p| try std.testing.expectEqual(if (vault.onEdge(p)) grid.Tile.wall else grid.Tile.floor, lv.at(p));
+}
+
+test "a zoo key chest bypass goes around painted walls" {
+    const s = Spec{ .key = .{ .x = 30, .y = 21 } };
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .rock);
+    for (5..40) |x| lv.set(.{ .x = @intCast(x), .y = 21 }, .floor);
+    const walls = [_]P{ .{ .x = 29, .y = 20 }, .{ .x = 30, .y = 20 }, .{ .x = 31, .y = 20 }, .{ .x = 30, .y = 22 } };
+    var painted = grid.CellSet.initEmpty();
+    for (walls) |p| {
+        lv.set(p, .wall);
+        painted.set(grid.Level.idx(p));
+    }
+    s.stampAround(&lv, &painted);
+    for (walls) |p| try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    _ = grid.distances(&lv, .{ .x = 5, .y = 21 }, &dist, &queue);
+    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
+    try std.testing.expect(s.keyReachable(&dist));
+}
+
+test "a zoo enclosed by painted walls opens only one painted cell" {
+    const s = Spec{};
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .rock);
+    carve.box(&lv, grid.Box.sized(.{ .x = 2, .y = 2 }, 16, grid.H - 4), .floor);
+    const enclosure = grid.Box.sized(.{ .x = 36, .y = 14 }, 16, 14);
+    var painted = grid.CellSet.initEmpty();
+    var cells = enclosure.cells();
+    while (cells.next()) |p| if (enclosure.onEdge(p)) {
+        lv.set(p, .wall);
+        painted.set(grid.Level.idx(p));
+    };
+    s.stampAround(&lv, &painted);
+    var broken: usize = 0;
+    var it = painted.iterator(.{});
+    while (it.next()) |i| broken += @intFromBool(lv.tile[i] != .wall);
+    try std.testing.expectEqual(@as(usize, 1), broken);
+    const reached = grid.reached(&lv, .{ .x = 5, .y = 21 });
+    try std.testing.expect(reached.isSet(grid.Level.idx(s.approach())));
 }
 
 test "a key chest touching the zoo's ring only at a corner is reachable" {

@@ -6,7 +6,6 @@ const P = mathx.P;
 
 const CROWD: usize = 5;
 const POCKET: usize = 16;
-const JOIN_PASSES: usize = 160;
 const NONE = std.math.maxInt(u16);
 const NO_CELL = std.math.maxInt(u32);
 /// Radians; a bend changes by up to half this a step.
@@ -427,7 +426,7 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void 
     var st: Stretches = .{};
     const region = &st.region;
     const size = &st.size;
-    for (0..JOIN_PASSES) |_| {
+    for (0..grid.CELLS) |_| {
         const n = st.label(lv);
         if (n <= 1) return;
         const main = st.biggest();
@@ -1092,6 +1091,23 @@ test "noise is smooth, in range, and a seed is a field" {
         jump = @max(jump, @abs(v - a.at(p.add(.{ .x = 1, .y = 0 }), 12, 3)));
     }
     try std.testing.expect(lo >= 0 and hi <= 1 and hi - lo > 0.5 and jump < 0.2);
+}
+
+test "connecting hundreds of painted pockets reaches every preserved floor" {
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .wall);
+    const painted = grid.CellSet.initFull();
+    for (0..17) |y| for (0..17) |x| {
+        lv.set(.{ .x = @intCast(2 + x * 2), .y = @intCast(2 + y * 2) }, .floor);
+    };
+    var st = Stretches{};
+    try std.testing.expectEqual(@as(usize, 289), st.label(&lv));
+    var rng = mathx.Rng.init(0xC011EC7);
+    connect(&lv, &rng, Palette.BUILT, .{ .authored = &painted });
+    try std.testing.expectEqual(@as(usize, 1), st.label(&lv));
+    for (0..17) |y| for (0..17) |x| {
+        try std.testing.expectEqual(grid.Tile.floor, lv.at(.{ .x = @intCast(2 + x * 2), .y = @intCast(2 + y * 2) }));
+    };
 }
 
 test "a small island is bridged, not filled as a pocket" {

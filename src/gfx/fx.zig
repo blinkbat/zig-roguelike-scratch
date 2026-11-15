@@ -17,7 +17,7 @@ pub const BURST_WISPS = state.BURST_WISPS;
 pub const Sting = state.Sting;
 pub const FLAMES_GLOW = state.FLAMES_GLOW;
 const Settle = state.Settle;
-const Burst = state.Burst;
+pub const Burst = state.Burst;
 pub const Zap = state.Zap;
 const Shimmer = state.Shimmer;
 pub const FLASH_S = impact_queue.FLASH_S;
@@ -539,7 +539,8 @@ pub const Fx = struct {
         claim(Pulse, &self.pulses, &self.pulse_head).* = .{ .source = struck(at, col, g.reach), .life = g.life, .max = g.life };
     }
 
-    pub fn trail(self: *Fx, lv: *const grid.Level, at: [2]f32, dir: [2]f32, act: skillbar.Act, age: f32) void {
+    pub fn trail(self: *Fx, lv: *const grid.Level, lit: *const [grid.CELLS]bool, at: [2]f32, dir: [2]f32, act: skillbar.Act, age: f32) void {
+        if (!grid.cellOr(bool, lit, mathx.cellOf(at), false)) return;
         const m = flareOf(act.element()) orelse return;
         const life = m.trail_s;
         if (age >= life) return;
@@ -629,7 +630,7 @@ pub const Fx = struct {
         self.glow(from, col, s.burst);
         for (b.area.slice()) |p| {
             const to = mathx.centre(p);
-            for (0..burstMotes(b.area.n)) |_| {
+            for (0..burstMotes(b.density_cells orelse b.area.n)) |_| {
                 const life = self.rng.between(0.22, 0.4);
                 self.emit(.{
                     .p = .{ to[0] + self.rng.spread(0.5), to[1] + self.rng.spread(0.5), STRIKE_Z },
@@ -1113,6 +1114,36 @@ pub fn drawMissileFaded(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: 
 
 /// A chain run out from `from` to a barbed head at `at`, pointing `dir`.
 pub fn drawHookFaded(from: [2]f32, at: [2]f32, dir: [2]f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
+    drawHookChain(from, at, dir, ox, oy, cell, alpha);
+    drawHookHead(at, dir, ox, oy, cell, alpha);
+}
+
+pub fn hookCellClip(p: mathx.P, origin: [2]f32, cell: f32) grid.Box {
+    const near = projected(.{ @floatFromInt(p.x), @floatFromInt(p.y) }, origin[0], origin[1], cell);
+    const far = projected(.{ @floatFromInt(p.x + 1), @floatFromInt(p.y + 1) }, origin[0], origin[1], cell);
+    return .{ .lo = mathx.roundCell(near.x, near.y), .hi = mathx.roundCell(far.x, far.y) };
+}
+
+test "hook chain clips follow its height across visibility boundaries" {
+    const p = mathx.P{ .x = 20, .y = 21 };
+    for ([_]f32{ 64, 128 }) |cell| {
+        for ([_][2]f32{ .{ 0, 0 }, .{ -713, -850 }, .{ 15, 27 } }) |origin| {
+            const clip = hookCellClip(p, origin, cell);
+            const visible = projected(.{ 20.5, 21.1 }, origin[0], origin[1], cell);
+            const hidden = projected(.{ 20.5, 22.2 }, origin[0], origin[1], cell);
+            try std.testing.expect(clip.holds(mathx.roundCell(visible.x, visible.y)));
+            try std.testing.expect(!clip.holds(mathx.roundCell(hidden.x, hidden.y)));
+            const south = hookCellClip(p.add(.{ .x = 0, .y = 1 }), origin, cell);
+            const east = hookCellClip(p.add(.{ .x = 1, .y = 0 }), origin, cell);
+            try std.testing.expectEqual(clip.hi.y, south.lo.y);
+            try std.testing.expectEqual(clip.hi.x, east.lo.x);
+            try std.testing.expectEqual(@as(i32, @intFromFloat(cell)), clip.width());
+            try std.testing.expectEqual(@as(i32, @intFromFloat(cell)), clip.height());
+        }
+    }
+}
+
+pub fn drawHookChain(from: [2]f32, at: [2]f32, dir: [2]f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     const a = projected(from, ox, oy, cell);
     const p = projected(at, ox, oy, cell);
     const k = pxScale(cell);
@@ -1121,6 +1152,12 @@ pub fn drawHookFaded(from: [2]f32, at: [2]f32, dir: [2]f32, ox: f32, oy: f32, ce
     const span = mathx.len(p.x - a.x, p.y - a.y);
     var along: f32 = HOOK_LINK * k;
     while (along < span) : (along += HOOK_LINK * k) pixel.fleck(.{ .x = a.x + dir[0] * along, .y = a.y + dir[1] * along }, 1.5, k, ink);
+}
+
+pub fn drawHookHead(at: [2]f32, dir: [2]f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
+    const p = projected(at, ox, oy, cell);
+    const k = pxScale(cell);
+    const ink = look.fade(look.CHAIN, alpha);
     for ([_]f32{ -1, 1 }) |side| {
         const barb = rl.Vector2{ .x = p.x - dir[0] * HOOK_BARB * k - dir[1] * side * HOOK_BARB * k, .y = p.y - dir[1] * HOOK_BARB * k + dir[0] * side * HOOK_BARB * k };
         pixel.line(p, barb, 2, k, ink);

@@ -437,10 +437,15 @@ pub const Node = struct {
     }
 
     pub fn stamp(self: *const Node, lv: *grid.Level, roll: u64) void {
+        self.stampAt(lv, roll, if (self.door_n > 0) self.door[0].at else null);
+    }
+
+    pub fn stampAt(self: *const Node, lv: *grid.Level, roll: u64, entrance: ?P) void {
         var buf: [grid.MAX_DOORS]P = undefined;
         const cells = self.doorCells(&buf);
+        const laid = self.sectionOn(roll);
         switch (self.plan) {
-            .procgen => |*pg| procgen.rollWith(lv, roll, cells, pg.floor, pg.features(), self.sectionOn(roll)),
+            .procgen => |*pg| procgen.rollWith(lv, roll, cells, pg.floor, pg.features(), laid),
             .bespoke => |*b| {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;
@@ -452,7 +457,10 @@ pub const Node = struct {
                 }
             },
         }
-        if (self.zoo) |z| z.stamp(lv);
+        if (self.zoo) |z| {
+            const authored = if (laid) |s| s.cells() else grid.CellSet.initEmpty();
+            z.stampToward(lv, if (laid != null) &authored else null, entrance);
+        }
     }
 
     pub fn sketch(self: *const Node, lv: *grid.Level) void {
@@ -679,7 +687,7 @@ pub const Atlas = struct {
     pub fn standable(self: *const Atlas, from: Start, scratch: *grid.Level) bool {
         const nd = &self.node[from.node];
         if (nd.unrolled()) return true;
-        nd.sketch(scratch);
+        nd.stampAt(scratch, 0, from.at);
         var stood: script.Stood = @splat(null);
         self.stampNpcs(from.node, scratch, 0, &stood, EVERY_NPC);
         return landing(scratch, from.at, nd.placed()) != null;
@@ -1276,6 +1284,55 @@ test "every map in the maps folder parses, and each procgen node rolls its groun
             try std.testing.expectEqual(open, reached);
             rolled += 1;
         }
+    }
+}
+
+test "a zoo connects to the entrance even when a sealed room is larger" {
+    const alloc = std.testing.allocator;
+    const map = try testAtlas();
+    defer alloc.destroy(map);
+    const n = map.add(.{ .bespoke = .{} }).?;
+    const nd = &map.node[n];
+    @memset(&nd.plan.bespoke.tile, .rock);
+    for (1..20) |x| nd.plan.bespoke.tile[grid.Level.idx(.{ .x = @intCast(x), .y = 21 })] = .floor;
+    const vault = grid.Box.sized(.{ .x = 31, .y = 18 }, 7, 7);
+    var it = vault.cells();
+    while (it.next()) |p| nd.plan.bespoke.tile[grid.Level.idx(p)] = if (vault.onEdge(p)) .wall else .floor;
+    nd.zoo = .{};
+    const entrance = P{ .x = 5, .y = 21 };
+    map.start = .{ .node = n, .at = entrance };
+    var lv: grid.Level = undefined;
+    nd.stampAt(&lv, 0, entrance);
+    const reached = grid.reached(&lv, entrance);
+    try std.testing.expect(reached.isSet(grid.Level.idx(nd.zoo.?.approach())));
+    it = vault.cells();
+    while (it.next()) |p| try std.testing.expectEqual(if (vault.onEdge(p)) grid.Tile.wall else grid.Tile.floor, lv.at(p));
+    try std.testing.expect(map.standable(map.start, &lv));
+    try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(nd.zoo.?.approach())));
+}
+
+test "zoo connections preserve a valid fixed section outside the encounter" {
+    var nd = Node{ .plan = .{ .procgen = .{ .floor = .{ .open = .{
+        .litter = .{ .boulders = 0 },
+        .decor = .{ .tiny_shrubs = 0, .tall_grass = 0, .shrooms = 0 },
+    } } } }, .zoo = .{} };
+    try std.testing.expect(nd.plan.procgen.addFeature(.scatter));
+    nd.plan.procgen.feature[0] = .{ .scatter = .{ .tile = .rock, .on = .grass, .amount = mathx.MILLE } };
+    const painted = [_]P{ .{ .x = 38, .y = 21 }, .{ .x = 32, .y = 27 } };
+    for (painted) |p| try std.testing.expect(nd.plan.procgen.section.paint(p, .wall));
+    nd.door[0] = .{ .at = .{ .x = 0, .y = 21 } };
+    nd.door_n = 1;
+    for ([_]?P{ null, .{ .x = 32, .y = 28 } }) |key| {
+        nd.zoo.?.key = key;
+        try std.testing.expect(nd.zooFits() and nd.plan.procgen.valid() and nd.plan.procgen.section.valid());
+        var lv: grid.Level = undefined;
+        nd.stamp(&lv, 1);
+        for (painted) |p| try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
+        var dist: [grid.CELLS]i32 = undefined;
+        var queue: [grid.CELLS]u32 = undefined;
+        _ = grid.distances(&lv, nd.door[0].at, &dist, &queue);
+        try std.testing.expect(dist[grid.Level.idx(nd.zoo.?.approach())] >= 0);
+        try std.testing.expect(nd.zoo.?.keyReachable(&dist));
     }
 }
 

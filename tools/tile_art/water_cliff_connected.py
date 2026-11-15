@@ -54,7 +54,7 @@ text(32, 576, 'Ground, cliff faces, and lip/cap fill are separate editable layer
 text(32, 600, 'Original face pieces below are unchanged RGBA. Lip shadows fall on the cliff AND water at runtime.', 14)
 labels.save(work / 'labels.png')
 guides.save(work / 'grid.png')
-q = lambda p: json.dumps(str(p).replace('\\', '/'))
+q = lambda p: json.dumps(str(p).replace('\\', '/'), ensure_ascii=False)
 lua = [f'for _,path in ipairs({{{q(args.output)},{q(args.output.with_suffix(".png"))}}}) do']
 if args.replace:
     lua.extend([

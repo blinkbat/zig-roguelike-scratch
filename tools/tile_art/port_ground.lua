@@ -7,6 +7,18 @@ local material=assert(({
 })[name],'name=grass|dirt|water')
 local title=name:gsub('^%l',string.upper)
 local path=app.params.source or ('C:/Users/DavidBennett/Desktop/'..name..'.aseprite')
+local canonical=root..'assets/source/'..name..'.aseprite'
+local function bytesOf(file)
+  local input=assert(io.open(file,'rb'))
+  local bytes,read_error=input:read('*a')
+  local closed,close_error=input:close()
+  assert(bytes,read_error)
+  assert(closed,close_error)
+  return bytes
+end
+if app.params.install=='yes' and app.fs.isFile(canonical) then
+  assert(bytesOf(canonical)==bytesOf(path),'Preserving divergent canonical source; inspect owner edits before installing')
+end
 local art_path=app.params.art or path
 local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
 app.fs.makeAllDirectories(work)
@@ -223,7 +235,7 @@ drawing.stackIndex=#s.layers
 app.layer=l
 local dest=app.params.install=='yes' and path or work..name..'-draft.aseprite'
 s:saveAs(dest)
-if app.params.install=='yes' then s:saveCopyAs(root..'assets/source/'..name..'.aseprite') end
+if app.params.install=='yes' then s:saveCopyAs(canonical) end
 s:saveCopyAs(work..name..'-sheet.png')
 s:close()
 local back=assert(app.open(dest))

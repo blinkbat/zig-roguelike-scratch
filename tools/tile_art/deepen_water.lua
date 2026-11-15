@@ -1,6 +1,6 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local source=app.params.source or 'C:/Users/DavidBennett/Desktop/water.aseprite'
-local desktop='C:/Users/DavidBennett/Desktop/deep-water.aseprite'
+local desktop=app.params.out or 'C:/Users/DavidBennett/Desktop/deep-water.aseprite'
 local canonical=root..'assets/source/deep-water.aseprite'
 local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
 app.fs.makeAllDirectories(work)
@@ -8,30 +8,9 @@ local percent=tonumber(app.params.percent) or 60
 assert(percent and percent>0 and percent<100,'percent must be between 0 and 100')
 local install=app.params.install=='yes'
 local pc=app.pixelColor
-local function copy(from,to)
-  local f=assert(io.open(from,'rb'))
-  local bytes=f:read('*a')
-  f:close()
-  local out=assert(io.open(to,'wb'))
-  out:write(bytes)
-  out:close()
-end
-local stamp=os.date('%Y%m%d-%H%M%S')
 if install then
   assert(not app.fs.isFile(canonical),'Inspect the existing deep-water source before regenerating')
-  local old=assert(app.open(desktop))
-  local found=false
-  for _,l in ipairs(old.layers) do
-    if l.name=='Draw here' then
-      found=true
-      for _,cel in ipairs(l.cels) do
-        for it in cel.image:pixels() do assert(pc.rgbaA(it())==0,'Deep water has owner artwork; inspect before replacing') end
-      end
-    end
-  end
-  assert(found,'No Draw here in the old deep-water template')
-  old:close()
-  copy(desktop,work..'deep-water-before-'..stamp..'.aseprite')
+  assert(not app.fs.isFile(desktop),'Preserving existing deep-water artwork; choose a new out= path')
 end
 local s=assert(app.open(source))
 assert(s.width==512 and s.height==320 and #s.frames==1 and #s.slices==16)

@@ -769,10 +769,10 @@ pub fn drawMap(g: *game.Game) void {
     if (level_up_at) |at| g.pic.fx.level_up.drawSparks(at, o[0], o[1], game.CELL_F);
     if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), &g.light.visibility.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
 
-    if (g.pic.shot) |s| if (s.started()) drawShot(s, o);
+    if (g.pic.shot) |s| if (s.started()) drawShot(g, s, c);
     for (&g.pic.foe_shots) |*pending| {
         const s = pending.* orelse continue;
-        if (s.started()) drawShot(s, o);
+        if (s.started()) drawShot(g, s, c);
     }
     for (&g.pic.bolts) |*pending| {
         const b = pending.* orelse continue;
@@ -871,8 +871,25 @@ fn drawStandingBody(g: *game.Game, b: *const Shown) void {
     }
 }
 
-fn drawShot(s: game.presentation.Shot, o: [2]f32) void {
-    drawFlightAt(&s, s.view.at orelse return, o, game.CELL_F, s.view.alpha);
+fn drawShot(g: *const game.Game, s: game.presentation.Shot, c: Cam) void {
+    const at = s.view.at orelse return;
+    const o = c.origin();
+    if (!s.hook) return drawFlightAt(&s, at, o, game.CELL_F, s.view.alpha);
+    const bounds = grid.Box.between(s.from, mathx.cellOf(at)).grown(1);
+    var cells = bounds.cells();
+    const full = while (cells.next()) |p| {
+        if (!g.pic.litShown(&g.sim, p)) break false;
+    } else true;
+    if (full) return drawFlightAt(&s, at, o, game.CELL_F, s.view.alpha);
+    cells = bounds.cells();
+    while (cells.next()) |p| {
+        if (!g.pic.litShown(&g.sim, p)) continue;
+        const clip = fx.hookCellClip(p, o, game.CELL_F);
+        rl.beginScissorMode(clip.lo.x, clip.lo.y, clip.width(), clip.height());
+        fx.drawHookChain(mathx.centre(s.from), at, s.direction(), o[0], o[1], game.CELL_F, s.view.alpha);
+        rl.endScissorMode();
+    }
+    fx.drawHookHead(at, s.direction(), o[0], o[1], game.CELL_F, s.view.alpha);
 }
 
 pub fn drawFlight(s: *const game.presentation.Shot, o: [2]f32, cell: f32) void {

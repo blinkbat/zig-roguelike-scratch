@@ -50,7 +50,9 @@ Visible loot bags and stocked open chests have a faint steady sprite glow and
 a stronger shine sweep, fading with their pictured visibility.
 Visibility transitions use short presentation-only fades. Bodies, projectiles,
 NPCs, loose loot and ground hazards retain their last visible picture while fading
-out; hidden movement and state never update that picture. Targeting and interaction
+out; hidden movement and state never update that picture. Hook chains are clipped
+to visible cells at the chain's height so a visible head cannot reveal its hidden thrower.
+Targeting and interaction
 continue to use strict gameplay sight. Exploration feathering extends inward over
 known tiles only, with overlapping edge fades rounding the inner corners; unseen
 cells stay fully covered. Wall-adjacent feather widths interpolate continuously
@@ -91,8 +93,10 @@ Effect payloads and the impact queue cannot import the particle-effects coordina
 These helpers also cannot import Game, Presentation or the application.
 `gfx/status_marks.zig` cannot import the effects coordinator; its renderer reads
 only elapsed cosmetic time and explicit mark inputs. `game/projectile_motion.zig`
-cannot import Game or Presentation. Presentation supplies visibility to its motion
-view, which retains the last visible position during a fade.
+cannot import Game or Presentation. Presentation supplies pictured visibility to its
+motion view and trail emission. The view retains its last visible position during
+a fade. `recordBurst` keeps only pictured visible cells in the cosmetic burst while
+preserving the simulation area and per-cell particle density.
 ## Lifetimes
 
 `ui/keywords.zig` owns underlined keyword text, screen-space hit regions and one
@@ -271,8 +275,13 @@ capacity permits, including reserves for slime splitting. Swimmers receive shall
 water under their cells; mimics reveal and restore their ground when released.
 
 The room is stamped after terrain generation, with a walkable perimeter and
-short connections for its approach and key chest that stay outside its walls. Unrelated
-sealed rooms remain sealed. The chest is outside the perimeter and is
+short connections for its approach and key chest that stay outside its walls. These
+connections and the key chest's bypass preserve painted section walls wherever a
+route around them exists, breaking the fewest painted solid cells when enclosed.
+Connections target the arriving hero's floor component (the first travel door in
+standalone node previews, or the largest component if no entrance is known).
+Unrelated sealed rooms remain sealed; components touching the encounter or its key
+remain available for their connections. The chest is outside the perimeter and is
 connected before the door is sealed. Ordinary packs and derived NPC placements
 avoid the encounter. Authored foes, travel doors and fixed painted sections cannot
 overlap it; roaming painted sections cannot share its node. The editor previews

@@ -294,10 +294,12 @@ fn captureTactics(g: *game.Game) !void {
             g.character.cursor = i;
             g.sim.growth.ranks.set(act, 1);
             try capture(g, target, TACTICS_DIR ++ "/tree-" ++ @tagName(act) ++ ".png");
-            g.sim.growth.ranks.set(act, 2);
-            try capture(g, target, TACTICS_DIR ++ "/tree-" ++ @tagName(act) ++ "-upgrade.png");
-            g.sim.growth.ranks.set(act, progress.RANKS);
-            try capture(g, target, TACTICS_DIR ++ "/tree-" ++ @tagName(act) ++ "-maximum.png");
+            if (!progress.basic(act)) {
+                g.sim.growth.ranks.set(act, 2);
+                try capture(g, target, TACTICS_DIR ++ "/tree-" ++ @tagName(act) ++ "-upgrade.png");
+                g.sim.growth.ranks.set(act, progress.rankLimit(act));
+                try capture(g, target, TACTICS_DIR ++ "/tree-" ++ @tagName(act) ++ "-maximum.png");
+            }
         }
     }
     game.harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
@@ -635,10 +637,15 @@ pub fn captureCharacter(g: *game.Game) !void {
 
             g.character.cursor = progress.skills(class).len - 1;
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-future.png");
-            const described = if (class == .wizard) skillbar.Act.frost_nova else progress.skills(class)[0].act;
+            const described: skillbar.Act = switch (class) {
+                .wizard => .frost_nova,
+                .archer => .burning_arrow,
+                else => progress.skills(class)[0].act,
+            };
             g.character.cursor = skillCursor(class, described);
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-description.png");
             g.sim.growth.ranks.set(described, 2);
+            if (!g.sim.growth.canLearn(class, described)) return error.SkillUpgradeCaptureInvalid;
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-upgrade.png");
             if (class == .archer) {
                 g.character.cursor = skillCursor(class, .burning_arrow);
@@ -646,8 +653,17 @@ pub fn captureCharacter(g: *game.Game) !void {
                 try capture(g, target, SHOTS_DIR ++ "/tree-skills-mixed-upgrade.png");
             }
             g.character.cursor = progress.skills(class).len - 1;
-            g.sim.growth.active_points = 30;
+            g.sim.growth.active_points = 0;
+            for (progress.skills(class)) |s| {
+                const rank = g.sim.growth.ranks.get(s.act);
+                const limit = progress.rankLimit(s.act);
+                if (rank > limit) return error.SkillMaximumCaptureInvalid;
+                g.sim.growth.active_points += @as(u16, limit - rank) * progress.POINT_COST;
+            }
             for (progress.skills(class)) |s| while (g.sim.growth.learn(class, s.act)) {};
+            for (progress.skills(class)) |s| {
+                if (g.sim.growth.ranks.get(s.act) != progress.rankLimit(s.act)) return error.SkillMaximumCaptureInvalid;
+            }
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-maximum.png");
         }
         g.sim.class = .knight;

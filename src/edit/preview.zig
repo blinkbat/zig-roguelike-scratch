@@ -57,8 +57,8 @@ pub const Scene = struct {
         self.rolled_foes = .{};
         self.npc_at = @splat(null);
         switch (nd.plan) {
-            .bespoke => nd.sketch(&self.lv),
-            .procgen => nd.stamp(&self.lv, self.roll),
+            .bespoke => nd.stampAt(&self.lv, 0, arrival(map, node)),
+            .procgen => nd.stampAt(&self.lv, self.roll, arrival(map, node)),
         }
         map.stampNpcs(node, &self.lv, self.roll, &self.npc_at, atlas.EVERY_NPC);
         var rng = mathx.Rng.init(self.roll);

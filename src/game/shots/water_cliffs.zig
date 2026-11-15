@@ -267,7 +267,7 @@ fn checkWaterCapTint(g: *game.Game) !void {
             var beds: ground.Beds = undefined;
             @memset(&lv.tile, .shallows);
             beds.fill(&lv, SWATCH_LO, SWATCH_HI, false);
-            const reference = try waterSample(g, target, &beds, view, origin);
+            const reference = try waterSample(g, target, &lv, &beds, view, origin);
             defer rl.unloadImage(reference);
             for (&lv.tile, 0..) |*t, i| if (grid.Level.of(i).y >= 11) {
                 t.* = .water;
@@ -342,10 +342,10 @@ fn waterCliffTemplates(g: *game.Game) !void {
     }
 }
 
-fn waterSample(g: *game.Game, target: rl.RenderTexture2D, beds: *const ground.Beds, view: ?sprite.WaterView, origin: [2]f32) !rl.Image {
+fn waterSample(g: *game.Game, target: rl.RenderTexture2D, lv: *const grid.Level, beds: *const ground.Beds, view: ?sprite.WaterView, origin: [2]f32) !rl.Image {
     rl.beginTextureMode(target);
     rl.clearBackground(rl.Color.blank);
-    g.sprites.drawGround(&g.sim.lv, beds, origin, game.CELL_F, view);
+    g.sprites.drawGround(lv, beds, origin, game.CELL_F, view);
     rl.endTextureMode();
     return readTarget(target);
 }
@@ -407,18 +407,18 @@ pub fn checkWaterSurface(g: *game.Game) !void {
     defer rl.unloadTexture(dark);
     const blank = try swatch(1, 1, rl.Color.blank, error.WaterMirrorMissing);
     defer rl.unloadTexture(blank);
-    const plain = try waterSample(g, target, &beds, null, .{ 0, 0 });
+    const plain = try waterSample(g, target, &lv, &beds, null, .{ 0, 0 });
     defer rl.unloadImage(plain);
     var view = sprite.WaterView{ .screen = .{ width, height }, .visibility = visibility, .glints = dark };
-    const still = try waterSample(g, target, &beds, view, .{ 0, 0 });
+    const still = try waterSample(g, target, &lv, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(still);
     view.glints = gleam;
-    const first = try waterSample(g, target, &beds, view, .{ 0, 0 });
+    const first = try waterSample(g, target, &lv, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(first);
     try exportImage(first, SHOTS_DIR ++ "/water-glints.png");
     view.glints = dark;
     view.mirror = .{ .live = mirror.texture, .memory = blank };
-    const second = try waterSample(g, target, &beds, view, .{ 0, 0 });
+    const second = try waterSample(g, target, &lv, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(second);
     try exportImage(second, SHOTS_DIR ++ "/water-mirror-mask.png");
     var glinted = [_]usize{0} ** BANDS.len;
@@ -450,7 +450,7 @@ pub fn checkWaterSurface(g: *game.Game) !void {
         if (glinted[i] < MIN_PIXELS or reflected[i] < MIN_PIXELS) return error.WaterReflectionMissing;
     }
     view.mirror = .{ .live = blank, .memory = mirror.texture };
-    const memory = try waterSample(g, target, &beds, view, .{ 0, 0 });
+    const memory = try waterSample(g, target, &lv, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(memory);
     var remembered = [_]usize{0} ** BANDS.len;
     {
@@ -477,7 +477,7 @@ pub fn checkWaterSurface(g: *game.Game) !void {
     view.mirror = null;
     // Water fades by screen row, so only a sideways shift keeps each row's fade.
     const shift = P{ .x = CAMERA_SHIFT.x, .y = 0 };
-    const shifted = try waterSample(g, target, &beds, view, .{ -shift.x, -shift.y });
+    const shifted = try waterSample(g, target, &lv, &beds, view, .{ -shift.x, -shift.y });
     defer rl.unloadImage(shifted);
     var compared: usize = 0;
     {
@@ -494,10 +494,10 @@ pub fn checkWaterSurface(g: *game.Game) !void {
     std.debug.print("smooth water GPU: glints {d}/{d}, live mirrors {d}/{d}, remembered mirrors {d}/{d}; {d} grass/memory pixels exclude live effects, {d} sideways camera samples agree; alpha preserved\n", .{ glinted[0], glinted[1], reflected[0], reflected[1], remembered[0], remembered[1], fixed, compared });
     view.glints = dark;
     view.shimmer = true;
-    const swelled = try waterSample(g, target, &beds, view, .{ 0, 0 });
+    const swelled = try waterSample(g, target, &lv, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(swelled);
     view.seconds = SHIMMER_S;
-    const later = try waterSample(g, target, &beds, view, .{ 0, 0 });
+    const later = try waterSample(g, target, &lv, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(later);
     var swelling = [_]usize{0} ** DRY;
     var moving: usize = 0;

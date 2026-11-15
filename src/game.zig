@@ -333,7 +333,7 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
         const hero = g.sim.heroSlot().?;
         g.sim.lv.clear(g.sim.pool.items[hero].at);
     } else {
-        w.node[n].stamp(&g.sim.lv, roll);
+        w.node[n].stampAt(&g.sim.lv, roll, at);
         g.sim.ground = .{};
     }
     talking.stampEntering(g, n, at, back);

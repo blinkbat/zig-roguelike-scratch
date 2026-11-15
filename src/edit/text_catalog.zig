@@ -125,7 +125,8 @@ pub const Catalog = struct {
         var source = try project.openDir("src", .{ .iterate = true });
         defer source.close();
         for (try sortedFiles(a, source, included)) |path| {
-            const bytes = try source.readFileAlloc(a, path, FILE_CAP);
+            const bytes = try source.readFileAlloc(self.alloc, path, FILE_CAP);
+            defer self.alloc.free(bytes);
             try self.scan(try std.fmt.allocPrint(a, SRC ++ "{s}", .{path}), bytes);
         }
         try self.readMaps(project);
@@ -146,7 +147,8 @@ pub const Catalog = struct {
         defer maps.close();
         const a = self.arena.allocator();
         for (try sortedFiles(a, maps, isMap)) |path| {
-            const bytes = try maps.readFileAlloc(a, path, FILE_CAP);
+            const bytes = try maps.readFileAlloc(self.alloc, path, FILE_CAP);
+            defer self.alloc.free(bytes);
             try self.scanMap(try std.fmt.allocPrint(a, atlas.PREFIX ++ "{s}", .{path}), bytes);
         }
     }
@@ -292,15 +294,18 @@ pub const Catalog = struct {
 
     fn scan(self: *Catalog, path: []const u8, text: []const u8) !void {
         const a = self.arena.allocator();
+        var scratch = std.heap.ArenaAllocator.init(self.alloc);
+        defer scratch.deinit();
+        const temporary = scratch.allocator();
         const bytes = try a.dupeZ(u8, text);
         const file = self.files.items.len;
         try self.files.append(a, .{ .path = path, .bytes = bytes });
-        const ts = try tokenize(a, bytes);
+        const ts = try tokenize(temporary, bytes);
         for (ts) |token| if (token.tag == .invalid) return error.InvalidSource;
         if (self.skills == null) self.skills = try skillSources(a, @embedFile("../" ++ SKILLBAR_SOURCE));
-        var contexts = try ContextScan.init(a, path, bytes, ts, self.skills.?);
+        var contexts = try ContextScan.init(a, temporary, path, bytes, ts, self.skills.?);
         const pairs = contexts.pairs;
-        var excluded = try a.alloc(bool, ts.len);
+        var excluded = try temporary.alloc(bool, ts.len);
         @memset(excluded, false);
         for (ts, 0..) |token, i| {
             if (token.tag == .keyword_test) {
@@ -648,10 +653,10 @@ const ContextScan = struct {
     category: []const u8,
     skills: []const SkillSource,
 
-    fn init(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []const Token, skills: []const SkillSource) !ContextScan {
-        const pairs = try a.alloc(usize, ts.len);
+    fn init(a: std.mem.Allocator, temporary: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []const Token, skills: []const SkillSource) !ContextScan {
+        const pairs = try temporary.alloc(usize, ts.len);
         for (pairs, 0..) |*p, i| p.* = i;
-        var stack = std.ArrayList(usize).init(a);
+        var stack = std.ArrayList(usize).init(temporary);
         for (ts, 0..) |t, i| switch (t.tag) {
             .l_paren, .l_brace, .l_bracket => try stack.append(i),
             .r_paren, .r_brace, .r_bracket => if (stack.pop()) |open| {
@@ -660,7 +665,7 @@ const ContextScan = struct {
             },
             else => {},
         };
-        return .{ .a = a, .bytes = bytes, .ts = ts, .pairs = pairs, .scopes = std.ArrayList(Scope).init(a), .module = try moduleOf(a, path), .category = try categoryOf(a, path), .skills = skills };
+        return .{ .a = a, .bytes = bytes, .ts = ts, .pairs = pairs, .scopes = std.ArrayList(Scope).init(temporary), .module = try moduleOf(a, path), .category = try categoryOf(a, path), .skills = skills };
     }
 
     fn expressionEnd(s: *const ContextScan, from: usize) usize {
@@ -1012,6 +1017,35 @@ test "text catalog semantic context separates table rows skill containers calls 
     try std.testing.expectEqualStrings("Title", c.entries()[10].role);
     try std.testing.expectEqualStrings("ui.example.NAME", c.entries()[11].context);
     for (c.entries()) |e| try std.testing.expect(e.category.len > 0 and e.owner.len > 0 and e.role.len > 0 and e.context.len > 0);
+}
+
+test "text catalog retains snapshots and semantic text after later scans and a failed scan" {
+    var c = Catalog.init(std.testing.allocator);
+    defer c.deinit();
+    const original = "const SPECS = make(.{ .war_bow = .{ .desc = \"Far away.\", .name = \"War bow\" } });\n";
+    var input_text = original.*;
+    try c.scan("src/play/items.zig", &input_text);
+    @memset(&input_text, 'x');
+    c.labels = "play.skillbar.Act.arcane_barrier\tStone wall\n";
+    try c.scan("src/play/skillbar.zig", "pub const Act = enum { arcane_barrier };\n");
+    try c.scan("src/ui/other.zig", "const VALUE = 1;\n" ** 128);
+    try std.testing.expectError(error.InvalidSource, c.scan("src/ui/broken.zig", "const NAME = \"unterminated"));
+    try std.testing.expectEqual(@as(usize, 3), c.entries().len);
+    const bow = c.entries()[0];
+    try std.testing.expectEqualStrings(original, c.files.items[bow.file].bytes);
+    try std.testing.expectEqualStrings("\"Far away.\"", c.files.items[bow.file].bytes[bow.start..bow.end]);
+    try std.testing.expectEqualStrings("Far away.", bow.text);
+    try std.testing.expectEqualStrings(ITEMS_CATEGORY, bow.category);
+    try std.testing.expectEqualStrings("War bow", bow.owner);
+    try std.testing.expectEqualStrings("Description", bow.role);
+    try std.testing.expectEqualStrings("play.items.SPECS.war_bow.desc", bow.context);
+    const alias = c.entries()[2];
+    try std.testing.expectEqualStrings("Stone wall", alias.text);
+    try std.testing.expectEqualStrings(SKILLS_CATEGORY, alias.category);
+    try std.testing.expectEqualStrings("Arcane barrier", alias.owner);
+    try std.testing.expectEqualStrings("Display name", alias.role);
+    try std.testing.expectEqualStrings("play.skillbar.Act.arcane_barrier", alias.context);
+    try std.testing.expectEqualStrings(alias.context, alias.alias.?);
 }
 
 test "text catalog skill registry context follows named rows with module in any member order" {

@@ -26,6 +26,10 @@ pub const Thumbnails = struct {
 
     pub fn changedMap(self: *Thumbnails, now: *const atlas.Atlas, before: *const atlas.Atlas) void {
         if (now.node_n != before.node_n) return self.invalidateAll();
+        if (!std.meta.eql(now.start, before.start)) {
+            self.invalidate(now.start.node);
+            self.invalidate(before.start.node);
+        }
         for (now.node[0..now.node_n], before.node[0..before.node_n], 0..) |*current, *previous, n| {
             if (!std.mem.eql(u8, std.mem.asBytes(current), std.mem.asBytes(previous))) self.invalidate(n);
         }
@@ -39,7 +43,7 @@ pub const Thumbnails = struct {
         if (!rl.checkCollisionRecs(picture, canvas)) return null;
         if (!self.valid.isSet(n)) {
             const lv = if (n == scene.node and !scene.stale) &scene.lv else blk: {
-                map.node[n].stamp(&self.scratch, scene.roll);
+                map.node[n].stampAt(&self.scratch, scene.roll, preview.arrival(map, n));
                 break :blk &self.scratch;
             };
             var px: [grid.CELLS]rl.Color = undefined;
@@ -78,6 +82,10 @@ test "thumbnail invalidation follows changed nodes and discards identities after
     try std.testing.expect(!thumbnails.valid.isSet(1));
     try std.testing.expect(thumbnails.valid.isSet(2));
     thumbnails.valid.set(1);
+    map.start = .{ .node = 2, .at = grid.MIDDLE };
+    thumbnails.changedMap(map, before);
+    try std.testing.expect(!thumbnails.valid.isSet(0));
+    try std.testing.expect(!thumbnails.valid.isSet(2));
     map.remove(0);
     thumbnails.changedMap(map, before);
     try std.testing.expectEqual(@as(usize, 0), thumbnails.valid.count());
