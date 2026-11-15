@@ -11,7 +11,7 @@ pub const SHOTS_DIR = "shots";
 pub const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
 pub const MOUSE_DIR = SHOTS_DIR ++ "/mouse";
 pub const CINEMA_DIR = SHOTS_DIR ++ "/cinema";
-pub const SIZES = [_]mathx.P{ game.SCREEN_720, game.SCREEN_1080 };
+pub const SIZES = game.SIZES;
 const PATH_MAX = 256;
 
 pub fn renderTarget(g: *game.Game) !rl.RenderTexture2D {

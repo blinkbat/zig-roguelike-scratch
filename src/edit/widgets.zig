@@ -43,7 +43,7 @@ pub const INK_EDGE: f32 = 2;
 pub const NO_BOX = rl.Rectangle{ .x = 0, .y = 0, .width = 0, .height = 0 };
 const WHEEL_PX: i32 = ROW_H;
 const THUMB_MIN: f32 = 24;
-const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
+const GLYPH_OF_CELL: f32 = look.cellsOf(look.GLYPH_PX);
 pub const PANEL_BG = look.EDIT_PANEL;
 pub const ROW_ON = look.EDIT_ROW_ON;
 pub const ON = look.EDIT_ON;
@@ -122,8 +122,6 @@ pub fn rowText(face: *const font.Face, s: []const u8, size: i32, x: i32, y: i32,
     drawFit(face, s, size, w, false, x, midIn(y, ROW_H, size), col);
 }
 
-pub const rightX = raster.right;
-
 const LABEL_PAD: i32 = 10;
 
 pub fn labelW(face: *const font.Face, label: [:0]const u8, size: i32) i32 {
@@ -148,7 +146,7 @@ pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, valu
     if (buttonOn(controls, face, row(x + w - STEP_W, y, STEP_W), arrows.more, false, steps[1].live, arrows.modal, steps[1].tip)) by = 1;
     if (arrows.well) rl.drawRectangle(x + STEP_W, y, w - 2 * STEP_W, ROW_H, LIVE_FILL);
     var fit_buf: [LINE]u8 = undefined;
-    const shown = textFace(face).fit(&fit_buf, value, arrows.size, @intFromFloat(stepValue(r).width), false);
+    const shown = textFace(face).fit(&fit_buf, value, arrows.size, raster.width(stepValue(r)), false);
     textFace(face).drawMid(shown, x + @divTrunc(w, 2), midIn(y, ROW_H, arrows.size), arrows.size, look.TEXT);
     return if (shift) by * SHIFT_STEP else by;
 }
@@ -254,7 +252,7 @@ pub fn rowsOf(n: usize, cols: usize) i32 {
 }
 
 pub fn scissor(r: rl.Rectangle) void {
-    rl.beginScissorMode(@intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height));
+    rl.beginScissorMode(raster.left(r), raster.top(r), raster.width(r), raster.height(r));
 }
 
 fn scrollThumb(track: rl.Rectangle, offset: usize, shown: usize, total: usize) ?rl.Rectangle {

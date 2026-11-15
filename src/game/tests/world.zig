@@ -410,8 +410,7 @@ test "a node's night raiders come in by its raid door, each at its own turn, fro
     const mana = g.sim.mana;
     if (g.sim.pool.get(id)) |r| {
         try std.testing.expect(r.raider);
-        _ = g.sim.pool.damage(&g.sim.lv, id, r.hp);
-        game.combat.fell(g, id);
+        game.combat.fellOutright(g, id);
     }
     const spoiled = !std.meta.eql(ground, g.sim.ground) or mana != g.sim.mana;
     const xp = g.sim.growth.xp - growth.xp;
@@ -511,7 +510,7 @@ test "a door keeps the low glow, a level-up, the archer's facing and a walk pres
     game.beginMap(g, w);
     _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, actor.row(HERO).hp - 1);
     g.st = .{};
-    for (0..480) |_| game.update(g, harness.TEST_DT);
+    harness.idleFor(g, 480 * harness.TEST_DT);
     const low = g.vignette.low;
     _ = g.sim.growth.gain(@intCast(g.sim.growth.needed()));
     harness.nudge(g, .w);
@@ -576,9 +575,13 @@ test "a glowbulb shot in the dark keeps its pool drawn, and the foe it lit, unti
 }
 
 fn wispsOf(g: *const game.Game, ink: @TypeOf(look.GAS)) usize {
-    var n: usize = 0;
-    for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and m.grow > 0 and harness.sameRgb(m.col, ink));
-    return n;
+    const Wisp = struct {
+        ink: @TypeOf(look.GAS),
+        pub fn counts(w: @This(), m: anytype) bool {
+            return m.grow > 0 and harness.sameRgb(m.col, w.ink);
+        }
+    };
+    return harness.liveMotes(g, Wisp{ .ink = ink });
 }
 
 test "healing gas mends every hurt body in it a fifteenth of its life a turn, its wisps and caustic gas's drawn as each lands" {
@@ -640,7 +643,7 @@ test "steam stays transparent and masked scalding reaches mana shield once per t
     var paid: i32 = 0;
     for (0..100) |seed| {
         harness.heroArena(g, .wizard, at, &.{});
-        g.sim.inventory.gear.slots.set(.helm, .{ .kind = .hood, .mods = .{ .{ .kind = .masked, .value = 40 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.helm, harness.affixed(.hood, .{ .kind = .masked, .value = 40 }));
         const h = g.sim.heroActor().?;
         h.ward.turns = 3;
         g.sim.rng = mathx.Rng.init(seed);
@@ -664,7 +667,7 @@ test "steam stays transparent and masked scalding reaches mana shield once per t
         try std.testing.expectEqual(mana - spent, g.sim.mana);
         const volume = g.sim.lv.steam;
         g.st = .{};
-        for (0..30) |_| game.update(g, harness.TEST_DT);
+        harness.idleFor(g, 30 * harness.TEST_DT);
         try std.testing.expectEqualSlices(u16, &volume, &g.sim.lv.steam);
         try std.testing.expectEqual(mana - spent, g.sim.mana);
     }

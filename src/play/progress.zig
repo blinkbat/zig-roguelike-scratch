@@ -98,7 +98,7 @@ comptime {
     };
 }
 
-pub const Hit = struct { physical: damage.Span, element: ?damage.Span, style: attrs.Style, imbued: ?damage.Span = null };
+pub const Hit = struct { physical: damage.Span, element: ?damage.Span, scaling: attrs.Scaling, imbued: ?damage.Span = null };
 /// The hero's held buffs that change a blow's roll.
 pub const Readied = struct {
     steady: u8 = 0,
@@ -110,10 +110,10 @@ pub const Readied = struct {
 };
 pub const Blow = struct {
     by: attrs.Attrs,
-    style: attrs.Style,
+    scaling: attrs.Scaling,
     bases: skillbar.EquippedBases,
     pub fn hit(self: Blow, act: skillbar.Act) Hit {
-        return .{ .physical = self.by.span(self.style, self.bases.physical()), .element = if (self.bases.element) |e| self.by.elementSpan(self.style, e, act.element().?) else null, .style = self.style };
+        return .{ .physical = self.by.span(self.scaling, self.bases.physical()), .element = if (self.bases.element) |e| self.by.elementSpan(self.scaling, e, act.element().?) else null, .scaling = self.scaling };
     }
 };
 
@@ -244,23 +244,20 @@ pub const State = struct {
         return @as(i32, self.extraRanks(act)) * RANK_DAMAGE_PERCENT;
     }
 
-    fn skillAttrs(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act) attrs.Attrs {
-        var out = if (act.attack()) |attack| gear.forAttack(equipped, attack) else equipped;
-        if (act.attack()) |attack| out.damage_bonus.getPtr(gear.scaling(attack)).* += self.damageBonus(act);
-        return out;
-    }
-
     /// What scales `act`'s blow with `gear`, for previews and live rolls alike.
     fn blowOf(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act) ?Blow {
         const attack = act.attack() orelse return null;
-        return .{ .by = self.skillAttrs(equipped, gear, act), .style = gear.scaling(attack), .bases = act.equippedBases(gear) };
+        const scaling = gear.scaling(attack);
+        var by = gear.forAttack(equipped, attack);
+        by.raise(scaling, self.damageBonus(act));
+        return .{ .by = by, .scaling = scaling, .bases = act.equippedBases(gear) };
     }
 
     pub fn preparedBlow(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act, readied: Readied) ?Blow {
         var out = self.blowOf(equipped, gear, act) orelse return null;
         const steady = readied.steady;
         if (steady > 0 and tactics.SteadyAim.readies(act)) {
-            out.by.damage_bonus.getPtr(out.style).* += tactics.SteadyAim.bonus(steady);
+            out.by.raise(out.scaling, tactics.SteadyAim.bonus(steady));
             out.by.crit_bonus += tactics.SteadyAim.critical(steady);
         }
         return out;
@@ -269,7 +266,7 @@ pub const State = struct {
     pub fn preparedHit(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act, readied: Readied) ?Hit {
         const blow = self.preparedBlow(equipped, gear, act, readied) orelse return null;
         var out = blow.hit(act);
-        if (out.physical.hi > 0 and readied.imbues(act.attack().?)) out.imbued = blow.by.elementSpan(blow.style, tactics.Imbue.FIRE, tactics.Imbue.IMBUES);
+        if (out.physical.hi > 0 and readied.imbues(act.attack().?)) out.imbued = blow.by.elementSpan(blow.scaling, tactics.Imbue.FIRE, tactics.Imbue.IMBUES);
         return out;
     }
 

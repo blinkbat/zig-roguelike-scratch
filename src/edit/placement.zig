@@ -140,7 +140,7 @@ pub fn pickUp(ed: *Editor, p: P, second: bool) void {
         return ed.say("Picked up the {s} tool", .{t.name()});
     }
     ed.preview();
-    if (!ed.paintable()) return ed.say(editor.GENERATED, .{});
+    if (ed.refuseUnfit(.paint)) return;
     const under = ed.scene.lv.at(p);
     const t = if (under.single()) under else under.bare();
     ed.ink.set(.of(second), t);
@@ -365,7 +365,7 @@ pub fn clearSelection(ed: *Editor) void {
 
 pub fn startPaste(ed: *Editor) void {
     if (ed.board.size.x == 0) return ed.say("Nothing copied yet", .{});
-    if (!ed.paintable()) return ed.say(editor.GENERATED, .{});
+    if (ed.refuseUnfit(.paint)) return;
     ed.drop();
     ed.pasting = true;
     ed.say("{s} lays the copy with its corner at the cursor; {s} or {s} puts it away", .{ Desk.PAINT_CAPTION, Desk.ERASE_CAPTION, Desk.BACK_CAPTION });

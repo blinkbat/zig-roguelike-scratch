@@ -34,7 +34,7 @@ pub const CRIT_LABEL = "critical strike chance";
 pub const WEAPON_CRIT_LABEL = "weapon critical chance";
 pub const SPELL_CRIT_LABEL = "spell critical chance";
 pub const PHYSICAL_LABEL = "physical damage";
-pub const SCALES_FMT = "Scales with {s}";
+pub const SCALES_FMT = "Scales with {}";
 pub const Style = enum {
     heavy,
     light,
@@ -58,17 +58,39 @@ pub const Style = enum {
 };
 pub const STYLES = std.enums.values(Style);
 
+/// The styles a blow scales with, each weighing the same.
+pub const Scaling = std.EnumSet(Style);
+
+pub fn only(s: Style) Scaling {
+    return .initOne(s);
+}
+
+/// Formats as its attributes in style order: "Strength and Dexterity".
+pub const Named = struct {
+    scaling: Scaling,
+
+    pub fn format(self: Named, comptime _: []const u8, _: std.fmt.FormatOptions, w: anytype) !void {
+        const n = self.scaling.count();
+        var i: usize = 0;
+        var it = self.scaling.iterator();
+        while (it.next()) |s| : (i += 1) {
+            if (i > 0) try w.writeAll(if (i + 1 < n) ", " else " and ");
+            try w.writeAll(wording.named(s.attr()));
+        }
+    }
+};
+
 pub const Attack = enum {
     melee,
     ranged,
     spell,
 
-    pub fn defaultStyle(a: Attack) Style {
-        return switch (a) {
+    pub fn defaultScaling(a: Attack) Scaling {
+        return only(switch (a) {
             .melee => .heavy,
             .ranged => .light,
             .spell => .spell,
-        };
+        });
     }
 };
 
@@ -82,14 +104,14 @@ const DAMAGE_PER_POINT: i32 = 1;
 const CRIT_BASE: i32 = 5;
 const DEX_PER_CRIT: i32 = 4;
 /// Percent of the blow a critical strike deals.
-pub const CRIT_MULTI: i32 = 150;
+const CRIT_MULTI: i32 = 150;
 const DEX_PER_DODGE: i32 = 2;
 pub const DODGE_MAX: i32 = 75;
-pub const BLOCK_MAX: i32 = 75;
+const BLOCK_MAX: i32 = 75;
 /// Percent of a physical blow armour may take at most.
-pub const ARMOUR_MAX: i32 = 75;
+const ARMOUR_MAX: i32 = 75;
 
-pub fn reductionOf(armour: i32) i32 {
+fn reductionOf(armour: i32) i32 {
     return std.math.clamp(armour, 0, ARMOUR_MAX);
 }
 
@@ -151,6 +173,20 @@ pub const Attrs = struct {
         return DAMAGE_PER_POINT * a.get(s.attr()) + a.damage_bonus.get(s);
     }
 
+    /// Adds `n` to each of its styles, so their mean rises by `n`.
+    pub fn raise(a: *Attrs, sc: Scaling, n: i32) void {
+        var it = sc.iterator();
+        while (it.next()) |s| a.damage_bonus.getPtr(s).* += n;
+    }
+
+    /// The mean of its styles' increases.
+    pub fn increaseBy(a: Attrs, sc: Scaling) i32 {
+        var sum: i32 = 0;
+        var it = sc.iterator();
+        while (it.next()) |s| sum += a.increase(s);
+        return @divTrunc(sum, @max(1, @as(i32, @intCast(sc.count()))));
+    }
+
     pub fn reduction(a: Attrs) i32 {
         return reductionOf(a.armour);
     }
@@ -186,27 +222,27 @@ pub const Attrs = struct {
         return rng.percent(a.crit());
     }
 
-    pub fn dealt(a: Attrs, s: Style, amount: i32, critical: bool) Dealt {
+    pub fn dealt(a: Attrs, s: Scaling, amount: i32, critical: bool) Dealt {
         return a.dealtWith(s, amount, critical, 0);
     }
 
-    fn dealtWith(a: Attrs, s: Style, amount: i32, critical: bool, extra: i32) Dealt {
-        return Dealt.of(@as(i64, @max(0, amount)) * @max(0, mathx.PERCENT + a.increase(s) + extra) * @as(i64, if (critical) a.critMulti() else mathx.PERCENT));
+    fn dealtWith(a: Attrs, s: Scaling, amount: i32, critical: bool, extra: i32) Dealt {
+        return Dealt.of(@as(i64, @max(0, amount)) * @max(0, mathx.PERCENT + a.increaseBy(s) + extra) * @as(i64, if (critical) a.critMulti() else mathx.PERCENT));
     }
 
-    pub fn span(a: Attrs, s: Style, b: damage.Base) damage.Span {
+    pub fn span(a: Attrs, s: Scaling, b: damage.Base) damage.Span {
         return a.spanWith(s, b, a.physical_bonus);
     }
 
-    pub fn elementSpan(a: Attrs, s: Style, b: damage.Base, e: damage.Element) damage.Span {
+    pub fn elementSpan(a: Attrs, s: Scaling, b: damage.Base, e: damage.Element) damage.Span {
         return a.spanWith(s, b, a.element_bonus.get(e));
     }
 
-    fn spanWith(a: Attrs, s: Style, b: damage.Base, extra: i32) damage.Span {
+    fn spanWith(a: Attrs, s: Scaling, b: damage.Base, extra: i32) damage.Span {
         return .{ .lo = a.dealtWith(s, b.lo, false, extra).least(), .hi = a.dealtWith(s, b.hi, false, extra).most() };
     }
 
-    pub fn blow(a: Attrs, s: Style, d: damage.Damage, critical: bool, rng: *mathx.Rng) damage.Damage {
+    pub fn blow(a: Attrs, s: Scaling, d: damage.Damage, critical: bool, rng: *mathx.Rng) damage.Damage {
         var out = d;
         out.physical = a.dealtWith(s, d.physical, critical, a.physical_bonus).roll(rng);
         for (std.enums.values(damage.Element)) |e| out.elements.set(e, a.dealtWith(s, d.elements.get(e), critical, a.element_bonus.get(e)).roll(rng));
@@ -258,24 +294,24 @@ test "attributes raise life, mana, their own style's damage, crits and dodge" {
     const a = Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 10 });
     try std.testing.expectEqual(@as(i32, 30), a.life());
     try std.testing.expectEqual(@as(i32, 20), a.mana());
-    try std.testing.expectEqual(Dealt{ .whole = 12, .part = 0 }, a.dealt(.heavy, 10, false));
-    try std.testing.expectEqual(Dealt{ .whole = 11, .part = 0 }, a.dealt(.spell, 10, false));
-    try std.testing.expectEqual(Dealt{ .whole = 18, .part = 0 }, a.dealt(.light, 10, true));
-    try std.testing.expectEqual(damage.Span{ .lo = 2, .hi = 5 }, a.span(.heavy, .{ .lo = 2, .hi = 4 }));
+    try std.testing.expectEqual(Dealt{ .whole = 12, .part = 0 }, a.dealt(only(.heavy), 10, false));
+    try std.testing.expectEqual(Dealt{ .whole = 11, .part = 0 }, a.dealt(only(.spell), 10, false));
+    try std.testing.expectEqual(Dealt{ .whole = 18, .part = 0 }, a.dealt(only(.light), 10, true));
+    try std.testing.expectEqual(damage.Span{ .lo = 2, .hi = 5 }, a.span(only(.heavy), .{ .lo = 2, .hi = 4 }));
     try std.testing.expectEqual(@as(u32, 10), a.crit());
     try std.testing.expectEqual(@as(u32, 10), a.dodge());
     try std.testing.expectEqual(@as(u32, DODGE_MAX), Attrs.of(.{ .strength = 0, .dexterity = 1000, .intelligence = 0 }).dodge());
     var savage = a;
     savage.crit_damage = 30;
-    try std.testing.expectEqual(Dealt{ .whole = 21, .part = 6000 }, savage.dealt(.light, 10, true));
-    try std.testing.expectEqual(Dealt{ .whole = 12, .part = 0 }, savage.dealt(.light, 10, false));
+    try std.testing.expectEqual(Dealt{ .whole = 21, .part = 6000 }, savage.dealt(only(.light), 10, true));
+    try std.testing.expectEqual(Dealt{ .whole = 12, .part = 0 }, savage.dealt(only(.light), 10, false));
     savage.block = 200;
     try std.testing.expectEqual(@as(u32, BLOCK_MAX), savage.blockChance());
     var rng = mathx.Rng.init(0xA77);
     const ROLLS = 10_000;
     var sum: i64 = 0;
     for (0..ROLLS) |_| {
-        const v = a.dealt(.heavy, 2, false).roll(&rng);
+        const v = a.dealt(only(.heavy), 2, false).roll(&rng);
         try std.testing.expect(v == 2 or v == 3);
         sum += v;
     }
@@ -283,7 +319,7 @@ test "attributes raise life, mana, their own style's damage, crits and dodge" {
     try std.testing.expect(@abs(mean - 2.4) < 0.03);
     var hit = damage.Damage{ .physical = 10 };
     hit.elements.set(.fire, 20);
-    const b = a.blow(.light, hit, false, &rng);
+    const b = a.blow(only(.light), hit, false, &rng);
     try std.testing.expectEqual(@as(i32, 12), b.physical);
     try std.testing.expectEqual(@as(i32, 24), b.elements.get(.fire));
 }
@@ -294,10 +330,23 @@ test "physical and elemental base bonuses affect only their damage part and shar
     a.element_bonus.set(.fire, 25);
     const raw = damage.Damage{ .physical = 20, .elements = .initFill(20) };
     var rng = mathx.Rng.init(443);
-    const hit = a.blow(.spell, raw, false, &rng);
+    const hit = a.blow(only(.spell), raw, false, &rng);
     try std.testing.expectEqual(@as(i32, 22), hit.physical);
     try std.testing.expectEqual(@as(i32, 25), hit.elements.get(.fire));
     try std.testing.expectEqual(@as(i32, 20), hit.elements.get(.cold));
-    try std.testing.expectEqual(damage.Span{ .lo = 25, .hi = 25 }, a.elementSpan(.spell, .{ .lo = 20, .hi = 20 }, .fire));
-    try std.testing.expectEqual(damage.Span{ .lo = 22, .hi = 22 }, a.span(.spell, .{ .lo = 20, .hi = 20 }));
+    try std.testing.expectEqual(damage.Span{ .lo = 25, .hi = 25 }, a.elementSpan(only(.spell), .{ .lo = 20, .hi = 20 }, .fire));
+    try std.testing.expectEqual(damage.Span{ .lo = 22, .hi = 22 }, a.span(only(.spell), .{ .lo = 20, .hi = 20 }));
+}
+
+test "a blow scaling with several styles takes the mean of their increases, bonuses included" {
+    var a = Attrs.of(.{ .strength = 30, .dexterity = 10, .intelligence = 20 });
+    a.damage_bonus.set(.light, 10);
+    const both = Scaling.initMany(&.{ .heavy, .light });
+    try std.testing.expectEqual(@as(i32, 25), a.increaseBy(both));
+    try std.testing.expectEqual(@as(i32, 23), a.increaseBy(Scaling.initFull()));
+    try std.testing.expectEqual(a.increase(.heavy), a.increaseBy(only(.heavy)));
+    try std.testing.expectEqual(Dealt{ .whole = 125, .part = 0 }, a.dealt(both, 100, false));
+    var line: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("Strength, Dexterity and Intelligence", try std.fmt.bufPrint(&line, "{}", .{Named{ .scaling = .initFull() }}));
+    try std.testing.expectEqualStrings("Scales with Strength and Dexterity", try std.fmt.bufPrint(&line, SCALES_FMT, .{Named{ .scaling = both }}));
 }

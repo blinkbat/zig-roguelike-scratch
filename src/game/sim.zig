@@ -190,6 +190,10 @@ pub const Simulation = struct {
         return if (self.hero == grid.NO_ONE) null else actor.Pool.slot(self.hero);
     }
 
+    pub fn heroActorSlot(self: *const Simulation) ?actor.ActorSlot {
+        return .fromIndex(self.heroSlot() orelse return null);
+    }
+
     /// Living or not.
     pub fn heroBody(self: *const Simulation) ?*const actor.Actor {
         const i = self.heroSlot() orelse return null;

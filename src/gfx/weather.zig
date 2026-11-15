@@ -123,7 +123,7 @@ pub const Weather = struct {
         for (self.drop[0..self.n]) |d| {
             const x = @mod(d.x + ox, self.w);
             const y = @mod(d.y + oy, self.h);
-            const at = mathx.cellOf(.{ (x - ox) / cell, (y - oy) / cell });
+            const at = mathx.cellOf(look.cellOfScreen(.{ .x = x, .y = y }, ox, oy, cell));
             const seen = grid.cellOr(f32, sight, at, 0);
             if (seen <= 0) continue;
             const a = fall.alpha * std.math.clamp(bright, DIM_FLOOR, 1) * seen;

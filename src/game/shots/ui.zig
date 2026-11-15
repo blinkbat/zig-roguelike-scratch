@@ -236,7 +236,7 @@ fn captureTalk(g: *game.Game) !void {
         g.mode = .play;
         g.sim.gold = 60;
         g.sim.inventory = .{};
-        if (!g.sim.inventory.add(.{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 2 }, null, null, null } }) or !g.sim.inventory.stock(.bandage)) return error.InventoryFull;
+        if (!g.sim.inventory.add(items.affixed(.axe, &.{.{ .kind = .strength, .value = 2 }})) or !g.sim.inventory.stock(.bandage)) return error.InventoryFull;
         game.character.openTrade(g, 0);
         try capture(g, target, SHOTS_DIR ++ "/trade-buy-" ++ suffix ++ ".png");
         g.character.cursor = g.sim.plot.wares[0].?.count() - 1;
@@ -331,12 +331,12 @@ fn captureTactics(g: *game.Game) !void {
     skills.confirmAim(g);
     game.harness.drawnOut(g);
     try capture(g, target, TACTICS_DIR ++ "/fire-wall-chill-fright.png");
-    _ = g.sim.inventory.add(.{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 }, null, null } });
+    _ = g.sim.inventory.add(items.affixed(.gloves, &.{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 } }));
     game.character.openCharacter(g);
     g.character.choose(.inventory);
     g.character.cursor = 0;
     try capture(g, target, TACTICS_DIR ++ "/item-prefix-suffix.png");
-    g.sim.inventory.bag[0].mods = .{ .{ .kind = .opportunist, .value = 30 }, .{ .kind = .crit, .value = 5 }, null, null };
+    g.sim.inventory.bag[0] = items.affixed(g.sim.inventory.bag[0].kind, &.{ .{ .kind = .opportunist, .value = 30 }, .{ .kind = .crit, .value = 5 } });
     try capture(g, target, TACTICS_DIR ++ "/item-wrapped-affix.png");
 }
 
@@ -414,7 +414,7 @@ pub fn captureLoot(g: *game.Game) !void {
     game.harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
     const bag = P{ .x = 19, .y = 20 };
     const chest = P{ .x = 21, .y = 20 };
-    for ([_]item_bases.Kind{ .ring, .boots, .axe }) |kind| _ = g.sim.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null, null, null } }, .at = bag });
+    for ([_]item_bases.Kind{ .ring, .boots, .axe }) |kind| _ = g.sim.ground.add(.{ .item = if (kind == .axe) items.affixed(kind, &.{.{ .kind = .strength, .value = 3 }}) else .{ .kind = kind }, .at = bag });
     _ = g.sim.ground.gold(bag, BAG_GOLD);
     g.sim.lv.set(chest, .chest);
     game.settle(g);
@@ -450,7 +450,7 @@ pub fn captureLoot(g: *game.Game) !void {
     game.character.characterCommand(g, .take_all);
     try capture(g, target, SHOTS_DIR ++ "/loot-full.png");
     game.harness.drawnOut(g);
-    for (0..16) |_| _ = g.sim.ground.add(.{ .item = .{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 }, null, null } }, .at = bag });
+    for (0..16) |_| _ = g.sim.ground.add(.{ .item = items.affixed(.axe, &.{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } }), .at = bag });
     game.character.openLoot(g, bag);
     try capture(g, target, SHOTS_DIR ++ "/loot-dense.png");
     for (0..18) |_| game.harness.nudge(g, .s);
@@ -508,10 +508,10 @@ pub fn captureCharacter(g: *game.Game) !void {
     game.beginMapAt(g, w, w.start, SHOT_SEED);
     _ = g.sim.growth.gain(100);
     _ = g.sim.inventory.add(game.harness.affixed(.cap, .{ .kind = .life, .value = 3 }));
-    try g.sim.inventory.equip(0, .helm, g.sim.growth.attributes(g.sim.class));
+    try g.sim.inventory.equip(0, .helm, g.sim.growth.attributes(g.sim.class), g.sim.class);
     _ = g.sim.inventory.add(game.harness.affixed(.bow, .{ .kind = .dexterity, .value = 2 }));
-    try g.sim.inventory.equip(0, .right_hand, g.sim.growth.attributes(g.sim.class));
-    _ = g.sim.inventory.add(.{ .kind = .helmet, .mods = .{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 2 }, null, null } });
+    try g.sim.inventory.equip(0, .right_hand, g.sim.growth.attributes(g.sim.class), g.sim.class);
+    _ = g.sim.inventory.add(items.affixed(.helmet, &.{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 2 } }));
     _ = g.sim.inventory.add(game.harness.affixed(.ring, .{ .kind = .strength, .value = 3 }));
     _ = g.sim.inventory.add(.{ .kind = .leather });
     _ = g.sim.ground.add(.{ .item = .{ .kind = .amulet }, .at = g.sim.heroActor().?.at });
@@ -569,7 +569,7 @@ pub fn captureCharacter(g: *game.Game) !void {
         try capture(g, target, SHOTS_DIR ++ "/item-ring-right.png");
         g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .sling });
         g.sim.inventory.gear.slots.set(.left_hand, game.harness.affixed(.buckler, .{ .kind = .life, .value = 6 }));
-        _ = g.sim.inventory.add(.{ .kind = .crossbow, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 }, null, null } });
+        _ = g.sim.inventory.add(items.affixed(.crossbow, &.{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } }));
         g.character.cursor = bag_n;
         g.character.destination_index = 0;
         try capture(g, target, SHOTS_DIR ++ "/item-two-handed.png");
@@ -590,8 +590,8 @@ pub fn captureCharacter(g: *game.Game) !void {
     {
         const carried = g.sim.inventory;
         defer g.sim.inventory = carried;
-        const thorned = items.Item{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, .{ .kind = .life, .value = 3 }, null, null } };
-        const spoils = items.Item{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .spoils, .value = 25 }, null, null } };
+        const thorned = items.affixed(.leather, &.{ .{ .kind = .thorns, .value = 2 }, .{ .kind = .life, .value = 3 } });
+        const spoils = items.affixed(.ring, &.{ .{ .kind = .strength, .value = 3 }, .{ .kind = .spoils, .value = 25 } });
         g.character.choose(.inventory);
         g.character.cursor = g.sim.inventory.n;
         if (!g.sim.inventory.add(thorned)) return error.InventoryFull;
@@ -704,7 +704,7 @@ pub fn captureCharacter(g: *game.Game) !void {
         g.character.cursor = @intFromEnum(kind);
         try capture(g, target, SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ ".png");
     }
-    g.sim.inventory.bag[@intFromEnum(item_bases.Kind.axe)].mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 }, null, null };
+    g.sim.inventory.bag[@intFromEnum(item_bases.Kind.axe)] = items.affixed(.axe, &.{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } });
     g.character.cursor = @intFromEnum(item_bases.Kind.axe);
     try capture(g, target, SHOTS_DIR ++ "/item-axe-magic.png");
 }

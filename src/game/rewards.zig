@@ -50,7 +50,7 @@ fn dropGold(sim: *Simulation, at: P, amount: i32) void {
 
 pub fn barrelLoot(sim: *Simulation, at: P) ?i32 {
     if (!sim.lv.breakBarrel(at)) return null;
-    const rolled = loot.barrelLoot(&sim.loot_rng, sim.ground.room(FOE_DROPS));
+    const rolled = loot.barrelLoot(&sim.loot_rng, sim.ground.room(FOE_DROPS), sim.class);
     dropGold(sim, at, rolled.gold);
     if (rolled.item) |item| dropItem(sim, .{ .item = item, .at = at });
     return rolled.gold;
@@ -66,7 +66,7 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
         sim.chronicle.mark(.chest);
         return .opened;
     };
-    const rolled = loot.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
+    const rolled = loot.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity, sim.class);
     dropItem(sim, .{ .item = rolled.item.?, .at = at });
     const gold = rolled.gold;
     dropGold(sim, at, gold);
@@ -159,8 +159,8 @@ fn nativeLeft(sim: *const Simulation, family: actor.Kind) bool {
 fn lootOf(sim: *Simulation, fallen: actor.Actor) loot.Loot {
     if (!sim.lv.walkable(fallen.at)) return .{};
     const rarity = sim.heroAttrs().item_rarity;
-    if (actor.row(fallen.kind).disguised) return loot.mimicLoot(&sim.loot_rng, rarity);
-    return loot.foeLoot(&sim.loot_rng, rarity);
+    if (actor.row(fallen.kind).disguised) return loot.mimicLoot(&sim.loot_rng, rarity, sim.class);
+    return loot.foeLoot(&sim.loot_rng, rarity, sim.class);
 }
 
 const PYRE_REACH: i32 = 1;
@@ -176,10 +176,16 @@ pub fn pyre(lv: *const grid.Level, at: P) areas.Burst {
 fn ignite(sim: *Simulation, at: P, name: []const u8) Caught {
     var out = Caught.initEmpty();
     sim.sayAt(at, "The {s} bursts into flame!", .{name});
-    const area = pyre(&sim.lv, at);
-    for (sim.pool.slice(), 0..) |*a, i| {
-        if (!a.alive or !area.has(a.at)) continue;
-        if (sim.ignite(i, a)) out.set(i);
+    const caught = livingIn(sim, pyre(&sim.lv, at));
+    var each = caught.iterator(.{});
+    while (each.next()) |i| if (sim.ignite(i, &sim.pool.items[i])) out.set(i);
+    return out;
+}
+
+pub fn livingIn(sim: *const Simulation, area: anytype) Caught {
+    var out = Caught.initEmpty();
+    for (sim.pool.constSlice(), 0..) |a, i| {
+        if (a.alive and area.has(a.at)) out.set(i);
     }
     return out;
 }
@@ -190,11 +196,7 @@ fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
     const wet = areas.wetIn(&sim.lv, at, reach);
     if (gas.boil(&sim.lv, wet.slice()) == 0) return null;
     sim.sayAnyAt(wet.slice(), gas.HISSES, .{});
-    var out = Caught.initEmpty();
-    for (sim.pool.slice(), 0..) |*a, i| {
-        if (a.alive and wet.has(a.at)) out.set(i);
-    }
-    return out;
+    return livingIn(sim, wet);
 }
 
 pub const Fired = struct { steeped: ?Caught, caught: bool };
@@ -287,7 +289,7 @@ test "death rewards resolve without presentation and return only newly frightene
     const pictured = run.pic.pictured[fallen.slot().index];
     const rng = run.sim.rng;
     var loot_rng = run.sim.loot_rng;
-    const expected = loot.foeLoot(&loot_rng, run.sim.heroAttrs().item_rarity);
+    const expected = loot.foeLoot(&loot_rng, run.sim.heroAttrs().item_rarity, run.sim.class);
     const hp = run.sim.pool.get(fallen.value).?.hp;
     try std.testing.expect(run.sim.resolveDamage(fallen, hp).lethal);
     const result = defeat(&run.sim, fallen);

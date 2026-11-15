@@ -346,9 +346,14 @@ pub const Book = struct {
             } else if (self.page == .passives) {
                 self.walkTree(@floatFromInt(d.x), @floatFromInt(d.y));
             } else if (self.count(view) > 0) {
-                var boxes: [layout.CELLS_MAX]rl.Rectangle = undefined;
-                for (0..self.count(view)) |i| boxes[i] = self.cellBox(i, view);
-                if (menu.nearest(boxes[self.cursor], boxes[0..self.count(view)], dir)) |i| self.cursor = i;
+                const Cells = struct {
+                    book: *const Book,
+                    view: View,
+                    fn box(c: @This(), i: usize) rl.Rectangle {
+                        return c.book.cellBox(i, c.view);
+                    }
+                };
+                if (menu.nearestBy(self.count(view), self.cursor, dir, Cells{ .book = self, .view = view }, Cells.box)) |i| self.cursor = i;
             }
         }
         if (st.hit(menu.CONFIRM)) {
@@ -640,8 +645,7 @@ pub const Book = struct {
     }
     fn requirementAttrs(self: *const Book, view: View, slot: item_bases.Slot) attr.Attrs {
         return switch (self.page) {
-            .inventory => (view.inventory.swapped(self.bagIndex(view).?, slot) catch view.inventory.gear).statsWithout(slot, view.base),
-            .nearby, .loot, .trade => neededAttrs(view, self.selected(view).?, slot),
+            .inventory, .nearby, .loot, .trade => view.inventory.gear.requirementStats(self.selected(view).?, slot, view.base),
             .equipment, .stats, .passives, .skills, .quests => view.inventory.gear.statsWithout(slot, view.base),
         };
     }
@@ -668,7 +672,7 @@ pub const Book = struct {
         if (comparing) {
             const at = y + @max(item_card.height(face, layout.CARD_W, it, slot), item_card.height(face, layout.CARD_W, view.inventory.gear.slots.get(slot), slot)) + layout.REQUIREMENT_GAP;
             const bagged = self.bagIndex(view).?;
-            _ = view.inventory.preview(bagged, slot, view.base) catch |err| {
+            _ = view.inventory.preview(bagged, slot, view.base, view.class) catch |err| {
                 var reason: menu.Note(140) = .{};
                 if (err != error.Requirements) {
                     reason.say("{s}", .{inventory.caption(err)});
@@ -772,9 +776,6 @@ const Side = union(enum) {
     }
 };
 const ACTIONS = [_]input.Button{ menu.CONFIRM, menu.CHANGE, menu.REMOVE };
-fn neededAttrs(view: View, it: items.Item, slot: item_bases.Slot) attr.Attrs {
-    return view.inventory.gear.wearing(it, slot).statsWithout(slot, view.base);
-}
 fn slotChoice(k: item_bases.Kind) bool {
     return k.slots().len > 1;
 }
@@ -820,14 +821,14 @@ fn tabPrompt(page: Page) prompt_icon.Prompt {
     return .{ .key = page.shortcut().?.caption() };
 }
 pub fn verifyTabs(face: *const font.Face) !void {
-    const room: i32 = @as(i32, @intFromFloat(layout.tabBox(0).width)) - 2 * layout.TAB_PAD;
+    const room: i32 = raster.width(layout.tabBox(0)) - 2 * layout.TAB_PAD;
     var widest: i32 = 0;
     for (PAGES) |page| widest = @max(widest, tabWidth(face, page));
     if (widest > room) return error.TabOverflow;
     std.debug.print("character tabs: widest label {d}px of {d}px\n", .{ widest, room });
 }
 fn offhandWeapon(gear: Gear, slot: item_bases.Slot) ?items.Item {
-    return if (slot == .left_hand) gear.twoHander() else null;
+    return if (slot == .left_hand) gear.offhandHolder() else null;
 }
 
 fn dependent(view: View, at: usize, slot: item_bases.Slot) ?items.Item {
@@ -1024,7 +1025,7 @@ test "trade lists the shelf or the bag, swaps them on change, and the priced car
     try std.testing.expect(inv.add(.{ .kind = .cap }));
     const growth = progress.State.of(.archer);
     var view = testView(&inv, &growth);
-    const shelf = trade.Wares.roll(5, 0);
+    const shelf = trade.Wares.roll(5, 0, .archer);
     view.dealer = .{ .who = "Pedlar", .shelf = &shelf };
     var book = Book{};
     book.choose(.trade);
@@ -1069,23 +1070,23 @@ test "item card requirements exclude the item itself and every displaced hand" {
     const base = attr.Attrs.of(.{ .strength = 10, .dexterity = 12, .intelligence = 10 });
     var view = testView(&inv, &growth);
     view.base = base;
-    inv.gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .strength, .value = 10 }, null, null, null } });
-    try std.testing.expect(inv.add(.{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 10 }, null, null, null } }));
+    inv.gear.slots.set(.left_hand, items.affixed(.shield, &.{.{ .kind = .strength, .value = 10 }}));
+    try std.testing.expect(inv.add(items.affixed(.axe, &.{.{ .kind = .strength, .value = 10 }})));
     var book = Book{ .page = .inventory };
     try std.testing.expectEqual(@as(i32, 10), book.requirementAttrs(view, .right_hand).get(.strength));
-    try std.testing.expectError(error.Requirements, inv.preview(0, .right_hand, base));
+    try std.testing.expectError(error.Requirements, inv.preview(0, .right_hand, base, .knight));
     try std.testing.expect(inv.gear.slots.get(.left_hand) != null and inv.n == 1);
     inv.gear.slots.set(.left_hand, null);
-    inv.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, null, null, null } });
-    inv.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 7 }, null, null, null } });
-    inv.bag[0] = .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 2 }, null, null, null } };
+    inv.gear.slots.set(.left_ring, items.affixed(.ring, &.{.{ .kind = .strength, .value = 3 }}));
+    inv.gear.slots.set(.right_ring, items.affixed(.ring, &.{.{ .kind = .strength, .value = 7 }}));
+    inv.bag[0] = items.affixed(.ring, &.{.{ .kind = .strength, .value = 2 }});
     try std.testing.expectEqual(@as(i32, 17), book.requirementAttrs(view, .left_ring).get(.strength));
     try std.testing.expectEqual(@as(i32, 13), book.requirementAttrs(view, .right_ring).get(.strength));
     book.page = .equipment;
     try std.testing.expectEqual(@as(i32, 17), book.requirementAttrs(view, .left_ring).get(.strength));
-    inv.gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .strength, .value = 10 }, null, null, null } });
+    inv.gear.slots.set(.left_hand, items.affixed(.shield, &.{.{ .kind = .strength, .value = 10 }}));
     var ground = view;
-    ground.nearby = &.{.{ .loot = .{ .index = 0, .item = .{ .kind = .axe, .mods = .{ null, null, null, null } } } }};
+    ground.nearby = &.{.{ .loot = .{ .index = 0, .item = .{ .kind = .axe } } }};
     book.choose(.loot);
     try std.testing.expectEqual(@as(i32, 20), book.requirementAttrs(ground, .right_hand).get(.strength));
 }

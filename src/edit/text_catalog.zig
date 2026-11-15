@@ -5,6 +5,7 @@ const contains = @import("../core/text.zig").contains;
 const input = @import("../core/input.zig");
 const atlas = @import("../map/atlas.zig");
 const atlas_text = @import("../map/atlas_text.zig");
+const resilience = @import("../play/resilience.zig");
 
 pub const MAX_TEXT: usize = 32768;
 const FILE_CAP = atlas_text.TEXT_CAP;
@@ -154,7 +155,7 @@ pub const Catalog = struct {
         const a = self.arena.allocator();
         var names = atlas_text.NodeNames.of(bytes);
         while (names.next()) |n| {
-            try self.list.append(a, .{ .path = path, .line = n.line, .text = try a.dupe(u8, n.name), .category = "Maps", .owner = try std.fmt.allocPrint(a, "{s} (node {d})", .{ n.name, n.node }), .role = "Name", .context = try std.fmt.allocPrint(a, "{s}.node[{d}].name", .{ path, n.node }), .editable = false, .reason = "Rename this node in the map editor", .file = 0, .start = 0, .end = 0, .ordinal = 0 });
+            try self.list.append(a, .{ .path = path, .line = n.line, .text = try a.dupe(u8, n.name), .category = MAPS_CATEGORY, .owner = try std.fmt.allocPrint(a, "{s} (node {d})", .{ n.name, n.node }), .role = "Name", .context = try std.fmt.allocPrint(a, "{s}.node[{d}].name", .{ path, n.node }), .editable = false, .reason = "Rename this node in the map editor", .file = 0, .start = 0, .end = 0, .ordinal = 0 });
         }
     }
 
@@ -401,6 +402,12 @@ const ITEMS_SOURCES = [_][]const u8{ "play/items.zig", "play/item_bases.zig", "p
 const SAVE_SOURCE = "save_data.zig";
 const KEYBOARD_SOURCE = "ui/naming.zig";
 const LOG_LINES = "Log lines";
+const INPUT_CATEGORY = "Input";
+const MAPS_CATEGORY = "Maps";
+const ITEMS_CATEGORY = "Items";
+const SKILLS_CATEGORY = "Skills";
+const INTERFACE_CATEGORY = "Interface";
+const GAMEPLAY_CATEGORY = "Gameplay";
 const LOG_SOURCES = [_][]const u8{ "play/log.zig", "ui/journal.zig" };
 const DIALOGUE_SOURCES = [_][]const u8{ "ui/talk.zig", "game/talking.zig", "map/script.zig", "play/trigger.zig" };
 const QUESTS_SOURCE = "ui/quests.zig";
@@ -439,6 +446,12 @@ comptime {
     for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES ++ [_][]const u8{SKILLBAR_SOURCE} ++ ITEMS_SOURCES ++ CATEGORY_SOURCES) |p| _ = @embedFile("../" ++ p);
     for (DECL_SOURCES) |d| {
         if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "const " ++ d[1] ++ " ") == null) @compileError(d[0] ++ " no longer declares " ++ d[1]);
+    }
+    for (std.enums.values(resilience.Kind)) |k| {
+        const m = resilience.module(k) orelse continue;
+        var path = @typeName(m)[0..@typeName(m).len].*;
+        std.mem.replaceScalar(u8, &path, '.', '/');
+        if (!contains(&STATUS_SOURCES, &path ++ ZIG)) @compileError("STATUS_SOURCES lacks the module of " ++ @tagName(k));
     }
     for (TECHNICAL_DECLS ++ SPOKEN_DECLS ++ ACTION_WORDS) |name| {
         for (DECL_SOURCES) |d| {
@@ -569,30 +582,30 @@ fn moduleOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
 }
 
 fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
-    if (inputSource(path)) return "Input";
+    if (inputSource(path)) return INPUT_CATEGORY;
     if (std.mem.startsWith(u8, path, SRC)) {
         const rel = path[SRC.len..];
         if (contains(&LOG_SOURCES, rel)) return LOG_LINES;
         if (contains(&DIALOGUE_SOURCES, rel)) return "Dialogue";
         if (std.mem.eql(u8, rel, QUESTS_SOURCE)) return "Quests";
         if (std.mem.startsWith(u8, rel, "edit/")) return "Editor";
-        if (std.mem.startsWith(u8, rel, "map/")) return "Maps";
-        if (contains(&ITEM_TEXT_SOURCES, rel)) return "Items";
+        if (std.mem.startsWith(u8, rel, "map/")) return MAPS_CATEGORY;
+        if (contains(&ITEM_TEXT_SOURCES, rel)) return ITEMS_CATEGORY;
         if (std.mem.startsWith(u8, rel, "ui/character") or contains(&CHARACTER_SOURCES, rel)) return "Character";
-        if (contains(&SKILL_TEXT_SOURCES, rel)) return "Skills";
-        if (contains(&BINDING_SOURCES, rel)) return "Input";
+        if (contains(&SKILL_TEXT_SOURCES, rel)) return SKILLS_CATEGORY;
+        if (contains(&BINDING_SOURCES, rel)) return INPUT_CATEGORY;
         if (contains(&HUD_SOURCES, rel)) return "HUD";
-        if (std.mem.startsWith(u8, rel, "ui/")) return "Interface";
-        if (contains(&ITEMS_SOURCES, rel)) return "Items";
-        if (std.mem.eql(u8, rel, SKILLBAR_SOURCE)) return "Skills";
+        if (std.mem.startsWith(u8, rel, "ui/")) return INTERFACE_CATEGORY;
+        if (contains(&ITEMS_SOURCES, rel)) return ITEMS_CATEGORY;
+        if (std.mem.eql(u8, rel, SKILLBAR_SOURCE)) return SKILLS_CATEGORY;
         if (contains(&EFFECT_SOURCES, rel)) return "Effects";
         if (contains(&LOOK_SOURCES, rel)) return "Look";
         if (std.mem.eql(u8, rel, ACTOR_SOURCE)) return "Characters";
         if (contains(&STATUS_SOURCES, rel)) return "Status effects";
         if (std.mem.startsWith(u8, rel, "play/")) return "Combat";
-        if (std.mem.startsWith(u8, rel, "game/")) return "Gameplay";
-        if (std.mem.eql(u8, rel, APP_SOURCE)) return "Interface";
-        if (std.mem.eql(u8, rel, "game.zig")) return "Gameplay";
+        if (std.mem.startsWith(u8, rel, "game/")) return GAMEPLAY_CATEGORY;
+        if (std.mem.eql(u8, rel, APP_SOURCE)) return INTERFACE_CATEGORY;
+        if (std.mem.eql(u8, rel, "game.zig")) return GAMEPLAY_CATEGORY;
         if (std.mem.startsWith(u8, rel, "save")) return "Save";
     }
     return humanize(a, stem(std.fs.path.basename(path)));
@@ -734,7 +747,7 @@ const ContextScan = struct {
             } else owner = try humanize(s.a, scope.name);
         }
         if (skill_owner) |name| {
-            category = "Skills";
+            category = SKILLS_CATEGORY;
             owner = name;
         }
         if (owner == null) {
@@ -955,7 +968,7 @@ test "text catalog semantic context separates table rows skill containers calls 
     );
     try std.testing.expectEqual(@as(usize, 4), c.entries().len);
     const bow = c.entries()[0];
-    try std.testing.expectEqualStrings("Items", bow.category);
+    try std.testing.expectEqualStrings(ITEMS_CATEGORY, bow.category);
     try std.testing.expectEqualStrings("War bow", bow.owner);
     try std.testing.expectEqualStrings("Description", bow.role);
     try std.testing.expectEqualStrings("play.items.SPECS.war_bow.desc", bow.context);
@@ -969,7 +982,7 @@ test "text catalog semantic context separates table rows skill containers calls 
         \\};
         \\pub const Guard = struct { pub const DESCRIPTION = "Brace."; };
     );
-    try std.testing.expectEqualStrings("Skills", c.entries()[4].category);
+    try std.testing.expectEqualStrings(SKILLS_CATEGORY, c.entries()[4].category);
     try std.testing.expectEqualStrings("Arcane barrier", c.entries()[4].owner);
     try std.testing.expectEqualStrings("Description", c.entries()[4].role);
     try std.testing.expectEqualStrings("Status", c.entries()[5].role);
@@ -987,7 +1000,7 @@ test "text catalog semantic context separates table rows skill containers calls 
     try c.scan("src/play/skillbar.zig", "pub const Act = enum { arcane_barrier };\n");
     const alias = c.entries()[9];
     try std.testing.expectEqualStrings("Stone wall", alias.text);
-    try std.testing.expectEqualStrings("Skills", alias.category);
+    try std.testing.expectEqualStrings(SKILLS_CATEGORY, alias.category);
     try std.testing.expectEqualStrings("Arcane barrier", alias.owner);
     try std.testing.expectEqualStrings("play.skillbar.Act.arcane_barrier", alias.context);
     try std.testing.expectEqualStrings("Display name", alias.role);
@@ -1017,7 +1030,7 @@ test "text catalog skill registry context follows named rows with module in any 
     try std.testing.expectEqual(@as(usize, 3), c.skills.?.len);
     try c.scan("src/play/tactics.zig", "const ArcaneBarrier = struct { const DESCRIPTION = \"Raise a wall.\"; }; const Guard = struct { const DESCRIPTION = \"Stand firm.\"; };\n");
     try c.scan("src/play/ward.zig", "const DESCRIPTION = \"Drain mana.\";\n");
-    try std.testing.expectEqualStrings("Skills", c.entries()[0].category);
+    try std.testing.expectEqualStrings(SKILLS_CATEGORY, c.entries()[0].category);
     try std.testing.expectEqualStrings("Arcane barrier", c.entries()[0].owner);
     try std.testing.expectEqualStrings("play.tactics.ArcaneBarrier.DESCRIPTION", c.entries()[0].context);
     try std.testing.expectEqualStrings("Guard", c.entries()[1].owner);
@@ -1038,7 +1051,7 @@ test "text catalog finds all fright speech and gives maps nonempty semantic prov
     }
     try c.scanMap("maps/test.map", "node bespoke\nname First room\nnode procgen wilds\nname Second room\n");
     try std.testing.expectEqualStrings("First room (node 0)", c.entries()[4].owner);
-    try std.testing.expectEqualStrings("Maps", c.entries()[5].category);
+    try std.testing.expectEqualStrings(MAPS_CATEGORY, c.entries()[5].category);
     try std.testing.expectEqualStrings("Name", c.entries()[5].role);
     try std.testing.expectEqualStrings("maps/test.map.node[1].name", c.entries()[5].context);
 }
@@ -1066,7 +1079,7 @@ test "text catalog indexes live item skill and speech sources with complete meta
         }
         if (std.mem.eql(u8, e.context, "play.tactics.ArcaneBarrier.DESCRIPTION")) {
             barrier = true;
-            try std.testing.expectEqualStrings("Skills", e.category);
+            try std.testing.expectEqualStrings(SKILLS_CATEGORY, e.category);
             try std.testing.expectEqualStrings("Arcane barrier", e.owner);
         }
         if (std.mem.eql(u8, e.context, "gfx.fx.FRIGHT_WORDS")) speech += 1;
@@ -1093,7 +1106,7 @@ test "text catalog retains moved input captions and save wording under their ori
     try catalog.scan("src/save_data.zig", "pub const CAPTION = \"a generated floor\";");
     try std.testing.expectEqual(@as(usize, 3), catalog.entries().len);
     for (catalog.entries()[0..2]) |entry| {
-        try std.testing.expectEqualStrings("Input", entry.category);
+        try std.testing.expectEqualStrings(INPUT_CATEGORY, entry.category);
         try std.testing.expect(!entry.editable);
     }
     try std.testing.expectEqualStrings("Save", catalog.entries()[2].category);

@@ -174,6 +174,15 @@ pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consuma
     face.draw(line.text(), x, top + MODS_BELOW, font.LABEL, look.DIM);
 }
 
+const SlotNote = menu.Note(100);
+
+fn slotLine(spec: item_bases.Spec, slot: item_bases.Slot, out: *SlotNote) [:0]const u8 {
+    const slot_name = if (slot == .right_hand) (if (spec.two_handed) TWO_HANDED else ONE_HANDED) else slot.name();
+    const scales = if (slot == .right_hand) spec.scalingFor(spec.attack) orelse spec.scalingFor(.spell) else null;
+    if (scales) |s| out.say("{s}  /  {}", .{ slot_name, attr.Named{ .scaling = s } }) else out.say("{s}", .{slot_name});
+    return out.text();
+}
+
 pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.Item, slot: item_bases.Slot, available: attr.Attrs, caption: ?[:0]const u8) void {
     head(face, x, y, width, caption);
     const item = maybe orelse {
@@ -188,10 +197,8 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     if (!item.kind.equippable()) return;
     var base_buf: [items.NAME_MAX]u8 = undefined;
     if (item.rarity() == .rare) face.draw(items.baseName(item.kind, &base_buf), x, y + CARD_NAME + font.BODY_LINE, font.LABEL, look.TEXT);
-    var metadata: menu.Note(100) = .{};
-    const slot_name = if (slot == .right_hand) (if (spec.two_handed) TWO_HANDED else ONE_HANDED) else slot.name();
-    if (spec.damage != null) metadata.say("{s}  /  {s}", .{ slot_name, menu.named(spec.style.attr()) }) else metadata.say("{s}", .{slot_name});
-    face.draw(metadata.text(), x, y + SLOT_Y, font.LABEL, look.DIM);
+    var metadata: SlotNote = .{};
+    face.draw(slotLine(spec, slot, &metadata), x, y + SLOT_Y, font.LABEL, look.DIM);
     var top = y + CARD_STATS;
     var text: CardText = .{};
     const stats = CardLines.of(spec, slot, available);
@@ -222,6 +229,11 @@ fn verifyFace(face: *const font.Face) !void {
     for (std.enums.values(item_bases.Kind)) |kind| {
         const spec = item_bases.spec(kind);
         for (spec.slots) |slot| {
+            var metadata: SlotNote = .{};
+            if (face.width(slotLine(spec, slot, &metadata), font.LABEL) > layout.CARD_W) {
+                std.debug.print("card overflow {s}: {s}\n", .{ spec.name, metadata.text() });
+                return error.ItemCardOverflow;
+            }
             const rows = CardLines.of(spec, slot, null);
             for (rows.lines()) |line| {
                 const value = line.text(&text);

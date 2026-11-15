@@ -65,7 +65,7 @@ test "thorns still returns a connected melee hit rounded to zero by hero armour"
     var absorbed: usize = 0;
     for (0..64) |seed| {
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, .{ .kind = .armour, .value = 75 }, null, null } });
+        g.sim.inventory.gear.slots.set(.chest, items.affixed(.leather, &.{ .{ .kind = .thorns, .value = 2 }, .{ .kind = .armour, .value = 75 } }));
         const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
         game.settle(g);
         const hero_hp = g.sim.heroActor().?.hp;
@@ -772,9 +772,12 @@ test "a beefy pib's landed blow stuns the archer about a quarter of the time, an
 }
 
 fn sweepMotes(g: *const game.Game) usize {
-    var n: usize = 0;
-    for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and std.meta.eql(m.col, look.SWEEP));
-    return n;
+    const Sweep = struct {
+        pub fn counts(_: @This(), m: anytype) bool {
+            return std.meta.eql(m.col, look.SWEEP);
+        }
+    };
+    return harness.liveMotes(g, Sweep{});
 }
 
 fn whirling(g: *game.Game, _: usize) bool {
@@ -1742,7 +1745,7 @@ fn thrown(g: *game.Game) !usize {
     try std.testing.expectEqual(@as(u8, 0), b.flown);
     try std.testing.expectEqual(IMP_AT, b.at());
     harness.drawnOut(g);
-    _ = g.sim.pool.damage(&g.sim.lv, id, imp.hp);
+    _ = g.sim.pool.slay(&g.sim.lv, id);
     game.settle(g);
     return actor.Pool.slot(id);
 }

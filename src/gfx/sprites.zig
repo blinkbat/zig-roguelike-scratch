@@ -266,9 +266,8 @@ pub const Sprites = struct {
 
     fn bankHalf(piece: ground.BankPiece, side: usize, at: [2]f32, px: f32) struct { src: rl.Rectangle, dst: rl.Rectangle } {
         const shift = sideShift(side);
-        var src = sprite_assets.sheetCell(piece.col(), 0);
-        src.x += shift * look.SPRITE_PX;
-        src.width /= 2;
+        const cell = sprite_assets.sheetCell(piece.col(), 0);
+        const src = rl.Rectangle{ .x = cell.x + shift * cell.width, .y = cell.y, .width = cell.width / 2, .height = cell.height };
         return .{ .src = src, .dst = .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px * ground.BANK_LIFT, .width = px / 2, .height = px } };
     }
 

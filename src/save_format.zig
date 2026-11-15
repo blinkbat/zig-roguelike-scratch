@@ -18,6 +18,7 @@ const flask = @import("play/flask.zig");
 const sunder = @import("play/sunder.zig");
 const glacial = @import("play/glacial.zig");
 const day = @import("map/day.zig");
+const P = @import("core/mathx.zig").P;
 
 pub const MAGIC = "cistern-save\n";
 const VERSION: u64 = 2;
@@ -125,19 +126,29 @@ pub fn writeSnapshot(snapshot: *const Snapshot, out: *std.ArrayList(u8)) !void {
     try encode(out, .{ .summary = &snapshot.summary, .seed = snapshot.seed, .map = map, .node = snapshot.node, .visits = &visits, .run = &run, .portable = &portable });
 }
 
-test "a legacy key cell that was the only way to the gate migrates to an open chest with its key lying out" {
+fn legacyKeyZoo() atlas.zoo.Spec {
     var s = atlas.zoo.Spec{};
+    s.key = s.approach().add(.{ .x = -1, .y = 0 });
+    return s;
+}
+
+fn legacyKeyLevel(s: atlas.zoo.Spec) grid.Level {
     const way = s.approach();
-    s.key = way.add(.{ .x = -1, .y = 0 });
+    var lv = grid.openFloor();
+    for (&lv.tile) |*t| t.* = .rock;
+    lv.set(way, .floor);
+    lv.set(s.key.?, .zoo_key);
+    var it = grid.Box.sized(.{ .x = way.x - 10, .y = way.y - 2 }, 9, 5).cells();
+    while (it.next()) |p| lv.set(p, .floor);
+    return lv;
+}
+
+test "a legacy key cell that was the only way to the gate migrates to an open chest with its key lying out" {
+    const s = legacyKeyZoo();
     try std.testing.expect(s.valid());
     for ([_]bool{ true, false }) |choke| {
-        var lv = grid.openFloor();
-        for (&lv.tile) |*t| t.* = .rock;
-        lv.set(way, .floor);
-        lv.set(s.key.?, .zoo_key);
-        var it = grid.Box.sized(.{ .x = way.x - 10, .y = way.y - 2 }, 9, 5).cells();
-        while (it.next()) |p| lv.set(p, .floor);
-        if (!choke) lv.set(way.add(.{ .x = -1, .y = 1 }), .floor);
+        var lv = legacyKeyLevel(s);
+        if (!choke) lv.set(s.approach().add(.{ .x = -1, .y = 1 }), .floor);
         var ground = ground_items.Ground{};
         var bag = inventory.Inventory{};
         migrateZooKey(&lv, &ground, &.{}, s, &bag);
@@ -147,18 +158,11 @@ test "a legacy key cell that was the only way to the gate migrates to an open ch
 }
 
 test "a legacy key that would crowd out the drops still to come goes in the bag, not on the ground" {
-    var s = atlas.zoo.Spec{};
-    const way = s.approach();
-    s.key = way.add(.{ .x = -1, .y = 0 });
-    var lv = grid.openFloor();
-    for (&lv.tile) |*t| t.* = .rock;
-    lv.set(way, .floor);
-    lv.set(s.key.?, .zoo_key);
-    var it = grid.Box.sized(.{ .x = way.x - 10, .y = way.y - 2 }, 9, 5).cells();
-    while (it.next()) |p| lv.set(p, .floor);
+    const s = legacyKeyZoo();
+    var lv = legacyKeyLevel(s);
     const pool = actor.Pool{};
     var ground = ground_items.Ground{};
-    while (ground.room(deathsToCome(&pool))) _ = ground.add(.{ .item = items.SMALL_KEY, .at = way });
+    while (ground.room(deathsToCome(&pool))) _ = ground.add(.{ .item = items.SMALL_KEY, .at = s.approach() });
     const full = ground.n;
     var bag = inventory.Inventory{};
     migrateZooKey(&lv, &ground, &pool, s, &bag);
@@ -369,11 +373,11 @@ fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, pool: *const 
     }
 }
 
-fn chestable(level: *grid.Level, z: atlas.zoo.Spec, at: @import("core/mathx.zig").P) bool {
+fn chestable(level: *grid.Level, z: atlas.zoo.Spec, at: P) bool {
     return level.who(at) == grid.NO_ONE and !severs(level, z, at);
 }
 
-fn severs(level: *grid.Level, z: atlas.zoo.Spec, at: @import("core/mathx.zig").P) bool {
+fn severs(level: *grid.Level, z: atlas.zoo.Spec, at: P) bool {
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     const reached = grid.distances(level, z.approach(), &dist, &queue);
@@ -475,13 +479,20 @@ pub const TestRecord = struct {
         out.clearRetainingCapacity();
         try store.begin(out.writer(), MAGIC, VERSION);
         try change(out, try store.open(bytes, MAGIC, VERSION), path, replacement);
-        try seal(out);
-    }
-
-    fn seal(out: *std.ArrayList(u8)) !void {
-        try store.seal(out.writer(), out.items[store.head(MAGIC)..]);
+        try out.ensureUnusedCapacity(store.SUM);
+        seal(out);
     }
 };
+
+pub fn seal(out: *std.ArrayList(u8)) void {
+    store.sealReserved(out, store.head(MAGIC));
+}
+
+fn sealed(g: *game.Game, out: *std.ArrayList(u8)) !void {
+    out.clearRetainingCapacity();
+    try write(g, out);
+    seal(out);
+}
 
 test "portable save parsing defaults optional fields for every class and retains essential state" {
     const alloc = std.testing.allocator;
@@ -503,9 +514,7 @@ test "portable save parsing defaults optional fields for every class and retains
         source.sim.gold = 73;
         _ = source.sim.growth.gain(100);
         try std.testing.expect(source.sim.inventory.add(.{ .kind = .sword }));
-        original.clearRetainingCapacity();
-        try write(source, &original);
-        try TestRecord.seal(&original);
+        try sealed(source, &original);
         try TestRecord.file(&changed, original.items, &.{ "run", "growth", "ranks" }, null);
         std.mem.swap(std.ArrayList(u8), &original, &changed);
         for (omitted) |field| {
@@ -542,21 +551,18 @@ test "runs saved before flasks were items gain both, while a current run keeps a
     defer stripped.deinit();
     game.begin(source, 41);
     try source.sim.inventory.unequip(.life_flask, source.sim.growth.attributes(source.sim.class));
-    try write(source, &bytes);
-    try TestRecord.seal(&bytes);
+    try sealed(source, &bytes);
     try read(bytes.items, target, map);
     try std.testing.expect(!target.sim.inventory.gear.holds(.life) and target.sim.inventory.gear.holds(.mana));
     try std.testing.expectEqual(item_bases.Kind.life_flask, target.sim.inventory.bag[0].kind);
     source.sim.inventory = .{};
-    bytes.clearRetainingCapacity();
-    try write(source, &bytes);
-    try TestRecord.seal(&bytes);
+    try sealed(source, &bytes);
     try TestRecord.file(&stripped, bytes.items, &.{ "run", "inventory", "gear", "slots", "life_flask" }, null);
     try TestRecord.file(&bytes, stripped.items, &.{ "run", "inventory", "gear", "slots", "mana_flask" }, null);
-    std.mem.writeInt(u64, bytes.items[MAGIC.len..][0..@sizeOf(u64)], FLASKLESS, .little);
+    store.stamp(bytes.items, MAGIC, FLASKLESS);
     try read(bytes.items, target, map);
     for (std.enums.values(flask.Kind)) |k| try std.testing.expect(target.sim.inventory.gear.holds(k));
-    std.mem.writeInt(u64, bytes.items[MAGIC.len..][0..@sizeOf(u64)], VERSION, .little);
+    store.stamp(bytes.items, MAGIC, VERSION);
     try read(bytes.items, target, map);
     for (std.enums.values(flask.Kind)) |k| try std.testing.expect(!target.sim.inventory.gear.holds(k));
 }
@@ -605,7 +611,7 @@ test "portable saves reject tactical ranks beyond the supported skills before ap
         @field(body.tactics, field) = 255;
         bytes.clearRetainingCapacity();
         try writeSnapshot(snapshot, &bytes);
-        try TestRecord.seal(&bytes);
+        seal(&bytes);
         try std.testing.expectError(error.Damaged, read(bytes.items, run, into));
         try std.testing.expectEqual(@as(u8, 0), @field(run.sim.pool.get(id).?.tactics, field));
         try std.testing.expectEqual(@as(usize, 0), into.node_n);
@@ -642,8 +648,7 @@ test "portable save corruption and missing required state leave the live game an
     const map_hash = store.sum(std.mem.asBytes(map));
     var original = std.ArrayList(u8).init(alloc);
     defer original.deinit();
-    try write(current, &original);
-    try TestRecord.seal(&original);
+    try sealed(current, &original);
     var changed = std.ArrayList(u8).init(alloc);
     defer changed.deinit();
     var after = std.ArrayList(u8).init(alloc);
@@ -680,9 +685,7 @@ test "portable save corruption and missing required state leave the live game an
         try std.testing.expectError(expected, peek(changed.items));
         try std.testing.expectError(expected, read(changed.items, current, map));
         try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
-        after.clearRetainingCapacity();
-        try write(current, &after);
-        try TestRecord.seal(&after);
+        try sealed(current, &after);
         try std.testing.expectEqualSlices(u8, original.items, after.items);
     }
 }

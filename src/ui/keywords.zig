@@ -109,11 +109,9 @@ pub const State = struct {
                 return true;
             }
             if (st.walk) |d| {
-                var boxes: [MAX]rl.Rectangle = undefined;
-                for (self.links[0..self.n], boxes[0..self.n]) |link, *box| box.* = link.box;
                 const from = @min(self.focus.?, self.n - 1);
                 const delta = d.delta();
-                self.focus = menu.nearest(boxes[from], boxes[0..self.n], d) orelse mathx.wrap(from, if (delta.x != 0) delta.x else delta.y, self.n);
+                self.focus = menu.nearestBy(self.n, from, d, @as(*const State, self), linkBox) orelse mathx.wrap(from, if (delta.x != 0) delta.x else delta.y, self.n);
             }
             return true;
         }
@@ -217,6 +215,10 @@ pub const State = struct {
     }
 };
 
+fn linkBox(self: *const State, i: usize) rl.Rectangle {
+    return self.links[i].box;
+}
+
 fn wordByte(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_';
 }
@@ -232,11 +234,9 @@ fn wrapBody(face: anytype, body: []const u8, width: i32, buf: *font.Wrapped, lin
 }
 
 fn popupBox(screen: mathx.P, anchor: rl.Rectangle, width: i32, height: i32) rl.Rectangle {
-    const right = raster.right(anchor) + GAP;
-    const left = raster.left(anchor) - GAP - width;
-    const x = if (right + width <= screen.x - MARGIN) right else if (left >= MARGIN) left else raster.left(anchor);
+    const x = menu.besideX(anchor, width, screen.x, GAP, MARGIN) orelse raster.left(anchor);
     const y = if (raster.top(anchor) - GAP - height >= MARGIN) raster.top(anchor) - GAP - height else raster.bottom(anchor) + GAP;
-    return raster.rect(std.math.clamp(x, MARGIN, @max(MARGIN, screen.x - MARGIN - width)), std.math.clamp(y, MARGIN, @max(MARGIN, screen.y - MARGIN - height)), width, height);
+    return raster.rect(menu.clampOn(x, width, screen.x, MARGIN), menu.clampOn(y, height, screen.y, MARGIN), width, height);
 }
 
 test "keyword focus consumes navigation and dismissal while preserving its host" {

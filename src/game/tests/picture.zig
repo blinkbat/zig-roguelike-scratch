@@ -312,9 +312,7 @@ test "a step kicks up its surface particles at the footfall, once" {
         const slot = g.sim.heroSlot().?;
         harness.stepTo(g, g.sim.hero, to);
         game.update(g, g.pic.glide[slot].span());
-        var n: usize = 0;
-        for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and harness.sameRgb(m.col, case.ink));
-        try std.testing.expect(n > 0);
+        try std.testing.expect(harness.liveMotes(g, harness.InkMote{ .ink = case.ink }) > 0);
         const emitted = g.pic.fx.head;
         game.update(g, 1);
         try std.testing.expectEqual(emitted, g.pic.fx.head);
@@ -403,7 +401,7 @@ test "a foe stepping into the cell of a body still dying there sets off once tha
     const cell = P{ .x = 24, .y = 20 };
     const dying = harness.foeSlot(0);
     const mover = harness.foeSlot(1);
-    _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), g.sim.pool.get(harness.foeId(0)).?.hp);
+    _ = g.sim.pool.slay(&g.sim.lv, harness.foeId(0));
     const lands: f32 = 0.3;
     g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(dying), .at = cell, .lethal = true, .after = g.pic.afterOf(&g.sim, .fromIndex(dying)) } }, .{ .from = .{ .x = 20, .y = 20 }, .wait = lands });
     g.sim.pool.move(&g.sim.lv, harness.foeId(1), cell);
@@ -1199,7 +1197,7 @@ test "a foe the gas kills stepping from dark to dark has its death landed by the
     game.castSight(g, .{ .x = 20, .y = 20 });
     try std.testing.expect(!g.sim.lv.isLit(dark) and !g.sim.lv.isLit(was));
     g.sim.pool.move(&g.sim.lv, id, dark);
-    _ = g.sim.pool.damage(&g.sim.lv, id, g.sim.pool.items[s].hp);
+    _ = g.sim.pool.slay(&g.sim.lv, id);
     g.pic.owed[s].gassed = .{ .kill = true, .after = .{ .body = fx.Body.of(g.sim.pool.items[s], 0) } };
     harness.staggerOnly(g, id);
     g.pic.catchUp(&g.sim);

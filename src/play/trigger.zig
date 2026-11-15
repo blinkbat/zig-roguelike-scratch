@@ -3,6 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const actor = @import("actor.zig");
 const log = @import("log.zig");
 const trade = @import("trade.zig");
+const hero = @import("hero.zig");
 const script = @import("../map/script.zig");
 const P = mathx.P;
 const Script = script.Script;
@@ -63,9 +64,9 @@ pub const Runtime = struct {
     /// Each merchant's shelf, stocked the first time it trades.
     wares: [script.MAX_NPCS]?trade.Wares = @splat(null),
 
-    pub fn shelf(self: *Runtime, npc: u8, run_seed: u64) *trade.Wares {
+    pub fn shelf(self: *Runtime, npc: u8, run_seed: u64, class: hero.Class) *trade.Wares {
         const w = &self.wares[npc];
-        if (w.* == null) w.* = trade.Wares.roll(run_seed, npc);
+        if (w.* == null) w.* = trade.Wares.roll(run_seed, npc, class);
         return &w.*.?;
     }
 

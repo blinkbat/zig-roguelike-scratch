@@ -1054,6 +1054,11 @@ pub const Box = struct {
         };
     }
 
+    pub fn clipped(b: Box) ?Box {
+        const c = b.grown(0);
+        return if (c.hi.x <= c.lo.x or c.hi.y <= c.lo.y) null else c;
+    }
+
     pub fn overlaps(b: Box, o: Box, pad: i32) bool {
         return b.lo.x - pad < o.hi.x and b.hi.x + pad > o.lo.x and b.lo.y - pad < o.hi.y and b.hi.y + pad > o.lo.y;
     }
@@ -1138,6 +1143,15 @@ pub fn distances(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32
     return flood.drain();
 }
 
+pub fn reached(lv: *const Level, from: P) CellSet {
+    var dist: [CELLS]i32 = undefined;
+    var queue: [CELLS]u32 = undefined;
+    var flood = Flood.init(lv, from, &dist, &queue);
+    var out = CellSet.initEmpty();
+    while (flood.next()) |p| out.set(Level.idx(p));
+    return out;
+}
+
 pub const TEST_SEED_STRIDE = 7919;
 
 pub fn expectAllReached(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32) !void {
@@ -1165,6 +1179,11 @@ pub const Flood = struct {
     pub fn drain(self: *Flood) usize {
         while (self.next()) |_| {}
         return self.tail;
+    }
+
+    pub fn first(self: *Flood, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) ?P {
+        while (self.next()) |p| if (ok(ctx, p)) return p;
+        return null;
     }
 
     pub fn seed(self: *Flood, from: P) void {

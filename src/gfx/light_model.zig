@@ -32,7 +32,7 @@ const SPAN: i32 = grid.Cells.span(REACH);
 const FALLOFF_D0: f32 = 2.5;
 /// Wall height in cells; the brick face below `FACE_FROM` is foreshortened.
 pub const WALL_H: f32 = 1.0;
-const FACE_FROM: f32 = 1 - @as(f32, @floatFromInt(look.WALL_FACE_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
+const FACE_FROM: f32 = 1 - look.cellsOf(@floatFromInt(look.WALL_FACE_PX));
 pub const FACE_H: f32 = 1 - FACE_FROM;
 const FLAME_Z: f32 = 0.6;
 /// Above the plant's own caster height, so no lit point sits on the light.
@@ -227,7 +227,7 @@ pub fn bankSunlit(lv: *const grid.Level, banks: anytype, ray: SunRay, x: f32, y:
     }
     var lit: f32 = 1;
     if (banks.foot(.{ x, y })) |foot| {
-        if (y >= foot) lit = 1 - BANK_FOOT_SHADE * (1 - mathx.smoothstep(0, BANK_FOOT_PX / look.SPRITE_PX, y - foot));
+        if (y >= foot) lit = 1 - BANK_FOOT_SHADE * (1 - mathx.smoothstep(0, look.cellsOf(BANK_FOOT_PX), y - foot));
     }
     const far = height / ray.rise;
     var distance: f32 = SUN_STEP * 0.25;

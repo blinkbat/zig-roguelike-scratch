@@ -140,7 +140,7 @@ fn captureLens(g: *game.Game) !void {
             defer rl.unloadImage(image);
             if (differentPixels(base, image) == 0) return error.LensDidNotChangeFrame;
             if (comptime std.mem.eql(u8, field.name, "lens_blur")) {
-                var points = grid.Cells.of(.{ .x = 0, .y = @divTrunc(size.y * 40, 100) }, .{ .x = size.x, .y = @divTrunc(size.y * 60, 100) });
+                var points = grid.Cells.of(.{ .x = 0, .y = @intFromFloat(@ceil(@import("../../gfx/lens.zig").SHARP_BAND[0] * @as(f32, @floatFromInt(size.y)))) }, .{ .x = size.x, .y = @intFromFloat(@floor(@import("../../gfx/lens.zig").SHARP_BAND[1] * @as(f32, @floatFromInt(size.y)))) });
                 while (points.next()) |p| {
                     if (!sameRgb(rl.getImageColor(base, p.x, p.y), rl.getImageColor(image, p.x, p.y))) return error.LensBlurChangedSharpBand;
                 }
@@ -247,7 +247,7 @@ fn checkCinema(g: *game.Game, target: rl.RenderTexture2D) !void {
         g.cinema.options = if (enabled) .{} else cinema.Options.off;
         std.debug.print("cinema {s}: {d:.3} ms mean headless draw over {d} frames\n", .{ if (enabled) "on" else "off", try meanDraw(g, target, CINEMA_WARM, CINEMA_FRAMES), CINEMA_FRAMES });
     }
-    for ([_]P{ game.SCREEN_720, game.SCREEN_1080, g.screen }) |size| {
+    for (SIZES ++ [_]P{g.screen}) |size| {
         const resized = try targetAt(g, size);
         defer resized.close(g);
         drawInto(g, resized.target);

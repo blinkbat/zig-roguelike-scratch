@@ -65,9 +65,9 @@ pub fn meleeRaw(rng: *mathx.Rng, gear: *const Gear, blow: actor.Strike) i32 {
 }
 
 /// The crit is drawn after the damage it scales.
-pub fn scaled(rng: *mathx.Rng, by: attrs.Attrs, style: attrs.Style, hit: damage.Damage) Rolled {
+pub fn scaled(rng: *mathx.Rng, by: attrs.Attrs, scaling: attrs.Scaling, hit: damage.Damage) Rolled {
     const crit = by.crits(rng);
-    return .{ .blow = by.blow(style, hit, crit, rng), .crit = crit };
+    return .{ .blow = by.blow(scaling, hit, crit, rng), .crit = crit };
 }
 
 pub fn heroRoll(sim: *Simulation, comptime attack: attrs.Attack, raw: i32) Roll {
@@ -79,11 +79,11 @@ pub fn heroRollWith(rng: *mathx.Rng, sim: *const Simulation, comptime attack: at
     return imbuedScaled(rng, sim, attack, gear.forAttack(sim.heroAttrs(), attack), gear.scaling(attack), .{ .physical = raw }).physical();
 }
 
-fn imbuedScaled(rng: *mathx.Rng, sim: *const Simulation, attack: attrs.Attack, by: attrs.Attrs, style: attrs.Style, d: damage.Damage) Rolled {
+fn imbuedScaled(rng: *mathx.Rng, sim: *const Simulation, attack: attrs.Attack, by: attrs.Attrs, scaling: attrs.Scaling, d: damage.Damage) Rolled {
     const readied = sim.heroReadied();
     var fired = d;
     if (readied.imbues(attack)) fired.elements.getPtr(tactics.Imbue.IMBUES).* += tactics.Imbue.FIRE.roll(rng);
-    var hit = scaled(rng, by, style, fired);
+    var hit = scaled(rng, by, scaling, fired);
     hit.effect = sim.growth.onHit(sim.inventory.gear, attack, readied);
     return hit;
 }
@@ -102,8 +102,12 @@ pub fn heroBlow(sim: *Simulation, comptime act: skillbar.Act) Rolled {
 
 pub fn heroScaled(sim: *Simulation, comptime act: skillbar.Act, raw: damage.Damage) Rolled {
     const b = blowFor(sim, act);
-    if (raw.physical > 0) return imbuedScaled(&sim.rng, sim, act.attack().?, b.by, b.style, raw);
-    return scaled(&sim.rng, b.by, b.style, raw);
+    if (raw.physical > 0) return imbuedScaled(&sim.rng, sim, act.attack().?, b.by, b.scaling, raw);
+    return scaled(&sim.rng, b.by, b.scaling, raw);
+}
+
+pub fn heroScaledRoll(sim: *Simulation, comptime act: skillbar.Act, raw: damage.Damage) Roll {
+    return heroScaled(sim, act, raw).physical();
 }
 
 pub fn blowFor(sim: *const Simulation, comptime act: skillbar.Act) progress.Blow {
@@ -312,7 +316,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
 fn leeched(sim: *Simulation, dmg: i32) i32 {
     const share = sim.inventory.gear.leech();
     if (share == 0) return 0;
-    return @intCast(mathx.percentRound(@as(i64, dmg) * share, &sim.rng));
+    return mathx.percentRolled(dmg, share, &sim.rng);
 }
 
 pub const Chosen = struct { roll: Roll, takes: bool };

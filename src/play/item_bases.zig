@@ -7,6 +7,7 @@ const flask = @import("flask.zig");
 const wording = @import("../core/wording.zig");
 const resilience = @import("resilience.zig");
 const affixes = @import("affixes.zig");
+const hero = @import("hero.zig");
 
 pub const Slot = enum {
     left_hand,
@@ -84,6 +85,9 @@ pub const Kind = enum {
     amulet,
     hunting_bow,
     war_bow,
+    quiver,
+    ember_quiver,
+    frost_quiver,
     ash_wand,
     rime_wand,
     storm_wand,
@@ -131,7 +135,23 @@ pub const Kind = enum {
         const innate = spec(k).innate orelse return null;
         return if (innate == .flask) innate.flask else null;
     }
+
+    pub fn usableBy(k: Kind, c: hero.Class) bool {
+        return spec(k).classes.contains(c);
+    }
 };
+
+pub const Classes = std.EnumSet(hero.Class);
+const ARCHER: Classes = .initOne(.archer);
+const WIZARD: Classes = .initOne(.wizard);
+const KNIGHT: Classes = .initOne(.knight);
+const NOBODY: Classes = .initEmpty();
+const LIGHT = attrs.only(.light);
+const HEAVY = attrs.only(.heavy);
+
+fn both(a: attrs.Style, b: attrs.Style) attrs.Scaling {
+    return .initMany(&.{ a, b });
+}
 
 pub const ON_HIT_FMT = "{d}% chance to {s} on hit";
 pub const BLOCK_CHANCE_FMT = "{d}% chance to block";
@@ -158,6 +178,11 @@ pub const WeaponEffect = struct {
         }
     }
 };
+comptime {
+    for (std.meta.fieldNames(WeaponEffect)) |f| {
+        if (!std.mem.eql(u8, f, "bleed_damage") and !std.mem.eql(u8, f, "penetration")) _ = @field(resilience.Kind, f);
+    }
+}
 
 pub const Innate = union(enum) {
     grant: passives.Grant,
@@ -185,6 +210,15 @@ pub const Innate = union(enum) {
         }
     }
 
+    pub fn effect(self: Innate) WeaponEffect {
+        return switch (self) {
+            .bleed => |b| .{ .bleed = b.chance, .bleed_damage = b.damage },
+            .stun => |n| .{ .stun = n },
+            .penetration => |n| .{ .penetration = n },
+            .grant, .weapon_crit, .spell_crit, .physical_damage, .element, .flask => .{},
+        };
+    }
+
     pub fn write(self: Innate, w: anytype) void {
         switch (self) {
             .grant => |g| g.write(w),
@@ -205,35 +239,47 @@ pub const Spec = struct {
     slots: []const Slot,
     needs: attrs.Needs = .{},
     damage: ?damage.Base = null,
-    style: attrs.Style = .heavy,
+    /// What its attack scales with, or for a caster its spells; null takes the attack's own.
+    scales: ?attrs.Scaling = null,
     attack: attrs.Attack = .melee,
     two_handed: bool = false,
     /// A spellcaster's implement, which rolls spell modifiers.
     caster: bool = false,
+    /// An offhand worn beside a two-handed ranged weapon.
+    quiver: bool = false,
     armour: i16 = 0,
     block: i16 = 0,
     innate: ?Innate = null,
+    classes: Classes = .initFull(),
+
+    pub fn scaling(s: Spec) attrs.Scaling {
+        return s.scales orelse if (s.caster) attrs.only(.spell) else s.attack.defaultScaling();
+    }
+
+    pub fn scalingFor(s: Spec, attack: attrs.Attack) ?attrs.Scaling {
+        return if ((s.damage != null and s.attack == attack) or (attack == .spell and s.caster)) s.scaling() else null;
+    }
 };
 
 const SPECS = std.EnumArray(Kind, Spec).init(.{
-    .sword = .{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 3, .hi = 4 }, .style = .light },
-    .axe = .{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 9 }, .two_handed = true, .innate = .{ .bleed = .{ .chance = 30, .damage = 2 } } },
-    .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
-    .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 16 }, .two_handed = true, .caster = true, .innate = Innate.stat(.spell_damage, 30) },
-    .longsword = .{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 4, .hi = 7 } },
-    .mace = .{ .name = "Mace", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 3, .hi = 6 }, .innate = .{ .stun = 15 } },
-    .greatsword = .{ .name = "Greatsword", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 7, .hi = 12 }, .two_handed = true },
-    .crossbow = .{ .name = "Crossbow", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 3, .hi = 7 }, .attack = .ranged, .two_handed = true, .innate = .{ .penetration = 20 } },
-    .greatclub = .{ .name = "Greatclub", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 9 }, .two_handed = true, .innate = .{ .stun = 25 } },
-    .sling = .{ .name = "Sling", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .attack = .ranged },
-    .dagger = .{ .name = "Dagger", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .innate = .{ .weapon_crit = 15 } },
-    .handaxe = .{ .name = "Handaxe", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 3 }, .style = .light, .innate = .{ .bleed = .{ .chance = 25 } } },
-    .wand = .{ .name = "Wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = .{ .spell_crit = 8 } },
-    .tome = .{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = Innate.stat(.mana, 3) },
-    .orb = .{ .name = "Orb", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = .{ .spell_crit = 6 } },
-    .buckler = .{ .name = "Buckler", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2, .block = 10, .innate = Innate.stat(.dodge, 4) },
-    .totem = .{ .name = "Totem", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.life_on_kill, 1) },
-    .shield = .{ .name = "Wooden shield", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6, .block = 20 },
+    .sword = .{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 3, .hi = 4 }, .scales = LIGHT, .classes = NOBODY },
+    .axe = .{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 9 }, .two_handed = true, .innate = .{ .bleed = .{ .chance = 30, .damage = 2 } }, .classes = KNIGHT },
+    .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true, .classes = ARCHER },
+    .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 16, .strength = 12 }, .two_handed = true, .caster = true, .innate = Innate.stat(.spell_damage, 30), .scales = both(.spell, .heavy), .classes = WIZARD },
+    .longsword = .{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 12, .dexterity = 12 }, .damage = .{ .lo = 4, .hi = 7 }, .scales = both(.heavy, .light), .classes = KNIGHT },
+    .mace = .{ .name = "Mace", .slots = &.{.right_hand}, .needs = .{ .strength = 12, .intelligence = 12 }, .damage = .{ .lo = 3, .hi = 6 }, .innate = .{ .stun = 15 }, .scales = both(.heavy, .spell), .classes = KNIGHT },
+    .greatsword = .{ .name = "Greatsword", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 7, .hi = 12 }, .two_handed = true, .classes = KNIGHT },
+    .crossbow = .{ .name = "Crossbow", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 3, .hi = 7 }, .attack = .ranged, .two_handed = true, .innate = .{ .penetration = 20 }, .scales = HEAVY, .classes = ARCHER },
+    .greatclub = .{ .name = "Greatclub", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 9 }, .two_handed = true, .innate = .{ .stun = 25 }, .classes = KNIGHT },
+    .sling = .{ .name = "Sling", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .attack = .ranged, .classes = NOBODY },
+    .dagger = .{ .name = "Dagger", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .scales = LIGHT, .innate = .{ .weapon_crit = 15 }, .classes = NOBODY },
+    .handaxe = .{ .name = "Handaxe", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 3 }, .scales = LIGHT, .innate = .{ .bleed = .{ .chance = 25 } }, .classes = NOBODY },
+    .wand = .{ .name = "Wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = .{ .spell_crit = 8 }, .classes = WIZARD },
+    .tome = .{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = Innate.stat(.mana, 3), .classes = WIZARD },
+    .orb = .{ .name = "Orb", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = .{ .spell_crit = 6 }, .classes = WIZARD },
+    .buckler = .{ .name = "Buckler", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2, .block = 10, .innate = Innate.stat(.dodge, 4), .classes = NOBODY },
+    .totem = .{ .name = "Totem", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.life_on_kill, 1), .classes = NOBODY },
+    .shield = .{ .name = "Wooden shield", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6, .block = 20, .classes = KNIGHT },
     .cap = .{ .name = "Leather cap", .slots = &.{.helm}, .armour = 2 },
     .helmet = .{ .name = "Iron helm", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4, .innate = Innate.stat(.life, 3) },
     .leather = .{ .name = "Leather armour", .slots = &.{.chest}, .needs = .{ .strength = 10 }, .armour = 5, .innate = Innate.stat(.dodge, 5) },
@@ -243,11 +289,14 @@ const SPECS = std.EnumArray(Kind, Spec).init(.{
     .boots = .{ .name = "Soft boots", .slots = &.{.boots}, .armour = 1, .innate = Innate.stat(.dodge, 3) },
     .ring = .{ .name = "Copper ring", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.life, 1) },
     .amulet = .{ .name = "Bronze amulet", .slots = &.{.amulet}, .innate = Innate.stat(.life, 2) },
-    .hunting_bow = .{ .name = "Hunting bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 16 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light, .attack = .ranged, .two_handed = true, .innate = .{ .weapon_crit = 12 } },
-    .war_bow = .{ .name = "War bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 22 }, .damage = .{ .lo = 3, .hi = 6 }, .style = .light, .attack = .ranged, .two_handed = true },
-    .ash_wand = .{ .name = "Ash wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .caster = true, .innate = .{ .element = .{ .kind = .fire, .percent = 25 } } },
-    .rime_wand = .{ .name = "Rime wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .caster = true, .innate = .{ .element = .{ .kind = .cold, .percent = 25 } } },
-    .storm_wand = .{ .name = "Storm wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .caster = true, .innate = .{ .element = .{ .kind = .lightning, .percent = 25 } } },
+    .hunting_bow = .{ .name = "Hunting bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 16 }, .damage = .{ .lo = 2, .hi = 4 }, .attack = .ranged, .two_handed = true, .innate = .{ .weapon_crit = 12 }, .classes = ARCHER },
+    .war_bow = .{ .name = "War bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 20, .strength = 16 }, .damage = .{ .lo = 3, .hi = 6 }, .scales = both(.light, .heavy), .attack = .ranged, .two_handed = true, .classes = ARCHER },
+    .quiver = .{ .name = "Quiver", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .quiver = true, .innate = .{ .physical_damage = 10 }, .classes = ARCHER },
+    .ember_quiver = .{ .name = "Ember quiver", .slots = &.{.left_hand}, .needs = .{ .dexterity = 14 }, .quiver = true, .innate = .{ .element = .{ .kind = .fire, .percent = 20 } }, .classes = ARCHER },
+    .frost_quiver = .{ .name = "Frost quiver", .slots = &.{.left_hand}, .needs = .{ .dexterity = 14 }, .quiver = true, .innate = .{ .element = .{ .kind = .cold, .percent = 20 } }, .classes = ARCHER },
+    .ash_wand = .{ .name = "Ash wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .caster = true, .innate = .{ .element = .{ .kind = .fire, .percent = 25 } }, .classes = WIZARD },
+    .rime_wand = .{ .name = "Rime wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .caster = true, .innate = .{ .element = .{ .kind = .cold, .percent = 25 } }, .classes = WIZARD },
+    .storm_wand = .{ .name = "Storm wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14, .dexterity = 12 }, .caster = true, .innate = .{ .element = .{ .kind = .lightning, .percent = 25 } }, .scales = both(.spell, .light), .classes = WIZARD },
     .plate = .{ .name = "Plate armour", .slots = &.{.chest}, .needs = .{ .strength = 24 }, .armour = 15 },
     .robes = .{ .name = "Robes", .slots = &.{.chest}, .needs = .{ .intelligence = 12 }, .armour = 1, .innate = Innate.stat(.mana, 4) },
     .hood = .{ .name = "Hunter's hood", .slots = &.{.helm}, .needs = .{ .dexterity = 14 }, .armour = 1, .innate = Innate.stat(.crit, 5) },

@@ -3,6 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const items = @import("items.zig");
 const consumable = @import("consumable.zig");
 const inventory = @import("inventory.zig");
+const hero = @import("hero.zig");
 
 const WARES_MAX: usize = 8;
 const SHELF_MAX: usize = 2 * WARES_MAX;
@@ -48,12 +49,12 @@ pub const Wares = struct {
     supplies: consumable.Stacks = .initFill(0),
 
     /// The same shelf for the same run and merchant.
-    pub fn roll(run_seed: u64, merchant: u8) Wares {
+    pub fn roll(run_seed: u64, merchant: u8, class: hero.Class) Wares {
         var rng = mathx.Rng.init(run_seed ^ (@as(u64, merchant) +% 1) *% mathx.GOLDEN_GAMMA);
         var w = Wares{};
         for (consumable.KINDS) |k| w.supplies.set(k, @intCast(rng.range(SUPPLY_LEAST, SUPPLY_MOST)));
         const n: usize = @intCast(rng.range(WARES_LEAST, WARES_MAX));
-        for (0..n) |_| _ = mathx.push(items.Item, &w.item, &w.item_n, items.roll(&rng, SHELF_RARITY));
+        for (0..n) |_| _ = mathx.push(items.Item, &w.item, &w.item_n, items.roll(&rng, SHELF_RARITY, class));
         return w;
     }
 
@@ -173,9 +174,9 @@ pub fn sell(shelf: *Wares, row: usize, inv: *inventory.Inventory, gold: *i32) Fa
 }
 
 test "a merchant's shelf is the same for the same run and differs between merchants" {
-    const a = Wares.roll(0xC0FFEE, 0);
-    const again = Wares.roll(0xC0FFEE, 0);
-    const other = Wares.roll(0xC0FFEE, 1);
+    const a = Wares.roll(0xC0FFEE, 0, .archer);
+    const again = Wares.roll(0xC0FFEE, 0, .archer);
+    const other = Wares.roll(0xC0FFEE, 1, .archer);
     try std.testing.expectEqualSlices(items.Item, a.shelved(), again.shelved());
     try std.testing.expect(a.item_n >= WARES_LEAST and a.item_n <= WARES_MAX);
     try std.testing.expect(!std.meta.eql(a.item, other.item) or !std.meta.eql(a.supplies, other.supplies));
@@ -184,7 +185,7 @@ test "a merchant's shelf is the same for the same run and differs between mercha
 }
 
 test "buying takes the price and the ware, and an empty purse or a full bag refuses with both untouched" {
-    var shelf = Wares.roll(7, 3);
+    var shelf = Wares.roll(7, 3, .archer);
     var inv = inventory.Inventory{};
     var gold: i32 = 0;
     const first_item = consumable.KINDS.len;
@@ -207,7 +208,7 @@ test "buying takes the price and the ware, and an empty purse or a full bag refu
 }
 
 test "a supply bought comes off the shelf's stack, and a full stack refuses it" {
-    var shelf = Wares.roll(11, 0);
+    var shelf = Wares.roll(11, 0, .archer);
     var inv = inventory.Inventory{};
     var gold: i32 = 1000;
     const k = shelf.at(0).?.supply;
@@ -223,7 +224,9 @@ test "a supply bought comes off the shelf's stack, and a full stack refuses it" 
 
 test "selling pays a quarter of the asking price, at least a coin, and lists supplies before the bag" {
     var inv = inventory.Inventory{};
-    try std.testing.expect(inv.add(.{ .kind = .ring, .rare_name = .{ .first = .Void, .last = .Maw }, .mods = .{ .{ .kind = .mana, .value = 2 }, .{ .kind = .life, .value = 3 }, null, null } }));
+    var void_maw = items.affixed(.ring, &.{ .{ .kind = .mana, .value = 2 }, .{ .kind = .life, .value = 3 } });
+    void_maw.rare_name = .{ .first = .Void, .last = .Maw };
+    try std.testing.expect(inv.add(void_maw));
     try std.testing.expect(inv.stock(.bandage));
     var shelf = Wares{};
     var gold: i32 = 0;
@@ -239,9 +242,9 @@ test "selling pays a quarter of the asking price, at least a coin, and lists sup
 }
 
 test "what is sold goes on that shelf at the asking price, and a full shelf lets its oldest item go" {
-    var shelf = Wares.roll(13, 2);
+    var shelf = Wares.roll(13, 2, .archer);
     var inv = inventory.Inventory{};
-    const ring = items.Item{ .kind = .ring, .mods = .{ .{ .kind = .life, .value = 3 }, null, null, null } };
+    const ring = items.affixed(.ring, &.{.{ .kind = .life, .value = 3 }});
     try std.testing.expect(inv.add(ring));
     try std.testing.expect(inv.stock(.bandage));
     const bandages = shelf.supplies.get(.bandage);

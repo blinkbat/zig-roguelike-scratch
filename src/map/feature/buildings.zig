@@ -42,12 +42,9 @@ pub const Params = struct {
 
 const Box = grid.Box;
 
-pub const SECTION_LOTS: usize = 1;
-pub const LOTS_MAX: usize = @import("../procgen.zig").LOTS_MAX;
-
 /// Every lot a floor's features take, so no feature raises one over another's.
 pub const Lots = struct {
-    box: [LOTS_MAX]Box = undefined,
+    box: [@import("../procgen.zig").LOTS_MAX]Box = undefined,
     n: usize = 0,
     mine: usize = 0,
 
@@ -74,7 +71,7 @@ pub const Lots = struct {
     }
 
     pub fn takeApart(self: *Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
-        if (self.n == LOTS_MAX) return null;
+        if (self.n == self.box.len) return null;
         const b = self.site(lv, rng, w, h, gap, pal) orelse return null;
         _ = mathx.push(Box, &self.box, &self.n, b);
         return b;

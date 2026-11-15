@@ -11,6 +11,10 @@ pub const Error = error{ BadLine, TooMany, BadLink };
 
 /// Each script line's first word; the map's other words and knobs must not take one.
 pub const Word = enum { flag, counter, timer, quest, stage, dialog, line, who, say, say_more, act, ask, ask_more, need, gets, then, npc, shows, looks, trigger, when, do };
+
+comptime {
+    for (std.meta.fieldNames(script.Table)) |t| std.debug.assert(@hasField(Word, t));
+}
 const BY = "by";
 const FAR = "far";
 const ARROW = " -> ";
@@ -232,12 +236,6 @@ pub const Reader = struct {
 
     pub fn take(r: *Reader, s: *Script, word: Word, f: *Tokens) Error!void {
         switch (word) {
-            inline .flag, .counter, .timer => |t| {
-                const table = @field(script.Table, @tagName(t));
-                const name = try nameOf(f);
-                if (s.find(table, name) != null) return error.BadLine;
-                _ = s.declare(table, name) orelse return error.TooMany;
-            },
             .quest => {
                 r.leave();
                 const name = try nameOf(f);
@@ -346,6 +344,12 @@ pub const Reader = struct {
             .do => {
                 const t = &s.trigger[r.trigger orelse return error.BadLine];
                 if (!mathx.push(script.Act, &t.act, &t.act_n, try r.act(s, f))) return error.TooMany;
+            },
+            inline else => |t| {
+                const table = @field(script.Table, @tagName(t));
+                const name = try nameOf(f);
+                if (s.find(table, name) != null) return error.BadLine;
+                _ = s.declare(table, name) orelse return error.TooMany;
             },
         }
     }

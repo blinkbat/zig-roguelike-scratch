@@ -421,6 +421,7 @@ test "a fireball on grass sets some alight as its blast lands, and the fire spre
         caught += 1;
         try std.testing.expect(harness.logged(g, fire.CATCHES));
         try std.testing.expect(std.mem.allEqual(u8, &g.pic.flames_shown, 0));
+        try std.testing.expect(std.mem.allEqual(u8, &g.pic.groundShown(&g.sim).flames, 0));
         harness.drawnOut(g);
         try std.testing.expectEqualSlices(u8, &g.sim.lv.flames, &g.pic.flames_shown);
         var turns: usize = 0;

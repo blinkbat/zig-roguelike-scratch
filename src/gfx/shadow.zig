@@ -49,7 +49,7 @@ const FOREST_SOFT: f32 = 3.0;
 const FOREST_PAD: f32 = FOREST_SOFT * model.SHADOW_TAPS;
 pub const CAST_REACH: f32 = blk: {
     const l = @max(sky.REACH_MAX, SHADOW_LEN_HI);
-    const pad = @max(SHADOW_PAD, FOREST_PAD) / look.SPRITE_PX;
+    const pad = look.cellsOf(@max(SHADOW_PAD, FOREST_PAD));
     break :blk 0.5 + @max(pad + l * (1 + pad), CANOPY_AT * l + CANOPY_R * (1 + l * CANOPY_STRETCH));
 };
 

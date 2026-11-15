@@ -269,10 +269,9 @@ pub const Gpu = struct {
         raster.beginBlend(rl.gl.rl_one, rl.gl.rl_one, rl.gl.rl_max);
         for (flames_) |f| {
             if (!f.live()) continue;
-            const x = ox + f.at[0] * cell;
-            const y = oy + f.at[1] * cell;
-            glowAt(g, x, y, cell * model.GLOW_HALO, cell * model.GLOW_HALO, look.premultiplied(f.tint(), model.GLOW_HALO_A * f.glow * f.lit));
-            if (f.kind == .wall) glowAt(g, x, y, cell * model.GLOW_CORE, cell * model.GLOW_CORE, look.premultiplied(f.tint(), model.GLOW_CORE_A * f.glow * f.lit));
+            const at = look.screenOf(.{ f.at[0], f.at[1], 0 }, ox, oy, cell);
+            glowAt(g, at.x, at.y, cell * model.GLOW_HALO, cell * model.GLOW_HALO, look.premultiplied(f.tint(), model.GLOW_HALO_A * f.glow * f.lit));
+            if (f.kind == .wall) glowAt(g, at.x, at.y, cell * model.GLOW_CORE, cell * model.GLOW_CORE, look.premultiplied(f.tint(), model.GLOW_CORE_A * f.glow * f.lit));
         }
         rl.endBlendMode();
         raster.endTarget(outer);

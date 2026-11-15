@@ -1,5 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
+const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const sky = @import("sky.zig");
 const look = @import("look.zig");
@@ -130,6 +131,12 @@ pub const FS_HEAD =
     \\vec3 saturated(vec3 c, float s) {
     \\    return mix(vec3(dot(c, LUMA)), c, s);
     \\}
+    \\vec2 insetTexel(vec2 uv, vec2 texel) {
+    \\    return clamp(uv, texel * 0.5, vec2(1.0) - texel * 0.5);
+    \\}
+    \\vec2 insetUv(vec2 uv, vec2 size) {
+    \\    return insetTexel(uv, 1.0 / size);
+    \\}
     \\
 ;
 
@@ -151,13 +158,6 @@ pub const MAP_VIEW_FS =
     \\}
     \\float mapAlpha(sampler2D m, vec2 p, float outside) {
     \\    return insideMap(p) ? texture(m, p / CELLS).a : outside;
-    \\}
-    \\
-;
-
-pub const INSET_UV_FS =
-    \\vec2 insetUv(vec2 uv, vec2 size) {
-    \\    return clamp(uv, 0.5 / size, vec2(1.0) - 0.5 / size);
     \\}
     \\
 ;
@@ -193,7 +193,11 @@ pub const MapView = struct {
     screen: [2]f32,
 
     pub fn of(ox: i32, oy: i32, cell: i32, w: i32, h: i32) MapView {
-        return .{ .origin = .{ @floatFromInt(ox), @floatFromInt(oy) }, .cell = @floatFromInt(cell), .screen = .{ @floatFromInt(w), @floatFromInt(h) } };
+        return .at(.{ @floatFromInt(ox), @floatFromInt(oy) }, @floatFromInt(cell), .{ .x = w, .y = h });
+    }
+
+    pub fn at(origin: [2]f32, cell: f32, screen: mathx.P) MapView {
+        return .{ .origin = origin, .cell = cell, .screen = .{ @floatFromInt(screen.x), @floatFromInt(screen.y) } };
     }
 };
 

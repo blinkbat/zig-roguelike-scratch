@@ -57,14 +57,14 @@ pub fn rngWhere(want: anytype) mathx.Rng {
 pub fn procRng(g: *const game.Game, comptime act: skillbar.Act, procs: usize, want: bool) mathx.Rng {
     const Procs = struct {
         by: attrs.Attrs,
-        style: attrs.Style,
+        scaling: attrs.Scaling,
         bases: skillbar.EquippedBases,
         n: usize,
         want: bool,
         fn holds(p: @This(), rng: *mathx.Rng) bool {
             var raw = attacks.rollRaw(rng, act, p.bases);
             for (0..p.n) |_| {
-                _ = attacks.scaled(rng, p.by, p.style, raw);
+                _ = attacks.scaled(rng, p.by, p.scaling, raw);
                 if (skillbar.Act.skill(act).procs(rng, 0) != p.want) return false;
                 raw.physical = 0;
             }
@@ -72,7 +72,7 @@ pub fn procRng(g: *const game.Game, comptime act: skillbar.Act, procs: usize, wa
         }
     };
     const b = attacks.blowFor(&g.sim, act);
-    return rngWhere(Procs{ .by = b.by, .style = b.style, .bases = b.bases, .n = procs, .want = want });
+    return rngWhere(Procs{ .by = b.by, .scaling = b.scaling, .bases = b.bases, .n = procs, .want = want });
 }
 
 pub fn foes(g: *game.Game) []actor.Actor {
@@ -191,8 +191,7 @@ pub fn aimAt(g: *game.Game, act: skillbar.Act, at: P) void {
 }
 
 pub fn boundTo(g: *const game.Game, act: skillbar.Act) skills.Use {
-    const s = g.bar.slotOf(act).?;
-    return .{ .act = act, .by = s.button, .set = s.set };
+    return skills.Use.bound(g.bar, act);
 }
 
 /// Wall from `lo` to `hi`, both inclusive.
@@ -237,8 +236,8 @@ pub fn expectDamage(g: *const game.Game, comptime act: skillbar.Act, dealt: i32,
     var lo: i32 = 0;
     var hi: i32 = 0;
     for (ranges) |r| {
-        lo += b.by.dealt(b.style, r.lo, false).least();
-        hi += b.by.dealt(b.style, r.hi, true).most();
+        lo += b.by.dealt(b.scaling, r.lo, false).least();
+        hi += b.by.dealt(b.scaling, r.hi, true).most();
     }
     try expectWithin(dealt, lo, hi);
 }
@@ -316,7 +315,7 @@ pub fn lootRng(magic: ?bool) mathx.Rng {
         magic: ?bool,
 
         fn holds(l: @This(), rng: *mathx.Rng) bool {
-            const reward = loot.foeLoot(rng, 0);
+            const reward = loot.foeLoot(rng, 0, heroes.DEFAULT);
             if (reward.gold <= 0) return false;
             const m = l.magic orelse return true;
             const it = reward.item orelse return false;
@@ -331,7 +330,7 @@ pub fn barrelRng(item: bool) mathx.Rng {
         item: bool,
 
         fn holds(b: @This(), rng: *mathx.Rng) bool {
-            return (loot.barrelLoot(rng, true).item != null) == b.item;
+            return (loot.barrelLoot(rng, true, heroes.DEFAULT).item != null) == b.item;
         }
     };
     return rngWhere(Barrel{ .item = item });
@@ -464,9 +463,7 @@ pub fn toughen(a: *actor.Actor) void {
 }
 
 pub fn affixed(kind: item_bases.Kind, affix: affixes.Affix) items.Item {
-    var it = items.Item{ .kind = kind };
-    it.mods[0] = affix;
-    return it;
+    return items.affixed(kind, &.{affix});
 }
 
 pub const HARVEST_LIFE: i32 = 2;
@@ -590,6 +587,26 @@ pub fn idle(g: *game.Game) void {
 pub fn caughtUp(g: *game.Game, slot: usize) bool {
     return g.pic.pictured[slot].hp == g.sim.pool.items[slot].hp;
 }
+
+pub fn liveMotes(g: *const game.Game, which: anytype) usize {
+    var n: usize = 0;
+    for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and which.counts(m));
+    return n;
+}
+
+pub const AnyMote = struct {
+    pub fn counts(_: AnyMote, _: anytype) bool {
+        return true;
+    }
+};
+
+pub const InkMote = struct {
+    ink: rl.Color,
+
+    pub fn counts(self: InkMote, m: anytype) bool {
+        return sameRgb(m.col, self.ink);
+    }
+};
 
 test "predicted foe strikes follow terrain and ordered armour rolls in real turns" {
     const g = try game.boot(std.testing.allocator);

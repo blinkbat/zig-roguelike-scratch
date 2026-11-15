@@ -21,9 +21,11 @@ const JITTER: f32 = 0.5;
 /// In `grid.Tile.letter`'s legend; grass stands for the site's ground.
 const SYMBOLS = "\"#.";
 
-comptime {
-    for (SYMBOLS) |c| std.debug.assert(grid.Tile.ofLetter(c) != null);
-}
+const SYMBOL_TILES = blk: {
+    var out: [SYMBOLS.len]grid.Tile = undefined;
+    for (SYMBOLS, &out) |c, *t| t.* = grid.Tile.ofLetter(c).?;
+    break :blk out;
+};
 
 pub const Template = enum { huts, compound, pillars, mixed };
 
@@ -144,7 +146,7 @@ const Model = struct {
 const DIRS = mathx.CARDINALS;
 
 fn symbol(c: u8) u8 {
-    return @intCast(std.mem.indexOfScalar(u8, SYMBOLS, c) orelse 0);
+    return @intCast(std.mem.indexOfScalar(u8, SYMBOLS, c).?);
 }
 
 fn rotate(p: Pattern) Pattern {
@@ -299,7 +301,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
                 for (0..h) |yy| {
                     for (0..w) |xx| {
                         const q = P{ .x = x + @as(i32, @intCast(xx)), .y = y + @as(i32, @intCast(yy)) };
-                        const t = grid.Tile.ofLetter(SYMBOLS[out[yy * w + xx]]).?;
+                        const t = SYMBOL_TILES[out[yy * w + xx]];
                         lv.set(q, if (t == .wall) (if (rng.percent(p.decay)) .rubble else .wall) else if (t == .grass) pal.open else t);
                     }
                 }

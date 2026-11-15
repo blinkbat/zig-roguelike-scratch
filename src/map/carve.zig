@@ -56,7 +56,7 @@ pub const Noise = struct {
     }
 
     fn lattice(self: Noise, x: i32, y: i32) f32 {
-        var h = self.seed ^ (@as(u64, @bitCast(@as(i64, x))) *% 0x9E3779B97F4A7C15) ^ (@as(u64, @bitCast(@as(i64, y))) *% 0xC2B2AE3D27D4EB4F);
+        var h = self.seed ^ (@as(u64, @bitCast(@as(i64, x))) *% mathx.GOLDEN_GAMMA) ^ (@as(u64, @bitCast(@as(i64, y))) *% 0xC2B2AE3D27D4EB4F);
         h ^= h >> 31;
         h *%= 0xBF58476D1CE4E5B9;
         h ^= h >> 29;

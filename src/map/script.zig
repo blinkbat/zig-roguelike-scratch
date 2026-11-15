@@ -78,8 +78,7 @@ fn Text(comptime N: usize, comptime multiline: bool) type {
         }
 
         fn allowed(s: []const u8) bool {
-            for (s) |c| if (!std.ascii.isPrint(c) and !(multiline and c == '\n')) return false;
-            return true;
+            return printable(s, multiline);
         }
     };
 }
@@ -92,9 +91,11 @@ pub const Note = Words(NOTE_MAX);
 pub const Title = Words(TITLE_MAX);
 
 pub fn plain(s: []const u8) bool {
-    for (s) |c| {
-        if (!std.ascii.isPrint(c)) return false;
-    }
+    return printable(s, false);
+}
+
+fn printable(s: []const u8, comptime lines: bool) bool {
+    for (s) |c| if (!std.ascii.isPrint(c) and !(lines and c == '\n')) return false;
     return true;
 }
 
@@ -560,6 +561,10 @@ pub const Quest = struct {
 
 pub const Table = enum { flag, counter, timer };
 
+comptime {
+    for (std.meta.fieldNames(Table)) |t| std.debug.assert(@hasField(CondKind, t) and @hasField(ActKind, t));
+}
+
 pub const Script = struct {
     pub const COUNTED = .{
         .{ "flag", "flag_n" },
@@ -935,20 +940,20 @@ pub const Ref = union(enum) { table: Table, npc, dialog, quest };
 
 pub fn condRef(k: CondKind) ?Ref {
     return switch (k) {
-        inline .flag, .counter, .timer => |t| .{ .table = @field(Table, @tagName(t)) },
         .near => .npc,
         .talked => .dialog,
         .quest, .stage => .quest,
         .always, .never, .elapsed, .region, .deaths, .alive => null,
+        inline else => |t| .{ .table = @field(Table, @tagName(t)) },
     };
 }
 
 pub fn actRef(k: ActKind) ?Ref {
     return switch (k) {
-        inline .flag, .counter, .timer => |t| .{ .table = @field(Table, @tagName(t)) },
         .dialog => .dialog,
         .quest => .quest,
         .text, .wait, .preserve, .trade => null,
+        inline else => |t| .{ .table = @field(Table, @tagName(t)) },
     };
 }
 

@@ -83,7 +83,7 @@ pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) us
     return n;
 }
 
-const SMOKE_MOST: u16 = 19;
+const SMOKE_MOST: u16 = gas.GASSED_UP - 1;
 
 pub fn smoulder(lv: *grid.Level, p: P) void {
     const room = SMOKE_MOST -| lv.volumeAt(.smoke, p);

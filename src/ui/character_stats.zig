@@ -391,9 +391,9 @@ pub fn verify(face: *const font.Face) !void {
 }
 
 test "a skill's status chances combine its own roll with the weapon's second roll" {
-    const bash = chancesOf(.shield_bash, .{ .physical = .{ .lo = 1, .hi = 2 }, .element = null, .style = .heavy }, .{ .stun = 20, .bleed = 10 });
+    const bash = chancesOf(.shield_bash, .{ .physical = .{ .lo = 1, .hi = 2 }, .element = null, .scaling = attr.only(.heavy) }, .{ .stun = 20, .bleed = 10 });
     try std.testing.expectEqual(@as(u32, 60), bash.get(.stun));
     try std.testing.expectEqual(@as(u32, 10), bash.get(.bleed));
-    const spark = chancesOf(.spark, .{ .physical = .{ .lo = 0, .hi = 0 }, .element = .{ .lo = 1, .hi = 3 }, .style = .spell }, .{ .stun = 20 });
+    const spark = chancesOf(.spark, .{ .physical = .{ .lo = 0, .hi = 0 }, .element = .{ .lo = 1, .hi = 3 }, .scaling = attr.only(.spell) }, .{ .stun = 20 });
     try std.testing.expectEqual(@as(u32, 50), spark.get(.stun));
 }

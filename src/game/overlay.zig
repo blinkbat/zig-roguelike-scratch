@@ -463,7 +463,7 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
                 if (h.physical.hi > 0) w.print("\n" ++ damage.PHYSICAL_FMT, .{ h.physical.lo, h.physical.hi }) catch {};
                 if (h.element) |e| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi }) catch {};
                 if (h.imbued) |f| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(tactics.Imbue.IMBUES), f.lo, f.hi }) catch {};
-                w.print("\n" ++ attrs.SCALES_FMT, .{menu.named(h.style.attr())}) catch {};
+                w.print("\n" ++ attrs.SCALES_FMT, .{attrs.Named{ .scaling = h.scaling }}) catch {};
             }
             if (v.drinks) |n|
                 w.print("\n{d} drink{s} left", .{ n, plural(n) }) catch {}

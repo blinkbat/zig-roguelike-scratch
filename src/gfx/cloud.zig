@@ -159,8 +159,7 @@ pub const Cloud = struct {
 
     /// Whether any gas is drawn over `box`, which must cover every cell a baked texel reads.
     fn tinted(self: *const Cloud, box: grid.Box) bool {
-        const clip = box.grown(0);
-        if (clip.hi.x <= clip.lo.x or clip.hi.y <= clip.lo.y) return false;
+        const clip = box.clipped() orelse return false;
         const lo: usize = @intCast(clip.lo.x);
         const hi: usize = @intCast(clip.hi.x);
         const top = clip.lo.y;

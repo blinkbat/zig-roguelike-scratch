@@ -34,6 +34,10 @@ pub fn begin(w: anytype, magic: []const u8, print: u64) !void {
     try w.writeInt(u64, print, .little);
 }
 
+pub fn stamp(bytes: []u8, magic: []const u8, print: u64) void {
+    std.mem.writeInt(u64, bytes[magic.len..][0..PRINT], print, .little);
+}
+
 /// Ends a file with the sum of its `body`, everything after its head.
 pub fn seal(w: anytype, body: []const u8) !void {
     try w.writeInt(u64, sum(body), .little);

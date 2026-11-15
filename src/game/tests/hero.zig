@@ -440,7 +440,7 @@ test "life and mana fill and drain at XP speed after their presented impact" {
     game.update(g, harness.TEST_DT);
     try std.testing.expectApproxEqAbs(1 + (life_target - 1) * mathx.easing(harness.TEST_DT, game.presentation.RESOURCE_EASE), g.pic.life_fill, 0.0001);
     try std.testing.expectApproxEqAbs(1 + (mana_target - 1) * mathx.easing(harness.TEST_DT, game.presentation.RESOURCE_EASE), g.pic.mana_fill, 0.0001);
-    for (0..300) |_| game.update(g, harness.TEST_DT);
+    harness.idleFor(g, 300 * harness.TEST_DT);
     try std.testing.expectEqual(life_target, g.pic.life_fill);
     try std.testing.expectEqual(mana_target, g.pic.mana_fill);
     h.hp = h.max;
@@ -449,7 +449,7 @@ test "life and mana fill and drain at XP speed after their presented impact" {
     game.update(g, harness.TEST_DT);
     try std.testing.expect(g.pic.life_fill > life_target and g.pic.life_fill < 1);
     try std.testing.expect(g.pic.mana_fill > mana_target and g.pic.mana_fill < 1);
-    for (0..300) |_| game.update(g, harness.TEST_DT);
+    harness.idleFor(g, 300 * harness.TEST_DT);
     try std.testing.expectEqual(@as(f32, 1), g.pic.life_fill);
     try std.testing.expectEqual(@as(f32, 1), g.pic.mana_fill);
 }

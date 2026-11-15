@@ -149,7 +149,7 @@ fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
 
 /// Ends a file `write` began in `out` with its sum, in the room `write` kept, so it may run off the frame.
 fn seal(out: *std.ArrayList(u8)) void {
-    store.sealReserved(out, if (portable(out.items)) store.head(format.MAGIC) else HEAD);
+    if (portable(out.items)) format.seal(out) else store.sealReserved(out, HEAD);
 }
 
 /// Written by `format`, not the raw legacy writer.
@@ -499,8 +499,7 @@ test "save terrain refuses unvisited bespoke torches outside the map before muta
     const map_hash = store.sum(std.mem.asBytes(into));
     var before = std.ArrayList(u8).init(alloc);
     defer before.deinit();
-    try write(target, &before);
-    seal(&before);
+    try sealed(target, &before);
     var corrupt = std.ArrayList(u8).init(alloc);
     defer corrupt.deinit();
     var after = std.ArrayList(u8).init(alloc);
@@ -522,9 +521,7 @@ test "save terrain refuses unvisited bespoke torches outside the map before muta
             try std.testing.expectError(error.Damaged, peek(corrupt.items));
             try std.testing.expectError(error.Damaged, read(corrupt.items, target, into));
             try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
-            after.clearRetainingCapacity();
-            try write(target, &after);
-            seal(&after);
+            try sealed(target, &after);
             try std.testing.expectEqualSlices(u8, before.items, after.items);
         }
     }
@@ -538,8 +535,8 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     defer game.shut(alloc, g);
     game.beginMap(g, w);
     g.sim.name = hero.Name.of("Arwen");
-    try std.testing.expect(g.sim.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .intelligence, .value = 2 }, null, null, null } }));
-    try g.sim.inventory.equip(0, .right_ring, g.sim.growth.attributes(g.sim.class));
+    try std.testing.expect(g.sim.inventory.add(items.affixed(.ring, &.{.{ .kind = .intelligence, .value = 2 }})));
+    try g.sim.inventory.equip(0, .right_ring, g.sim.growth.attributes(g.sim.class), g.sim.class);
     try std.testing.expect(g.sim.inventory.add(.{ .kind = .sword }));
     _ = g.sim.growth.gain(100);
     try std.testing.expect(g.sim.growth.learn(g.sim.class, .burning_arrow));
@@ -637,7 +634,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
     game.beginMapAt(g, w, w.start, 7);
-    const shelf = g.sim.plot.shelf(0, g.sim.seed);
+    const shelf = g.sim.plot.shelf(0, g.sim.seed, g.sim.class);
     g.sim.gold = 1000;
     _ = try @import("play/trade.zig").buy(shelf, shelf.count() - 1, &g.sim.inventory, &g.sim.gold);
     var buf = std.ArrayList(u8).init(alloc);
@@ -658,7 +655,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0x761969bb41088ab3;
+const RECORDED_FINGERPRINT: Print = 0xa229069d880514a0;
 
 test "zoo keys doors populations and visits survive portable saves" {
     const alloc = std.testing.allocator;
@@ -803,7 +800,7 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
     try fixture(g, w);
-    g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+    g.sim.inventory.gear.slots.set(.chest, items.affixed(.leather, &.{.{ .kind = .thorns, .value = 2 }}));
     g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .rare_name = .{ .first = .Void, .last = .Maw }, .mods = .{ .{ .kind = .spoils, .value = 25 }, .{ .kind = .strength, .value = 1 }, .{ .kind = .resistance, .value = 10, .element = .cold }, .{ .kind = .life, .value = 2 } } });
     const rare = items.Item{ .kind = .robes, .rare_name = .{ .first = .Magus, .last = .Fold }, .mods = .{ .{ .kind = .intelligence, .value = 3 }, .{ .kind = .armour, .value = 4 }, .{ .kind = .mana, .value = 3 }, .{ .kind = .life, .value = 6 } } };
     try std.testing.expect(g.sim.inventory.add(rare));
@@ -917,8 +914,7 @@ test "legacy saves convert on load and reject invalid native tags before changin
     try std.testing.expectEqualDeep(source.sim.rng, target.sim.rng);
     var fresh = std.ArrayList(u8).init(alloc);
     defer fresh.deinit();
-    try write(target, &fresh);
-    seal(&fresh);
+    try sealed(target, &fresh);
     try std.testing.expect(std.mem.startsWith(u8, fresh.items, format.MAGIC));
     _ = try peek(fresh.items);
 

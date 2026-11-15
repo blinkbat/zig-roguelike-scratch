@@ -182,7 +182,7 @@ fn dragFirstBox(ed: *editor.Editor) P {
 
 fn mouseOn(ed: *const editor.Editor, c: rl.Rectangle, p: P) P {
     const r = ed.cellRect(c, p);
-    return .{ .x = @as(i32, @intFromFloat(r.x)) + 1, .y = @as(i32, @intFromFloat(r.y)) + 1 };
+    return .{ .x = raster.left(r) + 1, .y = raster.top(r) + 1 };
 }
 
 fn click(ed: *editor.Editor, t: editor.Tool, p: P) void {
@@ -388,6 +388,20 @@ test "a stroke leaving the map paints up to its edge, and it ends with the butto
     ed.desk = .{ .shift = true, .paint = true, .erase = true, .paint_hit = true, .erase_hit = true, .mouse = mouseOn(ed, c, .{ .x = 8, .y = 8 }) };
     interaction.mapMouse(ed, c, true);
     try std.testing.expect(!ed.span.?.erase);
+}
+
+test "a stroke leaving the canvas within a frame paints up to the canvas edge" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const c = TEST_CANVAS;
+    ed.cam = .{ -4, 0 };
+    ed.tool = .paint;
+    ed.gesture();
+    ed.desk = .{ .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = 5, .y = 10 }) };
+    interaction.mapMouse(ed, c, true);
+    ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = -6, .y = 10 }) };
+    interaction.mapMouse(ed, c, false);
+    try std.testing.expectEqual(@as(usize, 6), rowCount(ed, 10, .floor));
 }
 
 test "a click off the map ends the stroke held through it" {

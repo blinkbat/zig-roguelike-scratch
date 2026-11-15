@@ -82,12 +82,11 @@ pub const Patch = struct {
     }
 
     fn at(p: *const Patch, k: SightField, x: f32, y: f32) f32 {
-        const u = x - 0.5;
-        const v = y - 0.5;
+        const u, const v = fieldUv(p.lo, x, y);
         const fx = @floor(u);
         const fy = @floor(v);
-        const ix: usize = @intCast(@as(i32, @intFromFloat(fx)) - p.lo.x);
-        const iy: usize = @intCast(@as(i32, @intFromFloat(fy)) - p.lo.y);
+        const ix: usize = @intFromFloat(fx);
+        const iy: usize = @intFromFloat(fy);
         const f = p.v.getPtrConst(k);
         const i = iy * SIDE + ix;
         return mathx.bilerp(.{ f[i], f[i + 1], f[i + SIDE], f[i + SIDE + 1] }, u - fx, v - fy);

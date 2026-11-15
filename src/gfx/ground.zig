@@ -416,7 +416,7 @@ fn depthOf(g: Ground) ?*const BankDepth {
 
 pub fn bankHeight(t: grid.Tile) f32 {
     const d = depthOf(of(t) orelse return 0) orelse return 0;
-    return d.px / @as(f32, look.SPRITE_PX);
+    return look.cellsOf(d.px);
 }
 
 pub fn bankAbove(north: grid.Tile, south: grid.Tile) bool {
@@ -424,7 +424,7 @@ pub fn bankAbove(north: grid.Tile, south: grid.Tile) bool {
 }
 
 pub const BANK_LIFT_PX: f32 = 8;
-pub const BANK_LIFT: f32 = BANK_LIFT_PX / look.SPRITE_PX;
+pub const BANK_LIFT: f32 = look.cellsOf(BANK_LIFT_PX);
 
 const Profile = [BankPiece.COUNT * look.SPRITE_PX]u8;
 const Heights = fn (*const BankDepth) *const Profile;
@@ -490,7 +490,7 @@ const BankShape = struct {
         const offset = @as(usize, @intFromEnum(piece)) * look.SPRITE_PX + @min(col, look.SPRITE_PX - 1);
         if (depth.feet[offset] == 0) return null;
         const foot = heights(depth)[offset];
-        return @as(f32, @floatFromInt(p.y)) + (@as(f32, @floatFromInt(foot)) - BANK_LIFT_PX) / look.SPRITE_PX;
+        return @as(f32, @floatFromInt(p.y)) + look.cellsOf(@as(f32, @floatFromInt(foot)) - BANK_LIFT_PX);
     }
 };
 

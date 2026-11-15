@@ -677,6 +677,11 @@ pub const Pool = struct {
         return true;
     }
 
+    pub fn slay(self: *Pool, lv: *grid.Level, id: u16) bool {
+        const a = self.get(id) orelse return false;
+        return self.damage(lv, id, a.hp);
+    }
+
     /// Call after `damage`; with no free cell beside it, it splits on a later blow. The new body's id.
     pub fn split(self: *Pool, lv: *grid.Level, id: u16, rng: *mathx.Rng) ?u16 {
         const a = self.get(id) orelse return null;

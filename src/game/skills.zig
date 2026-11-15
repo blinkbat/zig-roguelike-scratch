@@ -249,7 +249,16 @@ fn recoverFlask(run: *game.Game, k: flask.Kind, wait: f32) void {
     }
 }
 
-pub const Use = struct { act: skillbar.Act, by: ?input.Button, set: skillbar.Set = .primary };
+pub const Use = struct {
+    act: skillbar.Act,
+    by: ?input.Button,
+    set: skillbar.Set = .primary,
+
+    pub fn bound(bar: skillbar.Bar, act: skillbar.Act) Use {
+        const s = bar.slotOf(act) orelse return .{ .act = act, .by = null };
+        return .{ .act = act, .by = s.button, .set = s.set };
+    }
+};
 
 /// Since PoE2 0.2.0, pressing the modifier while a button is already held fires that button's secondary skill.
 pub fn usedSkill(run: *game.Game) ?Use {
@@ -380,7 +389,7 @@ fn rushTo(run: *game.Game, from: P, comptime action: skillbar.Act, mark: P) void
     const occupied = run.sim.lv.who(mark) != grid.NO_ONE;
     const stop = if (occupied) Skill.stop(from, mark) else mark;
     if (!stop.eq(from)) game.heroTo(run, stop);
-    const stroke = game.presentation.Stroke{ .from = stop, .wait = run.pic.glideToHeld(.fromIndex(run.sim.heroSlot().?), stop, 0) };
+    const stroke = game.presentation.Stroke{ .from = stop, .wait = run.pic.glideToHeld(run.sim.heroActorSlot().?, stop, 0) };
     if (occupied) combat.knock(run, action, direction, stroke) else sayDone(run, action);
     run.pic.turnHero(&run.sim, direction.delta().x);
     run.pic.lead = stroke.wait;
@@ -524,15 +533,13 @@ fn resolveProjectileHit(run: *game.Game, comptime action: skillbar.Act, hit: bow
     combat.boilUnder(run, action, flight.impact().?, stroke.wait);
 }
 
-/// Each body struck as the projectile reaches its cell, then whatever stopped it.
 fn skewerHits(run: *game.Game, comptime action: skillbar.Act, pierced: bow.Pierced, stroke: game.presentation.Stroke) void {
-    for (pierced.body[0..pierced.n], pierced.step[0..pierced.n]) |id, step| {
-        hitProjectileActor(run, action, id, stroke.along(step, pierced.flight.len));
-    }
-    switch (pierced.flight.struck.?) {
-        .barrel, .plant => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),
-        .body => {},
-    }
+    const Each = struct {
+        pub fn hit(_: @This(), g: *game.Game, id: u16, along: game.presentation.Stroke) void {
+            hitProjectileActor(g, action, id, along);
+        }
+    };
+    combat.alongPierced(run, pierced, stroke, comptime combat.barrelVerb(action), Each{});
     combat.boilUnder(run, action, pierced.flight.impact().?, stroke.wait);
 }
 

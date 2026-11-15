@@ -30,7 +30,7 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
             const ids = skills.foesIn(g, area);
             const raw = attacks.rawFor(&g.sim, .whirlwind);
             const s = game.presentation.Stroke{ .from = h.at, .wait = game.CAST_S };
-            for (ids.slice()) |id| combat.wound(g, id, attacks.heroScaled(&g.sim, .whirlwind, raw).physical(), tactics.Whirlwind.VERB, s);
+            for (ids.slice()) |id| combat.wound(g, id, attacks.heroScaledRoll(&g.sim, .whirlwind, raw), tactics.Whirlwind.VERB, s);
             for (area.slice()) |at| combat.smash(g, at, tactics.Whirlwind.VERB, s);
             g.pic.leadUntil(s.wait);
         },
@@ -112,8 +112,7 @@ fn raise(g: *game.Game, at: P, rank: u8) void {
     if (risen.n >= tactics.RaiseSkeleton.most(rank)) {
         const oldest = risen.items[0];
         const slot = actor.Pool.slot(oldest);
-        _ = g.sim.pool.damage(&g.sim.lv, oldest, g.sim.pool.items[slot].hp);
-        combat.fell(g, oldest);
+        combat.fellOutright(g, oldest);
         g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(slot));
     }
     var body = actor.Actor.of(.skeleton, at);
@@ -204,9 +203,9 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
                     if (!actor.holds(a.kind, &g.sim.lv, to) or !area.has(to)) break;
                     displace(g, id, to);
                 }
-                if (g.sim.displaced.isSet(actor.Pool.slot(id))) _ = g.pic.glideToHeld(.fromIndex(actor.Pool.slot(id)), a.at, -game.CAST_S);
+                if (g.sim.displaced.isSet(actor.Pool.slot(id))) _ = g.pic.glideToHeld(actor.ActorId.fromInt(id).slot(), a.at, -game.CAST_S);
                 _ = g.sim.pinFor(a, tactics.GravityWell.pins(rank));
-                g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(id)));
+                g.pic.settleSlot(&g.sim, game.CAST_S, actor.ActorId.fromInt(id).slot());
             }
             g.sim.flowed = false;
             g.pic.fx.shimmer(mathx.centre(at), look.WARD);
@@ -223,7 +222,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
             for (area.slice()) |p| {
                 const id = g.sim.lv.who(p);
                 const a = g.sim.pool.get(id) orelse continue;
-                if (a.foe() and g.sim.ignite(actor.Pool.slot(id), a)) g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(id)));
+                if (a.foe() and g.sim.ignite(actor.Pool.slot(id), a)) g.pic.settleSlot(&g.sim, game.CAST_S, actor.ActorId.fromInt(id).slot());
             }
         },
         .raise_skeleton => raise(g, at, rank),
@@ -240,7 +239,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     const target = g.sim.pool.get(struck).?;
     const fuel: i32 = fuelOf(act, target);
     @field(target, @tagName(Skill.FUEL)) = .{};
-    g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(struck)));
+    g.pic.settleSlot(&g.sim, game.CAST_S, actor.ActorId.fromInt(struck).slot());
     const area = Skill.area(&g.sim.lv, at, g.sim.wider());
     const ids = skills.foesIn(g, area);
     var raw = attacks.rawElementFor(&g.sim, act);
@@ -932,8 +931,7 @@ test "the oldest skeleton crumbles first though a younger rose in an older one's
     }
     const elder = g.sim.lv.who(a);
     const first = actor.Pool.slot(elder);
-    _ = g.sim.pool.damage(&g.sim.lv, elder, g.sim.pool.items[first].hp);
-    combat.fell(g, elder);
+    combat.fellOutright(g, elder);
     g.pic.settleSlot(&g.sim, h.TEST_DT, .fromIndex(first));
     h.idleFor(g, 1);
     for ([_]P{ c, d }) |at| {

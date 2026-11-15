@@ -64,6 +64,7 @@ pub const SCREEN_720 = window.SCREEN_720;
 pub const SCREEN_1080 = window.SCREEN_1080;
 pub const SCREEN_1440 = window.SCREEN_1440;
 pub const SCREENS = window.SCREENS;
+pub const SIZES = window.SIZES;
 pub const CELL: i32 = 64;
 pub const CELL_F: f32 = @floatFromInt(CELL);
 pub const HALF_CELL: i32 = @divTrunc(CELL, 2);
@@ -393,7 +394,7 @@ fn followersLeft(v: *simulation.Visit, n: usize) void {
     for (v.pool.slice(), 0..) |*a, i| {
         if (left == 0) return;
         if (!follows(a)) continue;
-        _ = v.pool.damage(&v.lv, actor.Pool.idOf(i), a.hp);
+        _ = v.pool.slay(&v.lv, actor.Pool.idOf(i));
         left -= 1;
     }
 }
@@ -408,8 +409,14 @@ fn followerCell(lv: *const grid.Level, kind: actor.Kind, hero: P) ?P {
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var flood = grid.Flood.init(lv, hero, &dist, &queue);
-    while (flood.next()) |q| if (actor.standsOffDoor(kind, lv, q)) return q;
-    return null;
+    const Stands = struct {
+        kind: actor.Kind,
+        lv: *const grid.Level,
+        fn ok(s: @This(), p: P) bool {
+            return actor.standsOffDoor(s.kind, s.lv, p);
+        }
+    };
+    return flood.first(Stands{ .kind = kind, .lv = lv }, Stands.ok);
 }
 
 pub fn rollOf(run: u64, n: usize) u64 {
@@ -666,7 +673,7 @@ pub fn struggle(g: *Game) void {
 
 /// `late` seconds into the bump; the hit lands at its apex.
 pub fn heroBump(g: *Game, from: P, at: P, late: f32) presentation.Stroke {
-    _ = g.pic.bumpHeld(.fromIndex(g.sim.heroSlot().?), at, late);
+    _ = g.pic.bumpHeld(g.sim.heroActorSlot().?, at, late);
     return .{ .from = from, .wait = BUMP_LANDS - late };
 }
 

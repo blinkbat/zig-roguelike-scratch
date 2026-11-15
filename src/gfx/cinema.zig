@@ -150,7 +150,7 @@ pub const Cinema = struct {
         const size = raster.extentOf(scene);
         const visibility = l.mapTexture();
         const glints = l.glintTexture();
-        const view = shaders.MapView{ .origin = origin, .cell = cell, .screen = raster.sizeOf(scene) };
+        const view = shaders.MapView.at(origin, cell, size);
         if (self.blooms() and visibility != null and glints != null and raster.beginTarget(&self.spread, size, outer, rl.Color.black)) {
             const b = self.bloom.?;
             rl.beginShaderMode(b.shader);
@@ -212,7 +212,7 @@ pub const Cinema = struct {
         const field = self.field orelse return;
         const visibility = l.mapTexture() orelse return;
         rl.beginShaderMode(a.shader);
-        setField(a, field, visibility, .{ .origin = origin, .cell = cell, .screen = .{ @floatFromInt(screen.x), @floatFromInt(screen.y) } });
+        setField(a, field, visibility, .at(origin, cell, screen));
         shaders.setUniform(a.shader, a.time, l.t.at());
         shaders.setUniform(a.shader, a.sunlight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
         shaders.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));
@@ -264,7 +264,7 @@ const FIELD_FS = shaders.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\
 ;
 
-const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.INSET_UV_FS ++ shaders.glslConsts(.{ .BLOOM_GAIN = BLOOM_GAIN }) ++
+const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .BLOOM_GAIN = BLOOM_GAIN }) ++
     \\uniform sampler2D glints;
     \\uniform vec2 direction;
     \\uniform int extract;
@@ -301,7 +301,7 @@ const GRADE_FS = shaders.FS_HEAD ++ shaders.MAP_VIEW_FS ++ shaders.glslConsts(.{
     \\    vec4 c = texture(texture0, fragTexCoord);
     \\    vec2 p = cellAtFrag();
     \\    float live = mapAlpha(visibility, p, 1.0);
-    \\    vec3 remembered = mix(c.rgb, vec3(dot(c.rgb, LUMA)), MEMORY_GREY) * MEMORY_BRIGHTNESS;
+    \\    vec3 remembered = saturated(c.rgb, 1.0 - MEMORY_GREY) * MEMORY_BRIGHTNESS;
     \\    finalColor = vec4(mix(remembered, c.rgb, live), c.a);
     \\}
 ;

@@ -27,6 +27,8 @@ pub const Options = struct {
 };
 
 const PERSPECTIVE: f32 = 0.10;
+pub const SHARP_BAND = [2]f32{ 0.36, 0.64 };
+const BLUR_EDGES = [2]f32{ 0.03, 0.98 };
 const BLUR_SIGMAS: f32 = 3;
 const BLUR_TAPS_PER_SIGMA: f32 = 6;
 const BLUR_TAPS_MAX: i32 = @intFromFloat(BLUR_SIGMAS * BLUR_TAPS_PER_SIGMA);
@@ -120,7 +122,7 @@ fn perspectivePoint(point: mathx.P, screen: mathx.P, strength: f32) mathx.P {
     return .{ .x = @intFromFloat(@floor((x + 0.5 - width * 0.5) / perspectiveScale(y + 0.5, height, strength) + width * 0.5)), .y = point.y };
 }
 
-const FS = shaders.FS_HEAD ++ shaders.INSET_UV_FS ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE, .BLUR_REF_H = @as(f32, @floatFromInt(window.SCREEN_720.y)), .BLUR_SIGMAS = BLUR_SIGMAS, .BLUR_TAPS_PER_SIGMA = BLUR_TAPS_PER_SIGMA, .BLUR_TAPS_MAX = BLUR_TAPS_MAX }) ++
+const FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE, .SHARP_BAND = SHARP_BAND, .BLUR_EDGES = BLUR_EDGES, .BLUR_REF_H = @as(f32, @floatFromInt(window.SCREEN_720.y)), .BLUR_SIGMAS = BLUR_SIGMAS, .BLUR_TAPS_PER_SIGMA = BLUR_TAPS_PER_SIGMA, .BLUR_TAPS_MAX = BLUR_TAPS_MAX }) ++
     \\uniform vec2 screen;
     \\uniform vec2 direction;
     \\uniform float lens_blur;
@@ -140,8 +142,8 @@ const FS = shaders.FS_HEAD ++ shaders.INSET_UV_FS ++ shaders.glslConsts(.{ .PERS
     \\    vec2 uv = fragTexCoord;
     \\    float y = 1.0 - uv.y;
     \\    if (finish != 0) uv.x = (uv.x - 0.5) / (1.0 + PERSPECTIVE * perspective * y) + 0.5;
-    \\    float farBlur = 1.0 - smoothstep(0.03, 0.36, y);
-    \\    float nearBlur = smoothstep(0.64, 0.98, y);
+    \\    float farBlur = 1.0 - smoothstep(BLUR_EDGES.x, SHARP_BAND.x, y);
+    \\    float nearBlur = smoothstep(SHARP_BAND.y, BLUR_EDGES.y, y);
     \\    float radius = (farBlur * 4.0 + nearBlur * 1.6) * lens_blur * screen.y / BLUR_REF_H;
     \\    vec4 c = sampleScene(uv);
     \\    if (radius > 0.01) {

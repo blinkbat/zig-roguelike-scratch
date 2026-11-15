@@ -262,28 +262,31 @@ pub fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
         }
         if (ed.shape == .fill and ed.tool.broad()) {
             ed.stroke = .none;
-            if (!ed.tool.fits(ed.here())) return ed.say(editor.GENERATED, .{});
+            if (ed.refuseUnfit(ed.tool)) return;
             if (grid.Level.inside(p)) placement.fill(ed, p, second);
             return;
         }
     } else if (d.clicked() and ed.span == null) ed.letGo();
-    if (!over) ed.stroke_at = null;
-    if (ed.span != null or !over or ed.stroke == .none) return;
+    if (ed.span != null or ed.stroke == .none) return;
     const hit = if (ed.stroke == .paint) d.paint_hit else d.erase_hit;
     if (!hit and !ed.tool.strokes()) return;
     if (!ed.tool.fits(ed.here())) {
-        if (hit and grid.Level.inside(p)) ed.say(editor.GENERATED, .{});
+        if (hit and over and grid.Level.inside(p)) ed.say(editor.GENERATED, .{});
         return;
     }
     if (hit or ed.stroke_at == null) {
-        if (grid.Level.inside(p)) placement.brushAt(ed, p);
+        if (over and grid.Level.inside(p)) placement.brushAt(ed, p);
     } else {
         var ray = grid.Ray.init(ed.stroke_at.?, p);
         while (ray.next()) |q| {
-            if (grid.Level.inside(q)) placement.brushAt(ed, q);
+            if (grid.Level.inside(q) and cellShown(ed, c, q)) placement.brushAt(ed, q);
         }
     }
     ed.stroke_at = p;
+}
+
+fn cellShown(ed: *const Editor, c: rl.Rectangle, q: P) bool {
+    return raster.holds(c, raster.middleAt(ed.cellRect(c, q)));
 }
 
 pub fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {

@@ -489,7 +489,8 @@ const ACTIVE = Price("active");
 const PASSIVE = Price("passive");
 
 fn ring(p: rl.Vector2, radius: f32, ink: rl.Color) void {
-    rl.drawCircleLines(@intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), radius, ink);
+    const at = mathx.roundCell(p.x, p.y);
+    rl.drawCircleLines(at.x, at.y, radius, ink);
 }
 
 const NodeState = enum {
@@ -560,7 +561,8 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
         const mark = if (state == .allocated) BACK else ink;
         if (n.tier == .capstone) ring(p, r - CAPSTONE_RING, mark);
         if (n.ring == 0) {
-            face.centred(armInitial(n.arm), @intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), font.SMALL, if (state == .allocated) BACK else look.TEXT);
+            const at = mathx.roundCell(p.x, p.y);
+            face.centred(armInitial(n.arm), at.x, at.y, font.SMALL, if (state == .allocated) BACK else look.TEXT);
         } else if (n.seam) |s| {
             for ([_]f32{ -SEAM_MARK.y, SEAM_MARK.y }) |dy| rl.drawLineEx(.{ .x = p.x - SEAM_MARK.x, .y = p.y + dy }, .{ .x = p.x + SEAM_MARK.x, .y = p.y + dy }, 1, if (state == .allocated) BACK else armInk(s.to()));
         }

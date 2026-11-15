@@ -240,13 +240,36 @@ pub fn closed(st: *const input.State) bool {
     return backed(st) or st.hit(CHARACTER);
 }
 
+pub fn clampOn(at: i32, size: i32, room: i32, margin: i32) i32 {
+    return std.math.clamp(at, margin, @max(margin, room - size - margin));
+}
+
+pub fn besideX(anchor: rl.Rectangle, w: i32, screen_w: i32, gap: i32, margin: i32) ?i32 {
+    const right = raster.right(anchor) + gap;
+    if (right + w <= screen_w - margin) return right;
+    const left = raster.left(anchor) - gap - w;
+    return if (left >= margin) left else null;
+}
+
 const ACROSS: f32 = 2;
 
+fn sliceBox(boxes: []const rl.Rectangle, i: usize) rl.Rectangle {
+    return boxes[i];
+}
+
 pub fn nearest(from: rl.Rectangle, boxes: []const rl.Rectangle, dir: mathx.Dir) ?usize {
+    return nearestFrom(from, boxes.len, dir, boxes, sliceBox);
+}
+
+pub fn nearestBy(n: usize, from: usize, dir: mathx.Dir, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
+    return nearestFrom(boxOf(ctx, from), n, dir, ctx, boxOf);
+}
+
+fn nearestFrom(start: rl.Rectangle, n: usize, dir: mathx.Dir, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
     var best: ?usize = null;
     var best_score = std.math.floatMax(f32);
-    for (boxes, 0..) |to, i| {
-        const score = directionScore(from, to, dir, ACROSS) orelse continue;
+    for (0..n) |i| {
+        const score = directionScore(start, boxOf(ctx, i), dir, ACROSS) orelse continue;
         if (score < best_score) {
             best_score = score;
             best = i;

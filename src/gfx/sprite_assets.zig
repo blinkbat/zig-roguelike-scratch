@@ -266,7 +266,7 @@ comptime {
     for (std.enums.values(grid.Tile)) |t| {
         if (!look.standsOver(t)) continue;
         const size = pngSize(TILE_PNGS.get(t) orelse continue);
-        if (size.x != look.SPRITE_PX * t.wide() or (size.y > look.SPRITE_PX) != look.tall(t)) @compileError(@tagName(t) ++ ": a standing picture is a sprite wide a cell it stands on, and taller only when `tall`");
+        if (size.x != sheetSize(t.wide(), 1).x or (size.y > look.SPRITE_PX) != look.tall(t)) @compileError(@tagName(t) ++ ": a standing picture is a sprite wide a cell it stands on, and taller only when `tall`");
     }
     for (PICTURE_CASTERS) |t| {
         if (TILE_PNGS.get(t) == null) @compileError("a picture caster needs its picture: " ++ @tagName(t));
@@ -390,7 +390,8 @@ const WALL_CELL = blk: {
 /// raylib's `imageFromImage` copies without clamping, so a cell off the sheet would read past it.
 pub fn wallCell(sheet: rl.Image, i: usize) ?rl.Image {
     const at = mathx.unslot(i, WALL_COLS);
-    if ((at.x + 1) * look.SPRITE_PX > sheet.width or (at.y + 1) * look.SPRITE_PX > sheet.height) return null;
+    const end = sheetSize(at.x + 1, at.y + 1);
+    if (end.x > sheet.width or end.y > sheet.height) return null;
     return rl.imageFromImage(sheet, sheetCell(at.x, at.y));
 }
 
@@ -494,8 +495,7 @@ test "every wall and forest cell lies inside its PNG, and one past its end is re
         const h = pngSize(png).y;
         const sheet = rl.genImageColor(w, h, rl.Color.white);
         defer rl.unloadImage(sheet);
-        try std.testing.expectEqual(@as(i32, look.SPRITE_PX * WALL_COLS), w);
-        try std.testing.expectEqual(@as(i32, look.SPRITE_PX * ((WALL_MASKS.len + WALL_COLS - 1) / WALL_COLS)), h);
+        try std.testing.expectEqual(sheetSize(WALL_COLS, (WALL_MASKS.len + WALL_COLS - 1) / WALL_COLS), pngSize(png));
         for (0..WALL_MASKS.len) |i| rl.unloadImage(wallCell(sheet, i) orelse return error.CellOffSheet);
         try std.testing.expect(wallCell(sheet, @intCast(@divTrunc(w, look.SPRITE_PX) * @divTrunc(h, look.SPRITE_PX))) == null);
     }

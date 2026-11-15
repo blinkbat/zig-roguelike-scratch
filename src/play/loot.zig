@@ -8,6 +8,7 @@ const items = @import("items.zig");
 const Gear = @import("gear.zig").Gear;
 const inventory = @import("inventory.zig");
 const ground_items = @import("ground_items.zig");
+const hero = @import("hero.zig");
 
 pub const BASES = blk: {
     var ks: []const item_bases.Kind = &.{};
@@ -15,6 +16,31 @@ pub const BASES = blk: {
         if (k.flaskOf() == null and k.equippable()) ks = ks ++ &[_]item_bases.Kind{k};
     }
     break :blk ks[0..ks.len].*;
+};
+
+const CLASS_BASES = blk: {
+    @setEvalBranchQuota(20_000);
+    var out = std.EnumArray(hero.Class, []const item_bases.Kind).initUndefined();
+    for (hero.CLASSES) |c| {
+        var ks: []const item_bases.Kind = &.{};
+        for (BASES) |k| {
+            if (k.usableBy(c)) ks = ks ++ &[_]item_bases.Kind{k};
+        }
+        const fixed = ks[0..ks.len].*;
+        out.set(c, &fixed);
+    }
+    break :blk out;
+};
+
+/// The bases that roll as loot and stock shelves for `class`.
+pub fn basesFor(class: hero.Class) []const item_bases.Kind {
+    return CLASS_BASES.get(class);
+}
+
+pub const OWNED = blk: {
+    var out = std.EnumSet(item_bases.Kind).initEmpty();
+    for (BASES) |k| if (item_bases.spec(k).classes.count() > 0) out.insert(k);
+    break :blk out;
 };
 
 const DROP_PERCENT = 10;
@@ -44,43 +70,43 @@ pub fn qualityChance(base: u32, item_rarity: i32) u32 {
 
 pub const Loot = struct { gold: i32 = 0, item: ?items.Item = null, supply: ?consumable.Kind = null };
 
-pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
+pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32, class: hero.Class) Loot {
     return .{
         .gold = if (rng.percent(FOE_GOLD_PERCENT)) FOE_GOLD.roll(rng) else 0,
-        .item = if (rng.percent(DROP_PERCENT)) items.roll(rng, item_rarity) else null,
+        .item = if (rng.percent(DROP_PERCENT)) items.roll(rng, item_rarity, class) else null,
         .supply = consumable.roll(rng, FOE_SUPPLY_PERCENT),
     };
 }
 
 /// What a chest holds, rolled item, gold, then supply.
-pub fn chestLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
-    const item = items.roll(rng, item_rarity);
+pub fn chestLoot(rng: *mathx.Rng, item_rarity: i32, class: hero.Class) Loot {
+    const item = items.roll(rng, item_rarity, class);
     const gold = CHEST_GOLD.roll(rng);
     return .{ .item = item, .gold = gold, .supply = consumable.roll(rng, CHEST_SUPPLY_PERCENT) };
 }
 
 /// A chest's loot, its item rolled and then given up for a rare.
-pub fn mimicLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
-    var loot = chestLoot(rng, item_rarity);
-    loot.item = items.rollRare(rng);
+pub fn mimicLoot(rng: *mathx.Rng, item_rarity: i32, class: hero.Class) Loot {
+    var loot = chestLoot(rng, item_rarity, class);
+    loot.item = items.rollRare(rng, class);
     return loot;
 }
 
 /// Its gold, then now and then a white item, rolled only where `room` lets it lie.
-pub fn barrelLoot(rng: *mathx.Rng, room: bool) Loot {
+pub fn barrelLoot(rng: *mathx.Rng, room: bool, class: hero.Class) Loot {
     const gold = BARREL_GOLD.roll(rng);
-    return .{ .gold = gold, .item = if (rng.percent(BARREL_ITEM_PERCENT) and room) items.unrolled(rng) else null };
+    return .{ .gold = gold, .item = if (rng.percent(BARREL_ITEM_PERCENT) and room) items.unrolled(rng, class) else null };
 }
 
 test "foes now and then drop each kind of consumable, which stacks only as far as its cap" {
     var rng = mathx.Rng.init(0x5A99);
     var seen = std.EnumSet(consumable.Kind).initEmpty();
     var dropped: usize = 0;
-    for (0..10000) |_| if (foeLoot(&rng, 0).supply) |k| {
+    for (0..10000) |_| if (foeLoot(&rng, 0, .archer).supply) |k| {
         dropped += 1;
         seen.insert(k);
     };
-    try std.testing.expect(dropped >= 650 and dropped <= 950);
+    try expectShare(dropped, 10000, FOE_SUPPLY_PERCENT, 1.5);
     try std.testing.expectEqual(consumable.KINDS.len, seen.count());
     var inv = inventory.Inventory{};
     var ground = ground_items.Ground{};
@@ -100,7 +126,7 @@ test "foe loot is mostly gold then plain items with magic and rare affixes" {
     var magic: usize = 0;
     var rare: usize = 0;
     for (0..rolls) |_| {
-        const reward = foeLoot(&rng, 0);
+        const reward = foeLoot(&rng, 0, .archer);
         if (reward.gold > 0) {
             gold += 1;
             try std.testing.expect(reward.gold >= FOE_GOLD.lo and reward.gold <= FOE_GOLD.hi);
@@ -115,10 +141,14 @@ test "foe loot is mostly gold then plain items with magic and rare affixes" {
             }
         }
     }
-    try std.testing.expect(gold >= 4500 and gold <= 5500);
-    try std.testing.expect(plain >= 650 and plain <= 950);
-    try std.testing.expect(magic >= 125 and magic <= 275);
-    try std.testing.expect(rare >= 20 and rare <= 80);
+    try expectShare(gold, rolls, FOE_GOLD_PERCENT, 5);
+    try expectShare(plain, rolls, @as(f64, DROP_PERCENT) * (100 - MAGIC_PERCENT - RARE_PERCENT) / 100, 1.5);
+    try expectShare(magic, rolls, @as(f64, DROP_PERCENT) * MAGIC_PERCENT / 100, 0.75);
+    try expectShare(rare, rolls, @as(f64, DROP_PERCENT) * RARE_PERCENT / 100, 0.3);
+}
+
+pub fn expectShare(count: usize, total: usize, percent: f64, tolerance: f64) !void {
+    try std.testing.expect(@abs(@as(f64, @floatFromInt(count)) * 100 / @as(f64, @floatFromInt(total)) - percent) <= tolerance);
 }
 
 test "spoils rarity improves magic and rare quality without increasing item quantity" {
@@ -129,14 +159,14 @@ test "spoils rarity improves magic and rare quality without increasing item quan
         var rare: usize = 0;
         var drops: usize = 0;
         for (0..samples) |_| {
-            const reward = foeLoot(&rng, rarity);
+            const reward = foeLoot(&rng, rarity, .archer);
             if (reward.item) |it| {
                 drops += 1;
                 if (it.magical()) magic += 1;
                 if (it.rarity() == .rare) rare += 1;
             }
         }
-        try std.testing.expect(drops > 1800 and drops < 2200);
+        try expectShare(drops, samples, DROP_PERCENT, 1);
         const expected = @as(f64, @floatFromInt(qualityChance(MAGIC_PERCENT + RARE_PERCENT, rarity))) / 100;
         const expected_rare = @as(f64, @floatFromInt(qualityChance(RARE_PERCENT, rarity))) / 100;
         try std.testing.expect(@abs(@as(f64, @floatFromInt(magic)) / @as(f64, @floatFromInt(drops)) - expected) < 0.035);
@@ -145,10 +175,10 @@ test "spoils rarity improves magic and rare quality without increasing item quan
         if (expected == 1) try std.testing.expectEqual(drops, magic);
     }
     var gear = Gear{};
-    gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
-    gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .thorns, .value = 1 }, null, null, null } });
-    gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .spoils, .value = 25 }, null, null, null } });
-    gear.slots.set(.amulet, .{ .kind = .amulet, .mods = .{ .{ .kind = .spoils, .value = 15 }, null, null, null } });
+    gear.slots.set(.chest, items.affixed(.leather, &.{.{ .kind = .thorns, .value = 2 }}));
+    gear.slots.set(.left_hand, items.affixed(.shield, &.{.{ .kind = .thorns, .value = 1 }}));
+    gear.slots.set(.left_ring, items.affixed(.ring, &.{.{ .kind = .spoils, .value = 25 }}));
+    gear.slots.set(.amulet, items.affixed(.amulet, &.{.{ .kind = .spoils, .value = 15 }}));
     const a = gear.stats(attrs.Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 20 }));
     try std.testing.expectEqual(@as(i32, 3), a.thorns);
     try std.testing.expectEqual(@as(i32, 40), a.gold_find);

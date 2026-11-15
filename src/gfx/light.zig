@@ -248,14 +248,14 @@ pub const Light = struct {
     }
 
     fn countCasters(self: *Light, lv: *const grid.Level) void {
-        const w = grid.CORNERS_W;
-        @memset(self.casting[0..w], 0);
+        const casting = &self.casting;
+        @memset(casting[0..grid.CORNERS_W], 0);
         for (0..grid.ROWS) |y| {
             var row: u16 = 0;
-            self.casting[(y + 1) * w] = 0;
+            casting[cornerSlot(0, y + 1)] = 0;
             for (0..grid.COLS) |x| {
                 row += @intFromBool(model.casterOf(lv.tile[y * grid.COLS + x]) != null);
-                self.casting[(y + 1) * w + x + 1] = self.casting[y * w + x + 1] + row;
+                casting[cornerSlot(x + 1, y + 1)] = casting[cornerSlot(x + 1, y)] + row;
             }
         }
     }
@@ -278,14 +278,13 @@ pub const Light = struct {
     }
 
     pub fn castersIn(self: *const Light, box: grid.Box) u16 {
-        const w = grid.CORNERS_W;
-        const clip = box.grown(0);
-        if (clip.hi.x <= clip.lo.x or clip.hi.y <= clip.lo.y) return 0;
+        const clip = box.clipped() orelse return 0;
         const a: usize = @intCast(clip.lo.x);
         const b: usize = @intCast(clip.lo.y);
         const c: usize = @intCast(clip.hi.x);
         const d: usize = @intCast(clip.hi.y);
-        return self.casting[d * w + c] + self.casting[b * w + a] - self.casting[b * w + c] - self.casting[d * w + a];
+        const casting = &self.casting;
+        return casting[cornerSlot(c, d)] + casting[cornerSlot(a, b)] - casting[cornerSlot(c, b)] - casting[cornerSlot(a, d)];
     }
 
     fn carryShare(self: *const Light) f32 {
@@ -477,7 +476,15 @@ pub const Light = struct {
     }
 
     fn cornerAt(p: model.P) usize {
-        return @as(usize, @intCast(p.y)) * grid.CORNERS_W + @as(usize, @intCast(p.x));
+        return cornerSlot(@intCast(p.x), @intCast(p.y));
+    }
+
+    fn cornerSlot(x: usize, y: usize) usize {
+        return y * grid.CORNERS_W + x;
+    }
+
+    fn texelAt(tx: i32, ty: i32) usize {
+        return @intCast(ty * model.MAP_W + tx);
     }
 
     fn cloudAt(self: *const Light, q: [2]f32) f32 {
@@ -515,9 +522,7 @@ pub const Light = struct {
         if (dark) {
             var y = y0;
             while (y < y1) : (y += 1) {
-                const first: usize = @intCast(y * model.MAP_W + x0);
-                const last: usize = @intCast(y * model.MAP_W + x1);
-                inline for (comptime std.enums.values(model.Layer)) |k| @memset(self.texels.getPtr(k)[first..last], model.UNSEEN.get(k));
+                inline for (comptime std.enums.values(model.Layer)) |k| @memset(self.texels.getPtr(k)[texelAt(x0, y)..texelAt(x1, y)], model.UNSEEN.get(k));
             }
             return;
         }
@@ -541,7 +546,7 @@ pub const Light = struct {
         while (ty < y1) : (ty += 1) {
             var tx = x0;
             while (tx < x1) : (tx += 1) {
-                const i: usize = @intCast(ty * model.MAP_W + tx);
+                const i = texelAt(tx, ty);
                 glints[i] = model.UNSEEN.get(.glints);
                 const q = texelCentre(@intCast(tx), @intCast(ty));
                 const v = fade.view(patch.sightAt(ground, q[0], q[1]), q);

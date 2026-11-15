@@ -188,19 +188,22 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     return v;
 }
 
-fn dealerOf(g: *const game.Game) ?book.Dealer {
+fn dealerAt(g: *const game.Game) ?u8 {
     const s = g.sim.script() orelse return null;
     const npc = g.character.dealer;
-    if (npc >= s.npc_n) return null;
-    const shelf = &(g.sim.plot.wares[npc] orelse return null);
-    return .{ .who = s.npc[npc].called(), .shelf = shelf };
+    return if (npc < s.npc_n and g.sim.plot.wares[npc] != null) npc else null;
+}
+
+fn dealerOf(g: *const game.Game) ?book.Dealer {
+    const npc = dealerAt(g) orelse return null;
+    return .{ .who = g.sim.script().?.npc[npc].called(), .shelf = &g.sim.plot.wares[npc].? };
 }
 
 /// The conversation stays open beneath, and is back once the trade is done.
 pub fn openTrade(g: *game.Game, npc: u8) void {
     const s = g.sim.script() orelse return;
     if (npc >= s.npc_n) return;
-    _ = g.sim.plot.shelf(npc, g.sim.seed);
+    _ = g.sim.plot.shelf(npc, g.sim.seed, g.sim.class);
     openCharacter(g);
     g.character.choose(.trade);
     g.character.dealer = npc;
@@ -216,7 +219,7 @@ const Deal = enum { buy, sell };
 
 fn deal(g: *game.Game, comptime side: Deal, row: usize) void {
     if (!drawnFor(g)) return;
-    const shelf = &(g.sim.plot.wares[g.character.dealer] orelse return);
+    const shelf = &g.sim.plot.wares[dealerAt(g) orelse return].?;
     const done = switch (side) {
         .buy => trade.buy(shelf, row, &g.sim.inventory, &g.sim.gold),
         .sell => trade.sell(shelf, row, &g.sim.inventory, &g.sim.gold),
@@ -313,8 +316,7 @@ fn useCarried(g: *game.Game, k: consumable.Kind) void {
     if (!turnFree(g)) return;
     const act = skillbar.Act.ofSupply(k);
     if (act.reticle() != null) g.mode = .play;
-    const slot = g.bar.slotOf(act);
-    skills.useSkill(g, .{ .act = act, .by = if (slot) |s| s.button else null, .set = if (slot) |s| s.set else .primary });
+    skills.useSkill(g, skills.Use.bound(g.bar, act));
 }
 
 fn notYet(g: *game.Game) void {
@@ -375,7 +377,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
     switch (command) {
         .close, .passive, .skill, .bindings, .open_loot, .use, .buy, .sell => unreachable,
         .equip => |e| {
-            g.sim.inventory.equip(e.index, e.slot, base) catch |err| {
+            g.sim.inventory.equip(e.index, e.slot, base, g.sim.class) catch |err| {
                 itemFailed(g, err);
                 return;
             };

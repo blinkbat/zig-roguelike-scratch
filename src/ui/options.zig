@@ -76,23 +76,41 @@ fn range(row: Row) ?Range {
         .warmth => .{ .min = -1, .max = 1, .alt = 0.5 },
         .sepia, .film_grain, .scanlines, .chromatic_aberration => .{ .max = 1 },
     };
-    const lens_defaults: lens.Options = .{};
-    inline for (std.meta.fields(lens.Options)) |f| {
-        if (row == @field(Row, f.name)) out.default = @field(lens_defaults, f.name);
-    }
-    const strengths: cinema.Cinema.Strengths = .{};
-    inline for (std.meta.fields(cinema.Cinema.Strengths)) |f| {
-        if (row == @field(Row, f.name)) out.default = @field(strengths, f.name);
+    switch (row) {
+        inline else => |t| if (comptime sliderOf(t)) |s| {
+            out.default = switch (s) {
+                .lens => @field(lens.Options{}, @tagName(t)),
+                .strength => @field(cinema.Cinema.Strengths{}, @tagName(t)),
+            };
+        },
     }
     return out;
 }
 
-pub fn value(c: *const cinema.Cinema, row: Row) f32 {
-    inline for (std.meta.fields(lens.Options)) |f| {
-        if (row == @field(Row, f.name)) return @field(c.lens.options, f.name);
+const Slider = enum { lens, strength };
+
+fn sliderOf(comptime row: Row) ?Slider {
+    if (@hasField(lens.Options, @tagName(row))) return .lens;
+    if (@hasField(cinema.Cinema.Strengths, @tagName(row))) return .strength;
+    return null;
+}
+
+comptime {
+    for (std.meta.fields(lens.Options) ++ std.meta.fields(cinema.Cinema.Strengths)) |f| _ = @field(Row, f.name);
+    for (std.enums.values(Row)) |row| {
+        if (@hasField(lens.Options, @tagName(row)) and @hasField(cinema.Cinema.Strengths, @tagName(row))) @compileError("options row " ++ @tagName(row) ++ " names two settings");
+        if ((range(row) != null) != (sliderOf(row) != null)) @compileError("options row " ++ @tagName(row) ++ " has a range exactly when it names a setting");
     }
-    inline for (std.meta.fields(cinema.Cinema.Strengths)) |f| {
-        if (row == @field(Row, f.name)) return if (@field(c.options, f.name)) @field(c.strengths, f.name) else 0;
+}
+
+pub fn value(c: *const cinema.Cinema, row: Row) f32 {
+    switch (row) {
+        inline else => |t| if (comptime sliderOf(t)) |s| {
+            return switch (s) {
+                .lens => @field(c.lens.options, @tagName(t)),
+                .strength => if (@field(c.options, @tagName(t))) @field(c.strengths, @tagName(t)) else 0,
+            };
+        },
     }
     unreachable;
 }
@@ -100,18 +118,14 @@ pub fn value(c: *const cinema.Cinema, row: Row) f32 {
 pub fn set(c: *cinema.Cinema, row: Row, requested: f32) void {
     const r = range(row) orelse return;
     const amount = std.math.clamp(@round(requested * 100) / 100, r.min, r.max);
-    inline for (std.meta.fields(lens.Options)) |f| {
-        if (row == @field(Row, f.name)) {
-            @field(c.lens.options, f.name) = amount;
-            return;
-        }
-    }
-    inline for (std.meta.fields(cinema.Cinema.Strengths)) |f| {
-        if (row == @field(Row, f.name)) {
-            @field(c.options, f.name) = amount > 0;
-            @field(c.strengths, f.name) = if (amount > 0) amount else 1;
-            return;
-        }
+    switch (row) {
+        inline else => |t| if (comptime sliderOf(t)) |s| switch (s) {
+            .lens => @field(c.lens.options, @tagName(t)) = amount,
+            .strength => {
+                @field(c.options, @tagName(t)) = amount > 0;
+                @field(c.strengths, @tagName(t)) = if (amount > 0) amount else 1;
+            },
+        },
     }
 }
 
@@ -176,7 +190,10 @@ pub fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, sc
             display.sync();
         },
         inline .visuals, .display, .fullscreen, .debug => |r| return @field(Pick, @tagName(r)),
-        .lens_blur, .perspective, .vignette, .bloom, .atmosphere, .depth_of_field, .saturation, .warmth, .sepia, .film_grain, .scanlines, .chromatic_aberration => unreachable,
+        inline else => |r| {
+            comptime std.debug.assert(sliderOf(r) != null);
+            unreachable;
+        },
     }
     return null;
 }
@@ -201,7 +218,7 @@ pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *c
             inline else => |r| menu.named(r),
         };
         var fitted: [96]u8 = undefined;
-        const text_width = if (range(row) != null) @as(i32, @intFromFloat(track(box).x)) - x - LABEL_GAP else raster.width(box) - (x - raster.left(box)) - LABEL_GAP;
+        const text_width = (if (range(row) != null) raster.left(track(box)) else raster.right(box)) - x - LABEL_GAP;
         face.text(face.fit(&fitted, label, font.BODY, text_width, false), x, menu.rowTextY(box) + LABEL_DROP, font.BODY, ink);
         if (range(row)) |r| {
             const amount = value(c, row);
@@ -245,7 +262,7 @@ test "visual sliders clamp, reset and drag without changing other effects" {
     try std.testing.expectEqual(@as(f32, 2), value(&c, .bloom));
     const box = menu.rowBox(screen, menu.window(screen.y, rows(.visuals).len, selection.at), selection.at);
     const rail = track(box);
-    _ = step(&c, &selection, &.{ .click = true, .left_down = true, .pointer = .{ .x = @intFromFloat(rail.x + rail.width / 2), .y = raster.middleAt(box).y } }, screen, .visuals, &display);
+    _ = step(&c, &selection, &.{ .click = true, .left_down = true, .pointer = .{ .x = raster.middleAt(rail).x, .y = raster.middleAt(box).y } }, screen, .visuals, &display);
     try std.testing.expectApproxEqAbs(@as(f32, 1), value(&c, .lens_blur), 0.02);
     _ = step(&c, &selection, &.{ .left_down = true, .pointer = .{ .x = screen.x, .y = 0 } }, screen, .visuals, &display);
     try std.testing.expectEqual(@as(f32, 2), value(&c, .lens_blur));

@@ -1000,7 +1000,8 @@ fn projected(at: [2]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {
 }
 
 fn unprojected(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
-    return .{ (v.x - ox) / cell, (v.y - oy) / cell + STRIKE_Z };
+    const at = look.cellOfScreen(v, ox, oy, cell);
+    return .{ at[0], at[1] + STRIKE_Z };
 }
 
 const pxScale = look.pxScale;
@@ -1173,9 +1174,7 @@ fn heading(a: f32) [2]f32 {
     return .{ @cos(a), @sin(a) };
 }
 
-fn screen(p: [3]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {
-    return .{ .x = ox + p[0] * cell, .y = oy + (p[1] - p[2]) * cell };
-}
+const screen = look.screenOf;
 
 fn advance(m: *Mote, lv: *const grid.Level, dt: f32) void {
     var left = dt;

@@ -266,12 +266,9 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
     const h = TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(shown)) * TIP_LINE;
     var x = centredOver(over, TIP_W, screen);
     var y = above(@min(raster.top(over), layout.top + STATUS_Y), h);
-    if (over.y < @as(f32, @floatFromInt(layout.top)) and over.y < @as(f32, @floatFromInt(h + TIP_GAP + TIP_MARGIN))) {
-        const right = raster.right(over) + TIP_GAP;
-        const left = raster.left(over) - TIP_GAP - TIP_W;
-        const fits_right = right + TIP_W <= screen.x - TIP_MARGIN;
-        if (fits_right or left >= TIP_MARGIN) {
-            x = if (fits_right) right else left;
+    if (raster.top(over) < layout.top and raster.top(over) < h + TIP_GAP + TIP_MARGIN) {
+        if (menu.besideX(over, TIP_W, screen.x, TIP_GAP, TIP_MARGIN)) |side| {
+            x = side;
             y = onScreen(raster.top(over) - @divTrunc(h, 2), h, screen.y);
         }
     }
@@ -304,7 +301,7 @@ pub fn prompt(face: *const font.Face, sprites: *const sprite.Sprites, screen: ma
 }
 
 fn onScreen(at: i32, size: i32, room: i32) i32 {
-    return std.math.clamp(at, TIP_MARGIN, @max(TIP_MARGIN, room - size - TIP_MARGIN));
+    return menu.clampOn(at, size, room, TIP_MARGIN);
 }
 
 fn centredOver(over: rl.Rectangle, w: i32, screen: mathx.P) i32 {

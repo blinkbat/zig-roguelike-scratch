@@ -1213,7 +1213,7 @@ fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
     const f = frameOf(ed, g, .quests);
     const list = listArea(ed, f);
     var y = list.begin(&ed.clip);
-    if (listHead(ed, g, f, y, "Quests", m.quest_n, script.MAX_QUESTS, NEW_W, NEW_LABEL, "A quest of one blank stage")) {
+    if (listHead(ed, g, f, y, Page.quests.label(), m.quest_n, script.MAX_QUESTS, NEW_W, NEW_LABEL, "A quest of one blank stage")) {
         if (m.addQuest()) |q| {
             added(ed);
             s.quest = q;

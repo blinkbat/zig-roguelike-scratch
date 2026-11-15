@@ -173,8 +173,7 @@ pub const Bespoke = struct {
     }
 
     pub fn dropFoe(self: *Bespoke, i: usize) void {
-        _ = mathx.swapRemove(Foe, &self.foe, &self.foe_n, i);
-        self.foe[self.foe_n] = section.NO_FOE;
+        mathx.removeAt(Foe, &self.foe, &self.foe_n, i, section.NO_FOE);
     }
 };
 
@@ -244,9 +243,8 @@ pub const Node = struct {
                 for (b.foes()) |f| if (z.reserves(f.at)) return false;
             },
             .procgen => |*pg| {
-                var it = z.reserved().cells();
-                while (it.next()) |p| if (pg.section.tileAt(p) != null) return false;
-                if (z.key) |k| if (pg.section.tileAt(k) != null) return false;
+                var it = z.reservedCells().iterator(.{});
+                while (it.next()) |i| if (pg.section.tile[i] != null) return false;
                 if (!pg.section.empty() and pg.section.anchor != .fixed) return false;
             },
         }
@@ -519,7 +517,7 @@ pub const Atlas = struct {
     pub fn stampNpcs(self: *const Atlas, n: usize, lv: *grid.Level, roll: u64, stood: *script.Stood, shown: anytype) void {
         lv.clearNpcs();
         var avoid = shown.lying();
-        if (self.node[n].zoo) |z| avoid = avoid.unionWith(z.cells());
+        if (self.node[n].zoo) |z| avoid = avoid.unionWith(z.reservedCells());
         var foes: [MAX_FOES]Foe = undefined;
         for (self.node[n].placedOn(roll, &foes)) |f| avoid.set(grid.Level.idx(f.at));
         for (self.script.npcs(), 0..) |*npc, i| if (npc.node == n) if (self.script.standsAt(i, stood)) |c| avoid.set(grid.Level.idx(c));
@@ -734,10 +732,7 @@ pub fn landing(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var flood = grid.Flood.init(lv, p, &dist, &queue);
-    while (flood.next()) |q| {
-        if (free(lv, q, foes)) return q;
-    }
-    return nearest(lv, p, foes);
+    return flood.first(Free{ .lv = lv, .foes = foes }, Free.at) orelse nearest(lv, p, foes);
 }
 
 pub fn spawnFoes(lv: *grid.Level, pool: *actor.Pool, foes: []const Foe) void {
@@ -750,15 +745,20 @@ fn free(lv: *const grid.Level, q: P, foes: []const Foe) bool {
     return lv.vacant(q) and section.foeIn(foes, q) == null;
 }
 
-fn nearest(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
-    const Free = struct {
-        lv: *const grid.Level,
-        foes: []const Foe,
+const Free = struct {
+    lv: *const grid.Level,
+    foes: []const Foe,
 
-        pub fn has(f: @This(), i: usize) bool {
-            return free(f.lv, grid.Level.of(i), f.foes);
-        }
-    };
+    pub fn has(f: Free, i: usize) bool {
+        return free(f.lv, grid.Level.of(i), f.foes);
+    }
+
+    fn at(f: Free, q: P) bool {
+        return free(f.lv, q, f.foes);
+    }
+};
+
+fn nearest(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
     return grid.nearest(p, Free{ .lv = lv, .foes = foes });
 }
 

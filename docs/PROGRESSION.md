@@ -19,8 +19,14 @@ transaction rules and integration behavior.
 
 Inventory is a list without weight or stash. Equipment has main hand, offhand,
 helm, chest, belt, gloves, boots, two rings, amulet and two flask slots.
-A main-hand item allows an offhand unless it occupies both hands. The resulting
-loadout must satisfy every requirement; an item cannot fund its own requirement.
+A main-hand item allows an offhand unless it occupies both hands; a quiver is the
+one offhand worn beside a two-handed ranged weapon. The resulting loadout must
+satisfy every requirement; an item cannot fund its own requirement.
+
+Weapons and offhands belong to classes (`item_bases.Spec.classes`); armour and
+jewellery suit every class. Only the hero's class may equip a base, and loot and
+merchant shelves roll only its bases. Bases owned by no class stay out of both.
+Gear already worn from an older save stays worn.
 
 Successful equip, unequip and drop each spend a turn. Raising maximum life through
 equipment or allocation does not heal current HP. Death loses run equipment,
@@ -64,10 +70,13 @@ independently of their modifiers. Innate effects remain separate from affixes;
 `affixes.Mod.allows` owns equipment restrictions.
 
 Strength scales heavy weapons, Dexterity light weapons and Intelligence spells.
-Melee/ranged delivery independently selects the equipped weapon. Basic attacks,
-skills, rank bonuses and previews share weapon lookup and damage calculations.
-Caster implements have no innate attack. Weapon and spell critical bonuses are
-separate; damage-type bonuses affect only matching components.
+A base may scale with several styles, taking their mean increase; a caster
+implement's scaling applies to spells. Rank and Steady Aim bonuses raise each
+style in the scaling. Melee/ranged delivery independently selects the equipped
+weapon. Basic attacks, skills, rank bonuses and previews share weapon lookup and
+damage calculations. Caster implements have no innate attack. Weapon and spell
+critical bonuses are separate; damage-type bonuses affect only matching
+components.
 
 Equipment and passive recovery combine through `Simulation.heroPerks`.
 Worn-item kill recovery also applies to status kills; passive kill recovery

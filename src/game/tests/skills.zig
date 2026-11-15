@@ -509,11 +509,13 @@ test "juke targets across obstacles, lands instantly and spends mana but no turn
     try std.testing.expectEqual(g.sim.manaMax() - juke.COST, g.sim.mana);
     try std.testing.expectEqual(juke.COOLDOWN, g.sim.cooldown.get(.juke));
     try std.testing.expect(g.sim.unsaved);
-    var trail: usize = 0;
-    for (g.pic.fx.motes) |m| {
-        if (m.life > 0 and std.meta.eql(m.col, look.JUKE_TRAIL) and m.p[0] < mathx.centre(from)[0] + 1) trail += 1;
-    }
-    try std.testing.expect(trail > 0);
+    const Trail = struct {
+        behind: f32,
+        pub fn counts(t: @This(), m: anytype) bool {
+            return std.meta.eql(m.col, look.JUKE_TRAIL) and m.p[0] < t.behind;
+        }
+    };
+    try std.testing.expect(harness.liveMotes(g, Trail{ .behind = mathx.centre(from)[0] + 1 }) > 0);
     harness.use(g, .juke);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
 }
@@ -668,7 +670,7 @@ test "binding mouse targets follow both sets at different screen sizes" {
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const clock = g.sim.clock;
-    for ([_]P{ game.SCREEN_720, game.SCREEN_1080 }) |screen| {
+    for (game.SIZES) |screen| {
         g.screen = screen;
         const panel = overlay.bindPanel(g);
         try std.testing.expect(panel.x < BOOK.x and panel.y < BOOK.y);
@@ -1104,7 +1106,7 @@ test "attribute damage and critical rolls reach melee, arrows, mixed arrows and 
             const raw = attacks.rollRaw(&expected_rng, c[1], attacks.basesFor(&g.sim, c[1]));
             const critical = c[0].attrs().crits(&expected_rng);
             criticals += @intFromBool(critical);
-            const expected = c[0].attrs().blow(comptime c[1].attack().?.defaultStyle(), raw, critical, &expected_rng).total(target.resists);
+            const expected = c[0].attrs().blow(comptime c[1].attack().?.defaultScaling(), raw, critical, &expected_rng).total(target.resists);
             harness.use(g, c[1]);
             try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
             skills.confirmAim(g);
@@ -1137,34 +1139,35 @@ test "weapon weight controls live damage and its preview independently of attack
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     inline for (.{
-        .{ item_bases.Kind.crossbow, skillbar.Act.shoot, attrs.Style.heavy },
-        .{ item_bases.Kind.bow, skillbar.Act.shoot, attrs.Style.light },
-        .{ item_bases.Kind.sling, skillbar.Act.shoot, attrs.Style.light },
-        .{ item_bases.Kind.dagger, skillbar.Act.cleave, attrs.Style.light },
-        .{ item_bases.Kind.longsword, skillbar.Act.cleave, attrs.Style.heavy },
+        .{ item_bases.Kind.crossbow, skillbar.Act.shoot, attrs.only(.heavy) },
+        .{ item_bases.Kind.bow, skillbar.Act.shoot, attrs.only(.light) },
+        .{ item_bases.Kind.war_bow, skillbar.Act.shoot, attrs.Scaling.initMany(&.{ .light, .heavy }) },
+        .{ item_bases.Kind.dagger, skillbar.Act.cleave, attrs.only(.light) },
+        .{ item_bases.Kind.longsword, skillbar.Act.cleave, attrs.Scaling.initMany(&.{ .heavy, .light }) },
+        .{ item_bases.Kind.mace, skillbar.Act.cleave, attrs.Scaling.initMany(&.{ .heavy, .spell }) },
     }) |case| {
         const act = case[1];
-        const style = case[2];
+        const scaling = case[2];
         harness.heroArena(g, if (act == .shoot) .archer else .knight, .{ .x = 20, .y = 20 }, &.{});
         g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = case[0] });
         g.sim.inventory.gear.slots.set(.left_ring, harness.affixed(.ring, .{ .kind = .strength, .value = 70 }));
         g.sim.growth.ranks.set(act, 2);
         var expected_attrs = g.sim.inventory.gear.forAttack(g.sim.heroAttrs(), act.attack().?);
-        expected_attrs.damage_bonus.getPtr(style).* += g.sim.growth.damageBonus(act);
+        expected_attrs.raise(scaling, g.sim.growth.damageBonus(act));
         try std.testing.expectEqualDeep(expected_attrs, attacks.blowFor(&g.sim, act).by);
         const raw = damage.Damage{ .physical = 100 };
         g.sim.rng = mathx.Rng.init(0xDA6);
         var expected_rng = g.sim.rng;
         const critical = expected_attrs.crits(&expected_rng);
-        const expected = expected_attrs.blow(style, raw, critical, &expected_rng);
+        const expected = expected_attrs.blow(scaling, raw, critical, &expected_rng);
         try std.testing.expectEqualDeep(expected, attacks.heroScaled(&g.sim, act, raw).blow);
         g.bar.bind(.{ .set = .primary, .button = skillbar.SLOTS[0] }, act);
         var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
         var body: [overlay.TIP_BODY_MAX]u8 = undefined;
         const tip = overlay.tipOf(g, .{ .slot = 0 }, &title, &body).?;
-        const scaling_label = comptime std.fmt.comptimePrint(attrs.SCALES_FMT, .{menu.named(case[2].attr())});
-        try std.testing.expect(std.mem.indexOf(u8, tip.body, scaling_label) != null);
-        const span = expected_attrs.span(style, attacks.basesFor(&g.sim, act).physical());
+        var label: [64]u8 = undefined;
+        try std.testing.expect(std.mem.indexOf(u8, tip.body, try std.fmt.bufPrint(&label, attrs.SCALES_FMT, .{attrs.Named{ .scaling = scaling }})) != null);
+        const span = expected_attrs.span(scaling,attacks.basesFor(&g.sim, act).physical());
         var wanted: [64]u8 = undefined;
         try std.testing.expect(std.mem.indexOf(u8, tip.body, try std.fmt.bufPrint(&wanted, damage.PHYSICAL_FMT, .{ span.lo, span.hi })) != null);
         if (act == .cleave) {
@@ -1176,7 +1179,7 @@ test "weapon weight controls live damage and its preview independently of attack
                 var unscoped_rng = g.sim.rng;
                 const crit = by.crits(&expected_rng);
                 scoped_only += @intFromBool(crit and !g.sim.heroAttrs().crits(&unscoped_rng));
-                try std.testing.expectEqual(by.blow(style, raw, crit, &expected_rng).physical, attacks.heroRoll(&g.sim, .melee, 100).dmg);
+                try std.testing.expectEqual(by.blow(scaling, raw, crit, &expected_rng).physical, attacks.heroRoll(&g.sim, .melee, 100).dmg);
             }
             if (case[0] == .dagger) try std.testing.expect(scoped_only > 0);
         }

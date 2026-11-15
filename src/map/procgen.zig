@@ -186,8 +186,10 @@ pub const LOTS_MAX: usize = blk: {
         const m = @field(FEATURES, name);
         if (takesLots(m)) most = @max(most, m.COUNT_MAX);
     }
-    break :blk MAX_FEATURES * most + buildings.SECTION_LOTS;
+    break :blk MAX_FEATURES * most + SECTION_LOTS;
 };
+
+const SECTION_LOTS: usize = 1;
 
 /// Reproducible from the seed, the doors and the plan; the edge sealed, then every open cell joined, each door too.
 pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features: []const Feature) void {

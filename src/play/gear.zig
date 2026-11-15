@@ -9,6 +9,7 @@ const item_bases = @import("item_bases.zig");
 const items = @import("items.zig");
 const loot = @import("loot.zig");
 const inventory = @import("inventory.zig");
+const hero = @import("hero.zig");
 
 pub const Gear = struct {
     slots: std.EnumArray(item_bases.Slot, ?items.Item) = .initFill(null),
@@ -41,8 +42,9 @@ pub const Gear = struct {
 
     pub fn forAttack(self: Gear, base: attrs.Attrs, attack: attrs.Attack) attrs.Attrs {
         var out = base;
-        if (self.weapon(attack) == null) out.physical_bonus -= self.sum(.physical_damage);
-        out.crit_bonus += if (attack == .spell) base.spell_crit_bonus else if (self.weapon(attack) != null) base.weapon_crit_bonus else 0;
+        const armed = self.weapon(attack) != null;
+        if (!armed) out.physical_bonus -= self.sum(.physical_damage);
+        out.crit_bonus += if (attack == .spell) base.spell_crit_bonus else if (armed) base.weapon_crit_bonus else 0;
         return out;
     }
 
@@ -123,19 +125,15 @@ pub const Gear = struct {
 
     pub fn onHit(self: Gear, attack: attrs.Attack) item_bases.WeaponEffect {
         const own: i32 = if (self.slots.get(.right_hand)) |w| w.value(.penetration) else 0;
-        var out = item_bases.WeaponEffect{ .penetration = self.sum(.penetration) - own };
+        const ammo: i32 = if (self.quiver()) |q| q.value(.penetration) else 0;
+        var out = item_bases.WeaponEffect{ .penetration = self.sum(.penetration) - own - ammo };
         const held = self.wielded(attack) orelse return out;
         out.penetration += own;
+        if (attack == .ranged) out.penetration += ammo;
         for (self.slots.values) |maybe| if (maybe) |it| {
             for (it.mods) |m| if (m) |a| if (a.kind == .imbue) out.imbue(a.element, @intCast(a.value));
         };
-        const innate = held.innate orelse return out;
-        const fixed: item_bases.WeaponEffect = switch (innate) {
-            .bleed => |b| .{ .bleed = b.chance, .bleed_damage = b.damage },
-            .stun => |n| .{ .stun = n },
-            .penetration => |n| .{ .penetration = n },
-            .grant, .weapon_crit, .spell_crit, .physical_damage, .element, .flask => .{},
-        };
+        const fixed = (held.innate orelse return out).effect();
         out.bleed = fixed.bleed;
         out.bleed_damage = fixed.bleed_damage;
         out.stun = fixed.stun;
@@ -143,9 +141,26 @@ pub const Gear = struct {
         return out;
     }
 
-    pub fn twoHander(self: Gear) ?items.Item {
+    fn twoHander(self: Gear) ?items.Item {
         const it = self.slots.get(.right_hand) orelse return null;
         return if (item_bases.spec(it.kind).two_handed) it else null;
+    }
+
+    fn quiver(self: Gear) ?items.Item {
+        const it = self.slots.get(.left_hand) orelse return null;
+        return if (item_bases.spec(it.kind).quiver) it else null;
+    }
+
+    fn handsFit(self: Gear) bool {
+        const main = self.twoHander() orelse return true;
+        if (self.slots.get(.left_hand) == null) return true;
+        return self.quiver() != null and item_bases.spec(main.kind).attack == .ranged;
+    }
+
+    pub fn offhandHolder(self: Gear) ?items.Item {
+        if (self.slots.get(.left_hand) != null) return null;
+        const main = self.twoHander() orelse return null;
+        return if (item_bases.spec(main.kind).attack == .ranged) null else main;
     }
 
     pub fn valid(self: Gear, base: attrs.Attrs) bool {
@@ -154,7 +169,7 @@ pub const Gear = struct {
 
     /// A loaded save can wear unmet gear after a retune; only a change that unmeets an item is refused.
     pub fn validFrom(self: Gear, before: Gear, base: attrs.Attrs) bool {
-        if (self.twoHander() != null and self.slots.get(.left_hand) != null) return false;
+        if (!self.handsFit()) return false;
         for (item_bases.SLOTS) |slot| if (self.slots.get(slot)) |it| {
             if (!it.fits(slot) or !self.keepsMet(before, slot, base)) return false;
         };
@@ -171,8 +186,8 @@ pub const Gear = struct {
     pub fn wearing(self: Gear, it: items.Item, slot: item_bases.Slot) Gear {
         var after = self;
         after.slots.set(slot, it);
-        if (item_bases.spec(it.kind).two_handed) after.slots.set(.left_hand, null);
-        if (slot == .left_hand and self.twoHander() != null) after.slots.set(.right_hand, null);
+        if (after.handsFit()) return after;
+        after.slots.set(if (slot == .left_hand) .right_hand else .left_hand, null);
         return after;
     }
 
@@ -180,6 +195,10 @@ pub const Gear = struct {
         var without = self;
         without.slots.set(slot, null);
         return without.stats(base);
+    }
+
+    pub fn requirementStats(self: Gear, it: items.Item, slot: item_bases.Slot, base: attrs.Attrs) attrs.Attrs {
+        return self.wearing(it, slot).statsWithout(slot, base);
     }
 
     /// An item cannot fund its own requirement.
@@ -198,13 +217,14 @@ pub const Gear = struct {
         return (self.wielded(attack) orelse return null).damage;
     }
 
-    pub fn scaling(self: Gear, attack: attrs.Attack) attrs.Style {
-        return if (self.wielded(attack)) |s| s.style else attack.defaultStyle();
+    pub fn scaling(self: Gear, attack: attrs.Attack) attrs.Scaling {
+        const it = self.slots.get(.right_hand) orelse return attack.defaultScaling();
+        return item_bases.spec(it.kind).scalingFor(attack) orelse attack.defaultScaling();
     }
 };
 
 test "weapon weights cross melee and range while caster implements have no innate attack" {
-    const heavy = [_]item_bases.Kind{ .longsword, .mace, .greatsword, .crossbow, .greatclub, .axe };
+    const heavy = [_]item_bases.Kind{ .greatsword, .crossbow, .greatclub, .axe };
     const light = [_]item_bases.Kind{ .bow, .sling, .dagger, .sword, .handaxe };
     var gear = Gear{};
     const strong = attrs.Attrs.of(.{ .strength = 60, .dexterity = 10, .intelligence = 20 });
@@ -212,50 +232,124 @@ test "weapon weights cross melee and range while caster implements have no innat
         gear.slots.set(.right_hand, .{ .kind = kind });
         const s = item_bases.spec(kind);
         const is_heavy = std.mem.indexOfScalar(item_bases.Kind, &heavy, kind) != null;
-        try std.testing.expectEqual(if (is_heavy) attrs.Style.heavy else .light, gear.scaling(s.attack));
-        try std.testing.expectEqual(@as(i32, if (is_heavy) 60 else 10), strong.increase(gear.scaling(s.attack)));
+        try std.testing.expectEqual(attrs.only(if (is_heavy) .heavy else .light), gear.scaling(s.attack));
+        try std.testing.expectEqual(@as(i32, if (is_heavy) 60 else 10), strong.increaseBy(gear.scaling(s.attack)));
         try std.testing.expect(s.damage != null);
         try std.testing.expectEqual(s.damage, gear.weapon(s.attack));
         try std.testing.expect(gear.weapon(if (s.attack == .ranged) .melee else .ranged) == null);
     }
-    const implements = [_]item_bases.Kind{ .wand, .staff };
-    for (implements) |kind| {
-        gear.slots.set(.right_hand, .{ .kind = kind });
-        try std.testing.expect(item_bases.spec(kind).damage == null);
+    const Split = struct { kind: item_bases.Kind, increase: i32 };
+    for ([_]Split{ .{ .kind = .longsword, .increase = 35 }, .{ .kind = .mace, .increase = 40 }, .{ .kind = .war_bow, .increase = 35 } }) |split| {
+        gear.slots.set(.right_hand, .{ .kind = split.kind });
+        const attack = item_bases.spec(split.kind).attack;
+        try std.testing.expectEqual(@as(usize, 2), gear.scaling(attack).count());
+        try std.testing.expectEqual(split.increase, strong.increaseBy(gear.scaling(attack)));
+    }
+    const Implement = struct { kind: item_bases.Kind, spells: i32 };
+    for ([_]Implement{ .{ .kind = .wand, .spells = 20 }, .{ .kind = .staff, .spells = 40 }, .{ .kind = .storm_wand, .spells = 15 } }) |implement| {
+        gear.slots.set(.right_hand, .{ .kind = implement.kind });
+        try std.testing.expect(item_bases.spec(implement.kind).damage == null);
         for (std.enums.values(attrs.Attack)) |attack| {
             try std.testing.expect(gear.weapon(attack) == null);
-            try std.testing.expectEqual(attack.defaultStyle(), gear.scaling(attack));
+            if (attack != .spell) try std.testing.expectEqual(attack.defaultScaling(), gear.scaling(attack));
         }
+        try std.testing.expectEqual(implement.spells, strong.increaseBy(gear.scaling(.spell)));
     }
     const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
-    const offhands = [_]item_bases.Kind{ .tome, .orb, .buckler, .shield, .totem };
+    const offhands = [_]item_bases.Kind{ .tome, .orb };
     for (offhands) |kind| {
         var inv = inventory.Inventory{};
         try std.testing.expect(inv.add(.{ .kind = .wand }));
-        try inv.equip(0, .right_hand, base);
+        try inv.equip(0, .right_hand, base, .wizard);
         try std.testing.expect(inv.add(.{ .kind = kind }));
-        try inv.equip(0, .left_hand, base);
+        try inv.equip(0, .left_hand, base, .wizard);
         try std.testing.expect(inv.gear.valid(base));
         try std.testing.expectEqual(item_bases.Kind.wand, inv.gear.slots.get(.right_hand).?.kind);
         try std.testing.expect(item_bases.spec(kind).damage == null);
         try std.testing.expect(inv.add(.{ .kind = .staff }));
-        try inv.equip(0, .right_hand, base);
+        try inv.equip(0, .right_hand, base, .wizard);
         try std.testing.expect(inv.gear.slots.get(.left_hand) == null);
         try std.testing.expectEqual(@as(usize, 2), inv.n);
     }
-    var seen = std.EnumSet(item_bases.Kind).initEmpty();
+    var knight = inventory.Inventory{};
+    try std.testing.expect(knight.add(.{ .kind = .longsword }));
+    try knight.equip(0, .right_hand, base, .knight);
+    try std.testing.expect(knight.add(.{ .kind = .shield }));
+    try knight.equip(0, .left_hand, base, .knight);
+    try std.testing.expect(knight.add(.{ .kind = .greatsword }));
+    try knight.equip(0, .right_hand, base, .knight);
+    try std.testing.expect(knight.gear.slots.get(.left_hand) == null);
+    try std.testing.expectEqual(@as(usize, 2), knight.n);
     var rng = mathx.Rng.init(0x17E);
-    for (0..2000) |_| seen.insert(items.roll(&rng, 0).kind);
-    try std.testing.expectEqual(loot.BASES.len, seen.count());
+    for (hero.CLASSES) |class| {
+        var seen = std.EnumSet(item_bases.Kind).initEmpty();
+        for (0..2000) |_| {
+            const kind = items.roll(&rng, 0, class).kind;
+            try std.testing.expect(kind.usableBy(class));
+            seen.insert(kind);
+        }
+        try std.testing.expectEqual(loot.basesFor(class).len, seen.count());
+    }
+}
+
+test "each class rolls and wears only its own weapons and offhands, while armour and jewellery suit all" {
+    for (loot.BASES) |kind| {
+        const s = item_bases.spec(kind);
+        const hand = kind.fits(.right_hand) or kind.fits(.left_hand);
+        if (!hand) try std.testing.expectEqual(hero.CLASSES.len, s.classes.count());
+        if (hand) try std.testing.expect(s.classes.count() <= 1);
+        if (s.classes.contains(.archer) and kind.fits(.right_hand)) try std.testing.expectEqual(attrs.Attack.ranged, s.attack);
+        if (s.classes.contains(.knight) and s.damage != null) try std.testing.expect(s.scaling().contains(.heavy));
+    }
+    const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
+    for (loot.BASES) |unowned| {
+        if (loot.OWNED.contains(unowned)) continue;
+        for (hero.CLASSES) |class| {
+            var inv = inventory.Inventory{};
+            try std.testing.expect(inv.add(.{ .kind = unowned }));
+            try std.testing.expectError(error.WrongClass, inv.equip(0, item_bases.spec(unowned).slots[0], base, class));
+            try std.testing.expect(std.mem.indexOfScalar(item_bases.Kind, loot.basesFor(class), unowned) == null);
+        }
+    }
+}
+
+test "a quiver rides beside a two-handed ranged weapon, and nothing else two-handed" {
+    const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
+    var inv = inventory.Inventory{};
+    try std.testing.expect(inv.add(.{ .kind = .war_bow }));
+    try inv.equip(0, .right_hand, base, .archer);
+    try std.testing.expect(inv.add(.{ .kind = .ember_quiver }));
+    try inv.equip(0, .left_hand, base, .archer);
+    try std.testing.expect(inv.gear.valid(base));
+    try std.testing.expectEqual(item_bases.Kind.war_bow, inv.gear.slots.get(.right_hand).?.kind);
+    try std.testing.expect(inv.add(.{ .kind = .crossbow }));
+    try inv.equip(0, .right_hand, base, .archer);
+    try std.testing.expectEqual(item_bases.Kind.ember_quiver, inv.gear.slots.get(.left_hand).?.kind);
+    try std.testing.expectEqual(@as(usize, 1), inv.n);
+    try std.testing.expectEqual(@as(i32, 20), inv.gear.stats(base).element_bonus.get(.fire));
+    try std.testing.expect(inv.gear.wearing(.{ .kind = .staff }, .right_hand).slots.get(.left_hand) == null);
+    var held = Gear{};
+    held.slots.set(.right_hand, .{ .kind = .greatsword });
+    try std.testing.expectEqual(item_bases.Kind.greatsword, held.offhandHolder().?.kind);
+    try std.testing.expect(held.wearing(.{ .kind = .quiver }, .left_hand).slots.get(.right_hand) == null);
+    held.slots.set(.left_hand, .{ .kind = .quiver });
+    try std.testing.expect(!held.valid(base));
+    var pierced = Gear{};
+    pierced.slots.set(.right_hand, .{ .kind = .war_bow });
+    try std.testing.expect(pierced.offhandHolder() == null);
+    pierced.slots.set(.left_hand, items.affixed(.quiver, &.{.{ .kind = .penetration, .value = 7 }}));
+    try std.testing.expectEqual(@as(i32, 7), pierced.onHit(.ranged).penetration);
+    try std.testing.expectEqual(@as(i32, 0), pierced.onHit(.melee).penetration);
+    try std.testing.expectEqual(@as(i32, 0), pierced.onHit(.spell).penetration);
 }
 
 test "rolled combat defenses and recovery modifiers reach equipment consumers" {
     const base = attrs.Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 20 });
     var gear = Gear{};
-    gear.slots.set(.right_hand, .{ .kind = .crossbow, .mods = .{ .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .penetration, .value = 10 }, null, null } });
-    gear.slots.set(.gloves, .{ .kind = .gloves, .mods = .{ .{ .kind = .armour, .value = 4 }, .{ .kind = .crit, .value = 5 }, null, null } });
-    gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .resistance, .value = 20, .element = .cold }, .{ .kind = .mana_regen, .value = 1 }, null, null } });
-    gear.slots.set(.belt, .{ .kind = .belt, .mods = .{ .{ .kind = .life_flask, .value = 20 }, null, null, null } });
+    gear.slots.set(.right_hand, items.affixed(.crossbow, &.{ .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .penetration, .value = 10 } }));
+    gear.slots.set(.gloves, items.affixed(.gloves, &.{ .{ .kind = .armour, .value = 4 }, .{ .kind = .crit, .value = 5 } }));
+    gear.slots.set(.left_ring, items.affixed(.ring, &.{ .{ .kind = .resistance, .value = 20, .element = .cold }, .{ .kind = .mana_regen, .value = 1 } }));
+    gear.slots.set(.belt, items.affixed(.belt, &.{.{ .kind = .life_flask, .value = 20 }}));
     const stats = gear.stats(base);
     try std.testing.expectEqual(@as(i32, 20), stats.physical_bonus);
     try std.testing.expectEqual(@as(i16, 20), stats.resists.get(.cold));
@@ -264,7 +358,7 @@ test "rolled combat defenses and recovery modifiers reach equipment consumers" {
     try std.testing.expectEqual(@as(i32, 0), gear.onHit(.melee).penetration);
     try std.testing.expectEqual(@as(i32, 0), gear.forAttack(stats, .spell).physical_bonus);
     try std.testing.expectEqualDeep(passives.Perks{ .mana_regen = 1, .life_flask = 20 }, gear.perks(.{}));
-    gear.slots.set(.gloves, .{ .kind = .gloves, .mods = .{ .{ .kind = .penetration, .value = 7 }, null, null, null } });
+    gear.slots.set(.gloves, items.affixed(.gloves, &.{.{ .kind = .penetration, .value = 7 }}));
     try std.testing.expectEqual(@as(i32, 37), gear.onHit(.ranged).penetration);
     try std.testing.expectEqual(@as(i32, 7), gear.onHit(.melee).penetration);
     gear.slots.set(.right_hand, null);
@@ -273,11 +367,11 @@ test "rolled combat defenses and recovery modifiers reach equipment consumers" {
 
 test "imbued weapons add their element's ailment to that weapon's hits and worn mods sum across slots" {
     var gear = Gear{};
-    gear.slots.set(.right_hand, .{ .kind = .handaxe, .mods = .{ .{ .kind = .imbue, .value = 15, .element = .fire }, .{ .kind = .mana_on_kill, .value = 2 }, null, null } });
-    gear.slots.set(.helm, .{ .kind = .helmet, .mods = .{ .{ .kind = .masked, .value = 30 }, .{ .kind = .resolve, .value = 12 }, null, null } });
-    gear.slots.set(.amulet, .{ .kind = .amulet, .mods = .{ .{ .kind = .lantern, .value = 1 }, .{ .kind = .resolve, .value = 8 }, null, null } });
-    gear.slots.set(.belt, .{ .kind = .belt, .mods = .{ .{ .kind = .mana_flask, .value = 20 }, null, null, null } });
-    gear.slots.set(.boots, .{ .kind = .boots, .mods = .{ .{ .kind = .stillness, .value = 2 }, null, null, null } });
+    gear.slots.set(.right_hand, items.affixed(.handaxe, &.{ .{ .kind = .imbue, .value = 15, .element = .fire }, .{ .kind = .mana_on_kill, .value = 2 } }));
+    gear.slots.set(.helm, items.affixed(.helmet, &.{ .{ .kind = .masked, .value = 30 }, .{ .kind = .resolve, .value = 12 } }));
+    gear.slots.set(.amulet, items.affixed(.amulet, &.{ .{ .kind = .lantern, .value = 1 }, .{ .kind = .resolve, .value = 8 } }));
+    gear.slots.set(.belt, items.affixed(.belt, &.{.{ .kind = .mana_flask, .value = 20 }}));
+    gear.slots.set(.boots, items.affixed(.boots, &.{.{ .kind = .stillness, .value = 2 }}));
     const hit = gear.onHit(.melee);
     try std.testing.expectEqual(@as(u32, 15), hit.chance(.burn));
     try std.testing.expectEqual(@as(u32, 25), hit.chance(.bleed));

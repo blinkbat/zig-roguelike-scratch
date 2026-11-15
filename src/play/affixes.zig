@@ -122,16 +122,16 @@ pub const Mod = enum {
         const ring = k.fits(.left_ring);
         const armour = slot.armour();
         return switch (m) {
-            .physical_damage => weapon,
+            .physical_damage => weapon or s.quiver,
             .spell_damage => s.caster or slot == .amulet,
-            .crit => weapon or slot == .gloves or ring,
+            .crit => weapon or s.quiver or slot == .gloves or ring,
             .armour => armour or k.blocks(),
             .dodge => slot == .boots or slot == .gloves or ring,
             .resistance => armour or slot == .left_hand or ring or slot == .amulet,
             .mana_regen => s.caster or k == .circlet or ring or slot == .amulet,
             .life_on_kill => weapon or k == .totem or ring,
             .life_flask => slot == .belt or slot == .amulet,
-            .penetration => weapon or slot == .gloves,
+            .penetration => weapon or s.quiver or slot == .gloves,
             .thorns => slot == .chest or k == .shield,
             .spoils => ring or slot == .amulet,
             .imbue => weapon,
@@ -149,7 +149,7 @@ pub const Mod = enum {
             .life_regen => slot == .chest or slot == .belt or slot == .amulet,
             .leech => weapon or ring,
             .area => s.caster or slot == .amulet,
-            .pierce => (weapon and s.attack == .ranged) or (s.caster and slot == .right_hand and !s.two_handed),
+            .pierce => (weapon and s.attack == .ranged) or s.quiver or (s.caster and slot == .right_hand and !s.two_handed),
             .haste => slot == .boots or slot == .amulet,
             .life, .mana, .strength, .dexterity, .intelligence => true,
         };
@@ -166,7 +166,6 @@ pub fn imbued(e: damage.Element) resilience.Kind {
     };
 }
 
-/// The modifiers loot rolls, in items.roll order, with their value ranges.
 pub const AffixRoll = struct { kind: Mod, lo: i32, hi: i32 };
 
 const Range = struct { lo: i32, hi: i32 };
@@ -210,6 +209,7 @@ const RANGES = std.EnumArray(Mod, Range).init(.{
 
 pub const MODS = std.enums.values(Mod)[0..std.enums.values(Mod).len].*;
 
+/// The modifiers loot rolls, in items.roll order, with their value ranges.
 pub const AFFIXES = blk: {
     var out: [MODS.len]AffixRoll = undefined;
     for (MODS, &out) |m, *a| a.* = affixOf(m);
@@ -287,8 +287,8 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
     var seen = std.EnumSet(Mod).initEmpty();
     var elements = std.EnumSet(damage.Element).initEmpty();
     var imbues = std.EnumSet(damage.Element).initEmpty();
-    for (0..50000) |_| {
-        const it = items.roll(&rng, 0);
+    for (0..50000) |i| {
+        const it = items.roll(&rng, 0, hero.CLASSES[i % hero.CLASSES.len]);
         for (it.mods) |maybe| if (maybe) |m| {
             seen.insert(m.kind);
             try std.testing.expect(m.kind.allows(it.kind));
@@ -307,13 +307,13 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
     try std.testing.expectEqual(std.enums.values(damage.Element).len, elements.count());
     try std.testing.expectEqual(IMBUES.len, imbues.count());
     var name: [items.NAME_MAX]u8 = undefined;
-    try std.testing.expectEqualStrings("Rimed Mace of Siphoning", (items.Item{ .kind = .mace, .mods = .{ .{ .kind = .imbue, .value = 10, .element = .cold }, .{ .kind = .mana_on_kill, .value = 1 }, null, null } }).name(&name));
-    try std.testing.expectEqualStrings("Masked Iron Helm of the Lantern", (items.Item{ .kind = .helmet, .mods = .{ .{ .kind = .masked, .value = 30 }, .{ .kind = .lantern, .value = 1 }, null, null } }).name(&name));
-    const gloves = items.Item{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 2 }, .{ .kind = .crit, .value = 3 }, null, null } };
+    try std.testing.expectEqualStrings("Rimed Mace of Siphoning", items.affixed(.mace, &.{ .{ .kind = .imbue, .value = 10, .element = .cold }, .{ .kind = .mana_on_kill, .value = 1 } }).name(&name));
+    try std.testing.expectEqualStrings("Masked Iron Helm of the Lantern", items.affixed(.helmet, &.{ .{ .kind = .masked, .value = 30 }, .{ .kind = .lantern, .value = 1 } }).name(&name));
+    const gloves = items.affixed(.gloves, &.{ .{ .kind = .strength, .value = 2 }, .{ .kind = .crit, .value = 3 } });
     try std.testing.expectEqualStrings("Bear's Leather Gloves of Precision", gloves.name(&name));
     try std.testing.expectEqualStrings("bear's leather gloves of precision", gloves.spoken(&name));
-    try std.testing.expectEqualStrings("Leather Gloves of Precision", (items.Item{ .kind = .gloves, .mods = .{ .{ .kind = .crit, .value = 3 }, null, null, null } }).name(&name));
-    try std.testing.expectEqualStrings("Fire-Warded Hunter's Hood", (items.Item{ .kind = .hood, .mods = .{ .{ .kind = .resistance, .value = 10, .element = .fire }, null, null, null } }).name(&name));
+    try std.testing.expectEqualStrings("Leather Gloves of Precision", items.affixed(.gloves, &.{.{ .kind = .crit, .value = 3 }}).name(&name));
+    try std.testing.expectEqualStrings("Fire-Warded Hunter's Hood", items.affixed(.hood, &.{.{ .kind = .resistance, .value = 10, .element = .fire }}).name(&name));
     try std.testing.expectEqualStrings("Short Sword", items.baseName(.sword, &name));
     try std.testing.expectEqualStrings("Magus Fold", (items.Item{ .kind = .robes, .rare_name = .{ .first = .Magus, .last = .Fold } }).spoken(&name));
 }

@@ -80,16 +80,26 @@ pub const Spec = struct {
 
     pub fn valid(s: *const Spec) bool {
         if (s.width < SIZE_MIN or s.width > SIZE_MAX or s.height < SIZE_MIN or s.height > SIZE_MAX) return false;
-        if (s.at.x < MARGIN or s.at.y < MARGIN or s.at.x > grid.W - s.width - MARGIN or s.at.y > grid.H - s.height - MARGIN) return false;
+        const area = grid.Box.inMap(MARGIN);
+        const r = s.room();
+        if (!area.holds(r.lo) or !area.holds(r.hi.sub(.{ .x = 1, .y = 1 }))) return false;
         if (s.pool_n == 0 or s.pool_n > MAX_KINDS) return false;
         for (s.entries()) |e| if (!e.kind.stocked() or e.weight == 0) return false;
-        if (s.key) |k| if (!grid.Box.inMap(MARGIN).holds(k) or s.reserved().holds(k)) return false;
+        if (s.key) |k| if (!area.holds(k) or s.reserved().holds(k)) return false;
         return true;
     }
 
     pub fn cells(s: *const Spec) grid.CellSet {
+        return s.cellsOf(s.room());
+    }
+
+    pub fn reservedCells(s: *const Spec) grid.CellSet {
+        return s.cellsOf(s.reserved());
+    }
+
+    fn cellsOf(s: *const Spec, b: grid.Box) grid.CellSet {
         var out = grid.CellSet.initEmpty();
-        grid.markBox(&out, s.room());
+        grid.markBox(&out, b);
         if (s.key) |k| out.set(grid.Level.idx(k));
         return out;
     }
@@ -120,10 +130,10 @@ pub const Spec = struct {
         if (s.key) |k| {
             lv.set(k, .floor);
             _ = lv.breakBarrel(k);
-            const joined = reachedFrom(lv, way_in);
+            const joined = grid.reached(lv, way_in);
             s.connectTo(lv, k, &joined);
             lv.set(k, .chest);
-            const kept = reachedFrom(lv, way_in);
+            const kept = grid.reached(lv, way_in);
             for (grid.STEPS) |d| {
                 const n = k.add(d);
                 if (grid.Level.inside(n) and joined.isSet(grid.Level.idx(n)) and !kept.isSet(grid.Level.idx(n))) s.connectTo(lv, n, &kept);
@@ -138,13 +148,8 @@ pub const Spec = struct {
         lv.addTorch(lume.torchOver(inner, inner.lo.x));
     }
 
-    fn reachedFrom(lv: *const grid.Level, from: P) grid.CellSet {
-        var dist: [grid.CELLS]i32 = undefined;
-        var queue: [grid.CELLS]u32 = undefined;
-        var flood = grid.Flood.init(lv, from, &dist, &queue);
-        var out = grid.CellSet.initEmpty();
-        while (flood.next()) |p| out.set(grid.Level.idx(p));
-        return out;
+    fn inSet(set: *const grid.CellSet, p: P) bool {
+        return set.isSet(grid.Level.idx(p));
     }
 
     fn connectTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet) void {
@@ -152,7 +157,7 @@ pub const Spec = struct {
         var dist: [grid.CELLS]i32 = undefined;
         var reach: [grid.CELLS]u32 = undefined;
         var flood = grid.Flood.init(lv, from, &dist, &reach);
-        while (flood.next()) |p| if (targets.isSet(grid.Level.idx(p))) return;
+        if (flood.first(targets, inSet) != null) return;
         var seen = grid.CellSet.initEmpty();
         var back: [grid.CELLS]usize = undefined;
         var queue: [grid.CELLS]P = undefined;

@@ -58,8 +58,8 @@ The zoo node field and gate/key tile names change the raw-layout fingerprint;
 pre-zoo raw saves are not claimed as compatible. So does the clock's `stunned`
 flag; portable saves without it load unstunned. Portable saves retain named-value
 compatibility, including absent zoo definitions.
-The Small Key item identity also changes the raw fingerprint; portable item
-identities remain compatible by name.
+The Small Key and quiver item identities also change the raw fingerprint;
+portable item identities remain compatible by name.
 
 A raw file loads only when its ABI/type/tree fingerprint matches this exact build.
 The fingerprint names every enum member reachable from the raw layout, so adding a

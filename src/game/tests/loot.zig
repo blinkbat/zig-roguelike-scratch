@@ -44,7 +44,7 @@ test "rare chest and foe drops keep their names and mods through pickup and drop
         var expected: ?items.Item = null;
         for (0..10000) |seed| {
             var rng = mathx.Rng.init(seed);
-            const candidate = if (foe) loot.foeLoot(&rng, 0).item else items.roll(&rng, 0);
+            const candidate = if (foe) loot.foeLoot(&rng, 0, g.sim.class).item else items.roll(&rng, 0, g.sim.class);
             if (candidate) |it| if (it.rarity() == .rare) {
                 expected = it;
                 g.sim.loot_rng = mathx.Rng.init(seed);
@@ -89,7 +89,7 @@ test "spoils applies to chest and foe quality and every gold pickup route" {
         g.sim.lv.set(at, .chest);
         g.sim.loot_rng = mathx.Rng.init(seed);
         var expected_rng = g.sim.loot_rng;
-        const expected = items.roll(&expected_rng, 25);
+        const expected = items.roll(&expected_rng, 25, g.sim.class);
         try std.testing.expect(game.combat.openChest(g, at));
         try std.testing.expectEqualDeep(expected, g.sim.ground.drops[0].item);
         if (expected.magical()) magic += 1;
@@ -98,7 +98,7 @@ test "spoils applies to chest and foe quality and every gold pickup route" {
     g.sim.ground = .{};
     g.sim.loot_rng = harness.lootRng(true);
     var expected_rng = g.sim.loot_rng;
-    const expected = loot.foeLoot(&expected_rng, 25);
+    const expected = loot.foeLoot(&expected_rng, 25, g.sim.class);
     const rat = harness.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
     harness.slay(g, rat, from);
     try std.testing.expectEqualDeep(expected.item.?, g.sim.ground.drops[0].item);
@@ -352,7 +352,7 @@ test "walking onto a bag opens only its loot and can leave every item behind" {
     try std.testing.expectEqual(@as(usize, 2), character.bookView(g, &g.nearby).nearby.len);
     harness.drawnOut(g);
     try std.testing.expectEqual(@as(usize, 0), g.sim.log.held);
-    for (0..30) |_| game.update(g, harness.TEST_DT);
+    harness.idleFor(g, 30 * harness.TEST_DT);
     try std.testing.expectEqual(@as(usize, 2), g.sim.log.n);
     for (0..inventory.BAG_MAX) |_| try std.testing.expect(g.sim.inventory.add(.{ .kind = .cap }));
     harness.press(g, menu.CHANGE);

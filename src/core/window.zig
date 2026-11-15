@@ -8,6 +8,7 @@ pub const SCREEN_720 = P{ .x = 1280, .y = 720 };
 pub const SCREEN_1080 = P{ .x = 1920, .y = 1080 };
 pub const SCREEN_1440 = P{ .x = 2560, .y = 1440 };
 pub const SCREENS = [_]P{ SCREEN_720, SCREEN_1080, SCREEN_1440 };
+pub const SIZES = [_]P{ SCREEN_720, SCREEN_1080 };
 
 pub const Display = struct {
     pub const LIMITS = [_]i32{ 0, 30, 60, 120, 144 };

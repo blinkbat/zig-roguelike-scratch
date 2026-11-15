@@ -207,12 +207,12 @@ const App = struct {
             const remove = saveDeleteBox(g.screen, i);
             const on = app.loads.at == i;
             const x = menu.pick(g.face, .{ .x = row.x, .y = row.y, .width = remove.x - row.x - menu.ACTION_GAP, .height = row.height }, on);
-            const text_w = @as(i32, @intFromFloat(remove.x)) - x - menu.ACTION_GAP;
+            const text_w = raster.left(remove) - x - menu.ACTION_GAP;
             const text = g.face.fit(&fit, slotLine(slot, &line, i), menu.ROW, text_w, false);
             g.face.text(text, x, menu.rowTextY(row), menu.ROW, menu.rowInk(on));
             if (slotDetails(slot, &line)) |detail| {
                 const fitted = g.face.fit(&fit, detail, font.SMALL, text_w, false);
-                g.face.text(fitted, x, @as(i32, @intFromFloat(row.y)) + SAVE_DETAIL_Y, font.SMALL, look.DIM);
+                g.face.text(fitted, x, raster.top(row) + SAVE_DETAIL_Y, font.SMALL, look.DIM);
             }
             if (slot.* != .empty) menu.action(&g.face, remove, prompt_icon.Prompt.menuOf(&g.st, DELETE), if (app.armed == i) "Delete it?" else "Delete save");
         }
@@ -736,7 +736,7 @@ test "mouse save deletion stays tied to its row through intermediate movement an
         app.list[2] = .empty;
         try std.testing.expect(app.saveStep(&.{ .pointer = raster.middleAt(saveDeleteBox(screen, 2)), .click = true }, screen) == null);
         const row = saveRowBox(screen, 2);
-        const load = app.saveStep(&.{ .pointer = .{ .x = @as(i32, @intFromFloat(row.x)) + 20, .y = raster.middleAt(row).y }, .click = true }, screen).?;
+        const load = app.saveStep(&.{ .pointer = .{ .x = raster.left(row) + 20, .y = raster.middleAt(row).y }, .click = true }, screen).?;
         try std.testing.expectEqual(@as(usize, 2), load.load);
         app.list[2] = .{ .unreadable = .damaged };
     }

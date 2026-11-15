@@ -25,7 +25,7 @@ pub fn counted(comptime T: type, comptime field: []const u8) ?[]const u8 {
     return null;
 }
 
-pub fn formerly(comptime T: type, comptime field: []const u8) ?[]const u8 {
+fn formerly(comptime T: type, comptime field: []const u8) ?[]const u8 {
     if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "WAS")) {
         inline for (T.WAS) |entry| {
             if (comptime !@hasField(T, entry[0])) @compileError(@typeName(T) ++ ".WAS names " ++ entry[0] ++ ", not its field");

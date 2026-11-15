@@ -418,14 +418,21 @@ pub const Editor = struct {
         ed.pasting = false;
     }
 
+    pub fn refuseUnfit(ed: *Editor, t: Tool) bool {
+        if (t.fits(ed.here())) return false;
+        ed.say(GENERATED, .{});
+        return true;
+    }
+
     pub fn setTool(ed: *Editor, t: Tool) void {
-        if (!t.fits(ed.here())) return ed.say(GENERATED, .{});
+        if (ed.refuseUnfit(t)) return;
         if (!t.eql(ed.tool)) ed.release();
         if (t == .foe and !ed.foeShown(t.foe)) ed.foe_type = null;
         ed.hold(t);
     }
 
     pub fn takeTool(ed: *Editor, t: Tool) void {
+        if (ed.refuseUnfit(t)) return;
         ed.leaveSelect();
         ed.setTool(t);
     }
@@ -1048,7 +1055,7 @@ pub fn capture(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8
     ed.cam = .{ 4, 2 };
     g.screen = .{ .x = target.texture.width, .y = target.texture.height };
     const hover_at = ed.cellRect(Editor.canvas(g), .{ .x = 14, .y = 13 });
-    ed.desk.mouse = .{ .x = @as(i32, @intFromFloat(hover_at.x)) + 8, .y = @as(i32, @intFromFloat(hover_at.y)) + 8 };
+    ed.desk.mouse = .{ .x = raster.left(hover_at) + 8, .y = raster.top(hover_at) + 8 };
     ed.said_t = 0;
     const dir = std.fs.path.dirname(map_path) orelse ".";
     const view_paths = std.EnumArray(View, [:0]const u8).init(.{ .map = map_path, .graph = graph_path });

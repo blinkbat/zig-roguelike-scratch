@@ -120,7 +120,7 @@ pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
     rl.drawRectangle(0, 0, g.screen.x, widgets.TOP_H, PANEL_BG);
     widgets.hrule(0, widgets.TOP_H - 1, g.screen.x);
     const file = fileSlot(g);
-    var verbs = Bar.from(ed, g, widgets.rightX(file) + widgets.GAP, widgets.GAP);
+    var verbs = Bar.from(ed, g, raster.right(file) + widgets.GAP, widgets.GAP);
     if (smallButton(ed, g, file, FILE_LABEL, isPopup(ed, .file), true, "New, open and save maps; back to the title")) {
         editor.openPopup(ed, file, .file, 0, g.screen.y);
     }
@@ -150,7 +150,7 @@ pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
         const h = widgets.plateHit(ed.controls(), r, ed.family == f, true, false, f.tip());
         const pic = widgets.pictureAt(r, @floatFromInt(widgets.GAP), TAB_PIC);
         toolIcon(ed, g, ed.family_tool.get(f), pic);
-        widgets.textFace(&g.face).draw(label, widgets.rightX(pic) + widgets.GAP, tabs_y + widgets.DETAIL_DY, DETAIL, look.TEXT);
+        widgets.textFace(&g.face).draw(label, raster.right(pic) + widgets.GAP, tabs_y + widgets.DETAIL_DY, DETAIL, look.TEXT);
         if (h.hit) ed.openFamily(f);
     }
     var views = Bar.back(ed, g, g.screen.x - widgets.PAD, tabs_y);
@@ -190,7 +190,7 @@ pub fn fileRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle) void {
     for (FILE_ITEMS, 0..) |f, k| {
         const r = editor.popupRow(box, .file, k);
         const hit = widgets.buttonSized(ed.controls(), &g.face, r, f.label(), DETAIL, false, true, true, null);
-        _ = widgets.drawRight(&g.face, f.key(), DETAIL, widgets.rightX(r), widgets.midY(r, DETAIL), look.DIM);
+        _ = widgets.drawRight(&g.face, f.key(), DETAIL, raster.right(r), widgets.midY(r, DETAIL), look.DIM);
         if (hit) {
             ed.popup = null;
             f.act(ed);
@@ -279,8 +279,8 @@ fn toolRow(ed: *editor.Editor, g: *game.Game, col: Column, y: *i32, t: editor.To
     widgets.textFace(&g.face).draw(key, widgets.textX(r), widgets.midY(r, DETAIL), DETAIL, look.DIM);
     const pic = widgets.pictureAt(r, @floatFromInt(widgets.GAP + KEY_W), TOOL_PIC);
     toolIcon(ed, g, t, pic);
-    const name_x = widgets.rightX(pic) + widgets.GAP * 2;
-    widgets.drawFit(&g.face, t.name(), widgets.TEXT, widgets.rightX(r) - name_x - widgets.GAP, false, name_x, widgets.midY(r, widgets.TEXT), if (live) look.TEXT else look.DIM);
+    const name_x = raster.right(pic) + widgets.GAP * 2;
+    widgets.drawFit(&g.face, t.name(), widgets.TEXT, raster.right(r) - name_x - widgets.GAP, false, name_x, widgets.midY(r, widgets.TEXT), if (live) look.TEXT else look.DIM);
     if (!live) rl.drawRectangleRec(r, UNLIVE);
     if (h.hit) ed.takeTool(t);
 }
@@ -476,7 +476,7 @@ fn nodeDropdown(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) bool {
     widgets.buttonBackEdged(r, true, if (isPopup(ed, .node)) ON else widgets.LIVE_EDGE);
     const h = widgets.plateHit(ed.controls(), r, false, true, false, "Open another node");
     const y = widgets.midY(r, widgets.TEXT);
-    const caret_w = widgets.drawRight(&g.face, DROP_CARET, widgets.TEXT, widgets.rightX(r), y, look.DIM);
+    const caret_w = widgets.drawRight(&g.face, DROP_CARET, widgets.TEXT, raster.right(r), y, look.DIM);
     widgets.drawFit(&g.face, ed.nodeTitle(ed.node, &buf), widgets.TEXT, widgets.insetW(r) - caret_w - widgets.GAP, false, widgets.textX(r), y, look.TEXT);
     return h.hit;
 }

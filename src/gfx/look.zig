@@ -17,6 +17,18 @@ pub const SPRITE_PX: i32 = 64;
 pub fn pxScale(cell: f32) f32 {
     return cell / SPRITE_PX;
 }
+
+pub fn cellsOf(px: f32) f32 {
+    return px / SPRITE_PX;
+}
+
+pub fn screenOf(p: [3]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {
+    return .{ .x = ox + p[0] * cell, .y = oy + (p[1] - p[2]) * cell };
+}
+
+pub fn cellOfScreen(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
+    return .{ (v.x - ox) / cell, (v.y - oy) / cell };
+}
 /// A faced wall's bottom rows of brick, as `tools/tile_art/export_walls.lua` paints them.
 pub const WALL_FACE_PX: i32 = 23;
 pub const GLYPH_PX: i32 = 60;
@@ -524,7 +536,7 @@ pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\uniform vec2 texel;
     \\uniform float strength;
     \\vec4 tap(vec2 offset) {
-    \\    vec4 c = texture(texture0, clamp(fragTexCoord + offset * texel, texel * 0.5, vec2(1.0) - texel * 0.5));
+    \\    vec4 c = texture(texture0, insetTexel(fragTexCoord + offset * texel, texel));
     \\    return vec4(c.rgb * c.a, c.a);
     \\}
     \\vec4 focused() {

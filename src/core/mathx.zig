@@ -152,6 +152,10 @@ pub fn percentRound(hundredths: i64, rng: *Rng) i64 {
     return @divTrunc(hundredths, PERCENT) + @intFromBool(part > 0 and rng.percent(part));
 }
 
+pub fn percentRolled(v: i32, pc: i64, rng: *Rng) i32 {
+    return @intCast(percentRound(@as(i64, v) * pc, rng));
+}
+
 pub fn plural(n: anytype) []const u8 {
     return if (n == 1) "" else "s";
 }
@@ -619,7 +623,7 @@ pub fn unitOf(h: u64) f32 {
     return @as(f32, @floatFromInt(h >> 40)) / (1 << 24);
 }
 
-pub fn cellHash(seed: u64, p: P) u64 {
+fn cellHash(seed: u64, p: P) u64 {
     const coordinates = [2]i32{ p.x, p.y };
     return std.hash.Wyhash.hash(seed, std.mem.asBytes(&coordinates));
 }

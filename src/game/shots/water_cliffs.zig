@@ -164,9 +164,7 @@ fn captureFootfalls(g: *game.Game, target: rl.RenderTexture2D) !void {
         const slot = g.sim.heroSlot().?;
         game.update(g, g.pic.glide[slot].span());
         g.pic.fx.step(&g.sim.lv, 0.1);
-        var motes: usize = 0;
-        for (g.pic.fx.motes) |m| motes += @intFromBool(m.life > 0);
-        if (motes == 0) return error.FootfallParticlesMissing;
+        if (game.harness.liveMotes(g, game.harness.AnyMote{}) == 0) return error.FootfallParticlesMissing;
         try capturef(g, target, WATER_CLIFFS_DIR ++ "/footfall-{s}.png", .{@tagName(tile)});
     }
 }

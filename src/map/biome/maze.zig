@@ -165,9 +165,8 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
         const edge = mid.add(step.scaled(@divTrunc(size, 2)));
         carve.lane(lv, rng, mid, edge.add(step), DOOR_W, if (style.built()) 0 else CAVE_WANDER, pal.open, .cut);
     }
-    const inner = size - 2;
     switch (style) {
-        .tombs => if (inner >= TOMB_INNER) {
+        .tombs => if (inside.width() >= TOMB_INNER) {
             for (carve.corners(whole.shrunk(2))) |c| lv.set(c, .wall);
             if (rng.chance(GRAVE_CHANCE)) lv.set(mid, .grave) else if (rng.chance(TOMB_BARREL_CHANCE)) lv.putBarrel(lo.add(TOMB_BARREL_AT));
             if (mask & bitOf(.n) == 0) lv.addTorch(lume.torchOver(inside, mid.x));
@@ -227,4 +226,5 @@ test "a maze sets the rooms asked, joined, and merging adds loops" {
     rng = mathx.Rng.init(0xD2);
     shape(&lv, &rng, 1, .{ .style = .tombs, .merge = 1000 });
     try std.testing.expect(tree > 14 * 50);
+    try std.testing.expect(carve.count(&lv, .floor) > tree);
 }
