@@ -66,7 +66,7 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
         sim.chronicle.mark(.chest);
         return .opened;
     };
-    const rolled = loot.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
+    const rolled = loot.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity, .of(sim.areaLevel(sim.node)));
     dropItem(sim, .{ .item = rolled.item.?, .at = at });
     const gold = rolled.gold;
     dropGold(sim, at, gold);
@@ -159,8 +159,9 @@ fn nativeLeft(sim: *const Simulation, family: actor.Kind) bool {
 fn lootOf(sim: *Simulation, fallen: actor.Actor) loot.Loot {
     if (!sim.lv.walkable(fallen.at)) return .{};
     const rarity = sim.heroAttrs().item_rarity;
-    if (actor.row(fallen.kind).disguised) return loot.mimicLoot(&sim.loot_rng, rarity);
-    return loot.foeLoot(&sim.loot_rng, rarity);
+    const tier = loot.foeTier(fallen.kind, sim.areaLevel(sim.node));
+    if (actor.row(fallen.kind).disguised) return loot.mimicLoot(&sim.loot_rng, rarity, tier);
+    return loot.foeLoot(&sim.loot_rng, rarity, tier);
 }
 
 const PYRE_REACH: i32 = 1;
@@ -289,7 +290,7 @@ test "death rewards resolve without presentation and return only newly frightene
     const pictured = run.pic.pictured[fallen.slot().index];
     const rng = run.sim.rng;
     var loot_rng = run.sim.loot_rng;
-    const expected = loot.foeLoot(&loot_rng, run.sim.heroAttrs().item_rarity);
+    const expected = loot.foeLoot(&loot_rng, run.sim.heroAttrs().item_rarity, loot.foeTier(.bloat, run.sim.areaLevel(run.sim.node)));
     const hp = run.sim.pool.get(fallen.value).?.hp;
     try std.testing.expect(run.sim.resolveDamage(fallen, hp).lethal);
     const result = defeat(&run.sim, fallen);

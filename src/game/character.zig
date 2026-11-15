@@ -203,7 +203,7 @@ fn dealerOf(g: *const game.Game) ?book.Dealer {
 pub fn openTrade(g: *game.Game, npc: u8) void {
     const s = g.sim.script() orelse return;
     if (npc >= s.npc_n) return;
-    _ = g.sim.plot.shelf(npc, g.sim.seed);
+    _ = g.sim.plot.shelf(npc, g.sim.seed, .of(g.sim.areaLevel(s.npc[npc].node)));
     openCharacter(g);
     g.character.choose(.trade);
     g.character.dealer = npc;

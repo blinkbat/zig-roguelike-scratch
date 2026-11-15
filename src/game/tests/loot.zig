@@ -44,7 +44,7 @@ test "rare chest and foe drops keep their names and mods through pickup and drop
         var expected: ?items.Item = null;
         for (0..10000) |seed| {
             var rng = mathx.Rng.init(seed);
-            const candidate = if (foe) loot.foeLoot(&rng, 0).item else items.roll(&rng, 0);
+            const candidate = if (foe) loot.foeLoot(&rng, 0, loot.foeTier(.rat, g.sim.areaLevel(g.sim.node))).item else items.roll(&rng, 0, .of(g.sim.areaLevel(g.sim.node)));
             if (candidate) |it| if (it.rarity() == .rare) {
                 expected = it;
                 g.sim.loot_rng = mathx.Rng.init(seed);
@@ -89,7 +89,7 @@ test "spoils applies to chest and foe quality and every gold pickup route" {
         g.sim.lv.set(at, .chest);
         g.sim.loot_rng = mathx.Rng.init(seed);
         var expected_rng = g.sim.loot_rng;
-        const expected = items.roll(&expected_rng, 25);
+        const expected = items.roll(&expected_rng, 25, .of(g.sim.areaLevel(g.sim.node)));
         try std.testing.expect(game.combat.openChest(g, at));
         try std.testing.expectEqualDeep(expected, g.sim.ground.drops[0].item);
         if (expected.magical()) magic += 1;
@@ -98,7 +98,7 @@ test "spoils applies to chest and foe quality and every gold pickup route" {
     g.sim.ground = .{};
     g.sim.loot_rng = harness.lootRng(true);
     var expected_rng = g.sim.loot_rng;
-    const expected = loot.foeLoot(&expected_rng, 25);
+    const expected = loot.foeLoot(&expected_rng, 25, loot.foeTier(.rat, g.sim.areaLevel(g.sim.node)));
     const rat = harness.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
     harness.slay(g, rat, from);
     try std.testing.expectEqualDeep(expected.item.?, g.sim.ground.drops[0].item);
@@ -1086,6 +1086,89 @@ test "opportunist's blows land harder only on a pinned, chilled or maimed foe" {
         d.* = attacks.resolve(&g.sim, .fromInt(harness.foeId(0)), blow, .chosen).?.hit.damage.dmg;
     }
     try std.testing.expectEqualSlices(i32, &.{ 10, 13, 13, 13 }, &dealt);
+}
+
+test "kindling lands harder on a burning foe, and nightstalker on one lit by the hero's light alone" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
+    const rat = g.sim.pool.get(harness.foeId(0)).?;
+    const blow = attacks.Roll{ .dmg = 10, .hit_checked = true };
+    g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .kindling, .value = 20 }));
+    g.sim.inventory.gear.slots.set(.helm, harness.affixed(.cap, .{ .kind = .nightstalker, .value = 30 }));
+    g.sim.outdoors = true;
+    const Case = struct { hour: f32, burning: bool, torch: bool, dealt: i32 };
+    for ([_]Case{
+        .{ .hour = day.NOON, .burning = false, .torch = false, .dealt = 10 },
+        .{ .hour = day.NOON, .burning = true, .torch = false, .dealt = 12 },
+        .{ .hour = day.DEAD_OF_NIGHT, .burning = false, .torch = false, .dealt = 13 },
+        .{ .hour = day.DEAD_OF_NIGHT, .burning = true, .torch = false, .dealt = 15 },
+        .{ .hour = day.DEAD_OF_NIGHT, .burning = false, .torch = true, .dealt = 10 },
+    }) |c| {
+        g.sim.clock = day.Clock.at(c.hour);
+        const wall = P{ .x = 21, .y = 17 };
+        g.sim.lv.set(wall, if (c.torch) .wall else .floor);
+        g.sim.lv.torch.n = 0;
+        if (c.torch) g.sim.lv.addTorch(wall);
+        harness.setLife(rat, 50, 50);
+        rat.burn.turns = @intFromBool(c.burning);
+        try std.testing.expectEqual(c.hour != day.NOON and !c.torch, g.sim.inDark(rat.at));
+        try std.testing.expectEqual(c.dealt, attacks.resolve(&g.sim, .fromInt(harness.foeId(0)), blow, .chosen).?.hit.damage.dmg);
+    }
+}
+
+test "heft knocks a foe a tile further, and slams one stopped short by a wall" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const foe = P{ .x = 21, .y = 20 };
+    for ([_]bool{ false, true }) |walled| {
+        harness.heroArena(g, .knight, from, &.{foe});
+        harness.toughenFoes(g);
+        g.sim.inventory.gear.slots.set(.left_hand, harness.affixed(.shield, .{ .kind = .heft, .value = 4 }));
+        if (walled) g.sim.lv.set(.{ .x = 22, .y = 20 }, .wall);
+        g.sim.rng = harness.procRng(g, .shield_bash, 1, true);
+        harness.aimAt(g, .shield_bash, foe);
+        const rat = g.sim.pool.get(harness.foeId(0)).?;
+        try std.testing.expectEqual(P{ .x = if (walled) 21 else 23, .y = 20 }, rat.at);
+        try std.testing.expectEqual(walled, harness.logged(g, "slams"));
+    }
+}
+
+test "blindness does not make daylight or distant torchlight count as darkness" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 22, .y = 20 };
+    for ([_]bool{ false, true }) |torch| {
+        harness.heroArena(g, .wizard, from, &.{at});
+        g.sim.heroActor().?.blind.start();
+        g.sim.outdoors = !torch;
+        g.sim.clock = day.Clock.at(if (torch) 0 else day.NOON);
+        if (torch) g.sim.lv.addTorch(.{ .x = 29, .y = 19 });
+        game.castSight(g, from);
+        try std.testing.expect(!g.sim.lv.isLit(at));
+        try std.testing.expect(!g.sim.inDark(at));
+        g.sim.inventory.gear.slots.set(.helm, harness.affixed(.cap, .{ .kind = .nightstalker, .value = 30 }));
+        const foe = g.sim.pool.get(harness.foeId(0)).?;
+        harness.setLife(foe, 100, 100);
+        combat.wound(g, harness.foeId(0), .{ .dmg = 10, .physical = 10, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+        try std.testing.expectEqual(@as(i32, 90), foe.hp);
+    }
+}
+
+test "commander raises skeletons with more life" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const tactics = @import("../../play/tactics.zig");
+    harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.mana = harness.TEST_MANA;
+    g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .commander, .value = 25 }));
+    const at = P{ .x = 22, .y = 20 };
+    harness.aimAt(g, .raise_skeleton, at);
+    const bones = g.sim.pool.get(g.sim.lv.who(at)).?;
+    try std.testing.expectEqual(@divTrunc(tactics.RaiseSkeleton.life(1) * 125 + 99, 100), bones.max);
+    try std.testing.expectEqual(bones.max, bones.hp);
 }
 
 test "opportunist reads the foe as it stood before the blow pinned it" {

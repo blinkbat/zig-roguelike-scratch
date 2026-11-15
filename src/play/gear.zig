@@ -110,6 +110,22 @@ pub const Gear = struct {
         return self.floored(.opportunist);
     }
 
+    pub fn kindling(self: Gear) i32 {
+        return self.floored(.kindling);
+    }
+
+    pub fn nightstalker(self: Gear) i32 {
+        return self.floored(.nightstalker);
+    }
+
+    pub fn heft(self: Gear) i32 {
+        return self.floored(.heft);
+    }
+
+    pub fn commander(self: Gear) i32 {
+        return self.floored(.commander);
+    }
+
     fn percent(self: Gear, kind: affixes.Mod) i32 {
         return std.math.clamp(self.sum(kind), 0, mathx.PERCENT);
     }
@@ -305,7 +321,7 @@ test "any class equips any hand base whose requirements it meets, and loot rolls
     }
     var rng = mathx.Rng.init(0x17E);
     var seen = std.EnumSet(item_bases.Kind).initEmpty();
-    for (0..2000) |_| seen.insert(items.roll(&rng, 0).kind);
+    for (0..2000) |_| seen.insert(items.roll(&rng, 0, .high).kind);
     try std.testing.expectEqual(loot.BASES.len, seen.count());
 }
 

@@ -62,6 +62,12 @@ fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool, wa
     }
 }
 
+pub fn pooled(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, p: P) bool {
+    var lit_by: [grid.CELLS]bool = undefined;
+    pools(lv, viewer, sight, carried, &lit_by);
+    return grid.cellOr(bool, &lit_by, p, false);
+}
+
 pub fn see(lv: *grid.Level, viewer: P, sight: i32, sky: f32, carried: []const Source) void {
     const was = lv.seen;
     fov.cast(lv, viewer, sight);

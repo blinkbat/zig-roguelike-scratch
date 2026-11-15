@@ -62,8 +62,10 @@ pub const Item = struct {
         return same_side < @as(usize, if (self.rarity() == .rare) affixes.RARE_SIDE else affixes.MAGIC_SIDE);
     }
 
-    fn allowsRoll(self: Item, a: affixes.AffixRoll) bool {
-        return self.allows(a.kind);
+    const Rolling = struct { item: Item, tier: affixes.Tier };
+
+    fn allowsRoll(r: Rolling, a: affixes.AffixRoll) bool {
+        return a.rolls(r.tier) and r.item.allows(a.kind);
     }
 
     /// A loaded item's modifiers, kept within what their rolls give.
@@ -97,7 +99,7 @@ pub const Item = struct {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .life_regen, .leech, .area, .pierce, .haste => {},
+            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .life_regen, .leech, .area, .pierce, .haste, .kindling, .heft, .commander, .nightstalker => {},
             inline else => |k| {
                 if (comptime !k.granted()) @compileError("Item.apply: say where " ++ @tagName(k) ++ " takes effect");
                 k.grant(m.value).apply(a);
@@ -133,28 +135,57 @@ pub fn unrolled(rng: *mathx.Rng) Item {
     return .{ .kind = rng.pick(item_bases.Kind, &loot.BASES) };
 }
 
-pub fn roll(rng: *mathx.Rng, item_rarity: i32) Item {
+pub fn roll(rng: *mathx.Rng, item_rarity: i32, tier: affixes.Tier) Item {
     var out = unrolled(rng);
     const quality = rng.below(mathx.PERCENT);
     if (quality >= loot.qualityChance(loot.MAGIC_PERCENT + loot.RARE_PERCENT, item_rarity)) return out;
-    affix(&out, rng, quality < loot.qualityChance(loot.RARE_PERCENT, item_rarity));
+    affix(&out, rng, quality < loot.qualityChance(loot.RARE_PERCENT, item_rarity), tier);
     return out;
 }
 
-pub fn rollRare(rng: *mathx.Rng) Item {
+pub fn rollRare(rng: *mathx.Rng, tier: affixes.Tier) Item {
     var out = unrolled(rng);
-    affix(&out, rng, true);
+    affix(&out, rng, true, tier);
     return out;
 }
 
-fn affix(out: *Item, rng: *mathx.Rng, rare: bool) void {
+fn affix(out: *Item, rng: *mathx.Rng, rare: bool, tier: affixes.Tier) void {
     if (rare) out.rare_name = affixes.RareName.roll(rng);
     const count = if (rare) rng.range(affixes.RARE_LEAST, affixes.AFFIXES_MAX) else rng.range(1, affixes.MAGIC_MOST);
     for (0..@intCast(count)) |i| {
-        const a = rng.pickWhere(affixes.AffixRoll, &affixes.AFFIXES, out.*, Item.allowsRoll).?;
+        const a = rng.pickWhere(affixes.AffixRoll, &affixes.AFFIXES, Item.Rolling{ .item = out.*, .tier = tier }, Item.allowsRoll).?;
         const from = a.kind.elements();
-        out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)), .element = if (from.len > 0) rng.pick(damage.Element, from) else .fire };
+        out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.ceiling(tier))), .element = if (from.len > 0) rng.pick(damage.Element, from) else .fire };
     }
+}
+
+test "a low tier caps every roll and keeps out the mods its tier is short of, and only the top tier reaches each range's best" {
+    try std.testing.expectEqual(affixes.Tier.low, affixes.Tier.of(1));
+    try std.testing.expectEqual(affixes.Tier.low, affixes.Tier.of(2));
+    try std.testing.expectEqual(affixes.Tier.mid, affixes.Tier.of(3));
+    try std.testing.expectEqual(affixes.Tier.high, affixes.Tier.of(5));
+    try std.testing.expectEqual(affixes.Tier.high, affixes.Tier.of(255));
+    try std.testing.expectEqual(@as(i32, 3), affixes.affixOf(.life).ceiling(.low));
+    try std.testing.expectEqual(@as(i32, 4), affixes.affixOf(.life).ceiling(.mid));
+    try std.testing.expectEqual(@as(i32, 6), affixes.affixOf(.life).ceiling(.high));
+    for (std.enums.values(affixes.Tier)) |tier| {
+        var rng = mathx.Rng.init(0x71E2);
+        var best = std.EnumArray(affixes.Mod, i32).initFill(std.math.minInt(i32));
+        for (0..40000) |_| {
+            const it = rollRare(&rng, tier);
+            for (it.mods) |maybe| if (maybe) |m| {
+                const a = affixes.affixOf(m.kind);
+                try std.testing.expect(a.rolls(tier));
+                try std.testing.expect(m.value >= a.lo and m.value <= a.ceiling(tier));
+                best.getPtr(m.kind).* = @max(best.get(m.kind), m.value);
+            };
+        }
+        for (affixes.AFFIXES) |a| {
+            if (a.rolls(tier)) try std.testing.expectEqual(a.ceiling(tier), best.get(a.kind)) else try std.testing.expectEqual(std.math.minInt(i32), best.get(a.kind));
+        }
+    }
+    for ([_]affixes.Mod{ .alacrity, .area }) |m| try std.testing.expect(!affixes.affixOf(m).rolls(.mid));
+    try std.testing.expect(!affixes.affixOf(.bounding).rolls(.low));
 }
 
 test "rare items roll distinct legal affixes and persistent combinatorial names" {
@@ -166,7 +197,7 @@ test "rare items roll distinct legal affixes and persistent combinatorial names"
     var sizes: [affixes.AFFIXES_MAX - affixes.RARE_LEAST + 1]usize = @splat(0);
     const rolls = 100000;
     for (0..rolls) |_| {
-        const it = roll(&rng, 0);
+        const it = roll(&rng, 0, .high);
         counts.getPtr(it.rarity()).* += 1;
         if (it.rarity() != .rare) continue;
         bases.insert(it.kind);
@@ -219,7 +250,7 @@ test "every equipment base rolls all three rarities and keeps its innate separat
     var blue = std.EnumSet(item_bases.Kind).initEmpty();
     var yellow = std.EnumSet(item_bases.Kind).initEmpty();
     for (0..30000) |_| {
-        const it = roll(&rng, 0);
+        const it = roll(&rng, 0, .high);
         switch (it.rarity()) {
             .normal => white.insert(it.kind),
             .magic => blue.insert(it.kind),

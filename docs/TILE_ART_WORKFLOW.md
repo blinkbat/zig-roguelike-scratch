@@ -33,6 +33,11 @@ algorithms live in `tools/tile_art/`.
 Export existing art directly after edits. Port/template generators reconstruct
 derived work and must not overwrite later paint. Inspect their refusal checks and
 take a fresh backup before using an installation or replacement option.
+`ground_sheet.lua replace=yes` accepts only a blank template whose layers, guide
+pixels and slices still match the requested template. Changed artwork or template
+parameters require a new output path. Verify its preservation checks with
+`python -B tools/tile_art/test_ground_sheet.py --aseprite <aseprite.exe>`; fixtures
+and generated images stay in TEMP.
 
 ## Walls and forest
 

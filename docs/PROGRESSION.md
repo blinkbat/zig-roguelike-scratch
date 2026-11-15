@@ -74,6 +74,13 @@ Magic names describe their prefix/suffix rolls. Rare two-part names are saved
 independently of their modifiers. Innate effects remain separate from affixes;
 `affixes.Mod.allows` owns equipment restrictions.
 
+A hidden tier caps every rolled modifier, and items never store or show it.
+An area's level comes from its door distance to the start, and a foe's from its
+life. A foe drop rolls at the higher of the two, and chests and merchant shelves
+at their node's level. Lower tiers cap each value below its range's best and
+leave out the modifiers marked for higher tiers. Levels, tiers and gates live in
+`play/loot.zig` and `play/affixes.zig`.
+
 Strength scales heavy weapons, Dexterity light weapons and Intelligence spells.
 A base may scale with several styles, taking their mean increase; a caster
 implement's scaling applies to spells. Rank and Steady Aim bonuses raise each

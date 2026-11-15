@@ -122,14 +122,28 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
     const id = hit.id;
     const a = g.sim.pool.get(id).?;
     const name = actor.row(a.kind).name;
-    const back = if (a.pin.holding()) null else M.knocked(&g.sim.lv, a.at, d, id);
-    if (back) |b| if (actor.holds(a.kind, &g.sim.lv, b)) {
-        tactics_exec.displace(g, id, b);
-        _ = g.pic.glideToHeld(actor.ActorId.fromInt(id).slot(), b, -s.wait);
-        g.sim.sayAt(b, "The {s} is knocked back.", .{name});
-    };
+    const heft = g.sim.inventory.gear.heft();
+    const pinned = a.pin.holding();
+    var at = a.at;
+    var pushed: usize = 0;
+    if (!pinned) {
+        const most: usize = if (heft > 0) 2 else 1;
+        while (pushed < most) : (pushed += 1) {
+            const b = M.knocked(&g.sim.lv, at, d, id) orelse break;
+            if (!actor.holds(a.kind, &g.sim.lv, b)) break;
+            at = b;
+        }
+    }
+    if (pushed > 0) {
+        tactics_exec.displace(g, id, at);
+        _ = g.pic.glideToHeld(actor.ActorId.fromInt(id).slot(), at, -s.wait);
+        g.sim.sayAt(at, "The {s} is knocked back.", .{name});
+    }
     if (comptime act.afflicts()) if (hit.takes) g.sim.sayFoeTakes(a, M.TAKES);
+    if (heft > 0 and !pinned and pushed < 2) wound(g, id, .{ .dmg = heft, .physical = heft, .hit_checked = true, .opportunity = 0 }, HEFT_VERB, s);
 }
+
+const HEFT_VERB = "slams";
 
 pub const SHOOT = bow.VERB;
 const IT_DIES = " It dies.";
@@ -968,7 +982,12 @@ fn guardTurn(g: *game.Game, id: u16, af: actor.Afflicted, sight: i32) void {
 
 fn bodyStrike(g: *game.Game, id: u16, target: u16, af: actor.Afflicted, flight: ?bow.Flight) void {
     const r = g.sim.pool.get(id).?;
-    const s = actor.row(r.kind).blow.strike;
+    const row = actor.row(r.kind);
+    var s = row.blow.strike;
+    if (row.allied and !row.posted) {
+        const more = mathx.PERCENT + g.sim.inventory.gear.commander();
+        s.hit = .{ .lo = mathx.percentCeil(s.hit.lo, more), .hi = mathx.percentCeil(s.hit.hi, more) };
+    }
     const at = g.sim.pool.get(target).?.at;
     g.pic.turnLater(.fromInt(id), at.x - r.at.x);
     const impact: ?fx.Impact = if (bodyBlow(g, id, target, s, s.verb, af.contains(.enfeeble), false)) |hit| .{ .actor = hit } else null;

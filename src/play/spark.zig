@@ -13,7 +13,7 @@ pub const TAKES = clock.STUNNED;
 pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("Strike a target in sight with lightning. {s}.", .{clock.stunNote(CHANCE)});
 
-pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
+pub const BASE = damage.Base{ .lo = 3, .hi = 4 };
 
 pub const procs = damage.chance(CHANCE);
 pub const chance = damage.flat(CHANCE);

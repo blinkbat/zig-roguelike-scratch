@@ -14,7 +14,7 @@ pub const VERB = "rends";
 pub const TAKES = bleeding.TAKES;
 pub const DESCRIPTION = std.fmt.comptimePrint("Strike an adjacent foe. Inflicts a bleed of {d} per turn.", .{BLEED});
 
-pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
+pub const BASE = damage.Base{ .lo = 1, .hi = 3 };
 
 pub const CHANCE: u32 = mathx.PERCENT;
 pub const procs = damage.chance(CHANCE);

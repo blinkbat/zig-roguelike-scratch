@@ -65,7 +65,7 @@ const SPECS = std.EnumArray(Class, Spec).init(.{
         .blurb = "A bow that reaches what it sees, and a kick for what comes close",
     },
     .wizard = .{
-        .attrs = .of(.{ .strength = 8, .dexterity = 10, .intelligence = 20 }),
+        .attrs = .of(.{ .strength = 10, .dexterity = 10, .intelligence = 20 }),
         .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "bonks" },
         .arms = &.{.wand},
         .blurb = "Sparks that stun what they strike, and a blink to be elsewhere",
@@ -73,7 +73,7 @@ const SPECS = std.EnumArray(Class, Spec).init(.{
     .knight = .{
         .attrs = blk: {
             var a = attr.Attrs.of(.{ .strength = 24, .dexterity = 10, .intelligence = 10 });
-            a.armour = 10;
+            a.armour = 5;
             break :blk a;
         },
         .strike = .{ .hit = .{ .lo = 3, .hi = 5 }, .verb = "slashes" },

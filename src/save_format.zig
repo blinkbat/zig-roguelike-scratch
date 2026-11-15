@@ -151,7 +151,7 @@ test "a legacy key cell that was the only way to the gate migrates to an open ch
         if (!choke) lv.set(s.approach().add(.{ .x = -1, .y = 1 }), .floor);
         var ground = ground_items.Ground{};
         var bag = inventory.Inventory{};
-        migrateZooKey(&lv, &ground, &.{}, s, &bag);
+        try migrateZooKey(&lv, &ground, &.{}, s, &bag);
         try std.testing.expectEqual(if (choke) grid.Tile.chest_open else grid.Tile.chest, lv.at(s.key.?));
         try std.testing.expectEqual(choke, ground.hasItems(s.key.?));
     }
@@ -165,10 +165,29 @@ test "a legacy key that would crowd out the drops still to come goes in the bag,
     while (ground.room(deathsToCome(&pool))) _ = ground.add(.{ .item = items.SMALL_KEY, .at = s.approach() });
     const full = ground.n;
     var bag = inventory.Inventory{};
-    migrateZooKey(&lv, &ground, &pool, s, &bag);
+    try migrateZooKey(&lv, &ground, &pool, s, &bag);
     try std.testing.expectEqual(grid.Tile.chest_open, lv.at(s.key.?));
     try std.testing.expectEqual(full, ground.n);
     try std.testing.expectEqual(@as(usize, 1), bag.n);
+}
+
+test "legacy key migration rejects exhausted storage without losing the key" {
+    const s = legacyKeyZoo();
+    for ([_]grid.Tile{ .zoo_key, .key_taken }) |tile| {
+        var lv = legacyKeyLevel(s);
+        lv.set(s.key.?, tile);
+        lv.set(s.door(), .locked_gate);
+        var ground = ground_items.Ground{};
+        const pool = actor.Pool{};
+        while (ground.room(deathsToCome(&pool))) _ = ground.add(.{ .item = .{ .kind = .ring }, .at = s.approach() });
+        var bag = inventory.Inventory{};
+        while (bag.add(.{ .kind = .ring })) {}
+        const ground_n = ground.n;
+        try std.testing.expectError(error.Damaged, migrateZooKey(&lv, &ground, &pool, s, &bag));
+        try std.testing.expectEqual(tile, lv.at(s.key.?));
+        try std.testing.expectEqual(ground_n, ground.n);
+        try std.testing.expectEqual(inventory.BAG_MAX, bag.n);
+    }
 }
 
 test "portable autosave snapshots own every byte while the live run changes" {
@@ -198,6 +217,87 @@ test "portable autosave snapshots own every byte while the live run changes" {
     defer frozen.deinit();
     try writeSnapshot(snapshot, &frozen);
     try std.testing.expectEqualSlices(u8, before.items, frozen.items);
+}
+
+test "legacy key migration failure leaves the live run and map unchanged" {
+    const alloc = std.testing.allocator;
+    const current = try game.boot(alloc);
+    defer game.shut(alloc, current);
+    game.begin(current, 37);
+    const map = try alloc.create(data.Map);
+    defer alloc.destroy(map);
+    map.* = .{};
+    _ = map.add(.{ .procgen = .{} });
+    const s = legacyKeyZoo();
+    map.node[0].zoo = s;
+    map.start = .{ .node = 0, .at = s.approach() };
+    current.sim.lv = legacyKeyLevel(s);
+    game.reset(current, s.approach());
+    current.sim.map = map;
+    const snapshot = try alloc.create(Snapshot);
+    defer alloc.destroy(snapshot);
+    try capture(current, snapshot);
+    while (snapshot.run.ground.room(deathsToCome(&snapshot.run.pool))) _ = snapshot.run.ground.add(.{ .item = .{ .kind = .ring }, .at = s.approach() });
+    while (snapshot.run.inventory.add(.{ .kind = .ring })) {}
+    var before = std.ArrayList(u8).init(alloc);
+    defer before.deinit();
+    try sealed(current, &before);
+    const map_hash = store.sum(std.mem.asBytes(map));
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    var after = std.ArrayList(u8).init(alloc);
+    defer after.deinit();
+    for ([_]grid.Tile{ .zoo_key, .key_taken }) |tile| {
+        snapshot.run.lv.set(s.key.?, tile);
+        snapshot.run.lv.set(s.door(), .locked_gate);
+        bytes.clearRetainingCapacity();
+        try writeSnapshot(snapshot, &bytes);
+        seal(&bytes);
+        try std.testing.expectError(error.Damaged, read(bytes.items, current, map));
+        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
+        try sealed(current, &after);
+        try std.testing.expectEqualSlices(u8, before.items, after.items);
+    }
+}
+
+test "legacy key migration ignores the stale visit for the active node" {
+    const alloc = std.testing.allocator;
+    const current = try game.boot(alloc);
+    defer game.shut(alloc, current);
+    game.begin(current, 37);
+    const map = try alloc.create(data.Map);
+    defer alloc.destroy(map);
+    map.* = .{};
+    _ = map.add(.{ .procgen = .{} });
+    const s = legacyKeyZoo();
+    map.node[0].zoo = s;
+    map.start = .{ .node = 0, .at = s.approach() };
+    current.sim.lv = legacyKeyLevel(s);
+    game.reset(current, s.approach());
+    current.sim.map = map;
+    while (current.sim.ground.room(deathsToCome(&current.sim.pool))) _ = current.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = s.approach() });
+    while (current.sim.inventory.n < inventory.BAG_MAX - 1) try std.testing.expect(current.sim.inventory.add(.{ .kind = .ring }));
+    current.sim.visits[0] = .{ .lv = current.sim.lv, .pool = current.sim.pool, .ground = current.sim.ground, .facing = current.pic.facing };
+    current.sim.visited.set(0);
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    try sealed(current, &bytes);
+    try read(bytes.items, current, map);
+    try std.testing.expectEqual(grid.Tile.chest_open, current.sim.lv.at(s.key.?));
+    try std.testing.expectEqual(inventory.BAG_MAX, current.sim.inventory.n);
+    try std.testing.expectEqual(items.SMALL_KEY.kind, current.sim.inventory.bag[inventory.BAG_MAX - 1].kind);
+    try std.testing.expectEqual(grid.Tile.zoo_key, current.sim.visits[0].lv.at(s.key.?));
+    for ([_]i32{ -4, -5 }, 0..) |dx, i| {
+        const at = s.approach().add(.{ .x = dx, .y = 0 });
+        try std.testing.expectEqual(@as(?usize, i), map.addDoor(0, at));
+        current.sim.lv.putDoor(at, i);
+    }
+    map.link(.{ .node = 0, .door = 0 }, .{ .node = 0, .door = 1 });
+    current.sim.travel = .{ .node = 0, .door = 1 };
+    game.leave(current);
+    try std.testing.expectEqual(grid.Tile.chest_open, current.sim.lv.at(s.key.?));
+    try std.testing.expectEqual(grid.Tile.chest_open, current.sim.visits[0].lv.at(s.key.?));
+    try std.testing.expectEqual(inventory.BAG_MAX, current.sim.inventory.n);
 }
 
 pub const OpenError = error{ NotASave, OtherBuild, Short, Damaged };
@@ -271,6 +371,7 @@ pub fn apply(snapshot: *Snapshot, g: *game.Game, map: *data.Map) void {
 
 pub fn validate(snapshot: *Snapshot) !void {
     const run = &snapshot.run;
+    if (run.hero != actor.Pool.idOf(0)) return error.Damaged;
     if (!run.rng.valid() or !run.loot_rng.valid()) return error.Damaged;
     if (!run.name.valid()) return error.Damaged;
     const body = heroIn(&run.pool, run.hero, run.class.kind()) orelse return error.Damaged;
@@ -341,14 +442,14 @@ pub fn validate(snapshot: *Snapshot) !void {
     if (!std.mem.eql(u8, snapshot.summary.name.text(), run.name.text())) return error.Damaged;
     if (snapshot.summary.hp != body.hp or snapshot.summary.max != body.max or snapshot.summary.gold != run.gold) return error.Damaged;
     if (snapshot.map) |*map| {
-        migrateZooKey(&run.lv, &run.ground, &run.pool, map.node[snapshot.node].zoo, &run.inventory);
+        try migrateZooKey(&run.lv, &run.ground, &run.pool, map.node[snapshot.node].zoo, &run.inventory);
         for (&snapshot.visits, 0..) |*visit, node| if (visit.*) |*loaded| {
-            migrateZooKey(&loaded.lv, &loaded.ground, &loaded.pool, map.node[node].zoo, if (node == snapshot.node) null else &run.inventory);
+            if (node != snapshot.node) try migrateZooKey(&loaded.lv, &loaded.ground, &loaded.pool, map.node[node].zoo, &run.inventory);
         };
     }
 }
 
-fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, pool: *const actor.Pool, zoo: ?atlas.zoo.Spec, carried: ?*inventory.Inventory) void {
+fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, pool: *const actor.Pool, zoo: ?atlas.zoo.Spec, carried: ?*inventory.Inventory) !void {
     const z = zoo orelse return;
     const at = z.key orelse return;
     const key = items.SMALL_KEY;
@@ -356,18 +457,19 @@ fn migrateZooKey(level: *grid.Level, ground: *ground_items.Ground, pool: *const 
     switch (level.at(at)) {
         .zoo_key => {
             if (chestable(level, z, at)) return level.set(at, .chest);
+            if (!grounded or !ground.add(.{ .item = key, .at = at })) {
+                const bag = carried orelse return error.Damaged;
+                if (!bag.add(key)) return error.Damaged;
+            }
             level.set(at, .chest_open);
-            if (!grounded or !ground.add(.{ .item = key, .at = at })) if (carried) |bag| {
-                _ = bag.add(key);
-            };
         },
         .key_taken => {
-            level.set(at, .chest_open);
-            if (level.at(z.door()) != .locked_gate) return;
-            const bag = carried orelse return;
-            if (bag.add(key)) return;
+            if (level.at(z.door()) != .locked_gate) return level.set(at, .chest_open);
+            const bag = carried orelse return error.Damaged;
+            if (bag.add(key)) return level.set(at, .chest_open);
             if (chestable(level, z, at)) return level.set(at, .chest);
-            if (grounded) _ = ground.add(.{ .item = key, .at = at });
+            if (!grounded or !ground.add(.{ .item = key, .at = at })) return error.Damaged;
+            level.set(at, .chest_open);
         },
         else => {},
     }

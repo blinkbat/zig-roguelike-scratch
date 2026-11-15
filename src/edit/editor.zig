@@ -757,8 +757,12 @@ pub const Editor = struct {
     }
 
     pub fn dotUnder(ed: *const Editor, c: rl.Rectangle, m: P) ?atlas.Link {
-        for (0..ed.map.node_n) |n| {
-            for (0..ed.map.node[n].door_n) |k| {
+        var n = ed.map.node_n;
+        while (n > 0) {
+            n -= 1;
+            var k = ed.map.node[n].door_n;
+            while (k > 0) {
+                k -= 1;
                 const l = atlas.Link{ .node = n, .door = k };
                 if (rl.checkCollisionPointCircle(vec(m), ed.dotAt(c, l), DOT_R + DOT_SLOP)) return l;
             }

@@ -15,7 +15,7 @@ pub const ARMS = @import("skill_contract.zig").Arms.shield;
 pub const TAKES = clock.STUNNED;
 pub const DESCRIPTION = std.fmt.comptimePrint("Strike an adjacent foe and knock it back a tile. {s}.", .{clock.stunNote(CHANCE)});
 
-pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
+pub const BASE = damage.Base{ .lo = 1, .hi = 3 };
 
 pub const procs = damage.chance(CHANCE);
 pub const chance = damage.flat(CHANCE);

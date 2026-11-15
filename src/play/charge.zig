@@ -16,7 +16,7 @@ pub const DONE = "charges";
 pub const DESCRIBED = "Rush along a clear line to strike a foe {d}-{d} tiles away and knock it back a tile, or retreat to empty ground short of that.";
 pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIBED, .{ MIN_RANGE, RANGE });
 
-pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
+pub const BASE = damage.Base{ .lo = 4, .hi = 6 };
 
 pub const knocked = bash.knocked;
 

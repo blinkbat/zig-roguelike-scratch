@@ -16,11 +16,6 @@ if not args.replace and (args.output.exists() or args.output.with_suffix('.png')
     raise SystemExit('Preserving existing connected template; choose a new --output.')
 root = Path(__file__).resolve().parents[2]
 work = Path(tempfile.mkdtemp(prefix='cistern-connected-cliffs-'))
-if args.replace:
-    import shutil
-    for path in (args.output, args.output.with_suffix('.png')):
-        if path.exists():
-            shutil.copy2(path, work / path.name)
 size = (960, 640)
 labels = Image.new('RGBA', size)
 guides = Image.new('RGBA', size)
@@ -60,7 +55,17 @@ text(32, 600, 'Original face pieces below are unchanged RGBA. Lip shadows fall o
 labels.save(work / 'labels.png')
 guides.save(work / 'grid.png')
 q = lambda p: json.dumps(str(p).replace('\\', '/'))
-lua = [f'local s=Sprite({size[0]},{size[1]},ColorMode.RGB)', 'local first=s.layers[1]', 'local expected={}']
+lua = [f'for _,path in ipairs({{{q(args.output)},{q(args.output.with_suffix(".png"))}}}) do']
+if args.replace:
+    lua.extend([
+        'if app.fs.isFile(path) then', 'local input=assert(io.open(path,"rb"))', 'local backup', 'local n=0', 'repeat',
+        'n=n+1', f'backup=app.fs.joinPath({q(work)},"before-assembly-"..n.."-"..app.fs.fileName(path))',
+        'until not app.fs.isFile(backup)', 'local copy=assert(io.open(backup,"wb"))',
+        'assert(copy:write(assert(input:read("*a"))))', 'assert(copy:close())', 'input:close()', 'end',
+    ])
+else:
+    lua.append('assert(not app.fs.isFile(path),"Refusing to overwrite editable artwork: "..path)')
+lua.extend(['end', f'local s=Sprite({size[0]},{size[1]},ColorMode.RGB)', 'local first=s.layers[1]', 'local expected={}'])
 
 
 def layer(name, path, x=0, y=0, editable=True, visible=True):

@@ -176,7 +176,12 @@ fn blowOn(weak: bool, bonus: i32, s: *shock.Shock, dmg: i32, applied: ?resilienc
 }
 
 fn opportune(sim: *const Simulation, a: *const actor.Actor) i32 {
-    return if (a.slowed()) sim.inventory.gear.opportunist() else 0;
+    const gear = sim.inventory.gear;
+    var bonus: i32 = 0;
+    if (a.slowed()) bonus += gear.opportunist();
+    if (a.burn.turns > 0) bonus += gear.kindling();
+    if (gear.nightstalker() > 0 and sim.inDark(a.at)) bonus += gear.nightstalker();
+    return bonus;
 }
 
 /// What `resolve` deals `target` past armour for a blow carrying `applied`, spending nothing.

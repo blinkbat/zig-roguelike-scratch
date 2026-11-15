@@ -51,16 +51,6 @@ local function blank(image)
   return true
 end
 
-if app.fs.isFile(path) then
-  assert(app.params.replace=='yes','already exists: '..path..' (replace=yes backs it up and redoes it)')
-  local old=assert(app.open(path))
-  local d=drawing_of(old)
-  assert(not d or not d:cel(1) or blank(d:cel(1).image),'refusing: '..path..' has painting on Draw here')
-  local base=path:match('([^/\\]+)%.aseprite$')
-  old:saveCopyAs(work..base..'-before-ground-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
-  old:close()
-end
-
 local fill=pc.rgba(tonumber(r),tonumber(g),tonumber(b),255)
 local edge=pc.rgba(tonumber(r)//2,tonumber(g)//2,tonumber(b)//2,255)
 
@@ -88,6 +78,50 @@ for i,m in ipairs(order) do
 end
 local paper_image=Image(W,H,ColorMode.RGB)
 paper_image:clear(paper)
+local labels_image=Image{fromFile=labels_png}
+local guides={
+  {name='Paper - hide for transparent export',image=paper_image,opacity=255},
+  {name='Underdrawing (25%)',image=under,opacity=64},
+  {name='Labels - hide before export',image=labels_image,opacity=255},
+  {name='64x64 grid + X unused - hide before export',image=grid,opacity=255},
+}
+
+if app.fs.isFile(path) then
+  assert(app.params.replace=='yes','already exists: '..path..' (replace=yes only replaces an unchanged blank template)')
+  local old=assert(app.open(path))
+  assert(old.width==W and old.height==H and #old.frames==1 and #old.layers==#guides+1 and #old.slices==#order,'Preserving changed template: '..path)
+  for i,want in ipairs(guides) do
+    local l=old.layers[i]
+    assert(l.isImage and l.name==want.name and l.opacity==want.opacity,'Preserving changed guide: '..l.name)
+    local cel=assert(l:cel(1),'Preserving missing guide: '..l.name)
+    assert(cel.opacity==255,'Preserving changed guide opacity: '..l.name)
+    for pixel in cel.image:pixels() do
+      local x,y=pixel.x+cel.position.x,pixel.y+cel.position.y
+      assert((x>=0 and x<W and y>=0 and y<H) or pc.rgbaA(pixel())==0,'Preserving off-canvas guide pixels: '..l.name)
+    end
+    local actual=Image(W,H,ColorMode.RGB)
+    actual:drawImage(cel.image,cel.position)
+    assert(actual:isEqual(want.image),'Preserving changed guide pixels: '..l.name)
+  end
+  local d=old.layers[#old.layers]
+  assert(d.isImage and d.name=='Draw here' and (not d:cel(1) or blank(d:cel(1).image)),'Preserving owner painting: '..path)
+  local seen={}
+  for _,slice in ipairs(old.slices) do
+    local found=false
+    for i,m in ipairs(order) do
+      if slice.name=='Corners '..m then
+        local b=slice.bounds
+        assert(not seen[m] and b.x==((i-1)%4)*CELL and b.y==HEAD+((i-1)//4)*CELL and b.width==CELL and b.height==CELL,'Preserving changed slice: '..slice.name)
+        seen[m]=true
+        found=true
+      end
+    end
+    assert(found,'Preserving unknown slice: '..slice.name)
+  end
+  local base=path:match('([^/\\]+)%.aseprite$')
+  old:saveCopyAs(work..base..'-before-ground-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
+  old:close()
+end
 
 local sprite=Sprite(W,H,ColorMode.RGB)
 local function layer(name,image,opacity,visible)
@@ -99,10 +133,7 @@ local function layer(name,image,opacity,visible)
   return l
 end
 local first=sprite.layers[1]
-layer('Paper - hide for transparent export',paper_image)
-layer('Underdrawing (25%)',under,64)
-layer('Labels - hide before export',Image{fromFile=labels_png})
-layer('64x64 grid + X unused - hide before export',grid)
+for _,guide in ipairs(guides) do layer(guide.name,guide.image,guide.opacity) end
 local drawing=layer('Draw here',Image(W,H,ColorMode.RGB))
 sprite:deleteLayer(first)
 for i,m in ipairs(order) do

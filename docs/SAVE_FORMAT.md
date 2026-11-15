@@ -34,6 +34,7 @@ Xoshiro256 and stores its four words; changing algorithms requires a converter.
 Lengths and counts are bounded before indexing. Unknown enum/union tags, invalid
 booleans, numeric overflow, non-finite floats, all-zero RNG states, duplicate known fields, impossible
 actor references, incomplete required data and checksum failures are rejected.
+The hero retains the first actor-pool slot across active and visited levels.
 Active and visited levels validate occupancy and positions. Summary data must agree
 with the run. Parsing and validation complete before either the live game or its map
 is changed. A successful load marks the run dirty for an atomic canonical rewrite.

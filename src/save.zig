@@ -634,7 +634,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
     game.beginMapAt(g, w, w.start, 7);
-    const shelf = g.sim.plot.shelf(0, g.sim.seed);
+    const shelf = g.sim.plot.shelf(0, g.sim.seed, .high);
     g.sim.gold = 1000;
     _ = try @import("play/trade.zig").buy(shelf, shelf.count() - 1, &g.sim.inventory, &g.sim.gold);
     var buf = std.ArrayList(u8).init(alloc);
@@ -655,7 +655,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0x3105f0b3d380120d;
+const RECORDED_FINGERPRINT: Print = 0xd25d13d53c6aed2e;
 
 test "zoo keys doors populations and visits survive portable saves" {
     const alloc = std.testing.allocator;
@@ -968,6 +968,41 @@ test "save readers reject an all-zero combat or loot random stream before applyi
             try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
         }
         @field(source.sim, field) = saved;
+    }
+}
+
+test "save readers reject a hero outside the first pool slot before changing the run" {
+    const alloc = std.testing.allocator;
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    game.harness.arena(source, .{ .x = 20, .y = 20 }, &.{.{ .x = 24, .y = 20 }});
+    std.mem.swap(actor.Actor, &source.sim.pool.items[0], &source.sim.pool.items[1]);
+    source.sim.hero = actor.Pool.idOf(1);
+    for (source.sim.pool.constSlice(), 0..) |body, slot| source.sim.lv.stand(body.at, actor.Pool.idOf(slot));
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    game.begin(target, 91);
+    const map = try alloc.create(Map);
+    defer alloc.destroy(map);
+    map.* = .{};
+    const map_hash = store.sum(std.mem.asBytes(map));
+    var before = std.ArrayList(u8).init(alloc);
+    defer before.deinit();
+    try write(target, &before);
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    var after = std.ArrayList(u8).init(alloc);
+    defer after.deinit();
+    for ([_]bool{ false, true }) |legacy| {
+        bytes.clearRetainingCapacity();
+        if (legacy) try writeLegacy(source, &bytes) else try write(source, &bytes);
+        seal(&bytes);
+        try std.testing.expectError(error.Damaged, peek(bytes.items));
+        try std.testing.expectError(error.Damaged, read(bytes.items, target, map));
+        after.clearRetainingCapacity();
+        try write(target, &after);
+        try std.testing.expectEqualSlices(u8, before.items, after.items);
+        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
     }
 }
 

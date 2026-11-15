@@ -96,6 +96,8 @@ if args.replace_blank:
         'assert(paint.name=="Draw here" and (not paint:cel(1) or paint:cel(1).image:isEmpty()),"Preserving owner painting")',
         f'old:saveCopyAs({quote(WORK / "previous-template.aseprite")})', 'old:close()', 'end',
     ])
+else:
+    lua.append(f'assert(not app.fs.isFile({quote(OUTPUT)}),"Refusing to overwrite editable artwork")')
 lua.extend([f'local s=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local initial=s.layers[1]', 'local expected={}'])
 for index, (name, image, opacity) in enumerate(layers):
     path = WORK / f'layer-{index}.png'

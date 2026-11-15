@@ -616,6 +616,32 @@ pub const Atlas = struct {
         return self.node[at.node].door[at.door];
     }
 
+    /// The fewest doors from the start to node `n`; 0 when no door path reaches it.
+    pub fn hops(self: *const Atlas, n: usize) usize {
+        if (n >= self.node_n or self.start.node >= self.node_n) return 0;
+        var seen = std.StaticBitSet(MAX_NODES).initEmpty();
+        var queue: [MAX_NODES]usize = undefined;
+        var depth: [MAX_NODES]usize = undefined;
+        queue[0] = self.start.node;
+        depth[self.start.node] = 0;
+        seen.set(self.start.node);
+        var head: usize = 0;
+        var tail: usize = 1;
+        while (head < tail) : (head += 1) {
+            const at = queue[head];
+            if (at == n) return depth[at];
+            for (self.node[at].doors()) |d| {
+                const to = (d.to orelse continue).node;
+                if (seen.isSet(to)) continue;
+                seen.set(to);
+                depth[to] = depth[at] + 1;
+                queue[tail] = to;
+                tail += 1;
+            }
+        }
+        return 0;
+    }
+
     pub fn linksValid(self: *const Atlas) bool {
         if (self.node_n > self.node.len) return false;
         for (self.node[0..self.node_n]) |*nd| if (nd.door_n > nd.door.len) return false;

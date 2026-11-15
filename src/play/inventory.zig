@@ -111,7 +111,7 @@ pub const Inventory = struct {
 
 test "flasks start worn in their own slots, never roll as loot, and come off and back like gear" {
     var rng = mathx.Rng.init(0xF1A5);
-    for (0..5000) |_| try std.testing.expect(items.roll(&rng, 0).kind.flaskOf() == null);
+    for (0..5000) |_| try std.testing.expect(items.roll(&rng, 0, .high).kind.flaskOf() == null);
     const base = attrs.Attrs.of(.{ .strength = 10, .dexterity = 10, .intelligence = 10 });
     var inv = Inventory{ .gear = .flasks };
     try std.testing.expectEqualDeep(base, inv.gear.stats(base));
@@ -185,7 +185,7 @@ test "equipment swaps preserve both hands, reject self-funded requirements and k
     }
     var rng = mathx.Rng.init(123);
     for (0..2000) |_| {
-        const it = items.roll(&rng, 0);
+        const it = items.roll(&rng, 0, .high);
         if (it.mods[1]) |b| try std.testing.expect(it.mods[0].?.kind != b.kind);
     }
 }

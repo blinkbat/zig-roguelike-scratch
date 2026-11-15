@@ -253,7 +253,7 @@ pub const Spec = struct {
 const SPECS = std.EnumArray(Kind, Spec).init(.{
     .sword = .{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 3, .hi = 4 }, .scales = LIGHT },
     .axe = .{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 9 }, .two_handed = true, .innate = .{ .bleed = .{ .chance = 30, .damage = 2 } } },
-    .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true },
+    .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 3, .hi = 5 }, .attack = .ranged, .two_handed = true },
     .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 16, .strength = 12 }, .two_handed = true, .caster = true, .innate = Innate.stat(.spell_damage, 30), .scales = both(.spell, .heavy) },
     .longsword = .{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 12, .dexterity = 10 }, .damage = .{ .lo = 4, .hi = 7 }, .scales = both(.heavy, .light) },
     .mace = .{ .name = "Mace", .slots = &.{.right_hand}, .needs = .{ .strength = 12, .intelligence = 12 }, .damage = .{ .lo = 3, .hi = 6 }, .innate = .{ .stun = 15 }, .scales = both(.heavy, .spell) },

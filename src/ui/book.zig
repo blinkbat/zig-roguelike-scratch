@@ -1025,7 +1025,7 @@ test "trade lists the shelf or the bag, swaps them on change, and the priced car
     try std.testing.expect(inv.add(.{ .kind = .cap }));
     const growth = progress.State.of(.archer);
     var view = testView(&inv, &growth);
-    const shelf = trade.Wares.roll(5, 0);
+    const shelf = trade.Wares.roll(5, 0, .high);
     view.dealer = .{ .who = "Pedlar", .shelf = &shelf };
     var book = Book{};
     book.choose(.trade);

@@ -1128,7 +1128,9 @@ test "live skill tooltips include equipped damage, ranks and the actual targetin
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
     const tip = overlay.tipOf(g, .{ .slot = 0 }, &title, &body).?;
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "Range: 5 cells") != null);
-    try std.testing.expect(std.mem.indexOf(u8, tip.body, "Physical damage: 2-6") != null);
+    const span = attacks.blowFor(&g.sim, .shoot).hit(.shoot).physical;
+    var wanted: [64]u8 = undefined;
+    try std.testing.expect(std.mem.indexOf(u8, tip.body, try std.fmt.bufPrint(&wanted, damage.PHYSICAL_FMT, .{ span.lo, span.hi })) != null);
     try std.testing.expectEqualStrings("Shoot", tip.title);
     try std.testing.expect(std.mem.startsWith(u8, tip.body, skillbar.Act.shoot.desc()));
     try std.testing.expectEqual(@as(i32, 1), skillbar.Act.cleave.reach());

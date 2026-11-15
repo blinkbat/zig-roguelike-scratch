@@ -44,6 +44,11 @@ pub const Mod = enum {
     area,
     pierce,
     haste,
+    cull,
+    kindling,
+    heft,
+    commander,
+    nightstalker,
 
     pub fn grant(comptime m: Mod, amount: i32) passives.Grant {
         return .{ .kind = @field(passives.Kind, @tagName(m)), .amount = amount };
@@ -55,8 +60,8 @@ pub const Mod = enum {
 
     pub fn prefix(m: Mod) bool {
         return switch (m) {
-            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked, .opportunist, .crit_damage, .block, .leech, .area, .pierce => true,
-            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness, .bounding, .alacrity, .life_regen, .haste => false,
+            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked, .opportunist, .crit_damage, .block, .leech, .area, .pierce, .kindling, .nightstalker => true,
+            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness, .bounding, .alacrity, .life_regen, .haste, .cull, .heft, .commander => false,
         };
     }
 
@@ -64,7 +69,7 @@ pub const Mod = enum {
         return switch (m) {
             .resistance => std.enums.values(damage.Element),
             .imbue => &IMBUES,
-            .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .thorns, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .crit_damage, .block, .life_regen, .leech, .area, .pierce, .haste => &.{},
+            .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .thorns, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .crit_damage, .block, .life_regen, .leech, .area, .pierce, .haste, .cull, .kindling, .heft, .commander, .nightstalker => &.{},
         };
     }
     pub fn title(m: Mod, element: damage.Element) [:0]const u8 {
@@ -112,6 +117,11 @@ pub const Mod = enum {
             .area => "Sweeping",
             .pierce => "Skewering",
             .haste => "of Haste",
+            .cull => "of Culling",
+            .kindling => "Kindling",
+            .heft => "of Heft",
+            .commander => "of Command",
+            .nightstalker => "Nightstalker's",
         };
     }
     pub fn allows(m: Mod, k: item_bases.Kind) bool {
@@ -151,6 +161,11 @@ pub const Mod = enum {
             .area => s.caster or slot == .amulet,
             .pierce => (weapon and s.attack == .ranged) or s.quiver or (s.caster and slot == .right_hand and !s.two_handed),
             .haste => slot == .boots or slot == .amulet,
+            .cull => weapon or slot == .gloves,
+            .kindling => weapon or s.caster or slot == .amulet,
+            .heft => k.blocks() or (weapon and s.two_handed and s.attack == .melee),
+            .commander => slot == .helm or slot == .amulet or k == .totem,
+            .nightstalker => weapon or slot == .helm,
             .life, .mana, .strength, .dexterity, .intelligence => true,
         };
     }
@@ -166,9 +181,42 @@ pub fn imbued(e: damage.Element) resilience.Kind {
     };
 }
 
-pub const AffixRoll = struct { kind: Mod, lo: i32, hi: i32 };
+/// How strong a roll may be, from the level of the foe or area it drops in; never shown.
+pub const Tier = enum(u8) {
+    low,
+    mid,
+    high,
 
-const Range = struct { lo: i32, hi: i32 };
+    pub const COUNT: u8 = std.enums.values(Tier).len;
+
+    pub fn of(level: u8) Tier {
+        return @enumFromInt(@min(COUNT - 1, (@max(level, 1) - 1) / LEVELS_PER_TIER));
+    }
+
+    fn reaches(t: Tier, least: Tier) bool {
+        return @intFromEnum(t) >= @intFromEnum(least);
+    }
+};
+
+const LEVELS_PER_TIER = 2;
+
+pub const AffixRoll = struct {
+    kind: Mod,
+    lo: i32,
+    hi: i32,
+    least: Tier = .low,
+
+    pub fn rolls(a: AffixRoll, t: Tier) bool {
+        return t.reaches(a.least);
+    }
+
+    /// The best value tier `t` rolls: the full range only at the top tier.
+    pub fn ceiling(a: AffixRoll, t: Tier) i32 {
+        return a.lo + @divTrunc((a.hi - a.lo) * (@as(i32, @intFromEnum(t)) + 1), Tier.COUNT);
+    }
+};
+
+const Range = struct { lo: i32, hi: i32, least: Tier = .low };
 
 const RANGES = std.EnumArray(Mod, Range).init(.{
     .life = .{ .lo = 2, .hi = 6 },
@@ -196,15 +244,20 @@ const RANGES = std.EnumArray(Mod, Range).init(.{
     .masked = .{ .lo = 25, .hi = 40 },
     .stillness = .{ .lo = 1, .hi = 2 },
     .opportunist = .{ .lo = 15, .hi = 30 },
-    .bounding = .{ .lo = 1, .hi = 1 },
-    .alacrity = .{ .lo = 1, .hi = 1 },
+    .bounding = .{ .lo = 1, .hi = 1, .least = .mid },
+    .alacrity = .{ .lo = 1, .hi = 1, .least = .high },
     .crit_damage = .{ .lo = 10, .hi = 25 },
     .block = .{ .lo = 5, .hi = 10 },
     .life_regen = .{ .lo = 1, .hi = 2 },
     .leech = .{ .lo = 5, .hi = 10 },
-    .area = .{ .lo = 1, .hi = 1 },
+    .area = .{ .lo = 1, .hi = 1, .least = .high },
     .pierce = .{ .lo = 1, .hi = 2 },
     .haste = .{ .lo = 5, .hi = 10 },
+    .cull = .{ .lo = 3, .hi = 6 },
+    .kindling = .{ .lo = 15, .hi = 30 },
+    .heft = .{ .lo = 2, .hi = 4 },
+    .commander = .{ .lo = 15, .hi = 30 },
+    .nightstalker = .{ .lo = 15, .hi = 30 },
 });
 
 pub const MODS = std.enums.values(Mod)[0..std.enums.values(Mod).len].*;
@@ -218,7 +271,7 @@ pub const AFFIXES = blk: {
 
 pub fn affixOf(k: Mod) AffixRoll {
     const r = RANGES.get(k);
-    return .{ .kind = k, .lo = r.lo, .hi = r.hi };
+    return .{ .kind = k, .lo = r.lo, .hi = r.hi, .least = r.least };
 }
 
 pub const RareName = struct {
@@ -245,7 +298,7 @@ pub const Affix = struct {
     pub fn write(m: Affix, w: anytype) void {
         const n = m.value;
         switch (m.kind) {
-            inline .life, .mana, .strength, .dexterity, .intelligence, .crit, .armour, .mana_regen, .life_flask => |k| k.grant(n).write(w),
+            inline .life, .mana, .strength, .dexterity, .intelligence, .crit, .armour, .mana_regen, .life_flask, .cull => |k| k.grant(n).write(w),
             .life_regen => w.print("+{d} life recovered per {d} turns", .{ n, hero.LIFE_REGEN_TURNS }) catch {},
             .physical_damage => w.print("+{d}% physical weapon damage", .{n}) catch {},
             .spell_damage => w.print("+{d}% spell damage", .{n}) catch {},
@@ -271,6 +324,10 @@ pub const Affix = struct {
             .area => w.print("+{d} area skill radius", .{n}) catch {},
             .pierce => w.print("Projectiles pass through {d} more foe{s}", .{ n, mathx.plural(n) }) catch {},
             .haste => w.print("{d}% chance an action takes no turn", .{n}) catch {},
+            .kindling => w.print("+{d}% damage against burning foes", .{n}) catch {},
+            .heft => w.print("Knockbacks push 1 more tile, and slam a foe stopped short for {d} damage", .{n}) catch {},
+            .commander => w.print("+{d}% life and damage for your allies", .{n}) catch {},
+            .nightstalker => w.print("+{d}% damage against foes in darkness", .{n}) catch {},
         }
     }
 };
@@ -288,7 +345,7 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
     var elements = std.EnumSet(damage.Element).initEmpty();
     var imbues = std.EnumSet(damage.Element).initEmpty();
     for (0..50000) |_| {
-        const it = items.roll(&rng, 0);
+        const it = items.roll(&rng, 0, .high);
         for (it.mods) |maybe| if (maybe) |m| {
             seen.insert(m.kind);
             try std.testing.expect(m.kind.allows(it.kind));

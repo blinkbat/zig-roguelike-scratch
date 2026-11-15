@@ -43,6 +43,26 @@ test "editor input gives modal and view changes priority over canvas gestures" {
     try std.testing.expectEqual(history_at, ed.history.at);
 }
 
+test "overlapping graph doors pick the last drawn node and door" {
+    const ed = try editor.Editor.create(std.testing.allocator);
+    defer ed.destroy();
+    const other = ed.map.add(.{ .bespoke = .{} }).?;
+    ed.map.node[other].pos = ed.map.node[0].pos;
+    const at = P{ .x = 20, .y = 20 };
+    _ = ed.map.addDoor(0, at).?;
+    const door = ed.map.addDoor(other, at).?;
+    const c = raster.rect(0, 0, 800, 600);
+    const dot = ed.dotAt(c, .{ .node = other, .door = door });
+    const mouse = P{ .x = @intFromFloat(dot.x), .y = @intFromFloat(dot.y) };
+    try std.testing.expectEqual(atlas.Link{ .node = other, .door = door }, ed.dotUnder(c, mouse).?);
+    const later = ed.map.addDoor(other, at.add(.{ .x = 1, .y = 0 })).?;
+    const expected = atlas.Link{ .node = other, .door = later };
+    try std.testing.expectEqual(expected, ed.dotUnder(c, mouse).?);
+    ed.desk = .{ .mouse = mouse, .paint_hit = true, .paint = true };
+    interaction.graphMouse(ed, c, true);
+    try std.testing.expectEqual(expected, ed.linking.?);
+}
+
 test "a tool hotkey leaves Select the way clicking the tool's row does" {
     const ed = try editor.Editor.create(std.testing.allocator);
     defer ed.destroy();

@@ -85,6 +85,31 @@ fn captureVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
     try captureEased(g, target, &.{ 0.05, 0.12, 0.25, 0.60 }, "out");
     for (&g.sim.lv.lit, g.sim.lv.seen) |*lit, seen| lit.* = seen;
     try captureEased(g, target, &.{ 0.05, 0.12, 0.25 }, "in");
+    try captureGasBagFade(g, target);
+}
+
+fn captureGasBagFade(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const bag = P{ .x = 23, .y = 20 };
+    game.harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
+    if (!g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = bag })) return error.CaptureLootFull;
+    var cloud = grid.Cells.around(bag, 1);
+    while (cloud.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = 60;
+    studyAt(g, true, day.NOON);
+    game.prepare(g);
+    if (g.sprites.item_bag == null or g.cloud.veil == null) return error.BagVeilMissing;
+    const cell = &g.pic.seen_cells[grid.Level.idx(bag)];
+    if (!cell.bag or cell.alpha != 1) return error.BagNotVisible;
+    try capture(g, target, CINEMA_DIR ++ "/visibility-gas-bag.png");
+    cell.alpha = 0.5;
+    try capture(g, target, CINEMA_DIR ++ "/visibility-gas-bag-half.png");
+    cell.alpha = 0;
+    try capture(g, target, CINEMA_DIR ++ "/visibility-gas-bag-hidden.png");
+    const hidden = try readTarget(target);
+    defer rl.unloadImage(hidden);
+    cell.alpha = 1.0 / 4096.0;
+    if (try redrawnDiff(g, target, hidden) != 0) return error.GasVeilOutlivedBag;
+    cell.alpha = 1;
+    std.debug.print("gas-covered loot: subpixel fade matches hidden bag exactly\n", .{});
 }
 
 fn captureFireSight(g: *game.Game, target: rl.RenderTexture2D) !void {

@@ -398,7 +398,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P,
 
 fn veilSprite(g: *game.Game, t: rl.Texture2D, c: Cam, p: P, focus: look.Focused, ink: rl.Color) void {
     if (!g.cloud.beginVeil(ink, focus)) return;
-    drawSprite(t, c.sx(p), c.sy(p));
+    raster.stretch(t, spriteRect(t, c.sx(p), c.sy(p)), ink);
     cloud.Cloud.endVeil();
 }
 

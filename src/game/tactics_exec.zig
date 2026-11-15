@@ -116,7 +116,7 @@ fn raise(g: *game.Game, at: P, rank: u8) void {
         g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(slot));
     }
     var body = actor.Actor.of(.skeleton, at);
-    body.max = tactics.RaiseSkeleton.life(rank);
+    body.max = mathx.percentCeil(tactics.RaiseSkeleton.life(rank), mathx.PERCENT + g.sim.inventory.gear.commander());
     body.hp = body.max;
     body.tactics.risen = newest +| 1;
     const id = rise(g, body, spentSlot(g), game.CAST_S);
@@ -312,7 +312,7 @@ pub fn entered(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     const h = g.sim.heroActor() orelse return;
     const direction = h.tactics.overwatch orelse return;
-    if (a.veiled() or !a.foe() or !tactics.covered(h.at, direction, a.at)) return;
+    if (!a.seenFoe(&g.sim.lv) or !tactics.covered(h.at, direction, a.at)) return;
     const flight = bow.clearShot(&g.sim.lv, h.at, a.at, tactics.Overwatch.RANGE, id) orelse return;
     h.tactics.overwatch = null;
     combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), tactics.Overwatch.VERB, .{ .from = h.at, .wait = 0 }, id, flight);
@@ -364,6 +364,35 @@ test "tactical caltrops ranks pin entering ground foes and unlock stronger bleed
         game.update(g, 1);
         try std.testing.expectEqual(turns, g.sim.lv.caltrops[grid.Level.idx(foe.at)].turns);
     }
+}
+
+test "tactical overwatch waits for a moving foe to enter gameplay sight" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    game.harness.heroArena(g, .archer, from, &.{});
+    const id = game.harness.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, true);
+    const foe = g.sim.pool.get(id).?;
+    game.harness.toughen(foe);
+    const h = g.sim.heroActor().?;
+    h.blind.start();
+    game.castSight(g, from);
+    try std.testing.expect(!foe.seenFoe(&g.sim.lv));
+    h.tactics.overwatch = .e;
+    h.tactics.steady = 1;
+    const before = foe.hp;
+    const rng = g.sim.rng;
+    entered(g, id);
+    try std.testing.expectEqual(before, foe.hp);
+    try std.testing.expectEqualDeep(rng, g.sim.rng);
+    try std.testing.expectEqual(@as(?mathx.Dir, .e), h.tactics.overwatch);
+    try std.testing.expectEqual(@as(u8, 1), h.tactics.steady);
+    try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].reaction == null);
+    g.sim.pool.move(&g.sim.lv, id, from.add(mathx.Dir.e.delta()));
+    try std.testing.expect(foe.seenFoe(&g.sim.lv));
+    entered(g, id);
+    try std.testing.expect(h.tactics.overwatch == null);
+    try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].reaction != null);
 }
 
 test "tactical overwatch fires once after movement and steady aim is consumed or canceled by movement" {

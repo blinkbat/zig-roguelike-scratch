@@ -1,4 +1,5 @@
 const std = @import("std");
+const actor = @import("actor.zig");
 const attrs = @import("attrs.zig");
 const mathx = @import("../core/mathx.zig");
 const consumable = @import("consumable.zig");
@@ -44,25 +45,42 @@ pub fn qualityChance(base: u32, item_rarity: i32) u32 {
 
 pub const Loot = struct { gold: i32 = 0, item: ?items.Item = null, supply: ?consumable.Kind = null };
 
-pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
+const FOE_HP_PER_LEVEL = 10;
+const AREA_LEVELS_PER_HOP = 2;
+
+pub fn foeLevel(k: actor.Kind) u8 {
+    return @intCast(std.math.clamp(1 + @divTrunc(actor.row(k).hp, FOE_HP_PER_LEVEL), 1, std.math.maxInt(u8)));
+}
+
+/// An area's level from the doors between it and the start.
+pub fn areaLevel(hops: usize) u8 {
+    return @intCast(@min(1 + AREA_LEVELS_PER_HOP * hops, std.math.maxInt(u8)));
+}
+
+/// What a foe's drop may roll: the foe's level or the area's, the higher.
+pub fn foeTier(k: actor.Kind, area: u8) affixes.Tier {
+    return .of(@max(foeLevel(k), area));
+}
+
+pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32, tier: affixes.Tier) Loot {
     return .{
         .gold = if (rng.percent(FOE_GOLD_PERCENT)) FOE_GOLD.roll(rng) else 0,
-        .item = if (rng.percent(DROP_PERCENT)) items.roll(rng, item_rarity) else null,
+        .item = if (rng.percent(DROP_PERCENT)) items.roll(rng, item_rarity, tier) else null,
         .supply = consumable.roll(rng, FOE_SUPPLY_PERCENT),
     };
 }
 
 /// What a chest holds, rolled item, gold, then supply.
-pub fn chestLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
-    const item = items.roll(rng, item_rarity);
+pub fn chestLoot(rng: *mathx.Rng, item_rarity: i32, tier: affixes.Tier) Loot {
+    const item = items.roll(rng, item_rarity, tier);
     const gold = CHEST_GOLD.roll(rng);
     return .{ .item = item, .gold = gold, .supply = consumable.roll(rng, CHEST_SUPPLY_PERCENT) };
 }
 
 /// A chest's loot, its item rolled and then given up for a rare.
-pub fn mimicLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
-    var loot = chestLoot(rng, item_rarity);
-    loot.item = items.rollRare(rng);
+pub fn mimicLoot(rng: *mathx.Rng, item_rarity: i32, tier: affixes.Tier) Loot {
+    var loot = chestLoot(rng, item_rarity, tier);
+    loot.item = items.rollRare(rng, tier);
     return loot;
 }
 
@@ -76,7 +94,7 @@ test "foes now and then drop each kind of consumable, which stacks only as far a
     var rng = mathx.Rng.init(0x5A99);
     var seen = std.EnumSet(consumable.Kind).initEmpty();
     var dropped: usize = 0;
-    for (0..10000) |_| if (foeLoot(&rng, 0).supply) |k| {
+    for (0..10000) |_| if (foeLoot(&rng, 0, .high).supply) |k| {
         dropped += 1;
         seen.insert(k);
     };
@@ -100,7 +118,7 @@ test "foe loot is mostly gold then plain items with magic and rare affixes" {
     var magic: usize = 0;
     var rare: usize = 0;
     for (0..rolls) |_| {
-        const reward = foeLoot(&rng, 0);
+        const reward = foeLoot(&rng, 0, .high);
         if (reward.gold > 0) {
             gold += 1;
             try std.testing.expect(reward.gold >= FOE_GOLD.lo and reward.gold <= FOE_GOLD.hi);
@@ -121,6 +139,15 @@ test "foe loot is mostly gold then plain items with magic and rare affixes" {
     try expectShare(rare, rolls, @as(f64, DROP_PERCENT) * RARE_PERCENT / 100, 0.3);
 }
 
+test "a drop's tier follows its foe or its area, whichever is higher" {
+    try std.testing.expectEqual(affixes.Tier.low, foeTier(.rat, areaLevel(0)));
+    try std.testing.expectEqual(affixes.Tier.low, foeTier(.goblin, areaLevel(0)));
+    try std.testing.expectEqual(affixes.Tier.mid, foeTier(.bandit_shieldbearer, areaLevel(0)));
+    try std.testing.expectEqual(affixes.Tier.high, foeTier(.beefy_pib, areaLevel(0)));
+    try std.testing.expectEqual(affixes.Tier.mid, foeTier(.rat, areaLevel(1)));
+    try std.testing.expectEqual(affixes.Tier.high, foeTier(.rat, areaLevel(2)));
+}
+
 pub fn expectShare(count: usize, total: usize, percent: f64, tolerance: f64) !void {
     try std.testing.expect(@abs(@as(f64, @floatFromInt(count)) * 100 / @as(f64, @floatFromInt(total)) - percent) <= tolerance);
 }
@@ -133,7 +160,7 @@ test "spoils rarity improves magic and rare quality without increasing item quan
         var rare: usize = 0;
         var drops: usize = 0;
         for (0..samples) |_| {
-            const reward = foeLoot(&rng, rarity);
+            const reward = foeLoot(&rng, rarity, .high);
             if (reward.item) |it| {
                 drops += 1;
                 if (it.magical()) magic += 1;

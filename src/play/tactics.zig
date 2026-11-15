@@ -156,7 +156,7 @@ pub const Whirlwind = struct {
     pub const COST: i32 = 5;
     pub const COOLDOWN: u8 = 3;
     pub const VERB = "whirls into";
-    pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
+    pub const BASE = damage.Base{ .lo = 1, .hi = 3 };
     pub const DESCRIPTION = "Strike every adjacent foe and barrel with your melee weapon.";
     pub fn area(lv: *const grid.Level, at: P) areas.Burst {
         var out = areas.Burst{};

@@ -22,7 +22,9 @@ cannot leave a cached terrain bonus behind. All occupants use the same rule, inc
 flying bodies. Terrain bonuses are never written into actor stats or saved buildup.
 
 Hit chance and dodge use separate rolls; a missed attack stops at its collision and
-applies no damage, status or buildup. Dodge retains its attribute cap. Elemental
+applies no direct damage, status or buildup. Environmental effects resolve separately:
+lightning landing in water still conducts to its grounded occupants. Dodge retains its
+attribute cap. Elemental
 resistances clamp to -100..100 and reduce damage, including burning ticks. Status
 resistances also clamp to -100..100 and affect application rather than damage: positive
 values can resist an application; negative values increase its proc chance, capped at 100%.

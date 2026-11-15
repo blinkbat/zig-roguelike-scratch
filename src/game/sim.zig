@@ -8,6 +8,7 @@ const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const chronicle = @import("../play/chronicle.zig");
 const attrs = @import("../play/attrs.zig");
+const loot = @import("../play/loot.zig");
 const terrain = @import("../play/terrain.zig");
 const resilience = @import("../play/resilience.zig");
 const sunder = @import("../play/sunder.zig");
@@ -377,6 +378,11 @@ pub const Simulation = struct {
         return (self.nodeHere() orelse return null).zoo;
     }
 
+    pub fn areaLevel(self: *const Simulation, node: usize) u8 {
+        const w = self.map orelse return loot.areaLevel(0);
+        return loot.areaLevel(w.hops(node));
+    }
+
     fn climateNow(self: *const Simulation) climate.Climate {
         return (self.nodeHere() orelse return .{}).sky();
     }
@@ -389,16 +395,36 @@ pub const Simulation = struct {
         return self.heroRow().light + self.inventory.gear.sum(.lantern);
     }
 
-    pub fn see(self: *Simulation, from: P) void {
-        var carried: [actor.MAX]lume.Source = undefined;
+    fn lights(self: *const Simulation, from: P, hero_too: bool, out: *[actor.MAX]lume.Source) usize {
         var n: usize = 0;
-        for (self.pool.slice(), 0..) |a, i| {
+        for (self.pool.constSlice(), 0..) |a, i| {
+            if (self.isHero(i) and !hero_too) continue;
             const r = if (self.isHero(i)) self.heroLight() else actor.row(a.kind).light;
             if (!a.alive or r <= 0) continue;
-            _ = mathx.push(lume.Source, &carried, &n, .{ .at = if (self.isHero(i)) from else a.at, .reach = r });
+            _ = mathx.push(lume.Source, out, &n, .{ .at = if (self.isHero(i)) from else a.at, .reach = r });
         }
-        const sight = blind.sight(if (self.heroBody()) |h| h.blind.turns > 0 else false, self.heroRow().sight);
-        lume.see(&self.lv, from, sight, lume.skyReach(self.outdoors, self.clock.hour(), sight), carried[0..n]);
+        return n;
+    }
+
+    fn sightRange(self: *const Simulation) i32 {
+        return blind.sight(if (self.heroBody()) |h| h.blind.turns > 0 else false, self.heroRow().sight);
+    }
+
+    pub fn see(self: *Simulation, from: P) void {
+        var carried: [actor.MAX]lume.Source = undefined;
+        const n = self.lights(from, true, &carried);
+        const reach = self.sightRange();
+        lume.see(&self.lv, from, reach, lume.skyReach(self.outdoors, self.clock.hour(), reach), carried[0..n]);
+    }
+
+    /// Lit by no light but the hero's own.
+    pub fn inDark(self: *const Simulation, p: P) bool {
+        const h = self.heroBody() orelse return false;
+        const reach = self.heroRow().sight;
+        if (mathx.reaches(h.at, p, lume.skyReach(self.outdoors, self.clock.hour(), reach))) return false;
+        var carried: [actor.MAX]lume.Source = undefined;
+        const n = self.lights(h.at, false, &carried);
+        return !lume.pooled(&self.lv, p, 0, carried[0..n], p);
     }
 
     pub fn sayAt(self: *Simulation, at: P, comptime fmt: []const u8, args: anytype) void {
