@@ -9,7 +9,6 @@ const item_bases = @import("item_bases.zig");
 const loot = @import("loot.zig");
 const Gear = @import("gear.zig").Gear;
 const inventory = @import("inventory.zig");
-const hero = @import("hero.zig");
 
 pub const Rarity = enum { normal, magic, rare };
 
@@ -130,20 +129,20 @@ pub fn baseName(k: item_bases.Kind, buf: []u8) [:0]const u8 {
     return (Item{ .kind = k }).name(buf);
 }
 
-pub fn unrolled(rng: *mathx.Rng, class: hero.Class) Item {
-    return .{ .kind = rng.pick(item_bases.Kind, loot.basesFor(class)) };
+pub fn unrolled(rng: *mathx.Rng) Item {
+    return .{ .kind = rng.pick(item_bases.Kind, &loot.BASES) };
 }
 
-pub fn roll(rng: *mathx.Rng, item_rarity: i32, class: hero.Class) Item {
-    var out = unrolled(rng, class);
+pub fn roll(rng: *mathx.Rng, item_rarity: i32) Item {
+    var out = unrolled(rng);
     const quality = rng.below(mathx.PERCENT);
     if (quality >= loot.qualityChance(loot.MAGIC_PERCENT + loot.RARE_PERCENT, item_rarity)) return out;
     affix(&out, rng, quality < loot.qualityChance(loot.RARE_PERCENT, item_rarity));
     return out;
 }
 
-pub fn rollRare(rng: *mathx.Rng, class: hero.Class) Item {
-    var out = unrolled(rng, class);
+pub fn rollRare(rng: *mathx.Rng) Item {
+    var out = unrolled(rng);
     affix(&out, rng, true);
     return out;
 }
@@ -166,10 +165,8 @@ test "rare items roll distinct legal affixes and persistent combinatorial names"
     var lasts = std.EnumSet(affixes.RareName.Last).initEmpty();
     var sizes: [affixes.AFFIXES_MAX - affixes.RARE_LEAST + 1]usize = @splat(0);
     const rolls = 100000;
-    for (0..rolls) |i| {
-        const class = hero.CLASSES[i % hero.CLASSES.len];
-        const it = roll(&rng, 0, class);
-        try std.testing.expect(it.kind.usableBy(class));
+    for (0..rolls) |_| {
+        const it = roll(&rng, 0);
         counts.getPtr(it.rarity()).* += 1;
         if (it.rarity() != .rare) continue;
         bases.insert(it.kind);
@@ -191,7 +188,7 @@ test "rare items roll distinct legal affixes and persistent combinatorial names"
     try loot.expectShare(counts.get(.normal), rolls, 100 - loot.MAGIC_PERCENT - loot.RARE_PERCENT, 1);
     try loot.expectShare(counts.get(.magic), rolls, loot.MAGIC_PERCENT, 1);
     try loot.expectShare(counts.get(.rare), rolls, loot.RARE_PERCENT, 0.5);
-    try std.testing.expectEqual(loot.OWNED.count(), bases.count());
+    try std.testing.expectEqual(loot.BASES.len, bases.count());
     try std.testing.expectEqual(std.enums.values(affixes.RareName.First).len, firsts.count());
     try std.testing.expectEqual(std.enums.values(affixes.RareName.Last).len, lasts.count());
     try std.testing.expect(sizes[0] > 0 and sizes[1] > 0);
@@ -210,28 +207,28 @@ test "rare items roll distinct legal affixes and persistent combinatorial names"
     try std.testing.expectEqual(@as(i32, 2), gear.killRecovery());
     var inv = inventory.Inventory{};
     try std.testing.expect(inv.add(rare));
-    try inv.equip(0, .right_hand, base, .knight);
+    try inv.equip(0, .right_hand, base);
     try std.testing.expectEqualDeep(rare, inv.gear.slots.get(.right_hand).?);
     try inv.unequip(.right_hand, base);
     try std.testing.expectEqualDeep(rare, inv.bag[0]);
 }
 
-test "every class-owned equipment base rolls all three rarities and keeps its innate separate from affixes" {
+test "every equipment base rolls all three rarities and keeps its innate separate from affixes" {
     var rng = mathx.Rng.init(0xBA5E);
     var white = std.EnumSet(item_bases.Kind).initEmpty();
     var blue = std.EnumSet(item_bases.Kind).initEmpty();
     var yellow = std.EnumSet(item_bases.Kind).initEmpty();
-    for (0..30000) |i| {
-        const it = roll(&rng, 0, hero.CLASSES[i % hero.CLASSES.len]);
+    for (0..30000) |_| {
+        const it = roll(&rng, 0);
         switch (it.rarity()) {
             .normal => white.insert(it.kind),
             .magic => blue.insert(it.kind),
             .rare => yellow.insert(it.kind),
         }
     }
-    try std.testing.expectEqual(loot.OWNED.count(), white.count());
-    try std.testing.expectEqual(loot.OWNED.count(), blue.count());
-    try std.testing.expectEqual(loot.OWNED.count(), yellow.count());
+    try std.testing.expectEqual(loot.BASES.len, white.count());
+    try std.testing.expectEqual(loot.BASES.len, blue.count());
+    try std.testing.expectEqual(loot.BASES.len, yellow.count());
     const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
     for (loot.BASES) |kind| {
         var plain = base;

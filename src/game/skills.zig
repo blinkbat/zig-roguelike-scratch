@@ -105,7 +105,7 @@ pub fn closeAim(run: *game.Game) void {
     if (run.mode == .aim) run.mode = .play;
 }
 
-const Blocked = enum { cooling, mana, unworn, empty, none_left, locked, pinned };
+const Blocked = enum { cooling, mana, unworn, empty, none_left, locked, pinned, unarmed };
 
 pub fn heroPinned(run: *const game.Game) bool {
     return (run.sim.heroBody() orelse return false).pin.holding();
@@ -113,6 +113,7 @@ pub fn heroPinned(run: *const game.Game) bool {
 
 pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.simulation.Flasks, mana: i32, pinned: bool) ?Blocked {
     if (!run.sim.growth.unlocked(act)) return .locked;
+    if (!act.armed(run.sim.inventory.gear)) return .unarmed;
     if (act.moves() and pinned) return .pinned;
     if (endingStance(&run.sim, act)) return null;
     if (run.sim.cooldown.get(act) > 0) return .cooling;
@@ -153,6 +154,7 @@ fn ready(run: *game.Game, act: skillbar.Act) bool {
         .none_left => run.sim.log.say("{s}: none carried.", .{act.name()}),
         .locked => run.sim.log.say("{s} is not learned.", .{act.name()}),
         .pinned => run.sim.log.say("{s} " ++ pinning.TAKES ++ ".", .{run.sim.name.text()}),
+        .unarmed => run.sim.log.say("{s} needs {s}.", .{ act.name(), act.arms().?.noun() }),
     }
     return false;
 }

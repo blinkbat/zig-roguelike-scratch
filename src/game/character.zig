@@ -203,7 +203,7 @@ fn dealerOf(g: *const game.Game) ?book.Dealer {
 pub fn openTrade(g: *game.Game, npc: u8) void {
     const s = g.sim.script() orelse return;
     if (npc >= s.npc_n) return;
-    _ = g.sim.plot.shelf(npc, g.sim.seed, g.sim.class);
+    _ = g.sim.plot.shelf(npc, g.sim.seed);
     openCharacter(g);
     g.character.choose(.trade);
     g.character.dealer = npc;
@@ -377,7 +377,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
     switch (command) {
         .close, .passive, .skill, .bindings, .open_loot, .use, .buy, .sell => unreachable,
         .equip => |e| {
-            g.sim.inventory.equip(e.index, e.slot, base, g.sim.class) catch |err| {
+            g.sim.inventory.equip(e.index, e.slot, base) catch |err| {
                 itemFailed(g, err);
                 return;
             };

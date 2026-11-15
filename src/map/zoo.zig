@@ -81,8 +81,9 @@ pub const Spec = struct {
     pub fn valid(s: *const Spec) bool {
         if (s.width < SIZE_MIN or s.width > SIZE_MAX or s.height < SIZE_MIN or s.height > SIZE_MAX) return false;
         const area = grid.Box.inMap(MARGIN);
+        if (!area.holds(s.at)) return false;
         const r = s.room();
-        if (!area.holds(r.lo) or !area.holds(r.hi.sub(.{ .x = 1, .y = 1 }))) return false;
+        if (!area.holds(r.hi.sub(.{ .x = 1, .y = 1 }))) return false;
         if (s.pool_n == 0 or s.pool_n > MAX_KINDS) return false;
         for (s.entries()) |e| if (!e.kind.stocked() or e.weight == 0) return false;
         if (s.key) |k| if (!area.holds(k) or s.reserved().holds(k)) return false;
@@ -227,6 +228,15 @@ pub const Spec = struct {
         return true;
     }
 };
+
+test "zoo validation rejects extreme coordinates before computing room bounds" {
+    for ([_]i32{ std.math.minInt(i32), std.math.maxInt(i32) }) |edge| {
+        try std.testing.expect(!(Spec{ .at = .{ .x = edge, .y = 18 } }).valid());
+        try std.testing.expect(!(Spec{ .at = .{ .x = 40, .y = edge } }).valid());
+    }
+    try std.testing.expect((Spec{}).valid());
+    try std.testing.expect(!(Spec{ .at = .{ .x = grid.W - MARGIN, .y = 18 } }).valid());
+}
 
 test "a zoo accepts any Small Key and consumes one only when a locked gate opens" {
     const s = Spec{ .key = .{ .x = 32, .y = 28 } };

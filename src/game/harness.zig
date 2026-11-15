@@ -242,6 +242,10 @@ pub fn expectDamage(g: *const game.Game, comptime act: skillbar.Act, dealt: i32,
     try expectWithin(dealt, lo, hi);
 }
 
+pub fn sword(g: *const game.Game) damage.Base {
+    return g.sim.inventory.gear.weapon(.melee).?;
+}
+
 pub const FoeAttack = struct { id: u16, lands: bool };
 
 fn combatant(g: *const game.Game, id: u16) *const actor.Actor {
@@ -315,7 +319,7 @@ pub fn lootRng(magic: ?bool) mathx.Rng {
         magic: ?bool,
 
         fn holds(l: @This(), rng: *mathx.Rng) bool {
-            const reward = loot.foeLoot(rng, 0, heroes.DEFAULT);
+            const reward = loot.foeLoot(rng, 0);
             if (reward.gold <= 0) return false;
             const m = l.magic orelse return true;
             const it = reward.item orelse return false;
@@ -330,7 +334,7 @@ pub fn barrelRng(item: bool) mathx.Rng {
         item: bool,
 
         fn holds(b: @This(), rng: *mathx.Rng) bool {
-            return (loot.barrelLoot(rng, true, heroes.DEFAULT).item != null) == b.item;
+            return (loot.barrelLoot(rng, true).item != null) == b.item;
         }
     };
     return rngWhere(Barrel{ .item = item });
@@ -617,6 +621,7 @@ test "predicted foe strikes follow terrain and ordered armour rolls in real turn
             heroArena(g, class, at, &.{});
             g.sim.lv.set(at, tile);
             g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather });
+            g.sim.inventory.gear.slots.set(.left_hand, null);
             game.syncStats(g);
             const near = spawnAt(g, .bandit_crossbowman, .{ .x = 23, .y = 20 }, true);
             const far = spawnAt(g, .bandit_crossbowman, .{ .x = 20, .y = 24 }, true);

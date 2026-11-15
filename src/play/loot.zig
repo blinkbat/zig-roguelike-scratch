@@ -8,7 +8,6 @@ const items = @import("items.zig");
 const Gear = @import("gear.zig").Gear;
 const inventory = @import("inventory.zig");
 const ground_items = @import("ground_items.zig");
-const hero = @import("hero.zig");
 
 pub const BASES = blk: {
     var ks: []const item_bases.Kind = &.{};
@@ -16,31 +15,6 @@ pub const BASES = blk: {
         if (k.flaskOf() == null and k.equippable()) ks = ks ++ &[_]item_bases.Kind{k};
     }
     break :blk ks[0..ks.len].*;
-};
-
-const CLASS_BASES = blk: {
-    @setEvalBranchQuota(20_000);
-    var out = std.EnumArray(hero.Class, []const item_bases.Kind).initUndefined();
-    for (hero.CLASSES) |c| {
-        var ks: []const item_bases.Kind = &.{};
-        for (BASES) |k| {
-            if (k.usableBy(c)) ks = ks ++ &[_]item_bases.Kind{k};
-        }
-        const fixed = ks[0..ks.len].*;
-        out.set(c, &fixed);
-    }
-    break :blk out;
-};
-
-/// The bases that roll as loot and stock shelves for `class`.
-pub fn basesFor(class: hero.Class) []const item_bases.Kind {
-    return CLASS_BASES.get(class);
-}
-
-pub const OWNED = blk: {
-    var out = std.EnumSet(item_bases.Kind).initEmpty();
-    for (BASES) |k| if (item_bases.spec(k).classes.count() > 0) out.insert(k);
-    break :blk out;
 };
 
 const DROP_PERCENT = 10;
@@ -70,39 +44,39 @@ pub fn qualityChance(base: u32, item_rarity: i32) u32 {
 
 pub const Loot = struct { gold: i32 = 0, item: ?items.Item = null, supply: ?consumable.Kind = null };
 
-pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32, class: hero.Class) Loot {
+pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
     return .{
         .gold = if (rng.percent(FOE_GOLD_PERCENT)) FOE_GOLD.roll(rng) else 0,
-        .item = if (rng.percent(DROP_PERCENT)) items.roll(rng, item_rarity, class) else null,
+        .item = if (rng.percent(DROP_PERCENT)) items.roll(rng, item_rarity) else null,
         .supply = consumable.roll(rng, FOE_SUPPLY_PERCENT),
     };
 }
 
 /// What a chest holds, rolled item, gold, then supply.
-pub fn chestLoot(rng: *mathx.Rng, item_rarity: i32, class: hero.Class) Loot {
-    const item = items.roll(rng, item_rarity, class);
+pub fn chestLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
+    const item = items.roll(rng, item_rarity);
     const gold = CHEST_GOLD.roll(rng);
     return .{ .item = item, .gold = gold, .supply = consumable.roll(rng, CHEST_SUPPLY_PERCENT) };
 }
 
 /// A chest's loot, its item rolled and then given up for a rare.
-pub fn mimicLoot(rng: *mathx.Rng, item_rarity: i32, class: hero.Class) Loot {
-    var loot = chestLoot(rng, item_rarity, class);
-    loot.item = items.rollRare(rng, class);
+pub fn mimicLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
+    var loot = chestLoot(rng, item_rarity);
+    loot.item = items.rollRare(rng);
     return loot;
 }
 
 /// Its gold, then now and then a white item, rolled only where `room` lets it lie.
-pub fn barrelLoot(rng: *mathx.Rng, room: bool, class: hero.Class) Loot {
+pub fn barrelLoot(rng: *mathx.Rng, room: bool) Loot {
     const gold = BARREL_GOLD.roll(rng);
-    return .{ .gold = gold, .item = if (rng.percent(BARREL_ITEM_PERCENT) and room) items.unrolled(rng, class) else null };
+    return .{ .gold = gold, .item = if (rng.percent(BARREL_ITEM_PERCENT) and room) items.unrolled(rng) else null };
 }
 
 test "foes now and then drop each kind of consumable, which stacks only as far as its cap" {
     var rng = mathx.Rng.init(0x5A99);
     var seen = std.EnumSet(consumable.Kind).initEmpty();
     var dropped: usize = 0;
-    for (0..10000) |_| if (foeLoot(&rng, 0, .archer).supply) |k| {
+    for (0..10000) |_| if (foeLoot(&rng, 0).supply) |k| {
         dropped += 1;
         seen.insert(k);
     };
@@ -126,7 +100,7 @@ test "foe loot is mostly gold then plain items with magic and rare affixes" {
     var magic: usize = 0;
     var rare: usize = 0;
     for (0..rolls) |_| {
-        const reward = foeLoot(&rng, 0, .archer);
+        const reward = foeLoot(&rng, 0);
         if (reward.gold > 0) {
             gold += 1;
             try std.testing.expect(reward.gold >= FOE_GOLD.lo and reward.gold <= FOE_GOLD.hi);
@@ -159,7 +133,7 @@ test "spoils rarity improves magic and rare quality without increasing item quan
         var rare: usize = 0;
         var drops: usize = 0;
         for (0..samples) |_| {
-            const reward = foeLoot(&rng, rarity, .archer);
+            const reward = foeLoot(&rng, rarity);
             if (reward.item) |it| {
                 drops += 1;
                 if (it.magical()) magic += 1;

@@ -485,6 +485,7 @@ const toDefaults = mathx.toDefaults;
 fn freshRun(g: *Game) void {
     toDefaults(&g.sim, &(SimFields.run ++ SimFields.rebuilt));
     toDefaults(g, &Fields.run);
+    g.sim.inventory.gear = .startFor(g.sim.class);
     g.pic.freshRun();
     if (g.sim.playground) {
         g.sim.growth = progress.State.versed(g.sim.class);

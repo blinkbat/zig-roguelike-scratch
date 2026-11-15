@@ -7,10 +7,9 @@ const consumable = @import("consumable.zig");
 const item_bases = @import("item_bases.zig");
 const items = @import("items.zig");
 const Gear = @import("gear.zig").Gear;
-const hero = @import("hero.zig");
 
 pub const BAG_MAX = 256;
-pub const Failure = error{ Missing, WrongSlot, WrongClass, Requirements, Full };
+pub const Failure = error{ Missing, WrongSlot, Requirements, Full };
 
 pub const STACK_FULL = "Stack full";
 
@@ -19,7 +18,6 @@ pub fn caption(err: Failure) [:0]const u8 {
         error.Full => "Inventory full",
         error.Requirements => "Requirements unmet in final loadout",
         error.WrongSlot => "Wrong slot",
-        error.WrongClass => "Wrong class",
         error.Missing => "Item unavailable",
     };
 }
@@ -79,9 +77,8 @@ pub const Inventory = struct {
         return self.gear.wearing(it, slot);
     }
 
-    pub fn preview(self: *const Inventory, at: usize, slot: item_bases.Slot, base: attrs.Attrs, class: hero.Class) Failure!Gear {
+    pub fn preview(self: *const Inventory, at: usize, slot: item_bases.Slot, base: attrs.Attrs) Failure!Gear {
         const after = try self.swapped(at, slot);
-        if (!self.bag[at].kind.usableBy(class)) return error.WrongClass;
         if (!after.validFrom(self.gear, base)) return error.Requirements;
         var n = self.n - 1;
         for (item_bases.SLOTS) |s| n += @intFromBool(self.displaced(after, slot, s));
@@ -94,8 +91,8 @@ pub const Inventory = struct {
         return s == slot or !std.meta.eql(@as(?items.Item, worn), after.slots.get(s));
     }
 
-    pub fn equip(self: *Inventory, at: usize, slot: item_bases.Slot, base: attrs.Attrs, class: hero.Class) Failure!void {
-        const after = try self.preview(at, slot, base, class);
+    pub fn equip(self: *Inventory, at: usize, slot: item_bases.Slot, base: attrs.Attrs) Failure!void {
+        const after = try self.preview(at, slot, base);
         _ = self.remove(at);
         for (item_bases.SLOTS) |s| if (self.displaced(after, slot, s)) std.debug.assert(self.add(self.gear.slots.get(s).?));
         self.gear = after;
@@ -114,7 +111,7 @@ pub const Inventory = struct {
 
 test "flasks start worn in their own slots, never roll as loot, and come off and back like gear" {
     var rng = mathx.Rng.init(0xF1A5);
-    for (0..5000) |_| try std.testing.expect(items.roll(&rng, 0, .knight).kind.flaskOf() == null);
+    for (0..5000) |_| try std.testing.expect(items.roll(&rng, 0).kind.flaskOf() == null);
     const base = attrs.Attrs.of(.{ .strength = 10, .dexterity = 10, .intelligence = 10 });
     var inv = Inventory{ .gear = .flasks };
     try std.testing.expectEqualDeep(base, inv.gear.stats(base));
@@ -126,7 +123,7 @@ test "flasks start worn in their own slots, never roll as loot, and come off and
         try std.testing.expectEqual(item_bases.Kind.ofFlask(k), inv.bag[inv.n - 1].kind);
         try std.testing.expectError(error.WrongSlot, inv.swapped(inv.n - 1, .ofFlask(other)));
         try std.testing.expectError(error.WrongSlot, inv.swapped(inv.n - 1, .belt));
-        try inv.equip(inv.n - 1, .ofFlask(k), base, .knight);
+        try inv.equip(inv.n - 1, .ofFlask(k), base);
         try std.testing.expect(inv.gear.holds(k));
     }
     try std.testing.expectEqual(@as(usize, 0), inv.n);
@@ -146,26 +143,23 @@ test "equipment swaps preserve both hands, reject self-funded requirements and k
     const base = attrs.Attrs.of(.{ .strength = 18, .dexterity = 20, .intelligence = 10 });
     var inv = Inventory{};
     try std.testing.expect(inv.add(items.affixed(.ring, &.{.{ .kind = .strength, .value = 2 }})));
-    try inv.equip(0, .left_ring, base, .knight);
+    try inv.equip(0, .left_ring, base);
     try std.testing.expect(inv.add(.{ .kind = .mail }));
-    try inv.equip(0, .chest, base, .knight);
+    try inv.equip(0, .chest, base);
     try std.testing.expectError(error.Requirements, inv.unequip(.left_ring, base));
     try inv.unequip(.chest, base);
     try inv.unequip(.left_ring, base);
     var other = Inventory{};
     try std.testing.expect(other.add(items.affixed(.mail, &.{.{ .kind = .strength, .value = 3 }})));
-    try std.testing.expectError(error.Requirements, other.equip(0, .chest, base, .knight));
+    try std.testing.expectError(error.Requirements, other.equip(0, .chest, base));
     try std.testing.expectEqual(@as(usize, 1), other.n);
     try std.testing.expect(inv.add(.{ .kind = .longsword }));
-    try inv.equip(inv.n - 1, .right_hand, base, .knight);
+    try inv.equip(inv.n - 1, .right_hand, base);
     try std.testing.expect(inv.add(.{ .kind = .shield }));
-    try inv.equip(inv.n - 1, .left_hand, base, .knight);
+    try inv.equip(inv.n - 1, .left_hand, base);
     const n = inv.n;
     try std.testing.expect(inv.add(.{ .kind = .bow }));
-    const refused = inv;
-    try std.testing.expectError(error.WrongClass, inv.equip(inv.n - 1, .right_hand, base, .knight));
-    try expectInventoryUnchanged(&refused, &inv);
-    try inv.equip(inv.n - 1, .right_hand, base, .archer);
+    try inv.equip(inv.n - 1, .right_hand, base);
     try std.testing.expectEqual(n + 2, inv.n);
     try std.testing.expect(inv.gear.slots.get(.left_hand) == null);
     try std.testing.expectEqual(item_bases.Kind.bow, inv.gear.slots.get(.right_hand).?.kind);
@@ -175,23 +169,23 @@ test "equipment swaps preserve both hands, reject self-funded requirements and k
         hands.gear.slots.set(.right_hand, .{ .kind = .sword });
         hands.gear.slots.set(.left_hand, .{ .kind = .shield });
         try std.testing.expect(hands.add(.{ .kind = kind }));
-        const after = try hands.preview(0, .right_hand, strong, .knight);
+        const after = try hands.preview(0, .right_hand, strong);
         try std.testing.expect(after.slots.get(.left_hand) == null);
         try std.testing.expectEqual(@as(usize, 1), hands.n);
         try std.testing.expect(hands.gear.slots.get(.left_hand) != null);
-        try hands.equip(0, .right_hand, strong, .knight);
+        try hands.equip(0, .right_hand, strong);
         try std.testing.expectEqual(@as(usize, 2), hands.n);
         try std.testing.expectEqual(item_bases.Kind.sword, hands.bag[1].kind);
         try std.testing.expectEqual(item_bases.Kind.shield, hands.bag[0].kind);
         try std.testing.expectEqual(kind, hands.gear.slots.get(.right_hand).?.kind);
         try std.testing.expect(hands.gear.slots.get(.left_hand) == null);
-        try hands.equip(0, .left_hand, strong, .knight);
+        try hands.equip(0, .left_hand, strong);
         try std.testing.expect(hands.gear.slots.get(.right_hand) == null);
         try std.testing.expectEqual(kind, hands.bag[hands.n - 1].kind);
     }
     var rng = mathx.Rng.init(123);
     for (0..2000) |_| {
-        const it = items.roll(&rng, 0, .knight);
+        const it = items.roll(&rng, 0);
         if (it.mods[1]) |b| try std.testing.expect(it.mods[0].?.kind != b.kind);
     }
 }
@@ -209,14 +203,14 @@ test "equipment failures preserve every carried item and the complete loadout" {
     try std.testing.expect(inv.add(items.affixed(.mail, &.{.{ .kind = .strength, .value = 3 }})));
     const before = inv;
     for ([_]usize{ inv.n, BAG_MAX, std.math.maxInt(usize) }) |missing| {
-        try std.testing.expectError(error.Missing, inv.preview(missing, .chest, base, .knight));
-        try std.testing.expectError(error.Missing, inv.equip(missing, .chest, base, .knight));
+        try std.testing.expectError(error.Missing, inv.preview(missing, .chest, base));
+        try std.testing.expectError(error.Missing, inv.equip(missing, .chest, base));
         try expectInventoryUnchanged(&before, &inv);
     }
-    try std.testing.expectError(error.WrongSlot, inv.equip(0, .helm, base, .knight));
+    try std.testing.expectError(error.WrongSlot, inv.equip(0, .helm, base));
     try expectInventoryUnchanged(&before, &inv);
-    try std.testing.expectError(error.Requirements, inv.preview(0, .chest, base, .knight));
-    try std.testing.expectError(error.Requirements, inv.equip(0, .chest, base, .knight));
+    try std.testing.expectError(error.Requirements, inv.preview(0, .chest, base));
+    try std.testing.expectError(error.Requirements, inv.equip(0, .chest, base));
     try expectInventoryUnchanged(&before, &inv);
     try std.testing.expectError(error.Missing, inv.unequip(.left_ring, base));
     try expectInventoryUnchanged(&before, &inv);
@@ -229,7 +223,7 @@ test "equipment failures preserve every carried item and the complete loadout" {
     try expectInventoryUnchanged(&dependent, &inv);
     try std.testing.expect(inv.add(.{ .kind = .ring }));
     const replacement = inv;
-    try std.testing.expectError(error.Requirements, inv.equip(1, .left_ring, base, .knight));
+    try std.testing.expectError(error.Requirements, inv.equip(1, .left_ring, base));
     try expectInventoryUnchanged(&replacement, &inv);
 }
 
@@ -240,11 +234,11 @@ test "gear already unmet on load comes off and does not block other slots" {
     inv.gear.slots.set(.helm, .{ .kind = .helmet });
     try std.testing.expect(!inv.gear.valid(weak));
     try std.testing.expect(inv.add(.{ .kind = .ring }));
-    try inv.equip(0, .left_ring, weak, .knight);
+    try inv.equip(0, .left_ring, weak);
     try inv.unequip(.chest, weak);
     try inv.unequip(.helm, weak);
     try std.testing.expect(inv.add(.{ .kind = .mail }));
-    try std.testing.expectError(error.Requirements, inv.equip(inv.n - 1, .chest, weak, .knight));
+    try std.testing.expectError(error.Requirements, inv.equip(inv.n - 1, .chest, weak));
 }
 
 test "equipment swaps account for exact bag capacity and both displaced hands" {
@@ -255,8 +249,8 @@ test "equipment swaps account for exact bag capacity and both displaced hands" {
     try std.testing.expect(inv.add(.{ .kind = .greatsword }));
     for (1..BAG_MAX) |_| try std.testing.expect(inv.add(.{ .kind = .ring }));
     const full = inv;
-    try std.testing.expectError(error.Full, inv.preview(0, .right_hand, base, .knight));
-    try std.testing.expectError(error.Full, inv.equip(0, .right_hand, base, .knight));
+    try std.testing.expectError(error.Full, inv.preview(0, .right_hand, base));
+    try std.testing.expectError(error.Full, inv.equip(0, .right_hand, base));
     try expectInventoryUnchanged(&full, &inv);
     try std.testing.expectError(error.Full, inv.unequip(.left_hand, base));
     try expectInventoryUnchanged(&full, &inv);
@@ -265,16 +259,16 @@ test "equipment swaps account for exact bag capacity and both displaced hands" {
 
     _ = inv.remove(inv.n - 1);
     const before_preview = inv;
-    const preview = try inv.preview(0, .right_hand, base, .knight);
+    const preview = try inv.preview(0, .right_hand, base);
     try expectInventoryUnchanged(&before_preview, &inv);
-    try inv.equip(0, .right_hand, base, .knight);
+    try inv.equip(0, .right_hand, base);
     try std.testing.expectEqualDeep(preview, inv.gear);
     try std.testing.expectEqual(@as(usize, BAG_MAX), inv.n);
     try std.testing.expectEqual(item_bases.Kind.shield, inv.bag[BAG_MAX - 2].kind);
     try std.testing.expectEqual(item_bases.Kind.sword, inv.bag[BAG_MAX - 1].kind);
     for (inv.bag[0 .. BAG_MAX - 2]) |it| try std.testing.expectEqual(item_bases.Kind.ring, it.kind);
 
-    try inv.equip(BAG_MAX - 2, .left_hand, base, .knight);
+    try inv.equip(BAG_MAX - 2, .left_hand, base);
     try std.testing.expectEqual(@as(usize, BAG_MAX), inv.n);
     try std.testing.expect(inv.gear.slots.get(.right_hand) == null);
     try std.testing.expectEqual(item_bases.Kind.shield, inv.gear.slots.get(.left_hand).?.kind);

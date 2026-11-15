@@ -536,7 +536,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     game.beginMap(g, w);
     g.sim.name = hero.Name.of("Arwen");
     try std.testing.expect(g.sim.inventory.add(items.affixed(.ring, &.{.{ .kind = .intelligence, .value = 2 }})));
-    try g.sim.inventory.equip(0, .right_ring, g.sim.growth.attributes(g.sim.class), g.sim.class);
+    try g.sim.inventory.equip(0, .right_ring, g.sim.growth.attributes(g.sim.class));
     try std.testing.expect(g.sim.inventory.add(.{ .kind = .sword }));
     _ = g.sim.growth.gain(100);
     try std.testing.expect(g.sim.growth.learn(g.sim.class, .burning_arrow));
@@ -634,7 +634,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
     game.beginMapAt(g, w, w.start, 7);
-    const shelf = g.sim.plot.shelf(0, g.sim.seed, g.sim.class);
+    const shelf = g.sim.plot.shelf(0, g.sim.seed);
     g.sim.gold = 1000;
     _ = try @import("play/trade.zig").buy(shelf, shelf.count() - 1, &g.sim.inventory, &g.sim.gold);
     var buf = std.ArrayList(u8).init(alloc);
@@ -655,7 +655,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0xa229069d880514a0;
+const RECORDED_FINGERPRINT: Print = 0x3105f0b3d380120d;
 
 test "zoo keys doors populations and visits survive portable saves" {
     const alloc = std.testing.allocator;

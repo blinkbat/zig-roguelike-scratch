@@ -4,6 +4,7 @@ const actor = @import("actor.zig");
 const wording = @import("../core/wording.zig");
 const cleave = @import("cleave.zig");
 const attr = @import("attrs.zig");
+const item_bases = @import("item_bases.zig");
 
 const NUMBERS = [_][]const u8{ "none", "one", "two", "three", "four", "five", "six", "seven", "eight" };
 
@@ -44,6 +45,10 @@ pub const Class = enum {
         return SPECS.getPtrConst(c).strike;
     }
 
+    pub fn arms(c: Class) []const item_bases.Kind {
+        return SPECS.getPtrConst(c).arms;
+    }
+
     pub fn kind(c: Class) actor.Kind {
         return switch (c) {
             inline else => |t| @field(actor.Kind, @tagName(t)),
@@ -51,16 +56,18 @@ pub const Class = enum {
     }
 };
 
-const Spec = struct { attrs: attr.Attrs, strike: actor.Strike, blurb: [:0]const u8 };
+const Spec = struct { attrs: attr.Attrs, strike: actor.Strike, arms: []const item_bases.Kind, blurb: [:0]const u8 };
 const SPECS = std.EnumArray(Class, Spec).init(.{
     .archer = .{
         .attrs = .of(.{ .strength = 14, .dexterity = 20, .intelligence = 10 }),
         .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "kicks" },
+        .arms = &.{.bow},
         .blurb = "A bow that reaches what it sees, and a kick for what comes close",
     },
     .wizard = .{
         .attrs = .of(.{ .strength = 8, .dexterity = 10, .intelligence = 20 }),
         .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "bonks" },
+        .arms = &.{.wand},
         .blurb = "Sparks that stun what they strike, and a blink to be elsewhere",
     },
     .knight = .{
@@ -70,6 +77,7 @@ const SPECS = std.EnumArray(Class, Spec).init(.{
             break :blk a;
         },
         .strike = .{ .hit = .{ .lo = 3, .hi = 5 }, .verb = "slashes" },
+        .arms = &.{ .longsword, .shield },
         .blurb = std.fmt.comptimePrint("A shield that knocks foes back stunned, and a blade that sweeps {s} at once", .{NUMBERS[cleave.WIDTH]}),
     },
 });

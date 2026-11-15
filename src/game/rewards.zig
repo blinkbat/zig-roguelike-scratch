@@ -50,7 +50,7 @@ fn dropGold(sim: *Simulation, at: P, amount: i32) void {
 
 pub fn barrelLoot(sim: *Simulation, at: P) ?i32 {
     if (!sim.lv.breakBarrel(at)) return null;
-    const rolled = loot.barrelLoot(&sim.loot_rng, sim.ground.room(FOE_DROPS), sim.class);
+    const rolled = loot.barrelLoot(&sim.loot_rng, sim.ground.room(FOE_DROPS));
     dropGold(sim, at, rolled.gold);
     if (rolled.item) |item| dropItem(sim, .{ .item = item, .at = at });
     return rolled.gold;
@@ -66,7 +66,7 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
         sim.chronicle.mark(.chest);
         return .opened;
     };
-    const rolled = loot.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity, sim.class);
+    const rolled = loot.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
     dropItem(sim, .{ .item = rolled.item.?, .at = at });
     const gold = rolled.gold;
     dropGold(sim, at, gold);
@@ -159,8 +159,8 @@ fn nativeLeft(sim: *const Simulation, family: actor.Kind) bool {
 fn lootOf(sim: *Simulation, fallen: actor.Actor) loot.Loot {
     if (!sim.lv.walkable(fallen.at)) return .{};
     const rarity = sim.heroAttrs().item_rarity;
-    if (actor.row(fallen.kind).disguised) return loot.mimicLoot(&sim.loot_rng, rarity, sim.class);
-    return loot.foeLoot(&sim.loot_rng, rarity, sim.class);
+    if (actor.row(fallen.kind).disguised) return loot.mimicLoot(&sim.loot_rng, rarity);
+    return loot.foeLoot(&sim.loot_rng, rarity);
 }
 
 const PYRE_REACH: i32 = 1;
@@ -289,7 +289,7 @@ test "death rewards resolve without presentation and return only newly frightene
     const pictured = run.pic.pictured[fallen.slot().index];
     const rng = run.sim.rng;
     var loot_rng = run.sim.loot_rng;
-    const expected = loot.foeLoot(&loot_rng, run.sim.heroAttrs().item_rarity, run.sim.class);
+    const expected = loot.foeLoot(&loot_rng, run.sim.heroAttrs().item_rarity);
     const hp = run.sim.pool.get(fallen.value).?.hp;
     try std.testing.expect(run.sim.resolveDamage(fallen, hp).lethal);
     const result = defeat(&run.sim, fallen);

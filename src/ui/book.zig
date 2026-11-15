@@ -672,7 +672,7 @@ pub const Book = struct {
         if (comparing) {
             const at = y + @max(item_card.height(face, layout.CARD_W, it, slot), item_card.height(face, layout.CARD_W, view.inventory.gear.slots.get(slot), slot)) + layout.REQUIREMENT_GAP;
             const bagged = self.bagIndex(view).?;
-            _ = view.inventory.preview(bagged, slot, view.base, view.class) catch |err| {
+            _ = view.inventory.preview(bagged, slot, view.base) catch |err| {
                 var reason: menu.Note(140) = .{};
                 if (err != error.Requirements) {
                     reason.say("{s}", .{inventory.caption(err)});
@@ -1025,7 +1025,7 @@ test "trade lists the shelf or the bag, swaps them on change, and the priced car
     try std.testing.expect(inv.add(.{ .kind = .cap }));
     const growth = progress.State.of(.archer);
     var view = testView(&inv, &growth);
-    const shelf = trade.Wares.roll(5, 0, .archer);
+    const shelf = trade.Wares.roll(5, 0);
     view.dealer = .{ .who = "Pedlar", .shelf = &shelf };
     var book = Book{};
     book.choose(.trade);
@@ -1074,7 +1074,7 @@ test "item card requirements exclude the item itself and every displaced hand" {
     try std.testing.expect(inv.add(items.affixed(.axe, &.{.{ .kind = .strength, .value = 10 }})));
     var book = Book{ .page = .inventory };
     try std.testing.expectEqual(@as(i32, 10), book.requirementAttrs(view, .right_hand).get(.strength));
-    try std.testing.expectError(error.Requirements, inv.preview(0, .right_hand, base, .knight));
+    try std.testing.expectError(error.Requirements, inv.preview(0, .right_hand, base));
     try std.testing.expect(inv.gear.slots.get(.left_hand) != null and inv.n == 1);
     inv.gear.slots.set(.left_hand, null);
     inv.gear.slots.set(.left_ring, items.affixed(.ring, &.{.{ .kind = .strength, .value = 3 }}));

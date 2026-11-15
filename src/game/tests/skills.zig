@@ -1103,10 +1103,11 @@ test "attribute damage and critical rolls reach melee, arrows, mixed arrows and 
             target.resists = .initFill(50);
             g.sim.rng = mathx.Rng.init(seed);
             var expected_rng = g.sim.rng;
-            const raw = attacks.rollRaw(&expected_rng, c[1], attacks.basesFor(&g.sim, c[1]));
-            const critical = c[0].attrs().crits(&expected_rng);
+            const b = attacks.blowFor(&g.sim, c[1]);
+            const raw = attacks.rollRaw(&expected_rng, c[1], b.bases);
+            const critical = b.by.crits(&expected_rng);
             criticals += @intFromBool(critical);
-            const expected = c[0].attrs().blow(comptime c[1].attack().?.defaultScaling(), raw, critical, &expected_rng).total(target.resists);
+            const expected = b.by.blow(b.scaling, raw, critical, &expected_rng).total(target.resists);
             harness.use(g, c[1]);
             try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
             skills.confirmAim(g);
@@ -1349,7 +1350,7 @@ test "a knight's shield bash knocks a foe back a tile, and its stun keeps the fo
         g.sim.rng = harness.procRng(g, .shield_bash, 1, stuns);
         harness.press(g, CONFIRM);
         const dealt = harness.TEST_HP - rat.hp;
-        try harness.expectDamage(g, .shield_bash, dealt, &.{bash.BASE});
+        try harness.expectDamage(g, .shield_bash, dealt, &.{ bash.BASE, harness.sword(g) });
         try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
         try std.testing.expectEqual(manaAfter(g, .shield_bash), g.sim.mana);
         try std.testing.expectEqual(bash.COOLDOWN - 1, g.sim.cooldown.get(.shield_bash));
@@ -1360,6 +1361,7 @@ test "a knight's shield bash knocks a foe back a tile, and its stun keeps the fo
     try std.testing.expectEqual(@as(i32, 22), landed[0]);
     try std.testing.expectEqual(@as(i32, 21), landed[1]);
     harness.heroArena(g, .knight, from, &.{.{ .x = 21, .y = 20 }});
+    harness.toughenFoes(g);
     g.sim.lv.set(.{ .x = 22, .y = 20 }, .wall);
     harness.use(g, .shield_bash);
     g.sim.rng = harness.procRng(g, .shield_bash, 1, true);
@@ -1415,6 +1417,29 @@ test "a cleave strikes only the bodies in its arc as it is swung, not a half spl
     try std.testing.expectEqual(@as(usize, 2), slimes);
 }
 
+test "each class starts armed for its whole kit, and the knight's Attack strikes beside it with its weapon until it has none" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for (heroes.CLASSES) |class| {
+        harness.heroArena(g, class, .{ .x = 20, .y = 20 }, &.{});
+        for (class.arms()) |k| try std.testing.expectEqual(k, g.sim.inventory.gear.slots.get(item_bases.spec(k).slots[0]).?.kind);
+        try std.testing.expect(g.sim.inventory.gear.valid(g.sim.growth.attributes(class)));
+        for (skillbar.kit(class)) |act| try std.testing.expect(act.armed(g.sim.inventory.gear));
+    }
+    harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
+    harness.toughenFoes(g);
+    harness.use(g, .strike);
+    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+    try std.testing.expectEqual(P{ .x = 21, .y = 20 }, g.mode.aim.mark);
+    harness.press(g, CONFIRM);
+    try harness.expectDamage(g, .strike, harness.TEST_HP - harness.foes(g)[0].hp, &.{harness.sword(g)});
+    harness.drawnOut(g);
+    g.sim.inventory.gear.slots.set(.right_hand, null);
+    harness.use(g, .strike);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try std.testing.expect(harness.logged(g, "Attack needs a melee weapon."));
+}
+
 test "a knight's cleave strikes the three tiles of its arc and nothing outside it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -1430,7 +1455,7 @@ test "a knight's cleave strikes the three tiles of its arc and nothing outside i
     for (harness.foes(g), 0..) |a, i| {
         const lost = harness.TEST_HP - a.hp;
         if (i < arc.len) {
-            try harness.expectDamage(g, .cleave, lost, &.{cleave.BASE});
+            try harness.expectDamage(g, .cleave, lost, &.{ cleave.BASE, harness.sword(g) });
         } else try std.testing.expectEqual(@as(i32, 0), lost);
     }
     try std.testing.expectEqual(manaAfter(g, .cleave), g.sim.mana);
@@ -1809,7 +1834,7 @@ test "a charge runs the knight down a line to the foe, striking it and knocking 
         harness.press(g, CONFIRM);
         try std.testing.expectEqual(P{ .x = 22, .y = 20 }, g.sim.heroActor().?.at);
         const dealt = harness.TEST_HP - rat.hp;
-        try harness.expectDamage(g, .charge, dealt, &.{charge.BASE});
+        try harness.expectDamage(g, .charge, dealt, &.{ charge.BASE, harness.sword(g) });
         try std.testing.expectEqual(manaAfter(g, .charge), g.sim.mana);
         try std.testing.expectEqual(charge.COOLDOWN - 1, g.sim.cooldown.get(.charge));
         x.* = rat.at.x;
@@ -1865,7 +1890,7 @@ test "bleeding doubles after knockback even if the foe loses its action" {
 test "rejected skills preserve simulation across every class and readiness gate" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const Gate = enum { busy, locked, cooling, mana, empty };
+    const Gate = enum { busy, locked, cooling, mana, empty, unarmed };
     var counts = std.EnumArray(Gate, usize).initFill(0);
     for (heroes.CLASSES) |class| {
         for (skillbar.kit(class)) |act| {
@@ -1877,8 +1902,8 @@ test "rejected skills preserve simulation across every class and readiness gate"
                 switch (gate) {
                     .busy => g.pic.busy = 0.5,
                     .locked => {
-                        if (act.flaskOf() != null) continue;
                         g.sim.growth.ranks.set(act, 0);
+                        if (g.sim.growth.unlocked(act)) continue;
                     },
                     .cooling => g.sim.cooldown.set(act, 2),
                     .mana => {
@@ -1889,6 +1914,11 @@ test "rejected skills preserve simulation across every class and readiness gate"
                     .empty => {
                         const kind = act.flaskOf() orelse continue;
                         g.sim.flasks.getPtr(kind).charges = 0;
+                    },
+                    .unarmed => {
+                        if (act.arms() == null) continue;
+                        g.sim.inventory.gear.slots.set(.right_hand, null);
+                        g.sim.inventory.gear.slots.set(.left_hand, null);
                     },
                 }
                 g.sim.unsaved = false;

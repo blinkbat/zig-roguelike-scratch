@@ -18,6 +18,30 @@ pub const Declaration = enum { describe, TELEPORTS, arc, ELEMENT, burst, JUMPS, 
 pub const Bases = struct { physical: ?damage.Base, element: ?damage.Base };
 pub const Ailment = struct { kind: resilience.Kind, chance: u32 };
 
+pub const Arms = enum {
+    melee,
+    ranged,
+    implement,
+    shield,
+
+    pub fn noun(w: Arms) []const u8 {
+        return switch (w) {
+            .melee => "a melee weapon",
+            .ranged => "a ranged weapon",
+            .implement => "a wand or staff",
+            .shield => "a shield",
+        };
+    }
+
+    pub fn of(a: attrs.Attack) Arms {
+        return switch (a) {
+            .melee => .melee,
+            .ranged => .ranged,
+            .spell => .implement,
+        };
+    }
+};
+
 pub const Contract = struct {
     reticle: ?Reticle,
     delivery: ?attrs.Attack,
@@ -65,7 +89,8 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
         return null;
     };
     if (!@hasDecl(m, "DESCRIPTION")) return "module requires DESCRIPTION";
-    if ((d.reticle == .bow or has(d, "BASE")) != (d.delivery != null)) return "damage BASE requires explicit delivery (melee, ranged or spell)";
+    const weapon_only = d.reticle == .swing and d.delivery == .melee;
+    if ((d.reticle == .bow or has(d, "BASE") or weapon_only) != (d.delivery != null)) return "damage BASE requires explicit delivery (melee, ranged or spell)";
     if (has(d, "ELEMENT") and (!has(d, "BASE") or d.delivery == null)) return "ELEMENT requires BASE and delivery";
     if (has(d, "BOLT") and (d.reticle != .bow or d.delivery != .spell)) return "BOLT requires bow targeting and spell delivery";
     if (has(d, "BOLT") != has(d, "BOLT_RANGE")) return "a BOLT names its BOLT_RANGE, and only a bolt does";
@@ -106,7 +131,6 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
             if (r != .swing and !@hasDecl(m, "DESCRIBED")) return "a leap or rush requires DESCRIBED, its description with its reach left open";
             if (r != .leap and d.delivery != .melee) return "a swing or rush requires melee delivery";
             if (r == .swing and has(d, "arc") and has(d, "knocked")) return "swing takes at most one of arc or knocked";
-            if (r == .swing and !has(d, "arc") and !has(d, "knocked") and !has(d, "afflict")) return "a single-target swing requires afflict";
             if (r == .rush) {
                 if (!has(d, "knocked")) return "rush requires knocked";
                 if (!signature(m, "wayTo", &.{ mathx.P, mathx.P }, ?mathx.Dir)) return "rush requires wayTo(P, P) ?Dir";

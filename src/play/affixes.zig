@@ -287,8 +287,8 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
     var seen = std.EnumSet(Mod).initEmpty();
     var elements = std.EnumSet(damage.Element).initEmpty();
     var imbues = std.EnumSet(damage.Element).initEmpty();
-    for (0..50000) |i| {
-        const it = items.roll(&rng, 0, hero.CLASSES[i % hero.CLASSES.len]);
+    for (0..50000) |_| {
+        const it = items.roll(&rng, 0);
         for (it.mods) |maybe| if (maybe) |m| {
             seen.insert(m.kind);
             try std.testing.expect(m.kind.allows(it.kind));

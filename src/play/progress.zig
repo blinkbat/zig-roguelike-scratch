@@ -83,7 +83,7 @@ pub fn skills(c: hero.Class) []const Skill {
 }
 
 fn innate(act: skillbar.Act) bool {
-    return std.mem.indexOfScalar(skillbar.Act, &skillbar.COMMON, act) != null or act.carried();
+    return std.mem.indexOfScalar(skillbar.Act, &skillbar.COMMON, act) != null or act.carried() or act == .strike;
 }
 
 comptime {

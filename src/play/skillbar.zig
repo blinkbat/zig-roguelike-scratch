@@ -28,6 +28,7 @@ const wording = @import("../core/wording.zig");
 const tactics = @import("tactics.zig");
 const rend = @import("rend.zig");
 const piercing = @import("piercing.zig");
+const strike = @import("strike.zig");
 
 const Button = input.Button;
 
@@ -53,6 +54,7 @@ pub const EquippedBases = struct {
 
 pub const Act = enum {
     shoot,
+    strike,
     wait,
     secondary,
     juke,
@@ -263,6 +265,27 @@ pub const Act = enum {
         return out;
     }
 
+    pub const Arms = contracts.Arms;
+
+    pub fn arms(a: Act) ?Arms {
+        return switch (a) {
+            inline else => |t| comptime blk: {
+                if (t.carried()) break :blk null;
+                if (module(t)) |m| if (@hasDecl(m, "ARMS")) break :blk m.ARMS;
+                break :blk if (t.attack()) |at| Arms.of(at) else null;
+            },
+        };
+    }
+
+    pub fn armed(a: Act, gear: Gear) bool {
+        return switch (a.arms() orelse return true) {
+            .melee => gear.weapon(.melee) != null,
+            .ranged => gear.weapon(.ranged) != null,
+            .implement => gear.implement(),
+            .shield => gear.shield(),
+        };
+    }
+
     pub fn bursts(a: Act) bool {
         return a.declares("burst");
     }
@@ -320,6 +343,7 @@ pub const KitBuf = [ACTS.len]Act;
 const Skill = contracts.Definition;
 const SKILLS = std.EnumArray(Act, Skill).init(.{
     .shoot = .{ .module = null, .reticle = .bow, .delivery = .ranged },
+    .strike = .{ .module = strike, .reticle = .swing, .delivery = .melee },
     .wait = .{ .module = null },
     .secondary = .{ .module = null },
     .juke = .{ .module = juke, .reticle = .leap },
@@ -384,7 +408,7 @@ fn kitOf(comptime basic: Act, comptime own: []const Act) [1 + COMMON.len + own.l
 
 const ARCHER_KIT = kitOf(.shoot, &.{ .juke, .steady_aim, .burning_arrow, .glacial_shot, .barbed_arrow, .caltrops, .pinning_shot, .overwatch, .piercing_shot });
 const WIZARD_KIT = kitOf(.spark, &.{ .blink, .fireball, .frost_nova, .mana_shield, .chain_lightning, .combustion, .gravity_well, .arcane_barrier, .shatter, .fire_wall, .raise_skeleton });
-const KNIGHT_KIT = kitOf(.cleave, &.{ .charge, .guard, .shield_bash, .whirlwind, .unyielding, .rend, .war_cry, .imbue, .bide });
+const KNIGHT_KIT = kitOf(.strike, &.{ .cleave, .charge, .guard, .shield_bash, .whirlwind, .unyielding, .rend, .war_cry, .imbue, .bide });
 
 pub fn kit(c: hero.Class) []const Act {
     return switch (c) {
@@ -534,7 +558,7 @@ fn secondary(c: hero.Class) Row {
             r.set(.a, .frost_nova);
             r.set(.b, .mana_shield);
         },
-        .knight => {},
+        .knight => r.set(.x, .cleave),
     }
     return r;
 }
@@ -554,7 +578,7 @@ fn primary(c: hero.Class) Row {
             r.set(.a, .fireball);
         },
         .knight => {
-            r.set(.x, .cleave);
+            r.set(.x, .strike);
             r.set(.b, .charge);
             r.set(.a, .shield_bash);
         },

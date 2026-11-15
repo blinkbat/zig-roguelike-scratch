@@ -508,9 +508,9 @@ pub fn captureCharacter(g: *game.Game) !void {
     game.beginMapAt(g, w, w.start, SHOT_SEED);
     _ = g.sim.growth.gain(100);
     _ = g.sim.inventory.add(game.harness.affixed(.cap, .{ .kind = .life, .value = 3 }));
-    try g.sim.inventory.equip(0, .helm, g.sim.growth.attributes(g.sim.class), g.sim.class);
+    try g.sim.inventory.equip(0, .helm, g.sim.growth.attributes(g.sim.class));
     _ = g.sim.inventory.add(game.harness.affixed(.bow, .{ .kind = .dexterity, .value = 2 }));
-    try g.sim.inventory.equip(0, .right_hand, g.sim.growth.attributes(g.sim.class), g.sim.class);
+    try g.sim.inventory.equip(0, .right_hand, g.sim.growth.attributes(g.sim.class));
     _ = g.sim.inventory.add(items.affixed(.helmet, &.{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 2 } }));
     _ = g.sim.inventory.add(game.harness.affixed(.ring, .{ .kind = .strength, .value = 3 }));
     _ = g.sim.inventory.add(.{ .kind = .leather });

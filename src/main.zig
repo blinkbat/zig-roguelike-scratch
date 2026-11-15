@@ -147,6 +147,7 @@ test {
     _ = @import("play/barbed.zig");
     _ = @import("play/rend.zig");
     _ = @import("play/piercing.zig");
+    _ = @import("play/strike.zig");
     _ = @import("play/nova.zig");
     _ = @import("play/fireball.zig");
     _ = @import("play/chain.zig");

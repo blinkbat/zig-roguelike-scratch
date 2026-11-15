@@ -151,10 +151,27 @@ pub const Gear = struct {
         return if (item_bases.spec(it.kind).quiver) it else null;
     }
 
+    pub fn implement(self: Gear) bool {
+        const it = self.slots.get(.right_hand) orelse return false;
+        return item_bases.spec(it.kind).caster;
+    }
+
+    pub fn shield(self: Gear) bool {
+        const it = self.slots.get(.left_hand) orelse return false;
+        return it.kind.blocks();
+    }
+
+    pub fn startFor(c: hero.Class) Gear {
+        var out = flasks;
+        for (c.arms()) |k| out.slots.set(item_bases.spec(k).slots[0], .{ .kind = k });
+        return out;
+    }
+
     fn handsFit(self: Gear) bool {
-        const main = self.twoHander() orelse return true;
-        if (self.slots.get(.left_hand) == null) return true;
-        return self.quiver() != null and item_bases.spec(main.kind).attack == .ranged;
+        const off = self.slots.get(.left_hand) orelse return true;
+        const main = item_bases.spec((self.slots.get(.right_hand) orelse return true).kind);
+        if (item_bases.spec(off.kind).quiver) return main.attack == .ranged;
+        return !main.two_handed;
     }
 
     pub fn offhandHolder(self: Gear) ?items.Item {
@@ -256,74 +273,53 @@ test "weapon weights cross melee and range while caster implements have no innat
         try std.testing.expectEqual(implement.spells, strong.increaseBy(gear.scaling(.spell)));
     }
     const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
-    const offhands = [_]item_bases.Kind{ .tome, .orb };
+    const offhands = [_]item_bases.Kind{ .tome, .orb, .buckler, .shield, .totem };
     for (offhands) |kind| {
         var inv = inventory.Inventory{};
         try std.testing.expect(inv.add(.{ .kind = .wand }));
-        try inv.equip(0, .right_hand, base, .wizard);
+        try inv.equip(0, .right_hand, base);
         try std.testing.expect(inv.add(.{ .kind = kind }));
-        try inv.equip(0, .left_hand, base, .wizard);
+        try inv.equip(0, .left_hand, base);
         try std.testing.expect(inv.gear.valid(base));
         try std.testing.expectEqual(item_bases.Kind.wand, inv.gear.slots.get(.right_hand).?.kind);
         try std.testing.expect(item_bases.spec(kind).damage == null);
         try std.testing.expect(inv.add(.{ .kind = .staff }));
-        try inv.equip(0, .right_hand, base, .wizard);
+        try inv.equip(0, .right_hand, base);
         try std.testing.expect(inv.gear.slots.get(.left_hand) == null);
         try std.testing.expectEqual(@as(usize, 2), inv.n);
     }
-    var knight = inventory.Inventory{};
-    try std.testing.expect(knight.add(.{ .kind = .longsword }));
-    try knight.equip(0, .right_hand, base, .knight);
-    try std.testing.expect(knight.add(.{ .kind = .shield }));
-    try knight.equip(0, .left_hand, base, .knight);
-    try std.testing.expect(knight.add(.{ .kind = .greatsword }));
-    try knight.equip(0, .right_hand, base, .knight);
-    try std.testing.expect(knight.gear.slots.get(.left_hand) == null);
-    try std.testing.expectEqual(@as(usize, 2), knight.n);
-    var rng = mathx.Rng.init(0x17E);
+}
+
+test "any class equips any hand base whose requirements it meets, and loot rolls every base" {
     for (hero.CLASSES) |class| {
-        var seen = std.EnumSet(item_bases.Kind).initEmpty();
-        for (0..2000) |_| {
-            const kind = items.roll(&rng, 0, class).kind;
-            try std.testing.expect(kind.usableBy(class));
-            seen.insert(kind);
-        }
-        try std.testing.expectEqual(loot.basesFor(class).len, seen.count());
-    }
-}
-
-test "each class rolls and wears only its own weapons and offhands, while armour and jewellery suit all" {
-    for (loot.BASES) |kind| {
-        const s = item_bases.spec(kind);
-        const hand = kind.fits(.right_hand) or kind.fits(.left_hand);
-        if (!hand) try std.testing.expectEqual(hero.CLASSES.len, s.classes.count());
-        if (hand) try std.testing.expect(s.classes.count() <= 1);
-        if (s.classes.contains(.archer) and kind.fits(.right_hand)) try std.testing.expectEqual(attrs.Attack.ranged, s.attack);
-        if (s.classes.contains(.knight) and s.damage != null) try std.testing.expect(s.scaling().contains(.heavy));
-    }
-    const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
-    for (loot.BASES) |unowned| {
-        if (loot.OWNED.contains(unowned)) continue;
-        for (hero.CLASSES) |class| {
+        for (loot.BASES) |kind| {
+            const slot = kind.slots()[0];
+            if (slot != .right_hand and slot != .left_hand) continue;
+            var met = class.attrs();
+            inline for (attrs.ATTRS) |at| met.points.set(at, @max(met.get(at), @field(item_bases.spec(kind).needs, @tagName(at))));
             var inv = inventory.Inventory{};
-            try std.testing.expect(inv.add(.{ .kind = unowned }));
-            try std.testing.expectError(error.WrongClass, inv.equip(0, item_bases.spec(unowned).slots[0], base, class));
-            try std.testing.expect(std.mem.indexOfScalar(item_bases.Kind, loot.basesFor(class), unowned) == null);
+            try std.testing.expect(inv.add(.{ .kind = kind }));
+            try inv.equip(0, slot, met);
+            try std.testing.expectEqual(kind, inv.gear.slots.get(slot).?.kind);
         }
     }
+    var rng = mathx.Rng.init(0x17E);
+    var seen = std.EnumSet(item_bases.Kind).initEmpty();
+    for (0..2000) |_| seen.insert(items.roll(&rng, 0).kind);
+    try std.testing.expectEqual(loot.BASES.len, seen.count());
 }
 
-test "a quiver rides beside a two-handed ranged weapon, and nothing else two-handed" {
+test "a quiver rides only beside a ranged weapon or an empty main hand" {
     const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
     var inv = inventory.Inventory{};
     try std.testing.expect(inv.add(.{ .kind = .war_bow }));
-    try inv.equip(0, .right_hand, base, .archer);
+    try inv.equip(0, .right_hand, base);
     try std.testing.expect(inv.add(.{ .kind = .ember_quiver }));
-    try inv.equip(0, .left_hand, base, .archer);
+    try inv.equip(0, .left_hand, base);
     try std.testing.expect(inv.gear.valid(base));
     try std.testing.expectEqual(item_bases.Kind.war_bow, inv.gear.slots.get(.right_hand).?.kind);
     try std.testing.expect(inv.add(.{ .kind = .crossbow }));
-    try inv.equip(0, .right_hand, base, .archer);
+    try inv.equip(0, .right_hand, base);
     try std.testing.expectEqual(item_bases.Kind.ember_quiver, inv.gear.slots.get(.left_hand).?.kind);
     try std.testing.expectEqual(@as(usize, 1), inv.n);
     try std.testing.expectEqual(@as(i32, 20), inv.gear.stats(base).element_bonus.get(.fire));
@@ -334,6 +330,17 @@ test "a quiver rides beside a two-handed ranged weapon, and nothing else two-han
     try std.testing.expect(held.wearing(.{ .kind = .quiver }, .left_hand).slots.get(.right_hand) == null);
     held.slots.set(.left_hand, .{ .kind = .quiver });
     try std.testing.expect(!held.valid(base));
+    var sword = Gear{};
+    sword.slots.set(.right_hand, .{ .kind = .longsword });
+    const quivered = sword.wearing(.{ .kind = .quiver }, .left_hand);
+    try std.testing.expect(quivered.slots.get(.right_hand) == null);
+    try std.testing.expectEqual(item_bases.Kind.quiver, quivered.slots.get(.left_hand).?.kind);
+    try std.testing.expect(quivered.valid(base));
+    const armed = quivered.wearing(.{ .kind = .longsword }, .right_hand);
+    try std.testing.expect(armed.slots.get(.left_hand) == null);
+    try std.testing.expectEqual(item_bases.Kind.longsword, armed.slots.get(.right_hand).?.kind);
+    sword.slots.set(.left_hand, .{ .kind = .quiver });
+    try std.testing.expect(!sword.valid(base));
     var pierced = Gear{};
     pierced.slots.set(.right_hand, .{ .kind = .war_bow });
     try std.testing.expect(pierced.offhandHolder() == null);

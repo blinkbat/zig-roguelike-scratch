@@ -59,7 +59,8 @@ pre-zoo raw saves are not claimed as compatible. So does the clock's `stunned`
 flag; portable saves without it load unstunned. Portable saves retain named-value
 compatibility, including absent zoo definitions.
 The Small Key and quiver item identities also change the raw fingerprint;
-portable item identities remain compatible by name.
+portable item identities remain compatible by name. So does the Attack skill;
+portable skill bars and ranks name their skills.
 
 A raw file loads only when its ABI/type/tree fingerprint matches this exact build.
 The fingerprint names every enum member reachable from the raw layout, so adding a
