@@ -532,7 +532,7 @@ fn resolveProjectileHit(run: *game.Game, comptime action: skillbar.Act, hit: bow
         .body => |id| hitProjectileActor(run, action, id, stroke),
         .barrel, .plant => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),
     }
-    combat.boilUnder(run, action, flight.impact().?, stroke.wait);
+    projectileImpact(run, action, flight, stroke);
 }
 
 fn skewerHits(run: *game.Game, comptime action: skillbar.Act, pierced: bow.Pierced, stroke: game.presentation.Stroke) void {
@@ -542,7 +542,15 @@ fn skewerHits(run: *game.Game, comptime action: skillbar.Act, pierced: bow.Pierc
         }
     };
     combat.alongPierced(run, pierced, stroke, comptime combat.barrelVerb(action), Each{});
-    combat.boilUnder(run, action, pierced.flight.impact().?, stroke.wait);
+    projectileImpact(run, action, pierced.flight, stroke);
+}
+
+fn projectileImpact(run: *game.Game, comptime action: skillbar.Act, flight: bow.Flight, stroke: game.presentation.Stroke) void {
+    const at = flight.impact().?;
+    combat.boilUnder(run, action, at, stroke.wait);
+    if (comptime action.element() == .lightning) {
+        if (flight.struck.? != .body) combat.conduct(run, at, stroke);
+    }
 }
 
 fn hitProjectileActor(run: *game.Game, comptime action: skillbar.Act, id: u16, stroke: game.presentation.Stroke) void {

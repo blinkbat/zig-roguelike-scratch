@@ -55,13 +55,13 @@ text(32, 600, 'Original face pieces below are unchanged RGBA. Lip shadows fall o
 labels.save(work / 'labels.png')
 guides.save(work / 'grid.png')
 q = lambda p: json.dumps(str(p).replace('\\', '/'), ensure_ascii=False)
-lua = [f'for _,path in ipairs({{{q(args.output)},{q(args.output.with_suffix(".png"))}}}) do']
+lua = [f'local sourceFiles=dofile({q(root / "tools/tile_art/source_files.lua")})'] if args.replace else []
+lua.append(f'for _,path in ipairs({{{q(args.output)},{q(args.output.with_suffix(".png"))}}}) do')
 if args.replace:
     lua.extend([
-        'if app.fs.isFile(path) then', 'local input=assert(io.open(path,"rb"))', 'local backup', 'local n=0', 'repeat',
+        'if app.fs.isFile(path) then', 'local backup', 'local n=0', 'repeat',
         'n=n+1', f'backup=app.fs.joinPath({q(work)},"before-assembly-"..n.."-"..app.fs.fileName(path))',
-        'until not app.fs.isFile(backup)', 'local copy=assert(io.open(backup,"wb"))',
-        'assert(copy:write(assert(input:read("*a"))))', 'assert(copy:close())', 'input:close()', 'end',
+        'until not app.fs.isFile(backup)', 'sourceFiles.copy(path,backup)', 'end',
     ])
 else:
     lua.append('assert(not app.fs.isFile(path),"Refusing to overwrite editable artwork: "..path)')

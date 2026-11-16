@@ -2,6 +2,7 @@ local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-
 local source=root..'assets/source/forest-tree-walls.aseprite'
 local desktop='C:/Users/DavidBennett/Desktop/forest-tree-walls.aseprite'
 local stamp=os.date('%Y%m%d-%H%M%S')
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local pc=app.pixelColor
 local function rgb(r,g,b) return pc.rgba(r,g,b,255) end
 local colours={
@@ -10,21 +11,7 @@ local colours={
   [rgb(56,92,59)]=rgb(45,74,47),
   [rgb(27,66,30)]=rgb(23,55,25),
 }
-local function copy(from,to)
-  local f=assert(io.open(from,'rb'))
-  local bytes=f:read('*a')
-  f:close()
-  local out=assert(io.open(to,'wb'))
-  out:write(bytes)
-  out:close()
-end
-local function contents(path)
-  local f=assert(io.open(path,'rb'))
-  local bytes=f:read('*a')
-  f:close()
-  return bytes
-end
-assert(contents(source)==contents(desktop),'Desktop has different edits; reconcile before toning')
+assert(sourceFiles.read(source)==sourceFiles.read(desktop),'Desktop has different edits; reconcile before toning')
 local sprite=assert(app.open(source))
 local changed=0
 for _,layer in ipairs(sprite.layers) do
@@ -39,9 +26,9 @@ for _,layer in ipairs(sprite.layers) do
   end
 end
 assert(changed>0,'Forest palette already toned or owner palette changed')
-copy(source,root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.aseprite')
-copy(root..'assets/walls/forest-tree-walls.png',root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.png')
-copy(root..'assets/ground/grass.png',root..'assets/backup/grass.'..stamp..'.png')
+sourceFiles.copy(source,root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.aseprite')
+sourceFiles.copy(root..'assets/walls/forest-tree-walls.png',root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.png')
+sourceFiles.copy(root..'assets/ground/grass.png',root..'assets/backup/grass.'..stamp..'.png')
 sprite:saveAs(source)
 sprite:saveCopyAs(desktop)
 sprite:close()

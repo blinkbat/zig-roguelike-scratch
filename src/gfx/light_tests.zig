@@ -88,6 +88,21 @@ test "following new tiles refreshes open light fields even when sight and memory
     try std.testing.expectEqualSlices(f32, &fresh.visibility.open_sight, &l.visibility.open_sight);
 }
 
+test "following changed crowns refreshes canopy and dappling without a level reload" {
+    var lv = litFloor();
+    const at = P{ .x = 20, .y = 20 };
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    for ([_]grid.Tile{ .shrub, .dirt, .large_tree, .swamp_tree, .floor }) |tile| {
+        lv.set(at, tile);
+        l.follow(&lv);
+        const fresh = try testLight(&lv);
+        defer std.testing.allocator.destroy(fresh);
+        try std.testing.expectEqualSlices(f32, &fresh.canopy, &l.canopy);
+        try std.testing.expectEqualSlices(f32, &fresh.dappling, &l.dappling);
+    }
+}
+
 test "effect lights shade terrain and bodies without revealing memory or crossing walls" {
     var lv = litFloor();
     for (0..grid.H) |y| lv.set(.{ .x = 22, .y = @intCast(y) }, .wall);

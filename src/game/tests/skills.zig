@@ -1679,6 +1679,36 @@ test "a spark landing on empty water shocks the bodies wading in it" {
     try std.testing.expect(g.sim.pool.get(id).?.shock.turns > 0);
 }
 
+test "lightning stopped by a barrel conducts through its water after direct or piercing flight" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 23, .y = 20 };
+    const Case = struct { act: skillbar.Act, pierces: bool = false };
+    for ([_]Case{ .{ .act = .spark }, .{ .act = .chain_lightning }, .{ .act = .spark, .pierces = true } }) |case| {
+        for ([_]bool{ false, true }) |wet| {
+            harness.heroArena(g, .wizard, from, &.{});
+            for (23..27) |x| g.sim.lv.set(.{ .x = @intCast(x), .y = 20 }, .shallows);
+            if (!wet) g.sim.lv.set(at, .floor);
+            g.sim.lv.putBarrel(at);
+            const id = harness.spawnAt(g, .rat, .{ .x = 25, .y = 20 }, false);
+            if (case.pierces) {
+                g.sim.inventory.gear.slots.set(.right_hand, harness.affixed(.wand, .{ .kind = .pierce, .value = 1 }));
+                const first = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, false);
+                harness.toughen(g.sim.pool.get(first).?);
+            }
+            game.settle(g);
+            harness.aimAt(g, case.act, at);
+            try std.testing.expect(!g.sim.lv.hasBarrel(at));
+            try std.testing.expectEqual(actor.row(.rat).hp, g.sim.pool.get(id).?.hp);
+            try std.testing.expectEqual(wet, g.sim.pool.get(id).?.shock.turns > 0);
+            try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[actor.Pool.slot(id)].status.get(.shocked));
+            harness.drawnOut(g);
+            try std.testing.expectEqual(g.sim.pool.get(id).?.shock.turns, g.pic.pictured[actor.Pool.slot(id)].status.get(.shocked));
+        }
+    }
+}
+
 test "an arrow or bolt loosed at a closed chest strikes the mimic in it, flinging it open as the blow lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

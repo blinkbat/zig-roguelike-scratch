@@ -1,5 +1,6 @@
 -- params: out=<sheet.aseprite> labels=<ground_labels.py png> tint=r,g,b [replace=yes]
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local path=assert(app.params.out,'out=<sheet.aseprite>')
 local labels_png=assert(app.params.labels,'labels=<png>')
 local r,g,b=assert(app.params.tint,'tint=r,g,b'):match('^(%d+),(%d+),(%d+)$')
@@ -119,7 +120,7 @@ if app.fs.isFile(path) then
     assert(found,'Preserving unknown slice: '..slice.name)
   end
   local base=path:match('([^/\\]+)%.aseprite$')
-  old:saveCopyAs(work..base..'-before-ground-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
+  sourceFiles.copy(path,work..base..'-before-ground-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
   old:close()
 end
 

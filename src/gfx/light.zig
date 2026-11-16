@@ -119,10 +119,13 @@ pub const Light = struct {
     }
 
     fn retile(self: *Light, lv: *const grid.Level) void {
+        const crowns_changed = for (self.scratch.tile, lv.tile) |before, after| {
+            if (look.crowned(before) != look.crowned(after)) break true;
+        } else false;
         self.scratch.tile = lv.tile;
         self.scratch.flames = lv.flames;
         self.countCasters(&self.scratch);
-        self.visibility.terrain(&self.scratch);
+        if (crowns_changed) self.grounded() else self.visibility.terrain(&self.scratch);
         self.visibility.soften();
         for (self.torch[0..self.torch_n]) |*t| self.pour(lv, t);
     }

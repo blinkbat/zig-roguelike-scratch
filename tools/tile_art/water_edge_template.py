@@ -104,6 +104,7 @@ for name, x, y in slices:
                 f'slice.name={quote(name)}', 'end'])
 if args.replace_blank:
     lua.extend([
+        f'local sourceFiles=dofile({quote(ROOT / "tools/tile_art/source_files.lua")})',
         f'if app.fs.isFile({quote(OUTPUT)}) then',
         f'local old=assert(app.open({quote(OUTPUT)}))',
         'assert(old.width==s.width and old.height==s.height and old.colorMode==s.colorMode and #old.frames==1 and #old.layers==#s.layers and #old.slices==#s.slices,"Preserving changed template")',
@@ -129,7 +130,7 @@ if args.replace_blank:
         'local b=slice.bounds',
         'assert(b.x==want.x and b.y==want.y and b.width==want.width and b.height==want.height,"Preserving moved slice")',
         'names[slice.name]=nil', 'end',
-        f'old:saveCopyAs({quote(WORK / "previous-template.aseprite")})', 'old:close()', 'end',
+        f'sourceFiles.copy({quote(OUTPUT)},{quote(WORK / "previous-template.aseprite")})', 'old:close()', 'end',
     ])
 else:
     lua.append(f'assert(not app.fs.isFile({quote(OUTPUT)}),"Refusing to overwrite editable artwork")')

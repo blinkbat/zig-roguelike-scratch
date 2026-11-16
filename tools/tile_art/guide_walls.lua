@@ -1,4 +1,5 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local path=assert(app.params.source,'source=<sheet.aseprite>')
 local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
 app.fs.makeAllDirectories(work)
@@ -75,7 +76,7 @@ for _,slice in ipairs(sprite.slices) do
   assert(b.x==((i-1)%8)*64 and b.y==64+math.floor((i-1)/8)*64 and b.width==64 and b.height==64,slice.name)
 end
 local base=path:match('([^/\\]+)%.aseprite$')
-sprite:saveCopyAs(work..base..'-before-full-cell-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
+sourceFiles.copy(path,work..base..'-before-full-cell-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
 under:cel(1).image=sheet(true)
 under:cel(1).position=Point(0,0)
 exact:cel(1).image=sheet(false)

@@ -1,4 +1,5 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local path=app.params.source or 'C:/Users/DavidBennett/Desktop/regular-walls.aseprite'
 local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
 app.fs.makeAllDirectories(work)
@@ -104,7 +105,7 @@ for i,mask in ipairs(masks) do
   end
   references[#references+1]=tile
 end
-sprite:saveCopyAs(work..'regular-walls-before-ported-edges-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
+sourceFiles.copy(path,work..'regular-walls-before-ported-edges-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
 extension.name='Extension - ported painted edges'
 extension:cel(1).image=completed
 extension:cel(1).position=Point(0,0)

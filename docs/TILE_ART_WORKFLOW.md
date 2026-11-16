@@ -109,6 +109,15 @@ stop installation. Verify with
 `python -B tools/tile_art/test_port_sources.py --aseprite <aseprite.exe>` and
 `python -B tools/tile_art/test_source_files.py --aseprite <aseprite.exe>`; fixtures stay in TEMP.
 
+Forest toning and HUD border export use the same checked reads and backups before
+overwriting artwork. Verify their failure paths with
+`python -B tools/tile_art/test_backup_failures.py --aseprite <aseprite.exe>`; all fixtures stay in TEMP.
+
+Wall guide/idea updates, wall and forest ports, and replacement ground/water-edge
+templates also use checked byte-copy backups. Aseprite's `saveCopyAs` can return
+success after a failed save, so it cannot guard an overwrite. Verify these callers
+with `python -B tools/tile_art/test_legacy_backups.py --aseprite <aseprite.exe>`.
+
 Deep water is derived by `deepen_water.lua` from the shallow sheet with a 60% RGB
 transform, retaining alpha, geometry and positions. Export the existing deep
 source for later edits rather than repeating the derivation. `install=yes` requires
@@ -179,7 +188,10 @@ Verify with `python -B tools/tile_art/test_port_water_cliff_edits.py --aseprite 
 
 For new templates, `--shot-water-cliffs` exports three native game renders.
 `water_cliff_connected.py <shot-folder>` prepares a TEMP Aseprite assembly;
-replacement backs up existing outputs. `water_edge_template.py` supplies the
+`--replace` backs up existing outputs through `source_files.copy` before changing
+either destination. Verify backup failure handling and native layer assembly with
+`python -B tools/tile_art/test_water_cliff_connected.py --aseprite <aseprite.exe>`.
+`water_edge_template.py` supplies the
 original six-piece paint kit; `--replace-blank` requires unchanged guide pixels,
 layers and slices as well as a blank paint layer. Use `--output` for a new path.
 Verify with `python -B tools/tile_art/test_water_edge_template.py --aseprite <aseprite.exe>`.

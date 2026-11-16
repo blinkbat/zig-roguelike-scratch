@@ -1,4 +1,5 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local path=assert(app.params.source,'source=<sheet.aseprite>')
 local kind=assert(app.params.kind,'kind=cave|forest|water|deep')
 local LIQUID=kind=='water' or kind=='deep'
@@ -301,7 +302,7 @@ for _,a in ipairs(masks) do for _,b in ipairs(masks) do
   end
 end end
 local base=path:match('([^/\\]+)%.aseprite$')
-sprite:saveCopyAs(work..base..'-before-ideas-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
+sourceFiles.copy(path,work..base..'-before-ideas-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
 if not ideas then
   ideas=sprite:newLayer()
   ideas.name='Ideas - hide before export'

@@ -68,7 +68,7 @@ for i,mask in ipairs(masks) do
   if i>1 then sheet:drawImage(tile,Point(x,y+64)) end
 end
 local backup=(app.params.install=='yes' and backups or work)..'forest-tree-walls.'..os.date('%Y%m%d-%H%M%S')..'.aseprite'
-sprite:saveCopyAs(backup)
+sourceFiles.copy(path,backup)
 local extension=sprite:newLayer()
 extension.name='Forest extensions'
 sprite:newCel(extension,1,sheet,Point(0,0))

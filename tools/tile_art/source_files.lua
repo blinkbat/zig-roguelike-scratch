@@ -7,7 +7,7 @@ local function bytesOf(file)
   return bytes
 end
 
-local files={}
+local files={read=bytesOf}
 
 function files.preserve(source,canonical,install)
   if install and app.fs.isFile(canonical) then
