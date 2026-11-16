@@ -1,5 +1,4 @@
 const std = @import("std");
-const chronicle = @import("../play/chronicle.zig");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const fov = @import("../map/fov.zig");
@@ -12,11 +11,9 @@ const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const firebolt = @import("../play/firebolt.zig");
 const windup = @import("../play/windup.zig");
-const attrs = @import("../play/attrs.zig");
 const burning = @import("../play/burning.zig");
 const damage = @import("../play/damage.zig");
 const turn_clock = @import("../play/clock.zig");
-const glacial = @import("../play/glacial.zig");
 const areas = @import("../play/area.zig");
 const blind = @import("../play/blind.zig");
 const confusion = @import("../play/confusion.zig");
@@ -28,11 +25,19 @@ const look = @import("../gfx/look.zig");
 const game = @import("../game.zig");
 const foes = @import("foe_rules.zig");
 const attacks = @import("attacks.zig");
+const impacts = @import("combat_impacts.zig");
 const rewards = @import("rewards.zig");
 const skills = @import("skills.zig");
 const tactics_exec = @import("tactics_exec.zig");
 const P = mathx.P;
 const Stroke = game.presentation.Stroke;
+
+pub const wound = impacts.wound;
+pub const reaction = impacts.reaction;
+pub const heal = impacts.heal;
+pub const fellOutright = impacts.fellOutright;
+pub const fell = impacts.fell;
+pub const scare = impacts.scare;
 
 pub fn barrelVerb(comptime act: skillbar.Act) []const u8 {
     return if (comptime act.bolt() != null) skillbar.Act.skill(act).VERB else SHOOT;
@@ -146,12 +151,6 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
 const HEFT_VERB = "slams";
 
 pub const SHOOT = bow.VERB;
-const IT_DIES = " It dies.";
-const CUT_DOWN = " It is cut down.";
-
-fn deathNote(h: Hurt) []const u8 {
-    return if (h.lethal) IT_DIES else "";
-}
 
 pub fn skillHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skillbar.Act, s: Stroke) void {
     const M = skillbar.Act.skill(act);
@@ -298,11 +297,7 @@ pub fn burstPlant(g: *game.Game, p: P, s: Stroke) void {
 }
 
 pub fn openChest(g: *game.Game, p: P) bool {
-    if (g.sim.pool.get(g.sim.lv.who(p))) |a| if (a.disguised) {
-        unmaskMimic(g, a, 0);
-        g.sim.log.push(.danger, CHEST_IS, .{actor.row(a.kind).name});
-        return true;
-    };
+    if (impacts.openMimic(g, p)) return true;
     switch (rewards.openChest(&g.sim, p)) {
         .opened => return true,
         .not_closed => return false,
@@ -327,130 +322,6 @@ pub fn collectGold(g: *game.Game, at: P) void {
 pub fn arrive(g: *game.Game, at: P) void {
     if (rewards.coinDrop(&g.sim, at)) collectGold(g, at);
     rewards.noticeItems(&g.sim, at);
-}
-
-pub fn wound(g: *game.Game, id: u16, raw: attacks.Roll, comptime verb: []const u8, s: Stroke) void {
-    woundAt(g, .fromInt(id), raw, verb, s, .chosen, null);
-}
-
-pub fn reaction(g: *game.Game, id: u16, raw: attacks.Roll, comptime verb: []const u8, s: Stroke, source: u16, flight: ?bow.Flight) void {
-    woundAt(g, .fromInt(id), raw, verb, s, .{ .reaction = .fromInt(source) }, flight);
-}
-
-/// A blow on a mimic still posing as its chest flings it open, to act from the next turn; its chest stays drawn where it stands until the blow lands.
-fn reveal(g: *game.Game, target: actor.ActorId, s: Stroke) void {
-    const a = g.sim.pool.get(target.value) orelse return;
-    if (!a.disguised) return;
-    unmaskMimic(g, a, s.wait);
-    a.waits = true;
-    g.sim.sayAs(.danger, a.at, CHEST_IS, .{actor.row(a.kind).name});
-    g.pic.masked.set(target.slot().index);
-}
-
-const CHEST_IS = "The chest is a {s}!";
-
-fn unmaskMimic(g: *game.Game, a: *actor.Actor, wait: f32) void {
-    a.unmask(&g.sim.lv);
-    g.pic.shimmerBody(wait, a);
-}
-
-fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime verb: []const u8, s: Stroke, origin: chronicle.AttackOrigin, flight: ?bow.Flight) void {
-    var roll = raw;
-    const struck = g.sim.pool.get(target.value) orelse return;
-    if (!struck.foe()) return;
-    roll.hit_checked = roll.hit_checked or struck.disguised;
-    reveal(g, target, s);
-    const outcome = attacks.resolve(&g.sim, target, roll, origin) orelse return;
-    const hit = switch (outcome) {
-        .miss => {
-            g.pic.recordAttack(&g.sim, g.cloud, origin, s, flight, .miss, null);
-            return;
-        },
-        .hit => |hit| hit,
-    };
-    const h = hit.damage;
-    game.presentDamage(g, h);
-    const name = actor.row(hit.kind).name;
-    g.sim.chronicle.note(.{ .dealt = .{ .to = hit.kind, .killed = h.lethal, .origin = origin } });
-    const slot = target.slot().index;
-    if (h.lethal or !g.sim.pool.items[slot].veiled()) {
-        g.sim.sayAs(.damage, hit.at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.sim.name.text(), name, if (hit.roll.crit) " critically" else "", hit.roll.dmg, if (hit.culled) CUT_DOWN else deathNote(h) });
-        if (hit.bled) |said| g.sim.sayAt(hit.at, "The {s} {s}!", .{ name, said });
-        if (hit.stunned) g.sim.sayFoeTakes(&g.sim.pool.items[slot], turn_clock.STUNNED);
-        inline for (attacks.IMBUED) |M| if (hit.imbued.contains(M.AILMENT)) g.sim.sayFoeTakes(&g.sim.pool.items[slot], M.TAKES);
-    }
-    const impact = landedImpact(g, target.value, hit.at, h);
-    const recovery = recoverLife(g, hit.recovery);
-    g.pic.recordAttack(&g.sim, g.cloud, origin, s, flight, .{ .hit = impact }, recovery);
-}
-
-pub fn heal(g: *game.Game, n: i32, wait: f32) void {
-    const after = recoverLife(g, n) orelse return;
-    g.pic.recordRecovery(&g.sim, wait, after);
-}
-
-fn recoverLife(g: *game.Game, n: i32) ?fx.After {
-    if (!g.sim.recoverLife(n)) return null;
-    return g.pic.heroAfter(&g.sim);
-}
-
-fn slain(g: *game.Game, id: u16) ?fx.After {
-    const killed = g.sim.pool.items[actor.Pool.slot(id)];
-    fell(g, id);
-    if (killed.kind.ally() or killed.raider) return null;
-    return recoverLife(g, g.sim.inventory.gear.killRecovery());
-}
-
-fn landBlow(g: *game.Game, id: u16, h: Hurt) fx.After {
-    const after = afterBlow(g, id, h);
-    if (h.lethal) fell(g, id);
-    return after;
-}
-
-fn landedImpact(g: *game.Game, id: u16, at: P, h: Hurt) fx.ActorImpact {
-    return .{ .slot = actor.ActorId.fromInt(id).slot(), .at = at, .lethal = h.lethal, .after = landBlow(g, id, h) };
-}
-
-fn afterBlow(g: *game.Game, id: u16, h: Hurt) fx.After {
-    const other = if (h.lethal) null else split(g, id);
-    return g.pic.damageAfter(&g.sim, h, other);
-}
-
-/// Split halves become visible only when the splitting blow lands.
-fn split(g: *game.Game, id: u16) ?actor.ActorId {
-    const i = actor.Pool.slot(id);
-    const name = actor.row(g.sim.pool.items[i].kind).name;
-    const other = g.sim.pool.split(&g.sim.lv, id, &g.sim.rng) orelse return null;
-    const o = actor.Pool.slot(other);
-    g.sim.ran[o] = g.sim.ran[i];
-    g.pic.recordSplit(&g.sim, .fromInt(id), .fromInt(other));
-    g.sim.sayAt(g.sim.pool.items[i].at, "The {s} splits in two!", .{name});
-    tactics_exec.landed(g, other);
-    return .fromInt(other);
-}
-
-pub fn fellOutright(g: *game.Game, id: u16) void {
-    _ = g.sim.pool.slay(&g.sim.lv, id);
-    fell(g, id);
-}
-
-pub fn fell(g: *game.Game, id: u16) void {
-    const target = actor.ActorId.fromInt(id);
-    g.pic.beforeDeath(&g.sim, target);
-    const death = rewards.defeat(&g.sim, target);
-    g.pic.recordDeath(&g.sim, target, death);
-}
-
-pub fn scare(g: *game.Game, fallen: usize) void {
-    const frightened = rewards.scare(&g.sim, g.sim.pool.items[fallen].at);
-    g.pic.recordFright(&g.sim, .fromIndex(fallen), frightened);
-}
-
-fn heroDies(g: *game.Game) void {
-    g.sim.log.push(.danger, "{s} dies.", .{g.sim.name.text()});
-    g.died_in = std.meta.activeTag(g.mode);
-    g.mode = .dead;
-    game.epitaph.inscribe(g);
 }
 
 /// The hero's action is spent: a turn passes unless haste spares it.
@@ -562,8 +433,6 @@ fn finishTurnPicture(g: *game.Game) void {
     }
 }
 
-const Hurt = game.simulation.DamageResult;
-
 fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
     inline for (comptime std.enums.values(game.simulation.Tick)) |t| switch (t) {
         .gassed => gasTick(g, id, .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." }),
@@ -576,14 +445,14 @@ fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
     };
 }
 
-fn gasTick(g: *game.Game, id: u16, comptime tick: game.simulation.Tick, comptime said: Said) void {
+fn gasTick(g: *game.Game, id: u16, comptime tick: game.simulation.Tick, comptime said: impacts.Said) void {
     const a = g.sim.pool.get(id) orelse return;
     const kind = comptime tick.gas().?;
     if (g.sim.lv.volumeAt(kind, a.at) == 0 or ranAlready(g, id, tick)) return;
     const harm = if (kind == .steam) gas.scald(g.sim.combatStats(a).elements) else gas.harm(a.max);
     const dmg = masked(g, id, harm);
     if (dmg == 0) return;
-    _ = harmTick(g, id, dmg, tick, said);
+    _ = impacts.harmTick(g, id, dmg, tick, said);
 }
 
 fn masked(g: *game.Game, id: u16, dmg: i32) i32 {
@@ -606,7 +475,7 @@ fn scorch(g: *game.Game, id: u16) void {
     const caught = g.sim.igniteFresh(actor.Pool.slot(id), a, fire.CATCH);
     const dmg = fire.scorch(g.sim.combatStats(a).elements);
     if (dmg > 0) {
-        _ = harmTick(g, id, dmg, .scorched, .{ .hero = "The " ++ fire.NAME ++ " scorch {s} for {d}.", .foe = "The " ++ fire.NAME ++ " scorch the {s} for {d}." });
+        _ = impacts.harmTick(g, id, dmg, .scorched, .{ .hero = "The " ++ fire.NAME ++ " scorch {s} for {d}.", .foe = "The " ++ fire.NAME ++ " scorch the {s} for {d}." });
     } else if (caught) g.pic.recordWear(&g.sim, .fromInt(id));
 }
 
@@ -622,7 +491,7 @@ pub fn burnHarm(g: *game.Game, id: u16) void {
     if (ranAlready(g, id, .burned) or a.burn.turns == 0) return;
     const dmg = a.burn.tick(g.sim.combatStats(a).elements.get(burning.ELEMENT)) orelse return;
     if (dmg == 0) return;
-    _ = harmTick(g, id, dmg, .burned, .{ .hero = "Burning sears {s} for {d}.", .foe = "Burning sears the {s} for {d}." });
+    _ = impacts.harmTick(g, id, dmg, .burned, .{ .hero = "Burning sears {s} for {d}.", .foe = "Burning sears the {s} for {d}." });
 }
 
 fn bleedHarm(g: *game.Game, id: u16, moved: bool) void {
@@ -632,37 +501,10 @@ fn bleedHarm(g: *game.Game, id: u16, moved: bool) void {
     const stopped = a.bleed.turns == 0;
     const foe = "The {s} bleeds for {d}.";
     const h = if (moved)
-        harmTick(g, id, dmg, .bled, .{ .hero = "Moving tears {s}'s wound: it bleeds for {d}.", .foe = foe, .torn = true })
+        impacts.harmTick(g, id, dmg, .bled, .{ .hero = "Moving tears {s}'s wound: it bleeds for {d}.", .foe = foe, .torn = true })
     else
-        harmTick(g, id, dmg, .bled, .{ .hero = "{s} bleeds for {d}.", .foe = foe });
+        impacts.harmTick(g, id, dmg, .bled, .{ .hero = "{s} bleeds for {d}.", .foe = foe });
     if (id == g.sim.hero and stopped and !h.lethal) g.sim.log.say("{s} stops bleeding.", .{g.sim.name.text()});
-}
-
-const Said = struct { hero: []const u8, foe: ?[]const u8 = null, torn: bool = false };
-
-fn heroHurt(g: *game.Game, comptime fmt: []const u8, args: anytype, hurt: chronicle.Hurt) void {
-    g.sim.log.push(.danger, fmt, args);
-    g.sim.chronicle.note(.{ .hurt = hurt });
-}
-
-fn harmTick(g: *game.Game, id: u16, dmg: i32, comptime owed: game.simulation.Tick, comptime said: Said) Hurt {
-    const a = g.sim.pool.get(id).?;
-    const kind = a.kind;
-    const before = a.hp;
-    const h = game.hurt(g, .fromInt(id), dmg);
-    const hero = id == g.sim.hero;
-    const name = actor.row(kind).name;
-    if (hero) {
-        heroHurt(g, said.hero, .{ g.sim.name.text(), h.dmg }, .{ .by = comptime owed.source().?, .dmg = h.dmg, .before = before, .torn = said.torn });
-    } else if (comptime said.foe) |line| {
-        g.sim.sayOf(a, line ++ "{s}", .{ name, h.dmg, deathNote(h) });
-    } else if (h.lethal) g.sim.sayOf(a, "The {s} dies.", .{name});
-    var debt = game.presentation.Harm{ .kill = h.lethal, .after = afterBlow(g, id, h) };
-    if (h.lethal) {
-        if (hero) heroDies(g) else debt.recovery = slain(g, id);
-    }
-    g.pic.owe(.fromInt(id), owed, debt);
-    return h;
 }
 
 const Worn = struct { held: bool = false, skips: bool = false, afflicted: actor.Afflicted = .initEmpty() };
@@ -801,7 +643,7 @@ fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, a
             return;
         }
         if (g.sim.pool.get(w) != null) {
-            const hit = bodyBlow(g, id, w, c.blow, c.blow.verb, af.contains(.enfeeble), false);
+            const hit = impacts.bodyBlow(g, id, w, c.blow, c.blow.verb, af.contains(.enfeeble), false);
             g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = if (hit) |a| .{ .actor = a } else null });
         } else if (smashedBy(g, next, SMASHER, row.name)) |hit| g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = hit });
     }
@@ -908,7 +750,7 @@ fn flyBolts(g: *game.Game) bool {
         const s = Stroke{ .from = was.at(), .wait = g.pic.recordBolt(&g.sim, .fromIndex(i), was, now, flew, wait), .element = .fire };
         const stop = flew.stop orelse continue;
         switch (stop) {
-            .body => |w| if (!boltHits(g, kind, w, hu, s)) return false,
+            .body => |w| if (!impacts.boltHits(g, kind, w, hu, s)) return false,
             .barrel => |p| if (smashedBy(g, p, SMASHER ++ "'s " ++ firebolt.NAME, actor.row(kind).name)) |hit| g.pic.strike(&g.sim, g.cloud, hit, s),
             .wall, .spent => if (g.pic.litShown(&g.sim, now.at())) g.pic.fx.puff(s.wait, .{ .at = now.point(), .ink = look.FIRE }),
         }
@@ -923,31 +765,6 @@ fn boltsWait(g: *const game.Game) f32 {
     const step = g.pic.glide[actor.Pool.slot(g.sim.hero)];
     if (step.to.eq(at)) return lead;
     return @max(lead, step.toward(at, 0).left());
-}
-
-/// Fire past its fire resistance, without a dodge, on whatever body it flies into; false when that kills the hero.
-fn boltHits(g: *game.Game, by: actor.Kind, id: u16, hu: actor.Hurl, s: Stroke) bool {
-    reveal(g, .fromInt(id), s);
-    const a = g.sim.pool.get(id) orelse return true;
-    const at = a.at;
-    const slot = actor.Pool.slot(id);
-    const kind = a.kind;
-    const thrower = actor.row(by).name;
-    const dmg = damage.resisted(hu.hit.roll(&g.sim.rng), g.sim.combatStats(a).elements.get(firebolt.ELEMENT));
-    const before = a.hp;
-    const h = game.hurt(g, .fromInt(id), dmg);
-    const hero = id == g.sim.hero;
-    if (hero) {
-        heroHurt(g, "The {s}'s " ++ firebolt.NAME ++ " burns {s} for {d}.", .{ thrower, g.sim.name.text(), h.dmg }, .{ .by = .{ .foe = by }, .dmg = h.dmg, .before = before });
-    } else if (h.lethal or !a.veiled()) g.sim.sayAt(at, "The {s}'s " ++ firebolt.NAME ++ " burns the {s} for {d}.{s}", .{ thrower, actor.row(kind).name, h.dmg, deathNote(h) });
-    if (!h.lethal and h.dmg > 0) _ = g.sim.igniteFresh(slot, a, hu.burns);
-    if (hero) {
-        g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(slot), .at = at, .lethal = h.lethal, .after = afterBlow(g, id, h) } }, s);
-        if (h.lethal) heroDies(g);
-        return !h.lethal;
-    }
-    g.pic.strike(&g.sim, g.cloud, .{ .actor = landedImpact(g, id, at, h) }, s);
-    return true;
 }
 
 fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted, sight: i32) void {
@@ -990,30 +807,9 @@ fn bodyStrike(g: *game.Game, id: u16, target: u16, af: actor.Afflicted, flight: 
     }
     const at = g.sim.pool.get(target).?.at;
     g.pic.turnLater(.fromInt(id), at.x - r.at.x);
-    const impact: ?fx.Impact = if (bodyBlow(g, id, target, s, s.verb, af.contains(.enfeeble), false)) |hit| .{ .actor = hit } else null;
+    const impact: ?fx.Impact = if (impacts.bodyBlow(g, id, target, s, s.verb, af.contains(.enfeeble), false)) |hit| .{ .actor = hit } else null;
     g.pic.owe(.fromInt(id), .struck, .{ .at = at, .impact = impact });
     g.pic.owe(.fromInt(id), .arrow, flight);
-}
-
-/// Only a sweep rolls `s.stuns`.
-fn bodyBlow(g: *game.Game, by: u16, target: u16, s: actor.Strike, verb: []const u8, weak: bool, stuns: bool) ?fx.ActorImpact {
-    const striker = g.sim.pool.get(by).?;
-    const a = g.sim.pool.get(target).?;
-    const who = actor.row(striker.kind).name;
-    const name = actor.row(a.kind).name;
-    const dmg = (attacks.foeBlow(&g.sim, striker, a, s, weak) orelse {
-        g.sim.sayOf(a, "The {s} misses the {s}.", .{ who, name });
-        return null;
-    }).dealt;
-    const at = a.at;
-    const stunned = stuns and dmg > 0 and dmg < a.hp and g.sim.procStatus(a, .stun, s.stuns);
-    if (stunned) {
-        if (!a.waits and !g.sim.ran[actor.Pool.slot(target)].contains(.worn)) a.clock.stunBeforeAction(actor.row(a.kind).pace) else a.clock.stun();
-    }
-    const h = game.hurt(g, .fromInt(target), dmg);
-    g.sim.sayOf(a, "The {s} {s} the {s} for {d}.{s}", .{ who, verb, name, h.dmg, deathNote(h) });
-    if (stunned) g.sim.sayFoeTakes(a, turn_clock.STUNNED);
-    return landedImpact(g, target, at, h);
 }
 
 fn swimTurn(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflicted) void {
@@ -1094,51 +890,20 @@ fn fleeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
 /// Whether a strike landed on the hero; afflictions are those worn under this action.
 fn reach(g: *game.Game, attacker_id: u16, row: actor.Row, facing_delta: i32, flight: ?bow.Flight, afflictions: actor.Afflicted) bool {
     const attacker = actor.ActorId.fromInt(attacker_id);
-    const attacker_slot = attacker.slot();
     g.pic.turnLater(attacker, facing_delta);
-    const kind = g.sim.pool.items[attacker_slot.index].kind;
+    const kind = g.sim.pool.items[attacker.slot().index].kind;
     switch (row.blow) {
         .strike => |blow| {
             const sweeps = sweepReady(g, attacker_id, row);
             const weak = afflictions.contains(.enfeeble);
             if (sweeps) sweepRound(g, attacker_id, row, blow, weak);
             const verb = if (sweeps) actor.SWEEP_VERB else blow.verb;
-            const outcome = attacks.strikeHero(&g.sim, attacker, blow, weak);
-            const hit = switch (outcome) {
-                .blocked, .dodged => {
-                    g.sim.log.say("{s} {s} the {s}.", .{ g.sim.name.text(), if (outcome == .blocked) "blocks" else "dodges", row.name });
-                    g.pic.recordFoeAttack(attacker, .miss, flight);
-                    if (row.ranged == null) tactics_exec.counter(g, attacker_id);
-                    return false;
-                },
-                .hit => |hit| hit,
-            };
-            const harm = hit.damage;
-            const hero = &g.sim.pool.items[harm.target.slot().index];
-            game.presentDamage(g, harm);
-            heroHurt(g, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), harm.dmg }, .{ .by = .{ .foe = kind }, .dmg = harm.dmg, .before = hit.hp_before, .best = hit.maximum_roll });
-            if (hit.bled) |said| g.sim.log.push(.danger, "{s} {s}!", .{ g.sim.name.text(), said });
-            if (hit.stunned) {
-                g.sim.sayTakes(g.sim.heroSlot().?, hero, turn_clock.STUNNED);
-                g.sim.chronicle.note(.{ .stunned = kind });
-            }
-            if (hit.chilled) g.sim.sayTakes(g.sim.heroSlot().?, hero, glacial.TAKES);
-            const after = afterBlow(g, g.sim.hero, harm);
-            g.pic.recordFoeAttack(attacker, if (harm.lethal) .{ .kill = after } else .{ .hurt = after }, flight);
-            if (row.ranged == null) returnThorns(g, attacker_id, hero.at);
-            if (harm.lethal) {
-                heroDies(g);
-            } else if (row.ranged == null) {
-                tactics_exec.counter(g, attacker_id);
-            }
-            if (!harm.lethal and blow.knocks) knockHero(g, attacker_id);
-            return true;
+            const outcome = impacts.incomingStrike(g, attacker, kind, row, blow, verb, flight, weak);
+            if (outcome == .hurt and blow.knocks) knockHero(g, attacker_id);
+            return outcome != .missed;
         },
-        .burst => |b| {
-            if (b == .gas) g.sim.chronicle.note(.burst);
-            _ = g.sim.pool.slay(&g.sim.lv, attacker_id);
-            g.pic.recordFoeAttack(attacker, .{ .burst = g.pic.afterOf(&g.sim, attacker_slot) }, flight);
-            fell(g, attacker_id);
+        .burst => |burst| {
+            impacts.burst(g, attacker, burst, flight);
             return false;
         },
     }
@@ -1166,23 +931,6 @@ fn shove(g: *game.Game, by: u16, d: mathx.Dir, comptime said: []const u8) void {
     g.pic.recordKnock(.fromInt(by), from, to);
 }
 
-fn returnThorns(g: *game.Game, id: u16, from: P) void {
-    const amount = g.sim.heroAttrs().thorns;
-    if (amount <= 0) return;
-    const a = g.sim.pool.get(id) orelse return;
-    if (!mathx.adjacent(from, a.at)) return;
-    const dmg = attrs.armoured(g.sim.combatStats(a).armour, amount, &g.sim.rng);
-    if (dmg <= 0) return;
-    const at = a.at;
-    const kind = a.kind;
-    const h = game.hurt(g, .fromInt(id), dmg);
-    const after = afterBlow(g, id, h);
-    g.sim.chronicle.note(.{ .dealt = .{ .to = kind, .killed = h.lethal, .origin = .{ .reaction = .fromInt(id) } } });
-    g.sim.sayAs(.damage, at, "{s}'s thorns hurt the {s} for {d}.{s}", .{ g.sim.name.text(), actor.row(kind).name, h.dmg, deathNote(h) });
-    const recovery = if (h.lethal) slain(g, id) else null;
-    g.pic.owe(.fromInt(id), .thorns, .{ .kill = h.lethal, .after = after, .recovery = recovery });
-}
-
 fn sweepReady(g: *game.Game, id: u16, row: actor.Row) bool {
     const a = g.sim.pool.get(id).?;
     if (row.sweep_every == 0 or a.sweep_in > 0) return false;
@@ -1198,7 +946,7 @@ fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike, weak: boo
     var swept = game.presentation.Swept{};
     for (cells.slice(), struck[0..cells.n]) |p, w| {
         if (w == g.sim.hero) continue;
-        const hit: fx.Impact = if (w != grid.NO_ONE) .{ .actor = bodyBlow(g, id, w, s, actor.SWEEP_VERB, weak, true) orelse continue } else smashedBy(g, p, SMASHER, row.name) orelse continue;
+        const hit: fx.Impact = if (w != grid.NO_ONE) .{ .actor = impacts.bodyBlow(g, id, w, s, actor.SWEEP_VERB, weak, true) orelse continue } else smashedBy(g, p, SMASHER, row.name) orelse continue;
         _ = mathx.push(fx.Impact, &swept.hit, &swept.n, hit);
     }
     g.pic.owe(.fromInt(id), .swept, swept);

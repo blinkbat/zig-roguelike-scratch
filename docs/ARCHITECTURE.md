@@ -11,6 +11,8 @@ conversion live in `save_format.zig` and `save_values.zig`. See [save compatibil
 | Chosen attacks and reactions have distinct attribution | `play/chronicle.zig` | [hero](../src/game/tests/hero.zig) |
 | Attack rules cannot update graphics or input | `game/attacks.zig`, `game/sim.zig` | [hero](../src/game/tests/hero.zig), [skills](../src/game/tests/skills.zig), [terrain](../src/game/tests/terrain.zig) |
 | Each resolution is pictured at its own impact | `game/presentation.zig`, `gfx/impact_queue.zig` | [impact_queue](../src/gfx/impact_queue.zig), [picture](../src/game/tests/picture.zig), [tactics_exec](../src/game/tactics_exec.zig) |
+| Damage, split and death consequences capture their snapshots before another resolution | `game/combat_impacts.zig` | [hero](../src/game/tests/hero.zig), [picture](../src/game/tests/picture.zig), [foes](../src/game/tests/foes.zig) |
+| Turn timing uses one time origin without reading simulation or rendering state | `game/turn_schedule.zig` | [turn_schedule](../src/game/turn_schedule.zig), [hero](../src/game/tests/hero.zig), [source_rules](../tools/source_rules.zig) |
 | Sprite selection, GPU resources and appearance have separate owners | `gfx/sprite_assets.zig`, `gfx/sprites.zig`, `gfx/sprite_materials.zig`, `gfx/look.zig` | [sprite_assets](../src/gfx/sprite_assets.zig), [sprites](../src/gfx/sprites.zig) |
 | Turn stages preserve causality and clean up on death | `game/combat.zig`, `game/sim.zig` | [skills](../src/game/tests/skills.zig), [hero](../src/game/tests/hero.zig) |
 | Enemy ordering, targeting and support rules cannot schedule presentation | `game/foe_rules.zig` | [foe_rules](../src/game/foe_rules.zig), [foes](../src/game/tests/foes.zig) |
@@ -91,6 +93,12 @@ requiring padding in small modules; the compiler checks references and types.
 Sprite asset selection and shader definitions cannot import the sprite renderer.
 Effect payloads and the impact queue cannot import the particle-effects coordinator.
 These helpers also cannot import Game, Presentation or the application.
+`game/turn_schedule.zig` accepts explicit motion and visibility facts; its direct
+imports are limited to standard-library, core and play modules. It cannot read
+Simulation, Game, Presentation or rendering state. `game/combat_impacts.zig` is
+an adapter between rules and presentation; it cannot directly import the combat,
+skill or foe-rule coordinators. Reaction and landing callbacks remain explicit
+through `tactics_exec.zig`.
 `gfx/status_marks.zig` cannot import the effects coordinator; its renderer reads
 only elapsed cosmetic time and explicit mark inputs. `game/projectile_motion.zig`
 cannot import Game or Presentation. Presentation supplies pictured visibility to its
@@ -120,10 +128,21 @@ screen, window-size and run/turn resets. Gameplay rules never read it.
 - New runs discard pending presentation; travel keeps only explicitly carried state; resume settles the loaded picture without replaying effects.
 - Mutation APIs take `ActorId` for identity or `ActorSlot` for storage; callers convert integer identities at their boundary.
 - `freshTurn` owns its scene reset.
-- `stepGlide` owns a local `TurnTiming`, including the hero's pictured cell after each knockback.
+- `stepGlide` owns a local `turn_schedule.Turn`, including the hero's pictured cell after each knockback.
 - Each body's schedule runs motion/projectile timing, blows and mending, reactions, knockback, then status harm.
-- `BodyTiming.impact_in` and `finishes_in` are seconds from the current frame; `starts_at` and `TurnTiming.next_at` keep the turn origin; `late` converts.
+- `turn_schedule.Body.impact_in` and `finishes_in` are seconds from the current frame; `starts_at` and `Turn.next_at` keep the turn origin; `late` converts.
 - New effects record their resolved snapshot once and join a stage; gameplay never writes the queue's landed state or timers.
+
+`game/turn_schedule.zig`
+- Owns motion deadlines, projectile completion, reaction timing, knockback ordering and the recovery deadline.
+- Presentation supplies visibility, motion and occupancy-clearance facts, applies the resulting motion and delivers effects in stage order.
+- Timing state is local to scheduling; no saved state or simulation RNG enters this module.
+
+`game/combat_impacts.zig`
+- Owns complete chosen/reaction wounds, incoming strikes, status harm, body strikes and bolt impacts through snapshot capture.
+- Split, death, thorns and recovery helpers stay inside this owner. Combat selects targets and advances turns; it consumes completed outcomes or captured impacts.
+- Incoming strikes capture the hero before thorns or counters. Combat applies surviving knockback afterward, including when thorns killed the attacker.
+- Public `combat` entry points forward to this owner so existing skill and tactical callers retain their contracts.
 
 `gfx/fx.zig`, `gfx/impact_queue.zig`
 - `Fx.step` ages existing visuals before delivering ready events.
@@ -175,8 +194,8 @@ RNG in `Fx`.
 
 | Flow | State and RNG order | Snapshot and picture order | Regression coverage |
 | --- | --- | --- | --- |
-| Hero hit | `attacks.resolve`: hit check, armour/elements, statuses, `Simulation.resolveDamage`, recovery roll | `combat.woundAt`: damage debt/log, `afterBlow` split and snapshot, then recovery and `recordAttack` | `hero`: attack resolution isolation and recorded chosen/reaction/status outcomes; `picture`: each bite and arrow HP at impact |
-| Incoming strike | `combat.reach` resolves any sweep victims first, then `attacks.strikeHero` owns block, hit, damage and surviving-hit statuses | `reach` records damage debt/logs and the hero snapshot before melee thorns, then death or counter, then surviving knockback. A thorn-killed attacker still knocks back; a blocked/dodged melee still permits a counter | `hero`: recorded incoming-strike RNG and isolated rule outcomes; `foes`: thorns, status rates and thorn-killed shieldbearer knockback |
+| Hero hit | `attacks.resolve`: hit check, armour/elements, statuses, `Simulation.resolveDamage`, recovery roll | `combat_impacts.woundAt`: damage debt/log, `afterBlow` split and snapshot, then recovery and `recordAttack` | `hero`: attack resolution isolation and recorded chosen/reaction/status outcomes; `picture`: each bite and arrow HP at impact |
+| Incoming strike | `combat.reach` resolves any sweep victims first, then `combat_impacts.incomingStrike` calls `attacks.strikeHero` for block, hit, damage and surviving-hit statuses | `incomingStrike` records damage debt/logs and the hero snapshot before melee thorns, then death or counter; `reach` applies surviving knockback. A thorn-killed attacker still knocks back; a blocked/dodged melee still permits a counter | `hero`: recorded incoming-strike RNG, isolated rule outcomes and frame-partition invariance; `foes`: thorns, status rates and thorn-killed shieldbearer knockback |
 | Killing hit | Damage removes the living body; `rewards.defeat` then applies XP, loot RNG, flask/mana recovery, burst terrain and fright | `landBlow` captures the dead body before `fell`; `beforeDeath` captures affected surroundings before rewards; `recordDeath` holds drops and burst effects until impact | `hero`: kill flask refill; `picture`: arrow death; `foes`: mimic loot and pyre neighbours at impact |
 | Chain or reaction | `chainHit` captures target identities before any hit; each target resolves in sequence. `tactics_exec.counter` rolls its chance before the reaction's attack rolls | Every `woundAt` captures its result before the next hit. Chain delays accumulate per jump; a missed reaction still occupies its animation time | `hero`: missed reaction attribution and projectile timing; `skills`: chain and area attacks; `tactics_exec`: reaction timing |
 | Status damage and splitting | `harmAfter` visits gas, steam, healing gas, ground fire, burn, bleed. Consumed ticks are marked before damage; split children inherit them before entry effects run | Each `harmTick` captures its own body/split before death rewards and the next tick. `Presentation.scheduleHarm` follows that body's action and reactions; newborn harm waits for its reveal | `picture`: burning/gassed halves and quarters; `foes`: sweep stun paid once by both halves |
@@ -189,6 +208,9 @@ converts between them. When one frame crosses several deadlines, the impact queu
 uses snapshot sequence to prevent old health/status from replacing newer state,
 and releases every event's mana debt once. This is covered by the queue's overdue
 impact test and `hero`'s multiple incoming impacts in one frame.
+The hero regressions also advance resolved turns in one, two and 120 frames,
+checking unchanged simulation state and RNG, final pictured bodies, released mana
+debt and no repeated death rewards.
 
 ## Adding a skill
 

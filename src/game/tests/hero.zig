@@ -231,37 +231,99 @@ test "incoming strikes retain recorded seeded outcomes through statuses reaction
     }
 }
 
-test "one frame crossing several incoming impacts settles the latest health and all mana debt" {
+test "frame partitioning settles incoming impacts and mana debt without changing the resolved turn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 21, .y = 20 }, .{ .x = 19, .y = 20 }, .{ .x = 20, .y = 21 } });
-    harness.wakeFoes(g);
-    const hero = g.sim.heroActor().?;
-    harness.toughen(hero);
-    hero.ward.turns = 3;
-    g.sim.mana = 2;
-    game.settle(g);
-    const before_hp = hero.hp;
-    g.sim.rng = harness.foeAttacksRng(g, &.{
-        .{ .id = harness.foeId(0), .lands = true },
-        .{ .id = harness.foeId(1), .lands = true },
-        .{ .id = harness.foeId(2), .lands = true },
-    });
-    harness.use(g, .wait);
-    try std.testing.expect(hero.hp < before_hp);
-    try std.testing.expectEqual(before_hp, g.pic.heroShown(&g.sim).?.hp);
-    try std.testing.expect(g.pic.mana_held > 0);
-    const rng = g.sim.rng;
-    const clock = g.sim.clock;
-    g.st = .{};
-    game.update(g, g.pic.busy + 0.01);
-    try std.testing.expectEqual(hero.hp, g.pic.heroShown(&g.sim).?.hp);
-    try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
-    try std.testing.expect(g.pic.quiet());
-    game.update(g, 0.1);
-    try std.testing.expectEqualDeep(rng, g.sim.rng);
-    try std.testing.expectEqual(clock, g.sim.clock);
-    try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+    for ([_]usize{ 1, 2, 120 }) |frames| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 21, .y = 20 }, .{ .x = 19, .y = 20 }, .{ .x = 20, .y = 21 } });
+        harness.wakeFoes(g);
+        const hero = g.sim.heroActor().?;
+        harness.toughen(hero);
+        hero.ward.turns = 3;
+        g.sim.mana = 2;
+        game.settle(g);
+        const before_hp = hero.hp;
+        g.sim.rng = harness.foeAttacksRng(g, &.{
+            .{ .id = harness.foeId(0), .lands = true },
+            .{ .id = harness.foeId(1), .lands = true },
+            .{ .id = harness.foeId(2), .lands = true },
+        });
+        harness.use(g, .wait);
+        try std.testing.expect(hero.hp < before_hp);
+        try std.testing.expectEqual(before_hp, g.pic.heroShown(&g.sim).?.hp);
+        try std.testing.expect(g.pic.mana_held > 0);
+        const resolved = hero.*;
+        const mana = g.sim.mana;
+        const rng = g.sim.rng;
+        const loot_rng = g.sim.loot_rng;
+        const clock = g.sim.clock;
+        const dt = (g.pic.busy + 0.1) / @as(f32, @floatFromInt(frames));
+        g.st = .{};
+        for (0..frames) |_| {
+            game.update(g, dt);
+            try std.testing.expectEqualDeep(resolved, hero.*);
+            try std.testing.expectEqualDeep(rng, g.sim.rng);
+            try std.testing.expectEqualDeep(loot_rng, g.sim.loot_rng);
+            try std.testing.expectEqual(clock, g.sim.clock);
+            try std.testing.expectEqual(mana, g.sim.mana);
+        }
+        try std.testing.expectEqual(fx.Body.of(resolved, g.pic.seq), g.pic.heroShown(&g.sim).?);
+        try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+        try std.testing.expect(g.pic.quiet());
+        game.update(g, 0.1);
+        try std.testing.expectEqualDeep(resolved, hero.*);
+        try std.testing.expectEqualDeep(rng, g.sim.rng);
+        try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+    }
+}
+
+test "frame partitioning preserves thorn death knockback and bleeding without replaying rewards" {
+    const actor = @import("../../play/actor.zig");
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]usize{ 1, 2, 120 }) |frames| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        const hero = g.sim.heroActor().?;
+        harness.toughen(hero);
+        hero.bleed.startWith(2);
+        const attacker_id = harness.spawnAt(g, .bandit_shieldbearer, .{ .x = 21, .y = 20 }, true);
+        const attacker_slot = actor.Pool.slot(attacker_id);
+        g.sim.pool.get(attacker_id).?.hp = 1;
+        g.sim.inventory.gear.slots.set(.chest, harness.affixed(.leather, .{ .kind = .thorns, .value = 50 }));
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(42);
+        harness.use(g, .wait);
+        try std.testing.expect(!g.sim.pool.items[attacker_slot].alive);
+        try std.testing.expectEqual(@as(i32, 19), hero.at.x);
+        try std.testing.expect(hero.bleed.turns > 0);
+        try std.testing.expect(g.pic.drawnAt(&g.sim, attacker_slot) != null);
+        const resolved_hero = hero.*;
+        const resolved_attacker = g.sim.pool.items[attacker_slot];
+        const rng = g.sim.rng;
+        const loot_rng = g.sim.loot_rng;
+        const kills = g.sim.kills;
+        const growth = g.sim.growth;
+        const ground = g.sim.ground;
+        const clock = g.sim.clock;
+        const dt = (g.pic.busy + 1) / @as(f32, @floatFromInt(frames));
+        g.st = .{};
+        for (0..frames) |_| {
+            game.update(g, dt);
+            try std.testing.expectEqualDeep(resolved_hero, hero.*);
+            try std.testing.expectEqualDeep(resolved_attacker, g.sim.pool.items[attacker_slot]);
+            try std.testing.expectEqualDeep(rng, g.sim.rng);
+            try std.testing.expectEqualDeep(loot_rng, g.sim.loot_rng);
+            try std.testing.expectEqual(clock, g.sim.clock);
+        }
+        try std.testing.expectEqual(fx.Body.of(resolved_hero, g.pic.seq), g.pic.heroShown(&g.sim).?);
+        try std.testing.expectEqual(fx.Body.of(resolved_attacker, g.pic.seq), g.pic.pictured[attacker_slot]);
+        try std.testing.expect(g.pic.drawnAt(&g.sim, attacker_slot) == null);
+        try std.testing.expectEqual(kills, g.sim.kills);
+        try std.testing.expectEqualDeep(growth, g.sim.growth);
+        try std.testing.expectEqualDeep(ground, g.sim.ground);
+        try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+        try std.testing.expect(g.pic.quiet());
+    }
 }
 
 test "hero post-action death prevents gas spread and foe actions while clearing turn tracking" {

@@ -13,6 +13,10 @@ local pc=app.pixelColor
 local rgba=pc.rgba
 local palette=dofile(root..'tools/tile_art/water_cliff_materials.lua').darken
 local s=assert(app.open(original))
+assert(s.width==owner.width and s.height==owner.height and #s.frames==1 and #s.slices==54,'Expected connected water template')
+local flattened=Image(s.width,s.height,ColorMode.RGB)
+flattened:drawSprite(s,1)
+assert(flattened:isEqual(before),'Baseline differs from layered template')
 local edits=Image(owner.width,owner.height,ColorMode.RGB)
 local extrapolated=Image(owner.width,owner.height,ColorMode.RGB)
 local final=Image(owner)
@@ -58,6 +62,7 @@ for band=0,3 do
   if foot and owner:getPixel(x,foot)==surface and before:getPixel(x,foot)~=surface then
    for y=foot+1,math.min(foot+16,359) do
     if pc.rgbaA(deep:getPixel(x+320,y))==0 then break end
+    assert(owner:getPixel(x+320,y)==before:getPixel(x+320,y),'Preserve owner edits in middle set')
     local p=palette[surface]
     extrapolated:putPixel(x+320,y,p); final:putPixel(x+320,y,p)
     extended=extended+1
@@ -70,10 +75,9 @@ for _,part in ipairs({{name='Owner flat border edits',image=edits},{name='Deep b
  s:newCel(l,1,part.image,Point(0,0))
 end
 app.layer=s.layers[#s.layers]
-s:saveAs(output)
-s:saveCopyAs(preview)
-local actual=Image{fromFile=preview}
-assert(actual:isEqual(final),'Saved composite differs from expected pixel edits')
+local actual=Image(s.width,s.height,ColorMode.RGB)
+actual:drawSprite(s,1)
+assert(actual:isEqual(final),'Layered composite cannot preserve these pixel edits')
 local outside=0
 for y=0,owner.height-1 do
  for x=0,owner.width-1 do
@@ -83,6 +87,9 @@ for y=0,owner.height-1 do
   end
  end
 end
+s:saveAs(output)
+s:saveCopyAs(preview)
+assert(Image{fromFile=preview}:isEqual(final),'Saved composite differs from expected pixel edits')
 s:close()
 local saved=assert(app.open(output))
 assert(#saved.slices==54,'Slice layout changed')

@@ -22,6 +22,7 @@ const game = @import("../game.zig");
 const glide = @import("glide.zig");
 const simulation = @import("sim.zig");
 const rewards = @import("rewards.zig");
+const schedule = @import("turn_schedule.zig");
 const Simulation = simulation.Simulation;
 const P = mathx.P;
 
@@ -1017,16 +1018,12 @@ pub const Presentation = struct {
 
     /// `late` is seconds since the glides started.
     pub fn stepGlide(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, late: f32) void {
-        var turn = TurnTiming{
-            .late = late,
-            .next_at = if (self.lead) |t| t + late + game.STAGGER_S else 0,
-            .hero_cell = self.heroCell(sim).?,
-        };
+        var turn = schedule.Turn.begin(late, self.lead, self.heroCell(sim).?, .{ .stagger = game.STAGGER_S, .bump_lands = game.BUMP_LANDS });
         const hero = sim.heroSlot().?;
         const warded = self.owed[hero].worn;
         self.owed[hero].worn = null;
         const hero_done = @max(self.stagger(sim, gas, .fromInt(sim.hero), self.leadNow(), &turn), self.bolt_lands);
-        if (self.bolt_lands > 0) turn.next_at = @max(turn.next_at, self.bolt_lands + late + game.STAGGER_S);
+        turn.afterBolts(self.bolt_lands);
         self.lead = null;
         self.bolt_lands = 0;
         self.knocked_from = null;
@@ -1045,7 +1042,7 @@ pub const Presentation = struct {
         }
     }
 
-    fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, target: actor.ActorId, start: f32, turn: *TurnTiming) f32 {
+    fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, target: actor.ActorId, start: f32, turn: *schedule.Turn) f32 {
         const owed = self.owed[target.slot().index];
         self.owed[target.slot().index] = .{};
         var timing = self.scheduleMotion(sim, target, owed, start, turn) orelse return start;
@@ -1055,7 +1052,7 @@ pub const Presentation = struct {
         return self.scheduleHarm(sim, gas, owed, start, &timing, turn);
     }
 
-    fn scheduleMotion(self: *Presentation, sim: *const Simulation, target: actor.ActorId, owed: Owed, start: f32, turn: *TurnTiming) ?BodyTiming {
+    fn scheduleMotion(self: *Presentation, sim: *const Simulation, target: actor.ActorId, owed: Owed, start: f32, turn: *schedule.Turn) ?BodyTiming {
         const slot = target.slot().index;
         const body = &sim.pool.items[slot];
         const motion = &self.glide[slot];
@@ -1073,36 +1070,33 @@ pub const Presentation = struct {
         const visible_origin = !hidden and self.litShown(sim, motion.to);
         const arrow_seen = if (owed.arrow) |*f| owed.struck == null or shown or self.flightSeen(sim, f) else false;
         const lunges = attack != null or owed.struck != null or owed.hurled != null;
-        const visible_action = (shown or arrow_seen) and (lunges or owed.mended != null);
-        const staggered = if (moved) shown or visible_origin else visible_action;
-        var starts_at = if (staggered) turn.next_at else 0;
-        if (staggered and target.value != sim.hero and (moved or lunges)) starts_at = @max(starts_at, turn.late + motion.left());
-        if (staggered and moved and target.value != sim.hero) starts_at = @max(starts_at, turn.late + self.clearIn(sim, slot, body.at));
-        if (staggered) turn.next_at = starts_at + game.STAGGER_S;
-        const begins_in = if (staggered) starts_at - turn.late else start;
-        if (self.turning[slot]) |*t| t.in = begins_in;
+        var clock = turn.motion(.{
+            .start_in = start,
+            .hero = target.value == sim.hero,
+            .moved = moved,
+            .lunges = lunges,
+            .shown = shown,
+            .visible_origin = visible_origin,
+            .arrow_seen = arrow_seen,
+            .mending = owed.mended != null,
+            .motion_left = motion.left(),
+            .clear_in = if (moved and target.value != sim.hero and (shown or visible_origin)) self.clearIn(sim, slot, body.at) else 0,
+        });
+        if (self.turning[slot]) |*t| t.in = clock.begins_in;
         const hero_at = if (owed.knock) |k| k.from else turn.hero_cell;
-        var finishes_in = if (staggered or moved) begins_in else @max(start, motion.left());
         const bumps = owed.arrow == null and lunges;
         if (moved) {
-            motion.* = motion.toward(destination, turn.late - starts_at);
+            motion.* = motion.toward(destination, turn.late - clock.starts_at);
         } else if (bumps) {
-            motion.* = motion.bumping(if (owed.struck) |s| s.at else owed.hurled orelse hero_at, turn.late - starts_at);
+            motion.* = motion.bumping(if (owed.struck) |s| s.at else owed.hurled orelse hero_at, turn.late - clock.starts_at);
         }
-        if ((moved or bumps) and staggered) {
-            finishes_in = motion.left();
-            self.holdUntil(finishes_in);
-        }
-        var impact_in = begins_in + game.BUMP_LANDS;
-        if (moved and staggered and (attack != null or owed.struck != null)) impact_in = @max(impact_in, finishes_in);
+        if (clock.afterMotion(bumps, attack != null or owed.struck != null, motion.left())) self.holdUntil(clock.finishes_in);
         if (arrow_seen) {
-            const release = @max(start, starts_at - turn.late);
+            const release = @max(start, clock.starts_at - turn.late);
             const s = Shot{ .from = body.at, .flight = owed.arrow.?, .t = -release, .net = attack != null and attack.? == .snare, .hook = actor.row(body.kind).hooks != null };
             self.foe_shots[slot] = s;
             const loosed = self.loose(s);
-            impact_in = loosed.lands;
-            finishes_in = loosed.ends;
-            turn.next_at = @max(turn.next_at, finishes_in + turn.late);
+            turn.projectile(&clock, loosed.lands, loosed.ends);
         }
         return .{
             .slot = target.slot(),
@@ -1110,53 +1104,49 @@ pub const Presentation = struct {
             .at = destination,
             .hero_at = hero_at,
             .shown = shown,
-            .staggered = staggered,
-            .moved = moved,
-            .starts_at = starts_at,
-            .impact_in = impact_in,
-            .finishes_in = finishes_in,
+            .clock = clock,
         };
     }
 
     fn scheduleBlows(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming) void {
         if (owed.foe_hit) |b| switch (b) {
-            .hurt, .kill => |after| self.strikeBody(sim, gas, sim.heroActorSlot().?, timing.hero_at, b == .kill, after, .{ .from = timing.body.at, .wait = timing.impact_in, .element = strikeElement(timing.body.kind) }),
-            .burst => |after| self.strikeBody(sim, gas, timing.slot, timing.body.at, true, after, .{ .from = timing.hero_at, .wait = timing.impact_in }),
-            .snare => |held| if (held) |after| self.recordRecovery(sim, timing.impact_in, after),
+            .hurt, .kill => |after| self.strikeBody(sim, gas, sim.heroActorSlot().?, timing.hero_at, b == .kill, after, .{ .from = timing.body.at, .wait = timing.clock.impact_in, .element = strikeElement(timing.body.kind) }),
+            .burst => |after| self.strikeBody(sim, gas, timing.slot, timing.body.at, true, after, .{ .from = timing.hero_at, .wait = timing.clock.impact_in }),
+            .snare => |held| if (held) |after| self.recordRecovery(sim, timing.clock.impact_in, after),
             .miss => {},
         };
         if (owed.mended) |m| {
-            timing.finishes_in = @max(timing.finishes_in, timing.impact_in);
+            timing.clock.finishAfter(timing.clock.impact_in);
             var seen = timing.shown;
-            if (timing.shown) self.shimmerBody(timing.impact_in, timing.body);
+            if (timing.shown) self.shimmerBody(timing.clock.impact_in, timing.body);
             if (m.slot) |s| {
-                if (m.after) |after| self.fx.settle(timing.impact_in, .{ .slot = s, .after = after });
+                if (m.after) |after| self.fx.settle(timing.clock.impact_in, .{ .slot = s, .after = after });
                 const kin = self.glide[s.index].to;
                 if (self.litShown(sim, kin)) {
-                    self.fx.shimmerIn(timing.impact_in, .{ .at = mathx.centre(kin), .col = look.LIFE });
+                    self.fx.shimmerIn(timing.clock.impact_in, .{ .at = mathx.centre(kin), .col = look.LIFE });
                     seen = true;
                 }
             }
-            if (seen) self.holdUntil(timing.impact_in);
+            if (seen) self.holdUntil(timing.clock.impact_in);
         }
         if (owed.swept) |*sw| {
-            if (timing.shown) self.fx.sweep(timing.impact_in, mathx.centre(timing.body.at));
-            for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h, .{ .from = timing.body.at, .wait = timing.impact_in });
+            if (timing.shown) self.fx.sweep(timing.clock.impact_in, mathx.centre(timing.body.at));
+            for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h, .{ .from = timing.body.at, .wait = timing.clock.impact_in });
         }
         if (owed.thorns) |h| {
-            self.strikeBody(sim, gas, timing.slot, timing.body.at, h.kill, h.after, .{ .from = timing.hero_at, .wait = timing.impact_in });
-            if (h.recovery) |after| self.recordRecovery(sim, timing.impact_in, after);
+            self.strikeBody(sim, gas, timing.slot, timing.body.at, h.kill, h.after, .{ .from = timing.hero_at, .wait = timing.clock.impact_in });
+            if (h.recovery) |after| self.recordRecovery(sim, timing.clock.impact_in, after);
         }
-        if (owed.struck) |s| if (s.impact) |hit| self.strike(sim, gas, hit, .{ .from = timing.body.at, .wait = timing.impact_in });
+        if (owed.struck) |s| if (s.impact) |hit| self.strike(sim, gas, hit, .{ .from = timing.body.at, .wait = timing.clock.impact_in });
         if (owed.hurled != null) if (self.bolts[timing.slot.index]) |*b| {
-            b.t = -timing.impact_in;
+            b.t = -timing.clock.impact_in;
         };
     }
 
-    fn scheduleReaction(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming, turn: *TurnTiming) f32 {
-        var countered = timing.impact_in;
+    fn scheduleReaction(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming, turn: *schedule.Turn) f32 {
+        var countered = timing.clock.impact_in;
         if (owed.reaction) |r| {
-            const release = if (timing.moved) timing.finishes_in else timing.impact_in;
+            const release = timing.clock.reactionRelease();
             var impact = release + game.BUMP_LANDS;
             if (r.flight) |f| {
                 const shot_ = Shot{ .from = r.from, .flight = f, .act = .overwatch, .t = -release };
@@ -1169,8 +1159,7 @@ pub const Presentation = struct {
             }
             if (r.recovery) |after| self.recordRecovery(sim, impact, after);
             self.holdUntil(impact);
-            timing.finishes_in = @max(timing.finishes_in, impact);
-            turn.next_at = @max(turn.next_at, impact + turn.late + game.STAGGER_S);
+            turn.reaction(&timing.clock, impact);
             countered = impact;
         }
         return countered;
@@ -1183,40 +1172,37 @@ pub const Presentation = struct {
         return .{ .lands = release + s.lands(), .ends = release + s.ends() };
     }
 
-    fn scheduleKnock(self: *Presentation, sim: *const Simulation, owed: Owed, countered: f32, timing: *BodyTiming, turn: *TurnTiming) void {
+    fn scheduleKnock(self: *Presentation, sim: *const Simulation, owed: Owed, countered: f32, timing: *BodyTiming, turn: *schedule.Turn) void {
         if (owed.knock) |k| {
             const shoved = &self.glide[sim.heroSlot().?];
             shoved.* = shoved.toward(k.to, -countered);
             self.holdUntil(shoved.left());
-            timing.finishes_in = @max(timing.finishes_in, shoved.left());
-            turn.hero_cell = k.to;
-            turn.next_at = @max(turn.next_at, turn.late + shoved.left());
+            turn.knock(&timing.clock, k.to, shoved.left());
         }
     }
 
-    fn scheduleHarm(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, start: f32, timing: *BodyTiming, turn: *const TurnTiming) f32 {
-        timing.finishes_in = @max(timing.finishes_in, self.fx.impacts.landsIn(timing.slot));
+    fn scheduleHarm(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, start: f32, timing: *BodyTiming, turn: *const schedule.Turn) f32 {
+        timing.clock.finishAfter(self.fx.impacts.landsIn(timing.slot));
         inline for (comptime std.enums.values(simulation.Tick)) |t| {
             if (comptime @FieldType(Owed, @tagName(t)) == ?Harm) if (@field(owed, @tagName(t))) |h| {
-                if (h.recovery != null) timing.finishes_in = @max(timing.finishes_in, @max(0, turn.next_at - turn.late));
+                if (h.recovery != null) timing.clock.finishAfter(turn.recoveryReadyIn());
             };
         }
-        if (owed.worn) |c| self.fx.settle(timing.finishes_in, .{ .slot = timing.slot, .after = c });
+        if (owed.worn) |c| self.fx.settle(timing.clock.finishes_in, .{ .slot = timing.slot, .after = c });
         const mark: ?[2]f32 = if (timing.shown) mathx.centre(timing.at) else null;
         const drip: ?fx.Drip = if (mark) |m| .{ .at = m, .matter = fx.matterOf(timing.body.kind) } else null;
-        const in_view = timing.shown or timing.staggered;
+        const in_view = timing.shown or timing.clock.staggered;
         inline for (comptime std.enums.values(simulation.Tick)) |t| switch (t) {
             .worn => {},
-            .healed => if (owed.healed) |after| self.fx.settle(timing.finishes_in, .{ .slot = timing.slot, .after = after, .puff = fx.Puff.over(mark, look.gasInk(comptime t.gas().?)) }),
-            .gassed, .scalded => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, null, in_view, .{ .slot = timing.slot, .puff = fx.Puff.over(mark, look.gasInk(comptime t.gas().?)) }),
-            .scorched, .burned => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, .fire, in_view, .{ .slot = timing.slot, .fire_at = mark }),
-            .bled => if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.finishes_in, h, null, in_view, .{ .slot = timing.slot, .drip = drip }),
+            .healed => if (owed.healed) |after| self.fx.settle(timing.clock.finishes_in, .{ .slot = timing.slot, .after = after, .puff = fx.Puff.over(mark, look.gasInk(comptime t.gas().?)) }),
+            .gassed, .scalded => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.clock.finishes_in, h, null, in_view, .{ .slot = timing.slot, .puff = fx.Puff.over(mark, look.gasInk(comptime t.gas().?)) }),
+            .scorched, .burned => if (@field(owed, @tagName(t))) |h| self.harmShown(sim, gas, timing.at, timing.clock.finishes_in, h, .fire, in_view, .{ .slot = timing.slot, .fire_at = mark }),
+            .bled => if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.clock.finishes_in, h, null, in_view, .{ .slot = timing.slot, .drip = drip }),
         };
         if (timing.body.submerged != self.under.isSet(timing.slot.index)) {
-            const emerges_in = if (timing.staggered) @max(0, timing.starts_at - turn.late) else start;
-            self.dives[timing.slot.index] = if (timing.body.submerged or timing.moved) timing.finishes_in else emerges_in;
+            self.dives[timing.slot.index] = timing.clock.emergesIn(timing.body.submerged, start, turn.late);
         }
-        return timing.finishes_in;
+        return timing.clock.finishes_in;
     }
 
     fn clearIn(self: *const Presentation, sim: *const Simulation, slot: usize, to: P) f32 {
@@ -1344,12 +1330,6 @@ fn facingOf(dx: i32) ?actor.Facing {
     return if (dx < 0) .left else if (dx > 0) .right else null;
 }
 
-const TurnTiming = struct {
-    late: f32,
-    next_at: f32,
-    hero_cell: P,
-};
-
 fn strikeElement(k: actor.Kind) ?damage.Element {
     return switch (actor.row(k).blow) {
         .strike => |s| s.element,
@@ -1363,9 +1343,5 @@ const BodyTiming = struct {
     at: P,
     hero_at: P,
     shown: bool,
-    staggered: bool,
-    moved: bool,
-    starts_at: f32,
-    impact_in: f32,
-    finishes_in: f32,
+    clock: schedule.Body,
 };

@@ -103,8 +103,11 @@ legal adjacent pairs; inspect its connected preview as well.
 
 For `port_ground.lua`, `port_forest.lua` and `port_bridge.lua`, `install=yes`
 also requires any existing canonical source to match the input file byte for byte
-before either is changed. Verify this preflight with
-`python -B tools/tile_art/test_port_sources.py --aseprite <aseprite.exe>`; fixtures stay in TEMP.
+before either is changed. `source_files.lua` owns this shared check and the checked
+byte-copy backups used by the ground and bridge ports; read, write or close failures
+stop installation. Verify with
+`python -B tools/tile_art/test_port_sources.py --aseprite <aseprite.exe>` and
+`python -B tools/tile_art/test_source_files.py --aseprite <aseprite.exe>`; fixtures stay in TEMP.
 
 Deep water is derived by `deepen_water.lua` from the shallow sheet with a 60% RGB
 transform, retaining alpha, geometry and positions. Export the existing deep
@@ -139,6 +142,8 @@ copies the three named 64px left/repeat/right slices to
 It excludes references and compares reopened crop pixels. Derived
 `*-cliff-cap.png` alpha masks fill above faces and taper outside ends;
 `*-cliff-lip.txt` and `*-cliff-foot.txt` anchor cast/contact shadows.
+An explicit `out=` must end in `.png` (case-insensitive); auxiliary files use
+the same stem. Verify with `python -B tools/tile_art/test_export_water_cliff.py --aseprite <aseprite.exe>`.
 
 `pinch_shallow_cliff.lua` created the shallow half-height layer from original
 layer 8, which stays hidden and intact. Columns retain lip rows and horizontal
@@ -166,7 +171,11 @@ and require an explicit material assignment.
 `port_water_cliff_edits.lua` transfers changed shallow border pixels to the
 deep block while preserving taller faces and all pixels outside that block.
 Inspect `source`, `baseline`, `original`, `output`, `preview` and
-`report` inputs before using it. Do not regenerate templates over these edits.
+`report` inputs before using it. The baseline must match the layered original;
+the complete composite is checked before writing destinations. Edits that the
+added layers cannot reproduce, including erasing opaque original pixels, are
+rejected without replacing outputs. Do not regenerate templates over these edits.
+Verify with `python -B tools/tile_art/test_port_water_cliff_edits.py --aseprite <aseprite.exe>`.
 
 For new templates, `--shot-water-cliffs` exports three native game renders.
 `water_cliff_connected.py <shot-folder>` prepares a TEMP Aseprite assembly;

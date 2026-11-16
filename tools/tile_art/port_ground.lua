@@ -8,17 +8,8 @@ local material=assert(({
 local title=name:gsub('^%l',string.upper)
 local path=app.params.source or ('C:/Users/DavidBennett/Desktop/'..name..'.aseprite')
 local canonical=root..'assets/source/'..name..'.aseprite'
-local function bytesOf(file)
-  local input=assert(io.open(file,'rb'))
-  local bytes,read_error=input:read('*a')
-  local closed,close_error=input:close()
-  assert(bytes,read_error)
-  assert(closed,close_error)
-  return bytes
-end
-if app.params.install=='yes' and app.fs.isFile(canonical) then
-  assert(bytesOf(canonical)==bytesOf(path),'Preserving divergent canonical source; inspect owner edits before installing')
-end
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+sourceFiles.preserve(path,canonical,app.params.install=='yes')
 local art_path=app.params.art or path
 local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
 app.fs.makeAllDirectories(work)
@@ -217,16 +208,8 @@ end end
 assert(joins==128)
 local stamp=os.date('%Y%m%d-%H%M%S')
 local backup=work..name..'-before-'..stamp..'.aseprite'
-local function copy(from,to)
-  local input=assert(io.open(from,'rb'))
-  local bytes=input:read('*a')
-  input:close()
-  local output=assert(io.open(to,'wb'))
-  output:write(bytes)
-  output:close()
-end
-copy(path,backup)
-if art_path~=path then copy(art_path,work..name..'-painting-before-'..stamp..'.aseprite') end
+sourceFiles.copy(path,backup)
+if art_path~=path then sourceFiles.copy(art_path,work..name..'-painting-before-'..stamp..'.aseprite') end
 local l=s:newLayer()
 l.name=title..' extensions'
 s:newCel(l,1,extension,Point(0,0))

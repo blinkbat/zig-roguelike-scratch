@@ -23,6 +23,8 @@ fn domain(path: []const u8) bool {
 }
 
 const INTERACTION = "edit/interaction.zig";
+const TURN_SCHEDULE = "game/turn_schedule.zig";
+const COMBAT_IMPACTS = "game/combat_impacts.zig";
 
 const SPLIT_FROM = [_]struct { owners: []const []const u8, parent: []const u8 }{
     .{ .owners = &.{ "gfx/sprite_assets.zig", "gfx/sprite_materials.zig" }, .parent = "gfx/sprites.zig" },
@@ -50,6 +52,12 @@ const INDEPENDENT = [_][]const u8{
 };
 
 fn allowed(owner: []const u8, target: []const u8) bool {
+    if (std.mem.eql(u8, owner, TURN_SCHEDULE)) {
+        return std.mem.eql(u8, target, "std") or std.mem.startsWith(u8, target, "core/") or std.mem.startsWith(u8, target, "play/");
+    }
+    if (std.mem.eql(u8, owner, COMBAT_IMPACTS)) {
+        return !listed(&.{ "game/combat.zig", "game/skills.zig", "game/foe_rules.zig" }, target);
+    }
     for (SPLIT_FROM) |split| {
         if (listed(split.owners, owner) and std.mem.eql(u8, target, split.parent)) return false;
     }
@@ -72,7 +80,8 @@ pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) 
     defer tree.deinit(alloc);
     if (tree.errors.len != 0) return error.InvalidSyntax;
     if (tree.rootDecls().len == 0) return error.EmptyModule;
-    if (!domain(owner) and !listed(&INDEPENDENT, owner) and !std.mem.eql(u8, owner, INTERACTION)) return null;
+    if (!domain(owner) and !listed(&INDEPENDENT, owner) and !std.mem.eql(u8, owner, INTERACTION) and
+        !std.mem.eql(u8, owner, TURN_SCHEDULE) and !std.mem.eql(u8, owner, COMBAT_IMPACTS)) return null;
     const tags = tree.tokens.items(.tag);
     tokens: for (tags, 0..) |tag, i| {
         const token: u32 = @intCast(i);
@@ -112,6 +121,24 @@ test "attack resolution cannot import death rewards or foe turn coordination" {
     try std.testing.expect((try check(alloc, "game/attacks.zig", "const sim = @import(\"sim.zig\");")) == null);
     try std.testing.expect((try check(alloc, "game/attacks.zig", "const rewards = @import(\"rewards.zig\");")) != null);
     try std.testing.expect((try check(alloc, "game/attacks.zig", "const foes = @import(\"foe_rules.zig\");")) != null);
+}
+
+test "turn scheduling stays independent and impact resolution cannot call its combat coordinator" {
+    const alloc = std.testing.allocator;
+    for ([_][:0]const u8{
+        "const parent = @import(\"presentation.zig\");",
+        "const game = @import(\"../game.zig\");",
+        "const sim = @import(\"sim.zig\");",
+        "const renderer = @import(\"../gfx/fx.zig\");",
+        "const device = @import(\"raylib\");",
+    }) |source| try std.testing.expect((try check(alloc, TURN_SCHEDULE, source)) != null);
+    try std.testing.expect((try check(alloc, TURN_SCHEDULE, "const std = @import(\"std\"); const p = @import(\"../core/mathx.zig\"); const actor = @import(\"../play/actor.zig\");")) == null);
+    for ([_][:0]const u8{
+        "const parent = @import(\"combat.zig\");",
+        "const skills = @import(\"skills.zig\");",
+        "const foes = @import(\"foe_rules.zig\");",
+    }) |source| try std.testing.expect((try check(alloc, COMBAT_IMPACTS, source)) != null);
+    try std.testing.expect((try check(alloc, COMBAT_IMPACTS, "const rules = @import(\"attacks.zig\"); const rewards = @import(\"rewards.zig\"); const game = @import(\"../game.zig\");")) == null);
 }
 
 test "source boundaries reject rendering and application imports in domain code" {

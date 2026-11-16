@@ -96,8 +96,15 @@ fn sliderOf(comptime row: Row) ?Slider {
 }
 
 comptime {
+    var listed = std.EnumSet(Row).initEmpty();
+    for (std.enums.values(Page)) |page| for (rows(page)) |row| {
+        if (listed.contains(row)) @compileError("options row " ++ @tagName(row) ++ " appears on more than one page");
+        if (sliderOf(row) != null and page != .visuals) @compileError("options slider " ++ @tagName(row) ++ " belongs on the visuals page");
+        listed.insert(row);
+    };
     for (std.meta.fields(lens.Options) ++ std.meta.fields(cinema.Cinema.Strengths)) |f| _ = @field(Row, f.name);
     for (std.enums.values(Row)) |row| {
+        if (!listed.contains(row)) @compileError("options row " ++ @tagName(row) ++ " is missing from its page");
         if (@hasField(lens.Options, @tagName(row)) and @hasField(cinema.Cinema.Strengths, @tagName(row))) @compileError("options row " ++ @tagName(row) ++ " names two settings");
         if ((range(row) != null) != (sliderOf(row) != null)) @compileError("options row " ++ @tagName(row) ++ " has a range exactly when it names a setting");
     }

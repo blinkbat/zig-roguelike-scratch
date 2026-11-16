@@ -3,6 +3,8 @@ local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-
 local depth=app.params.depth or 'shallow'
 assert(depth=='shallow' or depth=='deep','depth=shallow|deep')
 local out=app.params.out or root..'assets/water/'..(depth=='shallow' and 'shallows' or 'water')..'-cliff.png'
+assert(out:lower():match('%.png$'),'out must name a PNG file')
+local stem=out:sub(1,-5)
 local layer_name=assert(app.params.layer,'layer=<painted layer index or name>')
 local s=assert(app.open(source))
 local layer=s.layers[tonumber(layer_name) or 0]
@@ -88,13 +90,13 @@ for x=0,191 do
  feet[#feet+1]=tostring(foot)
  lips[#lips+1]=tostring(lip)
 end
-local profile=assert(io.open(out:gsub('%.png$','-foot.txt'),'wb'))
+local profile=assert(io.open(stem..'-foot.txt','wb'))
 profile:write(table.concat(feet,',')..'\n')
 profile:close()
-local lip_profile=assert(io.open(out:gsub('%.png$','-lip.txt'),'wb'))
+local lip_profile=assert(io.open(stem..'-lip.txt','wb'))
 lip_profile:write(table.concat(lips,',')..'\n')
 lip_profile:close()
-local cap_out=out:gsub('%.png$','-cap.png')
+local cap_out=stem..'-cap.png'
 cap:saveAs(cap_out)
 assert(Image{fromFile=cap_out}:isEqual(cap),'cap mask changed')
 for i,tile in ipairs(pieces) do

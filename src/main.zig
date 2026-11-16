@@ -220,6 +220,8 @@ test {
     _ = @import("game/skills.zig");
     _ = @import("game/targeting.zig");
     _ = @import("game/presentation.zig");
+    _ = @import("game/turn_schedule.zig");
+    _ = @import("game/combat_impacts.zig");
     _ = @import("game/sim.zig");
     _ = @import("play/chronicle.zig");
     _ = @import("play/obituary.zig");

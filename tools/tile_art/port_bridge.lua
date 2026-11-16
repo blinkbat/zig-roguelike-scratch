@@ -1,17 +1,8 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local path=app.params.source or 'C:/Users/DavidBennett/Desktop/bridge.aseprite'
 local canonical=root..'assets/source/bridge.aseprite'
-local function bytesOf(file)
-  local input=assert(io.open(file,'rb'))
-  local bytes,read_error=input:read('*a')
-  local closed,close_error=input:close()
-  assert(bytes,read_error)
-  assert(closed,close_error)
-  return bytes
-end
-if app.params.install=='yes' and app.fs.isFile(canonical) then
-  assert(bytesOf(canonical)==bytesOf(path),'Preserving divergent canonical source; inspect owner edits before installing')
-end
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+sourceFiles.preserve(path,canonical,app.params.install=='yes')
 local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
 app.fs.makeAllDirectories(work)
 local order=dofile(root..'tools/tile_art/ground_corners.lua')
@@ -343,15 +334,7 @@ assert(joins==128)
 
 local stamp=os.date('%Y%m%d-%H%M%S')
 local backup=work..'bridge-before-'..stamp..'.aseprite'
-local function copy(from,to)
-  local input=assert(io.open(from,'rb'))
-  local bytes=input:read('*a')
-  input:close()
-  local output=assert(io.open(to,'wb'))
-  output:write(bytes)
-  output:close()
-end
-copy(path,backup)
+sourceFiles.copy(path,backup)
 if previous then s:deleteLayer(previous) end
 local l=s:newLayer()
 l.name='Bridge extensions'

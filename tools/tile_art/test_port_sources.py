@@ -45,7 +45,7 @@ local env=setmetatable({app={
   end,
 },dofile=function(path)
   local helper=path:match('/tools/tile_art/([^/]+)$')
-  assert(helper=='ground_corners.lua' or helper=='wall_masks.lua')
+  assert(helper=='ground_corners.lua' or helper=='wall_masks.lua' or helper=='source_files.lua')
   return dofile(realapp.params.helpers..'/'..helper)
 end},{__index=_G})
 assert(loadfile(realapp.params.script,'t',env))()

@@ -470,8 +470,8 @@ fn how(ctx: *const Context, top: *const Top, tagged: Tags, deed: ?Deed, said: *T
         },
         .best_roll => return w.print(" It was the hardest blow {} can strike.", .{Indefinite{ .word = sourceName(k.by) }}),
         .missed => |n| if (deed == null or deed.?.what != .missed) {
-            if (n == 1) return w.print(" {s} had missed a shot.", .{ctx.name});
-            return w.print(" {s} had missed {d} shots.", .{ ctx.name, n });
+            if (n == 1) return w.print(" {s} had missed an attack.", .{ctx.name});
+            return w.print(" {s} had missed {d} attacks.", .{ ctx.name, n });
         },
     };
 }
@@ -648,6 +648,17 @@ test "bites a shield took whole wore nobody down, and a shield cast in time was 
     try std.testing.expectEqual(@as(usize, 1), top.n);
     const r = write(&ctx);
     try std.testing.expectEqualStrings("Arwen the archer was stabbed to death by a pib in the Warrens. Arwen cast " ++ WARD_NAME ++ " on the final turn.", r.text());
+}
+
+test "a missed melee reaction is an attack rather than a shot and preserves the chosen deed" {
+    const turns = [_]Turn{turnOf(8, 4, &.{
+        .{ .used = .wait },
+        .{ .missed = .{ .origin = .{ .reaction = .fromInt(2) } } },
+        rat(5, 4),
+    })};
+    const ctx = testContext(&turns);
+    const report = write(&ctx);
+    try std.testing.expectEqualStrings("Arwen the archer was bitten to death by a rat in the Warrens. Arwen waited. Arwen had missed an attack.", report.text());
 }
 
 test "a report too long for its room drops whole sentences" {

@@ -534,7 +534,8 @@ pub fn pauseStep(g: *game.Game) void {
 fn pauseLabel(g: *const game.Game, r: game.PauseRow) [:0]const u8 {
     return switch (r) {
         .resume_ => "Resume",
-        .options, .debug, .quit => menu.named(r),
+        .options, .debug => menu.named(r),
+        .quit => if (g.back == .title) "Save & Quit" else "Quit",
         .back => switch (g.back) {
             .title => "Title",
             .editor => "Back to the editor",
