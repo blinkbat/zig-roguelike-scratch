@@ -118,7 +118,7 @@ const Tier = enum {
     }
 
     fn put(t: Tier, face: *const font.Face, s: [:0]const u8, x: i32, y: i32, col: rl.Color) void {
-        if (t == .plain) face.draw(s, x, y, t.size(), col) else face.engraved(s, x, y, t.size(), col);
+        if (t == .plain) face.rich(s, x, y, t.size(), col) else face.richEngraved(s, x, y, t.size(), col);
     }
 
     fn label(t: Tier) Tier {
@@ -250,7 +250,7 @@ const Column = struct {
             if (!column.dry) {
                 if (links) |l| {
                     l.text(column.face, term.title, x, column.y, font.SMALL, look.UI_FOCUS, &.{term}, on);
-                } else column.face.text(term.title, x, column.y, font.SMALL, look.UI_FOCUS);
+                } else column.face.richText(term.title, x, column.y, font.SMALL, look.UI_FOCUS);
             }
             x += column.face.width(term.title, font.SMALL) + GROUP_GAP;
         }

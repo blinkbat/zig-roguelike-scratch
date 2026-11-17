@@ -436,7 +436,7 @@ fn drawShadows(g: *game.Game, c: Cam, ground: *const grid.Level, cast: grid.Box,
     for (0..g.sim.pool.n) |i| {
         const at = g.pic.casterAt(&g.sim, i, cast) orelse continue;
         const body = g.pic.bodyShown(&g.sim, i);
-        const opacity = g.pic.sighted[i] * body.opacity;
+        const opacity = g.pic.sighted[i] * body.opacity * look.bodyOpacity(body.pic.kind);
         if (opacity <= 0) continue;
         const t = g.sprites.body(body.pic.kind) orelse continue;
         const s = c.px(at);
@@ -500,8 +500,9 @@ fn mirrorFade(g: *const game.Game, foot: f32, top: f32, bottom: f32) [2]f32 {
 fn drawBody(g: *game.Game, b: *const Shown, mirrored: bool) void {
     const tex = g.sprites.body(b.pic.kind);
     const l = look.body(b.pic.kind);
-    const opacity = b.sighted * b.opacity;
+    const opacity = b.sighted * b.opacity * look.bodyOpacity(b.pic.kind);
     var shine = b.shine;
+    if (look.bodyGlow(b.pic.kind)) |col| shine.emission = look.rgbOf(col) * sky.splat(look.BODY_GLOW_EMISSION);
     if (g.sim.isHero(b.slot)) shine.emission = g.pic.fx.level_up.bodyGlow();
     if (b.dark > 0) darken(&shine, b.dark);
     if (mirrored) drawMirrored(g, tex, l, b.s, b.lifted, b.left, b.mid, &shine, b.flash, opacity) else drawFigure(g, tex, l, b.lifted, b.left, b.mid, &shine, b.flash, opacity);
@@ -644,7 +645,7 @@ pub fn drawMap(g: *game.Game) void {
     g.light.bake(ground, lo, hi);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;
     const flames = g.light.flames(ground, &flame_buf);
-    g.cinema.prepare(ground, g.light, view, flames);
+    g.cinema.prepare(ground, g.light, view, flames, &g.sim.locations, if (g.debug.visuals.weather) g.pic.local_weather_shown else .initFill(.initFill(0)));
     const outer = g.framebuffer;
     const blooming = g.cinema.beginScene(g.screen, outer);
     if (blooming) g.framebuffer = g.cinema.scene.?.id;
@@ -676,7 +677,6 @@ pub fn drawMap(g: *game.Game) void {
     const o = c.origin();
     g.pic.fx.draw(o[0], o[1], game.CELL_F);
     g.light.drawMap(-c.x, -c.y, game.CELL);
-    g.cinema.drawAir(g.light, o, game.CELL_F, g.screen, if (game.weatherNow(g)) |w| w.get(.mist) else 0);
     drawTacticalGround(g, c, ground, lo, hi);
     drawBraced(g, c);
     const level_up_at: ?[2]f32 = if (g.sim.heroSlot()) |i| (if (g.pic.drawnAt(&g.sim, i)) |v| game.middle(v) else null) else null;
@@ -767,7 +767,7 @@ pub fn drawMap(g: *game.Game) void {
     drawTorches(g, c, flames);
     g.pic.fx.drawGlow(ground, &g.light.visibility.sight, o[0], o[1], game.CELL_F);
     if (level_up_at) |at| g.pic.fx.level_up.drawSparks(at, o[0], o[1], game.CELL_F);
-    if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), &g.light.visibility.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
+    if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), g.pic.local_weather_shown, &g.sim.locations, &g.light.visibility.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
 
     if (g.pic.shot) |s| if (s.started()) drawShot(g, s, c);
     for (&g.pic.foe_shots) |*pending| {
@@ -779,6 +779,7 @@ pub fn drawMap(g: *game.Game) void {
         const at = b.view.at orelse continue;
         fx.drawMissileFaded(at, b.heading, projectiles.BOLT_ACT, g.pic.fx.seconds.at(), o[0], o[1], game.CELL_F, b.view.alpha);
     }
+    g.cinema.drawAir(g.light, o, game.CELL_F, g.screen, g.pic.hour_shown, g.debug.visuals.water_reflections);
     if (blooming) {
         g.cinema.endScene(outer, o, game.CELL_F, g.light);
         g.framebuffer = outer;
@@ -1036,6 +1037,10 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
         const at = g.pic.bodyAt(&g.sim, i) orelse continue;
         const pic = g.pic.bodyShown(&g.sim, i).pic;
         if (pic.down()) continue;
+        if (look.bodyGlow(pic.kind)) |col| {
+            const source = light.Emission.onBody(game.middle(at), col, look.BODY_GLOW_RADIUS, look.BODY_GLOW_GAIN);
+            emitFaded(g, ground, source, g.pic.sighted[i]);
+        }
         const flicker = g.pic.fx.statusFlicker(@floatFromInt(i));
         const source = for (std.enums.values(fx.Status)) |s| {
             if (pic.status.get(s) > 0) if (s.emission(game.middle(at), flicker)) |e| break e;

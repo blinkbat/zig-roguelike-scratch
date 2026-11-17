@@ -1,4 +1,3 @@
-import argparse
 import hashlib
 import os
 from pathlib import Path
@@ -7,11 +6,10 @@ import sys
 import tempfile
 import unittest
 
+from art_support import ROOT, arguments, aseprite, main
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 
 class WaterTemplateTests(unittest.TestCase):
@@ -33,7 +31,7 @@ class WaterTemplateTests(unittest.TestCase):
         generated = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', env=env)
         self.assertEqual(0, generated.returncode, generated.stdout + generated.stderr)
         assembly = Path(generated.stdout.strip()) / 'assemble.lua'
-        result = subprocess.run([args.aseprite, '--batch', '--script', str(assembly)], capture_output=True, text=True)
+        result = aseprite(args.aseprite, assembly, timeout=None)
         if expected == 0:
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         else:
@@ -66,7 +64,7 @@ class WaterTemplateTests(unittest.TestCase):
                 self.sheet.write_bytes(baseline)
                 script = self.work / 'edit.lua'
                 script.write_text('local s=assert(app.open(app.params.file))\nlocal paint=Image(1,1,ColorMode.RGB)\npaint:clear(app.pixelColor.rgba(255,0,0,255))\n' + change + '\ns:saveAs(app.params.file); s:close()\n', encoding='utf-8')
-                result = subprocess.run([args.aseprite, '--batch', '--script-param', 'file=' + str(self.sheet), '--script', str(script)], capture_output=True, text=True)
+                result = aseprite(args.aseprite, script, {'file': str(self.sheet)}, timeout=None)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 before = hashlib.sha256(self.sheet.read_bytes()).digest()
                 self.generate(replace=True, expected=1)
@@ -74,4 +72,4 @@ class WaterTemplateTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

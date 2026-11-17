@@ -173,6 +173,7 @@ test {
     _ = @import("gfx/prompt_icon.zig");
     _ = @import("gfx/line_icons.zig");
     _ = @import("gfx/font.zig");
+    _ = @import("gfx/text_keywords.zig");
     _ = @import("gfx/ground.zig");
     _ = @import("gfx/fx.zig");
     _ = @import("gfx/pixel.zig");
@@ -251,4 +252,5 @@ test {
     _ = @import("edit/tests.zig");
     _ = @import("save.zig");
     _ = @import("app.zig");
+    _ = @import("game/shots/landscapes.zig");
 }

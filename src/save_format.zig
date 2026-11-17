@@ -21,9 +21,12 @@ const day = @import("map/day.zig");
 const P = @import("core/mathx.zig").P;
 
 pub const MAGIC = "cistern-save\n";
-const VERSION: u64 = 2;
+const VERSION: u64 = 3;
+/// Runs saved before heroes started holding their class arms.
+const UNARMED: u64 = 2;
 /// Runs saved before flasks were worn as items.
 const FLASKLESS: u64 = 1;
+const READABLE = [_]u64{ VERSION, UNARMED, FLASKLESS };
 pub const Code = wire.Codec(Policy);
 pub const FILE_CAP = blk: {
     @setEvalBranchQuota(100_000);
@@ -310,7 +313,7 @@ pub fn open(bytes: []const u8, magic: []const u8, print: u64) OpenError![]const 
 }
 
 fn opened(bytes: []const u8) !struct { body: []const u8, version: u64 } {
-    for ([_]u64{ VERSION, FLASKLESS }) |version| {
+    for (READABLE) |version| {
         const body = open(bytes, MAGIC, version) catch |err| switch (err) {
             error.OtherBuild => continue,
             else => return err,
@@ -325,7 +328,8 @@ pub fn parse(bytes: []const u8) !*Snapshot {
     const snapshot = try std.heap.page_allocator.create(Snapshot);
     errdefer std.heap.page_allocator.destroy(snapshot);
     try Code.read(file.body, snapshot);
-    if (file.version == FLASKLESS) snapshot.run.inventory.gear.wearFlasks();
+    if (file.version <= FLASKLESS) snapshot.run.inventory.gear.wearFlasks();
+    if (file.version <= UNARMED) snapshot.run.inventory.gear.arm(snapshot.run.class);
     try validate(snapshot);
     return snapshot;
 }
@@ -515,7 +519,7 @@ fn heroIn(pool: *const actor.Pool, id: u16, kind: actor.Kind) ?*const actor.Acto
 
 fn deathsToCome(pool: *const actor.Pool) usize {
     var alive: usize = 0;
-    for (pool.items[0..pool.n]) |a| alive += @intFromBool(a.alive and a.foe());
+    for (pool.constSlice()) |*a| alive += @intFromBool(a.livingFoe());
     return alive + (actor.MAX - pool.n);
 }
 
@@ -528,8 +532,9 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *ground_it
     for (pool.slice(), 0..) |body, slot| {
         if (!grid.Level.inside(body.at) or body.max <= 0 or body.hp < 0 or body.hp > body.max) return error.Damaged;
         if (body.alive and (body.hp == 0 or level.who(body.at) != actor.Pool.idOf(slot))) return error.Damaged;
-        if (body.chill.phase >= glacial.CYCLE or body.bleed.amount < 0) return error.Damaged;
-        if (body.max > BODY_MOST or body.bleed.amount > BODY_MOST or body.clock.ticks < -BODY_MOST or body.clock.ticks > BODY_MOST) return error.Damaged;
+        if (body.chill.phase >= glacial.CYCLE or body.bleed.amount < 0 or body.bleed.move_bonus < 0) return error.Damaged;
+        if (body.max > BODY_MOST or body.bleed.amount > BODY_MOST or body.bleed.move_bonus > BODY_MOST or body.clock.ticks < -BODY_MOST or body.clock.ticks > BODY_MOST) return error.Damaged;
+        if (@as(i64, body.bleed.amount) * 2 + body.bleed.move_bonus > std.math.maxInt(i32)) return error.Damaged;
         if (body.sunder.stacks > sunder.MOST or (body.sunder.stacks == 0) != (body.sunder.turns == 0)) return error.Damaged;
         if (body.maim.limp and body.maim.turns == 0) return error.Damaged;
         if (body.tactics.guard > progress.RANKS or body.tactics.steady > progress.RANKS) return error.Damaged;
@@ -590,7 +595,7 @@ pub fn seal(out: *std.ArrayList(u8)) void {
     store.sealReserved(out, store.head(MAGIC));
 }
 
-fn sealed(g: *game.Game, out: *std.ArrayList(u8)) !void {
+pub fn sealed(g: *game.Game, out: *std.ArrayList(u8)) !void {
     out.clearRetainingCapacity();
     try write(g, out);
     seal(out);
@@ -669,6 +674,40 @@ test "runs saved before flasks were items gain both, while a current run keeps a
     for (std.enums.values(flask.Kind)) |k| try std.testing.expect(!target.sim.inventory.gear.holds(k));
 }
 
+test "runs saved before class arms gain them where the hands fit, while a current run keeps them taken off" {
+    const alloc = std.testing.allocator;
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    const map = try alloc.create(data.Map);
+    defer alloc.destroy(map);
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    for (hero.CLASSES) |class| {
+        source.sim.class = class;
+        game.begin(source, 43);
+        for ([_]item_bases.Slot{ .right_hand, .left_hand }) |slot| source.sim.inventory.gear.slots.set(slot, null);
+        try sealed(source, &bytes);
+        try read(bytes.items, target, map);
+        try std.testing.expectEqualDeep(source.sim.inventory.gear, target.sim.inventory.gear);
+        for (READABLE[1..]) |version| {
+            store.stamp(bytes.items, MAGIC, version);
+            try read(bytes.items, target, map);
+            try std.testing.expectEqualDeep(@import("play/gear.zig").Gear.startFor(class).slots, target.sim.inventory.gear.slots);
+        }
+    }
+    source.sim.class = .knight;
+    game.begin(source, 43);
+    source.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .greatsword });
+    source.sim.inventory.gear.slots.set(.left_hand, null);
+    try sealed(source, &bytes);
+    store.stamp(bytes.items, MAGIC, UNARMED);
+    try read(bytes.items, target, map);
+    try std.testing.expectEqual(item_bases.Kind.greatsword, target.sim.inventory.gear.slots.get(.right_hand).?.kind);
+    try std.testing.expectEqual(@as(?items.Item, null), target.sim.inventory.gear.slots.get(.left_hand));
+}
+
 test "a body whose clock, bleed or life would overflow a turn's arithmetic is damaged" {
     const alloc = std.testing.allocator;
     const run = try game.boot(alloc);
@@ -677,11 +716,16 @@ test "a body whose clock, bleed or life would overflow a turn's arithmetic is da
     try validateLevel(&run.sim.lv, &run.sim.pool, &run.sim.ground);
     const h = run.sim.heroActor().?;
     const saved = h.*;
-    for (0..3) |case| {
+    for (0..5) |case| {
         h.* = saved;
         switch (case) {
             0 => h.clock.ticks = std.math.minInt(i32),
             1 => h.bleed.amount = std.math.maxInt(i32),
+            2 => h.bleed.move_bonus = -1,
+            3 => {
+                h.bleed.amount = BODY_MOST;
+                h.bleed.move_bonus = 2;
+            },
             else => {
                 h.max = std.math.maxInt(i32);
                 h.hp = h.max;

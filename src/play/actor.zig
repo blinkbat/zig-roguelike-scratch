@@ -276,7 +276,7 @@ pub const Row = struct {
 };
 
 const SIGHT: i32 = 7;
-pub const LURK_REACH: i32 = 1;
+const LURK_REACH: i32 = 1;
 
 pub const SWEEP_VERB = "sweeps";
 pub const SWEEP_CELLS = mathx.ALL_DIRS.len;

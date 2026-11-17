@@ -8,17 +8,19 @@ const hud = @import("../../ui/hud.zig");
 const light = @import("../../gfx/light.zig");
 const raster = @import("../../gfx/raster.zig");
 const cinema = @import("../../gfx/cinema.zig");
+const climate = @import("../../map/climate.zig");
 const day = @import("../../map/day.zig");
 const fire = @import("../../map/fire.zig");
 const gas = @import("../../map/gas.zig");
 const options_menu = @import("../../ui/options.zig");
 const game = @import("../../game.zig");
+const SHARP_BAND = @import("../../gfx/lens.zig").SHARP_BAND;
 
 const P = mathx.P;
 const CINEMA_DIR = @import("capture.zig").CINEMA_DIR;
 const capture = @import("capture.zig").capture;
 const capturef = @import("capture.zig").capturef;
-const SIZES = @import("capture.zig").SIZES;
+const SIZES = game.SIZES;
 const differentPixels = @import("capture.zig").differentPixels;
 const neutralLens = @import("capture.zig").neutralLens;
 const drawInto = @import("capture.zig").drawInto;
@@ -45,15 +47,102 @@ pub fn captureCinema(g: *game.Game) !void {
     defer dropAtlas(g, w);
     try loadStrand(g, w);
     try captureCinemaScene(g, target, "strand");
+    try captureStrandForest(g, target);
     poseForest(g);
     studyAt(g, true, MORNING);
+    g.pic.local_weather_shown = .initFill((climate.Climate{ .weather = .beams }).now(0, 0));
     try captureCinemaScene(g, target, "forest");
+    _ = game.harness.spawnAt(g, .beefy_pib, .{ .x = 20, .y = 18 }, false);
+    _ = game.harness.spawnAt(g, .wizard, .{ .x = 29, .y = 18 }, false);
+    studyAt(g, true, MORNING);
+    g.pic.local_weather_shown = .initFill((climate.Climate{ .weather = .beams }).now(0, 0));
+    try captureCinemaScene(g, target, "forest-units");
+    for ([_]f32{ 7, 9, 10, 16, 17, 18 }) |hour| {
+        studyAt(g, true, hour);
+        g.pic.local_weather_shown = .initFill((climate.Climate{ .weather = .beams }).now(0, 0));
+        try capturef(g, target, CINEMA_DIR ++ "/forest-units-hour-{d:.0}.png", .{hour});
+    }
+    try captureBeamWater(g, target);
     try cinemaWater(g, target);
     try captureLens(g);
     try captureVisibility(g, target);
     game.character.openPause(g);
     game.debugging.select(g, .composed_lighting);
     try capture(g, target, CINEMA_DIR ++ "/debug.png");
+}
+
+fn captureBeamWater(g: *game.Game, target: rl.RenderTexture2D) !void {
+    poseForest(g);
+    var cells = grid.Box.sized(.{ .x = 17, .y = 19 }, 18, 5).cells();
+    while (cells.next()) |p| g.sim.lv.set(p, .water);
+    for ([_]i32{ 18, 22, 26, 30, 34 }) |x| g.sim.lv.set(.{ .x = x, .y = 17 }, .large_tree);
+    studyAt(g, true, MORNING);
+    g.pic.local_weather_shown = .initFill((climate.Climate{ .weather = .beams }).now(0, 0));
+    try captureCinemaScene(g, target, "beam-water");
+    const before = g.debug.visuals.water_reflections;
+    defer g.debug.visuals.water_reflections = before;
+    g.debug.visuals.water_reflections = true;
+    try capture(g, target, CINEMA_DIR ++ "/beam-water-defaults.png");
+    g.light.t.step(1.5);
+    try capture(g, target, CINEMA_DIR ++ "/beam-water-ripple-later.png");
+    try checkBeamReflection(g, target);
+}
+
+fn checkBeamReflection(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const c = game.scene.Cam.of(g);
+    const shots = @import("capture.zig");
+    g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{}, &g.sim.locations, g.pic.local_weather_shown);
+    var images: [2]rl.Image = undefined;
+    var count: usize = 0;
+    defer for (images[0..count]) |img| rl.unloadImage(img);
+    for (&images, 0..) |*img, i| {
+        shots.intoTarget(g, target);
+        rl.clearBackground(.{ .r = 0, .g = 0, .b = 0, .a = 80 });
+        g.cinema.drawAir(g.light, c.origin(), game.CELL_F, g.screen, g.pic.hour_shown, i == 1);
+        shots.outOfTarget(g);
+        img.* = try readTarget(target);
+        count += 1;
+    }
+    var changed: usize = 0;
+    var px = shots.pixels(g.screen.x, g.screen.y);
+    while (px.next()) |q| {
+        const a = rl.getImageColor(images[0], q.x, q.y);
+        const b = rl.getImageColor(images[1], q.x, q.y);
+        if (a.a != b.a) return error.BeamReflectionChangedAlpha;
+        if (sameRgb(a, b)) continue;
+        const p = c.cellAt(q);
+        if (!grid.Level.inside(p) or !@import("../../gfx/look.zig").reflects(g.sim.lv.at(p))) return error.BeamReflectionOutsideWater;
+        changed += 1;
+    }
+    if (changed < shots.MIN_PIXELS) return error.BeamReflectionMissing;
+    std.debug.print("shaft reflection GPU: {d} water pixels; dry ground and alpha unchanged\n", .{changed});
+}
+
+fn captureStrandForest(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const from = g.sim.heroAt().?;
+    var best: ?P = null;
+    var distance: i32 = std.math.maxInt(i32);
+    for (g.sim.locations, 0..) |place, i| {
+        if (place != .forest) continue;
+        const p = grid.Level.of(i);
+        if (!g.sim.lv.walkable(p) or g.sim.lv.held(p)) continue;
+        if (p.x < from.x + 22 or g.sim.lv.at(p) != .grass) continue;
+        const d = mathx.dist(from, p);
+        if (d >= distance) continue;
+        best = p;
+        distance = d;
+    }
+    const at = best orelse return error.StrandForestMissing;
+    const h = g.sim.heroActor().?;
+    g.sim.lv.clear(h.at);
+    h.at = at;
+    g.sim.lv.stand(at, g.sim.hero);
+    g.sim.clock = day.Clock.at(MORNING);
+    game.settle(g);
+    try captureCinemaScene(g, target, "strand-forest");
+    try capture(g, target, CINEMA_DIR ++ "/strand-forest-defaults.png");
+    g.light.t.step(2);
+    try capture(g, target, CINEMA_DIR ++ "/strand-forest-motes-later.png");
 }
 
 fn captureVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -165,7 +254,7 @@ fn captureLens(g: *game.Game) !void {
             defer rl.unloadImage(image);
             if (differentPixels(base, image) == 0) return error.LensDidNotChangeFrame;
             if (comptime std.mem.eql(u8, field.name, "lens_blur")) {
-                var points = grid.Cells.of(.{ .x = 0, .y = @intFromFloat(@ceil(@import("../../gfx/lens.zig").SHARP_BAND[0] * @as(f32, @floatFromInt(size.y)))) }, .{ .x = size.x, .y = @intFromFloat(@floor(@import("../../gfx/lens.zig").SHARP_BAND[1] * @as(f32, @floatFromInt(size.y)))) });
+                var points = grid.Cells.of(.{ .x = 0, .y = @intFromFloat(@ceil(SHARP_BAND[0] * @as(f32, @floatFromInt(size.y)))) }, .{ .x = size.x, .y = @intFromFloat(@floor(SHARP_BAND[1] * @as(f32, @floatFromInt(size.y)))) });
                 while (points.next()) |p| {
                     if (!sameRgb(rl.getImageColor(base, p.x, p.y), rl.getImageColor(image, p.x, p.y))) return error.LensBlurChangedSharpBand;
                 }
@@ -239,7 +328,7 @@ pub fn captureCinemaScene(g: *game.Game, target: rl.RenderTexture2D, comptime na
                 const dx = @mod(x + c.x, game.CELL);
                 const dy = @mod(y + c.y, game.CELL);
                 const interior = dx >= game.CELL / light.SUB and dx < game.CELL - game.CELL / light.SUB and dy >= game.CELL / light.SUB and dy < game.CELL - game.CELL / light.SUB;
-                const sight = g.light.sightAt(@as(f32, @floatFromInt(x + c.x)) / game.CELL_F, @as(f32, @floatFromInt(y + c.y)) / game.CELL_F);
+                const sight = g.light.sightAt((@as(f32, @floatFromInt(x + c.x)) + 0.5) / game.CELL_F, (@as(f32, @floatFromInt(y + c.y)) + 0.5) / game.CELL_F);
                 if (interior and (!g.sim.lv.isSeen(p) or (live_only and sight == 0))) {
                     hidden += 1;
                     if (!same) {
@@ -254,8 +343,21 @@ pub fn captureCinemaScene(g: *game.Game, target: rl.RenderTexture2D, comptime na
         }
         std.debug.print("cinema {s}/{s}: {d} changed pixels, {d} hidden pixels unchanged\n", .{ name, f.name, changed, hidden });
     }
+    const air_strength = g.cinema.strengths.atmosphere;
+    g.cinema.options = cinema.Options.off;
+    g.cinema.options.atmosphere = true;
+    g.cinema.strengths.atmosphere = 0;
+    const zero_diff = redrawnDiff(g, target, base);
+    g.cinema.strengths.atmosphere = air_strength;
+    if (try zero_diff != 0) return error.ZeroAtmosphereChangedFrame;
     g.cinema.options = .{};
     try capture(g, target, CINEMA_DIR ++ "/" ++ name ++ "-all.png");
+    if (comptime std.mem.eql(u8, name, "strand") or std.mem.eql(u8, name, "forest") or std.mem.eql(u8, name, "beam-water")) {
+        for ([_]bool{ false, true }) |enabled| {
+            g.cinema.options.atmosphere = enabled;
+            std.debug.print("atmosphere {s}/{s}: {d:.3} ms mean draw\n", .{ name, if (enabled) "on" else "off", try meanDraw(g, target, CINEMA_WARM, CINEMA_FRAMES) });
+        }
+    }
     g.cinema.options = cinema.Options.off;
     if (try redrawnDiff(g, target, base) != 0) return error.CinemaOffChangedFrame;
 }

@@ -217,7 +217,7 @@ pub fn under(t: grid.Tile) ?grid.Tile {
     return t.ground() orelse if (t.upright() and tileBg(t) == null) .floor else null;
 }
 
-const CROWNS = std.EnumSet(grid.Tile).init(.{ .shrub = true, .swamp_tree = true, .large_tree = true });
+const CROWNS = grid.TREE_TILES;
 pub const SOFTENED = CROWNS.unionWith(grid.LITTER_TILES);
 
 comptime {
@@ -358,6 +358,24 @@ pub fn body(k: actor.Kind) Look {
         .caravan_guard => .{ .ch = 'G', .fg = rgb(0x7cc86e) },
     };
 }
+
+pub fn bodyOpacity(kind: actor.Kind) f32 {
+    return switch (kind) {
+        .slime, .slime_half, .slime_quarter => 0.82,
+        else => 1,
+    };
+}
+
+pub fn bodyGlow(kind: actor.Kind) ?rl.Color {
+    return switch (kind) {
+        .slime, .slime_half, .slime_quarter, .bloat, .pyre_bloat => body(kind).fg,
+        else => null,
+    };
+}
+
+pub const BODY_GLOW_EMISSION: f32 = 0.14;
+pub const BODY_GLOW_RADIUS: f32 = 1.6;
+pub const BODY_GLOW_GAIN: f32 = 0.18;
 
 pub const GLYPH_SHADOW = rl.Color{ .r = 0, .g = 0, .b = 0, .a = DROP_SHADOW_A };
 pub const GLYPH_SHADOW_PX: i32 = 4;

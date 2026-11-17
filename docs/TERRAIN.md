@@ -50,3 +50,7 @@ dark or wall cells, and opens without a visible target. The first body, barrel o
 terrain intercepts a nonpiercing projectile, even if that attack misses. Preview rendering
 must not reveal hidden collisions or their surrounding burst areas; confirmed flight still
 hits unseen interceptors.
+
+Combustion and Shatter can consume an afflicted visible foe in deep water. Their
+direct target is struck once even when its cell lies outside the walkable splash
+patch; other ground skills retain their existing terrain restrictions.

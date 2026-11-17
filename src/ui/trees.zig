@@ -191,7 +191,7 @@ fn drawPoints(face: *const font.Face, points: u16, right: bool) void {
 }
 
 fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, width: i32, ink: rl.Color) i32 {
-    return face.paragraph(text, x, y, width, font.SMALL, ink);
+    return face.richParagraph(text, x, y, width, font.SMALL, ink);
 }
 
 fn arrow(from: rl.Rectangle, to: rl.Rectangle, ink: rl.Color) void {
@@ -580,7 +580,7 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
 fn grantRow(face: *const font.Face, x: i32, y: i32, grant: passives.Grant) i32 {
     var text: menu.Note(100) = .{};
     grant.write(text.writer());
-    return face.paragraph(text.text(), x, y, TEXT_W, font.BODY, look.TEXT);
+    return face.richParagraph(text.text(), x, y, TEXT_W, font.BODY, look.TEXT);
 }
 
 fn grantNoteOf(n: passives.Node) ?[:0]const u8 {

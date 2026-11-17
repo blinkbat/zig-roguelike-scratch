@@ -81,7 +81,7 @@ pub const Fields = struct {
     pub const hero = [_][]const u8{"pool"};
     pub const start = [_][]const u8{ "visited", "node", "hero", "clock", "days" };
     /// Worked out from the map as a run starts, a node is entered and a saved run resumes.
-    pub const derived = [_][]const u8{"outdoors"};
+    pub const derived = [_][]const u8{ "outdoors", "locations" };
     /// Defaulted as a run starts, and again as a saved one resumes.
     pub const rebuilt = [_][]const u8{"chronicle"};
     pub const run = [_][]const u8{ "kills", "gold", "mana_recovery", "life_recovery", "flasks", "cooldown", "stepped", "log", "inventory", "ground", "plot" };
@@ -102,6 +102,7 @@ pub const Simulation = struct {
     clock: day.Clock = .{},
     days: u32 = 0,
     outdoors: bool = false,
+    locations: climate.Field = @splat(.inland),
     /// Never saved.
     unkillable: bool = false,
     /// Never saved; the app sets it for every run.
@@ -248,10 +249,10 @@ pub const Simulation = struct {
     }
 
     pub fn combatStats(self: *const Simulation, a: *const actor.Actor) terrain.Stats {
-        return self.combatStatsOn(a, self.lv.at(a.at), a.resilience, a.sunder);
+        return self.combatStatsOn(a, a.at, self.lv.at(a.at), a.resilience, a.sunder);
     }
 
-    pub fn combatStatsOn(self: *const Simulation, a: *const actor.Actor, tile: grid.Tile, buildup: resilience.State, sundered: sunder.Sunder) terrain.Stats {
+    pub fn combatStatsOn(self: *const Simulation, a: *const actor.Actor, at: P, tile: grid.Tile, buildup: resilience.State, sundered: sunder.Sunder) terrain.Stats {
         var base = terrain.Stats{ .hit = actor.row(a.kind).hit, .elements = a.resists, .armour = if (a.stuck) 0 else actor.row(a.kind).armour };
         if (a.kind.hero()) {
             const by = self.heroAttrs();
@@ -261,22 +262,61 @@ pub const Simulation = struct {
         base.armour -= sundered.lost();
         for (std.enums.values(resilience.Kind)) |k| {
             base.statuses.set(k, @as(i16, actor.innateResist(a.kind, k)) + buildup.meters.get(k).percent);
+            if (a.kind.hero() and resilience.tags(k).contains(.mental)) base.statuses.getPtr(k).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.composure));
         }
         if (a.kind.hero()) base.statuses.getPtr(.stun).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.resolve));
-        return base.onRained(tile, self.rainNow());
+        return base.onRained(tile, self.rainAt(at));
     }
 
     /// The rain falling on the open ground here, 0 under a roof.
     pub fn rainNow(self: *const Simulation) f32 {
-        return self.weatherHere().get(.rain);
+        return self.rainAt(self.heroAt() orelse grid.MIDDLE);
+    }
+
+    pub fn rainAt(self: *const Simulation, p: P) f32 {
+        if (!self.outdoors) return 0;
+        const place = grid.cellOr(climate.Location, &self.locations, p, .inland);
+        var c = self.climateNow();
+        if (self.nodeHere()) |node| if (node.locations.get(place)) |w| {
+            c.weather = w;
+        };
+        return c.now(self.seed, self.clock.since(self.days)).get(.rain);
+    }
+
+    pub fn localWeather(self: *const Simulation) climate.Local {
+        if (!self.outdoors) return .initFill(.initFill(0));
+        const overrides = if (self.nodeHere()) |node| node.locations else climate.Locations.initFill(null);
+        return climate.local(self.climateNow(), overrides, self.seed, self.clock.since(self.days));
+    }
+
+    pub fn rainField(self: *const Simulation) climate.Rain {
+        const weather = self.localWeather();
+        var rain = climate.Rain{ .field = &self.locations };
+        for (std.enums.values(climate.Location)) |place| rain.local.set(place, weather.get(place).get(.rain));
+        return rain;
     }
 
     pub fn weatherHere(self: *const Simulation) climate.Now {
-        return if (self.outdoors) self.weatherNow() else .initFill(0);
+        return climate.strongest(self.localWeather());
     }
 
     pub fn takeStatus(self: *Simulation, a: *actor.Actor, kind: resilience.Kind) bool {
         return a.resilience.takeResisted(kind, self.combatStats(a).statuses.get(kind), &self.rng);
+    }
+
+    pub fn cleanseWound(self: *Simulation) bool {
+        if (self.inventory.gear.sum(.cleansing) <= 0) return false;
+        const h = self.heroActor() orelse return false;
+        inline for (comptime std.enums.values(resilience.Kind)) |k| {
+            if (comptime resilience.tags(k).contains(.wounds)) {
+                const status = &@field(h, @tagName(k));
+                if (status.turns > 0) {
+                    status.* = .{};
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     pub fn procStatus(self: *Simulation, a: *actor.Actor, kind: resilience.Kind, chance: u32) bool {
@@ -381,6 +421,10 @@ pub const Simulation = struct {
     pub fn areaLevel(self: *const Simulation, node: usize) u8 {
         const w = self.map orelse return loot.areaLevel(0);
         return loot.areaLevel(w.hops(node));
+    }
+
+    pub fn commanded(self: *const Simulation, v: i32) i32 {
+        return mathx.percentCeil(v, mathx.PERCENT + self.inventory.gear.commander());
     }
 
     fn climateNow(self: *const Simulation) climate.Climate {

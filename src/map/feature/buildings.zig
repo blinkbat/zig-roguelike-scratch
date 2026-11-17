@@ -77,6 +77,16 @@ pub const Lots = struct {
         return b;
     }
 
+    pub fn canTake(self: *const Lots, lv: *const grid.Level, b: Box, gap: i32, pal: carve.Palette) bool {
+        return self.n < self.box.len and self.clear(b, gap) and fits(lv, b, pal);
+    }
+
+    pub fn takeAt(self: *Lots, lv: *const grid.Level, b: Box, gap: i32, pal: carve.Palette) bool {
+        if (!self.canTake(lv, b, gap, pal)) return false;
+        _ = mathx.push(Box, &self.box, &self.n, b);
+        return true;
+    }
+
     fn site(self: *const Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
         if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
         const Site = struct {

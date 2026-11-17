@@ -241,6 +241,7 @@ pub const Tile = enum(u8) {
 /// `BARREL_GROUND` with a barrel on it.
 pub const BARREL_LETTER = '0';
 pub const BARREL_GROUND: Tile = .floor;
+pub const FROZEN: Tile = .ice;
 
 pub fn groundOf(c: u8) ?Tile {
     return if (c == BARREL_LETTER) BARREL_GROUND else Tile.ofLetter(c);
@@ -422,6 +423,7 @@ const OPENED = tilesWhere(struct {
     }
 }.of);
 
+pub const TREE_TILES = std.EnumSet(Tile).init(.{ .shrub = true, .swamp_tree = true, .large_tree = true });
 pub const LITTER_TILES = tilesWhere(struct {
     fn of(t: Tile) bool {
         return TERRAIN.getPtrConst(t).litter;
@@ -868,7 +870,7 @@ pub const Level = struct {
     }
 
     pub fn frozen(self: *const Level, p: P) bool {
-        return self.at(p) == .ice and cellOr(u8, &self.thaw, p, 0) > 0;
+        return self.at(p) == FROZEN and cellOr(u8, &self.thaw, p, 0) > 0;
     }
 
     /// Terrain only.

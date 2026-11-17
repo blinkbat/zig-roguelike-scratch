@@ -246,7 +246,11 @@ pub const Spec = struct {
     }
 
     pub fn scalingFor(s: Spec, attack: attrs.Attack) ?attrs.Scaling {
-        return if ((s.damage != null and s.attack == attack) or (attack == .spell and s.caster)) s.scaling() else null;
+        return if (s.wields(attack) or (attack == .spell and s.caster)) s.scaling() else null;
+    }
+
+    pub fn wields(s: Spec, attack: attrs.Attack) bool {
+        return s.damage != null and s.attack == attack;
     }
 };
 

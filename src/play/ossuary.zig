@@ -92,7 +92,7 @@ pub const Hall = struct {
     }
 };
 
-pub const PATH = store.DIR ++ "/ossuary.bones";
+const PATH = store.DIR ++ "/ossuary.bones";
 pub const NOT_WRITTEN = "The Revered Ossuary did not write ({s})";
 pub const NOT_READ = "The Revered Ossuary could not be read ({s}); no hero will be entombed";
 const OLD_MAGIC = "cistern-ossuary\n";

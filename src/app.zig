@@ -877,6 +877,7 @@ pub const HEADLESS = [_]Headless{
     .{ .flag = "--shot-trees", .body = @import("game/shots/trees.zig").captureTrees },
     .{ .flag = "--shot-water-cliffs", .body = @import("game/shots/water_cliffs.zig").captureWaterCliffs },
     .{ .flag = "--shot-zoo", .body = @import("game/shots/zoo.zig").captureZoo },
+    .{ .flag = "--shot-landscapes", .body = @import("game/shots/landscapes.zig").captureLandscapes },
     .{ .flag = "--bench", .body = bench.benchWalk, .startup_shown = true },
 };
 

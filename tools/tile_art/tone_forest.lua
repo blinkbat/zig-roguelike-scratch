@@ -1,8 +1,8 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local source=root..'assets/source/forest-tree-walls.aseprite'
 local desktop='C:/Users/DavidBennett/Desktop/forest-tree-walls.aseprite'
-local stamp=os.date('%Y%m%d-%H%M%S')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local stamp=os.date(sourceFiles.STAMP)
 local pc=app.pixelColor
 local function rgb(r,g,b) return pc.rgba(r,g,b,255) end
 local colours={
@@ -34,12 +34,7 @@ sourceFiles.copy(root..'assets/ground/grass.png',root..'assets/backup/grass.'..s
 sprite:saveAs(source)
 sprite:close()
 local reopened=assert(app.open(source))
-for name,expected in pairs(tonedLayers) do
-  local saved
-  for _,layer in ipairs(reopened.layers) do if layer.name==name then saved=layer:cel(1) end end
-  assert(saved and saved.image:isEqual(expected.image),'Saved forest pixels changed')
-  assert(saved.position.x==expected.position.x and saved.position.y==expected.position.y,'Saved forest cel moved')
-end
+for name,expected in pairs(tonedLayers) do sourceFiles.checkCel(reopened,name,expected.image,expected.position) end
 reopened:close()
 sourceFiles.copy(source,desktop)
 local grass=Image{fromFile=root..'assets/ground/grass.png'}
@@ -47,11 +42,9 @@ for pixel in grass:pixels() do
   local p=pixel()
   pixel(pc.rgba(math.floor(pc.rgbaR(p)*0.85+0.5),math.floor(pc.rgbaG(p)*0.85+0.5),math.floor(pc.rgbaB(p)*0.85+0.5),pc.rgbaA(p)))
 end
-grass:saveAs(root..'assets/ground/grass.png')
-local check=Image{fromFile=root..'assets/ground/grass.png'}
-assert(check:isEqual(grass))
+sourceFiles.savePng(grass,root..'assets/ground/grass.png')
 dofile(root..'tools/tile_art/export_forest.lua')
-local report=assert(io.open(app.fs.joinPath(app.fs.tempPath,'wall-mocks/forest-tone.txt'),'w'))
+local report=sourceFiles.report(app.fs.joinPath(app.fs.tempPath,'wall-mocks/forest-tone.txt'))
 report:write(('%d foliage pixels darkened; trunks and alpha unchanged. Grass RGB reduced 15%%, alpha unchanged.\n'):format(changed))
 report:write('Sources and previous PNGs backed up in assets/backup/; Desktop and assets/source sources updated.\n')
 report:close()

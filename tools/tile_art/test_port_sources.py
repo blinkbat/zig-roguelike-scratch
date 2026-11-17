@@ -1,15 +1,11 @@
-import argparse
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
+from art_support import ROOT, arguments, aseprite, main
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-parser.add_argument('--scripts-dir', type=Path, default=ROOT / 'tools/tile_art')
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 PORTS = {
     'port_ground.lua': 'grass.aseprite',
@@ -45,7 +41,7 @@ local env=setmetatable({app={
   end,
 },dofile=function(path)
   local helper=path:match('/tools/tile_art/([^/]+)$')
-  assert(helper=='ground_corners.lua' or helper=='wall_masks.lua' or helper=='source_files.lua')
+  assert(helper=='ground_corners.lua' or helper=='ground_port.lua' or helper=='wall_masks.lua' or helper=='source_files.lua')
   return dofile(realapp.params.helpers..'/'..helper)
 end},{__index=_G})
 assert(loadfile(realapp.params.script,'t',env))()
@@ -65,22 +61,15 @@ assert(loadfile(realapp.params.script,'t',env))()
                 elif case in ('identical', 'missing_input'):
                     canonical.write_bytes(ORIGINAL)
                 before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
-                command = [args.aseprite, '--batch']
-                for value in (
-                    'root=' + root.as_posix() + '/',
-                    'source=' + source.as_posix(),
-                    'name=grass',
-                    'work=' + (root / 'work').as_posix(),
-                    'install=' + ('no' if case == 'draft_divergent' else 'yes'),
-                    'script=' + (args.scripts_dir / script).resolve().as_posix(),
-                    'helpers=' + (ROOT / 'tools/tile_art').as_posix(),
-                ):
-                    command += ['--script-param', value]
-                result = subprocess.run(
-                    command + ['--script', str(self.wrapper)],
-                    capture_output=True, text=True, timeout=30,
-                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
-                )
+                result = aseprite(args.aseprite, self.wrapper, {
+                    'root': root.as_posix() + '/',
+                    'source': source,
+                    'name': 'grass',
+                    'work': root / 'work',
+                    'install': 'no' if case == 'draft_divergent' else 'yes',
+                    'script': (args.scripts_dir / script).resolve(),
+                    'helpers': ROOT / 'tools/tile_art',
+                })
                 output = result.stdout + result.stderr
                 self.assertNotEqual(0, result.returncode, output)
                 if allowed:
@@ -107,9 +96,9 @@ assert(loadfile(realapp.params.script,'t',env))()
     def test_draft_ignores_divergent_canonical(self):
         self.check_case('draft_divergent', allowed=True)
 
-    def test_unreadable_input_refused_before_opening_canonical(self):
+    def test_unreadable_input_refused_before_opening_sprite(self):
         self.check_case('missing_input', allowed=False)
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

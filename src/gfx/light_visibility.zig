@@ -26,6 +26,19 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
 
 /// Bilinear self-weight is at least 1/4, keeping remembered open ground whole.
 const OPEN_WHOLE: f32 = 4;
+pub const SightPixels = [grid.CELLS][4]f32;
+pub const SIGHT_FS = @import("shaders.zig").glslConsts(.{ .OPEN_WHOLE = OPEN_WHOLE }) ++
+    \\vec4 sightCell(sampler2D sight, vec2 p) {
+    \\    return insideMap(p) ? texture(sight, (floor(p) + 0.5) / CELLS) : vec4(0.0);
+    \\}
+    \\float exactSight(sampler2D sight, vec2 p) {
+    \\    vec2 i = floor(p - 0.5), f = fract(p - 0.5);
+    \\    vec3 s = mix(mix(sightCell(sight, i).rgb, sightCell(sight, i + vec2(1.0, 0.0)).rgb, f.x),
+    \\                 mix(sightCell(sight, i + vec2(0.0, 1.0)).rgb, sightCell(sight, i + vec2(1.0)).rgb, f.x), f.y);
+    \\    if (sightCell(sight, p).a < 0.5 || s.b <= 0.0) return s.r;
+    \\    return mix(s.r, s.g / s.b, min(1.0, s.b * OPEN_WHOLE));
+    \\}
+;
 
 pub fn sample(f: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
     const uv = fieldUv(.{ .x = 0, .y = 0 }, x, y);
@@ -252,6 +265,15 @@ pub const Visibility = struct {
 
     pub fn sightAt(self: *const Visibility, x: f32, y: f32) f32 {
         return sightOf(Whole{ .fields = self }, self.groundAt(mathx.cellOf(.{ x, y })), x, y);
+    }
+
+    pub fn sightPixels(self: *const Visibility, pixels: *SightPixels) void {
+        for (pixels, 0..) |*pixel, i| pixel.* = .{
+            self.soft_sight[i],
+            self.open_sight[i],
+            self.open_weight[i],
+            self.ground[i],
+        };
     }
 
     pub fn openAt(self: *const Visibility, p: P, reach: f32) f32 {

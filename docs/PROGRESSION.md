@@ -74,6 +74,18 @@ Magic names describe their prefix/suffix rolls. Rare two-part names are saved
 independently of their modifiers. Innate effects remain separate from affixes;
 `affixes.Mod.allows` owns equipment restrictions.
 
+Serrated adds to the wielded weapon's innate bleed chance, only for that weapon's
+delivery. Grievous is recorded on each hero-inflicted bleed, including skill bleeds;
+its extra damage applies only on a turn the victim moves or is displaced. Refreshes
+keep the stronger base and movement bonus independently; expiry resets both.
+Splits, travel and saves preserve the wound, and changing gear does not change it.
+Composure adds resistance to every mental-tagged status through the shared combat
+stats resolver. Anchorage reduces incoming knockbacks and pulls; current attacks
+move one tile, so the modifier prevents that displacement without preventing damage.
+Cleansing removes one active wound before a life flask's turn advances, in status
+order: bleed, sunder, enfeeble, maim. It clears the whole status, preserves resistance
+buildup, and does nothing for refused drinks or mana flasks.
+
 A hidden tier caps every rolled modifier, and items never store or show it.
 An area's level comes from its door distance to the start, and a foe's from its
 life. A foe drop rolls at the higher of the two, and chests and merchant shelves

@@ -130,6 +130,7 @@ const UNSAVED = .{
     },
     .sim = .{
         "outdoors",
+        "locations",
         "unkillable",
         "playground",
         "unsaved",

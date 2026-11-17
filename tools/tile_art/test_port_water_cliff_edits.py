@@ -1,19 +1,14 @@
-import argparse
-import ctypes
 import os
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
 from PIL import Image
 
+from art_support import ROOT, arguments, aseprite, main, read_locked
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-parser.add_argument('--scripts-dir', type=Path, default=ROOT / 'tools/tile_art')
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 
 class WaterCliffPortTests(unittest.TestCase):
@@ -62,14 +57,7 @@ s:close()
             baseline.save(self.owner)
 
     def run_lua(self, script, **params):
-        command = [args.aseprite, '--batch']
-        for key, value in params.items():
-            command += ['--script-param', f'{key}={value}']
-        return subprocess.run(
-            command + ['--script', str(script)],
-            capture_output=True, text=True, timeout=30,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
-        )
+        return aseprite(args.aseprite, script, params)
 
     def port(self, output=None):
         return self.run_lua(
@@ -153,22 +141,12 @@ s:close()
         self.paint((10, 10), (100, 110, 120, 255))
         self.output.write_bytes(self.original.read_bytes())
         before = self.output.read_bytes()
-        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
-                                      ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
-                                      ctypes.c_void_p]
-        kernel.CreateFileW.restype = ctypes.c_void_p
-        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-        handle = kernel.CreateFileW(str(self.output), 0x80000000, 1, None, 3, 0, None)
-        self.assertNotEqual(ctypes.c_void_p(-1).value, handle, ctypes.get_last_error())
-        try:
+        with read_locked(self.output):
             result = self.port()
-        finally:
-            kernel.CloseHandle(handle)
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(before, self.output.read_bytes())
         self.assertFalse(self.report.exists())
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

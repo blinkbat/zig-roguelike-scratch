@@ -3,9 +3,9 @@ const script = @import("../map/script.zig");
 const Script = script.Script;
 
 pub const LineAt = struct { d: u8, l: u8 };
-pub const StageAt = struct { q: u8, k: u8 };
+const StageAt = struct { q: u8, k: u8 };
 pub const ChoiceAt = struct { d: u8, l: u8, c: u8 };
-pub const TableAt = struct { t: script.Table, i: u8 };
+const TableAt = struct { t: script.Table, i: u8 };
 pub const ActAt = union(enum) {
     trigger: struct { t: u8, a: u8 },
     line: struct { at: LineAt, a: u8 },
@@ -31,7 +31,7 @@ pub const Focus = union(enum) {
 };
 pub const Target = struct { words: Words, unique: ?Unique = null };
 
-pub const Words = union(enum) {
+const Words = union(enum) {
     name: *script.Name,
     who: *script.Who,
     say: *script.Say,
@@ -58,7 +58,7 @@ pub const Words = union(enum) {
     }
 };
 
-pub const Unique = union(enum) { dialog: u8, line: LineAt, trigger: u8, table: TableAt, quest: u8 };
+const Unique = union(enum) { dialog: u8, line: LineAt, trigger: u8, table: TableAt, quest: u8 };
 
 pub fn target(m: *Script, f: Focus) ?Target {
     return switch (f) {
@@ -104,7 +104,7 @@ fn choiceOf(m: *Script, at: ChoiceAt) ?*script.Choice {
     return if (at.c < ln.choice_n) &ln.choice[at.c] else null;
 }
 
-pub const ActList = struct { items: []script.Act, n: *u8 };
+const ActList = struct { items: []script.Act, n: *u8 };
 
 pub fn listOf(m: *Script, at: ActAt) ?ActList {
     return switch (at) {

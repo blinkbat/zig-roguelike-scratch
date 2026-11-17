@@ -48,6 +48,21 @@ the cinema memory grade, blending back to full colour with visibility.
 Water highlights, bloom and atmosphere use the same smooth visibility field across
 known terrain, including the fade into memory; gameplay sight still gates dynamic
 emissive sources. Unexplored terrain does not populate the atmospheric field.
+Nodes may override weather by inland, coast and forest location using
+"location forest beams" / "location coast coastal" map lines. Unspecified locations
+inherit the node's weather. The climate module derives coast from edge-connected
+sand and water (including bridges and temporarily frozen water), then forest from
+cells within two tiles of trees; coast takes priority.
+The unsaved location field rebuilds on settling a level. Rain resistance, fire
+dampening, inspection and rendering use the same field. Beam weather adds warm
+Screen-blended pixel shafts and rising motes near trees. Shafts have crisp pixel sides,
+independent lengths and landing heights, upward and bottom fades, softly moving light,
+ground pools and rippled water reflections. Atmosphere composites over world objects,
+units and projectiles before scene grading and UI. Its field bounds derive from the same
+geometry constants. Beam strength fades in from 08:00–10:00 and out from 16:00–18:00
+using the eased presentation clock; motes retain their daylight response.
+Atmosphere reconstructs presentation sight from the visibility
+owner's float support texture, so bright shafts cannot bleed into hidden ground.
 Visible loot bags and stocked open chests have a faint steady sprite glow and
 a stronger shine sweep, fading with their pictured visibility.
 Visibility transitions use short presentation-only fades. Bodies, projectiles,
@@ -63,6 +78,9 @@ suppressed while a foe is visible; deliberate interaction still works.
 
 Body lighting, including rim sheen, is capped at the authored sprite colour so
 nearby torches cannot bleach its highlights. Emission and hit flashes remain separate.
+Slime bodies, reflections and shadows share a slight translucency. Slimes and both
+bloat kinds have faint emission in their body color and a small local cosmetic
+light, gated by presented visibility; neither light changes gameplay sight.
 Shadow casters sample light independently of fog; receiver visibility fades the
 landed mask. Culling includes silhouettes and blur beyond the camera, and actor
 birth/death timing follows presentation. Bind the receiver shader's light-map
@@ -270,6 +288,25 @@ Undo/redo swaps invalidate only affected thumbnails, or all thumbnails when node
 identity changes. Source wording and attribution remain separate transactions in
 `text_catalog.zig` and `text_panel.zig`; map undo never rewrites source files.
 
+## Landscape shapes and niches
+
+`map/biome/tee.zig` shapes Caravan with broad forest-edge bends, varying road
+shoulders and a winding river. Roads straighten toward the camp so carts and
+their merchant retain room. `topology`'s `encampment` layout follows linked,
+unequal clearings: two lower loops, a cross-route and a broad northern clearing
+with a small side pocket. Goblin Camp uses this layout; camp setpieces favor
+existing clearings rather than cutting separate rooms into the surrounding forest.
+
+Reusable refuges are ordinary setpieces: `feature setpiece`, then
+`piece chest_niche` or `piece light_niche`, with the usual `count` and `apart`.
+Their asymmetric templates rotate in four directions, prefer terrain edges,
+inherit the biome's ground/path/wall palette and open onto existing dry ground.
+Placement preserves props and reserved feature/painted lots. The normal procgen
+connectivity pass keeps their interiors and reward approaches reachable.
+They provide a chest or a glowing plant; they do not establish an enemy-free zone.
+`--shot-landscapes` captures Caravan and Goblin Camp in native-scale tiles and
+detail views; run it from a temporary capture directory.
+
 ## Monster zoos
 
 `map/zoo.zig` owns a reusable encounter; either kind of atlas node can hold one
@@ -304,8 +341,9 @@ The room is stamped after terrain generation, with a walkable perimeter and
 short connections for its approach and key chest that stay outside its walls. These
 connections and the key chest's bypass preserve painted section walls wherever a
 route around them exists, breaking the fewest painted solid cells when enclosed.
-Connections target the arriving hero's floor component (the first travel door in
-standalone node previews, or the largest component if no entrance is known).
+Connections target the arriving hero's floor component (in standalone node previews the
+start cell on the start node, else the first travel door; the largest component if no
+entrance is known).
 Unrelated sealed rooms remain sealed; components touching the encounter or its key
 remain available for their connections. The chest is outside the perimeter and is
 connected before the door is sealed. Ordinary packs and derived NPC placements
@@ -327,6 +365,7 @@ Dialogue layout lives in `ui/talk.zig` and never paginates; authored `then` line
 the only page breaks. `game/talking.zig` drives the conversation.
 The editor previews the same layout. Long-form writing limits, independent editor
 scrolling and the source text concern tree are documented in [TEXT_EDITOR.md](TEXT_EDITOR.md).
+Map saving rejects serialized text beyond the reader's `atlas_text.TEXT_CAP` before replacing the file.
 `core/wire.zig` traverses aggregate save values by reference, so large authored
 dialogue buffers do not create recursive stack copies during encoding.
 

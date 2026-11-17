@@ -413,6 +413,8 @@ const ITEMS_CATEGORY = "Items";
 const SKILLS_CATEGORY = "Skills";
 const INTERFACE_CATEGORY = "Interface";
 const GAMEPLAY_CATEGORY = "Gameplay";
+const EFFECTS_CATEGORY = "Effects";
+const SAVE_CATEGORY = "Save";
 const LOG_SOURCES = [_][]const u8{ "play/log.zig", "ui/journal.zig" };
 const DIALOGUE_SOURCES = [_][]const u8{ "ui/talk.zig", "game/talking.zig", "map/script.zig", "play/trigger.zig" };
 const QUESTS_SOURCE = "ui/quests.zig";
@@ -603,7 +605,7 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (std.mem.startsWith(u8, rel, "ui/")) return INTERFACE_CATEGORY;
         if (contains(&ITEMS_SOURCES, rel)) return ITEMS_CATEGORY;
         if (std.mem.eql(u8, rel, SKILLBAR_SOURCE)) return SKILLS_CATEGORY;
-        if (contains(&EFFECT_SOURCES, rel)) return "Effects";
+        if (contains(&EFFECT_SOURCES, rel)) return EFFECTS_CATEGORY;
         if (contains(&LOOK_SOURCES, rel)) return "Look";
         if (std.mem.eql(u8, rel, ACTOR_SOURCE)) return "Characters";
         if (contains(&STATUS_SOURCES, rel)) return "Status effects";
@@ -611,7 +613,7 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (std.mem.startsWith(u8, rel, "game/")) return GAMEPLAY_CATEGORY;
         if (std.mem.eql(u8, rel, APP_SOURCE)) return INTERFACE_CATEGORY;
         if (std.mem.eql(u8, rel, "game.zig")) return GAMEPLAY_CATEGORY;
-        if (std.mem.startsWith(u8, rel, "save")) return "Save";
+        if (std.mem.startsWith(u8, rel, "save")) return SAVE_CATEGORY;
     }
     return humanize(a, stem(std.fs.path.basename(path)));
 }
@@ -1078,7 +1080,7 @@ test "text catalog finds all fright speech and gives maps nonempty semantic prov
     try c.scan("src/gfx/fx.zig", "pub const FRIGHT_WORDS = [_][:0]const u8{ \"Eek!\", \"Ah!\", \"[snorts]\", \"[squeals]\" };\n");
     try std.testing.expectEqual(@as(usize, 4), c.entries().len);
     for (c.entries()) |e| {
-        try std.testing.expectEqualStrings("Effects", e.category);
+        try std.testing.expectEqualStrings(EFFECTS_CATEGORY, e.category);
         try std.testing.expectEqualStrings("Fright speech", e.role);
         try std.testing.expectEqualStrings("gfx.fx.FRIGHT_WORDS", e.context);
         try std.testing.expect(e.owner.len > 0 and e.editable);
@@ -1120,7 +1122,7 @@ test "text catalog indexes live item skill and speech sources with complete meta
         if (std.mem.eql(u8, e.text, "Status resistance")) {
             resistance = true;
             try std.testing.expect(e.editable);
-            try std.testing.expectEqualStrings("Effects", e.category);
+            try std.testing.expectEqualStrings(EFFECTS_CATEGORY, e.category);
             try std.testing.expectEqualStrings("src/gfx/effect_state.zig", e.path);
         }
     }
@@ -1143,7 +1145,7 @@ test "text catalog retains moved input captions and save wording under their ori
         try std.testing.expectEqualStrings(INPUT_CATEGORY, entry.category);
         try std.testing.expect(!entry.editable);
     }
-    try std.testing.expectEqualStrings("Save", catalog.entries()[2].category);
+    try std.testing.expectEqualStrings(SAVE_CATEGORY, catalog.entries()[2].category);
     try catalog.scan("src/play/ossuary.zig", @embedFile("../play/ossuary.zig"));
     for (catalog.entries()[3..]) |entry| {
         try std.testing.expect(!std.mem.eql(u8, entry.text, "n") and !std.mem.eql(u8, entry.text, "summary_n"));

@@ -54,7 +54,6 @@ fn zoomOf(px: f32) usize {
 
 const SAY_S: f32 = 4;
 const FLASH_S: f32 = 1.2;
-pub const UNDO_CAP = history.CAPACITY;
 const PATH_FIELD_MAX: usize = 256;
 const FIELD_MAX: usize = 32;
 const THUMB: i32 = 2;
@@ -526,9 +525,6 @@ pub const Editor = struct {
         ed.scene.ensure(ed.map, ed.node);
     }
 
-    pub fn arrival(ed: *const Editor) P {
-        return previews.arrival(ed.map, ed.node);
-    }
 
     pub fn standable(ed: *Editor, from: atlas.Start) bool {
         return ed.thumbnails.standable(ed.map, from);
@@ -1007,7 +1003,7 @@ fn drawTip(ed: *const Editor, g: *game.Game) void {
     var fit_buf: [widgets.LINE]u8 = undefined;
     const s = widgets.textFace(&g.face).fit(&fit_buf, tip, widgets.DETAIL, TIP_MAX_W, false);
     const size = widgets.tagSize(&g.face, s, widgets.GAPS);
-    const x = std.math.clamp(ed.desk.mouse.x + TIP_DX, 0, @max(0, g.screen.x - size.x));
+    const x = menu.clampOn(ed.desk.mouse.x + TIP_DX, size.x, g.screen.x, 0);
     const y = if (ed.desk.mouse.y + TIP_DY + size.y > g.screen.y) ed.desk.mouse.y - TIP_DY - size.y else ed.desk.mouse.y + TIP_DY;
     widgets.drawTag(&g.face, s, .{ .x = x, .y = y }, widgets.GAPS, widgets.PANEL_BG, look.EDGE);
 }

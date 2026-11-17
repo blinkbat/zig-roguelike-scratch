@@ -131,8 +131,8 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
     const pinned = a.pin.holding();
     var at = a.at;
     var pushed: usize = 0;
+    const most: usize = if (heft > 0) 2 else 1;
     if (!pinned) {
-        const most: usize = if (heft > 0) 2 else 1;
         while (pushed < most) : (pushed += 1) {
             const b = M.knocked(&g.sim.lv, at, d, id) orelse break;
             if (!actor.holds(a.kind, &g.sim.lv, b)) break;
@@ -145,7 +145,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
         g.sim.sayAt(at, "The {s} is knocked back.", .{name});
     }
     if (comptime act.afflicts()) if (hit.takes) g.sim.sayFoeTakes(a, M.TAKES);
-    if (heft > 0 and !pinned and pushed < 2) wound(g, id, .{ .dmg = heft, .physical = heft, .hit_checked = true, .opportunity = 0 }, HEFT_VERB, s);
+    if (heft > 0 and !pinned and pushed < most) wound(g, id, .{ .dmg = heft, .physical = heft, .hit_checked = true, .opportunity = 0 }, HEFT_VERB, s);
 }
 
 const HEFT_VERB = "slams";
@@ -183,10 +183,10 @@ const Wet = struct { bodies: rewards.Caught, struck: ?usize = null, born: usize 
 fn wading(sim: *const game.simulation.Simulation, at: P) ?rewards.Caught {
     const water = shock.conducted(&sim.lv, at);
     if (water.n == 0) return null;
-    var out = rewards.Caught.initEmpty();
     const wet = rewards.livingIn(sim, water);
+    var out = wet;
     var each = wet.iterator(.{});
-    while (each.next()) |slot| if (actor.row(sim.pool.items[slot].kind).movement.grounded()) out.set(slot);
+    while (each.next()) |slot| if (!actor.row(sim.pool.items[slot].kind).movement.grounded()) out.unset(slot);
     return out;
 }
 
@@ -360,7 +360,7 @@ fn beginTurn(g: *game.Game, from: P) void {
     tactics_exec.startTurn(&g.sim);
     tactics_exec.bideTurn(g);
     const lying = g.sim.ground.lying();
-    _ = fire.turn(&g.sim.lv, &g.sim.rng, g.sim.rainNow(), &lying);
+    _ = fire.turnIn(&g.sim.lv, &g.sim.rng, g.sim.rainField(), &lying);
     _ = ice.turn(&g.sim.lv);
     skills.recover(g);
     for (&g.sim.cooldown.values) |*c| c.* -|= 1;
@@ -801,10 +801,7 @@ fn bodyStrike(g: *game.Game, id: u16, target: u16, af: actor.Afflicted, flight: 
     const r = g.sim.pool.get(id).?;
     const row = actor.row(r.kind);
     var s = row.blow.strike;
-    if (row.allied and !row.posted) {
-        const more = mathx.PERCENT + g.sim.inventory.gear.commander();
-        s.hit = .{ .lo = mathx.percentCeil(s.hit.lo, more), .hi = mathx.percentCeil(s.hit.hi, more) };
-    }
+    if (row.allied and !row.posted) s.hit = .{ .lo = g.sim.commanded(s.hit.lo), .hi = g.sim.commanded(s.hit.hi) };
     const at = g.sim.pool.get(target).?.at;
     g.pic.turnLater(.fromInt(id), at.x - r.at.x);
     const impact: ?fx.Impact = if (impacts.bodyBlow(g, id, target, s, s.verb, af.contains(.enfeeble), false)) |hit| .{ .actor = hit } else null;
@@ -918,6 +915,7 @@ fn knockHero(g: *game.Game, by: u16) void {
 /// The hero a cell `d`, unless held or the cell is taken or a door.
 fn shove(g: *game.Game, by: u16, d: mathx.Dir, comptime said: []const u8) void {
     const h = g.sim.heroActor() orelse return;
+    if (g.sim.inventory.gear.sum(.anchorage) >= 1) return;
     if (h.pin.holding()) return;
     const from = h.at;
     const to = from.add(d.delta());

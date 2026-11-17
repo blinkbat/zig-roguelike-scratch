@@ -19,6 +19,7 @@ const knobs = @import("knobs.zig");
 const modals = @import("modals.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
+const history = @import("history.zig");
 const P = mathx.P;
 
 test "a failed editor gesture blocks canvas and draw-time mutations without losing history" {
@@ -342,12 +343,12 @@ test "undo keeps no more than its cap, dropping the oldest" {
     const ed = try testBespoke();
     defer ed.destroy();
     ed.tool = .paint;
-    for (0..editor.UNDO_CAP + 5) |i| {
+    for (0..history.CAPACITY + 5) |i| {
         try ed.gesture();
         placement.place(ed, .{ .x = @intCast(1 + i), .y = 1 });
     }
-    try std.testing.expectEqual(editor.UNDO_CAP, ed.history.len);
-    for (0..editor.UNDO_CAP) |_| ed.undo();
+    try std.testing.expectEqual(history.CAPACITY, ed.history.len);
+    for (0..history.CAPACITY) |_| ed.undo();
     try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 5, .y = 1 }));
     try std.testing.expectEqual(grid.Tile.wall, tileAt(ed, .{ .x = 6, .y = 1 }));
 }
@@ -1028,7 +1029,8 @@ test "a full procgen preview keeps the hero's place in the pool, as play does" {
     ed.select(n);
     ed.preview();
     try std.testing.expectEqual(actor.MAX - actor.most(actor.HERO), ed.scene.shown_n);
-    try std.testing.expect(ed.scene.lv.vacant(ed.arrival()) or ed.scene.lv.at(ed.arrival()).solid());
+    const arrival = @import("preview.zig").arrival(ed.map, ed.node);
+    try std.testing.expect(ed.scene.lv.vacant(arrival) or ed.scene.lv.at(arrival).solid());
 }
 
 test "a procgen node shows a roll of it with its packs, and a bespoke one counts the ground no walk reaches" {
@@ -1153,7 +1155,7 @@ test "a graph drag put back keeps what there was to redo" {
     defer ed.destroy();
     _ = ed.map.add(.{ .bespoke = .{} });
     ed.select(1);
-    for (0..editor.UNDO_CAP) |_| {
+    for (0..history.CAPACITY) |_| {
         try ed.gesture();
         ed.map.node[1].pos.x += 1;
         ed.bank();
@@ -1278,16 +1280,16 @@ test "a knob's step is dim where its owner's fit would take it back" {
 test "editor history preserves exact contents through rollover undo and redo after the saved state expires" {
     const ed = try testBespoke();
     defer ed.destroy();
-    const total = editor.UNDO_CAP * 2 + 5;
+    const total = history.CAPACITY * 2 + 5;
     for (0..total) |i| {
         click(ed, .paint, .{ .x = @intCast(i + 1), .y = 1 });
         if (i == 0) {
             ed.history.markSaved();
         }
     }
-    try std.testing.expectEqual(editor.UNDO_CAP, ed.history.len);
+    try std.testing.expectEqual(history.CAPACITY, ed.history.len);
     try std.testing.expect(ed.history.saved_at == null);
-    for (0..editor.UNDO_CAP + 1) |i| {
+    for (0..history.CAPACITY + 1) |i| {
         const painted = total - i;
         try std.testing.expectEqual(painted, count(ed, .floor));
         for (0..total) |cell| try std.testing.expectEqual(if (cell < painted) grid.Tile.floor else grid.Tile.wall, tileAt(ed, .{ .x = @intCast(cell + 1), .y = 1 }));
@@ -1295,12 +1297,12 @@ test "editor history preserves exact contents through rollover undo and redo aft
         ed.undo();
     }
     try std.testing.expectEqual(@as(usize, 0), ed.history.at);
-    for (0..editor.UNDO_CAP + 1) |i| {
-        try std.testing.expectEqual(total - editor.UNDO_CAP + i, count(ed, .floor));
+    for (0..history.CAPACITY + 1) |i| {
+        try std.testing.expectEqual(total - history.CAPACITY + i, count(ed, .floor));
         try std.testing.expect(ed.history.dirty);
         ed.redo();
     }
-    try std.testing.expectEqual(editor.UNDO_CAP, ed.history.at);
+    try std.testing.expectEqual(history.CAPACITY, ed.history.at);
     try std.testing.expectEqual(total, count(ed, .floor));
 }
 

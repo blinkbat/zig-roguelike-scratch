@@ -207,6 +207,7 @@ fn drink(run: *game.Game, act: skillbar.Act, k: flask.Kind) void {
     const hero = run.sim.heroActor() orelse return;
     spend(run, act);
     run.sim.flasks.getPtr(k).drink(flask.recovers(k, hero.max, run.sim.heroDraughts()));
+    if (k == .life and run.sim.cleanseWound()) run.pic.settleHero(&run.sim, 0);
     run.pic.flasks_shown.set(k, run.sim.flasks.get(k));
     run.pic.fx.shimmer(mathx.centre(hero.at), switch (k) {
         .life => look.LIFE,

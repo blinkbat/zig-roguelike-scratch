@@ -1,15 +1,12 @@
-import argparse
 import hashlib
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
+from art_support import ROOT, arguments, aseprite, main
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 
 class GroundSheetTests(unittest.TestCase):
@@ -35,18 +32,15 @@ labels:saveAs(app.params.labels)
 ''')
         self.generate()
 
-    def command(self, script, *parameters):
-        command = [args.aseprite, '--batch']
-        for value in (
-            'root=' + ROOT.as_posix() + '/',
-            'out=' + self.sheet.as_posix(),
-            'style=' + (self.work / 'style.aseprite').as_posix(),
-            'labels=' + (self.work / 'labels.png').as_posix(),
-            'tint=100,120,140',
-            *parameters,
-        ):
-            command += ['--script-param', value]
-        return subprocess.run(command + ['--script', str(script)], capture_output=True, text=True)
+    def command(self, script, **parameters):
+        return aseprite(args.aseprite, script, {
+            'root': ROOT.as_posix() + '/',
+            'out': self.sheet,
+            'style': self.work / 'style.aseprite',
+            'labels': self.work / 'labels.png',
+            'tint': '100,120,140',
+            **parameters,
+        }, timeout=None)
 
     def run_lua(self, source):
         script = self.work / 'fixture.lua'
@@ -55,7 +49,7 @@ labels:saveAs(app.params.labels)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def generate(self, replace=False):
-        result = self.command(ROOT / 'tools/tile_art/ground_sheet.lua', *(['replace=yes'] if replace else []))
+        result = self.command(ROOT / 'tools/tile_art/ground_sheet.lua', **({'replace': 'yes'} if replace else {}))
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_unchanged_blank_template_can_be_replaced(self):
@@ -83,11 +77,11 @@ local paint=Image(1,1,ColorMode.RGB)
 paint:clear(app.pixelColor.rgba(255,0,0,255))
 ''' + change + '\ns:saveAs(app.params.out); s:close()\n')
                 before = hashlib.sha256(self.sheet.read_bytes()).digest()
-                result = self.command(ROOT / 'tools/tile_art/ground_sheet.lua', 'replace=yes')
+                result = self.command(ROOT / 'tools/tile_art/ground_sheet.lua', replace='yes')
                 self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertIn('Preserving', result.stdout + result.stderr)
                 self.assertEqual(before, hashlib.sha256(self.sheet.read_bytes()).digest())
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

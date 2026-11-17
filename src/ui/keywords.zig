@@ -10,7 +10,7 @@ const raster = @import("../gfx/raster.zig");
 const sprite = @import("../gfx/sprites.zig");
 const menu = @import("menu.zig");
 
-pub const Term = struct { title: [:0]const u8, body: []const u8 };
+const Term = struct { title: [:0]const u8, body: []const u8 };
 pub const STATUS_TERMS = blk: {
     var out: [std.enums.values(resilience.Tag).len]Term = undefined;
     for (std.enums.values(resilience.Tag), &out) |tag, *term| {
@@ -141,7 +141,11 @@ pub const State = struct {
     }
 
     pub fn text(self: *State, face: *const font.Face, line: [:0]const u8, x: i32, y: i32, px: i32, colour: rl.Color, terms: []const Term, on: menu.Surface) void {
-        face.text(line, x, y, px, colour);
+        face.richText(line, x, y, px, colour);
+        self.mark(face, line, x, y, px, colour, terms, on);
+    }
+
+    pub fn mark(self: *State, face: *const font.Face, line: [:0]const u8, x: i32, y: i32, px: i32, colour: rl.Color, terms: []const Term, on: menu.Surface) void {
         var from: usize = 0;
         while (from < line.len) {
             var matched = false;
@@ -153,9 +157,8 @@ pub const State = struct {
                 const prefix = std.fmt.bufPrintZ(&prefix_buf, "{s}", .{line[0..from]}) catch break;
                 const left = x + face.width(prefix, px);
                 const w = face.width(term.title, px);
-                face.text(term.title, left, y, px, look.UI_FOCUS);
                 const under = y + px + UNDERLINE_DROP;
-                rl.drawLine(left, under, left + w, under, look.UI_GOLD);
+                rl.drawLine(left, under, left + w, under, look.fade(look.UI_GOLD, look.alphaOf(colour)));
                 self.register(term, on.rectOf(raster.rect(left, y, w, px + LINK_FOOT)));
                 from = end;
                 matched = true;
@@ -206,10 +209,11 @@ pub const State = struct {
         const x = raster.left(box);
         const y = raster.top(box);
         sprite.layeredBacking(sprites, x, y, width, height, .definition);
-        face.text(link.term.title, x + PAD, y + PAD, font.BODY, look.UI_FOCUS);
+        face.richText(link.term.title, x + PAD, y + PAD, font.BODY, look.UI_FOCUS);
         var top = y + PAD + font.BODY + GAP;
+        var rich = font.Rich.init(link.term.body);
         for (lines[0..n]) |line| {
-            face.text(line, x + PAD, top, font.SMALL, look.TEXT);
+            rich.draw(face, line, x + PAD, top, font.SMALL, look.TEXT, .shadow);
             top += LINE;
         }
     }

@@ -233,6 +233,7 @@ pub const Node = struct {
     label: Label = .{},
     pos: P = .{ .x = 0, .y = 0 },
     zoo: ?zoo.Spec = null,
+    locations: climate.Locations = .initFill(null),
 
     pub fn zooFits(self: *const Node) bool {
         const z = self.zoo orelse return true;

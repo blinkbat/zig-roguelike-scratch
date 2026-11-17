@@ -1,17 +1,13 @@
-import argparse
-import ctypes
 import hashlib
 import os
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
+from art_support import ROOT, arguments, aseprite, main, read_locked
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 
 class DeepenWaterTests(unittest.TestCase):
@@ -48,17 +44,14 @@ labels:saveAs(app.params.labels)
 ''')
 
     def command(self, script, install='yes'):
-        command = [args.aseprite, '--batch']
-        for value in (
-            'root=' + self.work.as_posix() + '/',
-            'work=' + self.work.as_posix(),
-            'source=' + self.source.as_posix(),
-            'out=' + self.output.as_posix(),
-            'labels=' + (self.work / 'labels.png').as_posix(),
-            'install=' + install,
-        ):
-            command += ['--script-param', value]
-        return subprocess.run(command + ['--script', str(script)], capture_output=True, text=True)
+        return aseprite(args.aseprite, script, {
+            'root': self.work.as_posix() + '/',
+            'work': self.work,
+            'source': self.source,
+            'out': self.output,
+            'labels': self.work / 'labels.png',
+            'install': install,
+        }, timeout=None)
 
     def run_lua(self, source):
         script = self.work / 'fixture.lua'
@@ -150,18 +143,8 @@ s:saveAs(app.params.work..'/deep-water-draft.aseprite'); s:close()
 ''')
         draft = self.work / 'deep-water-draft.aseprite'
         before = draft.read_bytes()
-        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
-                                      ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
-                                      ctypes.c_void_p]
-        kernel.CreateFileW.restype = ctypes.c_void_p
-        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-        handle = kernel.CreateFileW(str(draft), 0x80000000, 1, None, 3, 0, None)
-        self.assertNotEqual(ctypes.c_void_p(-1).value, handle, ctypes.get_last_error())
-        try:
+        with read_locked(draft):
             result = self.command(ROOT / 'tools/tile_art/deepen_water.lua', install='no')
-        finally:
-            kernel.CloseHandle(handle)
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(before, draft.read_bytes())
         self.assertFalse(self.canonical.exists())
@@ -169,4 +152,4 @@ s:saveAs(app.params.work..'/deep-water-draft.aseprite'); s:close()
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

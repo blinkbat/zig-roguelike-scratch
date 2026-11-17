@@ -90,6 +90,7 @@ pub const Item = struct {
         a.block += base.block;
         if (base.innate) |innate| innate.apply(a);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
+            .serrated, .composure, .anchorage, .grievous, .cleansing => {},
             .physical_damage => a.physical_bonus += m.value,
             .crit_damage => a.crit_damage += m.value,
             .block => a.block += m.value,

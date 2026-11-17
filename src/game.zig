@@ -515,6 +515,7 @@ fn freshTurn(g: *Game) void {
 
 pub fn settle(g: *Game) void {
     g.art = .stale;
+    g.sim.locations = climate.locations(&g.sim.lv);
     g.sim.chronicle.restart(epitaph.turnStart(g));
     castSight(g, g.sim.heroActor().?.at);
     g.cloud.settle(&g.sim.lv);
@@ -526,6 +527,7 @@ pub fn settle(g: *Game) void {
     g.cam = camWant(g);
     g.pic.hour_shown = g.sim.clock.hour();
     g.pic.weather_shown = g.sim.weatherHere();
+    g.pic.local_weather_shown = g.sim.localWeather();
     g.light.sky = skyNow(g);
     g.light.settle(&g.sim.lv);
     carryLight(g);
@@ -895,12 +897,21 @@ pub fn overLog(g: *const Game) bool {
 fn skyNow(g: *const Game) ?sky.Sky {
     if (!g.sim.outdoors) return null;
     const flash = if (g.debug.visuals.weather) g.rain.flash() else 0;
-    return sky.under(g.pic.hour_shown, g.pic.weather_shown.get(.overcast)).struck(flash);
+    return sky.under(g.pic.hour_shown, weatherByHero(g).get(.overcast)).struck(flash);
 }
 
 /// null under a roof.
 pub fn weatherNow(g: *const Game) ?climate.Now {
-    return if (g.sim.outdoors) g.pic.weather_shown else null;
+    if (!g.sim.outdoors) return null;
+    var conditions = g.pic.weather_shown;
+    conditions.set(.lightning, weatherByHero(g).get(.lightning));
+    return conditions;
+}
+
+fn weatherByHero(g: *const Game) climate.Now {
+    const hero = g.sim.heroSlot() orelse return g.pic.weather_shown;
+    const at = g.pic.drawnCell(&g.sim, hero) orelse return g.pic.weather_shown;
+    return g.pic.local_weather_shown.get(grid.cellOr(climate.Location, &g.sim.locations, at, .inland));
 }
 
 fn drawnTurn(g: *Game) void {

@@ -552,7 +552,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     g.sim.heroActor().?.resists.set(.cold, 25);
     g.sim.heroActor().?.burn = .{ .turns = 2 };
     g.sim.heroActor().?.resilience.meters.set(.burn, .{ .percent = 50, .turns = 4 });
-    g.sim.heroActor().?.bleed = .{ .turns = 3, .amount = 2 };
+    g.sim.heroActor().?.bleed = .{ .turns = 3, .amount = 2, .move_bonus = 1 };
     g.sim.heroActor().?.chill = .{ .turns = 2, .phase = 1 };
     if (g.sim.pool.n > 1) g.sim.pool.items[1].chill = .{ .turns = 1, .phase = 2 };
     _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 5);
@@ -655,7 +655,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0xd25d13d53c6aed2e;
+const RECORDED_FINGERPRINT: Print = 0xbe5fb9a1243f1350;
 
 test "zoo keys doors populations and visits survive portable saves" {
     const alloc = std.testing.allocator;
@@ -778,11 +778,7 @@ test "legacy zoo key tiles migrate to chests and interchangeable Small Keys once
     try std.testing.expectEqual(grid.Tile.chest_open, back.sim.visits[1].lv.at(z.key.?));
 }
 
-fn sealed(g: *game.Game, buf: *std.ArrayList(u8)) !void {
-    buf.clearRetainingCapacity();
-    try write(g, buf);
-    seal(buf);
-}
+const sealed = format.sealed;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
     game.beginMapAt(g, w, w.start, 7);

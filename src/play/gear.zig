@@ -144,13 +144,14 @@ pub const Gear = struct {
         const ammo: i32 = if (self.quiver()) |q| q.value(.penetration) else 0;
         var out = item_bases.WeaponEffect{ .penetration = self.sum(.penetration) - own - ammo };
         const held = self.wielded(attack) orelse return out;
+        out.bleed = @intCast(self.percent(.serrated));
         out.penetration += own;
         if (attack == .ranged) out.penetration += ammo;
         for (self.slots.values) |maybe| if (maybe) |it| {
             for (it.mods) |m| if (m) |a| if (a.kind == .imbue) out.imbue(a.element, @intCast(a.value));
         };
         const fixed = (held.innate orelse return out).effect();
-        out.bleed = fixed.bleed;
+        out.bleed += fixed.bleed;
         out.bleed_damage = fixed.bleed_damage;
         out.stun = fixed.stun;
         out.penetration += fixed.penetration;
@@ -179,8 +180,18 @@ pub const Gear = struct {
 
     pub fn startFor(c: hero.Class) Gear {
         var out = flasks;
-        for (c.arms()) |k| out.slots.set(item_bases.spec(k).slots[0], .{ .kind = k });
+        out.arm(c);
         return out;
+    }
+
+    /// Each of the class's starting arms whose slot is empty and whose hands still fit.
+    pub fn arm(self: *Gear, c: hero.Class) void {
+        for (c.arms()) |k| {
+            const slot = k.slots()[0];
+            if (self.slots.get(slot) != null) continue;
+            self.slots.set(slot, .{ .kind = k });
+            if (!self.handsFit()) self.slots.set(slot, null);
+        }
     }
 
     fn handsFit(self: Gear) bool {
@@ -243,7 +254,7 @@ pub const Gear = struct {
     fn wielded(self: Gear, attack: attrs.Attack) ?item_bases.Spec {
         const it = self.slots.get(.right_hand) orelse return null;
         const s = item_bases.spec(it.kind);
-        return if (s.attack == attack and s.damage != null) s else null;
+        return if (s.wields(attack)) s else null;
     }
 
     pub fn weapon(self: Gear, attack: attrs.Attack) ?damage.Base {
@@ -386,6 +397,18 @@ test "rolled combat defenses and recovery modifiers reach equipment consumers" {
     try std.testing.expectEqual(@as(i32, 7), gear.onHit(.melee).penetration);
     gear.slots.set(.right_hand, null);
     try std.testing.expectEqual(@as(i32, 7), gear.onHit(.melee).penetration);
+}
+
+test "serrated adds to innate bleed only for the wielded weapon delivery" {
+    var gear = Gear{};
+    gear.slots.set(.right_hand, items.affixed(.axe, &.{.{ .kind = .serrated, .value = 25 }}));
+    try std.testing.expectEqual(@as(u32, 55), gear.onHit(.melee).bleed);
+    try std.testing.expectEqual(@as(i32, 2), gear.onHit(.melee).bleed_damage);
+    try std.testing.expectEqual(@as(u32, 0), gear.onHit(.ranged).bleed);
+    try std.testing.expectEqual(@as(u32, 0), gear.onHit(.spell).bleed);
+    gear.slots.set(.right_hand, items.affixed(.bow, &.{.{ .kind = .serrated, .value = 15 }}));
+    try std.testing.expectEqual(@as(u32, 15), gear.onHit(.ranged).bleed);
+    try std.testing.expectEqual(@as(u32, 0), gear.onHit(.melee).bleed);
 }
 
 test "imbued weapons add their element's ailment to that weapon's hits and worn mods sum across slots" {

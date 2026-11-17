@@ -45,7 +45,7 @@ test "thorns returns melee damage with the incoming impact and ignores dodges an
             harness.stagger(g);
             if (expected > 0) {
                 const impact = g.pic.fx.impacts.landsIn(.fromIndex(slot));
-                try std.testing.expectApproxEqAbs(impact, g.pic.fx.impacts.landsIn(.fromIndex(g.sim.heroSlot().?)), 0.0001);
+                try std.testing.expectApproxEqAbs(impact, g.pic.fx.impacts.landsIn(g.sim.heroActorSlot().?), 0.0001);
                 game.update(g, impact - 0.001);
                 try std.testing.expectEqual(hp, g.pic.pictured[slot].hp);
                 try std.testing.expectEqual(hero_hp, g.pic.heroShown(&g.sim).?.hp);
@@ -595,7 +595,7 @@ test "an arrow bursts a caustic bloat where it floats, and its gas reaches the a
         const lost = before - g.sim.heroActor().?.hp;
         if (first == null and lost > 0) first = turn;
         try std.testing.expectEqual(if (first == null) 0 else per, lost);
-        if (lost > 0) try std.testing.expect(g.pic.fx.impacts.flashOf(.fromIndex(g.sim.heroSlot().?)) > 0);
+        if (lost > 0) try std.testing.expect(g.pic.fx.impacts.flashOf(g.sim.heroActorSlot().?) > 0);
     }
     try std.testing.expectEqual(@as(?usize, 3), first);
 }
@@ -1738,6 +1738,27 @@ test "a chain gaoler's hook drags a hero who stays on its line one cell closer a
     try std.testing.expect(harness.samePx(g.pic.glide[g.sim.heroSlot().?].ground(), glide.cellPx(LANE_HERO)));
     harness.drawnOut(g);
     try std.testing.expect(harness.samePx(g.pic.glide[g.sim.heroSlot().?].ground(), glide.cellPx(pulled)));
+}
+
+test "anchorage prevents a landed bash or hook displacement without preventing damage" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]actor.Kind{ .bandit_shieldbearer, .chain_gaoler }) |kind| {
+        const id = if (kind == .chain_gaoler) try braced(g, kind) else blk: {
+            harness.arena(g, LANE_HERO, &.{});
+            break :blk harness.spawnAt(g, kind, LANE_HERO.add(mathx.Dir.e.delta()), true);
+        };
+        g.sim.inventory.gear.slots.set(.boots, harness.affixed(.boots, .{ .kind = .anchorage, .value = 1 }));
+        const hp = g.sim.heroActor().?.hp;
+        game.settle(g);
+        g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
+        combat.endTurn(g);
+        try std.testing.expectEqual(LANE_HERO, g.sim.heroAt().?);
+        try std.testing.expect(g.sim.heroActor().?.hp < hp);
+        harness.drawnOut(g);
+        harness.nudge(g, .w);
+        try std.testing.expectEqual(LANE_HERO.add(mathx.Dir.w.delta()), g.sim.heroAt().?);
+    }
 }
 
 test "a chain gaoler's hook catches on a barrel or a foe in its line and misses a hero who stepped off it" {

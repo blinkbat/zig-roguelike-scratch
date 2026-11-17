@@ -269,7 +269,7 @@ fn nearestFrom(start: rl.Rectangle, n: usize, dir: mathx.Dir, ctx: anytype, comp
     var best: ?usize = null;
     var best_score = std.math.floatMax(f32);
     for (0..n) |i| {
-        const score = directionScore(start, boxOf(ctx, i), dir, ACROSS) orelse continue;
+        const score = directionScore(start, boxOf(ctx, i), dir) orelse continue;
         if (score < best_score) {
             best_score = score;
             best = i;
@@ -278,7 +278,7 @@ fn nearestFrom(start: rl.Rectangle, n: usize, dir: mathx.Dir, ctx: anytype, comp
     return best;
 }
 
-fn directionScore(from: rl.Rectangle, to: rl.Rectangle, dir: mathx.Dir, across_weight: f32) ?f32 {
+fn directionScore(from: rl.Rectangle, to: rl.Rectangle, dir: mathx.Dir) ?f32 {
     const a = raster.middle(from);
     const b = raster.middle(to);
     const vx = b.x - a.x;
@@ -288,7 +288,7 @@ fn directionScore(from: rl.Rectangle, to: rl.Rectangle, dir: mathx.Dir, across_w
     const wy: f32 = @floatFromInt(d.y);
     const along = vx * wx + vy * wy;
     if (along <= 0) return null;
-    return along + across_weight * @abs(vx * wy - vy * wx);
+    return along + ACROSS * @abs(vx * wy - vy * wx);
 }
 
 pub const Window = struct {

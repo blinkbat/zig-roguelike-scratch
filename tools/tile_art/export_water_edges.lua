@@ -1,15 +1,16 @@
 local source=assert(app.params.source,'source=<edited template PNG>')
 local original=assert(app.params.original,'original=<canonical Aseprite>')
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
 local BANK_LIFT=8
 local report=assert(app.params.report,'report=<validation text>')
 local s=assert(app.open(original))
-assert(s.width==960 and s.height==640 and #s.frames==1,'Expected connected water template')
+assert(s.width==layout.width and s.height==layout.height and #s.frames==1,'Expected connected water template')
 local baseline=Image(s.width,s.height,ColorMode.RGB)
 local pc=app.pixelColor
 local mask=Image{fromFile=root..'assets/water/water-cliff-cap.png'}
 local water=Image{fromFile=root..'assets/ground/shallows-ground.png'}
-assert(mask.width==192 and mask.height==64 and water.width==256 and water.height==256,'Unexpected cap or water atlas dimensions')
+assert(mask.width==192 and mask.height==64 and water.width==layout.block and water.height==layout.block,'Unexpected cap or water atlas dimensions')
 local cap=Image(mask.width,mask.height,ColorMode.RGB)
 for y=0,63 do
  for x=0,191 do
@@ -23,7 +24,7 @@ for _,l in ipairs(s.layers) do
  end
 end
 local edited=Image{fromFile=source}
-assert(edited.width==960 and edited.height==640)
+assert(edited.width==layout.width and edited.height==layout.height)
 local materials=dofile(root..'tools/tile_art/water_cliff_materials.lua')
 local bands=materials.band
 local names={'dirt-shallows-edges','dirt-water-edges','shallows-water-edges'}
@@ -31,19 +32,19 @@ local counts={}
 local outputs={{image=cap,path=root..'assets/water/shallows-water-cap.png'}}
 for n,name in ipairs(names) do
  local atlas=Image(#materials.bands*water.width,water.height,ColorMode.RGB)
- local x0=32+(n-1)*320
+ local x0=layout.x+(n-1)*layout.stride
  local count=0
- for y=0,255 do
-  for x=0,255 do
-   local p=edited:getPixel(x0+x,104+y)
-   if p~=baseline:getPixel(x0+x,104+y) then
+ for y=0,layout.block-1 do
+  for x=0,layout.block-1 do
+   local p=edited:getPixel(x0+x,layout.y+y)
+   if p~=baseline:getPixel(x0+x,layout.y+y) then
     local band
     if n<3 and materials.dry[p] then band=bands.dry
     elseif n==1 and materials.shallow_face[p] then band=bands.shallow_face
     elseif n>1 and materials.deep_face[p] then band=bands.deep_face
     elseif materials.shallow[p] then band=bands.shallow
     elseif materials.deep[p] then band=bands.deep
-    else error(string.format('Unclassified edited color at (%d,%d); assign its terrain material before export',x0+x,104+y)) end
+    else error(string.format('Unclassified edited color at (%d,%d); assign its terrain material before export',x0+x,layout.y+y)) end
     atlas:putPixel(x+band*water.width,y,p)
     count=count+1
    end

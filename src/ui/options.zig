@@ -45,7 +45,7 @@ fn under(page: Page) ?usize {
     };
 }
 
-pub const Go = union(enum) { page: struct { to: Page, at: usize = 0 }, leave, fullscreen, debug };
+const Go = union(enum) { page: struct { to: Page, at: usize = 0 }, leave, fullscreen, debug };
 
 pub fn go(page: Page, back: bool, picked: ?Pick) ?Go {
     if (back) return if (under(page)) |at| .{ .page = .{ .to = .main, .at = at } } else .leave;

@@ -186,6 +186,39 @@ test "a node's sky shows its light and its weather out of doors, and neither und
     }
 }
 
+test "regional rain follows each body instead of the hero and beam weather stays dry" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    _ = w.add(.{ .procgen = .{ .floor = .{ .wilds = .{} } } });
+    w.node[0].locations.set(.coast, .drizzle);
+    w.node[0].locations.set(.forest, .beams);
+    harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.map = w;
+    defer g.sim.map = null;
+    g.sim.outdoors = true;
+    for (0..6) |x| g.sim.lv.set(.{ .x = @intCast(x), .y = 20 }, .sand);
+    g.sim.lv.set(.{ .x = 19, .y = 20 }, .large_tree);
+    game.settle(g);
+    try std.testing.expectEqual(@as(f32, 0), g.sim.rainNow());
+    const coast = P{ .x = 5, .y = 20 };
+    try std.testing.expectEqual(climate.DRIZZLE, g.sim.rainAt(coast));
+    var body = actor.Actor.of(.rat, coast);
+    const wet = g.sim.combatStats(&body);
+    body.at = .{ .x = 20, .y = 20 };
+    const dry = g.sim.combatStatsOn(&body, body.at, .sand, body.resilience, body.sunder);
+    try std.testing.expectEqualDeep(wet, g.sim.combatStatsOn(&body, coast, .sand, body.resilience, body.sunder));
+    try std.testing.expect(wet.elements.get(.fire) > dry.elements.get(.fire));
+    try std.testing.expectEqual(@as(f32, 1), g.sim.localWeather().get(.forest).get(.beams));
+    const rain = g.sim.rainField();
+    try std.testing.expectEqual(climate.DRIZZLE, rain.at(coast));
+    try std.testing.expectEqual(@as(f32, 0), rain.at(body.at));
+    g.sim.outdoors = false;
+    try std.testing.expectEqual(@as(f32, 0), g.sim.rainAt(coast));
+    try std.testing.expectEqual(@as(f32, 0), g.sim.weatherHere().get(.beams));
+}
+
 test "a door takes the archer to the door it leads to, and a node left is found as it was" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

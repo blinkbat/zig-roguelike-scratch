@@ -7,6 +7,7 @@ const store = @import("../core/store.zig");
 const contains = @import("../core/text.zig").contains;
 const pack = @import("../play/pack.zig");
 const atlas = @import("atlas.zig");
+const climate = @import("climate.zig");
 const script_text = @import("script_text.zig");
 const section = atlas.section;
 const P = mathx.P;
@@ -23,10 +24,41 @@ pub const HEADER = "roguelike-map 1";
 pub const TEXT_CAP: usize = 32 << 20;
 
 pub fn save(self: *atlas.Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
-    var text = std.ArrayList(u8).init(alloc);
+    var text = try encode(self, alloc);
     defer text.deinit();
-    try write(self, text.writer());
     try store.replace(path, text.items);
+}
+
+fn encode(self: *atlas.Atlas, alloc: std.mem.Allocator) !std.ArrayList(u8) {
+    var text = std.ArrayList(u8).init(alloc);
+    errdefer text.deinit();
+    try write(self, text.writer());
+    if (text.items.len > TEXT_CAP) return error.FileTooBig;
+    return text;
+}
+
+test "map saving rejects expanded dialogue beyond the reader limit before publishing" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    try a.parse(HEADER ++ "\nstart 0 5 5\nnode procgen open\n");
+    const script = atlas.script;
+    for (0..6) |_| {
+        const d = &a.script.dialog[a.script.addDialog("talk").?];
+        while (d.line_n < script.MAX_LINES) _ = d.addLine();
+        for (d.line[0..d.line_n]) |*line| {
+            try std.testing.expect(line.say.set("\n" ** script.SAY_MAX));
+        }
+    }
+    try std.testing.expect(a.script.valid(a.node_n));
+    var count = std.io.countingWriter(std.io.null_writer);
+    try write(a, count.writer());
+    try std.testing.expect(count.bytes_written > TEXT_CAP);
+    try std.testing.expectError(error.FileTooBig, encode(a, std.testing.allocator));
+    a.script = .{};
+    var text = try encode(a, std.testing.allocator);
+    defer text.deinit();
+    try a.parse(text.items);
+    try std.testing.expectEqual(@as(usize, 1), a.node_n);
 }
 
 pub fn write(self: *atlas.Atlas, w: anytype) !void {
@@ -68,6 +100,9 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
             },
         }
         if (nd.label.n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
+        for (std.enums.values(climate.Location)) |place| {
+            if (nd.locations.get(place)) |weather| try w.print(says(.location) ++ "{s} {s}\n", .{ @tagName(place), @tagName(weather) });
+        }
         if (nd.zoo) |*z| {
             try w.print(says(.zoo) ++ "{d} {d} {d} {d} {s}\n", .{ z.at.x, z.at.y, z.width, z.height, @tagName(z.side) });
             if (z.key) |k| try w.print(says(.zoo_key) ++ "{d} {d}\n", .{ k.x, k.y });
@@ -194,6 +229,12 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                 const pos = try point(&f);
                 if (!atlas.clampPos(pos).eq(pos)) return error.BadLine;
                 (try lastNode(self)).pos = pos;
+            },
+            .location => {
+                const nd = try lastNode(self);
+                const place = try takeValue(climate.Location, &f);
+                if (nd.locations.get(place) != null) return error.BadLine;
+                nd.locations.set(place, try takeValue(climate.Weather, &f));
             },
             .door => {
                 const nd = try lastNode(self);
@@ -329,7 +370,7 @@ pub fn floorKnobs(comptime a: Algo) []const []const u8 {
     return armKnobs(Floor, a);
 }
 const FLOOR_KNOBS_MAX = mostKnobs(Floor);
-const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe, section, paint, zoo, zoo_key, zoo_foe };
+const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe, section, paint, zoo, zoo_key, zoo_foe, location };
 const ONCE_FILE = std.EnumSet(Word).initOne(.start);
 const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at, .section, .zoo, .zoo_key });
 const ONCE = ONCE_FILE.unionWith(ONCE_NODE);
@@ -796,6 +837,25 @@ test "map text round-trips every floor and feature with default and changed knob
         }
     }
     try std.testing.expectEqual(2 * std.enums.values(Algo).len * std.enums.values(Kind).len, checked);
+}
+
+test "node location weather round trips and rejects duplicate or unknown locations" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const text = HEADER ++ "\nstart 0 5 5\nnode procgen wilds\nweather clear\nlocation coast coastal\nlocation forest beams\n";
+    try a.parse(text);
+    try std.testing.expectEqual(@as(?climate.Weather, .coastal), a.node[0].locations.get(.coast));
+    try std.testing.expectEqual(@as(?climate.Weather, .beams), a.node[0].locations.get(.forest));
+    try std.testing.expectEqual(@as(?climate.Weather, null), a.node[0].locations.get(.inland));
+    var out = std.ArrayList(u8).init(std.testing.allocator);
+    defer out.deinit();
+    try a.write(out.writer());
+    const back = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(back);
+    try back.parse(out.items);
+    try std.testing.expectEqualDeep(a.node[0].locations, back.node[0].locations);
+    try std.testing.expectError(error.BadLine, a.parse(text ++ "location forest clear\n"));
+    try std.testing.expectError(error.BadLine, a.parse(text ++ "location desert clear\n"));
 }
 
 test "a map's NPCs and script save with it, and NPCs off open bespoke floor are refused" {

@@ -138,15 +138,16 @@ pub fn incomingStrike(g: *game.Game, attacker: actor.ActorId, kind: actor.Kind, 
         .hit => |hit| hit,
     };
     const harm = hit.damage;
-    const hero = &g.sim.pool.items[harm.target.slot().index];
+    const hero_slot = harm.target.slot().index;
+    const hero = &g.sim.pool.items[hero_slot];
     game.presentDamage(g, harm);
     heroHurt(g, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), harm.dmg }, .{ .by = .{ .foe = kind }, .dmg = harm.dmg, .before = hit.hp_before, .best = hit.maximum_roll });
     if (hit.bled) |said| g.sim.log.push(.danger, "{s} {s}!", .{ g.sim.name.text(), said });
     if (hit.stunned) {
-        g.sim.sayTakes(g.sim.heroSlot().?, hero, turn_clock.STUNNED);
+        g.sim.sayTakes(hero_slot, hero, turn_clock.STUNNED);
         g.sim.chronicle.note(.{ .stunned = kind });
     }
-    if (hit.chilled) g.sim.sayTakes(g.sim.heroSlot().?, hero, glacial.TAKES);
+    if (hit.chilled) g.sim.sayTakes(hero_slot, hero, glacial.TAKES);
     const after = afterBlow(g, g.sim.hero, harm);
     g.pic.recordFoeAttack(attacker, if (harm.lethal) .{ .kill = after } else .{ .hurt = after }, flight);
     if (row.ranged == null) returnThorns(g, attacker.value, hero.at);
@@ -198,9 +199,10 @@ fn recoverLife(g: *game.Game, n: i32) ?fx.After {
 }
 
 fn slain(g: *game.Game, id: u16) ?fx.After {
-    const killed = g.sim.pool.items[actor.Pool.slot(id)];
+    const killed = &g.sim.pool.items[actor.Pool.slot(id)];
+    const spared = killed.kind.ally() or killed.raider;
     fell(g, id);
-    if (killed.kind.ally() or killed.raider) return null;
+    if (spared) return null;
     return recoverLife(g, g.sim.inventory.gear.killRecovery());
 }
 

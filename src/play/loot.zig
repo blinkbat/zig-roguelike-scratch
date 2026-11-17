@@ -48,7 +48,7 @@ pub const Loot = struct { gold: i32 = 0, item: ?items.Item = null, supply: ?cons
 const FOE_HP_PER_LEVEL = 10;
 const AREA_LEVELS_PER_HOP = 2;
 
-pub fn foeLevel(k: actor.Kind) u8 {
+fn foeLevel(k: actor.Kind) u8 {
     return @intCast(std.math.clamp(1 + @divTrunc(actor.row(k).hp, FOE_HP_PER_LEVEL), 1, std.math.maxInt(u8)));
 }
 

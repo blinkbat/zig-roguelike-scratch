@@ -41,6 +41,10 @@ const heapAtlas = @import("capture.zig").heapAtlas;
 const pixels = @import("capture.zig").pixels;
 const readTarget = @import("capture.zig").readTarget;
 const renderTarget = @import("capture.zig").renderTarget;
+const neutralLens = @import("capture.zig").neutralLens;
+const drawInto = @import("capture.zig").drawInto;
+const sameRgb = @import("capture.zig").sameRgb;
+const differentPixels = @import("capture.zig").differentPixels;
 const captureWater = @import("water_cliffs.zig").captureWater;
 const checkMapEdge = @import("water_cliffs.zig").checkMapEdge;
 const checkWaterMirrors = @import("water_cliffs.zig").checkWaterMirrors;
@@ -56,6 +60,56 @@ const cinemaWater = @import("cinema.zig").cinemaWater;
 fn requireProjectile(g: *const game.Game, act: skillbar.Act) !void {
     const shot = g.pic.shot orelse return error.ProjectileNotLaunched;
     if (g.mode != .play or shot.act != act) return error.WrongProjectile;
+}
+
+fn requireAim(g: *game.Game, act: skillbar.Act, from: P, at: P) !void {
+    if (g.mode != .aim or g.mode.aim.act() != act) return error.SkillNotAiming;
+    skills.markAim(g, from, at);
+}
+
+fn captureVolley(g: *game.Game, target: rl.RenderTexture2D, comptime act: skillbar.Act, procs: usize, offsets: []const P, comptime name: []const u8, flying: f32, landed: f32) !void {
+    game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{});
+    const at = g.sim.heroAt().?.add(.{ .x = bow.RANGE, .y = 0 });
+    for (offsets) |offset| _ = game.harness.spawnAt(g, .slime, at.add(offset), false);
+    game.settle(g);
+    g.sim.rng = game.harness.procRng(g, act, procs, true);
+    skills.useSkill(g, game.harness.boundTo(g, act));
+    try requireAim(g, act, g.sim.heroAt().?, at);
+    try capture(g, target, SHOTS_DIR ++ "/" ++ name ++ "-aim.png");
+    skills.confirmAim(g);
+    try requireProjectile(g, act);
+    g.st = .{};
+    game.update(g, flying);
+    try requireProjectile(g, act);
+    try capture(g, target, SHOTS_DIR ++ "/" ++ name ++ "-arrow.png");
+    game.update(g, landed);
+    try capture(g, target, SHOTS_DIR ++ "/" ++ name ++ ".png");
+}
+
+const Drawn = struct {
+    with: rl.Image,
+    without: rl.Image,
+
+    fn unload(self: Drawn) void {
+        rl.unloadImage(self.with);
+        rl.unloadImage(self.without);
+    }
+};
+
+fn drawnWithout(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8, hidden: *?game.presentation.Shot) !Drawn {
+    const options = g.cinema.options;
+    defer g.cinema.options = options;
+    g.cinema.options.bloom = false;
+    const lens = neutralLens(g);
+    defer g.cinema.lens.options = lens;
+    try capture(g, target, path);
+    const with = try readTarget(target);
+    errdefer rl.unloadImage(with);
+    const kept = hidden.*;
+    hidden.* = null;
+    defer hidden.* = kept;
+    drawInto(g, target);
+    return .{ .with = with, .without = try readTarget(target) };
 }
 
 fn captureCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -109,14 +163,8 @@ fn captureBraced(g: *game.Game, target: rl.RenderTexture2D) !void {
 
 fn captureHiddenHook(g: *game.Game, target: rl.RenderTexture2D) !void {
     const h = game.harness;
-    const origin = P{ .x = 24, .y = 20 };
-    h.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    g.sim.lv.set(.{ .x = 22, .y = 21 }, .reeds);
-    const id = h.spawnAt(g, .chain_gaoler, origin, true);
-    const slot = actor.Pool.slot(id);
-    game.settle(g);
-    game.combat.endTurn(g);
-    h.drawnOut(g);
+    const origin = h.HIDDEN_HOOK_AT;
+    const slot = actor.Pool.slot(h.hookFromReeds(g));
     h.nudge(g, .se);
     g.st = .{};
     for (0..120) |_| {
@@ -125,26 +173,14 @@ fn captureHiddenHook(g: *game.Game, target: rl.RenderTexture2D) !void {
         game.update(g, mathx.TEST_DT);
     } else return error.HookNotVisible;
     if (g.pic.litShown(&g.sim, origin)) return error.HookOriginVisible;
-    const options = g.cinema.options;
-    defer g.cinema.options = options;
-    g.cinema.options.bloom = false;
-    const lens = @import("capture.zig").neutralLens(g);
-    defer g.cinema.lens.options = lens;
-    try capture(g, target, SHOTS_DIR ++ "/hook-hidden-origin.png");
-    const with = try readTarget(target);
-    defer rl.unloadImage(with);
-    const hook = g.pic.foe_shots[slot];
-    g.pic.foe_shots[slot] = null;
-    defer g.pic.foe_shots[slot] = hook;
-    @import("capture.zig").drawInto(g, target);
-    const without = try readTarget(target);
-    defer rl.unloadImage(without);
+    const drawn = try drawnWithout(g, target, SHOTS_DIR ++ "/hook-hidden-origin.png", &g.pic.foe_shots[slot]);
+    defer drawn.unload();
     const clip = fx.hookCellClip(origin, game.scene.Cam.of(g).origin(), game.CELL_F);
     var cells = clip.cells();
     while (cells.next()) |p| {
-        if (!@import("capture.zig").sameRgb(rl.getImageColor(with, p.x, p.y), rl.getImageColor(without, p.x, p.y))) return error.HookRevealsHiddenOrigin;
+        if (!sameRgb(rl.getImageColor(drawn.with, p.x, p.y), rl.getImageColor(drawn.without, p.x, p.y))) return error.HookRevealsHiddenOrigin;
     }
-    if (@import("capture.zig").differentPixels(with, without) == 0) return error.HookNotDrawn;
+    if (differentPixels(drawn.with, drawn.without) == 0) return error.HookNotDrawn;
 }
 
 fn captureVerticalHook(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -164,23 +200,13 @@ fn captureVerticalHook(g: *game.Game, target: rl.RenderTexture2D) !void {
     hook.t = hook.lands() * 0.75;
     g.pic.shot = hook;
     defer g.pic.shot = null;
-    const options = g.cinema.options;
-    defer g.cinema.options = options;
-    g.cinema.options.bloom = false;
-    const lens = @import("capture.zig").neutralLens(g);
-    defer g.cinema.lens.options = lens;
-    try capture(g, target, SHOTS_DIR ++ "/hook-vertical-boundary.png");
-    const with = try readTarget(target);
-    defer rl.unloadImage(with);
-    g.pic.shot = null;
-    @import("capture.zig").drawInto(g, target);
-    const without = try readTarget(target);
-    defer rl.unloadImage(without);
+    const drawn = try drawnWithout(g, target, SHOTS_DIR ++ "/hook-vertical-boundary.png", &g.pic.shot);
+    defer drawn.unload();
     const clip = fx.hookCellClip(.{ .x = 20, .y = 21 }, game.scene.Cam.of(g).origin(), game.CELL_F);
     var changed: usize = 0;
-    var points = pixels(with.width, with.height);
+    var points = pixels(drawn.with.width, drawn.with.height);
     while (points.next()) |p| {
-        if (@import("capture.zig").sameRgb(rl.getImageColor(with, p.x, p.y), rl.getImageColor(without, p.x, p.y))) continue;
+        if (sameRgb(rl.getImageColor(drawn.with, p.x, p.y), rl.getImageColor(drawn.without, p.x, p.y))) continue;
         if (!clip.holds(p)) return error.HookRevealsHiddenRow;
         changed += 1;
     }
@@ -193,6 +219,7 @@ pub fn captureGeneral(g: *game.Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR);
 
     try captureParticleShapes();
+    try captureBodyGlow(g, target);
 
     game.begin(g, SHOT_SEED);
     poseRat(g);
@@ -239,43 +266,8 @@ pub fn captureGeneral(g: *game.Game) !void {
     game.update(g, 0.06);
     try capture(g, target, SHOTS_DIR ++ "/juke.png");
 
-    game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{});
-    const burning_at = g.sim.heroAt().?.add(.{ .x = bow.RANGE, .y = 0 });
-    _ = game.harness.spawnAt(g, .slime, burning_at, false);
-    game.settle(g);
-    g.sim.rng = game.harness.procRng(g, .burning_arrow, 1, true);
-    skills.useSkill(g, game.harness.boundTo(g, .burning_arrow));
-    if (g.mode != .aim or g.mode.aim.act() != .burning_arrow) return error.SkillNotAiming;
-    skills.markAim(g, g.sim.heroAt().?, burning_at);
-    try capture(g, target, SHOTS_DIR ++ "/burning-aim.png");
-    skills.confirmAim(g);
-    try requireProjectile(g, .burning_arrow);
-    g.st = .{};
-    game.update(g, 0.08);
-    try requireProjectile(g, .burning_arrow);
-    try capture(g, target, SHOTS_DIR ++ "/burning-arrow.png");
-    game.update(g, 0.10);
-    try capture(g, target, SHOTS_DIR ++ "/burning.png");
-
-    game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{});
-    const glacial_at = g.sim.heroAt().?.add(.{ .x = bow.RANGE, .y = 0 });
-    for ([_]P{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = -1 }, .{ .x = 2, .y = 1 } }) |offset| {
-        _ = game.harness.spawnAt(g, .slime, glacial_at.add(offset), false);
-    }
-    game.settle(g);
-    g.sim.rng = game.harness.procRng(g, .glacial_shot, 3, true);
-    skills.useSkill(g, game.harness.boundTo(g, .glacial_shot));
-    if (g.mode != .aim or g.mode.aim.act() != .glacial_shot) return error.SkillNotAiming;
-    skills.markAim(g, g.sim.heroAt().?, glacial_at);
-    try capture(g, target, SHOTS_DIR ++ "/glacial-aim.png");
-    skills.confirmAim(g);
-    try requireProjectile(g, .glacial_shot);
-    g.st = .{};
-    game.update(g, 0.05);
-    try requireProjectile(g, .glacial_shot);
-    try capture(g, target, SHOTS_DIR ++ "/glacial-arrow.png");
-    game.update(g, 0.14);
-    try capture(g, target, SHOTS_DIR ++ "/glacial.png");
+    try captureVolley(g, target, .burning_arrow, 1, &.{.{ .x = 0, .y = 0 }}, "burning", 0.08, 0.10);
+    try captureVolley(g, target, .glacial_shot, 3, &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = -1 }, .{ .x = 2, .y = 1 } }, "glacial", 0.05, 0.14);
     game.harness.drawnOut(g);
     posePicker(g, game.harness.boundTo(g, .glacial_shot));
     try capture(g, target, SHOTS_DIR ++ "/glacial-bind.png");
@@ -504,8 +496,7 @@ fn captureEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         if (g.sim.growth.ranks.get(act) == 0) g.sim.growth.ranks.set(act, 1);
         skills.useSkill(g, game.harness.boundTo(g, act));
         if (act.reticle()) |reticle| {
-            if (g.mode != .aim or g.mode.aim.act() != act) return error.SkillNotAiming;
-            skills.markAim(g, from, if (reticle == .leap or act == .raise_skeleton) .{ .x = 22, .y = 20 } else .{ .x = 23, .y = 20 });
+            try requireAim(g, act, from, if (reticle == .leap or act == .raise_skeleton) .{ .x = 22, .y = 20 } else .{ .x = 23, .y = 20 });
             skills.confirmAim(g);
             if (g.mode != .play) return error.SkillNotCast;
             if (reticle == .bow) try requireProjectile(g, act);
@@ -685,6 +676,20 @@ comptime {
         seen.insert(w.kind);
     }
     std.debug.assert(seen.count() == std.enums.values(actor.Kind).len);
+}
+
+fn captureBodyGlow(g: *game.Game, target: rl.RenderTexture2D) !void {
+    for ([_]struct { hour: f32, outdoors: bool, path: [:0]const u8 }{
+        .{ .hour = day.NOON, .outdoors = true, .path = SHOTS_DIR ++ "/body-glow-day.png" },
+        .{ .hour = NIGHT, .outdoors = false, .path = SHOTS_DIR ++ "/body-glow-dark.png" },
+    }) |study| {
+        game.harness.grassArena(g, .{ .x = 20, .y = 21 }, &.{});
+        inline for (.{ actor.Kind.slime, .slime_half, .slime_quarter, .bloat, .pyre_bloat }, 0..) |kind, i| {
+            _ = game.harness.spawnAt(g, kind, .{ .x = 16 + @as(i32, @intCast(i)) * 2, .y = 18 }, false);
+        }
+        studyAt(g, study.outdoors, study.hour);
+        try capture(g, target, study.path);
+    }
 }
 
 fn poseSteps(g: *game.Game, tile: grid.Tile) void {

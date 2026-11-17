@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const look = @import("look.zig");
 const raster = @import("raster.zig");
+const keywords = @import("text_keywords.zig");
 
 const TTF = "Balthazar-Regular.ttf";
 const DATA_TTF = "SourceSans3-Regular.ttf";
@@ -154,6 +155,34 @@ pub const Face = struct {
         return self.paragraphWith(draw, s, x, y, w, size, col);
     }
 
+    pub fn rich(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
+        var colored = Rich.init(s);
+        colored.draw(self, s, x, y, size, col, .plain);
+    }
+
+    pub fn richText(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
+        var colored = Rich.init(s);
+        colored.draw(self, s, x, y, size, col, .shadow);
+    }
+
+    pub fn richEngraved(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
+        var colored = Rich.init(s);
+        colored.draw(self, s, x, y, size, col, .engraved);
+    }
+
+    pub fn richParagraph(self: *const Face, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
+        return self.richParagraphWith(s, x, y, w, size, col, .plain);
+    }
+
+    pub fn richParagraphWith(self: *const Face, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color, style: Rich.Style) i32 {
+        var colored = Rich.init(s);
+        var buf: Wrapped = undefined;
+        var lines: [WRAP_LINES_MAX][:0]const u8 = undefined;
+        const n = wrap(self, s, size, w, &buf, &lines);
+        for (lines[0..n], 0..) |line, i| colored.draw(self, line, x, y + @as(i32, @intCast(i)) * (size + LEADING), size, col, style);
+        return y + @as(i32, @intCast(n)) * (size + LEADING);
+    }
+
     pub fn paragraphWith(self: *const Face, comptime line: fn (*const Face, [:0]const u8, i32, i32, i32, rl.Color) void, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
         const step = size + LEADING;
         var buf: Wrapped = undefined;
@@ -232,6 +261,69 @@ pub const Face = struct {
 
     pub fn engravedMid(self: *const Face, s: [:0]const u8, cx: i32, y: i32, size: i32, col: rl.Color) void {
         self.engraved(s, self.leftFor(s, cx, size), y, size, col);
+    }
+};
+
+pub const Rich = struct {
+    flow: keywords.Flow,
+    pub const Style = enum { plain, shadow, engraved };
+
+    pub fn init(body: []const u8) Rich {
+        return .{ .flow = .{ .body = body } };
+    }
+
+    pub fn skip(self: *Rich, line: []const u8) void {
+        self.flow.skip(line);
+    }
+
+    pub fn draw(self: *Rich, face: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, base: rl.Color, style: Style) void {
+        const native = face.walkable(s, size);
+        const f = native orelse face.font orelse {
+            self.skip(s);
+            return if (style == .plain) face.draw(s, x, y, size, base) else face.text(s, x, y, size, base);
+        };
+        const scale = scaleOf(f, size);
+        const engraved = style == .engraved and native != null;
+        if (style != .plain) {
+            const drop = shadowDrop(size) + @as(i32, if (engraved) ENGRAVE_DROP else 0);
+            face.draw(s, x + drop, y + drop, size, shadowOf(base));
+        }
+        if (engraved) {
+            rl.gl.rlSetTexture(f.texture.id);
+            rl.gl.rlBegin(rl.gl.rl_quads);
+        }
+        defer if (engraved) {
+            rl.gl.rlEnd();
+            rl.gl.rlSetTexture(0);
+        };
+        var at: f32 = @floatFromInt(x);
+        var top: f32 = @floatFromInt(y);
+        var byte: usize = 0;
+        var previous: ?keywords.Tone = null;
+        var col = base;
+        while (byte < s.len) {
+            const c = s[byte];
+            const tone = self.flow.next(c);
+            if (tone != previous) {
+                col = if (tone) |t| t.on(base) else base;
+                previous = tone;
+            }
+            const count = std.unicode.utf8ByteSequenceLength(c) catch 1;
+            const n = @min(count, s.len - byte);
+            const cp = std.unicode.utf8Decode(s[byte..][0..n]) catch '?';
+            for (s[byte + 1 .. byte + n]) |part| _ = self.flow.next(part);
+            byte += n;
+            if (c == '\n') {
+                at = @floatFromInt(x);
+                top += @as(f32, @floatFromInt(size)) * 1.5;
+                continue;
+            }
+            const i = if (native != null) ascii(c) else @as(usize, @intCast(rl.getGlyphIndex(f, cp)));
+            if (c != ' ') {
+                if (engraved) putInked(f, i, at, top, scale, Ink.of(col, top, @floatFromInt(size))) else put(f, i, at, top, scale, col);
+            }
+            at += advance(f, i, scale);
+        }
     }
 };
 

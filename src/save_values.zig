@@ -175,6 +175,27 @@ test "an NPC kept before it could stand off a painted cell loads where it stood"
     try std.testing.expectEqualDeep(now, back);
 }
 
+test "old portable bleeds default their movement bonus and new affixes keep named identities" {
+    const bleeding = @import("play/bleeding.zig");
+    const affixes = @import("play/affixes.zig");
+    const C = wire.Codec(Policy);
+    const Old = struct { turns: u8, fresh: bool, amount: i32 };
+    var bytes = std.ArrayList(u8).init(std.testing.allocator);
+    defer bytes.deinit();
+    try C.write(&bytes, Old{ .turns = 3, .fresh = false, .amount = 2 });
+    var back: bleeding.Bleed = undefined;
+    try C.read(bytes.items, &back);
+    try std.testing.expectEqualDeep(bleeding.Bleed{ .turns = 3, .amount = 2 }, back);
+    for ([_]affixes.Mod{ .serrated, .composure, .anchorage, .grievous, .cleansing }) |kind| {
+        bytes.clearRetainingCapacity();
+        const mod = affixes.Affix{ .kind = kind, .value = @intCast(affixes.affixOf(kind).hi) };
+        try C.write(&bytes, mod);
+        var restored: affixes.Affix = undefined;
+        try C.read(bytes.items, &restored);
+        try std.testing.expectEqualDeep(mod, restored);
+    }
+}
+
 pub const Policy = struct {
     pub fn defaults(destination: anytype, seen: anytype) void {
         if (std.meta.Child(@TypeOf(destination)) == data.Tail) {

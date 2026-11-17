@@ -1,14 +1,15 @@
 local root=assert(app.params.root,'root=<repo with trailing slash>')
 local work=assert(app.params.work,'work=<backup folder with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
+local stamp=os.date(sourceFiles.STAMP)
 if app.params.shots then
  local shots=app.params.shots
+ local block=Point(layout.x,layout.y)
  local s=assert(app.open(work..'water-cliff-connections.aseprite'))
  local replacements={}
  local function replace(name,im,at)
-  local old
-  for _,l in ipairs(s.layers) do if l.name==name then old=l break end end
-  assert(old,'Missing original layer '..name)
+  local old=assert(sourceFiles.layer(s,name),'Missing original layer '..name)
   old.name='Before shallow pinch - '..name
   old.isVisible=false
   local l=s:newLayer(); l.name=name
@@ -16,19 +17,16 @@ if app.params.shots then
   replacements[name]={image=im,position=at}
  end
  for i,name in ipairs({'Ground','Cliff faces','Lip and cap fill'}) do
-  replace('Land to shallows - '..name,Image{fromFile=shots..'template-0-layer-'..i..'.png'},Point(32,104))
+  replace('Land to shallows - '..name,Image{fromFile=shots..'template-0-layer-'..i..'.png'},block)
  end
- local owner=Image(s.width,s.height,ColorMode.RGB)
- for _,l in ipairs(s.layers) do
-  if l.name=='Owner flat border edits' then
-   local c=assert(l:cel(1)); owner:drawImage(c.image,c.position)
-  end
- end
- for y=104,359 do for x=32,287 do owner:putPixel(x,y,0) end end
- owner:drawImage(Image{fromFile=shots..'template-0-layer-4.png'},Point(32,104))
+ local edits=sourceFiles.layer(s,'Owner flat border edits')
+ local owner=edits and sourceFiles.canvas(s,assert(edits:cel(1))) or Image(s.width,s.height,ColorMode.RGB)
+ for y=block.y,block.y+layout.block-1 do for x=block.x,block.x+layout.block-1 do owner:putPixel(x,y,0) end end
+ owner:drawImage(Image{fromFile=shots..'template-0-layer-4.png'},block)
  replace('Owner flat border edits',owner,Point(0,0))
  local preview=work..'updated-template.png'
  local width,height=s.width,s.height
+ sourceFiles.keep(root..'assets/source/water-cliff-connections.aseprite',work,'pinch',stamp)
  s:saveAs(root..'assets/source/water-cliff-connections.aseprite')
  s:close()
  local saved=assert(app.open(root..'assets/source/water-cliff-connections.aseprite'))
@@ -45,7 +43,8 @@ if app.params.shots then
  local before=Image{fromFile=work..'desktop-before.png'}
  local expected=Image{fromFile=shots..'template-0.png'}
  for y=0,after.height-1 do for x=0,after.width-1 do
-  local p=x>=32 and x<288 and y>=104 and y<360 and expected:getPixel(x-32,y-104) or before:getPixel(x,y)
+  local inside=x>=block.x and x<block.x+layout.block and y>=block.y and y<block.y+layout.block
+  local p=inside and expected:getPixel(x-block.x,y-block.y) or before:getPixel(x,y)
   assert(after:getPixel(x,y)==p,'Unexpected connected-template change')
  end end
  return
@@ -67,9 +66,7 @@ local function sample(top,foot,y)
 end
 local s=assert(app.open(work..'water-cliff-edge.aseprite'))
 for _,l in ipairs(s.layers) do assert(l.name~='Shallow cliff - half height','Already pinched; use the original backup') end
-local source=assert(s.layers[8]:cel(1))
-local paint=Image(s.width,s.height,ColorMode.RGB)
-paint:drawImage(source.image,source.position)
+local paint=sourceFiles.canvas(s,assert(s.layers[8]:cel(1)))
 local compressed=Image(s.width,s.height,ColorMode.RGB)
 local columns=0
 for _,slice in ipairs(s.slices) do
@@ -92,6 +89,7 @@ s.layers[8].isVisible=false
 local l=s:newLayer(); l.name='Shallow cliff - half height'
 s:newCel(l,1,compressed,Point(0,0))
 local width,height=s.width,s.height
+sourceFiles.keep(root..'assets/source/water-cliff-edge.aseprite',work,'pinch',stamp)
 s:saveAs(root..'assets/source/water-cliff-edge.aseprite')
 s:close()
 local saved=assert(app.open(root..'assets/source/water-cliff-edge.aseprite'))
@@ -111,8 +109,8 @@ for row=0,3 do for x=0,255 do
   end end
  end
 end end
-edges:saveAs(root..'assets/water/dirt-shallows-edges.png')
-assert(Image{fromFile=root..'assets/water/dirt-shallows-edges.png'}:isEqual(edges))
-local report=assert(io.open(work..'pinch.txt','w'))
+sourceFiles.keep(root..'assets/water/dirt-shallows-edges.png',work,'pinch',stamp)
+sourceFiles.savePng(edges,root..'assets/water/dirt-shallows-edges.png')
+local report=sourceFiles.report(work..'pinch.txt')
 report:write(string.format('%d painted columns compressed to ceil(height/2), lip row and width preserved; endpoints sampled without smoothing. Original layer retained hidden. Matching face-span border edits compressed identically.\n',columns))
 report:close()

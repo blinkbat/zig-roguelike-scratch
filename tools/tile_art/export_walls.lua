@@ -1,6 +1,7 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local path=app.params.source or 'C:/Users/DavidBennett/Desktop/regular-walls.aseprite'
 local pc=app.pixelColor
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 assert(#masks==47)
 local COLS=8
@@ -11,36 +12,18 @@ local sprite=assert(app.open(path))
 assert(sprite.width==512 and sprite.height==448)
 local painted
 for _,layer in ipairs(sprite.layers) do if layer.name=='Layer 1' then painted=layer end end
-local source=Image(512,448,ColorMode.RGB)
-source:drawImage(assert(painted,'no Layer 1'):cel(1).image,painted:cel(1).position)
+local wall=dofile(root..'tools/tile_art/wall_strips.lua')(assert(painted,'no Layer 1'):cel(1).image,painted:cel(1).position)
 sprite:close()
+local source,tan,sample,sideRow,decorate=wall.source,wall.tan,wall.sample,wall.sideRow,wall.decorate
 local palette={}
 for it in source:pixels() do if pc.rgbaA(it())>0 then palette[it()]=true end end
-local tan=source:getPixel(30,87)
-assert(tan==pc.rgba(202,158,106,255))
 local dark=pc.rgba(84,15,0,255)
 assert(palette[dark])
-local function sample(x,y) return source:getPixel(x,y) end
 -- Face row by -> painted row: the cap's edge, the top mortar, courses alternating A (101) and B (104), the last C (107) with the foot.
 local faceRows={99,100}
 for k=1,6 do local s=(k%2==1) and 101 or 104; faceRows[#faceRows+1]=s; faceRows[#faceRows+1]=s+1; faceRows[#faceRows+1]=s+2 end
 for _,r in ipairs({107,108,109}) do faceRows[#faceRows+1]=r end
 assert(#faceRows==FACE)
-local function sideRow(y)
-  if y==0 or y==63 then return 80 end
-  return 67+(y+13)%30
-end
-local function decorate(image,inside,offsets)
-  for _,at in ipairs(offsets) do
-    local safe=true
-    for y=at[2]-3,at[2]+12 do for x=at[1]-3,at[1]+12 do
-      if not inside(x,y) then safe=false end
-    end end
-    if safe then
-      for y=0,9 do for x=0,9 do image:putPixel(at[1]+x,at[2]+y,sample(24+x,87+y)) end end
-    end
-  end
-end
 local function tile(mask)
   local bit=masks.bit
   local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
@@ -110,5 +93,4 @@ local exported=Image(W,H,ColorMode.RGB)
 exported:drawImage(check.layers[1]:cel(1).image,check.layers[1]:cel(1).position)
 check:close()
 assert(exported:isEqual(atlas))
-exported:saveAs(root..'assets/walls/walls.png')
-assert(Image{fromFile=root..'assets/walls/walls.png'}:isEqual(atlas),'Wall PNG export changed pixels or did not save')
+sourceFiles.savePng(exported,root..'assets/walls/walls.png','Wall PNG export changed pixels or did not save')

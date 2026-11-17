@@ -413,7 +413,7 @@ pub const Reader = struct {
                 c.slot = try int(u8, f);
                 c.n = try int(i32, f);
             },
-            .talked => c.slot = r.index.findDialog(f.next() orelse return error.BadLine) orelse return error.BadLink,
+            .talked => c.slot = try dialogNamed(&r.index, f),
             .deaths, .alive => {
                 c.foe = try value(actor.Kind, f);
                 c.cmp = try cmpOf(f);
@@ -436,7 +436,7 @@ pub const Reader = struct {
         var a = script.Act{ .kind = try value(script.ActKind, f) };
         switch (a.kind) {
             .preserve, .trade => {},
-            .dialog => a.slot = r.index.findDialog(f.next() orelse return error.BadLine) orelse return error.BadLink,
+            .dialog => a.slot = try dialogNamed(&r.index, f),
             .text => if (!a.note.set(rest(f))) return error.BadLine,
             .flag => {
                 a.slot = try slotOf(s, .flag, f);
@@ -464,6 +464,10 @@ pub const Reader = struct {
         return a;
     }
 };
+
+fn dialogNamed(ix: *const Index, f: *Tokens) Error!u8 {
+    return ix.findDialog(f.next() orelse return error.BadLine) orelse error.BadLink;
+}
 
 fn questOf(s: *const Script, f: *Tokens) Error!u8 {
     return s.findQuest(f.next() orelse return error.BadLine) orelse error.BadLink;

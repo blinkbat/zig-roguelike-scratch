@@ -14,6 +14,7 @@ pub const Bleed = struct {
     turns: u8 = 0,
     fresh: bool = false,
     amount: i32 = STILL,
+    move_bonus: i32 = 0,
 
     pub fn start(self: *Bleed) void {
         self.startWith(STILL);
@@ -25,12 +26,18 @@ pub const Bleed = struct {
     }
 
     pub fn startWith(self: *Bleed, amount: i32) void {
-        self.amount = if (damage.begin(self, TURNS)) amount else @max(self.amount, amount);
+        self.startWound(amount, 0);
+    }
+
+    pub fn startWound(self: *Bleed, amount: i32, move_bonus: i32) void {
+        const fresh = damage.begin(self, TURNS);
+        self.amount = if (fresh) amount else @max(self.amount, amount);
+        self.move_bonus = if (fresh) move_bonus else @max(self.move_bonus, move_bonus);
     }
 
     pub fn tick(self: *Bleed, moved: bool) ?i32 {
         if (!damage.due(self)) return null;
-        return if (moved) self.amount * MOVE_FACTOR else self.amount;
+        return if (moved) self.amount * MOVE_FACTOR + self.move_bonus else self.amount;
     }
 
     pub fn settle(self: *Bleed) void {
@@ -66,4 +73,18 @@ test "strong weapon bleed survives weaker refresh without postponing a tick" {
     b.start();
     b.settle();
     try std.testing.expectEqual(@as(?i32, STILL), b.tick(false));
+}
+
+test "grievous wounds retain their movement bonus on refresh and reset after expiry" {
+    var b = Bleed{};
+    b.startWound(2, 1);
+    b.settle();
+    try std.testing.expectEqual(@as(?i32, 2), b.tick(false));
+    try std.testing.expectEqual(@as(?i32, 5), b.tick(true));
+    b.start();
+    try std.testing.expectEqual(@as(?i32, 5), b.tick(true));
+    for (0..TURNS - 1) |_| _ = b.tick(false);
+    b.start();
+    b.settle();
+    try std.testing.expectEqual(@as(?i32, MOVING), b.tick(true));
 }

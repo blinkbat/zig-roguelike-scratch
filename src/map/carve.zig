@@ -693,7 +693,7 @@ fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, l
     return out;
 }
 
-const Regions = std.StaticBitSet(grid.CELLS);
+pub const Regions = std.StaticBitSet(grid.CELLS);
 
 pub fn trail(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, path: grid.Tile) void {
     var t = Trail{ .p = a, .b = b };

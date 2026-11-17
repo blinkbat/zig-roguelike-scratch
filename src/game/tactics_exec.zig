@@ -116,7 +116,7 @@ fn raise(g: *game.Game, at: P, rank: u8) void {
         g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(slot));
     }
     var body = actor.Actor.of(.skeleton, at);
-    body.max = mathx.percentCeil(tactics.RaiseSkeleton.life(rank), mathx.PERCENT + g.sim.inventory.gear.commander());
+    body.max = g.sim.commanded(tactics.RaiseSkeleton.life(rank));
     body.hp = body.max;
     body.tactics.risen = newest +| 1;
     const id = rise(g, body, spentSlot(g), game.CAST_S);
@@ -203,9 +203,10 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
                     if (!actor.holds(a.kind, &g.sim.lv, to) or !area.has(to)) break;
                     displace(g, id, to);
                 }
-                if (g.sim.displaced.isSet(actor.Pool.slot(id))) _ = g.pic.glideToHeld(actor.ActorId.fromInt(id).slot(), a.at, -game.CAST_S);
+                const slot = actor.ActorId.fromInt(id).slot();
+                if (g.sim.displaced.isSet(slot.index)) _ = g.pic.glideToHeld(slot, a.at, -game.CAST_S);
                 _ = g.sim.pinFor(a, tactics.GravityWell.pins(rank));
-                g.pic.settleSlot(&g.sim, game.CAST_S, actor.ActorId.fromInt(id).slot());
+                g.pic.settleSlot(&g.sim, game.CAST_S, slot);
             }
             g.sim.flowed = false;
             g.pic.fx.shimmer(mathx.centre(at), look.WARD);
@@ -222,7 +223,8 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
             for (area.slice()) |p| {
                 const id = g.sim.lv.who(p);
                 const a = g.sim.pool.get(id) orelse continue;
-                if (a.foe() and g.sim.ignite(actor.Pool.slot(id), a)) g.pic.settleSlot(&g.sim, game.CAST_S, actor.ActorId.fromInt(id).slot());
+                const slot = actor.ActorId.fromInt(id).slot();
+                if (a.foe() and g.sim.ignite(slot.index, a)) g.pic.settleSlot(&g.sim, game.CAST_S, slot);
             }
         },
         .raise_skeleton => raise(g, at, rank),
@@ -238,10 +240,12 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     const struck = g.sim.lv.who(at);
     const target = g.sim.pool.get(struck).?;
     const fuel: i32 = fuelOf(act, target);
+    const opportunity = attacks.opportune(&g.sim, target);
     @field(target, @tagName(Skill.FUEL)) = .{};
     g.pic.settleSlot(&g.sim, game.CAST_S, actor.ActorId.fromInt(struck).slot());
     const area = Skill.area(&g.sim.lv, at, g.sim.wider());
-    const ids = skills.foesIn(g, area);
+    var ids = skills.foesIn(g, area);
+    if (!ids.has(struck)) ids.push(struck);
     var raw = attacks.rawElementFor(&g.sim, act);
     raw.elements.getPtr(Skill.ELEMENT).* += Skill.FUEL_DAMAGE * fuel;
     const s = game.presentation.Stroke{ .from = from, .wait = game.CAST_S, .element = Skill.ELEMENT };
@@ -249,7 +253,9 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     for (ids.slice()) |id| {
         const a = g.sim.pool.get(id) orelse continue;
         const hit = attacks.heroScaled(&g.sim, act, raw);
-        combat.wound(g, id, hit.against(g.sim.combatStats(a).elements), Skill.VERB, s);
+        var roll = hit.against(g.sim.combatStats(a).elements);
+        if (id == struck) roll.opportunity = opportunity;
+        combat.wound(g, id, roll, Skill.VERB, s);
     }
     if (comptime Skill.ELEMENT == .fire) combat.fireLands(g, at, Skill.REACH + g.sim.wider(), Skill.KINDLE, s.wait);
     if (comptime Skill.ELEMENT == .cold) combat.coldLands(g, &area, s.wait);
@@ -705,6 +711,42 @@ test "war cry frightens foes as their fright resistance allows and the picture s
     g.sim.unkillable = false;
 }
 
+test "detonations target visible afflicted swimmers and damage the direct body outside the ground patch" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 21, .y = 20 };
+    inline for (.{ skillbar.Act.combustion, skillbar.Act.shatter }) |act| {
+        h.heroArena(g, .wizard, from, &.{});
+        g.sim.lv.set(at, .water);
+        const id = h.spawnAt(g, .bog_leech, at, false);
+        const target = g.sim.pool.get(id).?;
+        h.toughen(target);
+        game.settle(g);
+        try std.testing.expect(target.seenFoe(&g.sim.lv));
+        try std.testing.expect(!validAct(g, act, from, at));
+        if (act == .combustion) target.burn.start() else target.chill.apply();
+        game.settle(g);
+        try std.testing.expect(validAct(g, act, from, at));
+        try std.testing.expect(!skillbar.Act.caltrops.aimable(&g.sim.lv, from, at));
+        try std.testing.expect(!skillbar.Act.skill(act).area(&g.sim.lv, at, 0).has(at));
+        target.submerged = true;
+        try std.testing.expect(!validAct(g, act, from, at));
+        target.submerged = false;
+        const hp = target.hp;
+        const mana = g.sim.mana;
+        h.useAct(g, act);
+        try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+        try std.testing.expectEqual(at, g.mode.aim.mark);
+        skills.confirmAim(g);
+        try std.testing.expectEqual(@as(u8, 0), fuelOf(act, target));
+        try std.testing.expect(target.hp < hp);
+        try std.testing.expect(g.sim.mana < mana);
+        h.drawnOut(g);
+    }
+}
+
 test "shatter consumes chill for cold damage over its neighbours and refuses an unchilled foe without spending" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -729,6 +771,33 @@ test "shatter consumes chill for cold damage over its neighbours and refuses an 
     try std.testing.expect(g.sim.pool.get(id).?.hp < before);
     try std.testing.expect(g.sim.pool.get(neighbor).?.hp < before);
     try std.testing.expect(g.sim.mana < mana);
+}
+
+test "combustion's kindling reads its target as it burned before the burn was consumed" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const at = P{ .x = 23, .y = 20 };
+    var harder: usize = 0;
+    for (0..8) |seed| {
+        var lost: [2]i32 = undefined;
+        for (&lost, 0..) |*l, kindled| {
+            h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{at});
+            if (kindled == 1) g.sim.inventory.gear.slots.set(.amulet, h.affixed(.amulet, .{ .kind = .kindling, .value = 100 }));
+            const foe = g.sim.pool.get(g.sim.lv.who(at)).?;
+            h.toughen(foe);
+            foe.burn.start();
+            game.settle(g);
+            const hp = foe.hp;
+            g.sim.rng = mathx.Rng.init(seed);
+            h.aimAt(g, .combustion, at);
+            l.* = hp - foe.hp;
+            h.drawnOut(g);
+        }
+        try std.testing.expect(lost[1] >= lost[0]);
+        harder += @intFromBool(lost[1] > lost[0]);
+    }
+    try std.testing.expect(harder > 0);
 }
 
 test "fire wall ignites foes it rises under and those that enter, is shunned, and burns out" {

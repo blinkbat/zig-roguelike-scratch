@@ -273,20 +273,25 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
         }
     }
     sprite.layeredBacking(sprites, x, y, TIP_W, h, .menu);
-    face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
+    face.richText(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
+    var rich = font.Rich.init(body);
+    for (lines[0..first]) |line| rich.skip(line);
     for (lines[first .. first + shown], first..) |l, i| {
         const top = y + TIP_BODY_Y + @as(i32, @intCast(i - first)) * TIP_LINE;
         if (std.mem.eql(u8, l, TIP_RULE)) {
+            rich.skip(l);
             rl.drawLine(x + TIP_PAD, top + @divTrunc(TIP_LINE, 2), x + TIP_W - TIP_PAD, top + @divTrunc(TIP_LINE, 2), FRAME);
         } else if (std.mem.indexOfScalar(u8, l, TIP_SEP)) |split| {
             buf[i][split] = 0;
-            face.text(buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM);
-            face.text(buf[i][split + 1 .. l.len :0], x + TIP_VALUE_X, top, font.SMALL, look.TEXT);
+            rich.draw(face, buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM, .shadow);
+            rich.skip(&.{TIP_SEP});
+            rich.draw(face, buf[i][split + 1 .. l.len :0], x + TIP_VALUE_X, top, font.SMALL, look.TEXT, .shadow);
         } else if (words) |links| {
             const before = links.n;
-            links.text(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, &keywords.STATUS_TERMS, menu.Surface.IDENTITY);
+            rich.draw(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, .shadow);
+            links.mark(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, &keywords.STATUS_TERMS, menu.Surface.IDENTITY);
             if (links.n > before) links.root = raster.rect(x, y, TIP_W, h);
-        } else face.text(l, x + TIP_PAD, top, font.SMALL, look.TEXT);
+        } else rich.draw(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, .shadow);
     }
     return first;
 }

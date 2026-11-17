@@ -168,7 +168,7 @@ pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consuma
     _ = face.paragraph(menu.named(k), x, y + CARD_NAME, width, font.BODY, look.itemInk(.normal));
     face.draw(CONSUMABLE, x, y + SLOT_Y, font.LABEL, look.DIM);
     const act = skillbar.Act.ofSupply(k);
-    const top = face.paragraph(act.desc(), x, y + CARD_STATS, width, font.SMALL, look.TEXT);
+    const top = face.richParagraph(act.desc(), x, y + CARD_STATS, width, font.SMALL, look.TEXT);
     var line: menu.Note(40) = .{};
     line.say(CARRIED_FMT ++ ", 1 turn to use", .{carried});
     face.draw(line.text(), x, top + MODS_BELOW, font.LABEL, look.DIM);
@@ -203,7 +203,7 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     var text: CardText = .{};
     const stats = CardLines.of(spec, slot, available);
     for (stats.lines()) |line| {
-        face.draw(line.text(&text), x, top, line.size(), line.ink());
+        face.rich(line.text(&text), x, top, line.size(), line.ink());
         top += CARD_LINE;
     }
     if (item.magical()) {
@@ -212,7 +212,7 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
         top += MODS_BELOW;
         var shown: Mods = undefined;
         for (modsOf(item, &shown)) |m| {
-            top = face.paragraph(modifierText(item, m, &text), x, top, width, font.SMALL, ink);
+            top = face.richParagraph(modifierText(item, m, &text), x, top, width, font.SMALL, ink);
         }
     }
 }

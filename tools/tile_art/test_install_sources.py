@@ -1,14 +1,11 @@
-import argparse
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
+from art_support import ROOT, arguments, aseprite, main
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 PORTS = {
     'port_ground.lua': ('grass', 'local stamp=os.date', 320),
@@ -19,14 +16,7 @@ PORTS = {
 
 class InstallSourceTests(unittest.TestCase):
     def run_lua(self, script_path, **params):
-        command = [args.aseprite, '--batch']
-        for key, value in params.items():
-            if isinstance(value, Path):
-                value = value.as_posix()
-            command += ['--script-param', f'{key}={value}']
-        return subprocess.run(command + ['--script', str(script_path)], capture_output=True,
-                              text=True, timeout=30,
-                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        return aseprite(args.aseprite, script_path, params)
 
     def port(self, filename, blocked):
         name, start, height = PORTS[filename]
@@ -45,6 +35,7 @@ local backups=work
 local path=app.params.source
 local art_path=path
 local canonical=app.params.canonical
+local install=app.params.install=='yes'
 local sourceFiles=dofile(app.params.helper)
 local name=app.params.name
 local title=name:gsub('^%l',string.upper)
@@ -231,4 +222,4 @@ s:close()
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

@@ -209,7 +209,7 @@ pub fn fireRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) Fired {
 
 pub fn kindleRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) bool {
     const area = areas.patch(&sim.lv, at, reach);
-    if (fire.kindle(&sim.lv, area.slice(), k, sim.rainNow(), &sim.rng) == 0) return false;
+    if (fire.kindleIn(&sim.lv, area.slice(), k, sim.rainField(), &sim.rng) == 0) return false;
     sim.sayAt(at, fire.CATCHES, .{});
     return true;
 }
@@ -219,8 +219,11 @@ pub fn douseRound(sim: *Simulation, area: *const areas.Burst) Caught {
     var out = Caught.initEmpty();
     _ = fire.douse(&sim.lv, area.slice(), fire.DOUSE, &sim.rng);
     if (litFlames(sim, area) < seen) sim.log.say(fire.DIES, .{});
-    for (sim.pool.slice(), 0..) |*a, i| {
-        if (!a.alive or a.burn.turns == 0 or !area.has(a.at)) continue;
+    const living = livingIn(sim, area);
+    var each = living.iterator(.{});
+    while (each.next()) |i| {
+        const a = &sim.pool.items[i];
+        if (a.burn.turns == 0) continue;
         if (!sim.rng.percent(fire.QUENCH)) continue;
         a.burn = .{};
         out.set(i);

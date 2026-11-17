@@ -113,7 +113,7 @@ pub const Weather = struct {
         return .{ .x = x, .y = y, .land = land, .since = -1 };
     }
 
-    pub fn draw(self: *const Weather, now: ?climate.Now, sight: *const [grid.CELLS]f32, ox: f32, oy: f32, cell: f32, bright: f32) void {
+    pub fn draw(self: *const Weather, now: ?climate.Now, local: climate.Local, locations: *const climate.Field, sight: *const [grid.CELLS]f32, ox: f32, oy: f32, cell: f32, bright: f32) void {
         const n = now orelse return;
         const fall = fallOf(n.get(.rain)) orelse return;
         if (self.n == 0 or self.w <= 0 or self.h <= 0) return;
@@ -124,7 +124,10 @@ pub const Weather = struct {
             const x = @mod(d.x + ox, self.w);
             const y = @mod(d.y + oy, self.h);
             const at = mathx.cellOf(look.cellOfScreen(.{ .x = x, .y = y }, ox, oy, cell));
-            const seen = grid.cellOr(f32, sight, at, 0);
+            const place = grid.cellOr(climate.Location, locations, at, .inland);
+            const rain = local.get(place).get(.rain);
+            if (rain <= 0) continue;
+            const seen = grid.cellOr(f32, sight, at, 0) * @min(1, rain / n.get(.rain));
             if (seen <= 0) continue;
             const a = fall.alpha * std.math.clamp(bright, DIM_FLOOR, 1) * seen;
             if (d.since < 0) {

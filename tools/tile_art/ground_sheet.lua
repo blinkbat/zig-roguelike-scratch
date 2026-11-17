@@ -90,35 +90,11 @@ local guides={
 if app.fs.isFile(path) then
   assert(app.params.replace=='yes','already exists: '..path..' (replace=yes only replaces an unchanged blank template)')
   local old=assert(app.open(path))
-  assert(old.width==W and old.height==H and #old.frames==1 and #old.layers==#guides+1 and #old.slices==#order,'Preserving changed template: '..path)
-  for i,want in ipairs(guides) do
-    local l=old.layers[i]
-    assert(l.isImage and l.name==want.name and l.opacity==want.opacity,'Preserving changed guide: '..l.name)
-    local cel=assert(l:cel(1),'Preserving missing guide: '..l.name)
-    assert(cel.opacity==255,'Preserving changed guide opacity: '..l.name)
-    for pixel in cel.image:pixels() do
-      local x,y=pixel.x+cel.position.x,pixel.y+cel.position.y
-      assert((x>=0 and x<W and y>=0 and y<H) or pc.rgbaA(pixel())==0,'Preserving off-canvas guide pixels: '..l.name)
-    end
-    local actual=Image(W,H,ColorMode.RGB)
-    actual:drawImage(cel.image,cel.position)
-    assert(actual:isEqual(want.image),'Preserving changed guide pixels: '..l.name)
+  local slices={}
+  for i,m in ipairs(order) do
+    slices[#slices+1]={name='Corners '..m,bounds=Rectangle(((i-1)%4)*CELL,HEAD+((i-1)//4)*CELL,CELL,CELL)}
   end
-  local d=old.layers[#old.layers]
-  assert(d.isImage and d.name=='Draw here' and (not d:cel(1) or blank(d:cel(1).image)),'Preserving owner painting: '..path)
-  local seen={}
-  for _,slice in ipairs(old.slices) do
-    local found=false
-    for i,m in ipairs(order) do
-      if slice.name=='Corners '..m then
-        local b=slice.bounds
-        assert(not seen[m] and b.x==((i-1)%4)*CELL and b.y==HEAD+((i-1)//4)*CELL and b.width==CELL and b.height==CELL,'Preserving changed slice: '..slice.name)
-        seen[m]=true
-        found=true
-      end
-    end
-    assert(found,'Preserving unknown slice: '..slice.name)
-  end
+  sourceFiles.checkBlankTemplate(old,{width=W,height=H,colorMode=ColorMode.RGB,guides=guides,slices=slices},path)
   local base=path:match('([^/\\]+)%.aseprite$')
   sourceFiles.copy(path,work..base..'-before-ground-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
   old:close()

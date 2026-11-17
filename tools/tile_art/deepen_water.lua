@@ -5,8 +5,9 @@ local canonical=root..'assets/source/deep-water.aseprite'
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
 app.fs.makeAllDirectories(work)
+assert(app.params.percent==nil or tonumber(app.params.percent),'percent must be a number')
 local percent=tonumber(app.params.percent) or 60
-assert(percent and percent>0 and percent<100,'percent must be between 0 and 100')
+assert(percent>0 and percent<100,'percent must be between 0 and 100')
 local install=app.params.install=='yes'
 local pc=app.pixelColor
 if install then
@@ -53,20 +54,12 @@ local path=install and desktop or work..'deep-water-draft.aseprite'
 s:saveAs(path)
 s:close()
 local back=assert(app.open(path))
-local verified={}
-for _,l in ipairs(back.layers) do
-  local expected=snapshots[l.name]
-  if expected then
-    local cel=assert(l:cel(1))
-    assert(cel.position.x==expected.position.x and cel.position.y==expected.position.y,'Cel moved')
-    assert(cel.image:isEqual(expected.toned),'Saved pixels changed')
-    for y=0,cel.image.height-1 do for x=0,cel.image.width-1 do
-      assert(cel.image:getPixel(x,y)==toned(expected.original:getPixel(x,y)),'Wrong tone or alpha')
-    end end
-    verified[l.name]=true
-  end
+for name,expected in pairs(snapshots) do
+  local cel=sourceFiles.checkCel(back,name,expected.toned,expected.position)
+  for y=0,cel.image.height-1 do for x=0,cel.image.width-1 do
+    assert(cel.image:getPixel(x,y)==toned(expected.original:getPixel(x,y)),'Wrong tone or alpha')
+  end end
 end
-for name in pairs(snapshots) do assert(verified[name],'Saved source is missing artwork layers') end
 back:close()
 if install then sourceFiles.copy(path,canonical) end
 shallow:saveAs(work..'shallows-atlas.png')
@@ -76,7 +69,7 @@ preview:drawImage(shallow,Point(0,0))
 preview:drawImage(deep,Point(256,0))
 preview:resize(1024,512)
 preview:saveAs(work..'water-depth-comparison.png')
-local report=assert(io.open(work..'water-depth-validation.txt','w'))
+local report=sourceFiles.report(work..'water-depth-validation.txt')
 report:write(string.format('%d art pixels derived at %g%% RGB; alpha and cel positions unchanged.\n',changed,percent))
 report:write('Source left unchanged: '..source..'\nSaved and reopened: '..path..'\n')
 report:write('Shallows export: assets/ground/shallows-ground.png from water.aseprite. Deep export: assets/ground/water-ground.png from deep-water.aseprite.\n')

@@ -287,6 +287,7 @@ for _,layer in ipairs(sprite.layers) do
 end
 assert(under and drawing)
 local drawn=Image(drawing:cel(1).image)
+local drawnAt=Point(drawing:cel(1).position)
 local sheet=Image(512,448,ColorMode.RGB)
 local byMask={}
 for i,mask in ipairs(masks) do
@@ -302,7 +303,7 @@ for _,a in ipairs(masks) do for _,b in ipairs(masks) do
   end
 end end
 local base=path:match('([^/\\]+)%.aseprite$')
-sourceFiles.copy(path,work..base..'-before-ideas-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
+sourceFiles.copy(path,work..base..'-before-ideas-'..os.date(sourceFiles.STAMP)..'.aseprite')
 if not ideas then
   ideas=sprite:newLayer()
   ideas.name='Ideas - hide before export'
@@ -319,9 +320,7 @@ sprite:close()
 local reopened=assert(app.open(path))
 assert(reopened.width==512 and reopened.height==448,'Saved sheet dimensions changed')
 sourceFiles.checkLayer(reopened,'Ideas - hide before export',sheet,Point(0,0))
-for _,layer in ipairs(reopened.layers) do
-  if layer.name=='Draw here' then assert(layer:cel(1).image:isEqual(drawn)) end
-end
+sourceFiles.checkCel(reopened,'Draw here',drawn,drawnAt)
 reopened:close()
 local map={
   '##############',
@@ -346,12 +345,7 @@ for y=1,#map do for x=1,#map[1] do
 end end
 for y=1,#map do for x=1,#map[1] do
   if wall(x,y) then
-    local N,E,S,W=wall(x,y-1),wall(x+1,y),wall(x,y+1),wall(x-1,y)
-    local m=(N and 1 or 0)|(E and 2 or 0)|(S and 4 or 0)|(W and 8 or 0)
-    if N and E and wall(x+1,y-1) then m=m|16 end
-    if S and E and wall(x+1,y+1) then m=m|32 end
-    if S and W and wall(x-1,y+1) then m=m|64 end
-    if N and W and wall(x-1,y-1) then m=m|128 end
+    local m=masks.of(wall,x,y)
     local image=assert(byMask[m],'mask '..m)
     for yy=0,63 do for xx=0,63 do
       local p=image:getPixel(xx,yy)

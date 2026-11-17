@@ -15,29 +15,9 @@ end
 assert(authored and extension and drawing)
 local original=Image(authored:cel(1).image)
 local position=Point(authored:cel(1).position)
-local source=Image(512,448,ColorMode.RGB)
-source:drawImage(original,position)
-local palette={}
-for it in original:pixels() do if pc.rgbaA(it())>0 then palette[it()]=true end end
-local tan=source:getPixel(30,87)
-assert(tan==pc.rgba(202,158,106,255))
-local function sample(x,y) return source:getPixel(x,y) end
+local wall=dofile(root..'tools/tile_art/wall_strips.lua')(original,position)
+local source,tan,sample,sideRow,decorate=wall.source,wall.tan,wall.sample,wall.sideRow,wall.decorate
 local function brick(x,y) return sample(154+x%32,99+y) end
-local function sideRow(y)
-  if y==0 or y==63 then return 80 end
-  return 67+(y+13)%30
-end
-local function decorate(image,inside,offsets)
-  for _,at in ipairs(offsets) do
-    local safe=true
-    for y=at[2]-3,at[2]+12 do for x=at[1]-3,at[1]+12 do
-      if not inside(x,y) then safe=false end
-    end end
-    if safe then
-      for y=0,9 do for x=0,9 do image:putPixel(at[1]+x,at[2]+y,sample(24+x,87+y)) end end
-    end
-  end
-end
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bits={{128,1,16},{8,0,2},{64,4,32}}
 local function blob(mask)
@@ -105,7 +85,7 @@ for i,mask in ipairs(masks) do
   end
   references[#references+1]=tile
 end
-sourceFiles.copy(path,work..'regular-walls-before-ported-edges-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
+sourceFiles.copy(path,work..'regular-walls-before-ported-edges-'..os.date(sourceFiles.STAMP)..'.aseprite')
 extension.name='Extension - ported painted edges'
 extension:cel(1).image=completed
 extension:cel(1).position=Point(0,0)
@@ -117,16 +97,10 @@ sprite:close()
 local reopened=assert(app.open(path))
 assert(reopened.width==512 and reopened.height==448,'Saved sheet dimensions changed')
 sourceFiles.checkLayer(reopened,'Extension - ported painted edges',completed,Point(0,0))
-local preserved=false
-for _,layer in ipairs(reopened.layers) do
-  if layer.name=='Layer 1' then
-    assert(layer:cel(1).image:isEqual(original) and layer:cel(1).position==position)
-    preserved=true
-  end
-end
-assert(preserved and #reopened.slices==47)
+sourceFiles.checkCel(reopened,'Layer 1',original,position)
+assert(#reopened.slices==#masks)
 reopened:close()
 dofile(root..'tools/tile_art/export_walls.lua')
-local report=assert(io.open(work..'ported-pixel-validation.txt','w'))
+local report=sourceFiles.report(work..'ported-pixel-validation.txt')
 report:write('Original painted layer and position unchanged after reopening.\n47 distinct authoring cells; 44 extensions use copied uneven edge strips.\nAll declared cardinal connections have continuous opaque central coverage.\nCell 02 north boundary repaired with a copy of its first painted row beneath the original layer.\nexport_walls.lua built all 47 cells from Layer 1 strips into assets/walls/walls.png; binary alpha.\nNo resampling, rotation, mirroring or image generation.\n')
 report:close()

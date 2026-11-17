@@ -15,7 +15,7 @@ local outline=pc.rgba(34,34,34,255)
 local cap=pc.rgba(152,152,152,255)
 local face=pc.rgba(96,96,96,255)
 local sprite=assert(app.open(path))
-assert(sprite.width==512 and sprite.height==448 and #sprite.slices==47)
+assert(sprite.width==512 and sprite.height==448 and #sprite.slices==#masks)
 local under,exact,drawing
 for _,layer in ipairs(sprite.layers) do
   if layer.name=='Underdrawing (25%)' then under=layer end
@@ -24,6 +24,7 @@ for _,layer in ipairs(sprite.layers) do
 end
 assert(under and exact and drawing)
 local drawn=Image(drawing:cel(1).image)
+local drawnAt=Point(drawing:cel(1).position)
 local function tile(mask,faced)
   local bit=masks.bit
   local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
@@ -76,7 +77,7 @@ for _,slice in ipairs(sprite.slices) do
   assert(b.x==((i-1)%8)*64 and b.y==64+math.floor((i-1)/8)*64 and b.width==64 and b.height==64,slice.name)
 end
 local base=path:match('([^/\\]+)%.aseprite$')
-sourceFiles.copy(path,work..base..'-before-full-cell-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
+sourceFiles.copy(path,work..base..'-before-full-cell-'..os.date(sourceFiles.STAMP)..'.aseprite')
 under:cel(1).image=sheet(true)
 under:cel(1).position=Point(0,0)
 exact:cel(1).image=sheet(false)
@@ -90,8 +91,6 @@ local reopened=assert(app.open(path))
 assert(reopened.width==512 and reopened.height==448,'Saved sheet dimensions changed')
 sourceFiles.checkLayer(reopened,'Underdrawing (25%)',sheet(true),Point(0,0))
 sourceFiles.checkLayer(reopened,'Exact connection guide (hidden)',sheet(false),Point(0,0))
-for _,layer in ipairs(reopened.layers) do
-  if layer.name=='Draw here' then assert(layer:cel(1).image:isEqual(drawn)) end
-end
+sourceFiles.checkCel(reopened,'Draw here',drawn,drawnAt)
 reopened:saveCopyAs(work..base..'-full-cell.png')
 reopened:close()

@@ -573,6 +573,13 @@ test "a choice that trades opens the merchant's wares without a turn; buying spe
     try std.testing.expectEqual(stocked, g.sim.plot.wares[0].?.supplies.get(k));
 }
 
+fn npcWith(s: anytype, dialog: anytype) !usize {
+    for (s.npcs(), 0..) |npc, i| {
+        if (npc.dialog == dialog) return i;
+    }
+    return error.NoNpc;
+}
+
 test "the caravan merchant trades only after the stolen pib is returned" {
     const w = try atlas.testStart();
     defer std.testing.allocator.destroy(w);
@@ -581,12 +588,8 @@ test "the caravan merchant trades only after the stolen pib is returned" {
     const s = &w.script;
     const merchant_dialog = s.findDialog("merchant").?;
     const baby_dialog = s.findDialog("baby_pib").?;
-    const merchant = for (s.npcs(), 0..) |npc, i| {
-        if (npc.dialog == merchant_dialog) break i;
-    } else return error.NoMerchant;
-    const baby = for (s.npcs(), 0..) |npc, i| {
-        if (npc.dialog == baby_dialog) break i;
-    } else return error.NoBabyPib;
+    const merchant = try npcWith(s, merchant_dialog);
+    const baby = try npcWith(s, baby_dialog);
     game.beginMapAt(g, w, .{ .node = s.npc[merchant].node, .at = grid.MIDDLE }, SEED);
     const turns = g.sim.plot.turns;
     const Pick = struct {

@@ -234,7 +234,7 @@ pub fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     }
     if (ed.pasting) {
         if (over and d.paint_hit) {
-            if (ed.paintable()) placement.layBoard(ed, p) else ed.say(editor.GENERATED, .{});
+            if (!ed.refuseUnfit(.paint)) placement.layBoard(ed, p);
         }
         if (over and d.erase_hit) ed.putAwayPaste();
         return;

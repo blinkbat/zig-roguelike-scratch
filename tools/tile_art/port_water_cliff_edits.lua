@@ -5,15 +5,17 @@ local output=assert(app.params.output,'output=<updated Aseprite>')
 local preview=assert(app.params.preview,'preview=<updated PNG>')
 local report=assert(app.params.report,'report=<validation text>')
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
 local owner=Image{fromFile=source}
 local before=Image{fromFile=baseline}
-assert(owner.width==960 and owner.height==640)
+assert(owner.width==layout.width and owner.height==layout.height)
 assert(before.width==owner.width and before.height==owner.height)
 local pc=app.pixelColor
-local rgba=pc.rgba
-local palette=dofile(root..'tools/tile_art/water_cliff_materials.lua').darken
+local materials=dofile(root..'tools/tile_art/water_cliff_materials.lua')
+local palette=materials.darken
 local s=assert(app.open(original))
-assert(s.width==owner.width and s.height==owner.height and #s.frames==1 and #s.slices==54,'Expected connected water template')
+assert(s.width==owner.width and s.height==owner.height and #s.frames==1 and #s.slices==layout.slices,'Expected connected water template')
 local flattened=Image(s.width,s.height,ColorMode.RGB)
 flattened:drawSprite(s,1)
 assert(flattened:isEqual(before),'Baseline differs from layered template')
@@ -21,17 +23,19 @@ local edits=Image(owner.width,owner.height,ColorMode.RGB)
 local extrapolated=Image(owner.width,owner.height,ColorMode.RGB)
 local final=Image(owner)
 local changed,derived,extended=0,0,0
+local top,bottom=layout.y,layout.y+layout.block-1
+local left,right=layout.x,layout.x+layout.block-1
 for y=0,owner.height-1 do
  for x=0,owner.width-1 do
   local p=owner:getPixel(x,y)
   if p~=before:getPixel(x,y) then edits:putPixel(x,y,p); changed=changed+1 end
  end
 end
-for y=104,359 do
- for x=32,287 do
+for y=top,bottom do
+ for x=left,right do
   local p=owner:getPixel(x,y)
   if p~=before:getPixel(x,y) then
-   local dx=x+320
+   local dx=x+layout.stride
    assert(owner:getPixel(dx,y)==before:getPixel(dx,y),'Preserve owner edits in middle set')
    local deep=palette[p] or p
    extrapolated:putPixel(dx,y,deep)
@@ -41,30 +45,25 @@ for y=104,359 do
  end
 end
 local function canvas(name)
- for _,l in ipairs(s.layers) do
-  if l.name==name then
-   local im=Image(s.width,s.height,ColorMode.RGB)
-   local c=assert(l:cel(1)); im:drawImage(c.image,c.position)
-   return im
-  end
- end
- error('Missing source layer '..name)
+ local layer=sourceFiles.layer(s,name) or error('Missing source layer '..name)
+ return sourceFiles.canvas(s,assert(layer:cel(1)))
 end
 local shallow=canvas('Land to shallows - Cliff faces')
 local deep=canvas('Land to deep water - Cliff faces')
-local surface=rgba(119,146,185,255)
+local surface=materials.surface
 for band=0,3 do
- for x=32,287 do
+ for x=left,right do
   local foot=nil
-  for y=104+band*64,167+band*64 do
+  for y=top+band*64,top+63+band*64 do
    if pc.rgbaA(shallow:getPixel(x,y))>0 then foot=y end
   end
   if foot and owner:getPixel(x,foot)==surface and before:getPixel(x,foot)~=surface then
-   for y=foot+1,math.min(foot+16,359) do
-    if pc.rgbaA(deep:getPixel(x+320,y))==0 then break end
-    assert(owner:getPixel(x+320,y)==before:getPixel(x+320,y),'Preserve owner edits in middle set')
+   local dx=x+layout.stride
+   for y=foot+1,math.min(foot+16,bottom) do
+    if pc.rgbaA(deep:getPixel(dx,y))==0 then break end
+    assert(owner:getPixel(dx,y)==before:getPixel(dx,y),'Preserve owner edits in middle set')
     local p=palette[surface]
-    extrapolated:putPixel(x+320,y,p); final:putPixel(x+320,y,p)
+    extrapolated:putPixel(dx,y,p); final:putPixel(dx,y,p)
     extended=extended+1
    end
   end
@@ -79,9 +78,10 @@ local actual=Image(s.width,s.height,ColorMode.RGB)
 actual:drawSprite(s,1)
 assert(actual:isEqual(final),'Layered composite cannot preserve these pixel edits')
 local outside=0
+local middle=left+layout.stride
 for y=0,owner.height-1 do
  for x=0,owner.width-1 do
-  if x<352 or x>=608 or y<104 or y>=360 then
+  if x<middle or x>=middle+layout.block or y<top or y>bottom then
    assert(actual:getPixel(x,y)==owner:getPixel(x,y),'Changed outside middle set')
    outside=outside+1
   end
@@ -92,10 +92,11 @@ local slices={}
 for _,slice in ipairs(s.slices) do
  slices[slice.name]={x=slice.bounds.x,y=slice.bounds.y,width=slice.bounds.width,height=slice.bounds.height}
 end
+sourceFiles.keep(output,app.fs.filePath(report),'edits',os.date(sourceFiles.STAMP))
 s:saveAs(output)
 s:close()
 local saved=assert(app.open(output))
-assert(#saved.slices==54,'Slice layout changed')
+assert(#saved.slices==layout.slices,'Slice layout changed')
 assert(#saved.layers==layerCount,'Saved artwork layers changed')
 for _,slice in ipairs(saved.slices) do
  local expected=assert(slices[slice.name],'Saved slice name changed')
@@ -108,6 +109,4 @@ assert(savedComposite:isEqual(final),'Saved layered source differs from expected
 saved:saveCopyAs(preview)
 assert(Image{fromFile=preview}:isEqual(final),'Saved composite differs from expected pixel edits')
 saved:close()
-local f=assert(io.open(report,'w'))
-f:write(string.format('Owner edit pixels preserved: %d; shallow edits transferred: %d; deep end pixels extended: %d; outside-middle pixels unchanged: %d. 54 slices retained.\n',changed,derived,extended,outside))
-f:close()
+sourceFiles.write(report,string.format('Owner edit pixels preserved: %d; shallow edits transferred: %d; deep end pixels extended: %d; outside-middle pixels unchanged: %d. %d slices retained.\n',changed,derived,extended,outside,layout.slices))

@@ -53,6 +53,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
         const open = gv.roofed == null or pg.floor.outdoor();
         const title = if (gv.roofed) |roofed| (if (open) gv.title else roofed) else gv.title;
         knobs(ed, g, &y, title, &@field(pg, gv.field), gv.rows, open);
+        if (comptime std.mem.eql(u8, gv.field, "sky")) locationRows(ed, g, &y, open);
         y += widgets.BLOCK_GAP;
     }
     section(g, &y, "Makeups");
@@ -65,6 +66,25 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
     if (editor.button(ed, g, col.row(y), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
     panel.closePane(ed, .inspector, y + widgets.ROW_H);
     refit(ed, pg, was);
+}
+
+fn locationRows(ed: *editor.Editor, g: *game.Game, y: *i32, live: bool) void {
+    const choices = comptime std.enums.values(climate.Weather);
+    for (std.enums.values(climate.Location)) |place| {
+        const at = y.*;
+        y.* += widgets.ROW_STEP;
+        if (panel.clipped(ed, at)) continue;
+        panel.rowLabel(g, column(g), at, menu.titleOf(place), widgets.TEXT);
+        const value = ed.here().locations.get(place);
+        const label = if (value) |v| @tagName(v) else "inherit";
+        const tip = "Weather in this location; inherit uses the node's weather";
+        const by = stepper(ed, g, valueSlot(g, at, 0, 1), label, .{ .{ .tip = tip, .live = live }, .{ .tip = tip, .live = live } });
+        if (by == 0) continue;
+        const index: i32 = if (value) |v| @as(i32, @intCast(@intFromEnum(v))) + 1 else 0;
+        const next: usize = @intCast(@mod(index + std.math.sign(by), @as(i32, @intCast(choices.len + 1))));
+        ed.here().locations.set(place, if (next == 0) null else choices[next - 1]);
+        ed.changed();
+    }
 }
 
 pub fn choiceRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, which: editor.Which, top: usize, shown: usize) void {
@@ -579,7 +599,7 @@ const ADD_FEATURE_TIP = "Lay another feature over the base: " ++ menu.joined(std
 
 const SKY_ROWS = [_]Knob{
     .{ .field = "light", .tips = &.{listing(climate.Light, 2, "Its daylight at the clearest: clear, or always a bleak overcast; shown only open to the sky")} },
-    .{ .field = "weather", .tips = &.{listing(climate.Weather, 5, "How its sky changes: clear; a steady drizzle; coastal squalls and sea fog; thunderstorms; or long fogs. Rain dampens fire")} },
+    .{ .field = "weather", .tips = &.{listing(climate.Weather, 6, "How its sky changes: clear; steady drizzle; coastal squalls and sea fog; thunderstorms; long fogs; or forest light beams. Rain dampens fire")} },
 };
 
 pub const FOE_ROWS = [_]Knob{

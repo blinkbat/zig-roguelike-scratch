@@ -128,10 +128,10 @@ fn captureWaterVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
     defer for (air[0..air_n]) |img| rl.unloadImage(img);
     for (&air, 0..) |*img, i| {
         if (i == 1) @memset(&g.sim.lv.lit, false);
-        g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{});
+        g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{}, &g.sim.locations, g.pic.local_weather_shown);
         intoTarget(g, target);
         rl.clearBackground(rl.Color.black);
-        g.cinema.drawAir(g.light, c.origin(), game.CELL_F, g.screen, 0);
+        g.cinema.drawAir(g.light, c.origin(), game.CELL_F, g.screen, g.pic.hour_shown, true);
         outOfTarget(g);
         img.* = try readTarget(target);
         air_n += 1;

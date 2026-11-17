@@ -26,7 +26,7 @@ const ARENA_OF: f32 = 0.42;
 const FRAY: f32 = 0.6;
 const BIG_FRAY: f32 = 0.25;
 
-pub const Layout = enum { line, ring, diamond, u, plus, bowls, grid, arena };
+pub const Layout = enum { line, ring, diamond, u, plus, bowls, grid, arena, encampment };
 
 pub const Params = struct {
     layout: Layout = .line,
@@ -48,10 +48,12 @@ pub const Params = struct {
 };
 
 pub fn palette(p: Params) carve.Palette {
-    return carve.Palette.on(p.ground.tile(), p.filler.tile()).pocketed();
+    var pal = carve.Palette.on(p.ground.tile(), p.filler.tile()).pocketed();
+    if (p.layout == .encampment and p.ground == .grass) pal.path = .dirt;
+    return pal;
 }
 
-const Spot = struct { x: f32, y: f32, big: bool = false };
+const Spot = struct { x: f32, y: f32, big: bool = false, wide: f32 = 1, tall: f32 = 1 };
 const Edge = [2]u8;
 const Graph = struct { spots: []const Spot, edges: []const Edge, big_of: f32 = BOWL_OF, gap: f32 = 0 };
 
@@ -69,6 +71,19 @@ fn graphOf(l: Layout) Graph {
             .gap = GRID_GAP,
         },
         .arena => .{ .spots = &.{ .{ .x = 0.5, .y = 0.5, .big = true }, .{ .x = 0.04, .y = 0.5 }, .{ .x = 0.96, .y = 0.5 } }, .edges = &.{ .{ 1, 0 }, .{ 0, 2 } }, .big_of = ARENA_OF },
+        .encampment => .{
+            .spots = &.{
+                .{ .x = 0.42, .y = 0.95, .wide = 0.65, .tall = 0.65 },
+                .{ .x = 0.12, .y = 0.73, .wide = 1.35, .tall = 0.65 },
+                .{ .x = 0.70, .y = 0.78, .wide = 1.4, .tall = 0.8 },
+                .{ .x = 0.29, .y = 0.36, .wide = 1.25, .tall = 0.8 },
+                .{ .x = 0.88, .y = 0.46, .wide = 1.15 },
+                .{ .x = 0.69, .y = 0.13, .wide = 2.5, .tall = 1.35 },
+                .{ .x = 0.88, .y = 0.02, .wide = 0.55, .tall = 0.55 },
+                .{ .x = 0.57, .y = 0.47, .wide = 0.45, .tall = 0.45 },
+            },
+            .edges = &.{ .{ 0, 1 }, .{ 0, 2 }, .{ 1, 3 }, .{ 2, 4 }, .{ 3, 7 }, .{ 7, 4 }, .{ 7, 2 }, .{ 3, 5 }, .{ 4, 5 }, .{ 5, 6 } },
+        },
     };
 }
 
@@ -98,11 +113,13 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const short: f32 = @floatFromInt(@min(grid.W, grid.H));
     for (g.spots, 0..) |s, i| {
         const r: f32 = if (!s.big) @floatFromInt(p.clearing) else short * g.big_of;
-        clearing(lv, noise, at[i], r, if (s.big) BIG_FRAY else FRAY, pal.open);
+        if (p.layout == .encampment) {
+            oval(lv, noise, at[i], r * s.wide, r * s.tall, pal.open);
+        } else clearing(lv, noise, at[i], r, if (s.big) BIG_FRAY else FRAY, pal.open);
     }
     for (g.edges) |e| {
         if (g.gap > 0 and rng.chance(g.gap)) continue;
-        path(lv, rng, at[e[0]], at[e[1]], p.path, pal.open);
+        path(lv, rng, at[e[0]], at[e[1]], p.path, pal.path);
     }
     for (0..p.sides) |_| {
         const from = rng.pick(P, at[0..g.spots.len]);
@@ -110,6 +127,17 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
 
         path(lv, rng, from, to, p.path, pal.open);
         clearing(lv, noise, to, @as(f32, @floatFromInt(p.clearing)) * SIDE_CLEARING, FRAY, pal.open);
+    }
+}
+
+fn oval(lv: *grid.Level, noise: carve.Noise, c: P, rx: f32, ry: f32, open: grid.Tile) void {
+    var cells = grid.Box.around(c, @intFromFloat(@ceil(@max(rx, ry) * 1.25))).cells();
+    while (cells.next()) |q| {
+        if (!grid.Box.inMap(RIM_GAP).holds(q)) continue;
+        const dx = @as(f32, @floatFromInt(q.x - c.x)) / rx;
+        const dy = @as(f32, @floatFromInt(q.y - c.y)) / ry;
+        const edge = 0.9 + 0.35 * noise.at(q, 6, 2);
+        if (dx * dx + dy * dy <= edge * edge) lv.set(q, open);
     }
 }
 
@@ -142,5 +170,17 @@ test "every layout joins its spots" {
         shape(&lv, &rng, 1, .{ .layout = l, .sides = 0 });
         const parts = st.label(&lv);
         if (l != .grid) try std.testing.expectEqual(@as(usize, 1), parts);
+    }
+}
+
+test "the encampment keeps its linked clearings connected over many rolls" {
+    var lv = grid.Level.blank();
+    var st: carve.Stretches = .{};
+    for (0..100) |i| {
+        const seed = 0xCA49 +% i *% grid.TEST_SEED_STRIDE;
+        var rng = mathx.Rng.init(seed);
+        shape(&lv, &rng, seed, .{ .layout = .encampment, .filler = .rock, .ground = .dirt, .clearing = 6, .sides = 0 });
+        try std.testing.expectEqual(@as(usize, 1), st.label(&lv));
+        try std.testing.expect(lv.openCount() < grid.CELLS / 3);
     }
 }

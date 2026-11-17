@@ -150,7 +150,10 @@ pub fn afflicted(sim: *Simulation, a: *actor.Actor, comptime M: type, lands: boo
         sim.procStatus(a, M.AILMENT, M.chance(resist))
     else
         M.procs(&sim.rng, resist) and sim.takeStatus(a, M.AILMENT);
-    if (takes) M.afflict(a, &sim.rng);
+    if (takes) {
+        M.afflict(a, &sim.rng);
+        if (comptime M.AILMENT == .bleed) a.bleed.move_bonus = @max(a.bleed.move_bonus, sim.inventory.gear.sum(.grievous));
+    }
     return takes;
 }
 
@@ -175,7 +178,7 @@ fn blowOn(weak: bool, bonus: i32, s: *shock.Shock, dmg: i32, applied: ?resilienc
     return if (applied == .shock) weakened else shock.spend(s, weakened);
 }
 
-fn opportune(sim: *const Simulation, a: *const actor.Actor) i32 {
+pub fn opportune(sim: *const Simulation, a: *const actor.Actor) i32 {
     const gear = sim.inventory.gear;
     var bonus: i32 = 0;
     if (a.slowed()) bonus += gear.opportunist();
@@ -290,7 +293,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     if (!culled and r.dmg > 0 and r.dmg < a.hp) {
         if (r.applied != .bleed and sim.procStatus(a, .bleed, r.effect.bleed)) {
             bled = a.bleed.said();
-            a.bleed.startWith(r.effect.bleed_damage);
+            a.bleed.startWound(r.effect.bleed_damage, @max(0, sim.inventory.gear.sum(.grievous)));
         }
         if (r.applied != .stun and sim.procStatus(a, .stun, r.effect.stun)) {
             a.clock.stun();

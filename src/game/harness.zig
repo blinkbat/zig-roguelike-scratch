@@ -254,7 +254,7 @@ fn combatant(g: *const game.Game, id: u16) *const actor.Actor {
 
 fn foeAttacksHold(g: *const game.Game, hero_at: P, foe_attacks: []const FoeAttack, rng: *mathx.Rng) bool {
     const hero = g.sim.heroBody().?;
-    const defender = g.sim.combatStatsOn(hero, g.sim.lv.at(hero_at), hero.resilience, hero.sunder);
+    const defender = g.sim.combatStatsOn(hero, hero_at, g.sim.lv.at(hero_at), hero.resilience, hero.sunder);
     for (foe_attacks, 0..) |b, i| {
         const a = combatant(g, b.id);
         const strike = actor.row(a.kind).blow.strike;
@@ -611,6 +611,18 @@ pub const InkMote = struct {
         return sameRgb(m.col, self.ink);
     }
 };
+
+pub const HIDDEN_HOOK_AT = P{ .x = 24, .y = 20 };
+
+pub fn hookFromReeds(g: *game.Game) u16 {
+    arena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.lv.set(.{ .x = 22, .y = 21 }, .reeds);
+    const id = spawnAt(g, .chain_gaoler, HIDDEN_HOOK_AT, true);
+    game.settle(g);
+    combat.endTurn(g);
+    drawnOut(g);
+    return id;
+}
 
 test "predicted foe strikes follow terrain and ordered armour rolls in real turns" {
     const g = try game.boot(std.testing.allocator);

@@ -165,7 +165,7 @@ pub const Fields = struct {
     pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "sight_held", "lit_kindled", "tiles", "embers", "burnt", "busy", "lead", "bolt_lands", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
     pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
     pub const facing = [_][]const u8{"facing"};
-    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "seen_bodies", "seen_cells", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown" };
+    pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "seen_bodies", "seen_cells", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown", "local_weather_shown" };
     pub const scratch = [_][]const u8{ "ground_shown", "burnt_ground", "burnt_box" };
     /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
     pub const kept = [_][]const u8{ "seq", "fx", "occluder" };
@@ -237,6 +237,7 @@ pub const Presentation = struct {
     quests_shown: @FieldType(@FieldType(Simulation, "plot"), "quests") = @splat(.{}),
     hour_shown: f32 = day.Clock.hour(.{}),
     weather_shown: climate.Now = .initFill(0),
+    local_weather_shown: climate.Local = .initFill(.initFill(0)),
 
     pub fn quiet(self: *const Presentation) bool {
         return self.busy <= PACE_SLACK;
@@ -839,6 +840,10 @@ pub const Presentation = struct {
         self.stepSeenCells(sim, mathx.easing(dt, visibility.REVEAL));
         self.hour_shown = day.wrapHour(self.hour_shown + day.toward(self.hour_shown, sim.clock.hour()) * mathx.easing(dt, HOUR_EASE));
         self.weather_shown = climate.eased(self.weather_shown, sim.weatherHere(), mathx.easing(dt, WEATHER_EASE));
+        const local_weather = sim.localWeather();
+        for (std.enums.values(climate.Location)) |place| {
+            self.local_weather_shown.set(place, climate.eased(self.local_weather_shown.get(place), local_weather.get(place), mathx.easing(dt, WEATHER_EASE)));
+        }
         self.xp_shown = mathx.ease(self.xp_shown, self.xp_aim, mathx.easing(dt, XP_EASE), 1);
         const resource_ease = mathx.easing(dt, RESOURCE_EASE);
         self.life_fill = mathx.ease(self.life_fill, self.lifeFill(sim), resource_ease, resource_ease);
@@ -1025,7 +1030,7 @@ pub const Presentation = struct {
 
     /// `late` is seconds since the glides started.
     pub fn stepGlide(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, late: f32) void {
-        var turn = schedule.Turn.begin(late, self.lead, self.heroCell(sim).?, .{ .stagger = game.STAGGER_S, .bump_lands = game.BUMP_LANDS });
+        var turn = schedule.Turn.begin(late, self.lead, self.heroCell(sim).?, PACE);
         const hero = sim.heroSlot().?;
         const warded = self.owed[hero].worn;
         self.owed[hero].worn = null;
@@ -1056,14 +1061,15 @@ pub const Presentation = struct {
         self.scheduleBlows(sim, gas, owed, &timing);
         const countered = self.scheduleReaction(sim, gas, owed, &timing, turn);
         self.scheduleKnock(sim, owed, countered, &timing, turn);
-        return self.scheduleHarm(sim, gas, owed, start, &timing, turn);
+        return self.scheduleHarm(sim, gas, owed, &timing, turn);
     }
 
     fn scheduleMotion(self: *Presentation, sim: *const Simulation, target: actor.ActorId, owed: Owed, start: f32, turn: *schedule.Turn) ?BodyTiming {
         const slot = target.slot().index;
         const body = &sim.pool.items[slot];
         const motion = &self.glide[slot];
-        const destination = if (target.value == sim.hero) self.heroCell(sim).? else body.at;
+        const is_hero = target.value == sim.hero;
+        const destination = if (is_hero) self.heroCell(sim).? else body.at;
         const moved = !motion.to.eq(destination);
         if (!moved and !owed.any()) {
             if (self.turning[slot]) |*t| {
@@ -1077,9 +1083,9 @@ pub const Presentation = struct {
         const visible_origin = !hidden and self.litShown(sim, motion.to);
         const arrow_seen = if (owed.arrow) |*f| owed.struck == null or shown or self.flightSeen(sim, f) else false;
         const lunges = attack != null or owed.struck != null or owed.hurled != null;
-        var clock = turn.motion(.{
+        var facts = schedule.Motion{
             .start_in = start,
-            .hero = target.value == sim.hero,
+            .hero = is_hero,
             .moved = moved,
             .lunges = lunges,
             .shown = shown,
@@ -1087,8 +1093,10 @@ pub const Presentation = struct {
             .arrow_seen = arrow_seen,
             .mending = owed.mended != null,
             .motion_left = motion.left(),
-            .clear_in = if (moved and target.value != sim.hero and (shown or visible_origin)) self.clearIn(sim, slot, body.at) else 0,
-        });
+            .clear_in = 0,
+        };
+        if (moved and !is_hero and schedule.staggers(facts)) facts.clear_in = self.clearIn(sim, slot, body.at);
+        var clock = turn.motion(facts);
         if (self.turning[slot]) |*t| t.in = clock.begins_in;
         const hero_at = if (owed.knock) |k| k.from else turn.hero_cell;
         const bumps = owed.arrow == null and lunges;
@@ -1154,7 +1162,7 @@ pub const Presentation = struct {
         var countered = timing.clock.impact_in;
         if (owed.reaction) |r| {
             const release = timing.clock.reactionRelease();
-            var impact = release + game.BUMP_LANDS;
+            var impact = release + turn.pace.bump_lands;
             if (r.flight) |f| {
                 const shot_ = Shot{ .from = r.from, .flight = f, .act = .overwatch, .t = -release };
                 self.shot = shot_;
@@ -1188,7 +1196,7 @@ pub const Presentation = struct {
         }
     }
 
-    fn scheduleHarm(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, start: f32, timing: *BodyTiming, turn: *const schedule.Turn) f32 {
+    fn scheduleHarm(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming, turn: *const schedule.Turn) f32 {
         timing.clock.finishAfter(self.fx.impacts.landsIn(timing.slot));
         inline for (comptime std.enums.values(simulation.Tick)) |t| {
             if (comptime @FieldType(Owed, @tagName(t)) == ?Harm) if (@field(owed, @tagName(t))) |h| {
@@ -1207,7 +1215,7 @@ pub const Presentation = struct {
             .bled => if (owed.bled) |h| self.harmShown(sim, gas, timing.at, timing.clock.finishes_in, h, null, in_view, .{ .slot = timing.slot, .drip = drip }),
         };
         if (timing.body.submerged != self.under.isSet(timing.slot.index)) {
-            self.dives[timing.slot.index] = timing.clock.emergesIn(timing.body.submerged, start, turn.late);
+            self.dives[timing.slot.index] = timing.clock.emergesIn(timing.body.submerged);
         }
         return timing.clock.finishes_in;
     }
@@ -1300,6 +1308,7 @@ pub const Stroke = struct {
 pub const Life = struct { hp: i32, max: i32 };
 
 const LAID_LAYERS = .{ "flames", "barrier", "caltrops" };
+const PACE = schedule.Pace{ .stagger = game.STAGGER_S, .bump_lands = game.BUMP_LANDS };
 
 /// A walk due this close to the turn's last glide ending is not held for it.
 const PACE_SLACK: f32 = 1e-4;

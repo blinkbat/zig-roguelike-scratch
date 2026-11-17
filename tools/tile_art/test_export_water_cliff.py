@@ -1,16 +1,13 @@
-import argparse
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
 from PIL import Image
 
+from art_support import ROOT, arguments, aseprite, main
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 
 class WaterCliffExportTests(unittest.TestCase):
@@ -65,23 +62,17 @@ print('EXPECTED_PROFILE_FAILURE')
             for profile in ('foot', 'lip'):
                 for failure in ('write', 'close'):
                     with self.subTest(profile=profile, failure=failure):
-                        command = [args.aseprite, '--batch']
                         params = dict(source=work / 'source.aseprite', out=work / 'cliff.png',
                                       depth='deep', layer='Paint', failure=failure,
                                       failed=work / f'cliff-{profile}.txt',
                                       root=ROOT.as_posix() + '/',
                                       exporter=ROOT / 'tools/tile_art/export_water_cliff.lua')
-                        for key, value in params.items():
-                            if isinstance(value, Path):
-                                value = value.as_posix()
-                            command += ['--script-param', f'{key}={value}']
-                        result = subprocess.run(command + ['--script', str(probe)],
-                                                capture_output=True, text=True, timeout=30,
-                                                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                        result = aseprite(args.aseprite, probe, params)
                         output = result.stdout + result.stderr
                         self.assertEqual(0, result.returncode, output)
                         self.assertIn('EXPECTED_PROFILE_FAILURE', output)
                         self.assertNotIn('Verified deep cliff', output)
+                        self.assertFalse((work / 'cliff.png').exists())
 
     def test_png_suffixes_keep_atlas_and_auxiliary_outputs_distinct(self):
         with tempfile.TemporaryDirectory(prefix='cistern-cliff-export-test-') as temporary:
@@ -125,14 +116,7 @@ s:saveAs(app.params.source); s:close()
             self.assertEqual(b'existing output', output.read_bytes())
 
     def run_script(self, script, expected=0, **params):
-        command = [args.aseprite, '--batch']
-        for key, value in params.items():
-            if isinstance(value, Path):
-                value = value.as_posix()
-            command += ['--script-param', f'{key}={value}']
-        result = subprocess.run(command + ['--script', str(script)], capture_output=True,
-                                text=True, timeout=30,
-                                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        result = aseprite(args.aseprite, script, params)
         if expected == 0:
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         else:
@@ -141,4 +125,4 @@ s:saveAs(app.params.source); s:close()
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

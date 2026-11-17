@@ -1,7 +1,6 @@
-import argparse
-import ctypes
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,11 +8,10 @@ import unittest
 
 from PIL import Image
 
+from art_support import ROOT, arguments, aseprite, main, read_locked
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 
 class ConnectedTemplateTests(unittest.TestCase):
@@ -38,10 +36,10 @@ class ConnectedTemplateTests(unittest.TestCase):
             combined.save(self.shots / f'template-{n}.png')
         self.inputs = {path: path.read_bytes() for path in self.shots.iterdir()}
 
-    def generate(self):
+    def generate(self, root=ROOT):
         env = dict(os.environ, TEMP=str(self.work), TMP=str(self.work), PYTHONIOENCODING='utf-8')
         result = subprocess.run(
-            [sys.executable, '-B', str(ROOT / 'tools/tile_art/water_cliff_connected.py'),
+            [sys.executable, '-B', str(root / 'tools/tile_art/water_cliff_connected.py'),
              str(self.shots), '--output', str(self.output), '--replace'],
             env=env, capture_output=True, text=True, encoding='utf-8', timeout=30,
         )
@@ -49,11 +47,7 @@ class ConnectedTemplateTests(unittest.TestCase):
         return Path(result.stdout.strip()) / 'assemble.lua'
 
     def assemble(self, script, **params):
-        command = [args.aseprite, '--batch']
-        for key, value in params.items():
-            command += ['--script-param', f'{key}={value}']
-        return subprocess.run(command + ['--script', str(script)], capture_output=True, text=True,
-                              timeout=30, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        return aseprite(args.aseprite, script, params)
 
     def test_input_close_failure_preserves_both_destinations(self):
         assembly = self.generate()
@@ -102,23 +96,56 @@ assert(loadfile(app.params.assembly,'t',env))()
                                      preview.crop((32 + n * 320, 104, 288 + n * 320, 360)).convert('RGBA').tobytes())
         self.assertEqual(self.inputs, {p: p.read_bytes() for p in self.inputs})
 
+    def test_assembly_and_edge_export_follow_a_shifted_shared_layout(self):
+        root = self.work / 'project'
+        scripts = root / 'tools/tile_art'
+        scripts.mkdir(parents=True)
+        for name in ('water_cliff_connected.py', 'art_support.py', 'source_files.lua',
+                     'ground_corners.lua', 'water_cliff_materials.lua', 'export_water_edges.lua'):
+            shutil.copyfile(ROOT / 'tools/tile_art' / name, scripts / name)
+        (scripts / 'water_cliff_layout.lua').write_text(
+            'return {width=960,height=640,x=40,y=112,stride=312,block=256,slices=54}\n', encoding='utf-8')
+        for name in ('water/shallows-cliff.png', 'water/water-cliff.png',
+                     'water/water-cliff-cap.png', 'ground/shallows-ground.png'):
+            target = root / 'assets' / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / 'assets' / name, target)
+        assembly = self.generate(root)
+        result = self.assemble(assembly)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        with Image.open(self.preview) as preview:
+            for n in range(3):
+                with Image.open(self.shots / f'template-{n}.png') as expected:
+                    self.assertEqual(expected.convert('RGBA').tobytes(),
+                                     preview.crop((40 + n * 312, 112, 296 + n * 312, 368)).convert('RGBA').tobytes())
+        probe = self.work / 'export-shifted.lua'
+        probe.write_text('''
+local root=app.params.root
+local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
+local materials=dofile(root..'tools/tile_art/water_cliff_materials.lua')
+local edited=Image{fromFile=app.params.source}
+local ink=materials.surface
+for n=0,2 do edited:putPixel(layout.x+n*layout.stride+1,layout.y+1,ink) end
+edited:saveAs(app.params.source)
+dofile(root..'tools/tile_art/export_water_edges.lua')
+local expected=Image(#materials.bands*layout.block,layout.block,ColorMode.RGB)
+expected:putPixel(materials.band.shallow*layout.block+1,1,ink)
+for _,name in ipairs({'dirt-shallows-edges','dirt-water-edges','shallows-water-edges'}) do
+ assert(Image{fromFile=root..'assets/water/'..name..'.png'}:isEqual(expected),'Wrong shifted crop: '..name)
+end
+''', encoding='utf-8')
+        result = self.assemble(probe, root=root.as_posix() + '/', source=self.preview,
+                               original=self.output, report=self.work / 'export.txt')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(self.inputs, {p: p.read_bytes() for p in self.inputs})
+
     @unittest.skipUnless(os.name == 'nt', 'Windows file sharing failure')
     def test_locked_stale_preview_cannot_report_success(self):
         Image.new('RGBA', (960, 640), (190, 20, 130, 255)).save(self.preview)
         before = self.preview.read_bytes()
         assembly = self.generate()
-        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
-                                      ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
-                                      ctypes.c_void_p]
-        kernel.CreateFileW.restype = ctypes.c_void_p
-        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-        handle = kernel.CreateFileW(str(self.preview), 0x80000000, 1, None, 3, 0, None)
-        self.assertNotEqual(ctypes.c_void_p(-1).value, handle, ctypes.get_last_error())
-        try:
+        with read_locked(self.preview):
             result = self.assemble(assembly)
-        finally:
-            kernel.CloseHandle(handle)
         output = result.stdout + result.stderr
         self.assertNotEqual(0, result.returncode, output)
         self.assertIn('Saved preview differs from the assembled template', output)
@@ -128,4 +155,4 @@ assert(loadfile(app.params.assembly,'t',env))()
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

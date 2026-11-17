@@ -31,9 +31,6 @@ for i,name in ipairs(names) do
  atlas:drawImage(tile,Point((i-1)*64,0))
  pieces[i]=tile
 end
-atlas:saveAs(out)
-local back=Image{fromFile=out}
-assert(back:isEqual(atlas),'export changed pixels')
 local cap=Image(192,64,ColorMode.RGB)
 local pc=app.pixelColor
 for x=0,191 do
@@ -96,6 +93,9 @@ sourceFiles.write(stem..'-lip.txt',table.concat(lips,',')..'\n')
 local cap_out=stem..'-cap.png'
 cap:saveAs(cap_out)
 assert(Image{fromFile=cap_out}:isEqual(cap),'cap mask changed')
+atlas:saveAs(out)
+local back=Image{fromFile=out}
+assert(back:isEqual(atlas),'export changed pixels')
 for i,tile in ipairs(pieces) do
  assert(Image(back,Rectangle((i-1)*64,0,64,64)):isEqual(tile),'source tile changed')
 end

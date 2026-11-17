@@ -1,5 +1,3 @@
-import argparse
-import json
 import os
 from pathlib import Path
 import re
@@ -8,12 +6,10 @@ import sys
 import tempfile
 import unittest
 
+from art_support import ROOT, arguments, aseprite, main, quote
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-parser.add_argument('--scripts-dir', type=Path, default=ROOT / 'tools/tile_art')
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 BACKUPS = {
     'guide_walls.lua': 'before-full-cell-',
@@ -22,10 +18,6 @@ BACKUPS = {
     'port_forest.lua': '(path,backup)',
     'ground_sheet.lua': 'before-ground-',
 }
-
-
-def quote(value):
-    return json.dumps(str(value).replace('\\', '/'), ensure_ascii=False)
 
 
 class LegacyBackupTests(unittest.TestCase):
@@ -37,12 +29,7 @@ class LegacyBackupTests(unittest.TestCase):
     def run_lua(self, code, **params):
         script = self.work / 'probe.lua'
         script.write_text(code, encoding='utf-8')
-        command = [args.aseprite, '--batch']
-        for key, value in params.items():
-            command += ['--script-param', f'{key}={value}']
-        return subprocess.run(command + ['--script', str(script)], capture_output=True,
-                              text=True, timeout=30,
-                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        return aseprite(args.aseprite, script, params)
 
     def backup_calls(self):
         calls = {}
@@ -194,4 +181,4 @@ print('BACKUP_VERIFIED')
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

@@ -14,7 +14,9 @@ reach 2
 gap 14
 apart 4
 light clear
-weather coastal
+weather clear
+location coast coastal
+location forest beams
 makeup 3 rat rat
 makeup 2 rat
 makeup 2 bandit_crossbowman rat rat
@@ -120,6 +122,14 @@ makeup count 2 hearth goblin goblin
 makeup count 1 nook mimic
 makeup count 1 pond slime slime
 makeup count 1 pond bog_leech bog_leech
+feature setpiece
+piece chest_niche
+count 2
+apart 8
+feature setpiece
+piece light_niche
+count 2
+apart 8
 name Caravan
 zoo 40 18 8 6 w
 zoo_key 32 28
@@ -130,9 +140,13 @@ zoo_foe 1 bandit_netter
 at 240 0
 door 0 46 0 0
 door 33 0 2 0
-node procgen open
-ground dirt
-edge shrub
+node procgen topology
+layout encampment
+filler shrub
+clearing 6
+path 3
+sides 0
+ground grass
 litter 6
 decor 12 60 6
 packs 4
@@ -145,18 +159,18 @@ weather clear
 makeup 3 goblin goblin
 makeup 2 goblin goblin goblin
 makeup count 1 goblin goblin goblin goblin
-feature border
-tile shrub
-width 19
-rough 8
-feature border
-tile rock
-width 15
-rough 8
 feature setpiece
 piece camp
 count 4
 apart 2
+feature setpiece
+piece chest_niche
+count 1
+apart 6
+feature setpiece
+piece light_niche
+count 2
+apart 6
 name Goblin Camp
 at 240 -200
 door 48 63 1 1

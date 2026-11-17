@@ -26,6 +26,47 @@ fn carry(g: *game.Game, act: skillbar.Act, n: u8) void {
     if (g.bar.slotOf(act) == null) g.bar.bind(g.bar.firstEmpty().?, act);
 }
 
+test "cleansing removes one wound before life flask turn harm and leaves resistance intact" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const h = g.sim.heroActor().?;
+    g.sim.inventory.gear.slots.set(.belt, harness.affixed(.belt, .{ .kind = .cleansing, .value = 1 }));
+    h.bleed.startWound(100, 1);
+    h.bleed.settle();
+    h.sunder.stack();
+    h.enfeeble.start();
+    h.maim.start();
+    h.resilience.meters.set(.bleed, .{ .percent = 25, .turns = 4 });
+    game.settle(g);
+    const hp = h.hp;
+    const next = harness.turned(g.sim.clock, 1);
+    harness.use(g, .life_flask);
+    try std.testing.expectEqual(next, g.sim.clock);
+    try std.testing.expectEqual(hp, h.hp);
+    try std.testing.expectEqual(@as(u8, 0), h.bleed.turns);
+    try std.testing.expectEqual(@as(u8, 0), g.pic.heroShown(&g.sim).?.status.get(.bleeding));
+    try std.testing.expect(h.sunder.turns > 0 and h.enfeeble.turns > 0 and h.maim.turns > 0);
+    try std.testing.expectEqual(@as(u8, 25), h.resilience.meters.get(.bleed).percent);
+    harness.use(g, .mana_flask);
+    try std.testing.expect(h.sunder.turns > 0);
+    try std.testing.expect(g.sim.cleanseWound());
+    try std.testing.expectEqual(@as(u8, 0), h.sunder.stacks);
+    try std.testing.expect(g.sim.cleanseWound());
+    try std.testing.expectEqual(@as(u8, 0), h.enfeeble.turns);
+    try std.testing.expect(g.sim.cleanseWound());
+    try std.testing.expectEqual(@as(u8, 0), h.maim.turns);
+    try std.testing.expect(!h.maim.limp);
+    h.burn.start();
+    try std.testing.expect(!g.sim.cleanseWound());
+    h.bleed.start();
+    g.sim.flasks.getPtr(.life).charges = 0;
+    harness.use(g, .life_flask);
+    try std.testing.expect(h.bleed.turns > 0);
+    g.sim.inventory.gear.slots.set(.belt, null);
+    try std.testing.expect(!g.sim.cleanseWound());
+}
+
 test "a bandage stops bleeding for a turn and one from the stack, and none left spends nothing" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -488,7 +529,7 @@ test "life and mana fill and drain at XP speed after their presented impact" {
     g.pic.mana_held = max_mana - g.sim.mana;
     var after = g.pic.heroAfter(&g.sim);
     after.mana = g.pic.mana_held;
-    g.pic.fx.settle(1, .{ .slot = .fromIndex(g.sim.heroSlot().?), .after = after });
+    g.pic.fx.settle(1, .{ .slot = g.sim.heroActorSlot().?, .after = after });
     g.pic.busy = 1;
     g.st = .{};
     game.update(g, harness.TEST_DT);

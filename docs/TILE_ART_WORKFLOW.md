@@ -179,6 +179,8 @@ owner art, not new painting.
 
 The connected source `assets/source/water-cliff-connections.aseprite` contains
 three 4x4 blocks in `ground.ORDER`: dirt/shallows, dirt/deep, shallows/deep.
+`water_cliff_layout.lua` owns their canvas dimensions, origins and spacing for
+template assembly, edit ports and edge export.
 Preserve `Owner flat border edits`, the separate
 `Deep border extensions from shallow edits`, and hidden
 `Before shallow pinch` layers. Desktop working copies and PNG previews must
@@ -206,7 +208,8 @@ Verify with `python -B tools/tile_art/test_port_water_cliff_edits.py --aseprite 
 For new templates, `--shot-water-cliffs` exports three native game renders.
 `water_cliff_connected.py <shot-folder>` prepares a TEMP Aseprite assembly;
 `--replace` backs up existing outputs through `source_files.copy` before changing
-either destination. Verify backup failure handling and native layer assembly with
+either destination. Verify backup failure handling, native layer assembly and
+assembly/export alignment under a shifted layout with
 `python -B tools/tile_art/test_water_cliff_connected.py --aseprite <aseprite.exe>`.
 `water_edge_template.py` supplies the
 original six-piece paint kit; `--replace-blank` requires unchanged guide pixels,

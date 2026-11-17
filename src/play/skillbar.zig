@@ -206,7 +206,7 @@ pub const Act = enum {
                 .bow => bow.aimable(lv, from, to, reach_),
                 .swing => module(t).?.aimable(lv, from, to),
                 .leap, .rush => module(t).?.aimable(lv, from, to, reach_),
-                .ground => juke.inReach(from, to, reach_) and lv.walkable(to) and lv.isLit(to) and grid.litLine(lv, from, to),
+                .ground => juke.inReach(from, to, reach_) and (lv.walkable(to) or (t.consumes() and lv.wetAt(to))) and lv.isLit(to) and grid.litLine(lv, from, to),
             } else unreachable,
         };
     }

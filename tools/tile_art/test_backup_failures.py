@@ -1,14 +1,11 @@
-import argparse
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
+from art_support import ROOT, arguments, aseprite, main
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 WRAPPER = r'''
 local realapp,realio=app,io
@@ -101,11 +98,7 @@ class BackupFailureTests(unittest.TestCase):
                           source=files['source'].as_posix(), desktop=files['desktop'].as_posix(),
                           script=script.as_posix(), helper=(ROOT / 'tools/tile_art/source_files.lua').as_posix(),
                           kind=kind, failure=failure, fault_path=files[destination].as_posix(), occurrence=occurrence)
-            command = [args.aseprite, '--batch']
-            for key, value in params.items():
-                command += ['--script-param', f'{key}={value}']
-            result = subprocess.run(command + ['--script', str(wrapper)], capture_output=True, text=True,
-                                    timeout=30, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            result = aseprite(args.aseprite, wrapper, params)
             output = result.stdout + result.stderr
             self.assertNotEqual(0, result.returncode, output)
             if failure in ('none', 'missing_border_destinations'):
@@ -159,4 +152,4 @@ class BackupFailureTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

@@ -38,13 +38,12 @@ const THICKET_SCALE: f32 = 4;
 const CAMP_SCALE: f32 = 3;
 const CAMP_LO: f32 = 0.8;
 const CAMP_SPAN: f32 = 0.4;
-const PATH_WANDER: f32 = 0.4;
+const PATH_WANDER: f32 = 0.85;
 const RIVER_WANDER: f32 = 0.2;
 const TRIES: usize = 60;
 const OVERHANG: i32 = 2;
 const ROAD_JITTER: i32 = 1;
 const LANDING: i32 = 2;
-const KEEP_CLEAR: f32 = 1;
 const BARREL_REACH: i32 = 2;
 const PROP_NEAR: f32 = 0.35;
 const PROP_EDGE: f32 = 1;
@@ -175,7 +174,12 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
         if (grid.Level.onRim(q) or q.y >= plan.bar.hi.y) continue;
-        if (plan.depth(q) + fray * swing(edge.at(q, FRAY_SCALE, 2)) >= 0) lv.tile[i] = OPEN;
+        const warp = fray * std.math.clamp(@as(f32, @floatFromInt(plan.river_w - 12 - q.x)) / 12, 0, 1);
+        const warped = q.add(mathx.roundCell(
+            warp * 1.5 * swing(edge.at(.{ .x = 17, .y = q.y }, 18, 1)),
+            warp * (0.8 + swing(edge.at(.{ .x = q.x, .y = 91 }, 22, 1))),
+        ));
+        if (plan.depth(warped) + fray * swing(edge.at(q, FRAY_SCALE, 2)) >= 0) lv.tile[i] = OPEN;
     }
     if (p.river > 0) river(lv, rng, plan, p);
     camp(lv, edge, plan.camp, p.camp);
@@ -259,16 +263,27 @@ fn wetSpan(lv: *const grid.Level, from: P) ?[2]i32 {
 }
 
 fn lowestFor(width: u8) i32 {
-    return BAR_FLOOR - 1 - carve.discReach(carve.laneRadius(width));
+    return BAR_FLOOR - 1 - carve.discReach(carve.laneRadius(width) + 0.65);
 }
 
 fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lowest: i32, kept: *grid.CellSet) void {
     const r = carve.laneRadius(width);
-    const clear: i32 = @intFromFloat(@ceil(r) + KEEP_CLEAR);
+    const clear = carve.discReach(r + 0.65);
     const above = grid.Box{ .lo = .{ .x = std.math.minInt(i32), .y = std.math.minInt(i32) }, .hi = .{ .x = std.math.maxInt(i32), .y = lowest + 1 } };
     var m = carve.Meander.init(a, b, wander).within(above);
-    while (m.next(rng)) |c| {
-        carve.disc(lv, c, r, TRAIL, null);
+    const length = @max(1, mathx.distEuclid(a, b));
+    const arc = @min(length * 0.18, 7) * wander * (if (rng.percent(50)) @as(f32, 1) else -1);
+    while (m.next(rng)) |step| {
+        const phase = @min(1, mathx.distEuclid(step, a) / length) * std.math.pi;
+        const offset = arc * std.math.pow(f32, @sin(phase), 2);
+        const c = above.clamp(step.add(mathx.roundCell(
+            -@as(f32, @floatFromInt(b.y - a.y)) / length * offset,
+            @as(f32, @floatFromInt(b.x - a.x)) / length * offset,
+        )));
+        const bend = std.math.clamp(@min(mathx.distEuclid(step, a), mathx.distEuclid(step, b)) / 10, 0, 1);
+        m.m.wander = wander * bend;
+        const shoulder = 0.65 * bend * @max(0, @sin(@as(f32, @floatFromInt(m.m.steps)) * 0.22));
+        carve.disc(lv, c, r + shoulder, TRAIL, null);
         grid.markBox(kept, grid.Box.around(c, clear));
     }
 }

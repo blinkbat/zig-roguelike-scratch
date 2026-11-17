@@ -67,6 +67,47 @@ fn bleedingNow(a: *actor.Actor) void {
     a.bleed.fresh = false;
 }
 
+test "composure stacks only mental resistance with terrain and buildup" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const h = g.sim.heroActor().?;
+    h.resilience.meters.set(.blind, .{ .percent = 25, .turns = 3 });
+    const before = g.sim.combatStats(h);
+    g.sim.inventory.gear.slots.set(.helm, harness.affixed(.cap, .{ .kind = .composure, .value = 20 }));
+    g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .composure, .value = 15 }));
+    const after = g.sim.combatStats(h);
+    for (std.enums.values(resilience.Kind)) |k| {
+        try std.testing.expectEqual(before.statuses.get(k) + @as(i16, if (resilience.tags(k).contains(.mental)) 35 else 0), after.statuses.get(k));
+    }
+    h.resilience.meters.set(.blind, .{ .percent = 75, .turns = 3 });
+    try std.testing.expect(!g.sim.takeStatus(h, .blind));
+}
+
+test "grievous applies to weapon and skill bleeds and survives gear removal and splits" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{});
+    const id = harness.spawnAt(g, .slime, .{ .x = 23, .y = 20 }, false);
+    const a = g.sim.pool.get(id).?;
+    harness.toughen(a);
+    g.sim.inventory.gear.slots.set(.gloves, harness.affixed(.gloves, .{ .kind = .grievous, .value = 1 }));
+    _ = attacks.resolve(&g.sim, .fromInt(id), .{ .dmg = 1, .hit_checked = true, .effect = .{ .bleed = 100 } }, .chosen);
+    try std.testing.expectEqual(@as(i32, 1), a.bleed.move_bonus);
+    a.hp = @divTrunc(a.max, 3);
+    const child = g.sim.pool.split(&g.sim.lv, id, &g.sim.rng).?;
+    try std.testing.expectEqualDeep(a.bleed, g.sim.pool.get(child).?.bleed);
+    g.sim.inventory.gear.slots.set(.gloves, null);
+    a.bleed.settle();
+    try std.testing.expectEqual(@as(?i32, 3), a.bleed.tick(true));
+    a.bleed = .{};
+    a.resilience = .{};
+    g.sim.inventory.gear.slots.set(.gloves, harness.affixed(.gloves, .{ .kind = .grievous, .value = 1 }));
+    try std.testing.expect(attacks.afflicted(&g.sim, a, @import("../../play/rend.zig"), true, 0));
+    a.bleed.settle();
+    try std.testing.expectEqual(@as(?i32, 5), a.bleed.tick(true));
+}
+
 test "equipment base effects reach combat recovery and status resistance" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -300,7 +341,7 @@ test "glacial chill and its cadence follow slime splits without hitting newborn 
     try std.testing.expectEqual(@as(u8, 2), a.chill.phase);
     try std.testing.expectEqual(a.chill, half.chill);
     try std.testing.expectEqual(@as(i16, -100), half.resists.get(.cold));
-    try std.testing.expect(g.pic.fx.impacts.revealing(.fromIndex(actor.Pool.slot(id + 1))));
+    try std.testing.expect(g.pic.fx.impacts.revealing(actor.ActorId.fromInt(id + 1).slot()));
 }
 
 test "burning arrow spends mana only on confirmation and shows burning when its hit lands" {
@@ -1225,7 +1266,7 @@ test "dodging spends the foe turn without damage, bleeding or mana shield loss" 
                 harness.drawnOut(g);
                 try std.testing.expectEqual(h.hp, g.pic.heroShown(&g.sim).?.hp);
                 try std.testing.expectEqual(g.sim.mana, g.pic.manaShown(&g.sim));
-                if (dodged) try std.testing.expectEqual(@as(f32, 0), g.pic.fx.impacts.flashOf(.fromIndex(g.sim.heroSlot().?)));
+                if (dodged) try std.testing.expectEqual(@as(f32, 0), g.pic.fx.impacts.flashOf(g.sim.heroActorSlot().?));
             }
         }
     }

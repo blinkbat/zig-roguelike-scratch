@@ -9,14 +9,16 @@ local title=name:gsub('^%l',string.upper)
 local path=app.params.source or ('C:/Users/DavidBennett/Desktop/'..name..'.aseprite')
 local canonical=root..'assets/source/'..name..'.aseprite'
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
-sourceFiles.preserve(path,canonical,app.params.install=='yes')
+local install=app.params.install=='yes'
+sourceFiles.preserve(path,canonical,install)
 local art_path=app.params.art or path
 local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
 app.fs.makeAllDirectories(work)
 local order=dofile(root..'tools/tile_art/ground_corners.lua')
+local groundPort=dofile(root..'tools/tile_art/ground_port.lua')
 local pc=app.pixelColor
 local s=assert(app.open(path))
-assert(s.width==512 and s.height==320 and #s.frames==1 and #s.slices==16)
+assert(s.width==512 and s.height==320 and #s.frames==1 and #s.slices==#order)
 local drawing
 for _,l in ipairs(s.layers) do
   assert(l.name~=title..' extensions','Inspect owner edits before regenerating '..title..' extensions')
@@ -166,7 +168,7 @@ for i,m in ipairs(order) do
     if not opaque(pixel(ox+x,oy+y)) then extension:putPixel(ox+x,oy+y,tile:getPixel(x,y)) end
   end end
 end
-local function bit(m,b) return (m&b)~=0 end
+local bit=groundPort.bit
 for i,m in ipairs(order) do
   local sl
   for _,slice in ipairs(s.slices) do if slice.name=='Corners '..m then sl=slice end end
@@ -184,29 +186,8 @@ for i,m in ipairs(order) do
     if m==15 then assert(opaque(it()),'Fill has a hole') end
   end
 end
-local joins=0
-for a=0,15 do for b=0,15 do
-  if bit(a,2)==bit(b,1) and bit(a,8)==bit(b,4) then
-    for _,span in ipairs({{8,23,2},{40,55,8}}) do
-      for y=span[1],span[2] do
-        assert(opaque(cells[a]:getPixel(63,y))==bit(a,span[3]),'East gap')
-        assert(opaque(cells[b]:getPixel(0,y))==bit(a,span[3]),'West gap')
-      end
-    end
-    joins=joins+1
-  end
-  if bit(a,4)==bit(b,1) and bit(a,8)==bit(b,2) then
-    for _,span in ipairs({{8,23,4},{40,55,8}}) do
-      for x=span[1],span[2] do
-        assert(opaque(cells[a]:getPixel(x,63))==bit(a,span[3]),'South gap')
-        assert(opaque(cells[b]:getPixel(x,0))==bit(a,span[3]),'North gap in '..b..' at '..x)
-      end
-    end
-    joins=joins+1
-  end
-end end
-assert(joins==128)
-local stamp=os.date('%Y%m%d-%H%M%S')
+groundPort.checkJoins(cells)
+local stamp=os.date(sourceFiles.STAMP)
 local backup=work..name..'-before-'..stamp..'.aseprite'
 sourceFiles.copy(path,backup)
 if art_path~=path then sourceFiles.copy(art_path,work..name..'-painting-before-'..stamp..'.aseprite') end
@@ -216,58 +197,21 @@ s:newCel(l,1,extension,Point(0,0))
 for _,layer in ipairs(s.layers) do if layer.name=='Underdrawing (25%)' then layer.isVisible=false end end
 drawing.stackIndex=#s.layers
 app.layer=l
-local dest=app.params.install=='yes' and path or work..name..'-draft.aseprite'
+local dest=install and path or work..name..'-draft.aseprite'
 s:saveAs(dest)
 s:saveCopyAs(work..name..'-sheet.png')
 s:close()
 local back=assert(app.open(dest))
-local originalSaved,extensionSaved=false,false
-for _,layer in ipairs(back.layers) do
-  if layer.name=='Draw here' then
-    local cel=assert(layer:cel(1))
-    assert(cel.image:isEqual(original) and cel.position.x==position.x and cel.position.y==position.y,'Original altered')
-    originalSaved=true
-  end
-  if layer.name==title..' extensions' then
-    local cel=assert(layer:cel(1))
-    local img=Image(512,320,ColorMode.RGB)
-    img:drawImage(cel.image,cel.position)
-    assert(img:isEqual(extension),'Extension changed')
-    extensionSaved=true
-  end
-end
-assert(originalSaved and extensionSaved,'Saved source is missing artwork layers')
+sourceFiles.checkCel(back,'Draw here',original,position)
+sourceFiles.checkLayer(back,title..' extensions',extension,Point(0,0))
 back:close()
-if app.params.install=='yes' then sourceFiles.copy(dest,canonical) end
+if install then sourceFiles.copy(dest,canonical) end
 atlas:saveAs(work..name..'-atlas.png')
 local zoom=Image(atlas)
 zoom:resize(768,768)
 zoom:saveAs(work..name..'-atlas-3x.png')
-local map={
-  '..................',
-  '..#######.........',
-  '..#######..#......',
-  '..##..###..#......',
-  '..##..###..####...',
-  '..#######....#....',
-  '.............#....',
-  '..###..#..#..#....',
-  '..#.#...##........',
-  '..###...##..####..',
-  '............####..',
-  '..................',
-}
-local function grass(x,y)
-  return y>=1 and y<=#map and x>=1 and x<=#map[y] and map[y]:sub(x,x)=='#'
-end
-local preview=Image(#map[1]*64,#map*64,ColorMode.RGB)
-preview:clear(pc.rgba(146,122,93,255))
-for y=1,#map+1 do for x=1,#map[1]+1 do
-  local m=(grass(x-1,y-1) and 1 or 0)|(grass(x,y-1) and 2 or 0)|(grass(x-1,y) and 4 or 0)|(grass(x,y) and 8 or 0)
-  preview:drawImage(cells[m],Point((x-1)*64-32,(y-1)*64-32))
-end end
-preview:saveAs(work..name..'-connected.png')
-local report=assert(io.open(work..name..'-validation.txt','w'))
+groundPort.preview(cells,pc.rgba(146,122,93,255),work..name..'-connected.png')
+local report=sourceFiles.report(work..name..'-validation.txt')
 report:write('Source: '..path..'\nPainting: '..art_path..'\nSaved: '..dest..'\nBackup: '..backup..'\nOriginal image and position verified after reopening. Source palette retained.\n')
 report:write('15 painted 64x64 cells; mask 0 empty; mask 15 fully opaque. All 128 legal adjacent pairs checked at their quarter cores.\n')
 report:write('Original '..painted_count..' pixels and cel position untouched.\n')

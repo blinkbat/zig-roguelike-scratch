@@ -12,6 +12,7 @@ pub const MAX_KINDS = 16;
 const SIZE_MIN: u8 = 5;
 const SIZE_MAX: u8 = 10;
 const MARGIN: i32 = 2;
+const SPAN: grid.Tile = .stone_bridge;
 pub const Entry = struct { kind: actor.Kind = .rat, weight: u8 = 1 };
 pub const Side = enum { n, e, s, w };
 pub const Spec = struct {
@@ -128,26 +129,20 @@ pub const Spec = struct {
         var stretches: carve.Stretches = undefined;
         if (stretches.label(lv) > 0) {
             @memset(stretches.size[0..stretches.n], 0);
+            var near = grid.Nearest{ .from = entrance orelse .{ .x = 0, .y = 0 } };
             for (0..grid.CELLS) |i| {
                 const p = grid.Level.of(i);
-                if (lv.walkable(p) and !s.occupies(p)) stretches.size[stretches.region[i]] += 1;
+                if (!lv.walkable(p) or s.occupies(p)) continue;
+                stretches.size[stretches.region[i]] += 1;
+                near.offer(p);
             }
             var main = stretches.biggest();
-            if (entrance) |from| {
-                var near = grid.Nearest{ .from = from };
-                for (0..grid.CELLS) |i| {
-                    const p = grid.Level.of(i);
-                    if (lv.walkable(p) and !s.occupies(p)) near.offer(p);
-                }
+            if (entrance != null) {
                 if (near.best) |p| main = stretches.of(p);
             }
-            var related = grid.CellSet.initEmpty();
-            if (s.key) |k| {
-                var beside_key = grid.Cells.around(k, 1);
-                while (beside_key.next()) |p| if (lv.walkable(p)) related.set(stretches.of(p));
-            }
-            var ring = s.reserved().grown(1).cells();
-            while (ring.next()) |p| if (lv.walkable(p)) related.set(stretches.of(p));
+            var related = carve.Regions.initEmpty();
+            if (s.key) |k| relate(lv, &stretches, &related, grid.Cells.around(k, 1));
+            relate(lv, &stretches, &related, s.reserved().grown(1).cells());
             for (0..grid.CELLS) |i| {
                 const p = grid.Level.of(i);
                 if (!lv.walkable(p) or s.occupies(p)) continue;
@@ -185,6 +180,11 @@ pub const Spec = struct {
         lv.addTorch(lume.torchOver(inner, inner.lo.x));
     }
 
+    fn relate(lv: *const grid.Level, stretches: *const carve.Stretches, related: *carve.Regions, near: anytype) void {
+        var it = near;
+        while (it.next()) |p| if (lv.walkable(p)) related.set(stretches.of(p));
+    }
+
     fn inSet(set: *const grid.CellSet, p: P) bool {
         return set.isSet(grid.Level.idx(p));
     }
@@ -195,13 +195,16 @@ pub const Spec = struct {
         var reach: [grid.CELLS]u32 = undefined;
         var flood = grid.Flood.init(lv, from, &dist, &reach);
         if (flood.first(targets, inSet) != null) return;
+        if (!s.carveTo(lv, from, targets, protected, authored)) _ = s.carveTo(lv, from, targets, &grid.CellSet.initEmpty(), authored);
+    }
+
+    fn carveTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet, protected: *const grid.CellSet, authored: ?*const grid.CellSet) bool {
         var destinations = targets.*;
         var target = targets.iterator(.{});
         while (target.next()) |i| {
-            const p = grid.Level.of(i);
-            if (!grid.Level.onRim(p)) continue;
+            if (!carve.rimAt(i)) continue;
             for (grid.STEPS) |delta| {
-                const q = p.add(delta);
+                const q = grid.Level.of(i).add(delta);
                 if (!grid.Level.onRim(q)) destinations.set(grid.Level.idx(q));
             }
         }
@@ -221,9 +224,9 @@ pub const Spec = struct {
                     var at = head;
                     while (true) {
                         const q = queue[at];
-                        carve.layWith(lv, q, .floor, .stone_bridge);
+                        carve.layWith(lv, q, .floor, SPAN);
                         _ = lv.breakBarrel(q);
-                        if (at == 0) return;
+                        if (at == 0) return true;
                         at = back[at];
                     }
                 }
@@ -251,6 +254,7 @@ pub const Spec = struct {
                 tail += 1;
             }
         }
+        return false;
     }
 
     pub fn populate(s: *const Spec, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng) void {
@@ -314,6 +318,17 @@ test "a zoo connects an isolated map edge entrance without opening other rim cel
             if (grid.Level.onRim(p) and !p.eq(entrance)) try std.testing.expectEqual(grid.Tile.rock, lv.at(p));
         }
     }
+}
+
+test "a zoo behind a sealed strip spanning the map still connects its gate" {
+    const s = Spec{};
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .rock);
+    const entrance = P{ .x = 1, .y = 21 };
+    for (1..20) |x| lv.set(.{ .x = @intCast(x), .y = 21 }, .floor);
+    for (2..grid.H - 2) |y| lv.set(.{ .x = 22, .y = @intCast(y) }, .floor);
+    s.stampToward(&lv, null, entrance);
+    try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(s.approach())));
 }
 
 test "zoo validation rejects extreme coordinates before computing room bounds" {

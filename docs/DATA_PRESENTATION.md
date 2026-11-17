@@ -16,6 +16,13 @@ Magic blue, rare yellow, resource/element colors and actual gain/loss colors
 retain their meanings. Red marks a real blocker or loss. Zero values are dim.
 Controls use device-aware glyphs, including keyboard keycaps.
 
+Combat keywords use five shared hues in `gfx/text_keywords.zig`: physical,
+mental/chaos, fire, cold and lightning. Ailments inherit their broad group;
+generic stats, resources, timing, range and loot retain ordinary text styling.
+Use `gfx/font.zig` rich drawing in tooltips, item effects, stats and skill
+descriptions. Phrase colors survive wrapping and scrolling, follow paragraph
+brightness and opacity, and preserve red requirements and item-name rarity.
+
 Follow the foundational UI restraint rules in `AGENTS.md`: no explanatory
 headings for self-evident content, repeated action text or permanent control
 legends. Existing actionable controls keep their names and glyphs. Keep locked
@@ -54,12 +61,14 @@ An item card reads in this order:
 
 1. Name in normal pale, magic blue or rare yellow text; rare items also show their
    base name. Quiet slot and hand/scaling metadata follow.
-2. Applicable base properties in neutral text, including fixed innate effects.
+2. Applicable base properties in neutral text with colored mechanical keywords,
+   including fixed innate effects.
    Damage is one range; innate bleed chance has no separate bleed-damage line.
 3. Nonzero requirements using full attribute names. Show available attributes
    inline, computed after displacement and excluding the item's own bonus;
    red is reserved for unmet requirements.
-4. A divider and actual rolled modifiers in rarity color. Omit an empty section.
+4. A divider and actual rolled modifiers: rarity-colored values and surrounding
+   text, with the shared keyword hues. Omit an empty section.
 
 Cards share a left edge, use 17px metadata, 18px effects and 22px property rows.
 Requirement errors follow the actual card height. Selected and equipped items

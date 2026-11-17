@@ -23,6 +23,7 @@ const resilience = @import("../../play/resilience.zig");
 const juke = @import("../../play/juke.zig");
 const skillbar = @import("../../play/skillbar.zig");
 const look = @import("../../gfx/look.zig");
+const font = @import("../../gfx/font.zig");
 const raster = @import("../../gfx/raster.zig");
 const keywords = @import("../../ui/keywords.zig");
 const prompt_icon = @import("../../gfx/prompt_icon.zig");
@@ -47,7 +48,7 @@ const renderTarget = @import("capture.zig").renderTarget;
 const sameRgb = @import("capture.zig").sameRgb;
 const target720 = @import("capture.zig").target720;
 const targetAt = @import("capture.zig").targetAt;
-const SIZES = @import("capture.zig").SIZES;
+const SIZES = game.SIZES;
 const TACTICS_DIR = SHOTS_DIR ++ "/tactics";
 const LEVEL_UP_DIR = SHOTS_DIR ++ "/level-up";
 const NIGHT = @import("poses.zig").NIGHT;
@@ -70,6 +71,7 @@ pub fn captureEditor(g: *game.Game) !void {
 
 pub fn captureUi(g: *game.Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR);
+    try captureKeywordColors(g);
     try captureQuests(g);
     try captureTalk(g);
     try captureTactics(g);
@@ -84,6 +86,45 @@ pub fn captureUi(g: *game.Game) !void {
     try captureLevelUp(g);
     try captureMouse(g);
     try app.captureHeroes(g);
+}
+
+fn captureKeywordColors(g: *game.Game) !void {
+    const examples = [_][]const u8{
+        "Take fire damage per turn, reduced by fire resistance. Ignition burns nearby foes.",
+        "Cold damage can chill. Freezing leaves foes frozen; shatter consumes chill.",
+        "Lightning damage, shock chance, stun resistance and chaos resistance.",
+        "Bleeding drains life. Sunder reduces physical damage reduction. Maim slows movement.",
+        "Blindness, confusion, enfeeblement and fright are resisted separately.",
+        "Wounds, Slows, Mental and Elemental statuses build resistance after each application.",
+        "Critical strike chance and critical damage multiplier improve weapon damage.",
+        "Armour, block chance, dodge chance and elemental resistance defend against damage.",
+        "Maximum life, life recovery, life flask recovery and life on kill.",
+        "Maximum mana, mana recovery, mana cost and mana shield.",
+        "Strength, dexterity and intelligence scale physical weapon damage and spell damage.",
+        "Cooldowns last turns. Duration, area of effect, range and projectile penetration vary.",
+        "Gas and steam damage, wet terrain, darkness and light radius.",
+        "Heal life, cleanse wounds, recover mana and gain gold and item rarity.",
+        "Requires 25 Strength (12 available).",
+    };
+    inline for (SIZES) |size| {
+        const target = try rl.loadRenderTexture(size.x, size.y);
+        defer rl.unloadRenderTexture(target);
+        const scale = @as(f32, @floatFromInt(size.x)) / 1280;
+        const face = if (size.x == 1280) g.face else g.face.mipmapped();
+        rl.beginTextureMode(target);
+        rl.clearBackground(look.BG);
+        rl.beginMode2D(.{ .zoom = scale, .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = 0, .y = 0 }, .rotation = 0 });
+        for ([_]rl.Color{ look.TEXT, look.DIM, look.MAGIC }, 0..) |base, column| {
+            const x = 24 + @as(i32, @intCast(column)) * 420;
+            for (examples, 0..) |example, row| {
+                const y = 18 + @as(i32, @intCast(row)) * 46;
+                _ = face.richParagraphWith(example, x, y, 390, font.SMALL, if (row == examples.len - 1) look.LOSS else base, .shadow);
+            }
+        }
+        rl.endMode2D();
+        rl.endTextureMode();
+        try exportTarget(target, SHOTS_DIR ++ std.fmt.comptimePrint("/keyword-colors-{d}.png", .{size.y}));
+    }
 }
 
 fn captureQuests(g: *game.Game) !void {
@@ -340,6 +381,16 @@ fn captureTactics(g: *game.Game) !void {
     try capture(g, target, TACTICS_DIR ++ "/item-prefix-suffix.png");
     g.sim.inventory.bag[0] = items.affixed(g.sim.inventory.bag[0].kind, &.{ .{ .kind = .opportunist, .value = 30 }, .{ .kind = .crit, .value = 5 } });
     try capture(g, target, TACTICS_DIR ++ "/item-wrapped-affix.png");
+    inline for (.{
+        .{ .sword, .serrated, 25 },
+        .{ .amulet, .composure, 25 },
+        .{ .boots, .anchorage, 1 },
+        .{ .gloves, .grievous, 1 },
+        .{ .belt, .cleansing, 1 },
+    }) |sample| {
+        g.sim.inventory.bag[0] = items.affixed(sample[0], &.{.{ .kind = sample[1], .value = sample[2] }});
+        try capture(g, target, TACTICS_DIR ++ "/item-" ++ @tagName(sample[1]) ++ ".png");
+    }
 }
 
 fn captureMouse(g: *game.Game) !void {

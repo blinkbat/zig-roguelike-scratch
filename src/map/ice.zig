@@ -8,7 +8,7 @@ const P = mathx.P;
 pub const THAWS: u8 = 10;
 pub const FREEZES = "The water freezes over.";
 pub const WATER: grid.Tile = .shallows;
-pub const FROZEN: grid.Tile = .ice;
+pub const FROZEN = grid.FROZEN;
 
 pub fn turned(was: grid.Tile, now: grid.Tile) bool {
     return (was == WATER and now == FROZEN) or (was == FROZEN and now == WATER);

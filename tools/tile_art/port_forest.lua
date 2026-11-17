@@ -2,7 +2,8 @@ local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-
 local path=app.params.source or 'C:/Users/DavidBennett/Desktop/forest-tree-walls.aseprite'
 local canonical=root..'assets/source/forest-tree-walls.aseprite'
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
-sourceFiles.preserve(path,canonical,app.params.install=='yes')
+local install=app.params.install=='yes'
+sourceFiles.preserve(path,canonical,install)
 local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
 app.fs.makeAllDirectories(work)
 local backups=root..'assets/backup/'
@@ -10,7 +11,7 @@ app.fs.makeAllDirectories(backups)
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local pc=app.pixelColor
 local sprite=assert(app.open(path))
-assert(sprite.width==512 and sprite.height==448 and #sprite.frames==1 and #sprite.slices==47)
+assert(sprite.width==512 and sprite.height==448 and #sprite.frames==1 and #sprite.slices==#masks)
 local drawing
 for _,layer in ipairs(sprite.layers) do
   assert(layer.name~='Forest extensions','Inspect existing extensions for owner edits before regenerating')
@@ -67,7 +68,7 @@ for i,mask in ipairs(masks) do
   atlas:drawImage(tile,Point(x,y))
   if i>1 then sheet:drawImage(tile,Point(x,y+64)) end
 end
-local backup=(app.params.install=='yes' and backups or work)..'forest-tree-walls.'..os.date('%Y%m%d-%H%M%S')..'.aseprite'
+local backup=(install and backups or work)..'forest-tree-walls.'..os.date(sourceFiles.STAMP)..'.aseprite'
 sourceFiles.copy(path,backup)
 local extension=sprite:newLayer()
 extension.name='Forest extensions'
@@ -77,30 +78,15 @@ for _,layer in ipairs(sprite.layers) do
 end
 drawing.stackIndex=#sprite.layers
 app.layer=extension
-local destination=app.params.install=='yes' and path or work..'forest-tree-walls-draft.aseprite'
+local destination=install and path or work..'forest-tree-walls-draft.aseprite'
 sprite:saveAs(destination)
 sprite:saveCopyAs(work..'forest-tree-walls-sheet.png')
 sprite:close()
 local reopened=assert(app.open(destination))
-local originalSaved,extensionSaved=false,false
-for _,layer in ipairs(reopened.layers) do
-  if layer.name=='Draw here' then
-    local cel=assert(layer:cel(1))
-    assert(cel.image:isEqual(saved),'Original painting changed after saving')
-    assert(cel.position.x==position.x and cel.position.y==position.y,'Original painting moved')
-    originalSaved=true
-  end
-  if layer.name=='Forest extensions' then
-    local actual=Image(512,448,ColorMode.RGB)
-    local cel=assert(layer:cel(1))
-    actual:drawImage(cel.image,cel.position)
-    assert(actual:isEqual(sheet),'Extensions changed after saving')
-    extensionSaved=true
-  end
-end
-assert(originalSaved and extensionSaved,'Saved source is missing artwork layers')
+sourceFiles.checkCel(reopened,'Draw here',saved,position)
+sourceFiles.checkLayer(reopened,'Forest extensions',sheet,Point(0,0))
 reopened:close()
-if app.params.install=='yes' then sourceFiles.copy(destination,canonical) end
+if install then sourceFiles.copy(destination,canonical) end
 atlas:saveAs(work..'forest-tree-walls-art.png')
 source:saveAs(work..'forest-tree-walls-original.png')
 local map={
@@ -124,17 +110,11 @@ local preview=Image(19*64,#map*64,ColorMode.RGB)
 preview:clear(pc.rgba(104,112,77,255))
 for y=1,#map do for x=1,19 do
   if wall(x,y) then
-    local n,e,s,w=wall(x,y-1),wall(x+1,y),wall(x,y+1),wall(x-1,y)
-    local m=(n and 1 or 0)|(e and 2 or 0)|(s and 4 or 0)|(w and 8 or 0)
-    if n and e and wall(x+1,y-1) then m=m|16 end
-    if s and e and wall(x+1,y+1) then m=m|32 end
-    if s and w and wall(x-1,y+1) then m=m|64 end
-    if n and w and wall(x-1,y-1) then m=m|128 end
-    preview:drawImage(assert(cells[m]),Point((x-1)*64,(y-1)*64))
+    preview:drawImage(assert(cells[masks.of(wall,x,y)]),Point((x-1)*64,(y-1)*64))
   end
 end end
 preview:saveAs(work..'forest-tree-walls-connected.png')
-local report=assert(io.open(work..'forest-tree-walls-validation.txt','w'))
+local report=sourceFiles.report(work..'forest-tree-walls-validation.txt')
 report:write('Source: '..path..'\nSaved: '..destination..'\nBackup: '..backup..'\n')
 report:write('47 distinct 64x64 cells. Original Draw here pixels and position verified after reopen.\n')
 report:write('Source: cell 01 at sheet (0,64), 64x64; canopy crop (0,64), 64x50.\n')

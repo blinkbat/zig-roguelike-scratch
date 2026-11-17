@@ -5,6 +5,7 @@ const carve = @import("carve.zig");
 const gas = @import("gas.zig");
 const ice = @import("ice.zig");
 const damage = @import("../play/damage.zig");
+const climate = @import("climate.zig");
 
 const P = mathx.P;
 
@@ -56,10 +57,14 @@ fn catches(lv: *const grid.Level, p: P) bool {
 }
 
 pub fn kindle(lv: *grid.Level, cells: []const P, k: Kindle, rain: f32, rng: *mathx.Rng) usize {
-    const chance = damped(k.chance, rain);
-    if (chance == 0) return 0;
+    return kindleIn(lv, cells, k, .{ .uniform = rain }, rng);
+}
+
+pub fn kindleIn(lv: *grid.Level, cells: []const P, k: Kindle, rain: climate.Rain, rng: *mathx.Rng) usize {
     var n: usize = 0;
     for (cells) |p| {
+        const chance = damped(k.chance, rain.at(p));
+        if (chance == 0) continue;
         if (!catches(lv, p) or !rng.percent(chance)) continue;
         lay(lv, p, BURNS, k.heat);
         n += 1;
@@ -91,19 +96,22 @@ pub fn smoulder(lv: *grid.Level, p: P) void {
 }
 
 pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32, kept: *const grid.CellSet) bool {
+    return turnIn(lv, rng, .{ .uniform = rain }, kept);
+}
+
+pub fn turnIn(lv: *grid.Level, rng: *mathx.Rng, rain: climate.Rain, kept: *const grid.CellSet) bool {
     if (std.mem.allEqual(u8, &lv.flames, 0)) return false;
     const was = lv.flames;
-    const chance = damped(SPREAD, rain);
-    const tinder = damped(mathx.PERCENT, rain);
     for (was, 0..) |left, i| {
         if (left == 0) continue;
         const p = grid.Level.of(i);
         if (lv.tile[i].burns()) smoulder(lv, p);
-        if (chance == 0) continue;
         const heat = lv.heat[i];
         for (mathx.ALL_DIRS) |d| {
             const q = p.add(d.delta());
             if (!grid.Level.inside(q)) continue;
+            const chance = damped(SPREAD, rain.at(q));
+            const tinder = damped(mathx.PERCENT, rain.at(q));
             if (lv.at(q).wet()) {
                 if (rng.percent(chance)) _ = gas.boil(lv, &.{q});
             } else if (lv.frozen(q)) {

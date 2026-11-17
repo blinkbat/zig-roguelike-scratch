@@ -1,15 +1,11 @@
-import argparse
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
+from art_support import arguments, aseprite, main
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-parser.add_argument('--scripts-dir', type=Path, default=ROOT / 'tools/tile_art')
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 
 class SourceFileTests(unittest.TestCase):
@@ -17,15 +13,8 @@ class SourceFileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='cistern-source-files-test-') as temporary:
             script = Path(temporary) / 'probe.lua'
             script.write_text(code, encoding='utf-8')
-            command = [args.aseprite, '--batch']
-            params['module'] = (args.scripts_dir / 'source_files.lua').as_posix()
-            for key, value in params.items():
-                command += ['--script-param', f'{key}={value}']
-            result = subprocess.run(
-                command + ['--script', str(script)],
-                capture_output=True, text=True, timeout=30,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
-            )
+            params['module'] = args.scripts_dir / 'source_files.lua'
+            result = aseprite(args.aseprite, script, params)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def check_failure(self, failure):
@@ -116,4 +105,4 @@ files.copy(app.params.source,app.params.destination)
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)

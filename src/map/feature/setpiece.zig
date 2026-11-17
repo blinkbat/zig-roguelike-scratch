@@ -9,7 +9,7 @@ const P = mathx.P;
 pub const COUNT_MAX: u8 = 8;
 pub const APART_MAX: u8 = 30;
 
-pub const Piece = enum { circle, cairns, camp, graveyard, well, tower, shrine, corral, oasis };
+pub const Piece = enum { circle, cairns, camp, graveyard, well, tower, shrine, corral, oasis, chest_niche, light_niche };
 
 /// In `grid.groundOf`'s legend; ' ' leaves the ground as it is.
 pub fn rows(p: Piece) []const []const u8 {
@@ -87,6 +87,24 @@ pub fn rows(p: Piece) []const []const u8 {
             " &---& ",
             "  & &  ",
         },
+        .chest_niche => &.{
+            "  ####   ",
+            " ##..### ",
+            " #..C..# ",
+            " #.....# ",
+            "  #...,# ",
+            "  ##.,,# ",
+            "    .,,  ",
+        },
+        .light_niche => &.{
+            "   ####  ",
+            " ###..## ",
+            " #..p..# ",
+            " #.....# ",
+            " #,...## ",
+            "  #,,.#  ",
+            "   ,,.   ",
+        },
     };
 }
 
@@ -104,12 +122,88 @@ pub const Params = struct {
 };
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots: *buildings.Lots, p: Params) void {
+    if (p.piece == .chest_niche or p.piece == .light_niche) {
+        for (0..p.count) |_| niche(lv, rng, pal, lots, p);
+        return;
+    }
     const art = rows(p.piece);
     const w = size(art).x;
     const h = size(art).y;
     for (0..p.count) |_| {
-        const room = spaced(lots, lv, rng, w, h, p.apart, pal) orelse continue;
+        const room = if (p.piece == .camp)
+            campSpace(lots, lv, rng, w, h, p.apart, pal) orelse continue
+        else
+            spaced(lots, lv, rng, w, h, p.apart, pal) orelse continue;
         place(lv, room.lo, art, pal);
+    }
+}
+
+fn campSpace(lots: *buildings.Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, apart: u8, pal: carve.Palette) ?grid.Box {
+    for (0..400) |_| {
+        const at = P{ .x = rng.range(2, grid.W - w - 2), .y = rng.range(2, grid.H - h - 2) };
+        const b = grid.Box.sized(at, w, h);
+        if (!lots.canTake(lv, b, @max(buildings.Lots.GAP, 2 * @as(i32, apart)), pal)) continue;
+        var open: i32 = 0;
+        var cells = b.grown(1).cells();
+        const clean = while (cells.next()) |q| {
+            const t = lv.at(q);
+            if ((t != pal.open and t != pal.path and t != pal.solid) or lv.barrel[grid.Level.idx(q)]) break false;
+            if (b.holds(q) and lv.walkable(q)) open += 1;
+        } else true;
+        if (clean and open * 4 >= w * h * 3 and lots.takeAt(lv, b, @max(buildings.Lots.GAP, 2 * @as(i32, apart)), pal)) return b;
+    }
+    return null;
+}
+
+fn turn(q: P, size_: P, rotation: u2) P {
+    return switch (rotation) {
+        0 => q,
+        1 => .{ .x = size_.y - 1 - q.y, .y = q.x },
+        2 => .{ .x = size_.x - 1 - q.x, .y = size_.y - 1 - q.y },
+        3 => .{ .x = q.y, .y = size_.x - 1 - q.x },
+    };
+}
+
+fn niche(lv: *grid.Level, rng: *mathx.Rng, pal: carve.Palette, lots: *buildings.Lots, p: Params) void {
+    const art = rows(p.piece);
+    const size_ = size(art);
+    var best: ?struct { box: grid.Box, rotation: u2 } = null;
+    var score: usize = 0;
+    const gap = @max(buildings.Lots.GAP, @as(i32, p.apart));
+    for (0..400) |_| {
+        const rotation: u2 = @intCast(rng.range(0, 3));
+        const extent = if (rotation % 2 == 0) size_ else P{ .x = size_.y, .y = size_.x };
+        const at = P{ .x = rng.range(2, grid.W - extent.x - 2), .y = rng.range(2, grid.H - extent.y - 2) };
+        const b = grid.Box.sizedP(at, extent);
+        if (!lots.canTake(lv, b, gap, pal)) continue;
+        const mouth = at.add(turn(.{ .x = if (p.piece == .chest_niche) 5 else 4, .y = size_.y }, size_, rotation));
+        if (!lv.walkable(mouth) or lv.at(mouth).wet() or lv.barrel[grid.Level.idx(mouth)]) continue;
+        var solid: usize = 0;
+        var cells = b.grown(1).cells();
+        const clean = while (cells.next()) |q| {
+            const t = lv.at(q);
+            if ((t != pal.open and t != pal.path and t != pal.solid) or lv.barrel[grid.Level.idx(q)]) break false;
+            solid += @intFromBool(t == pal.solid);
+        } else true;
+        if (!clean) continue;
+        const merit = 1 + @min(solid, 40);
+        if (merit <= score) continue;
+        best = .{ .box = b, .rotation = rotation };
+        score = merit;
+    }
+    const site = best orelse return;
+    if (!lots.takeAt(lv, site.box, gap, pal)) return;
+    var spots = Spots{ .at = .{ .x = 0, .y = 0 }, .art = art };
+    while (spots.next()) |s| {
+        const tile: grid.Tile = switch (s.c) {
+            '#' => pal.solid,
+            '.' => pal.open,
+            ',' => pal.path,
+            'C' => .chest,
+            'p' => .glow_plant,
+            else => continue,
+        };
+        lv.set(site.box.lo.add(turn(s.q, size_, site.rotation)), tile);
     }
 }
 
@@ -186,6 +280,50 @@ test "every piece is a rectangle of known keys" {
             for (line) |c| try std.testing.expect(c == ' ' or grid.groundOf(c) != null);
         }
     }
+}
+
+test "niches adapt to each biome palette, protect occupied lots and leave their rewards reachable" {
+    const procgen = @import("../procgen.zig");
+    const door = P{ .x = 0, .y = grid.H / 2 };
+    var lv: grid.Level = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    var placed: usize = 0;
+    for (std.enums.values(procgen.Algo)) |algo| {
+        const base = procgen.Floor.of(algo);
+        const pal = base.palette();
+        for ([_]Piece{ .chest_niche, .light_niche }) |piece| {
+            var rng = mathx.Rng.init(0xA1C0 + @as(u64, @intFromEnum(algo)));
+            lv = grid.Level.blank();
+            carve.field(&lv, pal);
+            lv.barrel = @splat(false);
+            var lots: buildings.Lots = .{};
+            const reserved = grid.Box.sized(.{ .x = 20, .y = 20 }, 12, 12);
+            lots.reserve(reserved);
+            lots.begin();
+            apply(&lv, &rng, 0, pal, &lots, .{ .piece = piece, .count = 2, .apart = 4 });
+            const reward: grid.Tile = if (piece == .chest_niche) .chest else .glow_plant;
+            try std.testing.expectEqual(@as(usize, 2), carve.count(&lv, reward));
+            var cells = reserved.cells();
+            while (cells.next()) |q| try std.testing.expectEqual(pal.open, lv.at(q));
+            for (lv.tile) |t| try std.testing.expect(t == pal.open or t == pal.path or t == pal.solid or t == reward);
+        }
+        procgen.roll(&lv, 0xA1C0, &.{door}, base, &.{
+            .{ .setpiece = .{ .piece = .chest_niche, .count = 1 } },
+            .{ .setpiece = .{ .piece = .light_niche, .count = 1 } },
+        });
+        try grid.expectAllReached(&lv, door, &dist, &queue);
+        for (lv.tile, 0..) |t, i| {
+            if (t != .chest and t != .glow_plant) continue;
+            var around_ = grid.Cells.around(grid.Level.of(i), 1);
+            const reached = while (around_.next()) |q| {
+                if (grid.Level.inside(q) and dist[grid.Level.idx(q)] >= 0) break true;
+            } else false;
+            try std.testing.expect(reached);
+            placed += 1;
+        }
+    }
+    try std.testing.expect(placed >= std.meta.fields(procgen.Algo).len);
 }
 
 test "pieces land apart on open ground" {

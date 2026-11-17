@@ -49,6 +49,11 @@ pub const Mod = enum {
     heft,
     commander,
     nightstalker,
+    serrated,
+    composure,
+    anchorage,
+    grievous,
+    cleansing,
 
     pub fn grant(comptime m: Mod, amount: i32) passives.Grant {
         return .{ .kind = @field(passives.Kind, @tagName(m)), .amount = amount };
@@ -60,6 +65,8 @@ pub const Mod = enum {
 
     pub fn prefix(m: Mod) bool {
         return switch (m) {
+            .serrated, .grievous => true,
+            .composure, .anchorage, .cleansing => false,
             .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked, .opportunist, .crit_damage, .block, .leech, .area, .pierce, .kindling, .nightstalker => true,
             .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness, .bounding, .alacrity, .life_regen, .haste, .cull, .heft, .commander => false,
         };
@@ -67,6 +74,7 @@ pub const Mod = enum {
 
     pub fn elements(m: Mod) []const damage.Element {
         return switch (m) {
+            .serrated, .composure, .anchorage, .grievous, .cleansing => &.{},
             .resistance => std.enums.values(damage.Element),
             .imbue => &IMBUES,
             .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .thorns, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .crit_damage, .block, .life_regen, .leech, .area, .pierce, .haste, .cull, .kindling, .heft, .commander, .nightstalker => &.{},
@@ -74,6 +82,11 @@ pub const Mod = enum {
     }
     pub fn title(m: Mod, element: damage.Element) [:0]const u8 {
         return switch (m) {
+            .serrated => "Serrated",
+            .composure => "of Composure",
+            .anchorage => "of Anchorage",
+            .grievous => "Grievous",
+            .cleansing => "of Cleansing",
             .life => "of Life",
             .mana => "of Insight",
             .strength => "Bear's",
@@ -132,6 +145,11 @@ pub const Mod = enum {
         const ring = k.fits(.left_ring);
         const armour = slot.armour();
         return switch (m) {
+            .serrated => weapon,
+            .composure => slot == .helm or slot == .amulet,
+            .anchorage => slot == .boots,
+            .grievous => weapon or slot == .gloves,
+            .cleansing => slot == .belt,
             .physical_damage => weapon or s.quiver,
             .spell_damage => s.caster or slot == .amulet,
             .crit => weapon or s.quiver or slot == .gloves or ring,
@@ -219,6 +237,11 @@ pub const AffixRoll = struct {
 const Range = struct { lo: i32, hi: i32, least: Tier = .low };
 
 const RANGES = std.EnumArray(Mod, Range).init(.{
+    .serrated = .{ .lo = 15, .hi = 25 },
+    .composure = .{ .lo = 15, .hi = 25 },
+    .anchorage = .{ .lo = 1, .hi = 1 },
+    .grievous = .{ .lo = 1, .hi = 1 },
+    .cleansing = .{ .lo = 1, .hi = 1 },
     .life = .{ .lo = 2, .hi = 6 },
     .mana = .{ .lo = 1, .hi = 3 },
     .strength = .{ .lo = 1, .hi = 3 },
@@ -298,6 +321,11 @@ pub const Affix = struct {
     pub fn write(m: Affix, w: anytype) void {
         const n = m.value;
         switch (m.kind) {
+            .serrated => w.print(item_bases.ON_HIT_FMT, .{ n, wording.word(resilience.Kind.bleed) }) catch {},
+            .composure => w.print("+{d}% mental status resistance", .{n}) catch {},
+            .anchorage => w.print("Knockbacks and pulls move you {d} fewer tile{s}", .{ n, mathx.plural(n) }) catch {},
+            .grievous => w.print("+{d} bleed damage to moving foes", .{n}) catch {},
+            .cleansing => w.print("Drinking a life flask removes {d} wound status", .{n}) catch {},
             inline .life, .mana, .strength, .dexterity, .intelligence, .crit, .armour, .mana_regen, .life_flask, .cull => |k| k.grant(n).write(w),
             .life_regen => w.print("+{d} life recovered per {d} turns", .{ n, hero.LIFE_REGEN_TURNS }) catch {},
             .physical_damage => w.print("+{d}% physical weapon damage", .{n}) catch {},

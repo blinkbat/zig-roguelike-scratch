@@ -71,9 +71,10 @@ const BindAction = struct {
 pub const BIND_ACTIONS = [_]BindAction{
     .{ .button = CONFIRM, .label = "Choose skill", .browse_only = false },
     .{ .button = CHANGE, .label = "All skills", .browse_only = true },
-    .{ .button = REMOVE, .label = "Clear slot", .browse_only = true },
+    .{ .button = REMOVE, .label = CLEAR_SLOT, .browse_only = true },
     .{ .button = BACK, .label = "Back", .browse_only = false },
 };
+const CLEAR_SLOT = "Clear slot";
 const BIND_ACTION = menu.ACTION_BOX;
 const BIND_ACTION_STEP: i32 = BIND_ACTION.x + menu.ACTION_GAP;
 const BIND_ACTIONS_W: i32 = BIND_ACTIONS.len * BIND_ACTION_STEP - menu.ACTION_GAP;
@@ -255,9 +256,9 @@ pub fn drawBinds(g: *game.Game) void {
         g.face.draw(a.name(), menu.PANEL_PAD, info_y, font.HEAD, look.TEXT);
         var desc: [TIP_BODY_MAX + 1]u8 = undefined;
         const text = describe(g, a, &desc);
-        _ = desc_face.paragraph(text, menu.PANEL_PAD, info_y + BIND_DESC_DY, BIND_DESC_W, font.SMALL, look.TEXT);
+        _ = desc_face.richParagraph(text, menu.PANEL_PAD, info_y + BIND_DESC_DY, BIND_DESC_W, font.SMALL, look.TEXT);
     } else if (b.menu == .pick) {
-        menu.mid(g.face, panel, "Clear slot", info_y, font.BODY, look.TEXT);
+        menu.mid(g.face, panel, CLEAR_SLOT, info_y, font.BODY, look.TEXT);
     }
     for (BIND_ACTIONS, 0..) |action, i| {
         if (!action.shown(&b)) continue;
@@ -518,7 +519,7 @@ fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip 
     const w = stream.writer();
     w.print("{d}/{d} HP\n" ++ hud.TIP_RULE ++ "\n{s}", .{ pictured.hp, pictured.max, menu.titleOf(tile) }) catch {};
     terrain.of(tile).write(w);
-    const rain = g.sim.rainNow();
+    const rain = g.sim.rainAt(at);
     if (terrain.rainTitle(rain)) |t| {
         w.print("\n{s}", .{t}) catch {};
         terrain.rained(rain).write(w);

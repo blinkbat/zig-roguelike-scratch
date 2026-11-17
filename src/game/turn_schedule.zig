@@ -39,9 +39,9 @@ pub const Body = struct {
         self.finishes_in = @max(self.finishes_in, deadline_in);
     }
 
-    pub fn emergesIn(self: Body, submerged: bool, start_in: f32, late: f32) f32 {
-        const begins_in = if (self.staggered) @max(0, self.starts_at - late) else start_in;
-        return if (submerged or self.moved) self.finishes_in else begins_in;
+    pub fn emergesIn(self: Body, submerged: bool) f32 {
+        if (submerged or self.moved) return self.finishes_in;
+        return if (self.staggered) @max(0, self.begins_in) else self.begins_in;
     }
 };
 
@@ -54,19 +54,18 @@ pub const Turn = struct {
     pub fn begin(late: f32, lead_in: ?f32, hero_cell: P, pace: Pace) Turn {
         return .{
             .late = late,
-            .next_at = if (lead_in) |t| t + late + pace.stagger else 0,
+            .next_at = if (lead_in) |t| staggeredAfter(t, late, pace) else 0,
             .hero_cell = hero_cell,
             .pace = pace,
         };
     }
 
     pub fn afterBolts(self: *Turn, lands_in: f32) void {
-        if (lands_in > 0) self.next_at = @max(self.next_at, lands_in + self.late + self.pace.stagger);
+        if (lands_in > 0) self.next_at = @max(self.next_at, staggeredAfter(lands_in, self.late, self.pace));
     }
 
     pub fn motion(self: *Turn, facts: Motion) Body {
-        const visible_action = (facts.shown or facts.arrow_seen) and (facts.lunges or facts.mending);
-        const staggered = if (facts.moved) facts.shown or facts.visible_origin else visible_action;
+        const staggered = staggers(facts);
         var starts_at = if (staggered) self.next_at else 0;
         if (staggered and !facts.hero and (facts.moved or facts.lunges)) starts_at = @max(starts_at, self.late + facts.motion_left);
         if (staggered and facts.moved and !facts.hero) starts_at = @max(starts_at, self.late + facts.clear_in);
@@ -90,7 +89,7 @@ pub const Turn = struct {
 
     pub fn reaction(self: *Turn, body: *Body, impact_in: f32) void {
         body.finishAfter(impact_in);
-        self.next_at = @max(self.next_at, impact_in + self.late + self.pace.stagger);
+        self.next_at = @max(self.next_at, staggeredAfter(impact_in, self.late, self.pace));
     }
 
     pub fn knock(self: *Turn, body: *Body, to: P, motion_left: f32) void {
@@ -103,6 +102,15 @@ pub const Turn = struct {
         return @max(0, self.next_at - self.late);
     }
 };
+
+pub fn staggers(facts: Motion) bool {
+    const visible_action = (facts.shown or facts.arrow_seen) and (facts.lunges or facts.mending);
+    return if (facts.moved) facts.shown or facts.visible_origin else visible_action;
+}
+
+fn staggeredAfter(in: f32, late: f32, pace: Pace) f32 {
+    return in + late + pace.stagger;
+}
 
 test "turn schedule uses one time origin for late movement projectile reaction and knockback" {
     const at = P{ .x = 3, .y = 4 };
@@ -130,8 +138,8 @@ test "turn schedule gives hidden harm its start without delaying later visible a
     try std.testing.expectEqual(@as(f32, 0.3), hidden.finishes_in);
     try std.testing.expectEqual(@as(f32, 0), turn.next_at);
     hidden.finishAfter(0.7);
-    try std.testing.expectEqual(@as(f32, 0.3), hidden.emergesIn(false, 0.3, turn.late));
-    try std.testing.expectEqual(@as(f32, 0.7), hidden.emergesIn(true, 0.3, turn.late));
+    try std.testing.expectEqual(@as(f32, 0.3), hidden.emergesIn(false));
+    try std.testing.expectEqual(@as(f32, 0.7), hidden.emergesIn(true));
     const visible = turn.motion(.{ .start_in = 0.3, .hero = false, .moved = false, .lunges = true, .shown = true, .visible_origin = true, .arrow_seen = false, .mending = false, .motion_left = 0, .clear_in = 0 });
     try std.testing.expect(visible.staggered);
     try std.testing.expectEqual(@as(f32, 0), visible.begins_in);

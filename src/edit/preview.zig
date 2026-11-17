@@ -56,10 +56,8 @@ pub const Scene = struct {
         const placing = nd.placedOn(self.roll, &laid);
         self.rolled_foes = .{};
         self.npc_at = @splat(null);
-        switch (nd.plan) {
-            .bespoke => nd.stampAt(&self.lv, 0, arrival(map, node)),
-            .procgen => nd.stampAt(&self.lv, self.roll, arrival(map, node)),
-        }
+        const from = arrival(map, node);
+        nd.stampAt(&self.lv, self.roll, from);
         map.stampNpcs(node, &self.lv, self.roll, &self.npc_at, atlas.EVERY_NPC);
         var rng = mathx.Rng.init(self.roll);
         switch (nd.plan) {
@@ -68,7 +66,6 @@ pub const Scene = struct {
                 z.populate(&self.lv, &self.rolled_foes, &rng);
             },
             .procgen => {
-                const from = arrival(map, node);
                 const at = atlas.landing(&self.lv, from, placing) orelse from;
                 _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
                 nd.populate(&self.lv, &self.rolled_foes, &rng, at, self.roll);

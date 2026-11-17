@@ -1,14 +1,11 @@
-import argparse
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
+from art_support import ROOT, arguments, aseprite, main
 
-ROOT = Path(__file__).resolve().parents[2]
-parser = argparse.ArgumentParser()
-parser.add_argument('--aseprite', required=True)
-args, remaining = parser.parse_known_args()
+
+args, remaining = arguments()
 
 WRAPPER = r'''
 local nativeApp=app
@@ -76,6 +73,8 @@ for _,l in ipairs(sprite.layers) do
  if l.name=='Ideas - hide before export' then ideas=l end
 end
 local drawn=Image(drawing:cel(1).image)
+local drawnAt=Point(drawing:cel(1).position)
+local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local original=Image(authored:cel(1).image)
 local position=Point(authored:cel(1).position)
 local function generated(color)
@@ -136,14 +135,7 @@ end
 
 class SavedLayerTests(unittest.TestCase):
     def run_lua(self, script, **params):
-        command = [args.aseprite, '--batch']
-        for key, value in params.items():
-            if isinstance(value, Path):
-                value = value.as_posix()
-            command += ['--script-param', f'{key}={value}']
-        return subprocess.run(command + ['--script', str(script)], capture_output=True,
-                              text=True, timeout=30,
-                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        return aseprite(args.aseprite, script, params)
 
     def fixture(self, directory, body, **params):
         script = directory / 'fixture.lua'
@@ -212,8 +204,8 @@ class SavedLayerTests(unittest.TestCase):
             work = Path(temporary)
             for folder in ('assets/source', 'assets/water', 'shots', 'tools/tile_art'):
                 (work / folder).mkdir(parents=True)
-            (work / 'tools/tile_art/source_files.lua').write_bytes(
-                (ROOT / 'tools/tile_art/source_files.lua').read_bytes())
+            for helper in ('source_files.lua', 'water_cliff_layout.lua'):
+                (work / 'tools/tile_art' / helper).write_bytes((ROOT / 'tools/tile_art' / helper).read_bytes())
             params = dict(work=work.as_posix() + '/', root=work.as_posix() + '/',
                           faces=work / 'faces.png')
             if shots:
@@ -239,4 +231,4 @@ class SavedLayerTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[__file__, *remaining])
+    main(remaining)
