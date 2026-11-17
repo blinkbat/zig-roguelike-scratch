@@ -216,6 +216,7 @@ pub fn counter(face: *const font.Face, box: rl.Rectangle, n: u32) void {
 
 const FOCUS_GROW: f32 = 4;
 const FOCUS_W: f32 = 2;
+const FOCUS_SEGMENTS = 64;
 const TIP_W: i32 = 380;
 const TIP_PAD: i32 = 12;
 const TIP_GAP: i32 = 8;
@@ -227,7 +228,7 @@ pub const TIP_LINES_MAX: usize = 96;
 pub fn focus(box: rl.Rectangle, round: bool) void {
     if (round) {
         const r = box.width / 2 + FOCUS_GROW;
-        rl.drawRing(raster.middle(box), r - FOCUS_W, r, 0, 360, 64, look.UI_FOCUS);
+        rl.drawRing(raster.middle(box), r - FOCUS_W, r, 0, 360, FOCUS_SEGMENTS, look.UI_FOCUS);
         return;
     }
     rl.drawRectangleLinesEx(raster.grown(box, FOCUS_GROW), FOCUS_W, look.UI_FOCUS);
@@ -286,12 +287,14 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
             rich.draw(face, buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM, .shadow);
             rich.skip(&.{TIP_SEP});
             rich.draw(face, buf[i][split + 1 .. l.len :0], x + TIP_VALUE_X, top, font.SMALL, look.TEXT, .shadow);
-        } else if (words) |links| {
-            const before = links.n;
+        } else {
             rich.draw(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, .shadow);
-            links.mark(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, &keywords.STATUS_TERMS, menu.Surface.IDENTITY);
-            if (links.n > before) links.root = raster.rect(x, y, TIP_W, h);
-        } else rich.draw(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, .shadow);
+            if (words) |links| {
+                const before = links.n;
+                links.mark(face, l, x + TIP_PAD, top, font.SMALL, look.TEXT, &keywords.STATUS_TERMS.values, menu.Surface.IDENTITY);
+                if (links.n > before) links.root = raster.rect(x, y, TIP_W, h);
+            }
+        }
     }
     return first;
 }

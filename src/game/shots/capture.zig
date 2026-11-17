@@ -4,6 +4,7 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../../map/grid.zig");
 const atlas = @import("../../map/atlas.zig");
 const lens = @import("../../gfx/lens.zig");
+const look = @import("../../gfx/look.zig");
 const game = @import("../../game.zig");
 
 pub const SHOT_SEED: u64 = 0x5EED_1234;
@@ -11,7 +12,7 @@ pub const SHOTS_DIR = "shots";
 pub const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
 pub const MOUSE_DIR = SHOTS_DIR ++ "/mouse";
 pub const CINEMA_DIR = SHOTS_DIR ++ "/cinema";
-const PATH_MAX = 256;
+pub const PATH_MAX = 256;
 
 pub fn renderTarget(g: *game.Game) !rl.RenderTexture2D {
     return rl.loadRenderTexture(g.screen.x, g.screen.y);
@@ -88,11 +89,34 @@ pub fn outOfTarget(g: *game.Game) void {
     g.framebuffer = 0;
 }
 
+pub fn drawMapInto(g: *game.Game, target: rl.RenderTexture2D, clear: rl.Color) void {
+    intoTarget(g, target);
+    rl.clearBackground(clear);
+    game.scene.drawMap(g);
+    outOfTarget(g);
+}
+
+/// The atmosphere pass alone over `clear`; the caller unloads it.
+pub fn airImage(g: *game.Game, target: rl.RenderTexture2D, clear: rl.Color, reflections: bool) !rl.Image {
+    const c = game.scene.Cam.of(g);
+    g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{}, &g.sim.locations, g.pic.local_weather_shown);
+    intoTarget(g, target);
+    rl.clearBackground(clear);
+    g.cinema.drawAir(g.light, c.origin(), game.CELL_F, g.screen, g.pic.hour_shown, reflections);
+    outOfTarget(g);
+    return readTarget(target);
+}
+
+pub fn seekHalfway(g: *game.Game, t: f32, span: f32) void {
+    game.update(g, @max(0, span / 2 - t));
+}
+
 pub const SHOT_BIOME = "qud/qud_salt_marsh";
 pub const SHOT_OUTDOOR = "wilds";
 
 pub const MIN_PIXELS = 100;
-pub const sameRgb = game.harness.sameRgb;
+pub const VEIL_GAS = 60;
+pub const sameRgb = look.sameRgb;
 
 /// Draws into `target`, whose batch raylib flushes at `endTextureMode`, and saves it.
 pub fn capture(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {
@@ -103,6 +127,15 @@ pub fn capture(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !v
 pub fn capturef(g: *game.Game, target: rl.RenderTexture2D, comptime fmt: []const u8, args: anytype) !void {
     var path: [PATH_MAX]u8 = undefined;
     try capture(g, target, try std.fmt.bufPrintZ(&path, fmt, args));
+}
+
+pub fn captureAlong(g: *game.Game, target: rl.RenderTexture2D, times: []const f32, comptime prefix: []const u8) !void {
+    var elapsed: f32 = 0;
+    for (times, 0..) |t, i| {
+        game.update(g, t - elapsed);
+        elapsed = t;
+        try capturef(g, target, prefix ++ "{d}.png", .{i});
+    }
 }
 
 /// The target's pixels, top row first; the caller unloads it.

@@ -1,9 +1,24 @@
 local pc=app.pixelColor
 local port={}
+port.CELL,port.COLS=64,4
+port.HEAD=64
+port.SIZE=port.COLS*port.CELL
+port.W,port.H=512,port.HEAD+port.SIZE
+
+function port.at(i) return ((i-1)%port.COLS)*port.CELL,port.HEAD+(i-1)//port.COLS*port.CELL end
+
+function port.corner(sprite,m)
+  local found
+  for _,slice in ipairs(sprite.slices) do
+    if slice.name=='Corners '..m then found=slice end
+  end
+  return found
+end
 
 function port.bit(m,b) return (m&b)~=0 end
 
-local function opaque(v) return pc.rgbaA(v)>0 end
+function port.opaque(v) return pc.rgbaA(v)>0 end
+local opaque=port.opaque
 
 function port.checkJoins(cells)
   local bit=port.bit

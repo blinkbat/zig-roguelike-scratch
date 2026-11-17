@@ -152,7 +152,7 @@ pub fn afflicted(sim: *Simulation, a: *actor.Actor, comptime M: type, lands: boo
         M.procs(&sim.rng, resist) and sim.takeStatus(a, M.AILMENT);
     if (takes) {
         M.afflict(a, &sim.rng);
-        if (comptime M.AILMENT == .bleed) a.bleed.move_bonus = @max(a.bleed.move_bonus, sim.inventory.gear.sum(.grievous));
+        if (comptime M.AILMENT == .bleed) a.bleed.move_bonus = @max(a.bleed.move_bonus, sim.grievous());
     }
     return takes;
 }
@@ -293,7 +293,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     if (!culled and r.dmg > 0 and r.dmg < a.hp) {
         if (r.applied != .bleed and sim.procStatus(a, .bleed, r.effect.bleed)) {
             bled = a.bleed.said();
-            a.bleed.startWound(r.effect.bleed_damage, @max(0, sim.inventory.gear.sum(.grievous)));
+            a.bleed.startWound(r.effect.bleed_damage, sim.grievous());
         }
         if (r.applied != .stun and sim.procStatus(a, .stun, r.effect.stun)) {
             a.clock.stun();

@@ -975,7 +975,7 @@ test "a foe the gas kills out of sight leaves nothing drawn and nothing said" {
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(harness.foeId(0)));
     try std.testing.expectEqual(@as(usize, 1), g.sim.kills);
     try std.testing.expectEqual(@as(usize, 0), g.pic.fx.impacts.count());
-    for (g.pic.fx.motes) |m| try std.testing.expect(m.life <= 0);
+    try std.testing.expectEqual(@as(usize, 0), harness.liveMotes(g, harness.AnyMote{}));
     try std.testing.expectEqualStrings("The last rat is dead.", g.sim.log.line(0).?);
     try std.testing.expect(std.mem.endsWith(u8, g.sim.log.line(1).?, "experience."));
     try std.testing.expectEqual(said + 2, g.sim.log.n);
@@ -1175,7 +1175,7 @@ test "a half the gas splits off a burning slime on the foes' turn burns no soone
     for ([_]P{ at, .{ .x = 24, .y = 20 } }) |p| g.sim.lv.addGas(p, harness.TEST_GAS);
     g.pic.catchUp(&g.sim);
     harness.use(g, .wait);
-    const half = actor.Pool.slot(id) + 1;
+    const half = harness.splitOff(id);
     try std.testing.expect(g.pic.split_from[half] != null and g.pic.fx.impacts.pending(.fromIndex(half)));
     const when = showsAndLands(g, half);
     try std.testing.expect(when.lands >= when.shows);
@@ -1191,7 +1191,7 @@ test "a half an arrow splits off into gas takes the gas on its waiting turn, no 
     while (cells.next()) |p| g.sim.lv.addGas(p, harness.TEST_GAS);
     g.pic.catchUp(&g.sim);
     harness.confirmUse(g, .shoot);
-    const half = actor.Pool.slot(id) + 1;
+    const half = harness.splitOff(id);
     try std.testing.expect(g.pic.split_from[half] != null);
     const when = showsAndLands(g, half);
     const b = g.sim.pool.items[half];
@@ -1331,7 +1331,7 @@ test "a split nobody sees holds no one's walk" {
     g.pic.catchUp(&g.sim);
     harness.use(g, .wait);
     try std.testing.expectEqual(actor.Kind.slime_half, g.sim.pool.get(id).?.kind);
-    try std.testing.expectEqual(@as(?usize, null), g.pic.split_from[actor.Pool.slot(id) + 1]);
+    try std.testing.expectEqual(@as(?usize, null), g.pic.split_from[harness.splitOff(id)]);
     try std.testing.expect(g.pic.busy <= 0);
 }
 

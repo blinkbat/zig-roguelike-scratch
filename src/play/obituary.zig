@@ -3,6 +3,7 @@ const actor = @import("actor.zig");
 const heroes = @import("hero.zig");
 const chronicle = @import("chronicle.zig");
 const skillbar = @import("skillbar.zig");
+const bow = @import("bow.zig");
 const gas = @import("../map/gas.zig");
 const grid = @import("../map/grid.zig");
 const wording = @import("../core/wording.zig");
@@ -409,7 +410,7 @@ fn lastDeed(ctx: *const Context, tagged: Tags) ?Deed {
 
 fn missile(with: ?skillbar.Act) []const u8 {
     const a = with orelse return "blow";
-    if (a.isArrow()) return "arrow";
+    if (a.isArrow()) return bow.NOUN;
     return a.bolt() orelse "blow";
 }
 

@@ -818,7 +818,7 @@ test "loot on a nearby door preserves both loot and travel choices" {
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    const door = P{ .x = 2, .y = 5 };
+    const door = harness.WEST_DOOR;
     for (1..4) |contents| {
         _ = runTwoRooms(g, w);
         if (contents & 1 != 0) try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = door }));
@@ -858,7 +858,7 @@ test "a door is listed nearby only once no body is drawn on it" {
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     _ = runTwoRooms(g, w);
-    const door = P{ .x = 2, .y = 5 };
+    const door = harness.WEST_DOOR;
     const from = g.sim.heroActor().?.at;
     const rat = harness.spawnAt(g, .rat, door, false);
     try std.testing.expectEqual(@as(?atlas.Link, null), character.doorReached(g, from, door));
@@ -878,7 +878,7 @@ test "the nearby list closes once a body takes the last door it listed" {
     _ = runTwoRooms(g, w);
     try std.testing.expect(character.openNearby(g));
     try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
-    _ = harness.spawnAt(g, .rat, .{ .x = 2, .y = 5 }, false);
+    _ = harness.spawnAt(g, .rat, harness.WEST_DOOR, false);
     g.st = .{};
     game.update(g, 0);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));

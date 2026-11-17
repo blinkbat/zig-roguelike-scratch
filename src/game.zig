@@ -514,8 +514,12 @@ fn freshTurn(g: *Game) void {
 }
 
 pub fn settle(g: *Game) void {
-    g.art = .stale;
     g.sim.locations = climate.locations(&g.sim.lv);
+    settleKept(g);
+}
+
+fn settleKept(g: *Game) void {
+    g.art = .stale;
     g.sim.chronicle.restart(epitaph.turnStart(g));
     castSight(g, g.sim.heroActor().?.at);
     g.cloud.settle(&g.sim.lv);
@@ -552,7 +556,7 @@ pub fn resumeRun(g: *Game) void {
     while (left.next()) |n| if (n != g.sim.node) talking.stampNpcs(g, n, &g.sim.visits[n].lv);
     freshTurn(g);
     g.pic.settleXp(&g.sim);
-    settle(g);
+    settleKept(g);
     if (g.pic.heroShown(&g.sim)) |h| g.vignette.settle(h.hp, h.max) else g.vignette.clear();
     if (g.sim.plot.talk != null) g.mode = .talk;
 }
@@ -911,7 +915,7 @@ pub fn weatherNow(g: *const Game) ?climate.Now {
 fn weatherByHero(g: *const Game) climate.Now {
     const hero = g.sim.heroSlot() orelse return g.pic.weather_shown;
     const at = g.pic.drawnCell(&g.sim, hero) orelse return g.pic.weather_shown;
-    return g.pic.local_weather_shown.get(grid.cellOr(climate.Location, &g.sim.locations, at, .inland));
+    return g.pic.local_weather_shown.get(climate.placeAt(&g.sim.locations, at));
 }
 
 fn drawnTurn(g: *Game) void {

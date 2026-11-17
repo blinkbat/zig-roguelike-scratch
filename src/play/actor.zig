@@ -138,6 +138,7 @@ comptime {
         if (r.charges) |c| std.debug.assert(c.range >= windup.NEAREST and c.range <= c.rush and c.rush <= windup.LONGEST);
         if (r.hooks) |h| std.debug.assert(h.range >= windup.NEAREST and h.range <= windup.LONGEST);
         if (r.hurls) |h| std.debug.assert(h.range <= bow.LONGEST and h.speed > 0 and h.every > 1 and r.keeps > 0);
+        if (r.quickstep) |q| std.debug.assert(r.net != null and r.keeps > 0 and q.cells > 0 and q.every > 0);
     }
 }
 
@@ -211,6 +212,9 @@ pub const Ranged = struct { range: i32, retreat: i32 };
 /// Thrown every `every` turns at a hero within `range`, holding it for `pins` turns.
 pub const Net = struct { range: i32, pins: u8, every: u8 };
 
+/// Every `every` turns, while its net recovers: `cells` straight to a cell outside `keeps` and inside its net's range. A club beside the hero holds the net `club_holds` turns.
+pub const Quickstep = struct { cells: i32, every: u8, club_holds: u8 };
+
 /// Every `every` turns: heals the most hurt `kin` within `reach` by `amount`, or else wakes the sleeping ones.
 pub const Mend = struct { reach: i32, amount: i32, every: u8, kin: []const Kind };
 
@@ -264,6 +268,7 @@ pub const Row = struct {
     /// Backs off from a hero this close, and comes no closer.
     keeps: i32 = 0,
     net: ?Net = null,
+    quickstep: ?Quickstep = null,
     mends: ?Mend = null,
     charges: ?Charge = null,
     hooks: ?Hook = null,
@@ -295,10 +300,12 @@ pub const FLEES = "The {s} flees in terror!";
 const SLAM = Blow{ .strike = .{ .hit = .{ .lo = 2, .hi = 5 }, .verb = "slams", .slain = "crushed" } };
 const BOLT = Blow{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } };
 const NET = Net{ .range = 5, .pins = 2, .every = 4 };
+const QUICKSTEP = Quickstep{ .cells = 2, .every = 3, .club_holds = 2 };
 const MEND = Mend{ .reach = 5, .amount = 8, .every = 3, .kin = &.{ .pib, .beefy_pib } };
 const CHARGE = Charge{ .range = 5, .rush = 6, .every = 3, .blow = .{ .hit = .{ .lo = 5, .hi = 9 }, .verb = "rams", .slain = "rammed flat", .knocks = true } };
 const HOOK = Hook{ .range = 4, .every = 4, .blow = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "hooks", .slain = "hooked through" } };
-const HURL = Hurl{ .range = 7, .speed = 2, .every = 2, .hit = .{ .lo = 3, .hi = 5 }, .burns = 40 };
+const HURL = Hurl{ .name = "firebolt", .verb = "burns", .range = 7, .speed = 2, .every = 2, .hit = .{ .lo = 3, .hi = 5 }, .burns = 40, .element = .fire };
+const CHAOS_ORB = Hurl{ .name = "chaos orb", .verb = "strikes", .range = 7, .speed = 2, .every = 2, .hit = .{ .lo = 4, .hi = 6 }, .burns = 0, .element = .chaos, .careful = true };
 const ICY = damage.Resists.init(.{ .cold = damage.RESIST_MAX, .fire = -50, .chaos = 0, .lightning = 0 });
 const FIERY = damage.Resists.init(.{ .cold = -50, .fire = damage.RESIST_MAX, .chaos = 0, .lightning = 0 });
 
@@ -319,11 +326,11 @@ pub fn row(k: Kind) Row {
         .pib => .{ .name = "pib", .foe_type = .beast, .hp = 10, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .slain = "stabbed to death", .bleeds = 30 } }, .flees = true },
         .beefy_pib => .{ .name = "beefy pib", .foe_type = .beast, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .slain = "beaten to death", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .fright_resist = 50, .hit = 80, .armour = 20 },
         .bandit_crossbowman => .{ .name = "bandit crossbowman", .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = BOLT, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15, .fright_resist = 25 },
-        .bandit_netter => .{ .name = "bandit trapper", .foe_type = .humanoid, .hp = 10, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "clubs", .slain = "clubbed down" } }, .keeps = 2, .net = NET, .armour = 10, .fright_resist = 25 },
+        .bandit_netter => .{ .name = "bandit trapper", .foe_type = .humanoid, .hp = 10, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "clubs", .slain = "clubbed down" } }, .keeps = 2, .net = NET, .quickstep = QUICKSTEP, .armour = 10, .fright_resist = 25 },
         .bandit_shieldbearer => .{ .name = "bandit shieldbearer", .foe_type = .humanoid, .hp = 24, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bashes", .slain = "battered down", .knocks = true } }, .armour = 40, .stun_resist = 75, .fright_resist = 50 },
         .frost_wisp => .{ .name = "frost wisp", .movement = .flying, .foe_type = .aberration, .hp = 8, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "touches", .slain = "frozen solid", .element = .cold, .chills = mathx.PERCENT } }, .flits = true, .resists = ICY, .fright_resist = mathx.PERCENT },
         .pyre_bloat => .{ .name = "pyre bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .blow = .{ .burst = .fire }, .flits = true, .resists = FIERY, .fright_resist = mathx.PERCENT },
-        .pib_shaman => .{ .name = "pib shaman", .foe_type = .beast, .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "pokes", .slain = "poked to death" } }, .keeps = 3, .mends = MEND },
+        .pib_shaman => .{ .name = "pib shaman", .foe_type = .beast, .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "pokes", .slain = "poked to death" } }, .keeps = 3, .mends = MEND, .hurls = CHAOS_ORB },
         .bog_leech => .{ .name = "bog leech", .movement = .swimming, .foe_type = .beast, .hp = 12, .sight = 5, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bites", .slain = "drained dry", .bleeds = 50 } }, .lurks = true, .fright_resist = mathx.PERCENT },
         .mimic => .{ .name = "mimic", .foe_type = .aberration, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 4, .hi = 8 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 20, .fright_resist = mathx.PERCENT },
         .goblin => .{ .name = "goblin", .foe_type = .humanoid, .hp = 14, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "hacks", .slain = "hacked down" } }, .armour = 10, .fright_resist = 25 },
@@ -406,13 +413,16 @@ pub const Actor = struct {
     tactics: @import("tactics.zig").State = .{},
     fright: u8 = 0,
     sweep_in: u8 = 0,
-    /// Its turns until it can throw a net, mend, charge, hook or hurl again.
+    /// Its turns until it can throw a net, mend, charge or hook again.
     ready_in: u8 = 0,
+    /// Its turns until it can hurl again.
+    projectile_in: u8 = 0,
+    quickstep_in: u8 = 0,
     /// The line it braced along last turn, which its charge or hook follows this one.
     braced: ?mathx.Dir = null,
     /// Its charge missed: it loses its next action, without armour until then.
     stuck: bool = false,
-    /// Its firebolt in the air, which flies on after it falls.
+    /// Its hurl in the air, which flies on after it falls.
     bolt: ?firebolt.Bolt = null,
     submerged: bool = false,
     disguised: bool = false,

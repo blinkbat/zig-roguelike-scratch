@@ -1,14 +1,13 @@
-local template=app.params.template or 'C:/Users/DavidBennett/Desktop/cave-walls.aseprite'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local template=app.params.template or sourceFiles.DESKTOP..'cave-walls.aseprite'
 local path=assert(app.params.out,'out=<new sheet.aseprite>')
 local title=Image{fromFile=assert(app.params.title,'title=<header png>')}
 assert(not app.fs.isFile(path),'already exists: '..path)
 local sprite=assert(app.open(template))
-local labels,drawing,ideas
-for _,layer in ipairs(sprite.layers) do
-  if layer.name=='Labels - hide before export' then labels=layer end
-  if layer.name=='Draw here' then drawing=layer end
-  if layer.name=='Ideas - hide before export' then ideas=layer end
-end
+local labels=sourceFiles.layer(sprite,'Labels - hide before export')
+local drawing=sourceFiles.layer(sprite,'Draw here')
+local ideas=sourceFiles.layer(sprite,'Ideas - hide before export')
 assert(labels and drawing)
 local image=Image(sprite.width,sprite.height,ColorMode.RGB)
 local cel=assert(labels:cel(1))
@@ -26,10 +25,7 @@ drawing:cel(1).position=Point(0,0)
 sprite:saveAs(path)
 sprite:close()
 local saved=assert(app.open(path),'New sheet was not saved')
-local saved_labels
-for _,layer in ipairs(saved.layers) do
-  if layer.name=='Labels - hide before export' then saved_labels=layer end
-end
+local saved_labels=sourceFiles.layer(saved,'Labels - hide before export')
 local saved_cel=assert(saved_labels and saved_labels:cel(1),'New sheet labels missing')
 local actual=Image(saved.width,saved.height,ColorMode.RGB)
 actual:drawImage(saved_cel.image,saved_cel.position)

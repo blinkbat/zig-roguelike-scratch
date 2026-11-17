@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const look = @import("look.zig");
+const sky = @import("sky.zig");
 const wording = @import("../core/wording.zig");
 const resilience = @import("../play/resilience.zig");
 const damage = @import("../play/damage.zig");
@@ -14,18 +15,18 @@ pub const Tone = enum {
 
     fn ink(tone: Tone) rl.Color {
         return switch (tone) {
-            .physical => look.rgb(0xc6b69b),
-            .mental => look.rgb(0xb9a2d4),
-            .fire => look.FIRE,
-            .cold => look.COLD,
-            .lightning => look.LIGHTNING,
+            .physical => look.KEYWORD_PHYSICAL,
+            .mental => look.KEYWORD_MENTAL,
+            .fire => look.elementInk(.fire),
+            .cold => look.elementInk(.cold),
+            .lightning => look.elementInk(.lightning),
         };
     }
 
     pub fn on(tone: Tone, base: rl.Color) rl.Color {
-        if (base.r == look.LOSS.r and base.g == look.LOSS.g and base.b == look.LOSS.b) return base;
+        if (look.sameRgb(base, look.LOSS)) return base;
         const hue = tone.ink();
-        const target = luminance(base) * 0.94;
+        const target = luminance(base) * LUMA_SHARE;
         const light = luminance(hue);
         var out = if (target > light)
             look.mixed(hue, rl.Color.white, (target - light) / (255 - light))
@@ -36,17 +37,19 @@ pub const Tone = enum {
     }
 };
 
+const LUMA_SHARE: f32 = 0.94;
+
 fn luminance(c: rl.Color) f32 {
-    return 0.2126 * @as(f32, @floatFromInt(c.r)) + 0.7152 * @as(f32, @floatFromInt(c.g)) + 0.0722 * @as(f32, @floatFromInt(c.b));
+    return sky.luma(.{ @floatFromInt(c.r), @floatFromInt(c.g), @floatFromInt(c.b) });
 }
 
 const Group = struct { tone: Tone, words: []const u8 };
 const GROUPS = [_]Group{
-    .{ .tone = .physical, .words = "physical|damage|armour|armor|bleed|bleeds|bleeding|bled|wound|wounds|stun|stunned|stunning|pin|pinned|pinning|sunder|sundered|sundering|maim|maimed|maiming|enfeeble|enfeebled|enfeeblement|weapon damage|physical damage reduction|critical damage|critical strike damage|critical damage multiplier" },
-    .{ .tone = .mental, .words = "mental|chaos|blind|blinded|blindness|confusion|confused|confuse|fright|frightened|fear" },
-    .{ .tone = .fire, .words = "fire|burn|burns|burning|burned|ignite|ignites|ignited|igniting|ignition" },
-    .{ .tone = .cold, .words = "cold|freeze|freezes|freezing|frozen|chill|chills|chilled|chilling" },
-    .{ .tone = .lightning, .words = "lightning|shock|shocks|shocked|shocking" },
+    .{ .tone = .physical, .words = "physical|damage|armour|armor|bleeds|bleeding|bled|wound|wounds|stunned|stunning|pinned|pinning|sundered|sundering|maimed|maiming|enfeebled|enfeeblement|weapon damage|physical damage reduction|critical damage|critical strike damage|critical damage multiplier" },
+    .{ .tone = .mental, .words = "mental|blinded|blindness|confused|confuse|frightened|fear" },
+    .{ .tone = .fire, .words = "burns|burning|burned|ignite|ignites|ignited|igniting|ignition" },
+    .{ .tone = .cold, .words = "freeze|freezes|freezing|frozen|chills|chilled|chilling" },
+    .{ .tone = .lightning, .words = "shocks|shocked|shocking" },
 };
 
 const Entry = struct { word: []const u8, tone: Tone };
@@ -63,7 +66,7 @@ const ENTRIES = blk: {
             .chill => .cold,
             .shock => .lightning,
             .blind, .confusion, .fright => .mental,
-            else => .physical,
+            .stun, .bleed, .pin, .sunder, .enfeeble, .maim => .physical,
         };
         result = result ++ [_]Entry{.{ .word = wording.named(value), .tone = tone }};
     }
@@ -86,7 +89,7 @@ const BY_INITIAL = blk: {
 
 pub const Match = struct { end: usize, tone: Tone };
 
-fn wordByte(c: u8) bool {
+pub fn wordByte(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_' or c >= 128;
 }
 
@@ -184,7 +187,7 @@ test "keyword colors preserve paragraph brightness opacity and blockers" {
         for ([_]rl.Color{ look.TEXT, look.DIM, look.UI_FOCUS, look.MAGIC, look.fade(look.DIM, 0.3) }) |base| {
             const col = tone.on(base);
             try std.testing.expectEqual(base.a, col.a);
-            try std.testing.expectApproxEqAbs(luminance(base) * 0.94, luminance(col), 1.1);
+            try std.testing.expectApproxEqAbs(luminance(base) * LUMA_SHARE, luminance(col), 1.1);
         }
         try std.testing.expectEqual(look.LOSS, tone.on(look.LOSS));
     }

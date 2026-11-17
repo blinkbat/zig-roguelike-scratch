@@ -100,9 +100,9 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
             },
         }
         if (nd.label.n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
-        for (std.enums.values(climate.Location)) |place| {
+        if (nd.plan == .procgen) for (std.enums.values(climate.Location)) |place| {
             if (nd.locations.get(place)) |weather| try w.print(says(.location) ++ "{s} {s}\n", .{ @tagName(place), @tagName(weather) });
-        }
+        };
         if (nd.zoo) |*z| {
             try w.print(says(.zoo) ++ "{d} {d} {d} {d} {s}\n", .{ z.at.x, z.at.y, z.width, z.height, @tagName(z.side) });
             if (z.key) |k| try w.print(says(.zoo_key) ++ "{d} {d}\n", .{ k.x, k.y });
@@ -231,6 +231,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                 (try lastNode(self)).pos = pos;
             },
             .location => {
+                _ = try lastProcgen(self);
                 const nd = try lastNode(self);
                 const place = try takeValue(climate.Location, &f);
                 if (nd.locations.get(place) != null) return error.BadLine;
@@ -856,6 +857,25 @@ test "node location weather round trips and rejects duplicate or unknown locatio
     try std.testing.expectEqualDeep(a.node[0].locations, back.node[0].locations);
     try std.testing.expectError(error.BadLine, a.parse(text ++ "location forest clear\n"));
     try std.testing.expectError(error.BadLine, a.parse(text ++ "location desert clear\n"));
+}
+
+test "a bespoke node writes no location weather and refuses a location line" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const room = a.add(.{ .bespoke = .{} }).?;
+    a.node[room].plan.bespoke.fill(grid.Box.sized(.{ .x = 3, .y = 3 }, 9, 6), .floor);
+    a.start = .{ .node = room, .at = .{ .x = 4, .y = 4 } };
+    a.node[room].locations.set(.coast, .coastal);
+    var out = std.ArrayList(u8).init(std.testing.allocator);
+    defer out.deinit();
+    try a.write(out.writer());
+    const back = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(back);
+    try back.parse(out.items);
+    try std.testing.expectEqual(@as(?climate.Weather, null), back.node[room].locations.get(.coast));
+    try out.appendSlice(says(.location));
+    try out.appendSlice("coast coastal\n");
+    try std.testing.expectError(error.BadLine, back.parse(out.items));
 }
 
 test "a map's NPCs and script save with it, and NPCs off open bespoke floor are refused" {

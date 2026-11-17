@@ -6,14 +6,15 @@ const wording = @import("../core/wording.zig");
 const resilience = @import("../play/resilience.zig");
 const font = @import("../gfx/font.zig");
 const look = @import("../gfx/look.zig");
+const text_keywords = @import("../gfx/text_keywords.zig");
 const raster = @import("../gfx/raster.zig");
 const sprite = @import("../gfx/sprites.zig");
 const menu = @import("menu.zig");
 
 const Term = struct { title: [:0]const u8, body: []const u8 };
 pub const STATUS_TERMS = blk: {
-    var out: [std.enums.values(resilience.Tag).len]Term = undefined;
-    for (std.enums.values(resilience.Tag), &out) |tag, *term| {
+    var out = std.EnumArray(resilience.Tag, Term).initUndefined();
+    for (std.enums.values(resilience.Tag)) |tag| {
         var body: []const u8 = tag.description() ++ "\n";
         var members = tag.members().iterator();
         var first = true;
@@ -21,7 +22,7 @@ pub const STATUS_TERMS = blk: {
             body = body ++ (if (first) "" else ", ") ++ wording.named(kind);
             first = false;
         }
-        term.* = .{ .title = wording.named(tag), .body = body ++ "." };
+        out.set(tag, .{ .title = wording.named(tag), .body = body ++ "." });
     }
     break :blk out;
 };
@@ -152,7 +153,7 @@ pub const State = struct {
             for (terms) |term| {
                 const end = from + term.title.len;
                 if (term.title.len == 0 or end > line.len or !std.mem.eql(u8, line[from..end], term.title)) continue;
-                if ((from > 0 and wordByte(line[from - 1])) or (end < line.len and wordByte(line[end]))) continue;
+                if ((from > 0 and text_keywords.wordByte(line[from - 1])) or (end < line.len and text_keywords.wordByte(line[end]))) continue;
                 var prefix_buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
                 const prefix = std.fmt.bufPrintZ(&prefix_buf, "{s}", .{line[0..from]}) catch break;
                 const left = x + face.width(prefix, px);
@@ -223,10 +224,6 @@ fn linkBox(self: *const State, i: usize) rl.Rectangle {
     return self.links[i].box;
 }
 
-fn wordByte(c: u8) bool {
-    return std.ascii.isAlphanumeric(c) or c == '_';
-}
-
 fn wrapBody(face: anytype, body: []const u8, width: i32, buf: *font.Wrapped, lines: *[font.WRAP_LINES_MAX][:0]const u8) usize {
     var n: usize = 0;
     var rows = std.mem.splitScalar(u8, body, '\n');
@@ -245,8 +242,8 @@ fn popupBox(screen: mathx.P, anchor: rl.Rectangle, width: i32, height: i32) rl.R
 
 test "keyword focus consumes navigation and dismissal while preserving its host" {
     var state = State{};
-    state.register(STATUS_TERMS[0], raster.rect(100, 100, 60, 20));
-    state.register(STATUS_TERMS[1], raster.rect(200, 100, 60, 20));
+    state.register(STATUS_TERMS.values[0], raster.rect(100, 100, 60, 20));
+    state.register(STATUS_TERMS.values[1], raster.rect(200, 100, 60, 20));
     try std.testing.expect(state.step(&.{ .pressed = .initOne(menu.INSPECT) }));
     try std.testing.expectEqual(@as(?usize, 0), state.focus);
     try std.testing.expect(state.step(&.{ .walk = .e, .pressed = .initOne(.a) }));
@@ -260,7 +257,7 @@ test "keyword hit regions follow scaled panels and popups remain inside the scre
     const on = menu.Surface{ .scale = 1.25, .offset = .{ .x = 160, .y = 40 } };
     var state = State{};
     const box = on.rectOf(raster.rect(100, 100, 60, 20));
-    state.register(STATUS_TERMS[0], box);
+    state.register(STATUS_TERMS.values[0], box);
     try std.testing.expectEqual(@as(?usize, 0), state.at(raster.middleAt(box)));
     try std.testing.expectEqual(@as(?usize, null), state.at(.{ .x = 110, .y = 110 }));
     for (@import("../core/window.zig").SCREENS) |screen| {
@@ -279,7 +276,7 @@ test "keyword hover retains its parent and dismisses only its definition" {
         .popup = raster.rect(300, 150, 360, 140),
         .hover = 0,
     };
-    state.register(STATUS_TERMS[0], raster.rect(120, 400, 60, 20));
+    state.register(STATUS_TERMS.values[0], raster.rect(120, 400, 60, 20));
     const keys = input.State{ .device = .keys, .pointer = .{ .x = 140, .y = 410 } };
     try std.testing.expect(state.keepsRoot(&keys));
     const inside = input.State{ .device = .keys, .pointer = .{ .x = 620, .y = 180 }, .click = true };

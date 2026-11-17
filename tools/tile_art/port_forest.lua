@@ -1,51 +1,48 @@
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
-local path=app.params.source or 'C:/Users/DavidBennett/Desktop/forest-tree-walls.aseprite'
-local canonical=root..'assets/source/forest-tree-walls.aseprite'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local path=app.params.source or sourceFiles.DESKTOP..'forest-tree-walls.aseprite'
+local canonical=root..'assets/source/forest-tree-walls.aseprite'
 local install=app.params.install=='yes'
 sourceFiles.preserve(path,canonical,install)
-local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
-app.fs.makeAllDirectories(work)
+local work=sourceFiles.work()
 local backups=root..'assets/backup/'
 app.fs.makeAllDirectories(backups)
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
+local bit=masks.bit
+local W,H,CELL,HEAD=masks.W,masks.HEAD+masks.H,masks.CELL,masks.HEAD
 local pc=app.pixelColor
 local sprite=assert(app.open(path))
-assert(sprite.width==512 and sprite.height==448 and #sprite.frames==1 and #sprite.slices==#masks)
-local drawing
-for _,layer in ipairs(sprite.layers) do
-  assert(layer.name~='Forest extensions','Inspect existing extensions for owner edits before regenerating')
-  if layer.name=='Draw here' then drawing=layer end
-end
-assert(drawing)
+assert(sprite.width==W and sprite.height==H and #sprite.frames==1 and #sprite.slices==#masks)
+assert(not sourceFiles.layer(sprite,'Forest extensions'),'Inspect existing extensions for owner edits before regenerating')
+local drawing=assert(sourceFiles.layer(sprite,'Draw here'))
 local original=assert(drawing:cel(1))
 local saved=Image(original.image)
 local position=Point(original.position.x,original.position.y)
-local painted=Image(512,448,ColorMode.RGB)
+local painted=Image(W,H,ColorMode.RGB)
 painted:drawImage(saved,position)
-local source=Image(painted,Rectangle(0,64,64,64))
+local source=Image(painted,Rectangle(0,HEAD,CELL,CELL))
 local palette={}
 local count=0
-for y=0,447 do for x=0,511 do
+for y=0,H-1 do for x=0,W-1 do
   local p=painted:getPixel(x,y)
   if pc.rgbaA(p)>0 then
-    assert(x<64 and y>=64 and y<128,'New source painting outside cell 01; inspect before porting')
+    assert(x<CELL and y>=HEAD and y<HEAD+CELL,'New source painting outside cell 01; inspect before porting')
     palette[p]=true
     count=count+1
   end
 end end
 assert(count>0)
-local canopy=Image(source,Rectangle(0,0,64,50))
+local canopy=Image(source,Rectangle(0,0,CELL,50))
 local cells={}
-local sheet=Image(512,448,ColorMode.RGB)
-local atlas=Image(512,384,ColorMode.RGB)
-local function has(mask,bit) return (mask&bit)~=0 end
+local sheet=Image(W,H,ColorMode.RGB)
+local atlas=Image(masks.W,masks.H,ColorMode.RGB)
+local function has(mask,b) return (mask&b)~=0 end
 for i,mask in ipairs(masks) do
-  local n,e,s,w=has(mask,1),has(mask,2),has(mask,4),has(mask,8)
+  local n,e,s,w=has(mask,bit.n),has(mask,bit.e),has(mask,bit.s),has(mask,bit.w)
   local pieces={
-    {-32,-32,n and w and has(mask,128)}, {0,-32,n}, {32,-32,n and e and has(mask,16)},
+    {-32,-32,n and w and has(mask,bit.nw)}, {0,-32,n}, {32,-32,n and e and has(mask,bit.ne)},
     {-32,0,w}, {0,0,true}, {32,0,e},
-    {-32,32,s and w and has(mask,64)}, {0,32,s}, {32,32,s and e and has(mask,32)},
+    {-32,32,s and w and has(mask,bit.sw)}, {0,32,s}, {32,32,s and e and has(mask,bit.se)},
   }
   local tile=Image(64,64,ColorMode.RGB)
   for _,piece in ipairs(pieces) do
@@ -64,9 +61,9 @@ for i,mask in ipairs(masks) do
   end end
   for other,cell in pairs(cells) do assert(not tile:isEqual(cell),'Duplicate masks '..mask..' and '..other) end
   cells[mask]=tile
-  local x,y=((i-1)%8)*64,math.floor((i-1)/8)*64
+  local x,y=masks.at(i)
   atlas:drawImage(tile,Point(x,y))
-  if i>1 then sheet:drawImage(tile,Point(x,y+64)) end
+  if i>1 then sheet:drawImage(tile,Point(x,y+HEAD)) end
 end
 local backup=(install and backups or work)..'forest-tree-walls.'..os.date(sourceFiles.STAMP)..'.aseprite'
 sourceFiles.copy(path,backup)

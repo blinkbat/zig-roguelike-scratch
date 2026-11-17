@@ -1,17 +1,16 @@
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
-local path=app.params.source or 'C:/Users/DavidBennett/Desktop/regular-walls.aseprite'
-local pc=app.pixelColor
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local path=app.params.source or sourceFiles.DESKTOP..'regular-walls.aseprite'
+local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 assert(#masks==47)
-local COLS=8
-local W,H=COLS*64,math.ceil(#masks/COLS)*64
+local bit=masks.bit
+local W,H=masks.W,masks.H
 -- Brick courses under the cap's lower edge: 7 courses, 23 rows; src/gfx/look.zig's WALL_FACE_PX.
 local FACE=23
 local sprite=assert(app.open(path))
-assert(sprite.width==512 and sprite.height==448)
-local painted
-for _,layer in ipairs(sprite.layers) do if layer.name=='Layer 1' then painted=layer end end
+assert(sprite.width==W and sprite.height==masks.HEAD+H)
+local painted=sourceFiles.layer(sprite,'Layer 1')
 local wall=dofile(root..'tools/tile_art/wall_strips.lua')(assert(painted,'no Layer 1'):cel(1).image,painted:cel(1).position)
 sprite:close()
 local source,tan,sample,sideRow,decorate=wall.source,wall.tan,wall.sample,wall.sideRow,wall.decorate
@@ -25,7 +24,6 @@ for k=1,6 do local s=(k%2==1) and 101 or 104; faceRows[#faceRows+1]=s; faceRows[
 for _,r in ipairs({107,108,109}) do faceRows[#faceRows+1]=r end
 assert(#faceRows==FACE)
 local function tile(mask)
-  local bit=masks.bit
   local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
   local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
   local image=Image(64,64,ColorMode.RGB)
@@ -69,23 +67,25 @@ local cells={}
 for i,mask in ipairs(masks) do
   local image=tile(mask)
   for a=8,55 do
-    if (mask&1)~=0 then assert(pc.rgbaA(image:getPixel(a,0))==255,'north gap '..mask) end
-    if (mask&2)~=0 then assert(pc.rgbaA(image:getPixel(63,a))==255,'east gap '..mask) end
-    if (mask&4)~=0 then assert(pc.rgbaA(image:getPixel(a,63))==255,'south gap '..mask) end
-    if (mask&8)~=0 then assert(pc.rgbaA(image:getPixel(0,a))==255,'west gap '..mask) end
+    if (mask&bit.n)~=0 then assert(pc.rgbaA(image:getPixel(a,0))==255,'north gap '..mask) end
+    if (mask&bit.e)~=0 then assert(pc.rgbaA(image:getPixel(63,a))==255,'east gap '..mask) end
+    if (mask&bit.s)~=0 then assert(pc.rgbaA(image:getPixel(a,63))==255,'south gap '..mask) end
+    if (mask&bit.w)~=0 then assert(pc.rgbaA(image:getPixel(0,a))==255,'west gap '..mask) end
   end
   for _,other in ipairs(cells) do assert(not image:isEqual(other),'duplicate cell '..mask) end
   cells[#cells+1]=image
-  atlas:drawImage(image,Point(((i-1)%COLS)*64,math.floor((i-1)/COLS)*64))
+  atlas:drawImage(image,Point(masks.at(i)))
 end
 local runtime=Sprite(W,H,ColorMode.RGB)
 runtime.layers[1].name='Runtime walls'
 runtime:newCel(runtime.layers[1],1,atlas,Point(0,0))
 runtime.data='Full-cell walls built from Desktop regular-walls.aseprite Layer 1 strips by tools/tile_art/export_walls.lua; cell i is mask i of wall_masks.lua.'
 for i,mask in ipairs(masks) do
-  local slice=runtime:newSlice(Rectangle(((i-1)%COLS)*64,math.floor((i-1)/COLS)*64,64,64))
+  local x,y=masks.at(i)
+  local slice=runtime:newSlice(Rectangle(x,y,masks.CELL,masks.CELL))
   slice.name='mask '..mask
 end
+sourceFiles.keep(root..'assets/source/walls.aseprite',sourceFiles.work(),'export',os.date(sourceFiles.STAMP))
 runtime:saveAs(root..'assets/source/walls.aseprite')
 runtime:close()
 local check=assert(app.open(root..'assets/source/walls.aseprite'))

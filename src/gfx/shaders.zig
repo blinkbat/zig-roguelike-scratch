@@ -159,8 +159,24 @@ pub const MAP_VIEW_FS =
     \\float mapAlpha(sampler2D m, vec2 p, float outside) {
     \\    return insideMap(p) ? texture(m, p / CELLS).a : outside;
     \\}
+    \\vec4 cellTexel(sampler2D m, vec2 p) {
+    \\    return texture(m, (floor(p) + 0.5) / CELLS);
+    \\}
     \\
 ;
+
+pub fn channelDefines(comptime channels: anytype) [:0]const u8 {
+    comptime {
+        var out: [:0]const u8 = "";
+        for (std.meta.fields(@TypeOf(channels))) |f| {
+            var name: [f.name.len]u8 = undefined;
+            _ = std.ascii.upperString(&name, f.name);
+            const upper = name;
+            out = out ++ "#define " ++ upper ++ " " ++ @field(channels, f.name) ++ "\n";
+        }
+        return out;
+    }
+}
 
 pub const SIN_HASH_FS =
     \\float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }

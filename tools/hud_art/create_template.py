@@ -6,10 +6,12 @@ import re
 import tempfile
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'tools/tile_art'))
+from art_support import arial, quote
 DESKTOP = Path.home() / 'Desktop'
 OUTPUT = DESKTOP / 'hud-elements.aseprite'
 SOURCE = ROOT / 'assets/source/hud-elements.aseprite'
@@ -33,13 +35,11 @@ gd = ImageDraw.Draw(guides)
 ld = ImageDraw.Draw(labels)
 INK = (232, 221, 198, 255)
 CYAN = (112, 218, 237, 255)
-FONT = 'C:/Windows/Fonts/arial.ttf'
-BOLD = 'C:/Windows/Fonts/arialbd.ttf'
 slices = []
 
 
 def text(x, y, value, size=13, bold=False):
-    ld.text((x, y), value, font=ImageFont.truetype(BOLD if bold else FONT, size), fill=INK)
+    ld.text((x, y), value, font=arial(size, bold), fill=INK)
 
 
 def section(y, title):
@@ -212,11 +212,6 @@ for name, image in (('paper', paper), ('under', under), ('guides', guides), ('la
 if args.guides_only:
     print(f'Prepared guide PNGs only in {WORK}; editable sources unchanged.')
     sys.exit(0)
-
-
-def quote(value):
-    return json.dumps(str(value).replace('\\', '/'), ensure_ascii=False)
-
 
 lua = [f'for _,path in ipairs({{{quote(OUTPUT)},{quote(SOURCE)}}}) do', 'assert(not app.fs.isFile(path),"Refusing to overwrite editable artwork: "..path)', 'end', f'local sprite=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local expected={}']
 layers = [('PAPER - hide before export', 'paper', 255), ('GUIDE - underdrawing 25%', 'under', 64), ('GUIDE - alignment 22%', 'guides', 56), ('GUIDE - labels and separators 45%', 'labels', 115)]

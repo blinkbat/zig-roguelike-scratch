@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
+const shaders = @import("shaders.zig");
 const P = mathx.P;
 const smooth = mathx.smooth;
 
@@ -26,17 +27,19 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
 
 /// Bilinear self-weight is at least 1/4, keeping remembered open ground whole.
 const OPEN_WHOLE: f32 = 4;
-pub const SightPixels = [grid.CELLS][4]f32;
-pub const SIGHT_FS = @import("shaders.zig").glslConsts(.{ .OPEN_WHOLE = OPEN_WHOLE }) ++
+pub const SightTexel = extern struct { r: f32 = 0, g: f32 = 0, b: f32 = 0, a: f32 = 0 };
+pub const SightPixels = [grid.CELLS]SightTexel;
+const SIGHT = .{ .soft = "r", .open = "g", .weight = "b", .ground = "a" };
+pub const SIGHT_FS = shaders.channelDefines(SIGHT) ++ shaders.glslConsts(.{ .OPEN_WHOLE = OPEN_WHOLE }) ++
     \\vec4 sightCell(sampler2D sight, vec2 p) {
-    \\    return insideMap(p) ? texture(sight, (floor(p) + 0.5) / CELLS) : vec4(0.0);
+    \\    return insideMap(p) ? cellTexel(sight, p) : vec4(0.0);
     \\}
     \\float exactSight(sampler2D sight, vec2 p) {
     \\    vec2 i = floor(p - 0.5), f = fract(p - 0.5);
-    \\    vec3 s = mix(mix(sightCell(sight, i).rgb, sightCell(sight, i + vec2(1.0, 0.0)).rgb, f.x),
-    \\                 mix(sightCell(sight, i + vec2(0.0, 1.0)).rgb, sightCell(sight, i + vec2(1.0)).rgb, f.x), f.y);
-    \\    if (sightCell(sight, p).a < 0.5 || s.b <= 0.0) return s.r;
-    \\    return mix(s.r, s.g / s.b, min(1.0, s.b * OPEN_WHOLE));
+    \\    vec4 s = mix(mix(sightCell(sight, i), sightCell(sight, i + vec2(1.0, 0.0)), f.x),
+    \\                 mix(sightCell(sight, i + vec2(0.0, 1.0)), sightCell(sight, i + vec2(1.0)), f.x), f.y);
+    \\    if (sightCell(sight, p).GROUND < 0.5 || s.WEIGHT <= 0.0) return s.SOFT;
+    \\    return mix(s.SOFT, s.OPEN / s.WEIGHT, min(1.0, s.WEIGHT * OPEN_WHOLE));
     \\}
 ;
 
@@ -178,6 +181,8 @@ pub const Visibility = struct {
     carry_open: [grid.CELLS]f32,
     clear: [grid.CELLS]bool,
     clear_row: [grid.CELLS]bool,
+    /// Bumped each time the softened fields change.
+    revision: u32 = 0,
 
     pub fn reset(self: *Visibility) void {
         @memset(&self.sight, 0);
@@ -222,6 +227,7 @@ pub const Visibility = struct {
     }
 
     pub fn soften(self: *Visibility) void {
+        self.revision +%= 1;
         for (&self.soft_sight, &self.open_sight, &self.open_weight, &self.carry_open, &self.sight, &self.memory, &self.see_through) |*seen, *open, *w, *carry, s, m, k| {
             seen.* = s * m;
             open.* = s * m * k;
@@ -268,12 +274,12 @@ pub const Visibility = struct {
     }
 
     pub fn sightPixels(self: *const Visibility, pixels: *SightPixels) void {
-        for (pixels, 0..) |*pixel, i| pixel.* = .{
-            self.soft_sight[i],
-            self.open_sight[i],
-            self.open_weight[i],
-            self.ground[i],
-        };
+        for (pixels, 0..) |*pixel, i| {
+            @field(pixel, SIGHT.soft) = self.soft_sight[i];
+            @field(pixel, SIGHT.open) = self.open_sight[i];
+            @field(pixel, SIGHT.weight) = self.open_weight[i];
+            @field(pixel, SIGHT.ground) = self.ground[i];
+        }
     }
 
     pub fn openAt(self: *const Visibility, p: P, reach: f32) f32 {

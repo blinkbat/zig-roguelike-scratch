@@ -5,13 +5,43 @@ const damage = @import("damage.zig");
 
 const P = mathx.P;
 
-pub const NAME = "firebolt";
-pub const ELEMENT: damage.Element = .fire;
 /// Of a cell, how far toward its first cell a bolt not yet flown is drawn.
 const HAND: f32 = 0.35;
 
 /// Thrown every `every` turns once the last has come down; it flies `speed` cells a turn, `range` at most.
-pub const Hurl = struct { range: i32, speed: u8, every: u8, hit: damage.Base, burns: u32 };
+pub const Hurl = struct {
+    name: []const u8,
+    verb: []const u8,
+    range: i32,
+    speed: u8,
+    every: u8,
+    hit: damage.Base,
+    burns: u32,
+    element: damage.Element,
+    /// Held while another foe stands on or beside its line to the hero.
+    careful: bool = false,
+};
+
+/// What a hurl meets entering `c`, bodies aside: `barred` and `walled` stop it short, a body still draws it into `walled`; `barrel` and `halts` take it in and stop it.
+pub const Entry = enum { barred, walled, barrel, halts, open };
+
+pub fn entry(lv: *const grid.Level, c: P) Entry {
+    return entryOf(lv, c, lv.hasBarrel(c));
+}
+
+/// `entry`, with whether a barrel stands there given.
+pub fn entryOf(lv: *const grid.Level, c: P, barrel: bool) Entry {
+    if (!grid.Level.inside(c) or lv.hasBarrier(c)) return .barred;
+    if (barrel) return .barrel;
+    const t = lv.at(c);
+    if (t.walled()) return .walled;
+    return if (t.halts()) .halts else .open;
+}
+
+/// Taken into the cell rather than stopped short of it, bodies aside.
+pub fn enters(e: Entry) bool {
+    return e != .barred and e != .walled;
+}
 
 /// In flight along the line from `from` through `toward`, `flown` cells out.
 pub const Bolt = struct {
@@ -75,13 +105,9 @@ pub fn fly(b: *Bolt, lv: *const grid.Level, h: Hurl) Flew {
             return out;
         }
         const c = b.cell(b.flown + 1);
-        if (!grid.Level.inside(c) or lv.hasBarrier(c)) {
-            out.stop = .wall;
-            return out;
-        }
-        const w = lv.who(c);
-        const t = lv.at(c);
-        if (w == grid.NO_ONE and !lv.hasBarrel(c) and t.walled()) {
+        const e = entry(lv, c);
+        const w = if (e == .barred) grid.NO_ONE else lv.who(c);
+        if (e == .barred or (w == grid.NO_ONE and e == .walled)) {
             out.stop = .wall;
             return out;
         }
@@ -91,20 +117,23 @@ pub fn fly(b: *Bolt, lv: *const grid.Level, h: Hurl) Flew {
             out.stop = .{ .body = w };
             return out;
         }
-        if (lv.hasBarrel(c)) {
-            out.stop = .{ .barrel = c };
-            return out;
-        }
-        if (t.halts()) {
-            out.stop = .wall;
-            return out;
+        switch (e) {
+            .barrel => {
+                out.stop = .{ .barrel = c };
+                return out;
+            },
+            .halts => {
+                out.stop = .wall;
+                return out;
+            },
+            .barred, .walled, .open => {},
         }
     }
     if (b.flown >= h.range) out.stop = .spent;
     return out;
 }
 
-const TEST_HURL = Hurl{ .range = 6, .speed = 2, .every = 2, .hit = .{ .lo = 1, .hi = 1 }, .burns = 0 };
+const TEST_HURL = Hurl{ .name = "bolt", .verb = "hits", .range = 6, .speed = 2, .every = 2, .hit = .{ .lo = 1, .hi = 1 }, .burns = 0, .element = .fire };
 
 test "a bolt flies its speed a turn along its line and is spent at its range" {
     const lv = grid.openFloor();

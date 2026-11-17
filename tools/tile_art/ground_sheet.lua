@@ -1,27 +1,28 @@
 -- params: out=<sheet.aseprite> labels=<ground_labels.py png> tint=r,g,b [replace=yes]
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local groundPort=dofile(root..'tools/tile_art/ground_port.lua')
 local path=assert(app.params.out,'out=<sheet.aseprite>')
 local labels_png=assert(app.params.labels,'labels=<png>')
 local r,g,b=assert(app.params.tint,'tint=r,g,b'):match('^(%d+),(%d+),(%d+)$')
 assert(r,'tint=r,g,b')
-local style=app.params.style or 'C:/Users/DavidBennett/Desktop/cave-walls.aseprite'
-local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
-app.fs.makeAllDirectories(work)
+local style=app.params.style or sourceFiles.DESKTOP..'cave-walls.aseprite'
+local work=sourceFiles.work()
 local pc=app.pixelColor
 local order=dofile(root..'tools/tile_art/ground_corners.lua')
-assert(#order==16)
-local W,H,HEAD,CELL,HALF,LINE=512,320,64,64,32,2
+local COLS=groundPort.COLS
+assert(#order==COLS*COLS)
+local W,H,HEAD,CELL,HALF,LINE=groundPort.W,groundPort.H,groundPort.HEAD,groundPort.CELL,groundPort.CELL//2,2
 local NW,NE,SW,SE=1,2,4,8
 
 for i,m in ipairs(order) do
-  local col,row=(i-1)%4,(i-1)//4
-  if col<3 then
+  local col,row=(i-1)%COLS,(i-1)//COLS
+  if col<COLS-1 then
     local e=order[i+1]
     assert(((m&NE)~=0)==((e&NW)~=0) and ((m&SE)~=0)==((e&SW)~=0),'east seam '..m)
   end
-  if row<3 then
-    local s=order[i+4]
+  if row<COLS-1 then
+    local s=order[i+COLS]
     assert(((m&SW)~=0)==((s&NW)~=0) and ((m&SE)~=0)==((s&NE)~=0),'south seam '..m)
   end
 end
@@ -38,12 +39,6 @@ for _,layer in ipairs(ref.layers) do
 end
 ref:close()
 assert(paper and ink,'style sheet layers')
-
-local function drawing_of(sprite)
-  for _,layer in ipairs(sprite.layers) do
-    if layer.name=='Draw here' then return layer end
-  end
-end
 
 local function blank(image)
   for it in image:pixels() do
@@ -64,7 +59,7 @@ end
 local under=Image(W,H,ColorMode.RGB)
 local grid=Image(W,H,ColorMode.RGB)
 for i,m in ipairs(order) do
-  local ox,oy=((i-1)%4)*CELL,HEAD+((i-1)//4)*CELL
+  local ox,oy=groundPort.at(i)
   for y=0,CELL-1 do for x=0,CELL-1 do
     if quarters(m,x,y) then
       local beside=not quarters(m,x<HALF and HALF or HALF-1,y)
@@ -92,11 +87,12 @@ if app.fs.isFile(path) then
   local old=assert(app.open(path))
   local slices={}
   for i,m in ipairs(order) do
-    slices[#slices+1]={name='Corners '..m,bounds=Rectangle(((i-1)%4)*CELL,HEAD+((i-1)//4)*CELL,CELL,CELL)}
+    local x,y=groundPort.at(i)
+    slices[#slices+1]={name='Corners '..m,bounds=Rectangle(x,y,CELL,CELL)}
   end
   sourceFiles.checkBlankTemplate(old,{width=W,height=H,colorMode=ColorMode.RGB,guides=guides,slices=slices},path)
   local base=path:match('([^/\\]+)%.aseprite$')
-  sourceFiles.copy(path,work..base..'-before-ground-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
+  sourceFiles.copy(path,work..base..'-before-ground-'..os.date(sourceFiles.STAMP)..'.aseprite')
   old:close()
 end
 
@@ -114,7 +110,8 @@ for _,guide in ipairs(guides) do layer(guide.name,guide.image,guide.opacity) end
 local drawing=layer('Draw here',Image(W,H,ColorMode.RGB))
 sprite:deleteLayer(first)
 for i,m in ipairs(order) do
-  local s=sprite:newSlice(Rectangle(((i-1)%4)*CELL,HEAD+((i-1)//4)*CELL,CELL,CELL))
+  local x,y=groundPort.at(i)
+  local s=sprite:newSlice(Rectangle(x,y,CELL,CELL))
   s.name='Corners '..m
 end
 sprite.data='Paint on Draw here. 16 dual-grid 64x64 cells in tools/tile_art/ground_corners.lua order: each sits where four map cells meet, '
@@ -128,8 +125,8 @@ local reopened=assert(app.open(path))
 local names={}
 for _,l in ipairs(reopened.layers) do names[#names+1]=l.name end
 assert(table.concat(names,'|')=='Paper - hide for transparent export|Underdrawing (25%)|Labels - hide before export|64x64 grid + X unused - hide before export|Draw here',table.concat(names,'|'))
-assert(blank(drawing_of(reopened):cel(1).image))
-assert(#reopened.slices==16)
+assert(blank(sourceFiles.layer(reopened,'Draw here'):cel(1).image))
+assert(#reopened.slices==#order)
 local seen={}
 for _,s in ipairs(reopened.slices) do
   local m=assert(tonumber(s.name:match('^Corners (%d+)$')),s.name)

@@ -360,7 +360,7 @@ fn beginTurn(g: *game.Game, from: P) void {
     tactics_exec.startTurn(&g.sim);
     tactics_exec.bideTurn(g);
     const lying = g.sim.ground.lying();
-    _ = fire.turnIn(&g.sim.lv, &g.sim.rng, g.sim.rainField(), &lying);
+    _ = fire.turn(&g.sim.lv, &g.sim.rng, g.sim.rainField(), &lying);
     _ = ice.turn(&g.sim.lv);
     skills.recover(g);
     for (&g.sim.cooldown.values) |*c| c.* -|= 1;
@@ -535,6 +535,8 @@ fn foeTurn(g: *game.Game, id: u16) void {
     if (body.disguised) return;
     body.sweep_in -|= 1;
     body.ready_in -|= 1;
+    body.projectile_in -|= 1;
+    body.quickstep_in -|= 1;
     if (body.stuck) {
         body.stuck = false;
         g.pic.recordWear(&g.sim, .fromInt(id));
@@ -645,7 +647,7 @@ fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, a
         if (g.sim.pool.get(w) != null) {
             const hit = impacts.bodyBlow(g, id, w, c.blow, c.blow.verb, af.contains(.enfeeble), false);
             g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = if (hit) |a| .{ .actor = a } else null });
-        } else if (smashedBy(g, next, SMASHER, row.name)) |hit| g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = hit });
+        } else if (smashedBy(g, next, row.name, null)) |hit| g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = hit });
     }
     crab.stuck = true;
     g.pic.recordWear(&g.sim, .fromInt(id));
@@ -705,11 +707,11 @@ fn fling(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, d: mathx.Dir, a
     g.pic.recordFoeAttack(.fromInt(id), .miss, flight);
 }
 
-/// A firebolt at the hero along a clear shot, once its last has come down; the turn after it moves.
+/// A hurl at the hero along a clear shot, once its last has come down; the turn after it moves.
 fn hurlerTurn(g: *game.Game, id: u16, hu: actor.Hurl, held: bool, af: actor.Afflicted) bool {
     const r = g.sim.pool.get(id).?;
-    if (r.bolt == null and r.ready_in == 0 and hurl(g, id, hu)) return true;
-    return !held and r.ready_in > 0 and reposition(g, id, hu, af);
+    if (r.bolt == null and r.projectile_in == 0 and hurl(g, id, hu)) return true;
+    return !held and r.projectile_in > 0 and reposition(g, id, hu, af);
 }
 
 fn hurl(g: *game.Game, id: u16, hu: actor.Hurl) bool {
@@ -718,11 +720,12 @@ fn hurl(g: *game.Game, id: u16, hu: actor.Hurl) bool {
     if (mathx.adjacent(r.at, hero)) return false;
     _ = bow.clearShot(&g.sim.lv, r.at, hero, hu.range, g.sim.hero) orelse return false;
     const b = firebolt.Bolt.aimed(r.at, hero, hu.range);
+    if (hu.careful and foes.crowded(&g.sim, id, b, hero, hu.range)) return false;
     r.bolt = b;
-    r.ready_in = hu.every;
+    r.projectile_in = hu.every;
     g.pic.turnLater(.fromInt(id), hero.x - r.at.x);
-    g.sim.sayOf(r, "The {s} hurls a " ++ firebolt.NAME ++ ".", .{actor.row(r.kind).name});
-    g.pic.recordHurl(.fromInt(id), b, hero, g.pic.leadNow());
+    g.sim.sayOf(r, "The {s} hurls a {s}.", .{ actor.row(r.kind).name, hu.name });
+    g.pic.recordHurl(.fromInt(id), b, hu.element, hero, g.pic.leadNow());
     return true;
 }
 
@@ -734,7 +737,7 @@ fn reposition(g: *game.Game, id: u16, projectile: actor.Hurl, afflictions: actor
     return true;
 }
 
-/// Every firebolt in the air flies on, its thrower living or not; false once one kills the hero.
+/// Every hurl in the air flies on, its thrower living or not; false once one kills the hero.
 fn flyBolts(g: *game.Game) bool {
     const wait = boltsWait(g);
     for (0..g.sim.pool.n) |i| {
@@ -745,14 +748,14 @@ fn flyBolts(g: *game.Game) bool {
         const flew = firebolt.fly(&now, &g.sim.lv, hu);
         const lands = flew.stop != null;
         thrower.bolt = if (lands) null else now;
-        if (lands) thrower.ready_in = @max(thrower.ready_in, hu.every);
+        if (lands) thrower.projectile_in = @max(thrower.projectile_in, hu.every);
         const kind = thrower.kind;
-        const s = Stroke{ .from = was.at(), .wait = g.pic.recordBolt(&g.sim, .fromIndex(i), was, now, flew, wait), .element = .fire };
+        const s = Stroke{ .from = was.at(), .wait = g.pic.recordBolt(&g.sim, .fromIndex(i), was, now, flew, hu.element, wait), .element = hu.element };
         const stop = flew.stop orelse continue;
         switch (stop) {
             .body => |w| if (!impacts.boltHits(g, kind, w, hu, s)) return false,
-            .barrel => |p| if (smashedBy(g, p, SMASHER ++ "'s " ++ firebolt.NAME, actor.row(kind).name)) |hit| g.pic.strike(&g.sim, g.cloud, hit, s),
-            .wall, .spent => if (g.pic.litShown(&g.sim, now.at())) g.pic.fx.puff(s.wait, .{ .at = now.point(), .ink = look.FIRE }),
+            .barrel => |p| if (smashedBy(g, p, actor.row(kind).name, hu.name)) |impact| g.pic.strike(&g.sim, g.cloud, impact, s),
+            .wall, .spent => if (g.pic.litShown(&g.sim, now.at())) g.pic.fx.puff(s.wait, .{ .at = now.point(), .ink = look.elementInk(hu.element) }),
         }
     }
     return true;
@@ -777,7 +780,7 @@ fn allyTurn(g: *game.Game, id: u16, held: bool, af: actor.Afflicted, sight: i32)
         if (actor.approach(&g.sim.lv, r.at, id, at)) |d| return foeStep(g, id, r.at, d, af);
     }
     if (mathx.dist(r.at, hero) <= tactics.RaiseSkeleton.FOLLOW) return;
-    const d = actor.chase(&g.sim.lv, r.at, id, foes.flowTo(&g.sim, hero)) orelse return;
+    const d = chaseWay(g, r.at, id, hero) orelse return;
     foeStep(g, id, r.at, d, af);
 }
 
@@ -824,15 +827,27 @@ fn swimTurn(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflic
 
 fn keepAway(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflicted, sight: i32) void {
     if (row.mends) |m| if (mend(g, id, m, sight)) return;
+    if (row.quickstep) |q| {
+        if (!held and g.sim.pool.get(id).?.ready_in > 0) {
+            if (foes.quickstep(&g.sim, id, af)) |to| return foeMoveTo(g, id, to, af);
+        }
+        if (club(g, id, row, af)) {
+            if (g.sim.pool.get(id)) |living| living.ready_in = @max(living.ready_in, q.club_holds);
+            return;
+        }
+    }
     if (row.net) |n| if (throwNet(g, id, n)) return;
     if (row.hurls) |hu| if (hurlerTurn(g, id, hu, held, af)) return;
     if (!held and backOff(g, id, row.keeps, af)) return;
-    const r = g.sim.pool.get(id).?;
-    if (foes.besideWay(&g.sim, r.at, g.sim.heroAt().?)) |d| {
-        _ = reach(g, id, row, d.delta().x, null, af);
-        return;
-    }
+    if (club(g, id, row, af)) return;
     if (!held) closeIn(g, id, row.keeps, af);
+}
+
+/// Its blow at a hero beside it.
+fn club(g: *game.Game, id: u16, row: actor.Row, af: actor.Afflicted) bool {
+    const d = foes.besideWay(&g.sim, g.sim.pool.get(id).?.at, g.sim.heroAt().?) orelse return false;
+    _ = reach(g, id, row, d.delta().x, null, af);
+    return true;
 }
 
 fn backOff(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) bool {
@@ -847,7 +862,7 @@ fn backOff(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) bool {
 fn closeIn(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) void {
     const r = g.sim.pool.get(id).?;
     const hero = g.sim.heroAt().?;
-    const d = actor.chase(&g.sim.lv, r.at, id, foes.flowTo(&g.sim, hero)) orelse return;
+    const d = chaseWay(g, r.at, id, hero) orelse return;
     if (mathx.dist(r.at.add(d.delta()), hero) <= keep) return;
     foeStep(g, id, r.at, d, af);
 }
@@ -870,14 +885,22 @@ fn mend(g: *game.Game, id: u16, healing: actor.Mend, sight: i32) bool {
 
 fn foeStep(g: *game.Game, id: u16, from: P, chosen: mathx.Dir, af: actor.Afflicted) void {
     const d = if (confusion.strays(af.contains(.confusion), &g.sim.rng)) actor.stumble(&g.sim.lv, from, id, &g.sim.rng) orelse chosen else chosen;
-    g.pic.turnLater(.fromInt(id), d.delta().x);
-    g.sim.pool.move(&g.sim.lv, id, from.add(d.delta()));
+    foeMoveTo(g, id, from.add(d.delta()), af);
+}
+
+fn foeMoveTo(g: *game.Game, id: u16, to: P, af: actor.Afflicted) void {
+    g.pic.turnLater(.fromInt(id), to.x - g.sim.pool.get(id).?.at.x);
+    g.sim.pool.move(&g.sim.lv, id, to);
     _ = g.sim.pool.get(id).?.limp(af);
     tactics_exec.entered(g, id);
 }
 
 fn foeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
-    return foes.besideWay(&g.sim, at, hero) orelse actor.chase(&g.sim.lv, at, id, foes.flowTo(&g.sim, hero));
+    return foes.besideWay(&g.sim, at, hero) orelse chaseWay(g, at, id, hero);
+}
+
+fn chaseWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
+    return actor.chase(&g.sim.lv, at, id, foes.flowTo(&g.sim, hero));
 }
 
 fn fleeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
@@ -944,16 +967,17 @@ fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike, weak: boo
     var swept = game.presentation.Swept{};
     for (cells.slice(), struck[0..cells.n]) |p, w| {
         if (w == g.sim.hero) continue;
-        const hit: fx.Impact = if (w != grid.NO_ONE) .{ .actor = impacts.bodyBlow(g, id, w, s, actor.SWEEP_VERB, weak, true) orelse continue } else smashedBy(g, p, SMASHER, row.name) orelse continue;
+        const hit: fx.Impact = if (w != grid.NO_ONE) .{ .actor = impacts.bodyBlow(g, id, w, s, actor.SWEEP_VERB, weak, true) orelse continue } else smashedBy(g, p, row.name, null) orelse continue;
         _ = mathx.push(fx.Impact, &swept.hit, &swept.n, hit);
     }
     g.pic.owe(.fromInt(id), .swept, swept);
 }
 
-fn smashedBy(g: *game.Game, p: P, comptime subject: []const u8, name: []const u8) ?fx.Impact {
+/// The barrel at `p` broken by `name`, or by its `with` when it threw one.
+fn smashedBy(g: *game.Game, p: P, name: []const u8, with: ?[]const u8) ?fx.Impact {
     const gold = rewards.barrelLoot(&g.sim, p) orelse return null;
-    g.sim.sayAt(p, subject ++ " smashes" ++ BARREL_DROPS, .{ name, gold });
+    if (with) |noun| {
+        g.sim.sayAt(p, "The {s}'s {s} smashes" ++ BARREL_DROPS, .{ name, noun, gold });
+    } else g.sim.sayAt(p, "The {s} smashes" ++ BARREL_DROPS, .{ name, gold });
     return .{ .barrel = p };
 }
-
-const SMASHER = "The {s}";

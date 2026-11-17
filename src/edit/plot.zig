@@ -415,8 +415,7 @@ fn dropRow(ed: *editor.Editor, g: *game.Game, right: i32, y: i32, tip: [:0]const
 }
 
 fn nameRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: []const u8, f: Focus, act: [:0]const u8, live: bool, tip: [:0]const u8, blank: []const u8) bool {
-    caption(g, x, y, LABEL_W, label, look.TEXT);
-    words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W - NAME_BTN_W - NAME_BTN_GAP), f, blank);
+    wordsRow(ed, g, x, y, w - NAME_BTN_W - NAME_BTN_GAP, label, f, blank);
     return rightButton(ed, g, x + w, y, NAME_BTN_W, act, live, tip);
 }
 
@@ -444,8 +443,7 @@ fn countHead(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, comptime
 }
 
 fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, live: bool, tip: ?[:0]const u8, shift: bool) i32 {
-    const step = widgets.Step{ .tip = tip, .live = live };
-    return widgets.stepper(ed.controls(), &g.face, r, value, widgets.PAGE_ARROWS, .{ step, step }, shift);
+    return widgets.stepper(ed.controls(), &g.face, r, value, widgets.PAGE_ARROWS, widgets.Step.both(tip, live), shift);
 }
 
 const cycle = mathx.cycle;
@@ -474,17 +472,11 @@ fn indexStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: []const 
     ed.bank();
 }
 
-fn optionalStep(v: *?u8, by: i32, n: usize) void {
-    const at: usize = if (v.*) |i| @as(usize, i) + 1 else 0;
-    const to = mathx.wrap(at, by, n + 1);
-    v.* = if (to == 0) null else @intCast(to - 1);
-}
-
 fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []const u8) void {
     const s = &ed.plot;
     const on = if (s.focus) |now| std.meta.eql(now, f) else false;
     if (on) {
-        s.field_box = if (ed.clip) |c| rl.getCollisionRec(r, c) else r;
+        s.field_box = widgets.visiblePart(ed.clip, r);
         const shown = if (ed.clip) |c| ed.mouseIn(c) else true;
         if (text_panel.drawField(ed, g, &s.field, r, true, true) or (shown and ed.mouseIn(r))) s.claimed = true;
         return;
@@ -567,7 +559,7 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     var talks = widgets.Lay{ .x = x + LABEL_W, .y = y };
     const by = stepper(ed, g, talks.take(TALK_W), talksTo(m, npc), m.dialog_n > 0, "Which dialog speaking to it opens", false);
     if (by != 0) {
-        optionalStep(&npc.dialog, by, m.dialog_n);
+        npc.dialog = mathx.wrapOptional(u8, npc.dialog, by, m.dialog_n);
         ed.bank();
     }
     if (button(ed, g, talks.take(BTN_W), "New dialog for it", false, m.dialog_n < script.MAX_DIALOGS, "A dialog of one line, named for it, that it opens")) {
@@ -604,9 +596,8 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     const kinds = std.enums.values(actor.Kind);
     const looks_by = stepper(ed, g, widgets.row(x + LABEL_W, y, TALK_W), if (npc.looks) |k| actor.row(k).name else "a person", true, "The body it is drawn as", false);
     if (looks_by != 0) {
-        var at: ?u8 = if (npc.looks) |k| @intCast(std.mem.indexOfScalar(actor.Kind, kinds, k).?) else null;
-        optionalStep(&at, looks_by, kinds.len);
-        npc.looks = if (at) |k| kinds[k] else null;
+        const at: ?usize = if (npc.looks) |k| std.mem.indexOfScalar(actor.Kind, kinds, k).? else null;
+        npc.looks = if (mathx.wrapOptional(usize, at, looks_by, kinds.len)) |k| kinds[k] else null;
         ed.bank();
     }
     y += STEP + GAP;
@@ -731,24 +722,25 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
         s.reveal_line = false;
         line_area.reveal(STEP * (@as(i32, s.line) + 1), STEP);
     }
-    y = bottom - STEP;
-    if (button(ed, g, widgets.slotOf(lx, tools_w, y, 0, 3), "+ Line", false, d.line_n < script.MAX_LINES, "Another line, reached by a choice or a then")) {
+    var tools = widgets.Across{ .x = lx, .span = tools_w, .y = bottom - STEP, .n = 3 };
+    if (button(ed, g, tools.next(), "+ Line", false, d.line_n < script.MAX_LINES, "Another line, reached by a choice or a then")) {
         if (d.addLine()) |l| {
             ed.bank();
             s.line = l;
             s.reveal_line = true;
         }
     }
-    if (button(ed, g, widgets.slotOf(lx, tools_w, y, 1, 3), "Up", false, s.line > 0, "Earlier in the list; the first is where it opens")) {
+    if (button(ed, g, tools.next(), "Up", false, s.line > 0, "Earlier in the list; the first is where it opens")) {
         d.swapLines(s.line, s.line - 1);
         s.line -= 1;
         ed.bank();
     }
-    if (button(ed, g, widgets.slotOf(lx, tools_w, y, 2, 3), "Delete", false, d.line_n > 1, "Delete this line; every way into it ends the dialog instead")) {
+    if (button(ed, g, tools.next(), "Delete", false, d.line_n > 1, "Delete this line; every way into it ends the dialog instead")) {
         d.dropLine(s.line);
         s.line = @min(s.line, d.line_n - 1);
         ed.bank();
     }
+    tools.done();
     const dx = widgets.besides(x, lines_w, top + STEP + GAP, bottom);
     detailPane(ed, g, dx, top + STEP + GAP, x + w - dx, bottom, drawLine, di);
 }
@@ -808,7 +800,7 @@ fn targetStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, d: *const scri
     const label = if (next.*) |n| d.line[n].name.text() else "end";
     const by = stepper(ed, g, r, label, true, "Another line of this dialog, or the end of it", false);
     if (by == 0) return;
-    optionalStep(next, by, d.line_n);
+    next.* = mathx.wrapOptional(u8, next.*, by, d.line_n);
     ed.bank();
 }
 

@@ -21,6 +21,10 @@ Bleeds store a movement damage bonus with a zero default for older portable save
 The five wound/defense affix identities and this bleed field change the raw layout
 fingerprint; portable item and actor values retain their named compatibility.
 
+Actor projectile and quickstep cooldowns default to zero in older portable saves.
+In-flight orbs retain the existing bolt record; their element comes from the
+thrower's actor kind. The new cooldown fields change the raw-layout fingerprint.
+
 Missing run fields use empty inventory/ground/history, zero counters and cooldowns,
 full inactive flasks, initial clock, right-facing bodies and deterministic loot RNG
 seed 1. Missing mana starts at zero. A missing skill bar uses the loaded class and
@@ -67,8 +71,8 @@ The Small Key and quiver item identities also change the raw fingerprint;
 portable item identities remain compatible by name. So does the Attack skill;
 portable skill bars and ranks name their skills.
 Node location weather overrides default to inheritance in portable saves that
-predate them. Location masks are derived from terrain when a level settles and
-are never saved. The new node field and beams weather name change the raw-layout
+predate them. Location masks are derived from terrain as a level is entered and
+saved with the run; version 3 and older runs derive them from their saved level. The new node field and beams weather name change the raw-layout
 fingerprint; earlier portable saves remain compatible.
 The encampment layout and chest/light niche setpiece names also change the raw
 fingerprint; portable maps retain their existing named layouts and pieces.
@@ -89,18 +93,20 @@ claiming compatibility.
 The reader takes the map and level in their raw shape without the fields added
 to their ends since (`save_data.LegacyMap`, `LegacyLevel`: the script and the level's fields from `LEVEL_ADDED_FROM` on),
 then converts with those fields defaulted. Run state added after the raw format
-(`PORTABLE_FIELDS`: the trigger runtime, the days elapsed and life recovery progress) lives in portable saves alone.
+(`PORTABLE_FIELDS`: the trigger runtime, the days elapsed, life recovery progress and climate locations) lives in portable saves alone.
 
 ## Encoding and evolution
 
 `core/store.zig` supplies atomic replacement and an envelope: magic, a little-endian
 u64 format version, body, and a little-endian u64 Wyhash checksum of that body.
 The checksum detects damage; it is not authentication. Unknown envelope versions
-are refused. Run magic is `cistern-save\n`, version 3; ossuary magic is
+are refused. Run magic is `cistern-save\n`, version 4; ossuary magic is
 `cistern-ossuary-v1\n`, version 1. Version 1 runs predate flasks worn as items and load
-with both flasks equipped; version 2 keeps an empty flask slot empty. Versions 1 and 2
+with both flasks equipped; version 2 keeps an empty flask slot empty. Version 1 runs
 predate starting class arms and load with each arm worn in its empty slot where the
-hands still fit; version 3 keeps an emptied hand empty.
+hands still fit. Version 2 spans builds before and after heroes started armed, so a
+version 2 run is armed that way only when both hands are empty and no class arm is
+in the bag; version 3 keeps an emptied hand empty. Version 3 and older runs predate saved climate locations.
 
 `core/wire.zig` writes structs as a u16 field count followed by length-delimited
 named fields. Each field has a u16 name length, name bytes, u32 payload length and

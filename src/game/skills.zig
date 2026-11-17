@@ -503,7 +503,7 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
             },
         }
     } else {
-        run.sim.log.say("{s}'s {s} finds nothing.", .{ run.sim.name.text(), act.bolt() orelse "arrow" });
+        run.sim.log.say("{s}'s {s} finds nothing.", .{ run.sim.name.text(), act.bolt() orelse bow.NOUN });
         run.sim.chronicle.note(.{ .missed = .{} });
         comeDown(run, act, flight, stroke);
     }

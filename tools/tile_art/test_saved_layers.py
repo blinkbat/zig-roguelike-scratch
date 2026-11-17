@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import ROOT, arguments, aseprite, main
+from art_support import ROOT, SCRIPTS, arguments, aseprite, main
 
 
 args, remaining = arguments()
@@ -164,7 +164,7 @@ class SavedLayerTests(unittest.TestCase):
             self.assertNotEqual(before, destination.read_bytes())
 
     def wall(self, filename, blocked, existing=False):
-        source = (ROOT / 'tools/tile_art' / filename).read_text(encoding='utf-8')
+        source = (SCRIPTS / filename).read_text(encoding='utf-8')
         if filename == 'port_walls.lua':
             body = source[source.index('sourceFiles.copy(path,work'):]
             generated = ''
@@ -205,7 +205,7 @@ class SavedLayerTests(unittest.TestCase):
             for folder in ('assets/source', 'assets/water', 'shots', 'tools/tile_art'):
                 (work / folder).mkdir(parents=True)
             for helper in ('source_files.lua', 'water_cliff_layout.lua'):
-                (work / 'tools/tile_art' / helper).write_bytes((ROOT / 'tools/tile_art' / helper).read_bytes())
+                (work / 'tools/tile_art' / helper).write_bytes((SCRIPTS / helper).read_bytes())
             params = dict(work=work.as_posix() + '/', root=work.as_posix() + '/',
                           faces=work / 'faces.png')
             if shots:
@@ -213,7 +213,7 @@ class SavedLayerTests(unittest.TestCase):
             self.fixture(work, PINCH_FIXTURE, **params)
             name = 'water-cliff-connections' if shots else 'water-cliff-edge'
             destination = work / 'assets/source' / (name + '.aseprite')
-            body = (ROOT / 'tools/tile_art/pinch_shallow_cliff.lua').read_text(encoding='utf-8')
+            body = (SCRIPTS / 'pinch_shallow_cliff.lua').read_text(encoding='utf-8')
             self.publication(work, body, destination, blocked, **params)
             if blocked:
                 self.assertFalse((work / 'pinch.txt').exists())

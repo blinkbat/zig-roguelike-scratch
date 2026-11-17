@@ -15,7 +15,7 @@ const SPLIT_TRIES: usize = 8;
 const BARREL_TRIES: usize = 40;
 /// Rooms `partition` holds waiting to be cut; past that, a room is left whole.
 const PARTS_MAX: usize = 64;
-const SITE_MARGIN: i32 = 2;
+pub const SITE_MARGIN: i32 = 2;
 
 pub const Params = struct {
     count: u8 = 6,

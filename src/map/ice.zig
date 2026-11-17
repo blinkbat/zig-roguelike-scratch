@@ -8,10 +8,9 @@ const P = mathx.P;
 pub const THAWS: u8 = 10;
 pub const FREEZES = "The water freezes over.";
 pub const WATER: grid.Tile = .shallows;
-pub const FROZEN = grid.FROZEN;
 
 pub fn turned(was: grid.Tile, now: grid.Tile) bool {
-    return (was == WATER and now == FROZEN) or (was == FROZEN and now == WATER);
+    return (was == WATER and now == grid.FROZEN) or (was == grid.FROZEN and now == WATER);
 }
 
 pub fn freeze(lv: *grid.Level, cells: []const P) usize {
@@ -20,7 +19,7 @@ pub fn freeze(lv: *grid.Level, cells: []const P) usize {
         if (!grid.Level.inside(p)) continue;
         const i = grid.Level.idx(p);
         if (lv.tile[i] == WATER) {
-            lv.tile[i] = FROZEN;
+            lv.tile[i] = grid.FROZEN;
             n += 1;
         } else if (!lv.frozen(p)) continue;
         lv.thaw[i] = THAWS;
@@ -45,7 +44,7 @@ pub fn turn(lv: *grid.Level) bool {
     var thawed = false;
     for (&lv.thaw, &lv.tile) |*left, *t| {
         if (left.* == 0) continue;
-        if (t.* != FROZEN) {
+        if (t.* != grid.FROZEN) {
             left.* = 0;
             continue;
         }

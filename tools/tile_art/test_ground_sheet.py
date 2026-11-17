@@ -1,19 +1,15 @@
 import hashlib
-from pathlib import Path
-import tempfile
 import unittest
 
-from art_support import ROOT, arguments, aseprite, main
+from art_support import ROOT, SCRIPTS, WorkTest, arguments, aseprite, main
 
 
 args, remaining = arguments()
 
 
-class GroundSheetTests(unittest.TestCase):
+class GroundSheetTests(WorkTest):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='cistern-ground-test-')
-        self.addCleanup(self.temporary.cleanup)
-        self.work = Path(self.temporary.name)
+        super().setUp()
         self.sheet = self.work / 'ground.aseprite'
         self.run_lua('''
 local s=Sprite(512,448,ColorMode.RGB)
@@ -40,7 +36,7 @@ labels:saveAs(app.params.labels)
             'labels': self.work / 'labels.png',
             'tint': '100,120,140',
             **parameters,
-        }, timeout=None)
+        }, timeout=None, temp=self.work)
 
     def run_lua(self, source):
         script = self.work / 'fixture.lua'
@@ -49,7 +45,7 @@ labels:saveAs(app.params.labels)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def generate(self, replace=False):
-        result = self.command(ROOT / 'tools/tile_art/ground_sheet.lua', **({'replace': 'yes'} if replace else {}))
+        result = self.command(SCRIPTS / 'ground_sheet.lua', **({'replace': 'yes'} if replace else {}))
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_unchanged_blank_template_can_be_replaced(self):
@@ -77,7 +73,7 @@ local paint=Image(1,1,ColorMode.RGB)
 paint:clear(app.pixelColor.rgba(255,0,0,255))
 ''' + change + '\ns:saveAs(app.params.out); s:close()\n')
                 before = hashlib.sha256(self.sheet.read_bytes()).digest()
-                result = self.command(ROOT / 'tools/tile_art/ground_sheet.lua', replace='yes')
+                result = self.command(SCRIPTS / 'ground_sheet.lua', replace='yes')
                 self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertIn('Preserving', result.stdout + result.stderr)
                 self.assertEqual(before, hashlib.sha256(self.sheet.read_bytes()).digest())

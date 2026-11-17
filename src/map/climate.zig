@@ -3,7 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const day = @import("day.zig");
 const grid = @import("grid.zig");
 
-// Outdoor weather, a pure function of the profile, run seed and minutes; only its rain reaches the rules (`terrain.rained`, `fire.damped`).
+// Outdoor weather from the profile, run seed and minutes, and from a cell's location where a node overrides its weather; only its rain reaches the rules (`terrain.rained`, `fire.damped`).
 
 pub const Light = enum {
     clear,
@@ -30,34 +30,23 @@ pub const Location = enum { inland, coast, forest };
 pub const Locations = std.EnumArray(Location, ?Weather);
 pub const Field = [grid.CELLS]Location;
 pub const Local = std.EnumArray(Location, Now);
+pub const CALM: Local = .initFill(.initFill(0));
+/// Cells round a tree that count as forest.
+const FOREST_REACH: i32 = 2;
 
 pub fn locations(lv: *const grid.Level) Field {
     var field: Field = @splat(.inland);
-    var queue: [grid.CELLS]mathx.P = undefined;
-    var count: usize = 0;
+    var seen = grid.CellSet.initEmpty();
+    var queue: [grid.CELLS]u32 = undefined;
+    var spread = grid.Spread(*const grid.Level, coastal){ .ctx = lv, .steps = &mathx.CARDINALS, .seen = &seen, .queue = &queue };
     for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);
-        if (coastal(lv, p) and (p.x == 0 or p.y == 0 or p.x == grid.W - 1 or p.y == grid.H - 1)) {
-            field[i] = .coast;
-            queue[count] = p;
-            count += 1;
-        }
+        if (grid.Level.onRim(p) and coastal(lv, p)) spread.seed(p);
     }
-    var head: usize = 0;
-    while (head < count) : (head += 1) {
-        for (mathx.CARDINALS) |d| {
-            const p = queue[head].add(d);
-            if (!grid.Level.inside(p)) continue;
-            const i = grid.Level.idx(p);
-            if (field[i] == .coast or !coastal(lv, p)) continue;
-            field[i] = .coast;
-            queue[count] = p;
-            count += 1;
-        }
-    }
+    while (spread.next()) |p| field[grid.Level.idx(p)] = .coast;
     for (lv.tile, 0..) |t, i| {
         if (!grid.TREE_TILES.contains(t)) continue;
-        var cells = grid.Box.around(grid.Level.of(i), 2).grown(0).cells();
+        var cells = grid.Box.around(grid.Level.of(i), FOREST_REACH).grown(0).cells();
         while (cells.next()) |p| {
             const j = grid.Level.idx(p);
             if (field[j] != .coast) field[j] = .forest;
@@ -68,14 +57,16 @@ pub fn locations(lv: *const grid.Level) Field {
 
 fn coastal(lv: *const grid.Level, p: mathx.P) bool {
     const t = lv.at(p);
-    return t == .sand or t == .water or t == .shallows or t.spans() or lv.frozen(p);
+    return t == .sand or t.wet() or t.spans() or lv.frozen(p);
+}
+
+pub fn placeAt(field: *const Field, p: mathx.P) Location {
+    return grid.cellOr(Location, field, p, .inland);
 }
 
 pub fn local(c: Climate, overrides: Locations, seed: u64, minutes: u64) Local {
-    var result = Local.initFill(c.now(seed, minutes));
-    for (std.enums.values(Location)) |place| {
-        if (overrides.get(place)) |w| result.set(place, (Climate{ .light = c.light, .weather = w }).now(seed, minutes));
-    }
+    var result = Local.initUndefined();
+    for (std.enums.values(Location)) |place| result.set(place, c.in(overrides, place).now(seed, minutes));
     return result;
 }
 
@@ -94,7 +85,7 @@ pub const Rain = struct {
 
     pub fn at(self: Rain, p: mathx.P) f32 {
         const field = self.field orelse return self.uniform;
-        return self.local.get(grid.cellOr(Location, field, p, .inland));
+        return self.local.get(placeAt(field, p));
     }
 };
 
@@ -181,6 +172,11 @@ pub const PROFILES = std.EnumArray(Weather, Profile).init(.{
 pub const Climate = struct {
     light: Light = .clear,
     weather: Weather = .clear,
+
+    /// As it stands at `place`, whose weather `overrides` may set.
+    pub fn in(c: Climate, overrides: Locations, place: Location) Climate {
+        return .{ .light = c.light, .weather = overrides.get(place) orelse c.weather };
+    }
 
     pub fn now(c: Climate, seed: u64, minutes: u64) Now {
         const p = PROFILES.get(c.weather);

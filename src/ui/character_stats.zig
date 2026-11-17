@@ -100,7 +100,10 @@ const SECTION_GAP = 12;
 const CRIT_GAP = 20;
 const ROW_GAP = 16;
 const CHANCE_GAP = 18;
-const GROUP_GAP = 18;
+const GROUP_GAP = 24;
+const GROUP_COLS = 2;
+const GROUP_W = @divTrunc(STAT_W - GROUP_GAP, GROUP_COLS);
+const GROUP_HEAD = font.SMALL_LINE;
 const LEFT_FOOT = layout.FOOT_Y;
 const RIGHT_FOOT = layout.ACTION_Y - SECTION_GAP;
 
@@ -145,6 +148,7 @@ const Column = struct {
     dry: bool = false,
     cramped: bool = false,
     row: i32 = STAT_ROW,
+    width: i32 = STAT_W,
 
     fn left(face: *const font.Face, dry: bool, row: i32) Column {
         return .{ .face = face, .x = STATS_X, .foot = LEFT_FOOT, .dry = dry, .row = row };
@@ -161,13 +165,13 @@ const Column = struct {
     fn heading(column: *Column, title: [:0]const u8) void {
         if (!column.dry) {
             column.face.draw(title, column.x, column.y, font.SMALL, look.UI_FOCUS);
-            rl.drawLine(column.x, column.y + SECTION_RULE, column.x + STAT_W, column.y + SECTION_RULE, look.EDGE);
+            rl.drawLine(column.x, column.y + SECTION_RULE, column.x + column.width, column.y + SECTION_RULE, look.EDGE);
         }
         column.y += SECTION_ROWS;
     }
 
     fn fits(column: *Column, w: i32) void {
-        if (w > STAT_W) column.cramped = true;
+        if (w > column.width) column.cramped = true;
     }
 
     fn entry(column: *Column, label: [:0]const u8, value: [:0]const u8, tier: Tier, col: rl.Color) void {
@@ -180,7 +184,7 @@ const Column = struct {
         column.fits(column.face.width(label, tier.label().size()) + ROW_GAP + w);
         if (!column.dry) {
             tier.label().put(column.face, label, column.x, column.y + tier.labelDrop(), look.TEXT);
-            var at = column.x + STAT_W - w;
+            var at = column.x + column.width - w;
             for (parts) |p| {
                 tier.put(column.face, p[0], at, column.y, p[1]);
                 at += column.face.width(p[0], tier.size());
@@ -244,20 +248,26 @@ const Column = struct {
         column.y += CHANCE_ROW;
     }
 
-    fn groups(column: *Column, links: ?*keywords.State, on: menu.Surface) void {
-        var x = column.x;
-        for (keywords.STATUS_TERMS) |term| {
-            if (!column.dry) {
-                if (links) |l| {
-                    l.text(column.face, term.title, x, column.y, font.SMALL, look.UI_FOCUS, &.{term}, on);
-                } else column.face.richText(term.title, x, column.y, font.SMALL, look.UI_FOCUS);
-            }
-            x += column.face.width(term.title, font.SMALL) + GROUP_GAP;
+    fn groupHeading(column: *Column, tag: resilience.Tag, links: ?*keywords.State, on: menu.Surface) void {
+        const term = keywords.STATUS_TERMS.get(tag);
+        column.fits(column.face.width(term.title, font.SMALL));
+        if (!column.dry) {
+            if (links) |l| {
+                l.text(column.face, term.title, column.x, column.y, font.SMALL, look.UI_FOCUS, &.{term}, on);
+            } else column.face.richText(term.title, column.x, column.y, font.SMALL, look.UI_FOCUS);
         }
-        column.fits(x - column.x);
-        column.y += font.SMALL;
+        column.y += GROUP_HEAD;
     }
 };
+
+fn statusGroup(kind: resilience.Kind) resilience.Tag {
+    return switch (kind) {
+        .bleed, .sunder, .enfeeble, .maim => .wounds,
+        .stun, .pin => .slows,
+        .blind, .confusion, .fright => .mental,
+        .burn, .chill, .shock => .elemental,
+    };
+}
 
 /// Each ailment a hit may bring, the skill's own roll first and the weapon's only if that missed, as combat rolls them.
 fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: item_bases.WeaponEffect) std.EnumArray(resilience.Kind, u32) {
@@ -343,13 +353,36 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool, on: menu.Surface
     for (std.enums.values(damage.Element)) |e| right.amount(resistanceLabel(e), "{d}%", view.resists.get(e), look.elementInk(e));
     right.y += SECTION_GAP;
     right.heading("STATUS RESISTANCE");
-    for (std.enums.values(resilience.Kind)) |k| {
-        const measure = view.status_resist.get(k);
-        if (measure.turns > 0) text.say("{d}%, {d} turn{s}", .{ measure.percent, measure.turns, mathx.plural(measure.turns) }) else text.say("{d}%", .{measure.percent});
-        right.entry(resistanceLabel(k), text.text(), .plain, quiet(measure.percent, look.ailmentInk(k)));
+    var group_top = right.y;
+    for (std.enums.values(resilience.Tag), 0..) |tag, i| {
+        if (i > 0 and i % GROUP_COLS == 0) group_top = right.y + SECTION_GAP;
+        var group = right;
+        group.width = GROUP_W;
+        group.x += @as(i32, @intCast(i % GROUP_COLS)) * (group.width + GROUP_GAP);
+        group.y = group_top;
+        group.groupHeading(tag, view.keywords, on);
+        for (std.enums.values(resilience.Kind)) |k| {
+            if (statusGroup(k) != tag) continue;
+            const measure = view.status_resist.get(k);
+            if (measure.turns > 0) text.say("{d}%, {d} turn{s}", .{ measure.percent, measure.turns, mathx.plural(measure.turns) }) else text.say("{d}%", .{measure.percent});
+            group.entry(menu.named(k), text.text(), .plain, quiet(measure.percent, look.ailmentInk(k)));
+        }
+        right.y = @max(right.y, group.y);
+        right.cramped = right.cramped or group.cramped;
     }
-    right.groups(view.keywords, on);
     return .{ left, right };
+}
+
+test "advanced status groups assign every ailment once without losing its tags" {
+    var counts = std.EnumArray(resilience.Tag, usize).initFill(0);
+    for (std.enums.values(resilience.Kind)) |kind| {
+        const tag = statusGroup(kind);
+        try std.testing.expect(resilience.tags(kind).contains(tag));
+        counts.getPtr(tag).* += 1;
+    }
+    for (counts.values) |count| try std.testing.expect(count > 0);
+    try std.testing.expectEqual(resilience.Tag.wounds, statusGroup(.maim));
+    try std.testing.expectEqual(resilience.Tag.elemental, statusGroup(.chill));
 }
 
 fn resistanceLabel(e: anytype) [:0]const u8 {

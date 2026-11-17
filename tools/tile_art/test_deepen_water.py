@@ -1,27 +1,24 @@
 import hashlib
 import os
-from pathlib import Path
-import tempfile
 import unittest
 
-from art_support import ROOT, arguments, aseprite, main, read_locked
+from art_support import SCRIPTS, WorkTest, arguments, aseprite, main, read_locked
 
 
 args, remaining = arguments()
 
 
-class DeepenWaterTests(unittest.TestCase):
+class DeepenWaterTests(WorkTest):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='cistern-deepen-test-')
-        self.addCleanup(self.temporary.cleanup)
-        self.work = Path(self.temporary.name)
+        super().setUp()
         self.source = self.work / 'source.aseprite'
         self.output = self.work / 'deep.aseprite'
         self.canonical = self.work / 'assets/source/deep-water.aseprite'
         self.canonical.parent.mkdir(parents=True)
-        helper = self.work / 'tools/tile_art/source_files.lua'
-        helper.parent.mkdir(parents=True)
-        helper.write_bytes((ROOT / 'tools/tile_art/source_files.lua').read_bytes())
+        helpers = self.work / 'tools/tile_art'
+        helpers.mkdir(parents=True)
+        for name in ('source_files.lua', 'ground_port.lua'):
+            (helpers / name).write_bytes((SCRIPTS / name).read_bytes())
         self.run_lua('''
 local s=Sprite(512,320,ColorMode.RGB)
 s.layers[1].name='Draw here'
@@ -71,7 +68,7 @@ s:saveAs(app.params.out); s:close()
 ''')
         before = hashlib.sha256(self.output.read_bytes()).digest()
         source_before = self.source.read_bytes()
-        result = self.command(ROOT / 'tools/tile_art/deepen_water.lua')
+        result = self.command(SCRIPTS / 'deepen_water.lua')
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn('Preserving existing deep-water artwork', result.stdout + result.stderr)
         self.assertEqual(before, hashlib.sha256(self.output.read_bytes()).digest())
@@ -80,7 +77,7 @@ s:saveAs(app.params.out); s:close()
 
     def test_fresh_destination_installs_toned_pixels_and_preserves_source(self):
         source_before = self.source.read_bytes()
-        result = self.command(ROOT / 'tools/tile_art/deepen_water.lua')
+        result = self.command(SCRIPTS / 'deepen_water.lua')
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertTrue(self.output.is_file())
         self.assertTrue(self.canonical.is_file())
@@ -127,7 +124,7 @@ source:close()
     def test_blocked_canonical_destination_fails_without_success_report(self):
         self.canonical.mkdir()
         source_before = self.source.read_bytes()
-        result = self.command(ROOT / 'tools/tile_art/deepen_water.lua')
+        result = self.command(SCRIPTS / 'deepen_water.lua')
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(source_before, self.source.read_bytes())
         self.assertTrue(self.canonical.is_dir())
@@ -144,7 +141,7 @@ s:saveAs(app.params.work..'/deep-water-draft.aseprite'); s:close()
         draft = self.work / 'deep-water-draft.aseprite'
         before = draft.read_bytes()
         with read_locked(draft):
-            result = self.command(ROOT / 'tools/tile_art/deepen_water.lua', install='no')
+            result = self.command(SCRIPTS / 'deepen_water.lua', install='no')
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(before, draft.read_bytes())
         self.assertFalse(self.canonical.exists())

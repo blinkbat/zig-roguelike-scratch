@@ -38,7 +38,23 @@ const THICKET_SCALE: f32 = 4;
 const CAMP_SCALE: f32 = 3;
 const CAMP_LO: f32 = 0.8;
 const CAMP_SPAN: f32 = 0.4;
+/// Cells west of the river where the edge warp starts, and over which it ramps to full.
+const WARP_RAMP = 12;
+const WARP_SWAY: f32 = 1.5;
+const WARP_DROP: f32 = 0.8;
+const WARP_SWAY_SCALE: f32 = 18;
+const WARP_DROP_SCALE: f32 = 22;
+const WARP_SWAY_LANE: i32 = 17;
+const WARP_DROP_LANE: i32 = 91;
 const PATH_WANDER: f32 = 0.85;
+/// A road's sideways arc, per cell of its length, and its cap.
+const ARC_PER_CELL: f32 = 0.18;
+const ARC_MAX: f32 = 7;
+/// Cells from either end over which a road eases into its wander.
+const BEND_REACH: f32 = 10;
+/// Extra radius a road swells by, and how fast that swell cycles per step.
+const SHOULDER: f32 = 0.65;
+const SHOULDER_RATE: f32 = 0.22;
 const RIVER_WANDER: f32 = 0.2;
 const TRIES: usize = 60;
 const OVERHANG: i32 = 2;
@@ -134,8 +150,6 @@ const TRAIL = PAL.path;
 const SOLID = PAL.solid;
 const OPEN = PAL.open;
 const ABOVE_FOOT = grid.Box{ .lo = .{ .x = 1, .y = 1 }, .hi = .{ .x = grid.W - 1, .y = BAR_FLOOR - 1 } };
-/// The camp's river crossing, which no fire takes down.
-const CROSSING: grid.Tile = .stone_bridge;
 
 const Plan = struct {
     bar: grid.Box,
@@ -174,10 +188,10 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
         if (grid.Level.onRim(q) or q.y >= plan.bar.hi.y) continue;
-        const warp = fray * std.math.clamp(@as(f32, @floatFromInt(plan.river_w - 12 - q.x)) / 12, 0, 1);
+        const warp = fray * std.math.clamp(@as(f32, @floatFromInt(plan.river_w - WARP_RAMP - q.x)) / WARP_RAMP, 0, 1);
         const warped = q.add(mathx.roundCell(
-            warp * 1.5 * swing(edge.at(.{ .x = 17, .y = q.y }, 18, 1)),
-            warp * (0.8 + swing(edge.at(.{ .x = q.x, .y = 91 }, 22, 1))),
+            warp * WARP_SWAY * swing(edge.at(.{ .x = WARP_SWAY_LANE, .y = q.y }, WARP_SWAY_SCALE, 1)),
+            warp * (WARP_DROP + swing(edge.at(.{ .x = q.x, .y = WARP_DROP_LANE }, WARP_DROP_SCALE, 1))),
         ));
         if (plan.depth(warped) + fray * swing(edge.at(q, FRAY_SCALE, 2)) >= 0) lv.tile[i] = OPEN;
     }
@@ -250,7 +264,7 @@ fn roads(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params, kept: *grid.Ce
     const near = P{ .x = span[0] - LANDING, .y = c.y };
     const far = P{ .x = span[1] + LANDING, .y = c.y };
     road(lv, rng, c, near, p.path, PATH_WANDER, lowest, kept);
-    carve.lane(lv, rng, near, far, p.bridge, 0, TRAIL, .{ .road = CROSSING });
+    carve.lane(lv, rng, near, far, p.bridge, 0, TRAIL, .{ .road = grid.STONE_SPAN });
     road(lv, rng, far, .{ .x = grid.W - 1, .y = c.y }, p.path, 0, lowest, kept);
 }
 
@@ -263,16 +277,16 @@ fn wetSpan(lv: *const grid.Level, from: P) ?[2]i32 {
 }
 
 fn lowestFor(width: u8) i32 {
-    return BAR_FLOOR - 1 - carve.discReach(carve.laneRadius(width) + 0.65);
+    return BAR_FLOOR - 1 - carve.discReach(carve.laneRadius(width) + SHOULDER);
 }
 
 fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lowest: i32, kept: *grid.CellSet) void {
     const r = carve.laneRadius(width);
-    const clear = carve.discReach(r + 0.65);
+    const clear = carve.discReach(r + SHOULDER);
     const above = grid.Box{ .lo = .{ .x = std.math.minInt(i32), .y = std.math.minInt(i32) }, .hi = .{ .x = std.math.maxInt(i32), .y = lowest + 1 } };
     var m = carve.Meander.init(a, b, wander).within(above);
     const length = @max(1, mathx.distEuclid(a, b));
-    const arc = @min(length * 0.18, 7) * wander * (if (rng.percent(50)) @as(f32, 1) else -1);
+    const arc = @min(length * ARC_PER_CELL, ARC_MAX) * wander * (if (rng.percent(50)) @as(f32, 1) else -1);
     while (m.next(rng)) |step| {
         const phase = @min(1, mathx.distEuclid(step, a) / length) * std.math.pi;
         const offset = arc * std.math.pow(f32, @sin(phase), 2);
@@ -280,9 +294,9 @@ fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lo
             -@as(f32, @floatFromInt(b.y - a.y)) / length * offset,
             @as(f32, @floatFromInt(b.x - a.x)) / length * offset,
         )));
-        const bend = std.math.clamp(@min(mathx.distEuclid(step, a), mathx.distEuclid(step, b)) / 10, 0, 1);
+        const bend = std.math.clamp(@min(mathx.distEuclid(step, a), mathx.distEuclid(step, b)) / BEND_REACH, 0, 1);
         m.m.wander = wander * bend;
-        const shoulder = 0.65 * bend * @max(0, @sin(@as(f32, @floatFromInt(m.m.steps)) * 0.22));
+        const shoulder = SHOULDER * bend * @max(0, @sin(@as(f32, @floatFromInt(m.m.steps)) * SHOULDER_RATE));
         carve.disc(lv, c, r + shoulder, TRAIL, null);
         grid.markBox(kept, grid.Box.around(c, clear));
     }
@@ -542,14 +556,14 @@ fn rolled(lv: *grid.Level, seed: u64, doors: []const P, p: Params) void {
 const RUNS: usize = 100;
 
 fn bridgeAt(lv: *const grid.Level) !P {
-    return grid.Level.of(std.mem.indexOfScalar(grid.Tile, &lv.tile, CROSSING) orelse return error.NoBridge);
+    return grid.Level.of(std.mem.indexOfScalar(grid.Tile, &lv.tile, grid.STONE_SPAN) orelse return error.NoBridge);
 }
 
 fn farBank(lv: *const grid.Level) i32 {
     var lo: ?P = null;
     var hi: ?P = null;
     for (lv.tile, 0..) |t, k| {
-        if (t != CROSSING) continue;
+        if (t != grid.STONE_SPAN) continue;
         const q = grid.Level.of(k);
         if (lo == null) lo = q;
         hi = q;
@@ -596,7 +610,7 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
             while (cells.next()) |q| corner_open += @intFromBool(lv.walkable(q));
         }
         carts += carve.count(&lv, .caravan);
-        bridged += @intFromBool(carve.count(&lv, CROSSING) > 0);
+        bridged += @intFromBool(carve.count(&lv, grid.STONE_SPAN) > 0);
         flammable += carve.count(&lv, .bridge);
         trees += carve.count(&lv, .large_tree);
         barrels += lv.barrelCount();

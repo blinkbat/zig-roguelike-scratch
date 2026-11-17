@@ -239,7 +239,7 @@ fn drawSelect(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
     if (labelButton(ed, g, col.row(y), shapeLabel(&buf, .select), selecting, true, editor.Shape.select.tip())) ed.toggleSelect();
     y += widgets.ROW_STEP;
     if (!selecting) return y + widgets.GAP;
-    var clipboard = widgets.Across{ .col = col, .y = y, .n = 4 };
+    var clipboard = widgets.Across.of(col, y, 4);
     const on_map = ed.view == .map and ed.paintable();
     const selected = ed.selection != null and on_map;
     if (smallButton(ed, g, clipboard.next(), "Copy", false, selected, widgets.keyed("Copy selection", Desk.COPY_CAPTION))) placement.copySelection(ed, false);
@@ -442,7 +442,7 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     y += widgets.ROW_STEP;
     drawNodeDetail(g, ed.here(), col.left(), y);
     y += DETAIL + widgets.BLOCK_GAP;
-    var node = widgets.Across{ .col = col, .y = y, .n = 2 };
+    var node = widgets.Across.of(col, y, 2);
     if (smallButton(ed, g, node.next(), "Rename", ed.renaming, true, widgets.keyed("Name this node", Desk.RENAME_CAPTION)) and !ed.renamed) ed.startRename();
     const armed = ed.delete_armed == ed.node;
     if (smallButton(ed, g, node.next(), if (armed) "Delete it?" else "Delete", armed, ed.map.node_n > 1, if (armed) "Again deletes it; its doors' links go with it" else "Delete this node; it asks first")) {
@@ -450,12 +450,12 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     } else if (armed and ed.desk.clicked()) ed.delete_armed = null;
     node.done();
     y += widgets.ROW_STEP;
-    var adds = widgets.Across{ .col = col, .y = y, .n = 2 };
+    var adds = widgets.Across.of(col, y, 2);
     if (smallButton(ed, g, adds.next(), "+ Bespoke", false, true, "A node you paint yourself")) editor.addNode(ed, .{ .bespoke = .{} });
     if (smallButton(ed, g, adds.next(), "+ Procgen", false, true, knobs.ADD_PROCGEN_TIP)) editor.addNode(ed, .{ .procgen = .{} });
     adds.done();
     y += widgets.ROW_STEP + widgets.BLOCK_GAP;
-    var tabs = widgets.Across{ .col = col, .y = y, .n = std.enums.values(editor.Inspect).len };
+    var tabs = widgets.Across.of(col, y, std.enums.values(editor.Inspect).len);
     for (std.enums.values(editor.Inspect)) |i| {
         const live = ed.inspectable(i);
         if (smallButton(ed, g, tabs.next(), menu.named(i), ed.inspect == i, live, if (live) INSPECT_TIPS.get(i) else "Only a procgen node is rolled from a generator")) ed.setInspect(i);

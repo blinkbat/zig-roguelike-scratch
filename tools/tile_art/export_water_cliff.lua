@@ -1,6 +1,6 @@
-local source=app.params.source or 'C:/Users/DavidBennett/Desktop/water-cliff-edge.aseprite'
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local source=app.params.source or sourceFiles.DESKTOP..'water-cliff-edge.aseprite'
 local depth=app.params.depth or 'shallow'
 assert(depth=='shallow' or depth=='deep','depth=shallow|deep')
 local out=app.params.out or root..'assets/water/'..(depth=='shallow' and 'shallows' or 'water')..'-cliff.png'
@@ -8,11 +8,7 @@ assert(out:lower():match('%.png$'),'out must name a PNG file')
 local stem=out:sub(1,-5)
 local layer_name=assert(app.params.layer,'layer=<painted layer index or name>')
 local s=assert(app.open(source))
-local layer=s.layers[tonumber(layer_name) or 0]
-if not layer then
- for _,candidate in ipairs(s.layers) do if candidate.name==layer_name then layer=candidate break end end
-end
-assert(layer,'painted layer missing')
+local layer=assert(s.layers[tonumber(layer_name) or 0] or sourceFiles.layer(s,layer_name),'painted layer missing')
 local cel=assert(layer:cel(1),'painted cel missing')
 assert(layer.opacity==255 and cel.opacity==255,'paint must be full opacity')
 local paint=Image(s.width,s.height,ColorMode.RGB)

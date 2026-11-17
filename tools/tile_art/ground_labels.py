@@ -1,18 +1,17 @@
-import re
 import sys
-from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
+
+from art_support import arial, corner_order
 
 out, title = sys.argv[1], sys.argv[2]
-order = [int(n) for n in re.findall(r'\d+', (Path(__file__).parent / 'ground_corners.lua').read_text().split('return', 1)[1])]
-assert sorted(order) == list(range(16))
+order = corner_order()
 
 INK = (50, 50, 50, 255)
 W, H, HEAD, CELL = 512, 320, 64, 64
 image = Image.new('RGBA', (W, H))
 draw = ImageDraw.Draw(image)
-draw.text((12, 8), title, font=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf', 23), fill=INK)
-small = ImageFont.truetype('C:/Windows/Fonts/arial.ttf', 11)
+draw.text((12, 8), title, font=arial(23, True), fill=INK)
+small = arial(11)
 for i, mask in enumerate(order):
     x, y = (i % 4) * CELL, HEAD + (i // 4) * CELL
     if mask:
@@ -34,5 +33,5 @@ notes = [
     'sides must wrap. X is unused.',
 ]
 for k, line in enumerate(notes):
-    draw.text((272, HEAD + 4 + k * 17), line, font=ImageFont.truetype('C:/Windows/Fonts/arial.ttf', 13), fill=INK)
+    draw.text((272, HEAD + 4 + k * 17), line, font=arial(13), fill=INK)
 image.save(out)

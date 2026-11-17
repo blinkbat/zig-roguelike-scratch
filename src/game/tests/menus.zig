@@ -374,7 +374,7 @@ test "the playground's wizard casts freely and cannot die, and a restart lays it
         try std.testing.expectEqual(@as(u8, 0), g.sim.cooldown.get(.fireball));
     }
     try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
-    _ = game.hurt(g, .{ .value = g.sim.hero }, 1000);
+    _ = game.hurt(g, .{ .value = g.sim.hero }, harness.LETHAL_DMG);
     try std.testing.expect(g.sim.heroActor().?.alive);
     const lv = try std.testing.allocator.create(grid.Level);
     defer std.testing.allocator.destroy(lv);
@@ -574,8 +574,8 @@ test "status inspection explains overlapping tags without changing the simulatio
     try std.testing.expect(std.mem.startsWith(u8, tip.body, @import("../../play/glacial.zig").STATUS));
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "\nSlows, Elemental") != null);
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "Tags:") == null);
-    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS[@intFromEnum(resilience.Tag.slows)].body, "\nStun, Chill, Pin, Maim.") != null);
-    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS[@intFromEnum(resilience.Tag.elemental)].body, "\nBurn, Chill, Shock.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS.get(.slows).body, "\nStun, Chill, Pin, Maim.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS.get(.elemental).body, "\nBurn, Chill, Shock.") != null);
     const enfeebled = overlay.tipOf(g, .{ .status = .enfeebled }, &title, &body).?;
     try std.testing.expect(std.mem.endsWith(u8, enfeebled.body, "\nWounds"));
     const guarding = overlay.tipOf(g, .{ .status = .guarding }, &title, &body).?;
@@ -596,8 +596,8 @@ test "keyword inspection sits above character menus and HUD inspection without s
         g.character.advanced = true;
         g.inspecting = .{ .status = .chilled };
         g.keywords = .{ .screen = g.screen };
-        g.keywords.register(keywords.STATUS_TERMS[0], raster.rect(100, 100, 60, 20));
-        g.keywords.register(keywords.STATUS_TERMS[1], raster.rect(200, 100, 60, 20));
+        g.keywords.register(keywords.STATUS_TERMS.values[0], raster.rect(100, 100, 60, 20));
+        g.keywords.register(keywords.STATUS_TERMS.values[1], raster.rect(200, 100, 60, 20));
         harness.press(g, skillbar.INSPECT);
         try std.testing.expectEqual(@as(?usize, 0), g.keywords.focus);
         harness.nudge(g, .e);
@@ -621,7 +621,7 @@ test "a keyword clicked over the map neither walks the hero nor spends a turn" {
     const clock = g.sim.clock;
     const over = game.scene.Cam.of(g).mid(.{ .x = 22, .y = 20 });
     g.keywords = .{ .screen = g.screen };
-    g.keywords.register(keywords.STATUS_TERMS[0], raster.rect(over.x - 30, over.y - 10, 60, 20));
+    g.keywords.register(keywords.STATUS_TERMS.values[0], raster.rect(over.x - 30, over.y - 10, 60, 20));
     harness.clickAt(g, over);
     try std.testing.expect(g.mouse.target == null);
     g.st = .{ .device = .keys };

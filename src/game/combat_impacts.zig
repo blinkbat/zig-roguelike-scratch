@@ -3,7 +3,6 @@ const chronicle = @import("../play/chronicle.zig");
 const mathx = @import("../core/mathx.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
-const firebolt = @import("../play/firebolt.zig");
 const attrs = @import("../play/attrs.zig");
 const damage = @import("../play/damage.zig");
 const turn_clock = @import("../play/clock.zig");
@@ -89,13 +88,13 @@ pub fn boltHits(g: *game.Game, by: actor.Kind, id: u16, hu: actor.Hurl, s: Strok
     const slot = actor.Pool.slot(id);
     const kind = a.kind;
     const thrower = actor.row(by).name;
-    const dmg = damage.resisted(hu.hit.roll(&g.sim.rng), g.sim.combatStats(a).elements.get(firebolt.ELEMENT));
+    const dmg = damage.resisted(hu.hit.roll(&g.sim.rng), g.sim.combatStats(a).elements.get(hu.element));
     const before = a.hp;
     const h = game.hurt(g, .fromInt(id), dmg);
     const hero = id == g.sim.hero;
     if (hero) {
-        heroHurt(g, "The {s}'s " ++ firebolt.NAME ++ " burns {s} for {d}.", .{ thrower, g.sim.name.text(), h.dmg }, .{ .by = .{ .foe = by }, .dmg = h.dmg, .before = before });
-    } else if (h.lethal or !a.veiled()) g.sim.sayAt(at, "The {s}'s " ++ firebolt.NAME ++ " burns the {s} for {d}.{s}", .{ thrower, actor.row(kind).name, h.dmg, deathNote(h) });
+        heroHurt(g, "The {s}'s {s} {s} {s} for {d}.", .{ thrower, hu.name, hu.verb, g.sim.name.text(), h.dmg }, .{ .by = .{ .foe = by }, .dmg = h.dmg, .before = before });
+    } else if (h.lethal or !a.veiled()) g.sim.sayAt(at, "The {s}'s {s} {s} the {s} for {d}.{s}", .{ thrower, hu.name, hu.verb, actor.row(kind).name, h.dmg, deathNote(h) });
     if (!h.lethal and h.dmg > 0) _ = g.sim.igniteFresh(slot, a, hu.burns);
     if (hero) {
         g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(slot), .at = at, .lethal = h.lethal, .after = afterBlow(g, id, h) } }, s);

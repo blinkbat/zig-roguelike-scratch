@@ -1,11 +1,12 @@
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
-local path=app.params.source or 'C:/Users/DavidBennett/Desktop/regular-walls.aseprite'
-local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
-app.fs.makeAllDirectories(work)
+local path=app.params.source or sourceFiles.DESKTOP..'regular-walls.aseprite'
+local work=sourceFiles.work()
 local pc=app.pixelColor
+local masks=dofile(root..'tools/tile_art/wall_masks.lua')
+local bit=masks.bit
 local sprite=assert(app.open(path))
-assert(sprite.width==512 and sprite.height==448)
+assert(sprite.width==masks.W and sprite.height==masks.HEAD+masks.H)
 local authored,extension,drawing
 for _,layer in ipairs(sprite.layers) do
   if layer.name=='Layer 1' then authored=layer end
@@ -18,8 +19,7 @@ local position=Point(authored:cel(1).position)
 local wall=dofile(root..'tools/tile_art/wall_strips.lua')(original,position)
 local source,tan,sample,sideRow,decorate=wall.source,wall.tan,wall.sample,wall.sideRow,wall.decorate
 local function brick(x,y) return sample(154+x%32,99+y) end
-local masks=dofile(root..'tools/tile_art/wall_masks.lua')
-local bits={{128,1,16},{8,0,2},{64,4,32}}
+local bits={{bit.nw,bit.n,bit.ne},{bit.w,0,bit.e},{bit.sw,bit.s,bit.se}}
 local function blob(mask)
   local image=Image(64,64,ColorMode.RGB)
   local function inside(x,y)
@@ -62,11 +62,12 @@ local function blob(mask)
   decorate(image,cap,{{24,23},{5,7},{43,7},{8,43},{41,44}})
   return image
 end
-local completed=Image(512,448,ColorMode.RGB)
+local completed=Image(masks.W,masks.HEAD+masks.H,ColorMode.RGB)
 local blobs={}
 for i,mask in ipairs(masks) do
   blobs[i]=blob(mask)
-  if i>3 then completed:drawImage(blobs[i],Point(((i-1)%8)*64,64+math.floor((i-1)/8)*64)) end
+  local x,y=masks.at(i)
+  if i>3 then completed:drawImage(blobs[i],Point(x,masks.HEAD+y)) end
 end
 for x=0,63 do completed:putPixel(64+x,64,sample(64+x,65)) end
 local authoredSheet=Image(completed)
@@ -74,14 +75,15 @@ authoredSheet:drawImage(source,Point(0,0))
 local references={}
 for i,mask in ipairs(masks) do
   local tile=Image(64,64,ColorMode.RGB)
-  local ox,oy=((i-1)%8)*64,64+math.floor((i-1)/8)*64
+  local ox,oy=masks.at(i)
+  oy=masks.HEAD+oy
   for y=0,63 do for x=0,63 do tile:putPixel(x,y,authoredSheet:getPixel(ox+x,oy+y)) end end
   for _,other in ipairs(references) do assert(not tile:isEqual(other),'duplicate authoring cell '..i) end
   for a=23,40 do
-    if (mask & 1)~=0 then assert(pc.rgbaA(tile:getPixel(a,0))==255,'north connection gap '..i) end
-    if (mask & 2)~=0 then assert(pc.rgbaA(tile:getPixel(63,a))==255,'east connection gap '..i) end
-    if (mask & 4)~=0 then assert(pc.rgbaA(tile:getPixel(a,63))==255,'south connection gap '..i) end
-    if (mask & 8)~=0 then assert(pc.rgbaA(tile:getPixel(0,a))==255,'west connection gap '..i) end
+    if (mask & bit.n)~=0 then assert(pc.rgbaA(tile:getPixel(a,0))==255,'north connection gap '..i) end
+    if (mask & bit.e)~=0 then assert(pc.rgbaA(tile:getPixel(63,a))==255,'east connection gap '..i) end
+    if (mask & bit.s)~=0 then assert(pc.rgbaA(tile:getPixel(a,63))==255,'south connection gap '..i) end
+    if (mask & bit.w)~=0 then assert(pc.rgbaA(tile:getPixel(0,a))==255,'west connection gap '..i) end
   end
   references[#references+1]=tile
 end
@@ -95,7 +97,7 @@ sprite:saveAs(path)
 sprite:saveCopyAs(work..'regular-walls-current.png')
 sprite:close()
 local reopened=assert(app.open(path))
-assert(reopened.width==512 and reopened.height==448,'Saved sheet dimensions changed')
+assert(reopened.width==masks.W and reopened.height==masks.HEAD+masks.H,'Saved sheet dimensions changed')
 sourceFiles.checkLayer(reopened,'Extension - ported painted edges',completed,Point(0,0))
 sourceFiles.checkCel(reopened,'Layer 1',original,position)
 assert(#reopened.slices==#masks)

@@ -3,6 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const bow = @import("../play/bow.zig");
 const firebolt = @import("../play/firebolt.zig");
+const damage = @import("../play/damage.zig");
 const skillbar = @import("../play/skillbar.zig");
 const fx = @import("../gfx/fx.zig");
 const P = mathx.P;
@@ -129,30 +130,35 @@ test "missiles move continuously to the existing impact time in every direction"
     }
 }
 
-/// Seconds a firebolt takes over each cell it flies.
+/// Seconds a hurl takes over each cell it flies.
 pub const BOLT_CELL_S: f32 = 0.09;
-pub const BOLT_ACT: skillbar.Act = .fireball;
-
-/// A firebolt as drawn: from `from` to `to` over `span` seconds once `t` reaches 0; seen before then if `before`, and after if `after`.
+/// A hurl as drawn: from `from` to where `line` has flown over `span` seconds once `t` reaches 0; seen before then if `before`, and after if `after`.
 pub const BoltShown = struct {
+    element: damage.Element,
+    line: firebolt.Bolt,
     view: MotionView = .{},
     from: [2]f32,
-    to: [2]f32,
-    heading: [2]f32,
     t: f32 = 0,
     span: f32 = 0,
     before: bool = true,
     after: bool = true,
 
-    pub fn resting(b: firebolt.Bolt) BoltShown {
-        const p = b.point();
-        return .{ .from = p, .to = p, .heading = b.heading() };
+    pub fn resting(b: firebolt.Bolt, element: damage.Element) BoltShown {
+        return .{ .from = b.point(), .element = element, .line = b };
+    }
+
+    pub fn to(self: *const BoltShown) [2]f32 {
+        return self.line.point();
+    }
+
+    pub fn heading(self: *const BoltShown) [2]f32 {
+        return self.line.heading();
     }
 
     pub fn at(self: *const BoltShown) ?[2]f32 {
         if (self.t < 0) return if (self.before) self.from else null;
-        if (self.done()) return if (self.after) self.to else null;
-        return mathx.lerp2(self.from, self.to, self.t / self.span);
+        if (self.done()) return if (self.after) self.to() else null;
+        return mathx.lerp2(self.from, self.to(), self.t / self.span);
     }
 
     pub fn moving(self: *const BoltShown) bool {

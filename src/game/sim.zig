@@ -81,7 +81,7 @@ pub const Fields = struct {
     pub const hero = [_][]const u8{"pool"};
     pub const start = [_][]const u8{ "visited", "node", "hero", "clock", "days" };
     /// Worked out from the map as a run starts, a node is entered and a saved run resumes.
-    pub const derived = [_][]const u8{ "outdoors", "locations" };
+    pub const derived = [_][]const u8{"outdoors"};
     /// Defaulted as a run starts, and again as a saved one resumes.
     pub const rebuilt = [_][]const u8{"chronicle"};
     pub const run = [_][]const u8{ "kills", "gold", "mana_recovery", "life_recovery", "flasks", "cooldown", "stepped", "log", "inventory", "ground", "plot" };
@@ -91,7 +91,7 @@ pub const Fields = struct {
     /// Defaulted as each turn ends, and as a turn starts afresh.
     pub const marks = [_][]const u8{ "ran", "displaced" };
     /// Given their values by hand: by the app, as a run begins, or as a node is entered or left.
-    pub const set = [_][]const u8{ "name", "class", "lv", "map", "visits", "rng", "seed", "mana", "growth", "loot_rng" };
+    pub const set = [_][]const u8{ "name", "class", "lv", "map", "visits", "rng", "seed", "mana", "growth", "loot_rng", "locations" };
     pub const scratch = [_][]const u8{ "order", "flow", "queue" };
     pub const kept = [_][]const u8{ "unkillable", "playground" };
 };
@@ -268,23 +268,16 @@ pub const Simulation = struct {
         return base.onRained(tile, self.rainAt(at));
     }
 
-    /// The rain falling on the open ground here, 0 under a roof.
-    pub fn rainNow(self: *const Simulation) f32 {
-        return self.rainAt(self.heroAt() orelse grid.MIDDLE);
-    }
-
+    /// The rain falling on the open ground at `p`, 0 under a roof.
     pub fn rainAt(self: *const Simulation, p: P) f32 {
         if (!self.outdoors) return 0;
-        const place = grid.cellOr(climate.Location, &self.locations, p, .inland);
-        var c = self.climateNow();
-        if (self.nodeHere()) |node| if (node.locations.get(place)) |w| {
-            c.weather = w;
-        };
+        const place = climate.placeAt(&self.locations, p);
+        const c = if (self.nodeHere()) |node| self.climateNow().in(node.locations, place) else self.climateNow();
         return c.now(self.seed, self.clock.since(self.days)).get(.rain);
     }
 
     pub fn localWeather(self: *const Simulation) climate.Local {
-        if (!self.outdoors) return .initFill(.initFill(0));
+        if (!self.outdoors) return climate.CALM;
         const overrides = if (self.nodeHere()) |node| node.locations else climate.Locations.initFill(null);
         return climate.local(self.climateNow(), overrides, self.seed, self.clock.since(self.days));
     }
@@ -427,12 +420,13 @@ pub const Simulation = struct {
         return mathx.percentCeil(v, mathx.PERCENT + self.inventory.gear.commander());
     }
 
-    fn climateNow(self: *const Simulation) climate.Climate {
-        return (self.nodeHere() orelse return .{}).sky();
+    /// Extra damage a bleed the hero opens deals each turn its body moves.
+    pub fn grievous(self: *const Simulation) i32 {
+        return @max(0, self.inventory.gear.sum(.grievous));
     }
 
-    pub fn weatherNow(self: *const Simulation) climate.Now {
-        return self.climateNow().now(self.seed, self.clock.since(self.days));
+    fn climateNow(self: *const Simulation) climate.Climate {
+        return (self.nodeHere() orelse return .{}).sky();
     }
 
     pub fn heroLight(self: *const Simulation) i32 {

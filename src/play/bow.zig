@@ -11,6 +11,7 @@ const P = mathx.P;
 pub const RANGE: i32 = 5;
 pub const LONGEST: i32 = 8;
 pub const VERB = "shoots";
+pub const NOUN = "arrow";
 
 pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
 

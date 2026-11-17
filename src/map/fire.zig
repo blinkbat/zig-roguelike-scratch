@@ -56,11 +56,7 @@ fn catches(lv: *const grid.Level, p: P) bool {
     return grid.Level.inside(p) and lv.at(p).burns() and !lv.burning(p);
 }
 
-pub fn kindle(lv: *grid.Level, cells: []const P, k: Kindle, rain: f32, rng: *mathx.Rng) usize {
-    return kindleIn(lv, cells, k, .{ .uniform = rain }, rng);
-}
-
-pub fn kindleIn(lv: *grid.Level, cells: []const P, k: Kindle, rain: climate.Rain, rng: *mathx.Rng) usize {
+pub fn kindle(lv: *grid.Level, cells: []const P, k: Kindle, rain: climate.Rain, rng: *mathx.Rng) usize {
     var n: usize = 0;
     for (cells) |p| {
         const chance = damped(k.chance, rain.at(p));
@@ -95,11 +91,7 @@ pub fn smoulder(lv: *grid.Level, p: P) void {
     if (room > 0) lv.release(.smoke, p, @min(SMOKE, room));
 }
 
-pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: f32, kept: *const grid.CellSet) bool {
-    return turnIn(lv, rng, .{ .uniform = rain }, kept);
-}
-
-pub fn turnIn(lv: *grid.Level, rng: *mathx.Rng, rain: climate.Rain, kept: *const grid.CellSet) bool {
+pub fn turn(lv: *grid.Level, rng: *mathx.Rng, rain: climate.Rain, kept: *const grid.CellSet) bool {
     if (std.mem.allEqual(u8, &lv.flames, 0)) return false;
     const was = lv.flames;
     for (was, 0..) |left, i| {
@@ -154,7 +146,7 @@ fn burnOut(lv: *grid.Level, rng: *mathx.Rng, rain: f32) !Burn {
     var turns: usize = 0;
     while (!std.mem.allEqual(u8, &lv.flames, 0)) : (turns += 1) {
         if (turns == NEVER) return error.NeverOut;
-        _ = turn(lv, rng, rain, &NONE_KEPT);
+        _ = turn(lv, rng, .{ .uniform = rain }, &NONE_KEPT);
     }
     var out = Burn{ .cells = 0, .turns = turns, .reach = 0 };
     for (lv.tile, 0..) |t, i| {
@@ -215,7 +207,7 @@ test "fire takes grass, reeds, crops and bridges, never bare ground, walls or tr
         for (0..TRIES) |_| {
             if (lv.burning(AT.add(.{ .x = 1, .y = 0 }))) break;
             lv.flames[grid.Level.idx(AT)] = BURNS;
-            _ = turn(&lv, &rng, 0, &NONE_KEPT);
+            _ = turn(&lv, &rng, .{}, &NONE_KEPT);
         }
         try std.testing.expectEqual(t.burns(), lv.burning(AT.add(.{ .x = 1, .y = 0 })));
         try std.testing.expectEqual(t.wet(), lv.scalding(AT.add(.{ .x = 1, .y = 0 })));
@@ -264,7 +256,7 @@ test "a burnt bridge drops into the water and steams, shallow under a body stand
             if (held) lv.stand(AT, 1);
             kept.setValue(grid.Level.idx(AT), lying);
             lay(&lv, AT, 1, 0);
-            try std.testing.expect(turn(&lv, &rng, 0, &kept));
+            try std.testing.expect(turn(&lv, &rng, .{}, &kept));
             try std.testing.expectEqual(ashOf(.bridge, held or lying), lv.at(AT));
             try std.testing.expect(lv.scalding(AT) and burntDown(.bridge, lv.at(AT)));
         }
@@ -280,11 +272,11 @@ test "a burning tile smokes, laid flames on bare floor do not, and a fire of no 
     lv.set(bare, .floor);
     lay(&lv, AT, BURNS, 0);
     lay(&lv, bare, BURNS, 0);
-    _ = turn(&lv, &rng, 0, &NONE_KEPT);
+    _ = turn(&lv, &rng, .{}, &NONE_KEPT);
     try std.testing.expectEqual(SMOKE, lv.volumeAt(.smoke, AT));
     try std.testing.expectEqual(@as(u16, 0), lv.volumeAt(.smoke, bare));
     try std.testing.expectEqual(@as(usize, 2), grid.CELLS - std.mem.count(u8, &lv.flames, &.{0}));
-    for (1..BURNS) |_| _ = turn(&lv, &rng, 0, &NONE_KEPT);
+    for (1..BURNS) |_| _ = turn(&lv, &rng, .{}, &NONE_KEPT);
     try std.testing.expectEqual(ASH, lv.at(AT));
     try std.testing.expectEqual(grid.Tile.floor, lv.at(bare));
     try std.testing.expect(!lv.burning(AT) and !lv.burning(bare));
@@ -325,14 +317,14 @@ test "kindling catches only what burns and is not alight, by its chance under th
     const k = Kindle{ .chance = 50, .heat = 2 };
     for (0..TRIES) |_| {
         var lv = field(.grass);
-        caught += kindle(&lv, &.{AT}, k, 0, &rng);
+        caught += kindle(&lv, &.{AT}, k, .{}, &rng);
         var wet = field(.grass);
-        soaked += kindle(&wet, &.{AT}, k, 1, &rng);
+        soaked += kindle(&wet, &.{AT}, k, .{ .uniform = 1 }, &rng);
     }
     try std.testing.expect(caught > TRIES / 3 and caught < TRIES * 2 / 3 and soaked < caught / 2);
     var lv = field(.floor);
-    try std.testing.expectEqual(@as(usize, 0), kindle(&lv, &.{AT}, .{ .chance = mathx.PERCENT, .heat = 1 }, 0, &rng));
+    try std.testing.expectEqual(@as(usize, 0), kindle(&lv, &.{AT}, .{ .chance = mathx.PERCENT, .heat = 1 }, .{}, &rng));
     lv.set(AT, .grass);
-    try std.testing.expectEqual(@as(usize, 1), kindle(&lv, &.{AT}, .{ .chance = mathx.PERCENT, .heat = 1 }, 0, &rng));
-    try std.testing.expectEqual(@as(usize, 0), kindle(&lv, &.{AT}, .{ .chance = mathx.PERCENT, .heat = 1 }, 0, &rng));
+    try std.testing.expectEqual(@as(usize, 1), kindle(&lv, &.{AT}, .{ .chance = mathx.PERCENT, .heat = 1 }, .{}, &rng));
+    try std.testing.expectEqual(@as(usize, 0), kindle(&lv, &.{AT}, .{ .chance = mathx.PERCENT, .heat = 1 }, .{}, &rng));
 }

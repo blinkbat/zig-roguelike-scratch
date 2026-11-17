@@ -1,16 +1,16 @@
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local path=assert(app.params.source,'source=<sheet.aseprite>')
 local kind=assert(app.params.kind,'kind=cave|forest|water|deep')
 local LIQUID=kind=='water' or kind=='deep'
 assert(kind=='cave' or kind=='forest' or LIQUID)
-local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
-app.fs.makeAllDirectories(work)
+local work=sourceFiles.work()
 local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
+local bit=masks.bit
 local FACE=23
 local TOP=64-FACE
-local function rgb(r,g,b) return pc.rgba(r,g,b,255) end
+local rgb=sourceFiles.rgb
 local P=kind=='water' and {
   foam=rgb(226,238,234),shallow=rgb(92,164,196),m=rgb(52,118,176),d=rgb(38,92,150),hi=rgb(150,206,226),
   shade=rgb(30,70,120),lip=rgb(62,46,32),bank=rgb(120,92,62),bankd=rgb(88,66,44),bankl=rgb(150,118,80),ground=rgb(104,124,70),
@@ -80,7 +80,6 @@ local function faceTop(x) return kind=='cave' and TOP-1+math.floor(noise(x,8,7)*
 local function canopyFoot(x) return TOP+11-edge(x,0) end
 local function trunk(x) return (x%32)-11 end
 local function cell(mask)
-  local bit=masks.bit
   local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
   local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
   local R=kind=='cave' and 6 or 10
@@ -172,7 +171,6 @@ local function noise2(x,y,step,seed)
 end
 local function shore(t,seed) return 1+math.floor(noise(t,8,seed)*2.99)+math.floor(noise(t,4,seed+50)*1.99) end
 local function liquidCell(mask)
-  local bit=masks.bit
   local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
   local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
   local R,B=8,5
@@ -278,25 +276,23 @@ local function liquidCell(mask)
 end
 if LIQUID then cell=liquidCell end
 local sprite=assert(app.open(path))
-assert(sprite.width==512 and sprite.height==448)
-local under,drawing,ideas
-for _,layer in ipairs(sprite.layers) do
-  if layer.name=='Underdrawing (25%)' then under=layer end
-  if layer.name=='Draw here' then drawing=layer end
-  if layer.name=='Ideas - hide before export' then ideas=layer end
-end
+assert(sprite.width==masks.W and sprite.height==masks.HEAD+masks.H)
+local under=sourceFiles.layer(sprite,'Underdrawing (25%)')
+local drawing=sourceFiles.layer(sprite,'Draw here')
+local ideas=sourceFiles.layer(sprite,'Ideas - hide before export')
 assert(under and drawing)
 local drawn=Image(drawing:cel(1).image)
 local drawnAt=Point(drawing:cel(1).position)
-local sheet=Image(512,448,ColorMode.RGB)
+local sheet=Image(masks.W,masks.HEAD+masks.H,ColorMode.RGB)
 local byMask={}
 for i,mask in ipairs(masks) do
   local image=cell(mask)
   byMask[mask]=image
-  sheet:drawImage(image,Point(((i-1)%8)*64,64+math.floor((i-1)/8)*64))
+  local x,y=masks.at(i)
+  sheet:drawImage(image,Point(x,masks.HEAD+y))
 end
 for _,a in ipairs(masks) do for _,b in ipairs(masks) do
-  if (a&2)~=0 and (b&8)~=0 then
+  if (a&bit.e)~=0 and (b&bit.w)~=0 then
     for y=8,TOP-8 do
       assert(pc.rgbaA(byMask[a]:getPixel(63,y))==255 and pc.rgbaA(byMask[b]:getPixel(0,y))==255,'east-west seam '..a..' '..b)
     end
@@ -318,7 +314,7 @@ app.layer=drawing
 sprite:saveAs(path)
 sprite:close()
 local reopened=assert(app.open(path))
-assert(reopened.width==512 and reopened.height==448,'Saved sheet dimensions changed')
+assert(reopened.width==masks.W and reopened.height==masks.HEAD+masks.H,'Saved sheet dimensions changed')
 sourceFiles.checkLayer(reopened,'Ideas - hide before export',sheet,Point(0,0))
 sourceFiles.checkCel(reopened,'Draw here',drawn,drawnAt)
 reopened:close()

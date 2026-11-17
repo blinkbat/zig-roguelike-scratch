@@ -17,16 +17,22 @@ const skillbar = @import("play/skillbar.zig");
 const flask = @import("play/flask.zig");
 const sunder = @import("play/sunder.zig");
 const glacial = @import("play/glacial.zig");
+const bleeding = @import("play/bleeding.zig");
 const day = @import("map/day.zig");
+const climate = @import("map/climate.zig");
 const P = @import("core/mathx.zig").P;
 
 pub const MAGIC = "cistern-save\n";
-const VERSION: u64 = 3;
-/// Runs saved before heroes started holding their class arms.
+const VERSION: u64 = 4;
+/// Runs saved before cells' climate locations were kept: they take them from the level they saved.
+const PLACELESS: u64 = 3;
+/// Runs saved before heroes started holding their class arms, and the first builds after: see `armless`.
 const UNARMED: u64 = 2;
 /// Runs saved before flasks were worn as items.
 const FLASKLESS: u64 = 1;
-const READABLE = [_]u64{ VERSION, UNARMED, FLASKLESS };
+const LEGACY = [_]u64{ UNARMED, FLASKLESS };
+const READABLE = [_]u64{ VERSION, PLACELESS } ++ LEGACY;
+const HANDS = [_]item_bases.Slot{ .right_hand, .left_hand };
 pub const Code = wire.Codec(Policy);
 pub const FILE_CAP = blk: {
     @setEvalBranchQuota(100_000);
@@ -146,6 +152,18 @@ fn legacyKeyLevel(s: atlas.zoo.Spec) grid.Level {
     return lv;
 }
 
+fn legacyKeyRun(g: *game.Game, map: *data.Map) atlas.zoo.Spec {
+    map.* = .{};
+    _ = map.add(.{ .procgen = .{} });
+    const s = legacyKeyZoo();
+    map.node[0].zoo = s;
+    map.start = .{ .node = 0, .at = s.approach() };
+    g.sim.lv = legacyKeyLevel(s);
+    game.reset(g, s.approach());
+    g.sim.map = map;
+    return s;
+}
+
 test "a legacy key cell that was the only way to the gate migrates to an open chest with its key lying out" {
     const s = legacyKeyZoo();
     try std.testing.expect(s.valid());
@@ -229,14 +247,7 @@ test "legacy key migration failure leaves the live run and map unchanged" {
     game.begin(current, 37);
     const map = try alloc.create(data.Map);
     defer alloc.destroy(map);
-    map.* = .{};
-    _ = map.add(.{ .procgen = .{} });
-    const s = legacyKeyZoo();
-    map.node[0].zoo = s;
-    map.start = .{ .node = 0, .at = s.approach() };
-    current.sim.lv = legacyKeyLevel(s);
-    game.reset(current, s.approach());
-    current.sim.map = map;
+    const s = legacyKeyRun(current, map);
     const snapshot = try alloc.create(Snapshot);
     defer alloc.destroy(snapshot);
     try capture(current, snapshot);
@@ -270,14 +281,7 @@ test "legacy key migration ignores the stale visit for the active node" {
     game.begin(current, 37);
     const map = try alloc.create(data.Map);
     defer alloc.destroy(map);
-    map.* = .{};
-    _ = map.add(.{ .procgen = .{} });
-    const s = legacyKeyZoo();
-    map.node[0].zoo = s;
-    map.start = .{ .node = 0, .at = s.approach() };
-    current.sim.lv = legacyKeyLevel(s);
-    game.reset(current, s.approach());
-    current.sim.map = map;
+    const s = legacyKeyRun(current, map);
     while (current.sim.ground.room(deathsToCome(&current.sim.pool))) _ = current.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = s.approach() });
     while (current.sim.inventory.n < inventory.BAG_MAX - 1) try std.testing.expect(current.sim.inventory.add(.{ .kind = .ring }));
     current.sim.visits[0] = .{ .lv = current.sim.lv, .pool = current.sim.pool, .ground = current.sim.ground, .facing = current.pic.facing };
@@ -328,10 +332,22 @@ pub fn parse(bytes: []const u8) !*Snapshot {
     const snapshot = try std.heap.page_allocator.create(Snapshot);
     errdefer std.heap.page_allocator.destroy(snapshot);
     try Code.read(file.body, snapshot);
-    if (file.version <= FLASKLESS) snapshot.run.inventory.gear.wearFlasks();
-    if (file.version <= UNARMED) snapshot.run.inventory.gear.arm(snapshot.run.class);
+    if (file.version != VERSION) placeFromLevel(snapshot);
+    if (file.version == FLASKLESS) snapshot.run.inventory.gear.wearFlasks();
+    if (file.version == FLASKLESS or (file.version == UNARMED and armless(&snapshot.run.inventory, snapshot.run.class))) snapshot.run.inventory.gear.arm(snapshot.run.class);
     try validate(snapshot);
     return snapshot;
+}
+
+pub fn placeFromLevel(snapshot: *Snapshot) void {
+    snapshot.portable.locations = climate.locations(&snapshot.run.lv);
+}
+
+/// No hand held and no class arm carried: a version-2 run from before heroes started armed, not one that put its arms away.
+fn armless(inv: *const inventory.Inventory, class: hero.Class) bool {
+    for (HANDS) |slot| if (inv.gear.slots.get(slot) != null) return false;
+    for (inv.bag[0..inv.n]) |it| for (class.arms()) |k| if (it.kind == k) return false;
+    return true;
 }
 
 fn peek(bytes: []const u8) !data.Summary {
@@ -534,7 +550,7 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *ground_it
         if (body.alive and (body.hp == 0 or level.who(body.at) != actor.Pool.idOf(slot))) return error.Damaged;
         if (body.chill.phase >= glacial.CYCLE or body.bleed.amount < 0 or body.bleed.move_bonus < 0) return error.Damaged;
         if (body.max > BODY_MOST or body.bleed.amount > BODY_MOST or body.bleed.move_bonus > BODY_MOST or body.clock.ticks < -BODY_MOST or body.clock.ticks > BODY_MOST) return error.Damaged;
-        if (@as(i64, body.bleed.amount) * 2 + body.bleed.move_bonus > std.math.maxInt(i32)) return error.Damaged;
+        if (@as(i64, body.bleed.amount) * bleeding.MOVE_FACTOR + body.bleed.move_bonus > std.math.maxInt(i32)) return error.Damaged;
         if (body.sunder.stacks > sunder.MOST or (body.sunder.stacks == 0) != (body.sunder.turns == 0)) return error.Damaged;
         if (body.maim.limp and body.maim.turns == 0) return error.Damaged;
         if (body.tactics.guard > progress.RANKS or body.tactics.steady > progress.RANKS) return error.Damaged;
@@ -674,6 +690,28 @@ test "runs saved before flasks were items gain both, while a current run keeps a
     for (std.enums.values(flask.Kind)) |k| try std.testing.expect(!target.sim.inventory.gear.holds(k));
 }
 
+test "a run's climate locations load as they were worked out on entry, and a run saved before them takes its level's" {
+    const alloc = std.testing.allocator;
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    const map = try alloc.create(data.Map);
+    defer alloc.destroy(map);
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    game.begin(source, 47);
+    const i = grid.Level.idx(source.sim.heroActor().?.at);
+    const entered = source.sim.locations[i];
+    source.sim.locations[i] = if (entered == .forest) .inland else .forest;
+    try sealed(source, &bytes);
+    try read(bytes.items, target, map);
+    try std.testing.expectEqualSlices(climate.Location, &source.sim.locations, &target.sim.locations);
+    store.stamp(bytes.items, MAGIC, PLACELESS);
+    try read(bytes.items, target, map);
+    try std.testing.expectEqual(entered, target.sim.locations[i]);
+}
+
 test "runs saved before class arms gain them where the hands fit, while a current run keeps them taken off" {
     const alloc = std.testing.allocator;
     const source = try game.boot(alloc);
@@ -687,11 +725,11 @@ test "runs saved before class arms gain them where the hands fit, while a curren
     for (hero.CLASSES) |class| {
         source.sim.class = class;
         game.begin(source, 43);
-        for ([_]item_bases.Slot{ .right_hand, .left_hand }) |slot| source.sim.inventory.gear.slots.set(slot, null);
+        for (HANDS) |slot| source.sim.inventory.gear.slots.set(slot, null);
         try sealed(source, &bytes);
         try read(bytes.items, target, map);
         try std.testing.expectEqualDeep(source.sim.inventory.gear, target.sim.inventory.gear);
-        for (READABLE[1..]) |version| {
+        for (LEGACY) |version| {
             store.stamp(bytes.items, MAGIC, version);
             try read(bytes.items, target, map);
             try std.testing.expectEqualDeep(@import("play/gear.zig").Gear.startFor(class).slots, target.sim.inventory.gear.slots);
@@ -706,6 +744,16 @@ test "runs saved before class arms gain them where the hands fit, while a curren
     try read(bytes.items, target, map);
     try std.testing.expectEqual(item_bases.Kind.greatsword, target.sim.inventory.gear.slots.get(.right_hand).?.kind);
     try std.testing.expectEqual(@as(?items.Item, null), target.sim.inventory.gear.slots.get(.left_hand));
+    game.begin(source, 43);
+    const shield = source.sim.inventory.gear.slots.get(.left_hand).?;
+    source.sim.inventory.bag[0] = shield;
+    source.sim.inventory.n = 1;
+    for (HANDS) |slot| source.sim.inventory.gear.slots.set(slot, null);
+    try sealed(source, &bytes);
+    store.stamp(bytes.items, MAGIC, UNARMED);
+    try read(bytes.items, target, map);
+    try std.testing.expectEqual(@as(?items.Item, null), target.sim.inventory.gear.slots.get(.left_hand));
+    try std.testing.expectEqual(@as(?items.Item, null), target.sim.inventory.gear.slots.get(.right_hand));
 }
 
 test "a body whose clock, bleed or life would overflow a turn's arithmetic is damaged" {

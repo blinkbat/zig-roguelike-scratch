@@ -1,13 +1,13 @@
 import argparse
-import json
 from pathlib import Path
 import tempfile
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
+
+from art_support import ROOT, SCRIPTS, arial, quote
 
 
 DESKTOP = Path.home() / 'Desktop'
-ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = DESKTOP / 'water-cliff-edge.aseprite'
 WORK = Path(tempfile.mkdtemp(prefix='cistern-water-cliff-'))
 SIZE = (512, 512)
@@ -30,8 +30,7 @@ ink = (55, 55, 55, 255)
 
 
 def text(x, y, value, size=12, bold=False):
-    font = ImageFont.truetype('C:/Windows/Fonts/arial' + ('bd' if bold else '') + '.ttf', size)
-    ld.text((x, y), value, font=font, fill=ink, spacing=4)
+    ld.text((x, y), value, font=arial(size, bold), fill=ink, spacing=4)
 
 
 def face(draw, x, y, kind, height, fill, lip):
@@ -87,8 +86,7 @@ layers = [
     ('Labels - hide before export', labels, 255),
     ('64x64 grid - hide before export', grid, 180),
 ]
-quote = lambda value: json.dumps(str(value).replace('\\', '/'), ensure_ascii=False)
-lua = [f'local s=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local initial=s.layers[1]', 'local expected={}']
+lua =[f'local s=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local initial=s.layers[1]', 'local expected={}']
 for index, (name, image, opacity) in enumerate(layers):
     path = WORK / f'layer-{index}.png'
     image.save(path)
@@ -104,7 +102,7 @@ for name, x, y in slices:
                 f'slice.name={quote(name)}', 'end'])
 if args.replace_blank:
     lua.extend([
-        f'local sourceFiles=dofile({quote(ROOT / "tools/tile_art/source_files.lua")})',
+        f'local sourceFiles=dofile({quote(SCRIPTS / "source_files.lua")})',
         f'if app.fs.isFile({quote(OUTPUT)}) then',
         f'local old=assert(app.open({quote(OUTPUT)}))',
         f'sourceFiles.checkBlankTemplate(old,{{width=s.width,height=s.height,colorMode=s.colorMode,guides=expected,slices=s.slices}},{quote(OUTPUT)})',

@@ -209,7 +209,7 @@ pub fn fireRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) Fired {
 
 pub fn kindleRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) bool {
     const area = areas.patch(&sim.lv, at, reach);
-    if (fire.kindleIn(&sim.lv, area.slice(), k, sim.rainField(), &sim.rng) == 0) return false;
+    if (fire.kindle(&sim.lv, area.slice(), k, sim.rainField(), &sim.rng) == 0) return false;
     sim.sayAt(at, fire.CATCHES, .{});
     return true;
 }

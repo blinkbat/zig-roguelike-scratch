@@ -108,7 +108,7 @@ pub const Owed = struct {
     knock: ?Knock = null,
     mended: ?Mended = null,
     struck: ?Struck = null,
-    /// A firebolt thrown at this cell, drawn leaving the hand as the throw lands.
+    /// A hurl thrown at this cell, drawn leaving the hand as the throw lands.
     hurled: ?P = null,
 
     pub fn any(o: *const Owed) bool {
@@ -220,7 +220,7 @@ pub const Presentation = struct {
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
     lead: ?f32 = null,
-    /// Seconds until the turn's last firebolt strikes; the foes act after it.
+    /// Seconds until the turn's last hurl strikes; the foes act after it.
     bolt_lands: f32 = 0,
     fx: fx.Fx = .{},
     gold_taken: ?ground_items.Coins = null,
@@ -237,7 +237,7 @@ pub const Presentation = struct {
     quests_shown: @FieldType(@FieldType(Simulation, "plot"), "quests") = @splat(.{}),
     hour_shown: f32 = day.Clock.hour(.{}),
     weather_shown: climate.Now = .initFill(0),
-    local_weather_shown: climate.Local = .initFill(.initFill(0)),
+    local_weather_shown: climate.Local = climate.CALM,
 
     pub fn quiet(self: *const Presentation) bool {
         return self.busy <= PACE_SLACK;
@@ -386,8 +386,8 @@ pub const Presentation = struct {
     }
 
     /// Drawn in the thrower's hand from `wait` seconds on, until its throw is staggered.
-    pub fn recordHurl(self: *Presentation, by: actor.ActorId, b: firebolt.Bolt, at: P, wait: f32) void {
-        var shown = BoltShown.resting(b);
+    pub fn recordHurl(self: *Presentation, by: actor.ActorId, b: firebolt.Bolt, element: damage.Element, at: P, wait: f32) void {
+        var shown = BoltShown.resting(b, element);
         shown.t = -wait;
         shown.before = false;
         self.bolts[by.slot().index] = shown;
@@ -395,11 +395,11 @@ pub const Presentation = struct {
     }
 
     /// `was` flown on to `now` from `wait` seconds on, gone once there if it stopped; when it gets there.
-    pub fn recordBolt(self: *Presentation, sim: *const Simulation, by: actor.ActorSlot, was: firebolt.Bolt, now: firebolt.Bolt, flew: firebolt.Flew, wait: f32) f32 {
+    pub fn recordBolt(self: *Presentation, sim: *const Simulation, by: actor.ActorSlot, was: firebolt.Bolt, now: firebolt.Bolt, flew: firebolt.Flew, element: damage.Element, wait: f32) f32 {
         const old = self.bolts[by.index];
-        const from = if (old) |b| b.to else was.point();
+        const from = if (old) |b| b.to() else was.point();
         const span = @as(f32, @floatFromInt(flew.cells)) * BOLT_CELL_S;
-        self.bolts[by.index] = .{ .view = if (old) |b| b.view else .{}, .from = from, .to = now.point(), .heading = now.heading(), .t = -wait, .span = span, .after = flew.stop == null };
+        self.bolts[by.index] = .{ .element = element, .line = now, .view = if (old) |b| b.view else .{}, .from = from, .t = -wait, .span = span, .after = flew.stop == null };
         const seen = for (was.flown..@as(usize, now.flown) + 1) |k| {
             if (self.litShown(sim, now.cell(k))) break true;
         } else false;
@@ -416,7 +416,7 @@ pub const Presentation = struct {
         for (sim.pool.constSlice(), self.bolts[0..sim.pool.n]) |a, *shown| {
             if (shown.*) |b| {
                 if (b.done() and (!b.after or a.bolt == null)) shown.* = null;
-            } else if (a.bolt) |bolt| shown.* = BoltShown.resting(bolt);
+            } else if (a.bolt) |bolt| shown.* = BoltShown.resting(bolt, actor.row(a.kind).hurls.?.element);
         }
     }
 
@@ -906,7 +906,7 @@ pub const Presentation = struct {
     }
 
     pub fn cellAlpha(self: *const Presentation, p: P) f32 {
-        return if (grid.Level.inside(p)) self.seen_cells[grid.Level.idx(p)].alpha else 0;
+        return grid.cellOr(SeenCell, &self.seen_cells, p, .{}).alpha;
     }
 
     fn occluding(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
@@ -979,7 +979,7 @@ pub const Presentation = struct {
             }
         }
         for (&self.bolts) |*pending| if (pending.*) |*b| if (b.moving()) {
-            if (b.at()) |at| self.fx.trail(&sim.lv, lit, at, b.heading, projectiles.BOLT_ACT, 0);
+            if (b.at()) |at| self.fx.hurlTrail(&sim.lv, lit, at, b.heading(), b.element);
         };
         self.stepTurning(dt);
     }

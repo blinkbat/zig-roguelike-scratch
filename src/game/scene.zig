@@ -25,11 +25,12 @@ const ground_items = @import("../play/ground_items.zig");
 const cloud = @import("../gfx/cloud.zig");
 const sky = @import("../gfx/sky.zig");
 const day = @import("../map/day.zig");
+const climate = @import("../map/climate.zig");
 const shaders = @import("../gfx/shaders.zig");
 const hud = @import("../ui/hud.zig");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
-const projectiles = @import("projectile_motion.zig");
+const firebolt = @import("../play/firebolt.zig");
 const P = mathx.P;
 
 const LEAN_GLYPH: i32 = game.authored(40);
@@ -645,7 +646,7 @@ pub fn drawMap(g: *game.Game) void {
     g.light.bake(ground, lo, hi);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;
     const flames = g.light.flames(ground, &flame_buf);
-    g.cinema.prepare(ground, g.light, view, flames, &g.sim.locations, if (g.debug.visuals.weather) g.pic.local_weather_shown else .initFill(.initFill(0)));
+    g.cinema.prepare(ground, g.light, view, flames, &g.sim.locations, if (g.debug.visuals.weather) g.pic.local_weather_shown else climate.CALM);
     const outer = g.framebuffer;
     const blooming = g.cinema.beginScene(g.screen, outer);
     if (blooming) g.framebuffer = g.cinema.scene.?.id;
@@ -678,7 +679,8 @@ pub fn drawMap(g: *game.Game) void {
     g.pic.fx.draw(o[0], o[1], game.CELL_F);
     g.light.drawMap(-c.x, -c.y, game.CELL);
     drawTacticalGround(g, c, ground, lo, hi);
-    drawBraced(g, c);
+    drawBraced(g, c, ground);
+    drawOrbLanes(g, c, ground);
     const level_up_at: ?[2]f32 = if (g.sim.heroSlot()) |i| (if (g.pic.drawnAt(&g.sim, i)) |v| game.middle(v) else null) else null;
     if (level_up_at) |at| g.pic.fx.level_up.drawBeam(at, o[0], o[1], game.CELL_F);
 
@@ -777,7 +779,7 @@ pub fn drawMap(g: *game.Game) void {
     for (&g.pic.bolts) |*pending| {
         const b = pending.* orelse continue;
         const at = b.view.at orelse continue;
-        fx.drawMissileFaded(at, b.heading, projectiles.BOLT_ACT, g.pic.fx.seconds.at(), o[0], o[1], game.CELL_F, b.view.alpha);
+        fx.drawHurl(at, b.heading(), b.element, g.pic.fx.seconds.at(), o[0], o[1], game.CELL_F, b.view.alpha);
     }
     g.cinema.drawAir(g.light, o, game.CELL_F, g.screen, g.pic.hour_shown, g.debug.visuals.water_reflections);
     if (blooming) {
@@ -956,15 +958,41 @@ fn kinOf(g: *const game.Game, p: P) Kin {
 }
 
 /// The line each pictured braced foe will charge or hook down, faded with its cells and body.
-fn drawBraced(g: *game.Game, c: Cam) void {
+fn drawBraced(g: *game.Game, c: Cam, ground: *const grid.Level) void {
     for (0..g.sim.pool.n) |i| {
         const position = g.pic.bodyAt(&g.sim, i) orelse continue;
         const b = g.pic.bodyShown(&g.sim, i).pic;
         const d = b.braced orelse continue;
         if (b.down()) continue;
         const at = game.cellUnder(position);
-        const lane = windup.lane(&g.sim.lv, at, d, actor.braceReach(b.kind) orelse continue);
-        for (lane.slice()) |p| fillCell(c, p, look.fade(look.BRACED, g.pic.cellAlpha(p) * g.pic.sighted[i]));
+        const lane = windup.lane(ground, at, d, actor.braceReach(b.kind) orelse continue);
+        for (lane.slice()) |p| laneCell(g, c, p, look.BRACED, g.pic.sighted[i]);
+    }
+}
+
+fn laneCell(g: *const game.Game, c: Cam, p: P, ink: rl.Color, alpha: f32) void {
+    fillCell(c, p, look.fade(ink, g.pic.cellAlpha(p) * alpha));
+}
+
+/// The cells each pictured orb has yet to cross, out to its range or what stops it.
+fn drawOrbLanes(g: *game.Game, c: Cam, ground: *const grid.Level) void {
+    for (0..g.sim.pool.n) |i| {
+        const b = g.pic.bolts[i] orelse continue;
+        if (fx.hurlLook(b.element) != .orb) continue;
+        const at = b.view.at orelse continue;
+        const hu = actor.row(g.sim.pool.items[i].kind).hurls orelse continue;
+        const here = mathx.cellOf(at);
+        var start: usize = if (here.eq(b.line.from)) 0 else b.line.flown;
+        var ray = grid.Ray.init(b.line.from, b.line.toward);
+        for (1..@as(usize, @intCast(hu.range)) + 1) |k| {
+            const p = ray.next() orelse break;
+            if (k < start and p.eq(here)) start = k;
+            if (k <= start) continue;
+            const e = firebolt.entryOf(ground, p, grid.Level.inside(p) and barrelShownAt(g, p));
+            if (!firebolt.enters(e)) break;
+            laneCell(g, c, p, look.CHAOS_LANE, b.view.alpha);
+            if (e != .open) break;
+        }
     }
 }
 
@@ -1038,7 +1066,7 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
         const pic = g.pic.bodyShown(&g.sim, i).pic;
         if (pic.down()) continue;
         if (look.bodyGlow(pic.kind)) |col| {
-            const source = light.Emission.onBody(game.middle(at), col, look.BODY_GLOW_RADIUS, look.BODY_GLOW_GAIN);
+            const source = fx.BODY_GLOW.lit(game.middle(at), col, 1);
             emitFaded(g, ground, source, g.pic.sighted[i]);
         }
         const flicker = g.pic.fx.statusFlicker(@floatFromInt(i));
@@ -1050,7 +1078,7 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
     for (&g.pic.bolts) |*pending| {
         const b = pending.* orelse continue;
         const at = b.view.at orelse continue;
-        if (fx.missileLight(at, projectiles.BOLT_ACT)) |source| emitFaded(g, ground, source, b.view.alpha);
+        if (fx.hurlLight(at, b.element)) |source| emitFaded(g, ground, source, b.view.alpha);
     }
     for (0..grid.CELLS) |i| {
         const a = flameAlpha(g, i);

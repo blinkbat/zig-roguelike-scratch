@@ -12,7 +12,6 @@ pub const MAX_KINDS = 16;
 const SIZE_MIN: u8 = 5;
 const SIZE_MAX: u8 = 10;
 const MARGIN: i32 = 2;
-const SPAN: grid.Tile = .stone_bridge;
 pub const Entry = struct { kind: actor.Kind = .rat, weight: u8 = 1 };
 pub const Side = enum { n, e, s, w };
 pub const Spec = struct {
@@ -224,7 +223,7 @@ pub const Spec = struct {
                     var at = head;
                     while (true) {
                         const q = queue[at];
-                        carve.layWith(lv, q, .floor, SPAN);
+                        carve.layWith(lv, q, .floor, grid.STONE_SPAN);
                         _ = lv.breakBarrel(q);
                         if (at == 0) return true;
                         at = back[at];

@@ -124,7 +124,7 @@ pub const Weather = struct {
             const x = @mod(d.x + ox, self.w);
             const y = @mod(d.y + oy, self.h);
             const at = mathx.cellOf(look.cellOfScreen(.{ .x = x, .y = y }, ox, oy, cell));
-            const place = grid.cellOr(climate.Location, locations, at, .inland);
+            const place = climate.placeAt(locations, at);
             const rain = local.get(place).get(.rain);
             if (rain <= 0) continue;
             const seen = grid.cellOr(f32, sight, at, 0) * @min(1, rain / n.get(.rain));

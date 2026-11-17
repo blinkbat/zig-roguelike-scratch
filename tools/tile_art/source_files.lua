@@ -8,6 +8,15 @@ local function bytesOf(file)
 end
 
 local files={read=bytesOf,STAMP='%Y%m%d-%H%M%S'}
+files.DESKTOP=(os.getenv('USERPROFILE') or os.getenv('HOME') or ''):gsub('\\','/')..'/Desktop/'
+
+function files.work(folder)
+  local work=(folder or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
+  app.fs.makeAllDirectories(work)
+  return work
+end
+
+function files.rgb(r,g,b) return app.pixelColor.rgba(r,g,b,255) end
 
 function files.preserve(source,canonical,install)
   if install and app.fs.isFile(canonical) then

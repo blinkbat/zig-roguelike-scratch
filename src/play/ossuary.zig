@@ -50,10 +50,11 @@ const RENOWN_PER_KILL: u32 = 10;
 const RENOWN_PER_LEVEL: u32 = 100;
 const RENOWN_PER_PLACE: u32 = 25;
 const GOLD_PER_RENOWN: u32 = 5;
+const RENOWN_TERMS: u32 = std.meta.fields(Deeds).len;
 
 pub fn renown(d: Deeds) u32 {
-    const kills: u32 = @intCast(@min(d.kills, std.math.maxInt(u32) / RENOWN_PER_KILL / 4));
-    const places: u32 = @intCast(@min(d.places, std.math.maxInt(u32) / RENOWN_PER_PLACE / 4));
+    const kills: u32 = @intCast(@min(d.kills, std.math.maxInt(u32) / RENOWN_PER_KILL / RENOWN_TERMS));
+    const places: u32 = @intCast(@min(d.places, std.math.maxInt(u32) / RENOWN_PER_PLACE / RENOWN_TERMS));
     const gold: u32 = @intCast(@max(0, d.gold));
     return kills * RENOWN_PER_KILL +| (@as(u32, d.level) -| 1) * RENOWN_PER_LEVEL +| places * RENOWN_PER_PLACE +| gold / GOLD_PER_RENOWN;
 }

@@ -90,7 +90,6 @@ pub const Item = struct {
         a.block += base.block;
         if (base.innate) |innate| innate.apply(a);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
-            .serrated, .composure, .anchorage, .grievous, .cleansing => {},
             .physical_damage => a.physical_bonus += m.value,
             .crit_damage => a.crit_damage += m.value,
             .block => a.block += m.value,
@@ -100,7 +99,7 @@ pub const Item = struct {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .life_regen, .leech, .area, .pierce, .haste, .kindling, .heft, .commander, .nightstalker => {},
+            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .life_regen, .leech, .area, .pierce, .haste, .kindling, .heft, .commander, .nightstalker, .serrated, .composure, .anchorage, .grievous, .cleansing => {},
             inline else => |k| {
                 if (comptime !k.granted()) @compileError("Item.apply: say where " ++ @tagName(k) ++ " takes effect");
                 k.grant(m.value).apply(a);

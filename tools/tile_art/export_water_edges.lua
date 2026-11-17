@@ -1,6 +1,6 @@
 local source=assert(app.params.source,'source=<edited template PNG>')
 local original=assert(app.params.original,'original=<canonical Aseprite>')
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
 local BANK_LIFT=8
 local report=assert(app.params.report,'report=<validation text>')

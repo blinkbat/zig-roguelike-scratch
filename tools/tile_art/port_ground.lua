@@ -1,4 +1,5 @@
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local name=app.params.name or 'grass'
 local material=assert(({
   grass={pixels=9375,ne=true,west_y=98},
@@ -6,39 +7,34 @@ local material=assert(({
   water={pixels=15304,ne=true,west_y=128,west_h=64,complete={[4]=true,[6]=true,[10]=true,[11]=true}},
 })[name],'name=grass|dirt|water')
 local title=name:gsub('^%l',string.upper)
-local path=app.params.source or ('C:/Users/DavidBennett/Desktop/'..name..'.aseprite')
+local path=app.params.source or (sourceFiles.DESKTOP..name..'.aseprite')
 local canonical=root..'assets/source/'..name..'.aseprite'
-local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local install=app.params.install=='yes'
 sourceFiles.preserve(path,canonical,install)
 local art_path=app.params.art or path
-local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
-app.fs.makeAllDirectories(work)
+local work=sourceFiles.work(app.params.work)
 local order=dofile(root..'tools/tile_art/ground_corners.lua')
 local groundPort=dofile(root..'tools/tile_art/ground_port.lua')
 local pc=app.pixelColor
+local W,H=groundPort.W,groundPort.H
 local s=assert(app.open(path))
-assert(s.width==512 and s.height==320 and #s.frames==1 and #s.slices==#order)
-local drawing
-for _,l in ipairs(s.layers) do
-  assert(l.name~=title..' extensions','Inspect owner edits before regenerating '..title..' extensions')
-  if l.name=='Draw here' then drawing=l end
-end
+assert(s.width==W and s.height==H and #s.frames==1 and #s.slices==#order)
+assert(not sourceFiles.layer(s,title..' extensions'),'Inspect owner edits before regenerating '..title..' extensions')
+local drawing=sourceFiles.layer(s,'Draw here')
 local c=assert(drawing:cel(1))
 if art_path~=path then
   for it in c.image:pixels() do assert(pc.rgbaA(it())==0,'Destination already painted; inspect before importing') end
   local art=assert(app.open(art_path))
-  assert(art.width==512 and art.height==320 and #art.frames==1)
-  local source
-  for _,l in ipairs(art.layers) do if l.name=='Draw here' then source=l:cel(1) end end
-  assert(source,'No Draw here on art source')
+  assert(art.width==W and art.height==H and #art.frames==1)
+  local layer=sourceFiles.layer(art,'Draw here')
+  local source=assert(layer and layer:cel(1),'No Draw here on art source')
   c.image=Image(source.image)
   c.position=Point(source.position.x,source.position.y)
   art:close()
 end
 local original=Image(c.image)
 local position=Point(c.position.x,c.position.y)
-local painted=Image(512,320,ColorMode.RGB)
+local painted=Image(W,H,ColorMode.RGB)
 painted:drawImage(original,position)
 local palette={}
 local painted_count=0
@@ -51,10 +47,10 @@ for it in painted:pixels() do
 end
 assert(painted_count==material.pixels,'Source painting changed; inspect the crops before porting')
 local function pixel(x,y)
-  if x<0 or y<0 or x>=512 or y>=320 then return 0 end
+  if x<0 or y<0 or x>=W or y>=H then return 0 end
   return painted:getPixel(x,y)
 end
-local function opaque(v) return pc.rgbaA(v)>0 end
+local opaque=groundPort.opaque
 local fill=Image(painted,Rectangle(64,128,64,64))
 if name=='water' then
   assert(not opaque(fill:getPixel(63,1)),'Water fill repair changed')
@@ -117,14 +113,15 @@ local corners={
   {bit=8,h=4,v=2,x=32,y=32,outer=outer_se},
 }
 local cells={}
-local extension=Image(512,320,ColorMode.RGB)
-local atlas=Image(256,256,ColorMode.RGB)
+local extension=Image(W,H,ColorMode.RGB)
+local atlas=Image(groundPort.SIZE,groundPort.SIZE,ColorMode.RGB)
 for i,m in ipairs(order) do
   local tile=Image(64,64,ColorMode.RGB)
+  local ox,oy=groundPort.at(i)
   if m==15 then
     tile=Image(fill)
   elseif m==9 or m==12 or (material.complete and material.complete[m]) then
-    tile=Image(painted,Rectangle(((i-1)%4)*64,64+((i-1)//4)*64,64,64))
+    tile=Image(painted,Rectangle(ox,oy,64,64))
   else
     for _,q in ipairs(corners) do
       if (m&q.bit)~=0 then
@@ -156,24 +153,23 @@ for i,m in ipairs(order) do
       end end
     end
   end
-  local ox,oy=((i-1)%4)*64,64+((i-1)//4)*64
   for y=0,63 do for x=0,63 do
     local p=pixel(ox+x,oy+y)
     if opaque(p) then tile:putPixel(x,y,p) end
   end end
   for it in tile:pixels() do assert(not opaque(it()) or palette[it()],'New colour') end
   cells[m]=tile
-  atlas:drawImage(tile,Point(ox,oy-64))
+  atlas:drawImage(tile,Point(ox,oy-groundPort.HEAD))
   for y=0,63 do for x=0,63 do
     if not opaque(pixel(ox+x,oy+y)) then extension:putPixel(ox+x,oy+y,tile:getPixel(x,y)) end
   end end
 end
 local bit=groundPort.bit
 for i,m in ipairs(order) do
-  local sl
-  for _,slice in ipairs(s.slices) do if slice.name=='Corners '..m then sl=slice end end
-  assert(sl and sl.bounds.x==((i-1)%4)*64 and sl.bounds.y==64+((i-1)//4)*64
-    and sl.bounds.width==64 and sl.bounds.height==64,'Slice moved: '..m)
+  local sl=groundPort.corner(s,m)
+  local x,y=groundPort.at(i)
+  assert(sl and sl.bounds.x==x and sl.bounds.y==y
+    and sl.bounds.width==groundPort.CELL and sl.bounds.height==groundPort.CELL,'Slice moved: '..m)
   for _,q in ipairs(corners) do
     local cx,cy=q.x==0 and 8 or 48,q.y==0 and 8 or 48
     for y=cy,cy+7 do for x=cx,cx+7 do

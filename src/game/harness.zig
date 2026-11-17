@@ -9,6 +9,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
+const look = @import("../gfx/look.zig");
 const menu = @import("../ui/menu.zig");
 const heroes = @import("../play/hero.zig");
 const actor = @import("../play/actor.zig");
@@ -210,9 +211,7 @@ pub fn hemIn(lv: *grid.Level, at: P, open: ?P) void {
     }
 }
 
-pub fn sameRgb(a: rl.Color, b: rl.Color) bool {
-    return a.r == b.r and a.g == b.g and a.b == b.b;
-}
+pub const sameRgb = look.sameRgb;
 
 fn grassOver(lv: *grid.Level) void {
     retile(lv, .floor, .grass);
@@ -470,6 +469,8 @@ pub fn affixed(kind: item_bases.Kind, affix: affixes.Affix) items.Item {
     return items.affixed(kind, &.{affix});
 }
 
+pub const LETHAL_THORNS = affixed(.leather, .{ .kind = .thorns, .value = 50 });
+
 pub const HARVEST_LIFE: i32 = 2;
 
 pub fn harvestRing() items.Item {
@@ -557,13 +558,16 @@ pub fn corridor(b: *atlas.Bespoke) void {
     b.fill(grid.Box.between(.{ .x = 2, .y = 5 }, .{ .x = 12, .y = 5 }), .floor);
 }
 
+pub const WEST_DOOR = P{ .x = 2, .y = 5 };
+pub const EAST_DOOR = P{ .x = 11, .y = 5 };
+
 pub fn twoRooms(w: *atlas.Atlas) usize {
     w.* = .{};
     const a = w.add(.{ .bespoke = .{} }).?;
     const b = w.add(.{ .bespoke = .{} }).?;
     for ([_]usize{ a, b }) |n| corridor(&w.node[n].plan.bespoke);
-    const da = w.addDoor(a, .{ .x = 2, .y = 5 }).?;
-    const db = w.addDoor(b, .{ .x = 11, .y = 5 }).?;
+    const da = w.addDoor(a, WEST_DOOR).?;
+    const db = w.addDoor(b, EAST_DOOR).?;
     w.link(.{ .node = a, .door = da }, .{ .node = b, .door = db });
     w.start = .{ .node = a, .at = .{ .x = 3, .y = 5 } };
     return b;
@@ -573,6 +577,10 @@ pub fn splittable(g: *game.Game, at: P, awake: bool) u16 {
     const id = spawnAt(g, .slime, at, awake);
     g.sim.pool.get(id).?.hp = SLIME_HALF + 1;
     return id;
+}
+
+pub fn splitOff(id: u16) usize {
+    return actor.Pool.slot(id) + 1;
 }
 
 pub fn bittenToDeath(g: *game.Game) void {

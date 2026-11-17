@@ -24,8 +24,9 @@ const P = mathx.P;
 const FROM = P{ .x = 20, .y = 20 };
 const EAST = FROM.add(.{ .x = 1, .y = 0 });
 const TRIES: usize = 400;
-/// Of the eight ways a stray picks from, one is the way it meant.
-const STRAY_PERCENT = confusion.CHANCE * 7 / 8;
+const STRAY_WAYS: u32 = mathx.ALL_DIRS.len;
+/// Of the ways a stray picks from, one is the way it meant.
+const STRAY_PERCENT = confusion.CHANCE * (STRAY_WAYS - 1) / STRAY_WAYS;
 
 fn strayedAbout(strayed: usize) bool {
     return harness.aboutRateOf(strayed, TRIES, mathx.fraction(STRAY_PERCENT));

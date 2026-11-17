@@ -14,6 +14,7 @@ const spar = @import("../../map/spar.zig");
 const app = @import("../../app.zig");
 const editor = @import("../../edit/editor.zig");
 const book = @import("../../ui/book.zig");
+const menu = @import("../../ui/menu.zig");
 const heroes = @import("../../play/hero.zig");
 const actor = @import("../../play/actor.zig");
 const burning = @import("../../play/burning.zig");
@@ -37,8 +38,11 @@ const script_text = @import("../../map/script_text.zig");
 const P = mathx.P;
 const MOUSE_DIR = @import("capture.zig").MOUSE_DIR;
 const SHOTS_DIR = @import("capture.zig").SHOTS_DIR;
+const PATH_MAX = @import("capture.zig").PATH_MAX;
+const seekHalfway = @import("capture.zig").seekHalfway;
 const SHOT_SEED = @import("capture.zig").SHOT_SEED;
 const capture = @import("capture.zig").capture;
+const captureAlong = @import("capture.zig").captureAlong;
 const drawInto = @import("capture.zig").drawInto;
 const dropAtlas = @import("capture.zig").dropAtlas;
 const heapAtlas = @import("capture.zig").heapAtlas;
@@ -61,10 +65,10 @@ pub fn captureEditor(g: *game.Game) !void {
         const shot = try targetAt(g, size);
         defer shot.close(g);
         const target = shot.target;
-        var dir_buf: [128]u8 = undefined;
+        var dir_buf: [PATH_MAX]u8 = undefined;
         const dir = try std.fmt.bufPrint(&dir_buf, SHOTS_DIR ++ "/editor-{d}x{d}", .{ size.x, size.y });
         try std.fs.cwd().makePath(dir);
-        var paths: [4][256]u8 = undefined;
+        var paths: [4][PATH_MAX]u8 = undefined;
         try editor.capture(g, target, try std.fmt.bufPrintZ(&paths[0], "{s}/edit.png", .{dir}), try std.fmt.bufPrintZ(&paths[1], "{s}/edit-graph.png", .{dir}), try std.fmt.bufPrintZ(&paths[2], "{s}/edit-gen.png", .{dir}), try std.fmt.bufPrintZ(&paths[3], "{s}/edit-objects.png", .{dir}));
     }
 }
@@ -72,6 +76,7 @@ pub fn captureEditor(g: *game.Game) !void {
 pub fn captureUi(g: *game.Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR);
     try captureKeywordColors(g);
+    try captureEnemyChanges(g);
     try captureQuests(g);
     try captureTalk(g);
     try captureTactics(g);
@@ -86,6 +91,40 @@ pub fn captureUi(g: *game.Game) !void {
     try captureLevelUp(g);
     try captureMouse(g);
     try app.captureHeroes(g);
+}
+
+fn captureEnemyChanges(g: *game.Game) !void {
+    const shot = try target720(g);
+    defer shot.close(g);
+    const h = game.harness;
+    h.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
+    const shaman = h.spawnAt(g, .pib_shaman, .{ .x = 25, .y = 20 }, true);
+    game.settle(g);
+    h.use(g, .wait);
+    h.drawnOut(g);
+    h.use(g, .wait);
+    const bolt = g.pic.bolts[actor.Pool.slot(shaman)] orelse return error.ShamanDidNotCast;
+    g.st = .{};
+    seekHalfway(g, bolt.t, bolt.span);
+    try capture(g, shot.target, SHOTS_DIR ++ "/pib-shaman-chaos-orb.png");
+    h.drawnOut(g);
+
+    h.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
+    const netter = h.spawnAt(g, .bandit_netter, .{ .x = 21, .y = 20 }, true);
+    game.settle(g);
+    g.sim.rng = h.foeAttacksRng(g, &.{.{ .id = netter, .lands = true }});
+    h.use(g, .wait);
+    g.st = .{};
+    game.update(g, 0.08);
+    try capture(g, shot.target, SHOTS_DIR ++ "/bandit-netter-melee.png");
+    h.drawnOut(g);
+    const from = g.sim.pool.get(netter).?.at;
+    h.use(g, .wait);
+    if (mathx.dist(from, g.sim.pool.get(netter).?.at) != actor.row(.bandit_netter).quickstep.?.cells) return error.NetterDidNotQuickstep;
+    g.st = .{};
+    game.update(g, 0.08);
+    try capture(g, shot.target, SHOTS_DIR ++ "/bandit-netter-quickstep.png");
+    h.drawnOut(g);
 }
 
 fn captureKeywordColors(g: *game.Game) !void {
@@ -109,11 +148,11 @@ fn captureKeywordColors(g: *game.Game) !void {
     inline for (SIZES) |size| {
         const target = try rl.loadRenderTexture(size.x, size.y);
         defer rl.unloadRenderTexture(target);
-        const scale = @as(f32, @floatFromInt(size.x)) / 1280;
-        const face = if (size.x == 1280) g.face else g.face.mipmapped();
+        const on = menu.Surface{ .scale = @as(f32, @floatFromInt(size.x)) / @as(f32, @floatFromInt(game.SCREEN_720.x)), .offset = .{ .x = 0, .y = 0 } };
+        const face = on.faceFor(g.face);
         rl.beginTextureMode(target);
         rl.clearBackground(look.BG);
-        rl.beginMode2D(.{ .zoom = scale, .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = 0, .y = 0 }, .rotation = 0 });
+        on.begin();
         for ([_]rl.Color{ look.TEXT, look.DIM, look.MAGIC }, 0..) |base, column| {
             const x = 24 + @as(i32, @intCast(column)) * 420;
             for (examples, 0..) |example, row| {
@@ -216,7 +255,7 @@ fn captureInspect(g: *game.Game) !void {
             g.keywords = .{};
             const prefix = SHOTS_DIR ++ "/keyword-stats-" ++ @tagName(device) ++ "-" ++ suffix;
             try capture(g, target, prefix ++ "-base.png");
-            if (g.keywords.n != keywords.STATUS_TERMS.len) return error.MissingKeywordLinks;
+            if (g.keywords.n != keywords.STATUS_TERMS.values.len) return error.MissingKeywordLinks;
             try captureKeyword(g, target, @intFromEnum(resilience.Tag.wounds), prefix ++ "-wounds.png");
             try captureKeyword(g, target, @intFromEnum(resilience.Tag.elemental), prefix ++ "-elemental.png");
         }
@@ -541,12 +580,7 @@ pub fn captureLevelUp(g: *game.Game) !void {
         try capture(g, target, LEVEL_UP_DIR ++ "/" ++ scene.name ++ "-before.png");
         _ = g.sim.growth.gain(@intCast(g.sim.growth.needed()));
         game.update(g, 0);
-        var elapsed: f32 = 0;
-        inline for (.{ 0.12, 0.4, 0.9, 1.5, 2.1 }, 0..) |time, i| {
-            game.update(g, time - elapsed);
-            elapsed = time;
-            try capture(g, target, std.fmt.comptimePrint(LEVEL_UP_DIR ++ "/{s}-{d}.png", .{ scene.name, i }));
-        }
+        try captureAlong(g, target, &.{ 0.12, 0.4, 0.9, 1.5, 2.1 }, LEVEL_UP_DIR ++ "/" ++ scene.name ++ "-");
     }
 }
 

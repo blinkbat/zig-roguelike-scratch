@@ -1,8 +1,4 @@
-from pathlib import Path
-import tempfile
-import unittest
-
-from art_support import ROOT, arguments, aseprite, main
+from art_support import SCRIPTS, WorkTest, arguments, aseprite, main
 
 
 args, remaining = arguments()
@@ -18,23 +14,17 @@ ORIGINAL = b'owner\x00original\xffpaint'
 DIVERGENT = b'owner\x00different\xffpaint'
 
 
-class PortSourceTests(unittest.TestCase):
+class PortSourceTests(WorkTest):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='cistern-port-source-test-')
-        self.addCleanup(self.temporary.cleanup)
-        self.work = Path(self.temporary.name)
+        super().setUp()
         self.wrapper = self.work / 'preflight.lua'
         self.wrapper.write_text('''
 local realapp=app
-local env=setmetatable({app={
+local env
+env=setmetatable({app={
   params=realapp.params,
   pixelColor=realapp.pixelColor,
-  fs={
-    tempPath=realapp.params.work,
-    joinPath=realapp.fs.joinPath,
-    makeAllDirectories=realapp.fs.makeAllDirectories,
-    isFile=realapp.fs.isFile,
-  },
+  fs=setmetatable({tempPath=realapp.params.work},{__index=realapp.fs}),
   open=function(path)
     assert(path==realapp.params.source,'Wrong input source')
     error('PORT_SOURCE_OPEN_BOUNDARY')
@@ -42,7 +32,7 @@ local env=setmetatable({app={
 },dofile=function(path)
   local helper=path:match('/tools/tile_art/([^/]+)$')
   assert(helper=='ground_corners.lua' or helper=='ground_port.lua' or helper=='wall_masks.lua' or helper=='source_files.lua')
-  return dofile(realapp.params.helpers..'/'..helper)
+  return assert(loadfile(realapp.params.helpers..'/'..helper,'t',env))()
 end},{__index=_G})
 assert(loadfile(realapp.params.script,'t',env))()
 ''', encoding='utf-8')
@@ -68,7 +58,7 @@ assert(loadfile(realapp.params.script,'t',env))()
                     'work': root / 'work',
                     'install': 'no' if case == 'draft_divergent' else 'yes',
                     'script': (args.scripts_dir / script).resolve(),
-                    'helpers': ROOT / 'tools/tile_art',
+                    'helpers': SCRIPTS,
                 })
                 output = result.stdout + result.stderr
                 self.assertNotEqual(0, result.returncode, output)

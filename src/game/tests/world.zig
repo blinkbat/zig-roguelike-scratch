@@ -201,7 +201,7 @@ test "regional rain follows each body instead of the hero and beam weather stays
     for (0..6) |x| g.sim.lv.set(.{ .x = @intCast(x), .y = 20 }, .sand);
     g.sim.lv.set(.{ .x = 19, .y = 20 }, .large_tree);
     game.settle(g);
-    try std.testing.expectEqual(@as(f32, 0), g.sim.rainNow());
+    try std.testing.expectEqual(@as(f32, 0), g.sim.rainAt(g.sim.heroAt().?));
     const coast = P{ .x = 5, .y = 20 };
     try std.testing.expectEqual(climate.DRIZZLE, g.sim.rainAt(coast));
     var body = actor.Actor.of(.rat, coast);
@@ -301,8 +301,8 @@ test "a skeleton follows through a door that leads to another door on the same n
     _ = harness.twoRooms(w);
     const a = w.start.node;
     w.node[a].door_n = 0;
-    const west = w.addDoor(a, .{ .x = 2, .y = 5 }).?;
-    const east = w.addDoor(a, .{ .x = 11, .y = 5 }).?;
+    const west = w.addDoor(a, harness.WEST_DOOR).?;
+    const east = w.addDoor(a, harness.EAST_DOOR).?;
     w.link(.{ .node = a, .door = west }, .{ .node = a, .door = east });
     game.beginMap(g, w);
     _ = harness.spawnAt(g, .skeleton, .{ .x = 4, .y = 5 }, true);
@@ -539,7 +539,7 @@ test "a door keeps the low glow, a level-up, the archer's facing and a walk pres
     defer std.testing.allocator.destroy(w);
     const b = harness.twoRooms(w);
     const a = w.start.node;
-    _ = w.node[b].plan.bespoke.addFoe(.{ .kind = .rat, .at = .{ .x = 11, .y = 5 } });
+    _ = w.node[b].plan.bespoke.addFoe(.{ .kind = .rat, .at = harness.EAST_DOOR });
     game.beginMap(g, w);
     _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, actor.row(HERO).hp - 1);
     g.st = .{};
@@ -553,7 +553,7 @@ test "a door keeps the low glow, a level-up, the archer's facing and a walk pres
     while (g.sim.node == a) game.update(g, harness.TEST_DT);
     try std.testing.expect(g.pic.fx.level_up.life > 0);
     try std.testing.expectEqual(actor.Facing.left, g.pic.facing[g.sim.heroSlot().?]);
-    try std.testing.expect(!g.sim.heroActor().?.at.eq(.{ .x = 11, .y = 5 }));
+    try std.testing.expect(!g.sim.heroActor().?.at.eq(harness.EAST_DOOR));
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
     try std.testing.expect(g.pending != null);
     try std.testing.expectApproxEqAbs(low, g.vignette.low, 0.05);

@@ -1,10 +1,10 @@
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
-local source=root..'assets/source/forest-tree-walls.aseprite'
-local desktop='C:/Users/DavidBennett/Desktop/forest-tree-walls.aseprite'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local source=root..'assets/source/forest-tree-walls.aseprite'
+local desktop=sourceFiles.DESKTOP..'forest-tree-walls.aseprite'
 local stamp=os.date(sourceFiles.STAMP)
 local pc=app.pixelColor
-local function rgb(r,g,b) return pc.rgba(r,g,b,255) end
+local rgb=sourceFiles.rgb
 local colours={
   [rgb(107,185,112)]=rgb(82,143,86),
   [rgb(158,215,106)]=rgb(122,166,82),
@@ -44,7 +44,7 @@ for pixel in grass:pixels() do
 end
 sourceFiles.savePng(grass,root..'assets/ground/grass.png')
 dofile(root..'tools/tile_art/export_forest.lua')
-local report=sourceFiles.report(app.fs.joinPath(app.fs.tempPath,'wall-mocks/forest-tone.txt'))
+local report=sourceFiles.report(sourceFiles.work()..'forest-tone.txt')
 report:write(('%d foliage pixels darkened; trunks and alpha unchanged. Grass RGB reduced 15%%, alpha unchanged.\n'):format(changed))
 report:write('Sources and previous PNGs backed up in assets/backup/; Desktop and assets/source sources updated.\n')
 report:close()

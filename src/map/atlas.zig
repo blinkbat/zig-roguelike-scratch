@@ -812,6 +812,8 @@ pub fn testStart() !*Atlas {
 
 /// `START`'s node holding the caravan zoo.
 pub const CARAVAN_NODE: usize = 1;
+/// `START`'s goblin camp node.
+pub const GOBLIN_CAMP_NODE: usize = 2;
 
 test "removing a node unlinks the doors into it and renumbers the rest" {
     const a = try testAtlas();
@@ -1136,6 +1138,8 @@ test "the caravan's merchant stands beside a cart, and the stolen baby pib far u
     defer std.testing.allocator.destroy(a);
     const caravan = (a.node[a.start.node].doors()[0].to orelse return error.NoLink).node;
     const north = a.node[caravan].doors()[1].to orelse return error.NoLink;
+    try std.testing.expectEqual(CARAVAN_NODE, caravan);
+    try std.testing.expectEqual(GOBLIN_CAMP_NODE, north.node);
     const s = &a.script;
     const merchant = for (s.npcs(), 0..) |f, i| {
         if (f.node == caravan and std.mem.eql(u8, f.called(), "Merchant")) break i;

@@ -250,7 +250,7 @@ test "incoming strikes retain recorded seeded outcomes through statuses reaction
         harness.setLife(hero, case.hp, case.hp);
         const attacker_id = harness.spawnAt(g, case.kind, .{ .x = 21, .y = 20 }, true);
         if (case.thorns) {
-            g.sim.inventory.gear.slots.set(.chest, harness.affixed(.leather, .{ .kind = .thorns, .value = 50 }));
+            g.sim.inventory.gear.slots.set(.chest, harness.LETHAL_THORNS);
             g.sim.pool.get(attacker_id).?.hp = 1;
         }
         game.settle(g);
@@ -330,7 +330,7 @@ test "frame partitioning preserves thorn death knockback and bleeding without re
         const attacker_id = harness.spawnAt(g, .bandit_shieldbearer, .{ .x = 21, .y = 20 }, true);
         const attacker_slot = actor.Pool.slot(attacker_id);
         g.sim.pool.get(attacker_id).?.hp = 1;
-        g.sim.inventory.gear.slots.set(.chest, harness.affixed(.leather, .{ .kind = .thorns, .value = 50 }));
+        g.sim.inventory.gear.slots.set(.chest, harness.LETHAL_THORNS);
         game.settle(g);
         g.sim.rng = mathx.Rng.init(42);
         harness.use(g, .wait);

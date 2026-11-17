@@ -115,7 +115,7 @@ const FADE_FRAMES = game.harness.FADE_FRAMES;
 const FADED = game.harness.FADED;
 const UNFADED = game.harness.UNFADED;
 const TREES_DIR = SHOTS_DIR ++ "/trees";
-const VEIL_GAS = 60;
+const VEIL_GAS = @import("capture.zig").VEIL_GAS;
 
 fn fadeOut(g: *game.Game) void {
     for (0..FADE_FRAMES) |_| game.update(g, mathx.TEST_DT);

@@ -35,6 +35,7 @@ const SHOT_BIOME = @import("capture.zig").SHOT_BIOME;
 const SHOT_OUTDOOR = @import("capture.zig").SHOT_OUTDOOR;
 const SHOT_SEED = @import("capture.zig").SHOT_SEED;
 const capture = @import("capture.zig").capture;
+const captureAlong = @import("capture.zig").captureAlong;
 const dropAtlas = @import("capture.zig").dropAtlas;
 const exportTarget = @import("capture.zig").exportTarget;
 const heapAtlas = @import("capture.zig").heapAtlas;
@@ -45,6 +46,7 @@ const neutralLens = @import("capture.zig").neutralLens;
 const drawInto = @import("capture.zig").drawInto;
 const sameRgb = @import("capture.zig").sameRgb;
 const differentPixels = @import("capture.zig").differentPixels;
+const seekHalfway = @import("capture.zig").seekHalfway;
 const captureWater = @import("water_cliffs.zig").captureWater;
 const checkMapEdge = @import("water_cliffs.zig").checkMapEdge;
 const checkWaterMirrors = @import("water_cliffs.zig").checkWaterMirrors;
@@ -125,7 +127,7 @@ fn captureCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     const hp_after_shot = g.sim.heroActor().?.hp;
     const shot = g.pic.foe_shots[slot] orelse return error.CrossbowmanDidNotShoot;
     g.st = .{};
-    game.update(g, -shot.t + shot.lands() / 2);
+    seekHalfway(g, shot.t, shot.lands());
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-arrow.png");
     h.drawnOut(g);
     if (g.sim.heroActor().?.hp != hp_after_shot) return error.CrossbowmanIdleDamage;
@@ -153,7 +155,7 @@ fn captureBraced(g: *game.Game, target: rl.RenderTexture2D) !void {
     h.use(g, .wait);
     g.st = .{};
     const hook = g.pic.foe_shots[actor.Pool.slot(gaoler)] orelse return error.HookNotFlung;
-    game.update(g, -hook.t + hook.lands() / 2);
+    seekHalfway(g, hook.t, hook.lands());
     try capture(g, target, SHOTS_DIR ++ "/braced-hook.png");
     game.update(g, 0.1);
     try capture(g, target, SHOTS_DIR ++ "/braced-strike.png");
@@ -321,7 +323,7 @@ pub fn captureGeneral(g: *game.Game) !void {
     poseForest(g);
     try capture(g, target, SHOTS_DIR ++ "/forest.png");
     studyAt(g, true, MORNING);
-    try captureCinemaScene(g, target, "forest");
+    try captureCinemaScene(g, target, "forest", .{ .bench = true, .bloomless = true });
     for ([_]struct { hour: f32, name: [:0]const u8 }{
         .{ .hour = MORNING, .name = SHOTS_DIR ++ "/shadows-morning.png" },
         .{ .hour = day.NOON, .name = SHOTS_DIR ++ "/shadows-noon.png" },
@@ -377,7 +379,7 @@ pub fn captureGeneral(g: *game.Game) !void {
         {
             try loadStrand(g, w);
             try capture(g, target, SHOTS_DIR ++ "/strand.png");
-            try captureCinemaScene(g, target, "strand");
+            try captureCinemaScene(g, target, "strand", .{ .bench = true });
             const seen = g.sim.lv.seen;
             const lit = g.sim.lv.lit;
             game.scene.toggleReveal(g);
@@ -502,12 +504,7 @@ fn captureEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
             if (reticle == .bow) try requireProjectile(g, act);
         }
         g.st = .{};
-        var previous: f32 = 0;
-        inline for ([_]f32{ 0.012, 0.028, 0.05, 0.09, 0.16, 0.26 }, 0..) |t, i| {
-            game.update(g, t - previous);
-            previous = t;
-            try capture(g, target, directory ++ "/" ++ std.fmt.comptimePrint("{d}", .{i}) ++ ".png");
-        }
+        try captureAlong(g, target, &.{ 0.012, 0.028, 0.05, 0.09, 0.16, 0.26 }, directory ++ "/");
         if (act == .spark) {
             for (g.sim.pool.slice()) |*a| if (a.alive and a.foe()) a.clock.stun();
             game.settle(g);
@@ -684,9 +681,9 @@ fn captureBodyGlow(g: *game.Game, target: rl.RenderTexture2D) !void {
         .{ .hour = NIGHT, .outdoors = false, .path = SHOTS_DIR ++ "/body-glow-dark.png" },
     }) |study| {
         game.harness.grassArena(g, .{ .x = 20, .y = 21 }, &.{});
-        inline for (.{ actor.Kind.slime, .slime_half, .slime_quarter, .bloat, .pyre_bloat }, 0..) |kind, i| {
-            _ = game.harness.spawnAt(g, kind, .{ .x = 16 + @as(i32, @intCast(i)) * 2, .y = 18 }, false);
-        }
+        var glowing = look.GLOWING_BODIES.iterator();
+        var x: i32 = 16;
+        while (glowing.next()) |kind| : (x += 2) _ = game.harness.spawnAt(g, kind, .{ .x = x, .y = 18 }, false);
         studyAt(g, study.outdoors, study.hour);
         try capture(g, target, study.path);
     }
@@ -968,12 +965,14 @@ fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
         }
         for (g.sim.lv.torches()) |t| g.face.glyph(look.TORCH.ch, t.x * OVERVIEW_CELL + OVERVIEW_MID, t.y * OVERVIEW_CELL + OVERVIEW_MID, OVERVIEW_INK, look.TORCH.fg);
         rl.endTextureMode();
-        var buf: [listing.PATH_MAX + 32]u8 = undefined;
+        var buf: [OVERVIEW_PATH_MAX]u8 = undefined;
         const name = try overviewPath(&buf, list.at(i));
         try std.fs.cwd().makePath(std.fs.path.dirname(name).?);
         try exportTarget(target, name);
     }
 }
+
+const OVERVIEW_PATH_MAX = listing.PATH_MAX + 32;
 
 fn overviewPath(buf: []u8, map: []const u8) ![:0]const u8 {
     return std.fmt.bufPrintZ(buf, SHOTS_MAPS ++ "/{s}/overview.png", .{map[atlas.PREFIX.len..]});
@@ -982,7 +981,7 @@ fn overviewPath(buf: []u8, map: []const u8) ![:0]const u8 {
 test "map overview paths preserve folders with repeated map names" {
     const paths = [_][]const u8{ "main", "foo", "a/foo", "b/foo", "a/deeper/foo", "foo.png/bar" };
     inline for (paths) |path| {
-        var buf: [listing.PATH_MAX + 32]u8 = undefined;
+        var buf: [OVERVIEW_PATH_MAX]u8 = undefined;
         try std.testing.expectEqualStrings(SHOTS_MAPS ++ "/" ++ path ++ atlas.EXT ++ "/overview.png", try overviewPath(&buf, atlas.PREFIX ++ path ++ atlas.EXT));
     }
 }

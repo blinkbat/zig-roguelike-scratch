@@ -1,25 +1,22 @@
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
-local path=app.params.source or 'C:/Users/DavidBennett/Desktop/bridge.aseprite'
-local canonical=root..'assets/source/bridge.aseprite'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local path=app.params.source or sourceFiles.DESKTOP..'bridge.aseprite'
+local canonical=root..'assets/source/bridge.aseprite'
 local install=app.params.install=='yes'
 sourceFiles.preserve(path,canonical,install)
-local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
-app.fs.makeAllDirectories(work)
+local work=sourceFiles.work(app.params.work)
 local order=dofile(root..'tools/tile_art/ground_corners.lua')
 local groundPort=dofile(root..'tools/tile_art/ground_port.lua')
 local pc=app.pixelColor
+local W,H=groundPort.W,groundPort.H
 local s=assert(app.open(path))
-assert(s.width==512 and s.height==320 and #s.frames==1 and #s.slices==#order)
-local drawing,previous
-for _,l in ipairs(s.layers) do
-  if l.name=='Bridge extensions' then previous=l end
-  if l.name=='Draw here' then drawing=l end
-end
+assert(s.width==W and s.height==H and #s.frames==1 and #s.slices==#order)
+local previous=sourceFiles.layer(s,'Bridge extensions')
+local drawing=sourceFiles.layer(s,'Draw here')
 if previous then
   local old=assert(app.open(assert(app.params.previous,'Inspect owner edits; previous=<validated source> required')))
-  local expected
-  for _,l in ipairs(old.layers) do if l.name=='Bridge extensions' then expected=l:cel(1) end end
+  local layer=sourceFiles.layer(old,'Bridge extensions')
+  local expected=layer and layer:cel(1)
   local actual=previous:cel(1)
   assert(expected and actual.image:isEqual(expected.image) and actual.position==expected.position,'Extension has later edits')
   old:close()
@@ -27,7 +24,7 @@ end
 local c=assert(drawing:cel(1))
 local original=Image(c.image)
 local position=Point(c.position.x,c.position.y)
-local painted=Image(512,320,ColorMode.RGB)
+local painted=Image(W,H,ColorMode.RGB)
 painted:drawImage(original,position)
 local palette={}
 local painted_count=0
@@ -43,10 +40,10 @@ local O=pc.rgba(128,104,78,255)
 local K=pc.rgba(0,0,0,255)
 assert(palette[O] and palette[K])
 local function px(x,y)
-  if x<0 or y<0 or x>=512 or y>=320 then return 0 end
+  if x<0 or y<0 or x>=W or y>=H then return 0 end
   return painted:getPixel(x,y)
 end
-local function opaque(v) return pc.rgbaA(v)>0 end
+local opaque=groundPort.opaque
 local function dark(v) return v==O or v==K end
 
 -- Left quarters read x 64..95, right quarters x 32..63, so the west edge is his and the cut between them is the east edge.
@@ -271,8 +268,8 @@ local function piece(mask)
 end
 
 local cells={}
-local extension=Image(512,320,ColorMode.RGB)
-local atlas=Image(256,256,ColorMode.RGB)
+local extension=Image(W,H,ColorMode.RGB)
+local atlas=Image(groundPort.SIZE,groundPort.SIZE,ColorMode.RGB)
 for i,m in ipairs(order) do
   local tile=piece(m)
   for it in tile:pixels() do
@@ -280,16 +277,16 @@ for i,m in ipairs(order) do
     assert(pc.rgbaA(v)==0 or (pc.rgbaA(v)==255 and palette[v]),'New colour or partial alpha in mask '..m)
   end
   cells[m]=tile
-  local ox,oy=((i-1)%4)*64,64+((i-1)//4)*64
+  local ox,oy=groundPort.at(i)
   extension:drawImage(tile,Point(ox,oy))
-  atlas:drawImage(tile,Point(ox,oy-64))
+  atlas:drawImage(tile,Point(ox,oy-groundPort.HEAD))
 end
 
 local bit=groundPort.bit
 for i,m in ipairs(order) do
-  local sl
-  for _,slice in ipairs(s.slices) do if slice.name=='Corners '..m then sl=slice end end
-  assert(sl and sl.bounds.x==((i-1)%4)*64 and sl.bounds.y==64+((i-1)//4)*64,'Slice moved: '..m)
+  local sl=groundPort.corner(s,m)
+  local x,y=groundPort.at(i)
+  assert(sl and sl.bounds.x==x and sl.bounds.y==y,'Slice moved: '..m)
   for _,q in ipairs({{1,8,8},{2,48,8},{4,8,48},{8,48,48}}) do
     for y=q[3],q[3]+7 do for x=q[2],q[2]+7 do
       assert(opaque(cells[m]:getPixel(x,y))==bit(m,q[1]),'Wrong quarter in mask '..m)

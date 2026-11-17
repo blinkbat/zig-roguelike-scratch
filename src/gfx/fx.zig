@@ -16,6 +16,7 @@ pub const TICK_WISPS = state.TICK_WISPS;
 pub const BURST_WISPS = state.BURST_WISPS;
 pub const Sting = state.Sting;
 pub const FLAMES_GLOW = state.FLAMES_GLOW;
+pub const BODY_GLOW = state.BODY_GLOW;
 const Settle = state.Settle;
 pub const Burst = state.Burst;
 pub const Zap = state.Zap;
@@ -302,9 +303,8 @@ const LevelUp = struct {
     }
 
     pub fn emission(self: LevelUp, at: [2]f32) ?light.Emission {
-        const gain = self.alpha() * LEVEL_GLOW.gain;
-        if (gain <= 0) return null;
-        return light.Emission.onBody(at, look.LEVEL_GOLD, LEVEL_GLOW.radius, gain);
+        const e = LEVEL_GLOW.lit(at, look.LEVEL_GOLD, self.alpha());
+        return if (e.gain > 0) e else null;
     }
 
     pub fn drawBeam(self: LevelUp, at: [2]f32, ox: f32, oy: f32, cell: f32) void {
@@ -554,6 +554,23 @@ pub const Fx = struct {
             .drag = 3,
             .add = m.add,
         }), lv, age);
+    }
+
+    pub fn hurlTrail(self: *Fx, lv: *const grid.Level, lit: *const [grid.CELLS]bool, at: [2]f32, dir: [2]f32, element: damage.Element) void {
+        switch (hurlLook(element)) {
+            .fireball => return self.trail(lv, lit, at, dir, HURL_FIREBALL, 0),
+            .orb => {},
+        }
+        if (!grid.cellOr(bool, lit, mathx.cellOf(at), false)) return;
+        self.emit(.{
+            .p = .{ at[0], at[1], STRIKE_Z },
+            .v = .{ -dir[0] * CHAOS_ORB_TRAIL_BACK, -dir[1] * CHAOS_ORB_TRAIL_BACK, CHAOS_ORB_TRAIL_RISE },
+            .life = CHAOS_ORB_TRAIL_S,
+            .r = self.rng.between(CHAOS_ORB_TRAIL_R[0], CHAOS_ORB_TRAIL_R[1]),
+            .col = look.CHAOS,
+            .drag = CHAOS_ORB_TRAIL_DRAG,
+            .add = true,
+        });
     }
 
     pub fn shimmer(self: *Fx, at: [2]f32, col: rl.Color) void {
@@ -1083,6 +1100,62 @@ fn flareOf(element: ?damage.Element) ?Flare {
     };
 }
 
+/// How a foe's hurl is drawn: as the hero's fireball, or as an orb whose path is telegraphed.
+pub const HurlLook = enum { fireball, orb };
+
+pub fn hurlLook(element: damage.Element) HurlLook {
+    return switch (element) {
+        .chaos => .orb,
+        .fire, .cold, .lightning => .fireball,
+    };
+}
+
+const HURL_FIREBALL: skillbar.Act = .fireball;
+
+pub fn hurlLight(at: [2]f32, element: damage.Element) ?light.Emission {
+    return switch (hurlLook(element)) {
+        .fireball => missileLight(at, HURL_FIREBALL),
+        .orb => struck(at, look.CHAOS, CHAOS_ORB_LIGHT),
+    };
+}
+
+pub fn drawHurl(at: [2]f32, dir: [2]f32, element: damage.Element, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
+    switch (hurlLook(element)) {
+        .fireball => return drawMissileFaded(at, dir, HURL_FIREBALL, t, ox, oy, cell, alpha),
+        .orb => {},
+    }
+    const p = projected(at, ox, oy, cell);
+    const k = pxScale(cell);
+    const pulse = 1 + @sin(t * CHAOS_ORB_PULSE_RAD_S) * CHAOS_ORB_PULSE;
+    for (0..CHAOS_ORB_RINGS) |i| {
+        const f: f32 = @floatFromInt(i);
+        pixel.fleck(p, (CHAOS_ORB_HALO_PX - f * CHAOS_ORB_RING_PX) * pulse, k, look.fade(look.CHAOS_GLOW, alpha * CHAOS_ORB_HALO_A));
+    }
+    pixel.fleck(p, CHAOS_ORB_R_PX * pulse, k, look.fade(look.CHAOS, alpha));
+    drawHeart(p, k, CHAOS_ORB_CORE_PX, look.CHAOS_CORE, CHAOS_ORB_HEART_PX, alpha);
+}
+
+fn drawHeart(p: rl.Vector2, k: f32, core_px: f32, core: rl.Color, heart_px: f32, alpha: f32) void {
+    pixel.fleck(p, core_px, k, look.fade(core, alpha));
+    pixel.rect(p, heart_px, heart_px, k, look.fade(rl.Color.white, alpha));
+}
+
+const CHAOS_ORB_LIGHT = light.Reach{ .radius = 2, .gain = 0.85 };
+const CHAOS_ORB_TRAIL_S: f32 = 0.16;
+const CHAOS_ORB_TRAIL_BACK: f32 = 0.4;
+const CHAOS_ORB_TRAIL_RISE: f32 = 0.06;
+const CHAOS_ORB_TRAIL_R = [2]f32{ 0.5, 1 };
+const CHAOS_ORB_TRAIL_DRAG: f32 = 3;
+const CHAOS_ORB_HEART_PX: f32 = 3;
+const CHAOS_ORB_HALO_PX: f32 = 17;
+const CHAOS_ORB_HALO_A: f32 = 0.22;
+const CHAOS_ORB_RINGS: usize = 3;
+const CHAOS_ORB_RING_PX: f32 = 2.5;
+const CHAOS_ORB_R_PX: f32 = 10;
+const CHAOS_ORB_CORE_PX: f32 = 6;
+const CHAOS_ORB_PULSE: f32 = 0.08;
+const CHAOS_ORB_PULSE_RAD_S: f32 = 14;
+
 pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
     if (sparkFlies(act)) return struck(at, look.LIGHTNING, SPARK_LIGHT);
     const m = flareOf(act.element()) orelse return null;
@@ -1105,8 +1178,7 @@ pub fn drawMissileFaded(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: 
             const w = rl.Vector2{ .x = p.x - dir[0] * f * FIREBALL_GAP_PX * k, .y = p.y - dir[1] * f * FIREBALL_GAP_PX * k + @sin(t * FIREBALL_WAVE_RAD_S + f * FIREBALL_WAVE_PHASE) * FIREBALL_WAVE_PX * k };
             pixel.fleck(w, FIREBALL_R_PX - f * FIREBALL_TAPER_PX, k, look.fade(look.FIRE, (1 - f * FIREBALL_FADE) * alpha));
         }
-        pixel.fleck(p, FIREBALL_CORE_PX, k, look.fade(look.FIRE_CORE, alpha));
-        pixel.rect(p, FIREBALL_HEART_PX, FIREBALL_HEART_PX, k, look.fade(rl.Color.white, alpha));
+        drawHeart(p, k, FIREBALL_CORE_PX, look.FIRE_CORE, FIREBALL_HEART_PX, alpha);
         return;
     }
     drawArrow(p, dir, col, .{ ox, oy }, k);

@@ -1,11 +1,11 @@
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local path=app.params.source or root..'assets/source/forest-tree-walls.aseprite'
-local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
-app.fs.makeAllDirectories(work)
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local work=sourceFiles.work()
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local sprite=assert(app.open(path))
-assert(sprite.width==512 and sprite.height==448 and #sprite.frames==1 and #sprite.slices==47)
-local combined=Image(512,448,ColorMode.RGB)
+assert(sprite.width==masks.W and sprite.height==masks.HEAD+masks.H and #sprite.frames==1 and #sprite.slices==#masks)
+local combined=Image(masks.W,masks.HEAD+masks.H,ColorMode.RGB)
 local layers=0
 for _,layer in ipairs(sprite.layers) do
   if layer.name=='Draw here' or layer.name=='Forest extensions' then
@@ -16,10 +16,10 @@ for _,layer in ipairs(sprite.layers) do
   end
 end
 assert(layers==2,'Expected the original painting and its extensions')
-local atlas=Image(combined,Rectangle(0,64,512,384))
+local atlas=Image(combined,Rectangle(0,masks.HEAD,masks.W,masks.H))
 local pixels=0
 for i,mask in ipairs(masks) do
-  local x,y=((i-1)%8)*64,math.floor((i-1)/8)*64
+  local x,y=masks.at(i)
   local count=0
   for yy=0,63 do for xx=0,63 do
     local a=app.pixelColor.rgbaA(atlas:getPixel(x+xx,y+yy))
@@ -29,7 +29,8 @@ for i,mask in ipairs(masks) do
   assert(count>0,'Empty mask '..mask)
   pixels=pixels+count
 end
-for y=320,383 do for x=448,511 do assert(app.pixelColor.rgbaA(atlas:getPixel(x,y))==0,'Unused cell painted') end end
+local unusedX,unusedY=masks.at(#masks+1)
+for y=unusedY,unusedY+masks.CELL-1 do for x=unusedX,unusedX+masks.CELL-1 do assert(app.pixelColor.rgbaA(atlas:getPixel(x,y))==0,'Unused cell painted') end end
 atlas:saveAs(root..'assets/walls/forest-tree-walls.png')
 sprite:close()
 local check=Image{fromFile=root..'assets/walls/forest-tree-walls.png'}

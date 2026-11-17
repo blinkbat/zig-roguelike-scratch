@@ -128,7 +128,15 @@ pub fn labelW(face: *const font.Face, label: [:0]const u8, size: i32) i32 {
     return textFace(face).width(label, size) + 2 * LABEL_PAD;
 }
 
-pub const Step = struct { tip: ?[:0]const u8, live: bool = true };
+pub const Step = struct {
+    tip: ?[:0]const u8,
+    live: bool = true,
+
+    pub fn both(tip: ?[:0]const u8, live: bool) [2]Step {
+        const s = Step{ .tip = tip, .live = live };
+        return .{ s, s };
+    }
+};
 
 pub const LESS = "-";
 pub const MORE = "+";
@@ -275,8 +283,12 @@ pub fn scrollbarIn(box: rl.Rectangle, offset: usize, shown: usize, total: usize)
     scrollbar(.{ .x = box.x + box.width - w, .y = box.y, .width = w, .height = box.height }, offset, shown, total);
 }
 
+pub fn visiblePart(clip: ?rl.Rectangle, r: rl.Rectangle) rl.Rectangle {
+    return if (clip) |c| rl.getCollisionRec(c, r) else r;
+}
+
 pub fn scissorIn(clip: ?rl.Rectangle, r: rl.Rectangle) void {
-    scissor(if (clip) |c| rl.getCollisionRec(c, r) else r);
+    scissor(visiblePart(clip, r));
 }
 
 pub fn reclip(clip: ?rl.Rectangle) void {
@@ -299,7 +311,7 @@ pub const Scroll = struct {
         return raster.top(s.box) - s.top.*;
     }
 
-    pub fn shown(s: Scroll) i32 {
+    fn shown(s: Scroll) i32 {
         return @max(0, raster.height(s.box));
     }
 
@@ -318,14 +330,10 @@ pub const Scroll = struct {
         if (s.most.* > 0) scrollbarIn(s.box, @intCast(s.top.*), @intCast(s.shown()), @intCast(s.shown() + s.most.*));
     }
 
-    pub fn end(s: Scroll, bottom: i32, margin: i32) void {
-        s.fit(bottom, margin);
-        s.bar();
-    }
-
     pub fn close(s: Scroll, clip: *?rl.Rectangle, bottom: i32, margin: i32) void {
         unclip(clip);
-        s.end(bottom, margin);
+        s.fit(bottom, margin);
+        s.bar();
     }
 };
 
@@ -364,15 +372,20 @@ test "editor scrollbar thumb remains inside its track for large catalogs and sho
 }
 
 pub const Across = struct {
-    col: Column,
+    x: i32,
+    span: i32,
     y: i32,
     n: usize,
     k: usize = 0,
 
+    pub fn of(col: Column, y: i32, n: usize) Across {
+        return .{ .x = col.left(), .span = col.inner(), .y = y, .n = n };
+    }
+
     pub fn next(a: *Across) rl.Rectangle {
         std.debug.assert(a.k < a.n);
         defer a.k += 1;
-        return a.col.cell(a.y, a.k, a.n);
+        return slotOf(a.x, a.span, a.y, a.k, a.n);
     }
 
     pub fn done(a: *const Across) void {

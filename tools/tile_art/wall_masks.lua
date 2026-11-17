@@ -2,6 +2,10 @@
 local N,E,S,W,NE,SE,SW,NW=1,2,4,8,16,32,64,128
 local masks={0,1,2,4,8,3,19,5,6,38,9,137,10,12,76,7,23,39,55,11,27,139,155,13,77,141,205,14,46,78,110,15,31,47,63,79,95,111,127,143,159,175,191,207,223,239,255}
 masks.bit={n=N,e=E,s=S,w=W,ne=NE,se=SE,sw=SW,nw=NW}
+masks.CELL,masks.COLS=64,8
+masks.HEAD=64
+masks.W,masks.H=masks.COLS*masks.CELL,math.ceil(#masks/masks.COLS)*masks.CELL
+function masks.at(i) return ((i-1)%masks.COLS)*masks.CELL,(i-1)//masks.COLS*masks.CELL end
 function masks.of(filled,x,y)
   local n,e,s,w=filled(x,y-1),filled(x+1,y),filled(x,y+1),filled(x-1,y)
   local m=(n and N or 0)|(e and E or 0)|(s and S or 0)|(w and W or 0)

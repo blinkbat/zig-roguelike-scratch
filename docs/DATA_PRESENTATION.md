@@ -99,6 +99,11 @@ Defenses, attributes, critical chances and progression follow. Advanced holds
 damage bonuses, critical multiplier, recovery, elemental and status resistances,
 including dimmed zeroes. `character_stats.Tier` separates large headline
 numbers, Balthazar key rows and plain data rows.
+Advanced status resistances sit under Wounds, Slows, Mental and Elemental
+headers in two columns. The headers retain keyword inspection. Each status is
+listed once: overlapping Maim appears under Wounds and Chill under Elemental;
+their full tag membership remains available in inspection. Rows show the status
+name, percentage and any remaining turns without repeating “resistance”.
 
 Skills show effect, rank, current or first-rank properties, then a next-rank
 section containing only changes. Hit ranges include equipment, attributes,

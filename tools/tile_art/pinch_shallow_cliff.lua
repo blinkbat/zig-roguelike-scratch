@@ -65,7 +65,7 @@ local function sample(top,foot,y)
  return short==1 and top or top+math.floor((y-top)*(height-1)/(short-1)+0.5)
 end
 local s=assert(app.open(work..'water-cliff-edge.aseprite'))
-for _,l in ipairs(s.layers) do assert(l.name~='Shallow cliff - half height','Already pinched; use the original backup') end
+assert(not sourceFiles.layer(s,'Shallow cliff - half height'),'Already pinched; use the original backup')
 local paint=sourceFiles.canvas(s,assert(s.layers[8]:cel(1)))
 local compressed=Image(s.width,s.height,ColorMode.RGB)
 local columns=0

@@ -455,15 +455,13 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void 
     }
 }
 
-const TRAIL_MAX: usize = @intCast(grid.W + grid.H);
-
 /// The trail if it crosses no painted solid, else the way through fewest: false when that breaks one, so the pass relabels first.
 fn joinRound(lv: *grid.Level, rng: *mathx.Rng, st: *Stretches, from_r: u16, main: u16, a: P, b: P, path: grid.Tile, painted: *const grid.CellSet) bool {
-    var way: [TRAIL_MAX]P = undefined;
+    var way: [Trail.MOST]P = undefined;
     var n: usize = 0;
     var crosses = false;
     var t = Trail{ .p = a, .b = b };
-    while (t.next(rng)) |p| {
+    while (t.next(rng, lv)) |p| {
         way[n] = p;
         n += 1;
         const i = grid.Level.idx(p);
@@ -697,15 +695,21 @@ pub const Regions = std.StaticBitSet(grid.CELLS);
 
 pub fn trail(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, path: grid.Tile) void {
     var t = Trail{ .p = a, .b = b };
-    while (t.next(rng)) |p| lay(lv, p, path);
+    while (t.next(rng, lv)) |p| lay(lv, p, path);
 }
+
+const DETOURS_MAX = 8;
 
 const Trail = struct {
     p: P,
     b: P,
     begun: bool = false,
+    detours: u8 = 0,
 
-    fn next(t: *Trail, rng: *mathx.Rng) ?P {
+    /// Cells a trail lays: one per step across and down the map, and two per detour.
+    const MOST: usize = @as(usize, @intCast(grid.W + grid.H)) + 2 * DETOURS_MAX;
+
+    fn next(t: *Trail, rng: *mathx.Rng, lv: *const grid.Level) ?P {
         if (!t.begun) {
             t.begun = true;
             return t.p;
@@ -714,10 +718,61 @@ const Trail = struct {
         const dx = t.b.x - t.p.x;
         const dy = t.b.y - t.p.y;
         const across = dy == 0 or (dx != 0 and rng.below(@abs(dx) + @abs(dy)) < @abs(dx));
-        if (across) t.p.x += std.math.sign(dx) else t.p.y += std.math.sign(dy);
+        const along = P{ .x = std.math.sign(dx), .y = 0 };
+        const down = P{ .x = 0, .y = std.math.sign(dy) };
+        t.p = t.p.add(if (across) t.round(lv, along, down) else t.round(lv, down, along));
         return t.p;
     }
+
+    /// `step`, else the other way toward `b`, else aside: a trail passes a chest or glow plant by.
+    fn round(t: *Trail, lv: *const grid.Level, step: P, other: P) P {
+        if (!lv.at(t.p.add(step)).prized() or t.detours >= DETOURS_MAX) return step;
+        if (!other.eq(.{ .x = 0, .y = 0 }) and !lv.at(t.p.add(other)).prized()) return other;
+        const side = P{ .x = step.y, .y = step.x };
+        for ([_]P{ side, side.scaled(-1) }) |s| {
+            const q = t.p.add(s);
+            if (grid.Level.inside(q) and !grid.Level.onRim(q) and !lv.at(q).prized()) {
+                t.detours += 1;
+                return s;
+            }
+        }
+        return step;
+    }
 };
+
+test "a trail steps round a chest or glow plant in its way and still joins its ends" {
+    for (0..20) |seed| {
+        var lv = grid.Level.blank();
+        const a = P{ .x = 10, .y = 10 };
+        const b = P{ .x = 20, .y = 10 };
+        lv.set(a, .floor);
+        lv.set(.{ .x = 12, .y = 10 }, .glow_plant);
+        lv.set(.{ .x = 16, .y = 10 }, .chest);
+        lv.set(.{ .x = 19, .y = 9 }, .chest);
+        lv.set(.{ .x = 19, .y = 11 }, .chest);
+        var rng = mathx.Rng.init(seed + 1);
+        trail(&lv, &rng, a, b, .floor);
+        try std.testing.expectEqual(grid.Tile.glow_plant, lv.at(.{ .x = 12, .y = 10 }));
+        try std.testing.expectEqual(grid.Tile.chest, lv.at(.{ .x = 16, .y = 10 }));
+        try std.testing.expectEqual(grid.Tile.floor, lv.at(b));
+        var st: Stretches = .{};
+        _ = st.label(&lv);
+        try std.testing.expectEqual(st.of(a), st.of(b));
+    }
+}
+
+test "a trail along the row inside the rim steps round a chest without opening the rim" {
+    for (0..20) |seed| {
+        var lv = grid.Level.blank();
+        lv.set(.{ .x = 40, .y = 1 }, .chest);
+        var rng = mathx.Rng.init(seed + 1);
+        trail(&lv, &rng, .{ .x = 45, .y = 1 }, .{ .x = 30, .y = 1 }, .floor);
+        for (0..grid.CELLS) |i| {
+            const p = grid.Level.of(i);
+            if (grid.Level.onRim(p)) try std.testing.expect(lv.at(p).solid());
+        }
+    }
+}
 
 fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
     layWith(lv, p, path, SPAN);

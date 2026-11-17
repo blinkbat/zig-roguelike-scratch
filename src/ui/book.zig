@@ -533,10 +533,7 @@ pub const Book = struct {
         var cost: menu.Note(40) = .{};
         cost.say("{s}  " ++ hero.COINS_FMT, .{ if (self.selling) "Sells for" else "Price", asked });
         face.draw(cost.text(), layout.DETAIL_X, layout.LOOT_TOP, font.BODY, self.priceInk(view, asked));
-        self.drawCard(face, view, TRADE_CARD_Y, switch (w) {
-            .supply => |k| k,
-            .item => null,
-        });
+        self.drawCard(face, view, TRADE_CARD_Y, wareSupply(w));
     }
 
     fn drawNote(self: *const Book, face: *const font.Face, note_y: i32) void {
@@ -633,10 +630,7 @@ pub const Book = struct {
                         .item => it.?.name(&name_buf),
                         .supply => |k| std.fmt.bufPrintZ(&name_buf, "{s} ({d})", .{ menu.titleOf(k), s.left(k) }) catch menu.titleOf(k),
                     };
-                    rowGlyph(sprites, x, row_mid, it, switch (w) {
-                        .supply => |k| k,
-                        .item => null,
-                    });
+                    rowGlyph(sprites, x, row_mid, it, wareSupply(w));
                     listRow(face, x, row_mid, label, inkOf(it), cost.text(), self.priceInk(view, asked));
                 },
                 .passives, .skills, .stats, .quests => unreachable,
@@ -775,6 +769,12 @@ const Side = union(enum) {
         };
     }
 };
+fn wareSupply(w: trade.Ware) ?consumable.Kind {
+    return switch (w) {
+        .supply => |k| k,
+        .item => null,
+    };
+}
 const ACTIONS = [_]input.Button{ menu.CONFIRM, menu.CHANGE, menu.REMOVE };
 fn slotChoice(k: item_bases.Kind) bool {
     return k.slots().len > 1;

@@ -196,6 +196,12 @@ pub fn wrap(i: usize, by: i32, n: usize) usize {
     return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
 }
 
+/// As `wrap`, over none and then `0..n`.
+pub fn wrapOptional(comptime T: type, i: ?T, by: i32, n: usize) ?T {
+    const to = wrap(if (i) |v| @as(usize, v) + 1 else 0, by, n + 1);
+    return if (to == 0) null else @intCast(to - 1);
+}
+
 /// As `wrap`, but held at the first and the last instead.
 pub fn nudge(i: usize, by: i32, n: usize) usize {
     if (n == 0) return 0;

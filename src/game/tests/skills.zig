@@ -1607,7 +1607,7 @@ test "a half split into the cell of a body the same blow kills slides out once t
     game.settle(g);
     harness.use(g, .frost_nova);
     const dying = harness.foeSlot(0);
-    const half = actor.Pool.slot(id) + 1;
+    const half = harness.splitOff(id);
     try std.testing.expect(!g.sim.pool.items[dying].alive);
     try std.testing.expect(g.sim.pool.items[half].at.eq(cell));
     var overlap: f32 = 0;

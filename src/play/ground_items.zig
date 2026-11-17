@@ -62,20 +62,23 @@ pub const Ground = struct {
         return true;
     }
 
+    pub fn pileAt(self: *const Ground, at: mathx.P) ?usize {
+        for (self.coins[0..self.coin_n], 0..) |pile, i| if (pile.at.eq(at)) return i;
+        return null;
+    }
+
     pub fn gold(self: *Ground, at: mathx.P, amount: i32) bool {
         std.debug.assert(grid.Level.inside(at) and amount > 0);
-        for (self.coins[0..self.coin_n]) |*pile| if (pile.at.eq(at)) {
-            pile.amount +|= amount;
+        if (self.pileAt(at)) |i| {
+            self.coins[i].amount +|= amount;
             return true;
-        };
+        }
         return mathx.push(Coins, &self.coins, &self.coin_n, .{ .at = at, .amount = amount });
     }
 
     pub fn collect(self: *Ground, at: mathx.P) i32 {
-        for (self.coins[0..self.coin_n], 0..) |pile, i| if (pile.at.eq(at)) {
-            return mathx.swapRemove(Coins, &self.coins, &self.coin_n, i).amount;
-        };
-        return 0;
+        const i = self.pileAt(at) orelse return 0;
+        return mathx.swapRemove(Coins, &self.coins, &self.coin_n, i).amount;
     }
 
     pub fn add(self: *Ground, drop: Drop) bool {

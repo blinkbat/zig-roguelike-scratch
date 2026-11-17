@@ -124,7 +124,7 @@ pub fn value(c: *const cinema.Cinema, row: Row) f32 {
 
 pub fn set(c: *cinema.Cinema, row: Row, requested: f32) void {
     const r = range(row) orelse return;
-    const amount = std.math.clamp(@round(requested * 100) / 100, r.min, r.max);
+    const amount = std.math.clamp(@round(requested * mathx.PERCENT) / mathx.PERCENT, r.min, r.max);
     switch (row) {
         inline else => |t| if (comptime sliderOf(t)) |s| switch (s) {
             .lens => @field(c.lens.options, @tagName(t)) = amount,
@@ -235,7 +235,7 @@ pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *c
             rl.drawRectangleRec(.{ .x = rail.x, .y = rail.y, .width = rail.width * t, .height = rail.height }, ink);
             rl.drawRectangleRec(.{ .x = rail.x + rail.width * t - GRIP_HALF_W, .y = rail.y - GRIP_RISE, .width = 2 * GRIP_HALF_W, .height = GRIP_H }, ink);
             var buf: [24]u8 = undefined;
-            const number = std.fmt.bufPrintZ(&buf, "{d:.0}%", .{amount * 100}) catch "";
+            const number = std.fmt.bufPrintZ(&buf, "{d:.0}%", .{amount * mathx.PERCENT}) catch "";
             face.centred(number, raster.right(box) - VALUE_INSET, raster.middleAt(box).y, font.SMALL, ink);
         }
     }

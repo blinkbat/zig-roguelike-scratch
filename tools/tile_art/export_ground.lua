@@ -1,9 +1,11 @@
 -- A ground template's painting, its 4x4 block alone, as the game's sheet: assets/ground/<name>-ground.png, which src/gfx/ground.zig reads.
 -- params: name=grass|cobble|dirt|water|shallows|bridge [source=<sheet.aseprite>] [out=<png>] [from=underdrawing, a stand-in, only with out=]
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local groundPort=dofile(root..'tools/tile_art/ground_port.lua')
 local name=assert(app.params.name,'name=grass|cobble|dirt|water|shallows|bridge')
 local source_name=({water='deep-water',shallows='water'})[name] or name
-local source=app.params.source or ('C:/Users/DavidBennett/Desktop/'..source_name..'.aseprite')
+local source=app.params.source or (sourceFiles.DESKTOP..source_name..'.aseprite')
 local stand_in=app.params.from=='underdrawing'
 assert(app.params.from==nil or stand_in,'from=underdrawing or nothing')
 assert(not stand_in or app.params.out,'a stand-in never goes into assets/: give out=')
@@ -26,25 +28,22 @@ if stand_in then
   local assets=normalized(app.fs.joinPath(root,'assets'))
   assert(destination~=assets and destination:sub(1,#assets+1)~=assets..'/','a stand-in must be exported outside assets/')
 end
-local HEAD,CELL,COLS=64,64,4
+local HEAD,SIZE,COLS=groundPort.HEAD,groundPort.SIZE,groundPort.COLS
 local order=dofile(root..'tools/tile_art/ground_corners.lua')
 assert(#order==COLS*COLS)
 
 local sprite=assert(app.open(source))
-assert(sprite.width==512 and sprite.height==HEAD+COLS*CELL,'not a ground template: '..source)
+assert(sprite.width==groundPort.W and sprite.height==groundPort.H,'not a ground template: '..source)
 assert(#sprite.slices==COLS*COLS,'not a ground template: '..source)
 for i,m in ipairs(order) do
-  local s
-  for _,sl in ipairs(sprite.slices) do
-    if sl.name=='Corners '..m then s=sl end
-  end
-  assert(s,'no slice for mask '..m)
-  assert(s.bounds.x==((i-1)%COLS)*CELL and s.bounds.y==HEAD+((i-1)//COLS)*CELL,'slice '..m..' moved')
+  local s=assert(groundPort.corner(sprite,m),'no slice for mask '..m)
+  local x,y=groundPort.at(i)
+  assert(s.bounds.x==x and s.bounds.y==y,'slice '..m..' moved')
 end
 local want=stand_in and 'Underdrawing (25%)' or 'Draw here'
 local extension=(name=='water' or name=='shallows') and 'Water extensions' or name:gsub('^%l',string.upper)..' extensions'
 local found=false
-local sheet=Image(COLS*CELL,COLS*CELL,ColorMode.RGB)
+local sheet=Image(SIZE,SIZE,ColorMode.RGB)
 for _,l in ipairs(sprite.layers) do
   if l.name==want then found=true end
   if (l.name==want and (stand_in or l.isVisible)) or (not stand_in and l.name==extension) then
@@ -73,4 +72,4 @@ end
 sprite:close()
 sheet:saveAs(out)
 local back=Image{fromFile=out}
-assert(back.width==COLS*CELL and back.height==COLS*CELL and back:isEqual(sheet),'reread '..out)
+assert(back.width==SIZE and back.height==SIZE and back:isEqual(sheet),'reread '..out)

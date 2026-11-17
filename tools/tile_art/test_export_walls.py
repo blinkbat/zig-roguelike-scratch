@@ -6,7 +6,7 @@ import unittest
 
 from PIL import Image
 
-from art_support import ROOT, arguments, aseprite, main
+from art_support import SCRIPTS, arguments, aseprite, main
 
 
 args, remaining = arguments()
@@ -14,7 +14,7 @@ args, remaining = arguments()
 
 class WallExportTests(unittest.TestCase):
     def publish(self, readonly):
-        source = (ROOT / 'tools/tile_art/export_walls.lua').read_text(encoding='utf-8')
+        source = (SCRIPTS / 'export_walls.lua').read_text(encoding='utf-8')
         publication = source[source.index('sourceFiles.savePng(exported'):]
         with tempfile.TemporaryDirectory(prefix='cistern-wall-export-test-') as temporary:
             root = Path(temporary)
@@ -34,7 +34,7 @@ local exported=Image(atlas)
                 output.chmod(stat.S_IREAD)
             try:
                 result = aseprite(args.aseprite, script,
-                                  {'root': root, 'helper': ROOT / 'tools/tile_art/source_files.lua'})
+                                  {'root': root, 'helper': SCRIPTS / 'source_files.lua'})
                 message = result.stdout + result.stderr
                 if readonly:
                     self.assertNotEqual(0, result.returncode, message)

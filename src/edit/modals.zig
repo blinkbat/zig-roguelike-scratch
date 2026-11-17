@@ -11,7 +11,6 @@ const lume = @import("../map/lume.zig");
 const gas = @import("../map/gas.zig");
 const fire = @import("../map/fire.zig");
 const actor = @import("../play/actor.zig");
-const firebolt = @import("../play/firebolt.zig");
 const windup = @import("../play/windup.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
@@ -272,8 +271,11 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             }
             if (r.hooks) |h| f.put("Braces, then hooks along the line {d} cells every {d} turns, pulling 1 cell", .{ h.range, h.every });
             if (r.hurls) |h| {
-                f.put("{d}-{d} {s} firebolt, {d} cells a turn up to {d}; hits any body", .{ h.hit.lo, h.hit.hi, menu.word(firebolt.ELEMENT), h.speed, h.range });
-                f.put("{d}% to burn; moves after each throw, keeps {d} cells off", .{ h.burns, r.keeps });
+                f.put("{d}-{d} {s} {s}, {d} cells a turn up to {d}; hits any body", .{ h.hit.lo, h.hit.hi, menu.word(h.element), h.name, h.speed, h.range });
+                if (h.burns > 0)
+                    f.put("{d}% to burn; moves after each throw, keeps {d} cells off", .{ h.burns, r.keeps })
+                else
+                    f.put("Moves after each throw, keeps {d} cells off", .{r.keeps});
             }
             if (r.light > 0) f.put("Carries a light {d} cells round", .{r.light});
             if (r.splits) |into| f.put("Splits into two {s}s under half its hp", .{actor.row(into).name});

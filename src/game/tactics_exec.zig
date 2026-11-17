@@ -336,7 +336,7 @@ pub fn landed(g: *game.Game, id: u16) void {
     const trap = g.sim.lv.caltrops[cell];
     if (trap.turns > 0 and a.foe() and actor.row(a.kind).movement.grounded()) {
         _ = g.sim.pinFor(a, tactics.Caltrops.pins(trap.rank));
-        if (tactics.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) a.bleed.startWith(tactics.Caltrops.bleed(trap.rank));
+        if (tactics.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) a.bleed.startWound(tactics.Caltrops.bleed(trap.rank), g.sim.grievous());
         g.pic.recordWear(&g.sim, .fromInt(id));
         g.sim.sayOf(a, "The {s} steps into caltrops.", .{actor.row(a.kind).name});
     }

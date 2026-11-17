@@ -53,6 +53,7 @@ pub const Blow = struct {
 const BURN_GLOW = light.Reach{ .radius = 2, .gain = 0.55 };
 const WARD_GLOW = light.Reach{ .radius = 1.5, .gain = 0.25 };
 const STUN_GLOW = light.Reach{ .radius = 1.3, .gain = 0.45 };
+pub const BODY_GLOW = light.Reach{ .radius = 1.6, .gain = 0.18 };
 pub const FLAMES_GLOW = light.Reach{ .radius = @as(f32, @floatFromInt(lume.FIRE_REACH)) + 0.5, .gain = 0.3 };
 /// What a body suffers for turns, in the order the hud names them.
 pub const Status = enum {

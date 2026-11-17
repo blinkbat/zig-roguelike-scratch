@@ -51,6 +51,7 @@ must agree. Runtime atlases are 512x384: eight 64px cells per row, final cell em
 | Regular wall | Desktop `regular-walls.aseprite`, original `Layer 1`; `export_walls.lua` builds `assets/source/walls.aseprite` and `assets/walls/walls.png` |
 | Forest | `assets/source/forest-tree-walls.aseprite`, `Draw here` plus `Forest extensions`; `export_forest.lua` writes `assets/walls/forest-tree-walls.png` |
 | Cave/forest guides | Desktop `cave-walls.aseprite` / `forest-tree-walls.aseprite`; `guide_walls.lua` supplies guides, `idea_walls.lua` supplies hidden assistant ideas |
+| New wall sheet | `new_sheet.lua out=<new.aseprite> title=<header.png>` copies the `cave-walls.aseprite` guides into an empty sheet; `sheet_title.py <header.png> <title>` draws the header |
 
 Regular-wall runtime cells fill the tile, unlike the thin cores in the Desktop
 reference sheet. `export_walls.lua` samples original painted edges, cap details,

@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import ROOT, arguments, aseprite, main
+from art_support import SCRIPTS, arguments, aseprite, main
 
 
 args, remaining = arguments()
@@ -20,7 +20,7 @@ class InstallSourceTests(unittest.TestCase):
 
     def port(self, filename, blocked):
         name, start, height = PORTS[filename]
-        source = (ROOT / 'tools/tile_art' / filename).read_text(encoding='utf-8')
+        source = (SCRIPTS / filename).read_text(encoding='utf-8')
         publication = source[source.index(start):source.index('atlas:saveAs(')]
         with tempfile.TemporaryDirectory(prefix='cistern-install-port-test-') as temporary:
             work = Path(temporary)
@@ -55,7 +55,7 @@ s:newCel(drawing,1,original,position)
 s:saveAs(path)
 ''' + publication + '\nprint("PUBLICATION_COMPLETE")\n', encoding='utf-8')
             result = self.run_lua(script, work=work, source=working, canonical=canonical,
-                                  helper=ROOT / 'tools/tile_art/source_files.lua',
+                                  helper=SCRIPTS / 'source_files.lua',
                                   name=name, height=height, install='yes')
             output = result.stdout + result.stderr
             self.assertTrue(working.is_file(), output)
@@ -83,10 +83,10 @@ s:saveAs(path)
     def tone(self, fail):
         with tempfile.TemporaryDirectory(prefix='cistern-install-tone-test-') as temporary:
             work = Path(temporary)
-            for folder in ('assets/source', 'assets/walls', 'assets/ground', 'assets/backup', 'wall-mocks'):
+            for folder in ('assets/source', 'assets/walls', 'assets/ground', 'assets/backup', 'wall-mocks', 'desktop'):
                 (work / folder).mkdir(parents=True)
             source = work / 'assets/source/forest-tree-walls.aseprite'
-            desktop = work / 'desktop.aseprite'
+            desktop = work / 'desktop/forest-tree-walls.aseprite'
             script = work / 'tone.lua'
             script.write_text('''
 local root=app.params.root
@@ -103,36 +103,30 @@ im:saveAs(root..'assets/ground/grass.png')
 local realapp,realio=app,io
 local desktop=realapp.params.desktop
 local customio=setmetatable({open=function(path,mode)
- if path==desktop then
-  if mode=='wb' and realapp.params.fail=='yes' then return nil,'injected publication failure' end
-  path=realapp.params.desktop
- end
+ if path==desktop and mode=='wb' and realapp.params.fail=='yes' then return nil,'injected publication failure' end
  return realio.open(path,mode)
 end},{__index=realio})
 local env
 env=setmetatable({
  io=customio,
  app={params=realapp.params,pixelColor=realapp.pixelColor,open=realapp.open,
-  fs={tempPath=realapp.params.work,joinPath=realapp.fs.joinPath}},
+  fs=setmetatable({tempPath=realapp.params.work},{__index=realapp.fs})},
  dofile=function(path)
   if path==root..'tools/tile_art/source_files.lua' then
-   return assert(loadfile(realapp.params.helper,'t',env))()
+   local files=assert(loadfile(realapp.params.helper,'t',env))()
+   files.DESKTOP=realapp.params.desktop_dir
+   return files
   end
   assert(path==root..'tools/tile_art/export_forest.lua','Unexpected script')
  end,
 },{__index=_G})
-local input=assert(realio.open(realapp.params.script,'rb'))
-local body=assert(input:read('*a')); assert(input:close())
-local declaration="local desktop='C:/Users/DavidBennett/Desktop/forest-tree-walls.aseprite'"
-local first,last=body:find(declaration,1,true)
-assert(first,'Desktop declaration missing')
-body=body:sub(1,first-1)..'local desktop='..string.format('%q',desktop)..body:sub(last+1)
-assert(load(body,'@'..realapp.params.script,'t',env))()
+assert(loadfile(realapp.params.script,'t',env))()
 ''', encoding='utf-8')
             result = self.run_lua(script, root=work.as_posix() + '/', work=work,
-                                  desktop=desktop, fail='yes' if fail else 'no',
-                                  helper=ROOT / 'tools/tile_art/source_files.lua',
-                                  script=ROOT / 'tools/tile_art/tone_forest.lua')
+                                  desktop=desktop, desktop_dir=desktop.parent.as_posix() + '/',
+                                  fail='yes' if fail else 'no',
+                                  helper=SCRIPTS / 'source_files.lua',
+                                  script=SCRIPTS / 'tone_forest.lua')
             output = result.stdout + result.stderr
             report = work / 'wall-mocks/forest-tone.txt'
             if fail:
@@ -186,7 +180,7 @@ title:saveAs(app.params.title)
             before = template.read_bytes()
             if blocked:
                 destination.mkdir()
-            result = self.run_lua(ROOT / 'tools/tile_art/new_sheet.lua',
+            result = self.run_lua(SCRIPTS / 'new_sheet.lua',
                                   template=template, title=title, out=destination)
             self.assertEqual(before, template.read_bytes())
             if blocked:

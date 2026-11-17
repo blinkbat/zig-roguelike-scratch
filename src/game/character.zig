@@ -121,10 +121,8 @@ fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
 
 fn goldReached(g: *const game.Game, from: P, at: P) ?ground_items.Coins {
     if (!withinReach(from, at)) return null;
-    for (g.sim.ground.coins[0..g.sim.ground.coin_n]) |pile| {
-        if (pile.at.eq(at)) return g.pic.pileShown(&g.sim, pile);
-    }
-    return null;
+    const i = g.sim.ground.pileAt(at) orelse return null;
+    return g.pic.pileShown(&g.sim, g.sim.ground.coins[i]);
 }
 
 pub fn lootReached(g: *const game.Game, from: P, at: P) bool {

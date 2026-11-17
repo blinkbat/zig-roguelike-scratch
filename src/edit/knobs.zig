@@ -53,7 +53,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
         const open = gv.roofed == null or pg.floor.outdoor();
         const title = if (gv.roofed) |roofed| (if (open) gv.title else roofed) else gv.title;
         knobs(ed, g, &y, title, &@field(pg, gv.field), gv.rows, open);
-        if (comptime std.mem.eql(u8, gv.field, "sky")) locationRows(ed, g, &y, open);
+        if (gv.locations) locationRows(ed, g, &y, open);
         y += widgets.BLOCK_GAP;
     }
     section(g, &y, "Makeups");
@@ -78,11 +78,10 @@ fn locationRows(ed: *editor.Editor, g: *game.Game, y: *i32, live: bool) void {
         const value = ed.here().locations.get(place);
         const label = if (value) |v| @tagName(v) else "inherit";
         const tip = "Weather in this location; inherit uses the node's weather";
-        const by = stepper(ed, g, valueSlot(g, at, 0, 1), label, .{ .{ .tip = tip, .live = live }, .{ .tip = tip, .live = live } });
+        const by = stepper(ed, g, valueSlot(g, at, 0, 1), label, widgets.Step.both(tip, live));
         if (by == 0) continue;
-        const index: i32 = if (value) |v| @as(i32, @intCast(@intFromEnum(v))) + 1 else 0;
-        const next: usize = @intCast(@mod(index + std.math.sign(by), @as(i32, @intCast(choices.len + 1))));
-        ed.here().locations.set(place, if (next == 0) null else choices[next - 1]);
+        const index: ?usize = if (value) |v| @intFromEnum(v) else null;
+        ed.here().locations.set(place, if (mathx.wrapOptional(usize, index, std.math.sign(by), choices.len)) |i| choices[i] else null);
         ed.changed();
     }
 }
@@ -630,10 +629,10 @@ comptime {
     for (atlas_text.GROUPS) |grp| covers(@FieldType(atlas.Procgen, grp.field), groupRows(grp.field), grp.knobs);
 }
 
-const GroupView = struct { field: []const u8, title: [:0]const u8, roofed: ?[:0]const u8 = null, rows: []const Knob };
+const GroupView = struct { field: []const u8, title: [:0]const u8, roofed: ?[:0]const u8 = null, rows: []const Knob, locations: bool = false };
 
 const GROUP_VIEWS = [_]GroupView{
-    .{ .field = "sky", .title = "Sky", .roofed = "Sky (this base is under a roof)", .rows = &SKY_ROWS },
+    .{ .field = "sky", .title = "Sky", .roofed = "Sky (this base is under a roof)", .rows = &SKY_ROWS, .locations = true },
     .{ .field = "foes", .title = "Foes", .rows = &FOE_ROWS },
     .{ .field = "post", .title = "Allies", .rows = &POST_ROWS },
     .{ .field = "raid", .title = "Night raids", .rows = &RAID_ROWS },
@@ -740,7 +739,7 @@ fn stepNumber(ed: *editor.Editor, g: *game.Game, y: i32, owner: anytype, comptim
 }
 
 fn stepChoice(ed: *editor.Editor, g: *game.Game, y: i32, comptime T: type, v: *T, tip: [:0]const u8, live: bool) void {
-    const by = stepper(ed, g, valueSlot(g, y, 0, 1), @tagName(v.*), .{ .{ .tip = tip, .live = live }, .{ .tip = tip, .live = live } });
+    const by = stepper(ed, g, valueSlot(g, y, 0, 1), @tagName(v.*), widgets.Step.both(tip, live));
     v.* = cycle(T, v.*, by);
 }
 

@@ -81,7 +81,7 @@ pub const Tile = enum(u8) {
     /// Stone over lava or a chasm, which a burnt bridge must not leave as water.
     pub fn spannedBy(t: Tile, span: Tile) Tile {
         std.debug.assert(t.liquid() and span.spans());
-        return if (t.wet()) span else .stone_bridge;
+        return if (t.wet()) span else STONE_SPAN;
     }
 
     pub fn wet(t: Tile) bool {
@@ -126,6 +126,11 @@ pub const Tile = enum(u8) {
 
     pub fn isChest(t: Tile) bool {
         return t == .chest or t == .chest_open;
+    }
+
+    /// A chest or glow plant, which trails step round.
+    pub fn prized(t: Tile) bool {
+        return t.isChest() or t == .glow_plant;
     }
 
     pub fn isOpened(t: Tile) bool {
@@ -242,6 +247,8 @@ pub const Tile = enum(u8) {
 pub const BARREL_LETTER = '0';
 pub const BARREL_GROUND: Tile = .floor;
 pub const FROZEN: Tile = .ice;
+/// A crossing no fire takes down.
+pub const STONE_SPAN: Tile = .stone_bridge;
 
 pub fn groundOf(c: u8) ?Tile {
     return if (c == BARREL_LETTER) BARREL_GROUND else Tile.ofLetter(c);

@@ -886,13 +886,17 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     s.passage_box = widgets.NO_BOX;
     if (s.selected) |i| if (s.data) |c| {
         const e = c.entries()[i];
-        widgets.drawFit(&g.face, e.owner, TEXT, right_w, false, right_x, y, look.TEXT);
+        var yy = y;
+        widgets.drawFit(&g.face, e.owner, TEXT, right_w, false, right_x, yy, look.TEXT);
+        yy += LINE_H;
         const breadcrumb = std.fmt.bufPrintZ(&buf, "{s}  >  {s}", .{ e.category, e.role }) catch "";
-        widgets.drawFit(&g.face, breadcrumb, DETAIL, right_w, false, right_x, y + LINE_H, look.UI_GOLD);
+        widgets.drawFit(&g.face, breadcrumb, DETAIL, right_w, false, right_x, yy, look.UI_GOLD);
+        yy += widgets.DETAIL_STEP;
         const source = std.fmt.bufPrintZ(&buf, "{s}:{d}", .{ e.path, e.line }) catch "";
-        widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE_H + widgets.DETAIL_STEP, look.DIM);
-        widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE_H + 2 * widgets.DETAIL_STEP, look.DIM);
-        var yy = y + LINE_H + 3 * widgets.DETAIL_STEP + HINT_GAP;
+        widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, yy, look.DIM);
+        yy += widgets.DETAIL_STEP;
+        widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, yy, look.DIM);
+        yy += widgets.DETAIL_STEP + HINT_GAP;
         const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
         widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
         yy += DETAIL + LEAD;

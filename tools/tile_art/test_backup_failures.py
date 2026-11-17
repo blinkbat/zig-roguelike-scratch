@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import ROOT, arguments, aseprite, main
+from art_support import ROOT, SCRIPTS, arguments, aseprite, main
 
 
 args, remaining = arguments()
@@ -11,16 +11,11 @@ WRAPPER = r'''
 local realapp,realio=app,io
 local p=realapp.params
 local root=p.root
-local desktop='C:/Users/DavidBennett/Desktop/forest-tree-walls.aseprite'
 local reads={}
-local function actual(path)
- return path==desktop and p.desktop or path
-end
 local function injected(operation)
  return nil,'injected '..operation..' failure'
 end
 local customio={open=function(path,mode)
- path=actual(path)
  local input=mode=='rb'
  if input then reads[path]=(reads[path] or 0)+1 end
  local selected=input and path==p.fault_path and reads[path]==tonumber(p.occurrence)
@@ -57,11 +52,12 @@ env=setmetatable({
  io=customio,
  app={params=p,pixelColor=realapp.pixelColor,open=function() return sprite end,
   fs={tempPath=p.work,joinPath=realapp.fs.joinPath,fileName=realapp.fs.fileName,
-   makeAllDirectories=realapp.fs.makeAllDirectories,
-   isFile=function(path) return realapp.fs.isFile(actual(path)) end}},
+   makeAllDirectories=realapp.fs.makeAllDirectories,isFile=realapp.fs.isFile}},
  dofile=function(path)
   assert(path==root..'tools/tile_art/source_files.lua','Unexpected script: '..path)
-  return assert(loadfile(p.helper,'t',env))()
+  local files=assert(loadfile(p.helper,'t',env))()
+  files.DESKTOP=p.desktop_dir
+  return files
  end,
 },{__index=_G})
 assert(loadfile(p.script,'t',env))()
@@ -78,7 +74,7 @@ class BackupFailureTests(unittest.TestCase):
                 'canonical': root / 'assets/source/hud-border.aseprite',
                 'png': root / ('assets/ui/hud-border.png' if kind == 'border' else 'assets/walls/forest-tree-walls.png'),
                 'grass': root / 'assets/ground/grass.png',
-                'desktop': work / 'desktop.aseprite',
+                'desktop': work / 'desktop/forest-tree-walls.aseprite',
             }
             for path in files.values():
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,10 +89,11 @@ class BackupFailureTests(unittest.TestCase):
             before = {path: path.read_bytes() if path.exists() else None for path in files.values()}
             wrapper = work / 'probe.lua'
             wrapper.write_text(WRAPPER, encoding='utf-8')
-            script = ROOT / ('tools/hud_art/export_border.lua' if kind == 'border' else 'tools/tile_art/tone_forest.lua')
+            script = ROOT / 'tools/hud_art/export_border.lua' if kind == 'border' else SCRIPTS / 'tone_forest.lua'
             params = dict(root=root.as_posix() + '/', work=(work / 'scratch').as_posix(),
                           source=files['source'].as_posix(), desktop=files['desktop'].as_posix(),
-                          script=script.as_posix(), helper=(ROOT / 'tools/tile_art/source_files.lua').as_posix(),
+                          desktop_dir=files['desktop'].parent.as_posix() + '/',
+                          script=script.as_posix(), helper=(SCRIPTS / 'source_files.lua').as_posix(),
                           kind=kind, failure=failure, fault_path=files[destination].as_posix(), occurrence=occurrence)
             result = aseprite(args.aseprite, wrapper, params)
             output = result.stdout + result.stderr

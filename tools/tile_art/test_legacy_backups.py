@@ -1,12 +1,7 @@
-import os
 from pathlib import Path
 import re
-import subprocess
-import sys
-import tempfile
-import unittest
 
-from art_support import ROOT, arguments, aseprite, main, quote
+from art_support import ROOT, SCRIPTS, WorkTest, arguments, aseprite, generate, main, quote
 
 
 args, remaining = arguments()
@@ -20,12 +15,7 @@ BACKUPS = {
 }
 
 
-class LegacyBackupTests(unittest.TestCase):
-    def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='cistern-legacy-backups-')
-        self.addCleanup(self.temporary.cleanup)
-        self.work = Path(self.temporary.name)
-
+class LegacyBackupTests(WorkTest):
     def run_lua(self, code, **params):
         script = self.work / 'probe.lua'
         script.write_text(code, encoding='utf-8')
@@ -43,12 +33,8 @@ class LegacyBackupTests(unittest.TestCase):
             self.assertEqual(1, len(candidates), filename)
             calls[filename] = candidates[0]
         output = self.work / 'water.aseprite'
-        env = dict(os.environ, TEMP=str(self.work), TMP=str(self.work), PYTHONIOENCODING='utf-8')
-        generated = subprocess.run(
-            [sys.executable, '-B', str(args.scripts_dir / 'water_edge_template.py'),
-             '--output', str(output), '--replace-blank'],
-            env=env, capture_output=True, text=True, encoding='utf-8', timeout=30,
-        )
+        generated = generate(args.scripts_dir / 'water_edge_template.py', '--output', output, '--replace-blank',
+                             temp=self.work)
         self.assertEqual(0, generated.returncode, generated.stdout + generated.stderr)
         assembly = Path(generated.stdout.strip()) / 'assemble.lua'
         candidates = [line.strip() for line in assembly.read_text(encoding='utf-8').splitlines()
@@ -99,7 +85,7 @@ error('UNSAFE_SOURCE_WRITE')
 '''
                     result = self.run_lua(code, source=source.as_posix(), work=self.work.as_posix(),
                                           failure=failure,
-                                          helper=(ROOT / 'tools/tile_art/source_files.lua').as_posix())
+                                          helper=(SCRIPTS / 'source_files.lua').as_posix())
                     output = result.stdout + result.stderr
                     self.assertNotEqual(0, result.returncode, output)
                     self.assertIn('injected ' + failure + ' failure', output)
@@ -130,11 +116,12 @@ s:saveAs(app.params.source); s:close()
         blocked.mkdir(parents=True)
         wrapper = '''
 local realapp=app
-local env=setmetatable({
+local env
+env=setmetatable({
  app={params=realapp.params,pixelColor=realapp.pixelColor,open=realapp.open,
-  fs={tempPath=realapp.params.work,joinPath=realapp.fs.joinPath,
-   makeAllDirectories=realapp.fs.makeAllDirectories}},
+  fs=setmetatable({tempPath=realapp.params.work},{__index=realapp.fs})},
  os=setmetatable({date=function() return 'fixed' end},{__index=os}),
+ dofile=function(path) return assert(loadfile(path,'t',env))() end,
 },{__index=_G})
 assert(loadfile(realapp.params.script,'t',env))()
 print('GUIDE_SCRIPT_COMPLETED')
@@ -156,7 +143,7 @@ print('GUIDE_SCRIPT_COMPLETED')
             with self.subTest(script=filename):
                 source.write_bytes(original)
                 code = f'''
-local sourceFiles=dofile({quote(ROOT / 'tools/tile_art/source_files.lua')})
+local sourceFiles=dofile({quote(SCRIPTS / 'source_files.lua')})
 local path={quote(source)}
 local work={quote(self.work.as_posix() + '/')}
 local base='source'

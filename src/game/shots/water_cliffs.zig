@@ -14,10 +14,13 @@ const game = @import("../../game.zig");
 const P = mathx.P;
 const MIN_PIXELS = @import("capture.zig").MIN_PIXELS;
 const SHOTS_DIR = @import("capture.zig").SHOTS_DIR;
+const PATH_MAX = @import("capture.zig").PATH_MAX;
 const WATER_CLIFFS_DIR = SHOTS_DIR ++ "/water-cliffs";
 const capture = @import("capture.zig").capture;
 const capturef = @import("capture.zig").capturef;
 const drawInto = @import("capture.zig").drawInto;
+const airImage = @import("capture.zig").airImage;
+const drawMapInto = @import("capture.zig").drawMapInto;
 const exportImage = @import("capture.zig").exportImage;
 const exportTarget = @import("capture.zig").exportTarget;
 const intoTarget = @import("capture.zig").intoTarget;
@@ -122,18 +125,12 @@ fn captureWaterVisibility(g: *game.Game, target: rl.RenderTexture2D) !void {
     g.light.settle(&g.sim.lv);
     g.pic.snapSight(&g.sim);
     try capture(g, target, WATER_CLIFFS_DIR ++ "/visibility-diagonal.png");
-    const c = game.scene.Cam.of(g);
     var air: [2]rl.Image = undefined;
     var air_n: usize = 0;
     defer for (air[0..air_n]) |img| rl.unloadImage(img);
     for (&air, 0..) |*img, i| {
         if (i == 1) @memset(&g.sim.lv.lit, false);
-        g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{}, &g.sim.locations, g.pic.local_weather_shown);
-        intoTarget(g, target);
-        rl.clearBackground(rl.Color.black);
-        g.cinema.drawAir(g.light, c.origin(), game.CELL_F, g.screen, g.pic.hour_shown, true);
-        outOfTarget(g);
-        img.* = try readTarget(target);
+        img.* = try airImage(g, target, rl.Color.black, true);
         air_n += 1;
     }
     var mist: usize = 0;
@@ -218,6 +215,7 @@ fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
 }
 
 const GLINT_INK = look.rgb(0x302010);
+const HALF_SIGHT = look.rgb(0x808080);
 const SWATCH_PX = 256;
 const SWATCH_ORIGIN: f32 = -608;
 const SWATCH_LO = P{ .x = 8, .y = 8 };
@@ -231,7 +229,7 @@ fn swatch(w: i32, h: i32, c: rl.Color, comptime missing: anyerror) !rl.Texture2D
 fn checkWaterCapTint(g: *game.Game) !void {
     const target = try rl.loadRenderTexture(SWATCH_PX, SWATCH_PX);
     defer rl.unloadRenderTexture(target);
-    const sight = try swatch(1, 1, .{ .r = 128, .g = 128, .b = 128, .a = 255 }, error.WaterVisibilityMissing);
+    const sight = try swatch(1, 1, HALF_SIGHT, error.WaterVisibilityMissing);
     defer rl.unloadTexture(sight);
     const dark = try swatch(1, 1, rl.Color.black, error.WaterGlintsMissing);
     defer rl.unloadTexture(dark);
@@ -330,7 +328,7 @@ fn waterCliffTemplates(g: *game.Game) !void {
                 .edges => g.sprites.drawWaterEdges(&beds, origin, game.CELL_F, null),
             }
             rl.endTextureMode();
-            var path: [128]u8 = undefined;
+            var path: [PATH_MAX]u8 = undefined;
             const name = if (pass == .ground)
                 try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/template-{d}.png", .{n})
             else
@@ -397,7 +395,7 @@ pub fn checkWaterSurface(g: *game.Game) !void {
     }
     var beds: ground.Beds = undefined;
     beds.fill(&lv, .{ .x = 0, .y = 0 }, .{ .x = BANDS.len * BAND, .y = ROWS }, false);
-    var sight: [grid.CELLS]rl.Color = @splat(.{ .r = 128, .g = 128, .b = 128, .a = 0 });
+    var sight: [grid.CELLS]rl.Color = @splat(look.fade(HALF_SIGHT, 0));
     for (sight[0..grid.COLS]) |*pixel| pixel.a = 255;
     const visibility = raster.clamped(raster.rgba(&sight, grid.W, grid.H), .point) orelse return error.WaterVisibilityMissing;
     defer rl.unloadTexture(visibility);
@@ -535,10 +533,7 @@ pub fn checkMapEdge(g: *game.Game, target: rl.RenderTexture2D) !void {
     for ([_]bool{ true, false }) |visible| {
         @memset(&g.sim.lv.lit, visible);
         g.light.settle(&g.sim.lv);
-        intoTarget(g, target);
-        rl.clearBackground(look.FOG);
-        game.scene.drawMap(g);
-        outOfTarget(g);
+        drawMapInto(g, target, look.FOG);
         try exportTarget(target, if (visible) SHOTS_DIR ++ "/map-bottom-edge.png" else SHOTS_DIR ++ "/map-bottom-memory.png");
         const img = try readTarget(target);
         defer rl.unloadImage(img);

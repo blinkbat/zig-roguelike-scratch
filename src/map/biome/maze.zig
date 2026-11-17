@@ -84,7 +84,8 @@ const Plan = struct {
     mask: [COLS_MAX * ROWS_MAX]?Opened = @splat(null),
 
     fn at(self: *const Plan, c: usize, r: usize) ?Opened {
-        return self.mask[self.slot(.{ .x = @intCast(c), .y = @intCast(r) }).?];
+        const k = self.slot(.{ .x = @intCast(c), .y = @intCast(r) }).?;
+        return self.mask[k];
     }
 
     fn slot(self: *const Plan, cr: P) ?usize {

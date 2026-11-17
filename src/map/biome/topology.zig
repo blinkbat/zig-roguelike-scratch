@@ -49,13 +49,22 @@ pub const Params = struct {
 
 pub fn palette(p: Params) carve.Palette {
     var pal = carve.Palette.on(p.ground.tile(), p.filler.tile()).pocketed();
-    if (p.layout == .encampment and p.ground == .grass) pal.path = .dirt;
+    if (graphOf(p.layout).trodden and p.ground == .grass) pal.path = .dirt;
     return pal;
 }
 
 const Spot = struct { x: f32, y: f32, big: bool = false, wide: f32 = 1, tall: f32 = 1 };
 const Edge = [2]u8;
-const Graph = struct { spots: []const Spot, edges: []const Edge, big_of: f32 = BOWL_OF, gap: f32 = 0 };
+const Graph = struct {
+    spots: []const Spot,
+    edges: []const Edge,
+    big_of: f32 = BOWL_OF,
+    gap: f32 = 0,
+    /// Clearings are ovals stretched by each spot's `wide` and `tall`.
+    ovals: bool = false,
+    /// Paths through grass are worn to dirt.
+    trodden: bool = false,
+};
 
 fn graphOf(l: Layout) Graph {
     return switch (l) {
@@ -83,6 +92,8 @@ fn graphOf(l: Layout) Graph {
                 .{ .x = 0.57, .y = 0.47, .wide = 0.45, .tall = 0.45 },
             },
             .edges = &.{ .{ 0, 1 }, .{ 0, 2 }, .{ 1, 3 }, .{ 2, 4 }, .{ 3, 7 }, .{ 7, 4 }, .{ 7, 2 }, .{ 3, 5 }, .{ 4, 5 }, .{ 5, 6 } },
+            .ovals = true,
+            .trodden = true,
         },
     };
 }
@@ -113,7 +124,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const short: f32 = @floatFromInt(@min(grid.W, grid.H));
     for (g.spots, 0..) |s, i| {
         const r: f32 = if (!s.big) @floatFromInt(p.clearing) else short * g.big_of;
-        if (p.layout == .encampment) {
+        if (g.ovals) {
             oval(lv, noise, at[i], r * s.wide, r * s.tall, pal.open);
         } else clearing(lv, noise, at[i], r, if (s.big) BIG_FRAY else FRAY, pal.open);
     }
@@ -130,13 +141,20 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     }
 }
 
+/// Of an oval's radii, its edge before noise and how far noise pushes it out; and the box searched round it.
+const OVAL_EDGE: f32 = 0.9;
+const OVAL_FRAY: f32 = 0.35;
+const OVAL_REACH: f32 = 1.25;
+const OVAL_SCALE: f32 = 6;
+const OVAL_OCTAVES: u32 = 2;
+
 fn oval(lv: *grid.Level, noise: carve.Noise, c: P, rx: f32, ry: f32, open: grid.Tile) void {
-    var cells = grid.Box.around(c, @intFromFloat(@ceil(@max(rx, ry) * 1.25))).cells();
+    var cells = grid.Box.around(c, @intFromFloat(@ceil(@max(rx, ry) * OVAL_REACH))).cells();
     while (cells.next()) |q| {
         if (!grid.Box.inMap(RIM_GAP).holds(q)) continue;
         const dx = @as(f32, @floatFromInt(q.x - c.x)) / rx;
         const dy = @as(f32, @floatFromInt(q.y - c.y)) / ry;
-        const edge = 0.9 + 0.35 * noise.at(q, 6, 2);
+        const edge = OVAL_EDGE + OVAL_FRAY * noise.at(q, OVAL_SCALE, OVAL_OCTAVES);
         if (dx * dx + dy * dy <= edge * edge) lv.set(q, open);
     }
 }

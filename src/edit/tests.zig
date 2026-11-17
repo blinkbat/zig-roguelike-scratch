@@ -20,6 +20,7 @@ const modals = @import("modals.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const history = @import("history.zig");
+const preview = @import("preview.zig");
 const P = mathx.P;
 
 test "a failed editor gesture blocks canvas and draw-time mutations without losing history" {
@@ -571,6 +572,29 @@ test "leaving or closing mid graph drag keeps the move and asks before discardin
     }
 }
 
+test "a tool key, a shape key or Tab mid graph drag keeps the move as its own undo" {
+    for ([_]enum { tool, shape, view }{ .tool, .shape, .view }) |by| {
+        const ed = try testBespoke();
+        defer ed.destroy();
+        const was = dragFirstBox(ed);
+        const moved = ed.map.node[0].pos;
+        switch (by) {
+            .tool => ed.takeTool(for (editor.TOOLS) |t| {
+                if (!t.eql(ed.tool) and t.fits(ed.here())) break t;
+            } else unreachable),
+            .shape => ed.setShape(for (editor.SHAPES) |s| {
+                if (s != ed.shape) break s;
+            } else unreachable),
+            .view => ed.setView(ed.view.other()),
+        }
+        try std.testing.expect(ed.drag == null);
+        try std.testing.expectEqual(moved, ed.map.node[0].pos);
+        try std.testing.expectEqual(@as(usize, 1), ed.history.at);
+        ed.undo();
+        try std.testing.expectEqual(was, ed.map.node[0].pos);
+    }
+}
+
 test "Save As, a play-test or a rename mid graph drag keeps the move as its own undo" {
     for ([_]enum { save_as, play, rename }{ .save_as, .play, .rename }) |by| {
         const ed = try testBespoke();
@@ -1029,7 +1053,7 @@ test "a full procgen preview keeps the hero's place in the pool, as play does" {
     ed.select(n);
     ed.preview();
     try std.testing.expectEqual(actor.MAX - actor.most(actor.HERO), ed.scene.shown_n);
-    const arrival = @import("preview.zig").arrival(ed.map, ed.node);
+    const arrival = preview.arrival(ed.map, ed.node);
     try std.testing.expect(ed.scene.lv.vacant(arrival) or ed.scene.lv.at(arrival).solid());
 }
 

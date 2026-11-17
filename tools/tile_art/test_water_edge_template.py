@@ -1,34 +1,21 @@
 import hashlib
-import os
 from pathlib import Path
-import subprocess
-import sys
-import tempfile
-import unittest
 
-from art_support import ROOT, arguments, aseprite, main
+from art_support import SCRIPTS, WorkTest, arguments, aseprite, generate, main
 
 
 args, remaining = arguments()
 
 
-class WaterTemplateTests(unittest.TestCase):
+class WaterTemplateTests(WorkTest):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='cistern-water-test-')
-        self.addCleanup(self.temporary.cleanup)
-        self.work = Path(self.temporary.name)
+        super().setUp()
         self.sheet = self.work / 'water.aseprite'
         self.generate()
 
     def generate(self, replace=False, expected=0, temporary=None):
-        command = [sys.executable, '-B', str(ROOT / 'tools/tile_art/water_edge_template.py'), '--output', str(self.sheet)]
-        if replace:
-            command.append('--replace-blank')
-        env = os.environ.copy()
-        env['PYTHONIOENCODING'] = 'utf-8'
-        if temporary is not None:
-            env.update(TEMP=str(temporary), TMP=str(temporary))
-        generated = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', env=env)
+        generated = generate(SCRIPTS / 'water_edge_template.py', '--output', self.sheet,
+                             *(['--replace-blank'] if replace else []), temp=temporary or self.work)
         self.assertEqual(0, generated.returncode, generated.stdout + generated.stderr)
         assembly = Path(generated.stdout.strip()) / 'assemble.lua'
         result = aseprite(args.aseprite, assembly, timeout=None)

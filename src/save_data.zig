@@ -83,6 +83,7 @@ pub const PORTABLE_FIELDS = .{
     .{ .sim, "plot" },
     .{ .sim, "days" },
     .{ .sim, "life_recovery" },
+    .{ .sim, "locations" },
 };
 const PIC = game.presentation.Fields;
 /// Not saved: the picture but the facing, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
@@ -130,7 +131,6 @@ const UNSAVED = .{
     },
     .sim = .{
         "outdoors",
-        "locations",
         "unkillable",
         "playground",
         "unsaved",

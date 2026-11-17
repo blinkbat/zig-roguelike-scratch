@@ -24,6 +24,8 @@ const SavedRng = struct {
 };
 
 const SAVED = .{ SavedRng, SavedProgress, SavedNpc };
+const Code = wire.Codec(Policy);
+
 const Node = passives.Node;
 const NodeKey = struct {
     arm: @FieldType(Node, "arm"),
@@ -36,6 +38,26 @@ const NodeKey = struct {
         return .{ .arm = node.arm, .branch = node.branch, .seam = node.seam, .ring = node.ring, .slot = node.slot };
     }
 };
+
+test "actor combat cooldowns survive portable saves and default in older records" {
+    var bytes = std.ArrayList(u8).init(std.testing.allocator);
+    defer bytes.deinit();
+    var body = actor.Actor.of(.pib_shaman, .{ .x = 20, .y = 20 });
+    body.ready_in = 3;
+    body.projectile_in = 2;
+    body.quickstep_in = 1;
+    try Code.write(&bytes, body);
+    var loaded: actor.Actor = undefined;
+    try Code.read(bytes.items, &loaded);
+    try std.testing.expectEqualDeep(body, loaded);
+    bytes.clearRetainingCapacity();
+    const Old = struct { kind: actor.Kind, at: mathx.P, hp: i32, max: i32, ready_in: u8 };
+    try Code.write(&bytes, Old{ .kind = body.kind, .at = body.at, .hp = body.hp, .max = body.max, .ready_in = 3 });
+    try Code.read(bytes.items, &loaded);
+    try std.testing.expectEqual(@as(u8, 3), loaded.ready_in);
+    try std.testing.expectEqual(@as(u8, 0), loaded.projectile_in);
+    try std.testing.expectEqual(@as(u8, 0), loaded.quickstep_in);
+}
 
 test "save values retain passive identities refund retired nodes and preserve the RNG stream" {
     var state = progress.State.of(.wizard);
@@ -156,42 +178,36 @@ comptime {
 }
 
 test "an NPC kept before it could stand off a painted cell loads where it stood" {
-    const C = wire.Codec(Policy);
     const Old = struct { node: u8, at: mathx.P, name: script.Who, dialog: ?u8 };
     var bytes = std.ArrayList(u8).init(std.testing.allocator);
     defer bytes.deinit();
-    try wire.Codec(struct {
-        pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {
-            return wire.counted(T, field);
-        }
-    }).write(&bytes, Old{ .node = 1, .at = .{ .x = 6, .y = 5 }, .name = script.Who.of("Wenna"), .dialog = 0 });
+    try Code.write(&bytes, Old{ .node = 1, .at = .{ .x = 6, .y = 5 }, .name = script.Who.of("Wenna"), .dialog = 0 });
     var back: script.Npc = undefined;
-    try C.read(bytes.items, &back);
+    try Code.read(bytes.items, &back);
     try std.testing.expectEqualDeep(script.Npc{ .node = 1, .spot = .{ .at = .{ .x = 6, .y = 5 } }, .name = script.Who.of("Wenna"), .dialog = 0 }, back);
     bytes.clearRetainingCapacity();
     const now = script.Npc{ .node = 2, .spot = .{ .by = .caravan }, .looks = .pib, .shows = .{ .kind = .quest, .state = .done } };
-    try C.write(&bytes, now);
-    try C.read(bytes.items, &back);
+    try Code.write(&bytes, now);
+    try Code.read(bytes.items, &back);
     try std.testing.expectEqualDeep(now, back);
 }
 
 test "old portable bleeds default their movement bonus and new affixes keep named identities" {
     const bleeding = @import("play/bleeding.zig");
     const affixes = @import("play/affixes.zig");
-    const C = wire.Codec(Policy);
     const Old = struct { turns: u8, fresh: bool, amount: i32 };
     var bytes = std.ArrayList(u8).init(std.testing.allocator);
     defer bytes.deinit();
-    try C.write(&bytes, Old{ .turns = 3, .fresh = false, .amount = 2 });
+    try Code.write(&bytes, Old{ .turns = 3, .fresh = false, .amount = 2 });
     var back: bleeding.Bleed = undefined;
-    try C.read(bytes.items, &back);
+    try Code.read(bytes.items, &back);
     try std.testing.expectEqualDeep(bleeding.Bleed{ .turns = 3, .amount = 2 }, back);
     for ([_]affixes.Mod{ .serrated, .composure, .anchorage, .grievous, .cleansing }) |kind| {
         bytes.clearRetainingCapacity();
         const mod = affixes.Affix{ .kind = kind, .value = @intCast(affixes.affixOf(kind).hi) };
-        try C.write(&bytes, mod);
+        try Code.write(&bytes, mod);
         var restored: affixes.Affix = undefined;
-        try C.read(bytes.items, &restored);
+        try Code.read(bytes.items, &restored);
         try std.testing.expectEqualDeep(mod, restored);
     }
 }

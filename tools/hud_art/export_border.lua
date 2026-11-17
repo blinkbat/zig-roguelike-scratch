@@ -1,8 +1,7 @@
-local root = app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
-local source = app.params.source or 'C:/Users/DavidBennett/Desktop/border.aseprite'
-local work = app.fs.joinPath(app.fs.tempPath, 'hud-border-export')
-app.fs.makeAllDirectories(work)
+local root = app.params.root or assert(debug.getinfo(1, 'S').source:gsub('\\', '/'):match('^@(.*)tools/[^/]+/[^/]+$'), 'root=<repo with trailing slash>')
 local sourceFiles = dofile(root .. 'tools/tile_art/source_files.lua')
+local source = app.params.source or sourceFiles.DESKTOP .. 'border.aseprite'
+local work = sourceFiles.work(app.fs.joinPath(app.fs.tempPath, 'hud-border-export'))
 
 local W=73
 local H=55
@@ -39,7 +38,7 @@ local png = root .. 'assets/ui/hud-border.png'
 local canonical = root .. 'assets/source/hud-border.aseprite'
 for _, path in ipairs({source, canonical, png}) do
   if app.fs.isFile(path) then
-    sourceFiles.copy(path, app.fs.joinPath(work, os.date('%Y%m%d-%H%M%S-') .. app.fs.fileName(path)))
+    sourceFiles.copy(path, app.fs.joinPath(work, os.date(sourceFiles.STAMP) .. '-' .. app.fs.fileName(path)))
   end
 end
 border:saveAs(png)

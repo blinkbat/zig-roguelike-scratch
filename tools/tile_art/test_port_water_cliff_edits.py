@@ -1,21 +1,17 @@
 import os
-from pathlib import Path
-import tempfile
 import unittest
 
 from PIL import Image
 
-from art_support import ROOT, arguments, aseprite, main, read_locked
+from art_support import ROOT, WorkTest, arguments, aseprite, main, read_locked
 
 
 args, remaining = arguments()
 
 
-class WaterCliffPortTests(unittest.TestCase):
+class WaterCliffPortTests(WorkTest):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='cistern-water-port-test-')
-        self.addCleanup(self.temporary.cleanup)
-        self.work = Path(self.temporary.name)
+        super().setUp()
         self.original = self.work / 'original.aseprite'
         self.baseline = self.work / 'baseline.png'
         self.owner = self.work / 'owner.png'

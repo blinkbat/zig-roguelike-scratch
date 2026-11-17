@@ -65,19 +65,16 @@ pub const Mod = enum {
 
     pub fn prefix(m: Mod) bool {
         return switch (m) {
-            .serrated, .grievous => true,
-            .composure, .anchorage, .cleansing => false,
-            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked, .opportunist, .crit_damage, .block, .leech, .area, .pierce, .kindling, .nightstalker => true,
-            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness, .bounding, .alacrity, .life_regen, .haste, .cull, .heft, .commander => false,
+            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked, .opportunist, .crit_damage, .block, .leech, .area, .pierce, .kindling, .nightstalker, .serrated, .grievous => true,
+            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness, .bounding, .alacrity, .life_regen, .haste, .cull, .heft, .commander, .composure, .anchorage, .cleansing => false,
         };
     }
 
     pub fn elements(m: Mod) []const damage.Element {
         return switch (m) {
-            .serrated, .composure, .anchorage, .grievous, .cleansing => &.{},
             .resistance => std.enums.values(damage.Element),
             .imbue => &IMBUES,
-            .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .thorns, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .crit_damage, .block, .life_regen, .leech, .area, .pierce, .haste, .cull, .kindling, .heft, .commander, .nightstalker => &.{},
+            .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .thorns, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity, .crit_damage, .block, .life_regen, .leech, .area, .pierce, .haste, .cull, .kindling, .heft, .commander, .nightstalker, .serrated, .composure, .anchorage, .grievous, .cleansing => &.{},
         };
     }
     pub fn title(m: Mod, element: damage.Element) [:0]const u8 {

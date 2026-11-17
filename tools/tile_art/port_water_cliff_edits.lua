@@ -4,7 +4,7 @@ local original=assert(app.params.original,'original=<layered template>')
 local output=assert(app.params.output,'output=<updated Aseprite>')
 local preview=assert(app.params.preview,'preview=<updated PNG>')
 local report=assert(app.params.report,'report=<validation text>')
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
 local owner=Image{fromFile=source}

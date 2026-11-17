@@ -415,6 +415,16 @@ const INTERFACE_CATEGORY = "Interface";
 const GAMEPLAY_CATEGORY = "Gameplay";
 const EFFECTS_CATEGORY = "Effects";
 const SAVE_CATEGORY = "Save";
+const DIALOGUE_CATEGORY = "Dialogue";
+const QUESTS_CATEGORY = "Quests";
+const EDITOR_CATEGORY = "Editor";
+/// The character sheet's words, apart from `ACTORS_CATEGORY`'s bodies.
+const SHEET_CATEGORY = "Character";
+const ACTORS_CATEGORY = "Characters";
+const HUD_CATEGORY = "HUD";
+const LOOK_CATEGORY = "Look";
+const STATUS_CATEGORY = "Status effects";
+const COMBAT_CATEGORY = "Combat";
 const LOG_SOURCES = [_][]const u8{ "play/log.zig", "ui/journal.zig" };
 const DIALOGUE_SOURCES = [_][]const u8{ "ui/talk.zig", "game/talking.zig", "map/script.zig", "play/trigger.zig" };
 const QUESTS_SOURCE = "ui/quests.zig";
@@ -453,6 +463,7 @@ comptime {
     for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES ++ [_][]const u8{SKILLBAR_SOURCE} ++ ITEMS_SOURCES ++ CATEGORY_SOURCES) |p| _ = @embedFile("../" ++ p);
     for (DECL_SOURCES) |d| {
         if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "const " ++ d[1] ++ " ") == null) @compileError(d[0] ++ " no longer declares " ++ d[1]);
+        if (!contains(&([_][]const u8{KEYBOARD_DECL} ++ TECHNICAL_DECLS ++ SPOKEN_DECLS ++ ACTION_WORDS), d[1])) @compileError(d[1] ++ " is checked but never read");
     }
     for (std.enums.values(resilience.Kind)) |k| {
         const m = resilience.module(k) orelse continue;
@@ -593,23 +604,23 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (std.mem.startsWith(u8, path, SRC)) {
         const rel = path[SRC.len..];
         if (contains(&LOG_SOURCES, rel)) return LOG_LINES;
-        if (contains(&DIALOGUE_SOURCES, rel)) return "Dialogue";
-        if (std.mem.eql(u8, rel, QUESTS_SOURCE)) return "Quests";
-        if (std.mem.startsWith(u8, rel, "edit/")) return "Editor";
+        if (contains(&DIALOGUE_SOURCES, rel)) return DIALOGUE_CATEGORY;
+        if (std.mem.eql(u8, rel, QUESTS_SOURCE)) return QUESTS_CATEGORY;
+        if (std.mem.startsWith(u8, rel, "edit/")) return EDITOR_CATEGORY;
         if (std.mem.startsWith(u8, rel, "map/")) return MAPS_CATEGORY;
         if (contains(&ITEM_TEXT_SOURCES, rel)) return ITEMS_CATEGORY;
-        if (std.mem.startsWith(u8, rel, "ui/character") or contains(&CHARACTER_SOURCES, rel)) return "Character";
+        if (std.mem.startsWith(u8, rel, "ui/character") or contains(&CHARACTER_SOURCES, rel)) return SHEET_CATEGORY;
         if (contains(&SKILL_TEXT_SOURCES, rel)) return SKILLS_CATEGORY;
         if (contains(&BINDING_SOURCES, rel)) return INPUT_CATEGORY;
-        if (contains(&HUD_SOURCES, rel)) return "HUD";
+        if (contains(&HUD_SOURCES, rel)) return HUD_CATEGORY;
         if (std.mem.startsWith(u8, rel, "ui/")) return INTERFACE_CATEGORY;
         if (contains(&ITEMS_SOURCES, rel)) return ITEMS_CATEGORY;
         if (std.mem.eql(u8, rel, SKILLBAR_SOURCE)) return SKILLS_CATEGORY;
         if (contains(&EFFECT_SOURCES, rel)) return EFFECTS_CATEGORY;
-        if (contains(&LOOK_SOURCES, rel)) return "Look";
-        if (std.mem.eql(u8, rel, ACTOR_SOURCE)) return "Characters";
-        if (contains(&STATUS_SOURCES, rel)) return "Status effects";
-        if (std.mem.startsWith(u8, rel, "play/")) return "Combat";
+        if (contains(&LOOK_SOURCES, rel)) return LOOK_CATEGORY;
+        if (std.mem.eql(u8, rel, ACTOR_SOURCE)) return ACTORS_CATEGORY;
+        if (contains(&STATUS_SOURCES, rel)) return STATUS_CATEGORY;
+        if (std.mem.startsWith(u8, rel, "play/")) return COMBAT_CATEGORY;
         if (std.mem.startsWith(u8, rel, "game/")) return GAMEPLAY_CATEGORY;
         if (std.mem.eql(u8, rel, APP_SOURCE)) return INTERFACE_CATEGORY;
         if (std.mem.eql(u8, rel, "game.zig")) return GAMEPLAY_CATEGORY;

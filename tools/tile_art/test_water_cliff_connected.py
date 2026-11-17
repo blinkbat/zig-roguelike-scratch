@@ -1,24 +1,19 @@
 import os
 from pathlib import Path
 import shutil
-import subprocess
-import sys
-import tempfile
 import unittest
 
 from PIL import Image
 
-from art_support import ROOT, arguments, aseprite, main, read_locked
+from art_support import ROOT, SCRIPTS, WorkTest, arguments, aseprite, generate, main, read_locked
 
 
 args, remaining = arguments()
 
 
-class ConnectedTemplateTests(unittest.TestCase):
+class ConnectedTemplateTests(WorkTest):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='cistern-connected-test-')
-        self.addCleanup(self.temporary.cleanup)
-        self.work = Path(self.temporary.name)
+        super().setUp()
         self.shots = self.work / 'shots'
         self.shots.mkdir()
         self.output = self.work / 'connected.aseprite'
@@ -37,12 +32,8 @@ class ConnectedTemplateTests(unittest.TestCase):
         self.inputs = {path: path.read_bytes() for path in self.shots.iterdir()}
 
     def generate(self, root=ROOT):
-        env = dict(os.environ, TEMP=str(self.work), TMP=str(self.work), PYTHONIOENCODING='utf-8')
-        result = subprocess.run(
-            [sys.executable, '-B', str(root / 'tools/tile_art/water_cliff_connected.py'),
-             str(self.shots), '--output', str(self.output), '--replace'],
-            env=env, capture_output=True, text=True, encoding='utf-8', timeout=30,
-        )
+        result = generate(root / 'tools/tile_art/water_cliff_connected.py', self.shots, '--output', self.output,
+                          '--replace', temp=self.work)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         return Path(result.stdout.strip()) / 'assemble.lua'
 
@@ -102,7 +93,7 @@ assert(loadfile(app.params.assembly,'t',env))()
         scripts.mkdir(parents=True)
         for name in ('water_cliff_connected.py', 'art_support.py', 'source_files.lua',
                      'ground_corners.lua', 'water_cliff_materials.lua', 'export_water_edges.lua'):
-            shutil.copyfile(ROOT / 'tools/tile_art' / name, scripts / name)
+            shutil.copyfile(SCRIPTS / name, scripts / name)
         (scripts / 'water_cliff_layout.lua').write_text(
             'return {width=960,height=640,x=40,y=112,stride=312,block=256,slices=54}\n', encoding='utf-8')
         for name in ('water/shallows-cliff.png', 'water/water-cliff.png',

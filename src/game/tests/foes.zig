@@ -8,6 +8,7 @@ const fire = @import("../../map/fire.zig");
 const menu = @import("../../ui/menu.zig");
 const actor = @import("../../play/actor.zig");
 const bow = @import("../../play/bow.zig");
+const firebolt = @import("../../play/firebolt.zig");
 const bleeding = @import("../../play/bleeding.zig");
 const glacial = @import("../../play/glacial.zig");
 const pack = @import("../../play/pack.zig");
@@ -15,6 +16,7 @@ const items = @import("../../play/items.zig");
 const fx = @import("../../gfx/fx.zig");
 const look = @import("../../gfx/look.zig");
 const combat = @import("../combat.zig");
+const foe_rules = @import("../foe_rules.zig");
 const attacks = @import("../attacks.zig");
 const harness = @import("../harness.zig");
 const game = @import("../../game.zig");
@@ -1003,14 +1005,22 @@ test "a frightened pib in a dead end holds it, and strikes only an archer beside
     try std.testing.expect(strikes > 0);
 }
 
+const LAKE_SHORE = P{ .x = 20, .y = 20 };
+const LAKE_LEECH = P{ .x = 25, .y = 20 };
+
+fn lakeLeech(g: *game.Game) u16 {
+    harness.arena(g, LAKE_SHORE, &.{});
+    carve.box(&g.sim.lv, .{ .lo = .{ .x = 21, .y = 18 }, .hi = .{ .x = 27, .y = 23 } }, .water);
+    const id = harness.spawnAt(g, .bog_leech, LAKE_LEECH, true);
+    game.settle(g);
+    return id;
+}
+
 test "a bog leech swims unseen to the shore, surfaces beside the hero and is struck where it floats" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const from = P{ .x = 20, .y = 20 };
-    harness.arena(g, from, &.{});
-    carve.box(&g.sim.lv, .{ .lo = .{ .x = 21, .y = 18 }, .hi = .{ .x = 27, .y = 23 } }, .water);
-    const id = harness.spawnAt(g, .bog_leech, .{ .x = 25, .y = 20 }, true);
-    game.settle(g);
+    const from = LAKE_SHORE;
+    const id = lakeLeech(g);
     const slot = actor.Pool.slot(id);
     try std.testing.expect(g.sim.pool.get(id).?.submerged and harness.undrawn(g, slot));
     try std.testing.expectEqual(@as(?P, null), bow.pick(&g.sim.lv, &g.sim.pool, from, bow.RANGE));
@@ -1231,7 +1241,7 @@ test "a shieldbearer killed by thorns as its bash lands still knocks the hero ba
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
     harness.arena(g, from, &.{});
-    g.sim.inventory.gear.slots.set(.chest, harness.affixed(.leather, .{ .kind = .thorns, .value = 50 }));
+    g.sim.inventory.gear.slots.set(.chest, harness.LETHAL_THORNS);
     const id = harness.spawnAt(g, .bandit_shieldbearer, .{ .x = 21, .y = 20 }, true);
     g.sim.pool.get(id).?.hp = 1;
     harness.toughen(g.sim.heroActor().?);
@@ -1355,6 +1365,109 @@ test "a pib shaman mends the most hurt pib in reach, else wakes the sleeping one
     game.settle(g);
     combat.endTurn(g);
     try std.testing.expectEqual(@as(i32, 2), mathx.dist(g.sim.pool.get(cornered).?.at, from));
+}
+
+test "a pib shaman heals first and throws chaos orbs during its healing cooldown" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const shaman = harness.spawnAt(g, .pib_shaman, .{ .x = 25, .y = 20 }, true);
+    const kin = harness.spawnAt(g, .pib, .{ .x = 25, .y = 21 }, true);
+    g.sim.pool.get(kin).?.hp = 1;
+    game.settle(g);
+    combat.endTurn(g);
+    try std.testing.expectEqual(@as(i32, 9), g.sim.pool.get(kin).?.hp);
+    try std.testing.expect(g.sim.pool.get(shaman).?.bolt == null);
+    harness.drawnOut(g);
+    combat.endTurn(g);
+    const caster = g.sim.pool.get(shaman).?;
+    try std.testing.expect(caster.bolt != null);
+    try std.testing.expectEqual(@as(u8, 2), caster.ready_in);
+    try std.testing.expectEqual(actor.row(.pib_shaman).hurls.?.every, caster.projectile_in);
+    try std.testing.expectEqual(@import("../../play/damage.zig").Element.chaos, g.pic.bolts[actor.Pool.slot(shaman)].?.element);
+    harness.drawnOut(g);
+    caster.ready_in = 0;
+    g.sim.pool.get(kin).?.hp = 1;
+    combat.endTurn(g);
+    try std.testing.expectEqual(@as(i32, 9), g.sim.pool.get(kin).?.hp);
+    try std.testing.expectEqual(actor.row(.pib_shaman).mends.?.every, caster.ready_in);
+}
+
+test "a pib shaman holds its orb while a foe stands on or beside its line to the hero" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const shaman = harness.spawnAt(g, .pib_shaman, .{ .x = 25, .y = 20 }, true);
+    const kin = harness.spawnAt(g, .pib, .{ .x = 23, .y = 21 }, true);
+    const hero = P{ .x = 20, .y = 20 };
+    const range = actor.row(.pib_shaman).hurls.?.range;
+    const line = firebolt.Bolt.aimed(.{ .x = 25, .y = 20 }, hero, range);
+    try std.testing.expect(foe_rules.crowded(&g.sim, shaman, line, hero, range));
+    g.sim.pool.get(kin).?.alive = false;
+    g.sim.lv.clear(.{ .x = 23, .y = 21 });
+    _ = harness.spawnAt(g, .pib, .{ .x = 21, .y = 22 }, true);
+    try std.testing.expect(!foe_rules.crowded(&g.sim, shaman, line, hero, range));
+}
+
+test "shaman orbs deal chaos damage at impact without burning and respect chaos resistance" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]i16{ 0, 100 }) |resistance| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        const shaman = harness.spawnAt(g, .pib_shaman, .{ .x = 24, .y = 20 }, true);
+        const hero = g.sim.heroActor().?;
+        hero.resists.set(.chaos, resistance);
+        hero.resists.set(.fire, 100);
+        game.settle(g);
+        const hp = hero.hp;
+        combat.endTurn(g);
+        try std.testing.expectEqual(hp, hero.hp);
+        harness.drawnOut(g);
+        const caster = g.sim.pool.get(shaman).?;
+        caster.alive = false;
+        g.sim.lv.clear(caster.at);
+        combat.endTurn(g);
+        try std.testing.expectEqual(hp, hero.hp);
+        harness.drawnOut(g);
+        combat.endTurn(g);
+        const dealt = hp - hero.hp;
+        if (resistance == 100) try std.testing.expectEqual(@as(i32, 0), dealt) else try std.testing.expect(dealt >= actor.row(.pib_shaman).hurls.?.hit.lo and dealt <= actor.row(.pib_shaman).hurls.?.hit.hi);
+        try std.testing.expectEqual(@as(u8, 0), hero.burn.turns);
+        try std.testing.expectEqual(hp, g.pic.heroShown(&g.sim).?.hp);
+        harness.drawnOut(g);
+        try std.testing.expectEqual(hero.hp, g.pic.heroShown(&g.sim).?.hp);
+    }
+}
+
+test "a netter clubs at melee range then quicksteps away while its net recovers" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    const id = harness.spawnAt(g, .bandit_netter, .{ .x = 21, .y = 20 }, true);
+    const netter = g.sim.pool.get(id).?;
+    const start = netter.at;
+    const hp = g.sim.heroActor().?.hp;
+    game.settle(g);
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
+    combat.endTurn(g);
+    try std.testing.expect(g.sim.heroActor().?.hp < hp);
+    try std.testing.expectEqual(start, netter.at);
+    try std.testing.expect(harness.logged(g, "clubs"));
+    harness.drawnOut(g);
+    combat.endTurn(g);
+    try std.testing.expectEqual(@as(i32, 2), mathx.dist(start, netter.at));
+    try std.testing.expect(mathx.dist(from, netter.at) > actor.row(netter.kind).keeps);
+    try std.testing.expectEqual(actor.row(.bandit_netter).quickstep.?.every, netter.quickstep_in);
+    try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].foe_hit == null);
+    try std.testing.expect(harness.logged(g, "quicksteps"));
+    harness.drawnOut(g);
+    netter.pin.extend(2);
+    netter.ready_in = 2;
+    netter.quickstep_in = 0;
+    const pinned_at = netter.at;
+    combat.endTurn(g);
+    try std.testing.expectEqual(pinned_at, netter.at);
 }
 
 test "a foe biting before a shieldbearer's knock that turn lunges at where the hero stood" {
@@ -1533,14 +1646,10 @@ test "a pyre bloat bursting on the hero leaves sight clear through its burst" {
 test "a leech swimming unseen holds neither the stagger nor the walk" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const from = P{ .x = 20, .y = 20 };
-    harness.arena(g, from, &.{});
-    carve.box(&g.sim.lv, .{ .lo = .{ .x = 21, .y = 18 }, .hi = .{ .x = 27, .y = 23 } }, .water);
-    const id = harness.spawnAt(g, .bog_leech, .{ .x = 25, .y = 20 }, true);
-    game.settle(g);
+    const id = lakeLeech(g);
     combat.endTurn(g);
     const leech = g.sim.pool.get(id).?;
-    try std.testing.expect(leech.submerged and !leech.at.eq(.{ .x = 25, .y = 20 }));
+    try std.testing.expect(leech.submerged and !leech.at.eq(LAKE_LEECH));
     harness.stagger(g);
     try std.testing.expect(g.pic.quiet());
 }

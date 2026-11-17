@@ -2,10 +2,12 @@ import argparse
 import contextlib
 import ctypes
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -24,14 +26,35 @@ def main(remaining):
     unittest.main(argv=[sys.argv[0], *remaining])
 
 
-def aseprite(executable, script, params=None, timeout=30):
+def environment(temp, **extra):
+    env = dict(os.environ, **extra)
+    if temp is not None:
+        env.update(TEMP=str(temp), TMP=str(temp))
+    return env
+
+
+def aseprite(executable, script, params=None, timeout=30, temp=None):
     command = [executable, '--batch']
     for key, value in (params or {}).items():
         if isinstance(value, Path):
             value = value.as_posix()
         command += ['--script-param', f'{key}={value}']
     return subprocess.run(command + ['--script', str(script)], capture_output=True, text=True,
-                          timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                          timeout=timeout, env=environment(temp),
+                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+
+
+def generate(script, *arguments, temp=None):
+    return subprocess.run([sys.executable, '-B', str(script), *map(str, arguments)],
+                          env=environment(temp, PYTHONIOENCODING='utf-8'),
+                          capture_output=True, text=True, encoding='utf-8', timeout=30)
+
+
+class WorkTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='cistern-' + type(self).__name__ + '-')
+        self.addCleanup(temporary.cleanup)
+        self.work = Path(temporary.name)
 
 
 @contextlib.contextmanager

@@ -176,19 +176,23 @@ pub const Face = struct {
 
     pub fn richParagraphWith(self: *const Face, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color, style: Rich.Style) i32 {
         var colored = Rich.init(s);
-        var buf: Wrapped = undefined;
-        var lines: [WRAP_LINES_MAX][:0]const u8 = undefined;
-        const n = wrap(self, s, size, w, &buf, &lines);
-        for (lines[0..n], 0..) |line, i| colored.draw(self, line, x, y + @as(i32, @intCast(i)) * (size + LEADING), size, col, style);
-        return y + @as(i32, @intCast(n)) * (size + LEADING);
+        return self.paragraphBy(s, x, y, w, size, col, RichLines{ .rich = &colored, .style = style });
     }
 
     pub fn paragraphWith(self: *const Face, comptime line: fn (*const Face, [:0]const u8, i32, i32, i32, rl.Color) void, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
+        return self.paragraphBy(s, x, y, w, size, col, struct {
+            fn put(_: @This(), face: *const Face, l: [:0]const u8, lx: i32, ly: i32, px: i32, c: rl.Color) void {
+                line(face, l, lx, ly, px, c);
+            }
+        }{});
+    }
+
+    fn paragraphBy(self: *const Face, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color, lines_by: anytype) i32 {
         const step = size + LEADING;
         var buf: Wrapped = undefined;
         var lines: [WRAP_LINES_MAX][:0]const u8 = undefined;
         const n = wrap(self, s, size, w, &buf, &lines);
-        for (lines[0..n], 0..) |l, i| line(self, l, x, y + @as(i32, @intCast(i)) * step, size, col);
+        for (lines[0..n], 0..) |l, i| lines_by.put(self, l, x, y + @as(i32, @intCast(i)) * step, size, col);
         return y + @as(i32, @intCast(n)) * step;
     }
 
@@ -236,27 +240,19 @@ pub const Face = struct {
     }
 
     pub fn text(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
-        const off = shadowDrop(size);
-        self.draw(s, x + off, y + off, size, shadowOf(col));
+        self.shadow(s, x, y, size, col, false);
         self.draw(s, x, y, size, col);
     }
 
     pub fn engraved(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
         const f = self.walkable(s, size) orelse return self.text(s, x, y, size, col);
-        const off = shadowDrop(size) + ENGRAVE_DROP;
+        self.shadow(s, x, y, size, col, true);
+        walk(f, true, s, x, y, size, col, true, null);
+    }
+
+    fn shadow(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color, deep: bool) void {
+        const off = shadowDrop(size) + @as(i32, if (deep) ENGRAVE_DROP else 0);
         self.draw(s, x + off, y + off, size, shadowOf(col));
-        const ink = Ink.of(col, @floatFromInt(y), @floatFromInt(size));
-        const scale = scaleOf(f, size);
-        var at: f32 = @floatFromInt(x);
-        rl.gl.rlSetTexture(f.texture.id);
-        defer rl.gl.rlSetTexture(0);
-        rl.gl.rlBegin(rl.gl.rl_quads);
-        defer rl.gl.rlEnd();
-        for (s) |c| {
-            const i = ascii(c);
-            if (c != ' ') putInked(f, i, at, ink.top, scale, ink);
-            at += advance(f, i, scale);
-        }
     }
 
     pub fn engravedMid(self: *const Face, s: [:0]const u8, cx: i32, y: i32, size: i32, col: rl.Color) void {
@@ -282,50 +278,62 @@ pub const Rich = struct {
             self.skip(s);
             return if (style == .plain) face.draw(s, x, y, size, base) else face.text(s, x, y, size, base);
         };
-        const scale = scaleOf(f, size);
         const engraved = style == .engraved and native != null;
-        if (style != .plain) {
-            const drop = shadowDrop(size) + @as(i32, if (engraved) ENGRAVE_DROP else 0);
-            face.draw(s, x + drop, y + drop, size, shadowOf(base));
-        }
-        if (engraved) {
-            rl.gl.rlSetTexture(f.texture.id);
-            rl.gl.rlBegin(rl.gl.rl_quads);
-        }
-        defer if (engraved) {
-            rl.gl.rlEnd();
-            rl.gl.rlSetTexture(0);
-        };
-        var at: f32 = @floatFromInt(x);
-        var top: f32 = @floatFromInt(y);
-        var byte: usize = 0;
-        var previous: ?keywords.Tone = null;
-        var col = base;
-        while (byte < s.len) {
-            const c = s[byte];
-            const tone = self.flow.next(c);
-            if (tone != previous) {
-                col = if (tone) |t| t.on(base) else base;
-                previous = tone;
-            }
-            const count = std.unicode.utf8ByteSequenceLength(c) catch 1;
-            const n = @min(count, s.len - byte);
-            const cp = std.unicode.utf8Decode(s[byte..][0..n]) catch '?';
-            for (s[byte + 1 .. byte + n]) |part| _ = self.flow.next(part);
-            byte += n;
-            if (c == '\n') {
-                at = @floatFromInt(x);
-                top += @as(f32, @floatFromInt(size)) * 1.5;
-                continue;
-            }
-            const i = if (native != null) ascii(c) else @as(usize, @intCast(rl.getGlyphIndex(f, cp)));
-            if (c != ' ') {
-                if (engraved) putInked(f, i, at, top, scale, Ink.of(col, top, @floatFromInt(size))) else put(f, i, at, top, scale, col);
-            }
-            at += advance(f, i, scale);
-        }
+        if (style != .plain) face.shadow(s, x, y, size, base, engraved);
+        walk(f, native != null, s, x, y, size, base, engraved, &self.flow);
     }
 };
+
+const RichLines = struct {
+    rich: *Rich,
+    style: Rich.Style,
+
+    fn put(self: RichLines, face: *const Face, l: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
+        self.rich.draw(face, l, x, y, size, col, self.style);
+    }
+};
+
+fn walk(f: rl.Font, native: bool, s: []const u8, x: i32, y: i32, size: i32, base: rl.Color, engraved: bool, flow: ?*keywords.Flow) void {
+    const scale = scaleOf(f, size);
+    if (engraved) {
+        rl.gl.rlSetTexture(f.texture.id);
+        rl.gl.rlBegin(rl.gl.rl_quads);
+    }
+    defer if (engraved) {
+        rl.gl.rlEnd();
+        rl.gl.rlSetTexture(0);
+    };
+    var at: f32 = @floatFromInt(x);
+    var top: f32 = @floatFromInt(y);
+    var byte: usize = 0;
+    var previous: ?keywords.Tone = null;
+    var col = base;
+    while (byte < s.len) {
+        const c = s[byte];
+        const tone = if (flow) |fl| fl.next(c) else null;
+        if (tone != previous) {
+            col = if (tone) |t| t.on(base) else base;
+            previous = tone;
+        }
+        const glyph = s[byte..][0..@min(std.unicode.utf8ByteSequenceLength(c) catch 1, s.len - byte)];
+        if (flow) |fl| for (glyph[1..]) |part| {
+            _ = fl.next(part);
+        };
+        byte += glyph.len;
+        if (c == '\n') {
+            at = @floatFromInt(x);
+            top += @as(f32, @floatFromInt(size)) * NEWLINE_STEP;
+            continue;
+        }
+        const i = if (native) ascii(c) else @as(usize, @intCast(rl.getGlyphIndex(f, std.unicode.utf8Decode(glyph) catch '?')));
+        if (c != ' ') {
+            if (engraved) putInked(f, i, at, top, scale, Ink.of(col, top, @floatFromInt(size))) else put(f, i, at, top, scale, col);
+        }
+        at += advance(f, i, scale);
+    }
+}
+
+const NEWLINE_STEP: f32 = 1.5;
 
 fn trilinear(f: *rl.Font) void {
     rl.genTextureMipmaps(&f.texture);

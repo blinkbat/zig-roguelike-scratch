@@ -116,6 +116,10 @@ pub fn fade(c: rl.Color, a: f32) rl.Color {
     return .{ .r = c.r, .g = c.g, .b = c.b, .a = @intFromFloat(@as(f32, @floatFromInt(c.a)) * std.math.clamp(a, 0, 1)) };
 }
 
+pub fn sameRgb(a: rl.Color, b: rl.Color) bool {
+    return a.r == b.r and a.g == b.g and a.b == b.b;
+}
+
 pub fn mixed(a: rl.Color, b: rl.Color, t: f32) rl.Color {
     const k = std.math.clamp(t, 0, 1);
     const ch = struct {
@@ -359,23 +363,20 @@ pub fn body(k: actor.Kind) Look {
     };
 }
 
+const SLIME_OPACITY: f32 = 0.82;
+const SLIMES = actor.descent(.slime);
+
 pub fn bodyOpacity(kind: actor.Kind) f32 {
-    return switch (kind) {
-        .slime, .slime_half, .slime_quarter => 0.82,
-        else => 1,
-    };
+    return if (SLIMES.contains(kind)) SLIME_OPACITY else 1;
 }
 
+pub const GLOWING_BODIES = SLIMES.unionWith(.init(.{ .bloat = true, .pyre_bloat = true }));
+
 pub fn bodyGlow(kind: actor.Kind) ?rl.Color {
-    return switch (kind) {
-        .slime, .slime_half, .slime_quarter, .bloat, .pyre_bloat => body(kind).fg,
-        else => null,
-    };
+    return if (GLOWING_BODIES.contains(kind)) body(kind).fg else null;
 }
 
 pub const BODY_GLOW_EMISSION: f32 = 0.14;
-pub const BODY_GLOW_RADIUS: f32 = 1.6;
-pub const BODY_GLOW_GAIN: f32 = 0.18;
 
 pub const GLYPH_SHADOW = rl.Color{ .r = 0, .g = 0, .b = 0, .a = DROP_SHADOW_A };
 pub const GLYPH_SHADOW_PX: i32 = 4;
@@ -423,6 +424,9 @@ pub const NET = rgb(0xd6c496);
 pub const RAIN = rgb(0xc4d0e2);
 pub const MIST_TINT = [3]f32{ 0.48, 0.58, 0.68 };
 pub const SHAFT_TINT = [3]f32{ 1.0, 0.87, 0.64 };
+pub const LEAF_GOLD = [3]f32{ 0.96, 0.70, 0.26 };
+pub const LEAF_GREEN = [3]f32{ 0.58, 0.76, 0.28 };
+pub const LEAF_RUST = [3]f32{ 0.88, 0.42, 0.20 };
 
 pub const Gait = enum { hop, slide };
 
@@ -487,14 +491,20 @@ pub fn elementInk(e: damage.Element) rl.Color {
         .fire => FIRE,
         .cold => COLD,
         .lightning => LIGHTNING,
-        .chaos => ARROW,
+        .chaos => CHAOS,
     };
 }
 
 pub const LIGHTNING = rgb(0xf4e872);
+pub const CHAOS = rgb(0xb98ae8);
+pub const CHAOS_CORE = rgb(0xe4ccff);
+pub const CHAOS_GLOW = rgb(0xa050ff);
+pub const CHAOS_LANE = fade(rgb(0x9a5cf0), 0.4);
 pub const LIGHTNING_CORE = FIRE_CORE;
 pub const SPARK_CORE = rgb(0xf6f8ff);
 pub const PHYSICAL = ARROW;
+pub const KEYWORD_PHYSICAL = rgb(0xc6b69b);
+pub const KEYWORD_MENTAL = rgb(0xb9a2d4);
 pub const LIFE_TEXT = rgb(0xe0645a);
 pub const MANA_TEXT = rgb(0x6e9ce8);
 

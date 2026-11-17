@@ -1,10 +1,9 @@
 import argparse
-import json
 from pathlib import Path
 import tempfile
 
-from PIL import Image, ImageDraw, ImageFont
-from art_support import corner_order, water_cliff_layout
+from PIL import Image, ImageDraw
+from art_support import ROOT, SCRIPTS, arial, corner_order, quote as q, water_cliff_layout
 
 
 parser = argparse.ArgumentParser()
@@ -14,8 +13,7 @@ parser.add_argument('--replace', action='store_true')
 args = parser.parse_args()
 if not args.replace and (args.output.exists() or args.output.with_suffix('.png').exists()):
     raise SystemExit('Preserving existing connected template; choose a new --output.')
-root = Path(__file__).resolve().parents[2]
-work = Path(tempfile.mkdtemp(prefix='cistern-connected-cliffs-'))
+work =Path(tempfile.mkdtemp(prefix='cistern-connected-cliffs-'))
 layout = water_cliff_layout()
 size = (layout['width'], layout['height'])
 block_x, block_y, stride, block = (layout[key] for key in ('x', 'y', 'stride', 'block'))
@@ -27,8 +25,7 @@ assert block == 4 * 64
 
 
 def text(x, y, value, px=14, bold=False):
-    font = ImageFont.truetype('C:/Windows/Fonts/arial' + ('bd' if bold else '') + '.ttf', px)
-    ld.text((x, y), value, font=font, fill=(45, 48, 52, 255), spacing=5)
+    ld.text((x, y), value, font=arial(px, bold), fill=(45, 48, 52, 255), spacing=5)
 
 
 text(32, 18, 'WATER CLIFF CONNECTIONS', 26, True)
@@ -55,8 +52,7 @@ text(32, 576, 'Ground, cliff faces, and lip/cap fill are separate editable layer
 text(32, 600, 'Original face pieces below are unchanged RGBA. Lip shadows fall on the cliff AND water at runtime.', 14)
 labels.save(work / 'labels.png')
 guides.save(work / 'grid.png')
-q = lambda p: json.dumps(str(p).replace('\\', '/'), ensure_ascii=False)
-lua = [f'local sourceFiles=dofile({q(root / "tools/tile_art/source_files.lua")})'] if args.replace else []
+lua = [f'local sourceFiles=dofile({q(SCRIPTS / "source_files.lua")})'] if args.replace else []
 lua.append(f'for _,path in ipairs({{{q(args.output)},{q(args.output.with_suffix(".png"))}}}) do')
 if args.replace:
     lua.extend([
@@ -102,7 +98,7 @@ for n, name in enumerate(names):
             f'slice.name={q(f"transition_{n}_mask_{mask:02d}")}',
         ])
 for n, asset in enumerate(('shallows-cliff.png', 'water-cliff.png')):
-    layer(('Shallow' if n == 0 else 'Deep') + ' - original faces', root / 'assets/water' / asset, block_x + n * stride, 496)
+    layer(('Shallow' if n == 0 else 'Deep') + ' - original faces', ROOT / 'assets/water' / asset, block_x + n * stride, 496)
     for i, name in enumerate(('left', 'repeat', 'right')):
         lua.extend([
             f'local slice=s:newSlice(Rectangle({block_x+n*stride+i*64},496,64,64))',

@@ -1,10 +1,10 @@
-local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
-local source=app.params.source or 'C:/Users/DavidBennett/Desktop/water.aseprite'
-local desktop=app.params.out or 'C:/Users/DavidBennett/Desktop/deep-water.aseprite'
-local canonical=root..'assets/source/deep-water.aseprite'
+local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
-local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
-app.fs.makeAllDirectories(work)
+local groundPort=dofile(root..'tools/tile_art/ground_port.lua')
+local source=app.params.source or sourceFiles.DESKTOP..'water.aseprite'
+local desktop=app.params.out or sourceFiles.DESKTOP..'deep-water.aseprite'
+local canonical=root..'assets/source/deep-water.aseprite'
+local work=sourceFiles.work(app.params.work)
 assert(app.params.percent==nil or tonumber(app.params.percent),'percent must be a number')
 local percent=tonumber(app.params.percent) or 60
 assert(percent>0 and percent<100,'percent must be between 0 and 100')
@@ -15,12 +15,13 @@ if install then
   assert(not app.fs.isFile(desktop),'Preserving existing deep-water artwork; choose a new out= path')
 end
 local s=assert(app.open(source))
-assert(s.width==512 and s.height==320 and #s.frames==1 and #s.slices==16)
+assert(s.width==groundPort.W and s.height==groundPort.H and #s.frames==1 and #s.slices==groundPort.COLS*groundPort.COLS)
 local labels=Image{fromFile=assert(app.params.labels,'labels=<ground_labels.py PNG>')}
 assert(labels.width==s.width and labels.height==s.height)
 local snapshots={}
-local shallow=Image(256,256,ColorMode.RGB)
-local deep=Image(256,256,ColorMode.RGB)
+local size=groundPort.SIZE
+local shallow=Image(size,size,ColorMode.RGB)
+local deep=Image(size,size,ColorMode.RGB)
 local changed=0
 local function toned(p)
   if pc.rgbaA(p)==0 then return p end
@@ -40,8 +41,8 @@ for _,l in ipairs(s.layers) do
     end
     local position=Point(cel.position.x,cel.position.y)
     snapshots[l.name]={original=original,toned=image,position=position}
-    shallow:drawImage(original,Point(position.x,position.y-64))
-    deep:drawImage(image,Point(position.x,position.y-64))
+    shallow:drawImage(original,Point(position.x,position.y-groundPort.HEAD))
+    deep:drawImage(image,Point(position.x,position.y-groundPort.HEAD))
     cel.image=image
   elseif l.name=='Labels - hide before export' then
     assert(cel)
@@ -64,10 +65,10 @@ back:close()
 if install then sourceFiles.copy(path,canonical) end
 shallow:saveAs(work..'shallows-atlas.png')
 deep:saveAs(work..'deep-water-atlas.png')
-local preview=Image(512,256,ColorMode.RGB)
+local preview=Image(2*size,size,ColorMode.RGB)
 preview:drawImage(shallow,Point(0,0))
-preview:drawImage(deep,Point(256,0))
-preview:resize(1024,512)
+preview:drawImage(deep,Point(size,0))
+preview:resize(4*size,2*size)
 preview:saveAs(work..'water-depth-comparison.png')
 local report=sourceFiles.report(work..'water-depth-validation.txt')
 report:write(string.format('%d art pixels derived at %g%% RGB; alpha and cel positions unchanged.\n',changed,percent))

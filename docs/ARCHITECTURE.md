@@ -184,6 +184,8 @@ screen, window-size and run/turn resets. Gameplay rules never read it.
 - Owns enemy turn ordering, target queries, path-distance caching and ranged reposition selection from Simulation alone.
 - Net throws return flight, facing and whether the throw landed; a resisted net still lands and consumes its cooldown. Healing returns the healed slot, or a successful rouse with no slot.
 - Combat records the returned outcome immediately, before another actor changes the body. Rules cannot access presentation, input or application modes.
+- Hurls (`actor.Hurl`: firebolts, chaos orbs) share one in-flight record (`Actor.bolt`), one cooldown (`Actor.projectile_in`) and one impact schedule; the Hurl names its element, wording and burn chance, and `fx.hurlLook` picks how its element is drawn. A `careful` hurl is held while another foe stands on or beside its line (`crowded`). An orb's remaining path is drawn ahead of it, stopping where `firebolt.entry` stops the flight. Pib shamans mend or wake kin first; mending and hurling cool down apart.
+- `quickstep` returns where a netter darts while its net recovers, its cooldown set and the step said; it refuses while pinned or confused and never crosses blocked or shunned cells. A club beside the hero holds the net (`Quickstep.club_holds`).
 
 `game/rewards.zig`
 - `defeat` resolves XP, drops, flask refills, gas, steam and witness fright from Simulation alone; Presentation holds dropped gold and schedules speech from its `Death`.
@@ -198,8 +200,8 @@ screen, window-size and run/turn resets. Gameplay rules never read it.
 - Same-node doors move followers in place; followers without a destination cell stay alive where they were, retaining identity and statuses.
 
 `game/combat.zig`
-- Turn order: recovery/cooldowns, hero post-action harm, gas spread, foe clocks, firebolts in flight, each foe's action then its harm, waiting newborn harm, final ward/sight.
-- A braced foe (`Actor.braced`) acts down its locked line on its next action; any skipped action drops the brace. A firebolt (`Actor.bolt`) flies on after its thrower dies and freezes with its level when the hero leaves; `Presentation.bolts` is rebuilt from it.
+- Turn order: recovery/cooldowns, hero post-action harm, gas spread, foe clocks, hurls in flight, each foe's action then its harm, waiting newborn harm, final ward/sight.
+- A braced foe (`Actor.braced`) acts down its locked line on its next action; any skipped action drops the brace. A hurl (`Actor.bolt`) flies on after its thrower dies and freezes with its level when the hero leaves; `Presentation.bolts` is rebuilt from it.
 - Consumed ticks and displacement clear even when hero death interrupts the turn.
 - Split children inherit consumed ticks, so they cannot repeat their parent's harm that turn.
 

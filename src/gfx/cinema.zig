@@ -62,16 +62,39 @@ const SHAFT_COLS: i32 = @intFromFloat(@ceil((SHAFT_WIDTH[1] * SHAFT_POOL_WIDTH +
 const SHAFT_REFLECT_COLS: i32 = 1 + @as(i32, @intFromFloat(@ceil((2 * SHAFT_SLANT * SHAFT_REACH[1] * SHAFT_REFLECT + SHAFT_WIDTH[1] + SHAFT_SWAY) / SHAFT_SPACING[0])));
 const FIELD_MARGIN: i32 = @intFromFloat(@ceil(@max(SHAFT_REACH[1], SHAFT_REACH[1] * SHAFT_SLANT + SHAFT_WIDTH[1] * SHAFT_POOL_WIDTH) + SHAFT_NEAR));
 const BLOOM_GAIN: f32 = 0.22;
-/// Peak opacity of the water mist, the canopy's light shafts and the dust motes in them.
+/// Peak opacity of the water mist, the canopy's light shafts and the large dust motes in them.
 const MIST_GAIN: f32 = 0.065;
 const SHAFT_GAIN: f32 = 0.14;
-const SHAFT_MORNING = [2]f32{ day.SUNRISE + 2, day.SUNRISE + 4 };
-const SHAFT_EVENING = [2]f32{ day.SUNSET - 4, day.SUNSET - 2 };
 const DUST_GAIN: f32 = 0.64;
 const DUST_SMALL_GAIN: f32 = 1.45;
-/// Of the cells the dust drifts over, the share with no mote: a seed below this.
+const SHAFT_MORNING = [2]f32{ day.SUNRISE + 2, day.SUNRISE + 4 };
+const SHAFT_EVENING = [2]f32{ day.SUNSET - 4, day.SUNSET - 2 };
+const SHAFT_EMPTY: f32 = 0.19;
+const SHAFT_REFLECT_GAIN: f32 = 0.45;
+const SHAFT_POOL_GAIN: f32 = 0.65;
+/// In cells; each holds at most one mote.
+const DUST_SIZE = [2]f32{ 0.65, 1.6 };
+/// Of the dust cells, the share with no mote: a seed below this.
 const DUST_EMPTY: f32 = 0.36;
-/// Cells a second the mist and dust drift east.
+const DUST_LARGE: f32 = 0.91;
+/// In cells; each holds at most one leaf, which falls its height in a lifetime.
+const LEAF_SIZE = [2]f32{ 2.2, 3.2 };
+const LEAF_EMPTY: f32 = 0.45;
+/// Lifetimes a second.
+const LEAF_FALL = [2]f32{ 0.07, 0.11 };
+/// Radians a second of the side-to-side swoop; its reach in cells, the rise at each end, and the tilt there.
+const LEAF_SWING = [2]f32{ 1.5, 2.3 };
+const LEAF_SWAY: f32 = 0.3;
+const LEAF_LIFT: f32 = 0.12;
+const LEAF_TILT: f32 = 0.7;
+/// In sprite pixels from the middle to the tip, and the blade's depth.
+const LEAF_LENGTH: f32 = 1.6;
+const LEAF_WIDTH: f32 = 0.8;
+const LEAF_STEM: f32 = 0.55;
+const LEAF_GAIN: f32 = 0.8;
+const LEAF_SHADE: f32 = 0.35;
+const LEAF_DIM: f32 = 0.4;
+/// Cells a second the mist drifts east.
 const AIR_DRIFT: f32 = 0.025;
 /// In the thickest weather mist, how many times over the water mist thickens, and the peak opacity of the mist over land.
 const WEATHER_MIST_WATER: f32 = 2;
@@ -84,7 +107,8 @@ fn focusStrength(t: grid.Tile, at: [2]f32, hero: ?[2]f32) f32 {
 }
 
 const FIELD = .{ .lit = "r", .water = "g", .emissive = "b", .crown = "a" };
-const FIELD_DEFINES = std.fmt.comptimePrint("#define LIT {s}\n#define WATER {s}\n#define EMISSIVE {s}\n#define CROWN {s}\n", .{ FIELD.lit, FIELD.water, FIELD.emissive, FIELD.crown });
+const WEATHER = .{ .beam = "r", .mist = "g", .seen = "a" };
+const FIELD_DEFINES = shaders.channelDefines(FIELD) ++ shaders.channelDefines(WEATHER);
 
 fn markEmissive(pixels: *[grid.CELLS]rl.Color, at: [2]f32) bool {
     var marked = false;
@@ -111,6 +135,8 @@ pub const Cinema = struct {
     field: ?rl.Texture2D = null,
     weather_field: ?rl.Texture2D = null,
     sight_field: ?rl.Texture2D = null,
+    /// The visibility fields `sight_field` holds.
+    sight_of: ?struct { from: *const light_visibility.Visibility, revision: u32 } = null,
     scene: ?rl.RenderTexture2D = null,
     spread: ?rl.RenderTexture2D = null,
     active_bloom: bool = false,
@@ -124,7 +150,8 @@ pub const Cinema = struct {
         self.grade = shaders.program(Grade, GRADE_FS);
         self.field = raster.canvas(grid.W, grid.H, rl.Color.blank, .point);
         self.weather_field = raster.canvas(grid.W, grid.H, rl.Color.blank, .point);
-        var sight_pixels: light_visibility.SightPixels = @splat(@splat(0));
+        var sight_pixels: light_visibility.SightPixels = @splat(.{});
+        self.sight_of = null;
         self.sight_field = raster.clamped(.{
             .data = &sight_pixels,
             .width = grid.W,
@@ -163,12 +190,10 @@ pub const Cinema = struct {
                 const local = weather.get(locations[grid.Level.idx(p)]);
                 const beam = unitByte(local.get(.beams));
                 self.active_beams = self.active_beams or beam > 0;
-                weather_pixels[grid.Level.idx(p)] = .{
-                    .r = beam,
-                    .g = unitByte(local.get(.mist)),
-                    .b = 0,
-                    .a = 255,
-                };
+                const cell = &weather_pixels[grid.Level.idx(p)];
+                @field(cell, WEATHER.beam) = beam;
+                @field(cell, WEATHER.mist) = unitByte(local.get(.mist));
+                @field(cell, WEATHER.seen) = 255;
             }
         }
         for (flames) |f| {
@@ -182,9 +207,12 @@ pub const Cinema = struct {
             if (self.weather_field) |w| rl.updateTexture(w, &weather_pixels);
         }
         if (air_on) if (self.sight_field) |s| {
+            const v = &l.visibility;
+            if (self.sight_of) |was| if (was.from == v and was.revision == v.revision) return;
             var sight_pixels: light_visibility.SightPixels = undefined;
-            l.visibility.sightPixels(&sight_pixels);
+            v.sightPixels(&sight_pixels);
             rl.updateTexture(s, &sight_pixels);
+            self.sight_of = .{ .from = v, .revision = v.revision };
         };
     }
 
@@ -323,7 +351,7 @@ const FIELD_FS = shaders.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\uniform sampler2D visibility;
     \\vec4 fieldAt(vec2 p) {
     \\    if (!insideMap(p)) return vec4(0.0);
-    \\    return texture(field, (floor(p) + 0.5) / CELLS);
+    \\    return cellTexel(field, p);
     \\}
     \\float liveAt(vec2 p) {
     \\    return mapAlpha(visibility, p, 0.0);
@@ -397,6 +425,27 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ light_visibility.SIGHT_FS ++ shade
     .DUST_GAIN = DUST_GAIN,
     .DUST_SMALL_GAIN = DUST_SMALL_GAIN,
     .DUST_EMPTY = DUST_EMPTY,
+    .DUST_LARGE = DUST_LARGE,
+    .DUST_SIZE = DUST_SIZE,
+    .LEAF_SIZE = LEAF_SIZE,
+    .LEAF_EMPTY = LEAF_EMPTY,
+    .LEAF_FALL = LEAF_FALL,
+    .LEAF_SWING = LEAF_SWING,
+    .LEAF_SWAY = LEAF_SWAY,
+    .LEAF_LIFT = LEAF_LIFT,
+    .LEAF_TILT = LEAF_TILT,
+    .LEAF_LENGTH = LEAF_LENGTH,
+    .LEAF_WIDTH = LEAF_WIDTH,
+    .LEAF_STEM = LEAF_STEM,
+    .LEAF_GAIN = LEAF_GAIN,
+    .LEAF_SHADE = LEAF_SHADE,
+    .LEAF_DIM = LEAF_DIM,
+    .LEAF_GOLD = look.LEAF_GOLD,
+    .LEAF_GREEN = look.LEAF_GREEN,
+    .LEAF_RUST = look.LEAF_RUST,
+    .SHAFT_EMPTY = SHAFT_EMPTY,
+    .SHAFT_REFLECT_GAIN = SHAFT_REFLECT_GAIN,
+    .SHAFT_POOL_GAIN = SHAFT_POOL_GAIN,
     .AIR_DRIFT = AIR_DRIFT,
     .WEATHER_MIST_WATER = WEATHER_MIST_WATER,
     .WEATHER_MIST_LAND = WEATHER_MIST_LAND,
@@ -420,6 +469,15 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ light_visibility.SIGHT_FS ++ shade
     \\    return max(max(fieldAt(p + vec2(SHAFT_NEAR, 0.0)).CROWN, fieldAt(p - vec2(SHAFT_NEAR, 0.0)).CROWN),
     \\               max(fieldAt(p + vec2(0.0, SHAFT_NEAR)).CROWN, fieldAt(p - vec2(0.0, SHAFT_NEAR)).CROWN));
     \\}
+    \\float canopyAt(vec2 p) {
+    \\    return max(fieldAt(p).CROWN, treesAt(p));
+    \\}
+    \\vec2 artPixel(vec2 p) {
+    \\    return (floor(p * PIXELS) + 0.5) / PIXELS;
+    \\}
+    \\float lifeFade(float age, float rise, float fall) {
+    \\    return smoothstep(0.0, rise, age) * (1.0 - smoothstep(fall, 1.0, age));
+    \\}
     \\vec3 clearingLight(vec2 p, bool reflected) {
     \\    vec2 slanted = vec2(p.x + p.y * SHAFT_SLANT, p.y);
     \\    vec2 spacing = SHAFT_SPACING;
@@ -431,7 +489,7 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ light_visibility.SIGHT_FS ++ shade
     \\            if (!reflected && x < -SHAFT_COLS) continue;
     \\            vec2 id = patch + vec2(float(x), float(y));
     \\            float seed = hash(id + 71.0);
-    \\            if (seed < 0.19) continue;
+    \\            if (seed < SHAFT_EMPTY) continue;
     \\            vec2 base = (id + vec2(0.15 + seed * 0.7, 0.15 + hash(id + 29.0) * 0.8)) * spacing;
     \\            float height = base.y - slanted.y;
     \\            float reach = mix(SHAFT_REACH.x, SHAFT_REACH.y, hash(id + 13.0));
@@ -448,7 +506,7 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ light_visibility.SIGHT_FS ++ shade
     \\            vec2 ground = vec2(base.x - base.y * SHAFT_SLANT, base.y);
     \\            if (!insideMap(ground)) continue;
     \\            vec4 floorField = fieldAt(ground);
-    \\            float weatherBeam = texture(weather, (floor(ground) + 0.5) / CELLS).r;
+    \\            float weatherBeam = cellTexel(weather, ground).BEAM;
     \\            float clearing = treesAt(ground) * (1.0 - floorField.CROWN) * (1.0 - floorField.WATER) * weatherBeam;
     \\            float fade = smoothstep(0.0, 0.85 + hash(id + 91.0) * 0.65, height) * pow(max(0.0, 1.0 - height / reach), 1.1);
     \\            float ray = 1.0 - step(width, abs(side));
@@ -459,7 +517,7 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ light_visibility.SIGHT_FS ++ shade
     \\            if (!reflected) {
     \\                vec2 pool = vec2((p.x - ground.x) / (width * SHAFT_POOL_WIDTH), (p.y - ground.y) / (SHAFT_POOL_DEPTH.x + width * SHAFT_POOL_DEPTH.y));
     \\                float landing = max(0.0, 1.0 - dot(pool, pool));
-    \\                light.z += clearing * landing * landing * gain * 0.65;
+    \\                light.z += clearing * landing * landing * gain * SHAFT_POOL_GAIN;
     \\            }
     \\        }
     \\    }
@@ -469,43 +527,67 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ light_visibility.SIGHT_FS ++ shade
     \\    vec2 p = cellAtFrag();
     \\    float live = min(liveAt(p), exactSight(sight, p));
     \\    if (live < CLEAR_A) { finalColor = vec4(0.0); return; }
-    \\    vec4 weatherCell = texture(weather, (floor(p) + 0.5) / CELLS);
-    \\    if (weatherCell.a < 0.5) { finalColor = vec4(0.0); return; }
+    \\    vec4 weatherCell = cellTexel(weather, p);
+    \\    if (weatherCell.SEEN < 0.5) { finalColor = vec4(0.0); return; }
     \\    vec4 f = softField(p);
-    \\    vec2 weatherHere = weatherCell.rg;
-    \\    float weather_mist = weatherHere.g;
+    \\    float weather_mist = weatherCell.MIST;
     \\    float mist = f.WATER * (0.35 + 0.65 * noise(p * vec2(0.7, 2.2) + vec2(time * AIR_DRIFT, time * 0.012)));
     \\    mist *= MIST_GAIN * (1.0 + weather_mist * WEATHER_MIST_WATER);
     \\    mist += weather_mist * WEATHER_MIST_LAND * (0.4 + 0.6 * noise(p * vec2(0.35, 0.9) + vec2(time * AIR_DRIFT * 1.6, time * 0.008)));
     \\    mist *= brightness;
-    \\    float shafts = 0.0, dust = 0.0;
+    \\    float shafts = 0.0, dust = 0.0, leaf = 0.0;
+    \\    vec3 leafTint = vec3(0.0);
     \\    if (beams != 0 && sunlight > 0.0) {
-    \\        vec2 pixel = (floor(p * PIXELS) + 0.5) / PIXELS;
+    \\        vec2 pixel = artPixel(p);
     \\        vec3 clearing = clearingLight(pixel, false);
     \\        shafts = (clearing.x * (1.0 - f.CROWN * 0.45) + clearing.z * (1.0 - fieldAt(p).CROWN) * (1.0 - fieldAt(p).WATER)) * shaftlight * SHAFT_GAIN;
     \\        if (reflections != 0 && fieldAt(p).WATER > 0.5) {
     \\            vec2 waterPixel = pixel;
     \\            waterPixel.x += floor(sin(pixel.y * 23.0 + time * 1.2) * 4.0) / PIXELS;
     \\            float ripple = 0.65 + 0.35 * sin(pixel.y * 38.0 - time * 1.6);
-    \\            shafts += clearingLight(waterPixel, true).x * shaftlight * SHAFT_GAIN * 0.45 * ripple;
+    \\            shafts += clearingLight(waterPixel, true).x * shaftlight * SHAFT_GAIN * SHAFT_REFLECT_GAIN * ripple;
     \\        }
-    \\        vec2 dustSize = vec2(0.65, 1.6);
+    \\        vec2 dustSize = DUST_SIZE;
     \\        vec2 dustCell = floor(pixel / dustSize);
     \\        float seed = hash(dustCell);
     \\        float age = fract(time * (0.055 + seed * 0.035) + hash(dustCell + 19.0));
     \\        vec2 dotAt = (dustCell + vec2(0.2 + seed * 0.6, 1.0 - age)) * dustSize;
     \\        dotAt.x += sin(time * 0.65 + seed * 20.0) * 0.055;
-    \\        dotAt = (floor(dotAt * PIXELS) + 0.5) / PIXELS;
+    \\        dotAt = artPixel(dotAt);
     \\        vec2 delta = abs(pixel - dotAt);
-    \\        bool large = seed > 0.91;
+    \\        bool large = seed > DUST_LARGE;
     \\        dust = (1.0 - step((large ? 1.5 : 0.5) / PIXELS, max(delta.x, delta.y))) * step(DUST_EMPTY, seed);
     \\        dust *= large ? 1.0 : DUST_SMALL_GAIN;
-    \\        float trees = max(fieldAt(dotAt).CROWN, treesAt(dotAt));
-    \\        dust *= max(trees * 0.65 * weatherHere.r, clearing.y) * sunlight * DUST_GAIN;
-    \\        dust *= smoothstep(0.0, 0.12, age) * (1.0 - smoothstep(0.75, 1.0, age));
+    \\        dust *= max(canopyAt(dotAt) * 0.65 * weatherCell.BEAM, clearing.y) * sunlight * DUST_GAIN;
+    \\        dust *= lifeFade(age, 0.12, 0.75);
+    \\        vec2 leafSize = LEAF_SIZE;
+    \\        vec2 leafCell = floor(pixel / leafSize);
+    \\        if (hash(leafCell + 53.0) >= LEAF_EMPTY) {
+    \\            float leafAge = fract(time * mix(LEAF_FALL.x, LEAF_FALL.y, hash(leafCell + 61.0)) + hash(leafCell + 67.0));
+    \\            float sway = sin(time * mix(LEAF_SWING.x, LEAF_SWING.y, hash(leafCell + 73.0)) + hash(leafCell + 59.0) * 40.0);
+    \\            vec2 leafAt = leafCell * leafSize + vec2(leafSize.x * (0.3 + 0.4 * hash(leafCell + 79.0)) + sway * LEAF_SWAY,
+    \\                LEAF_LIFT + 0.1 + leafAge * (leafSize.y - LEAF_LIFT - 0.2) - LEAF_LIFT * sway * sway);
+    \\            leafAt = artPixel(leafAt);
+    \\            vec2 d = (pixel - leafAt) * PIXELS;
+    \\            float turn = -LEAF_TILT * sway;
+    \\            float tc = cos(turn), ts = sin(turn);
+    \\            float u = (d.x * tc + d.y * ts) * (hash(leafCell + 83.0) < 0.5 ? -1.0 : 1.0);
+    \\            float v = d.y * tc - d.x * ts;
+    \\            float blade = step(abs(u), LEAF_LENGTH) * step(-0.5 - LEAF_WIDTH * (1.0 - u * u / (LEAF_LENGTH * LEAF_LENGTH)), v) * step(v, 0.5);
+    \\            float stem = step(-LEAF_LENGTH - 1.0, u) * (1.0 - step(-LEAF_LENGTH, u)) * step(abs(v), 0.5);
+    \\            float shape = max(blade, stem * LEAF_STEM);
+    \\            if (shape > 0.0) {
+    \\                float hue = hash(leafCell + 89.0);
+    \\                leafTint = mix(LEAF_GOLD, hue < 0.5 ? LEAF_GREEN : LEAF_RUST, fract(hue * 2.0));
+    \\                float shine = max(canopyAt(leafAt) * LEAF_SHADE * weatherCell.BEAM * sunlight, min(clearing.x, 1.0) * shaftlight);
+    \\                float bright = mix(LEAF_DIM, 1.0, hash(leafCell + 97.0)) * (0.75 + 0.25 * sway * sway);
+    \\                float fade = lifeFade(leafAge, 0.18, 0.65);
+    \\                leaf = shape * shine * bright * fade * LEAF_GAIN;
+    \\            }
+    \\        }
     \\    }
-    \\    float alpha = (mist + shafts + dust) * live * amount;
-    \\    vec3 tint = (MIST_TINT * mist + SHAFT_TINT * (shafts + dust)) / max(mist + shafts + dust, 0.00001);
+    \\    float alpha = (mist + shafts + dust + leaf) * live * amount;
+    \\    vec3 tint = (MIST_TINT * mist + SHAFT_TINT * (shafts + dust) + leafTint * leaf) / max(mist + shafts + dust + leaf, 0.00001);
     \\    finalColor = vec4(tint * alpha, 0.0);
     \\}
 ;

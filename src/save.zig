@@ -239,6 +239,7 @@ fn parseLegacy(bytes: []const u8) !*format.Snapshot {
         }
     }
     if (!store.legacy.valid(format.Policy, snapshot)) return error.Damaged;
+    format.placeFromLevel(snapshot);
     try format.validate(snapshot);
     return snapshot;
 }
@@ -655,7 +656,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0xbe5fb9a1243f1350;
+const RECORDED_FINGERPRINT: Print = 0xb7ebf9e2df710bb9;
 
 test "zoo keys doors populations and visits survive portable saves" {
     const alloc = std.testing.allocator;

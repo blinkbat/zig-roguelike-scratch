@@ -420,6 +420,11 @@ pub const Editor = struct {
         ed.pasting = false;
     }
 
+    fn keepAndRelease(ed: *Editor) void {
+        ed.keepDrag();
+        ed.release();
+    }
+
     pub fn refuseUnfit(ed: *Editor, t: Tool) bool {
         if (t.fits(ed.here())) return false;
         ed.say(GENERATED, .{});
@@ -428,7 +433,7 @@ pub const Editor = struct {
 
     pub fn setTool(ed: *Editor, t: Tool) void {
         if (ed.refuseUnfit(t)) return;
-        if (!t.eql(ed.tool)) ed.release();
+        if (!t.eql(ed.tool)) ed.keepAndRelease();
         if (t == .foe and !ed.foeShown(t.foe)) ed.foe_type = null;
         ed.hold(t);
     }
@@ -473,7 +478,7 @@ pub const Editor = struct {
     }
 
     pub fn setShape(ed: *Editor, s: Shape) void {
-        if (s != ed.shape) ed.release();
+        if (s != ed.shape) ed.keepAndRelease();
         ed.shape = s;
         if (s != .select and !ed.tool.broad() and ed.paintable()) ed.setTool(.paint);
     }
@@ -490,7 +495,7 @@ pub const Editor = struct {
     }
 
     pub fn setView(ed: *Editor, v: View) void {
-        if (v != ed.view) ed.drop();
+        if (v != ed.view) ed.leaveHeld();
         ed.view = v;
     }
 
