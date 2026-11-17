@@ -1,4 +1,5 @@
 import argparse
+import ctypes
 import os
 from pathlib import Path
 import subprocess
@@ -99,6 +100,30 @@ assert(loadfile(app.params.assembly,'t',env))()
                 with Image.open(self.shots / f'template-{n}.png') as expected:
                     self.assertEqual(expected.convert('RGBA').tobytes(),
                                      preview.crop((32 + n * 320, 104, 288 + n * 320, 360)).convert('RGBA').tobytes())
+        self.assertEqual(self.inputs, {p: p.read_bytes() for p in self.inputs})
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows file sharing failure')
+    def test_locked_stale_preview_cannot_report_success(self):
+        Image.new('RGBA', (960, 640), (190, 20, 130, 255)).save(self.preview)
+        before = self.preview.read_bytes()
+        assembly = self.generate()
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                                      ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                                      ctypes.c_void_p]
+        kernel.CreateFileW.restype = ctypes.c_void_p
+        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+        handle = kernel.CreateFileW(str(self.preview), 0x80000000, 1, None, 3, 0, None)
+        self.assertNotEqual(ctypes.c_void_p(-1).value, handle, ctypes.get_last_error())
+        try:
+            result = self.assemble(assembly)
+        finally:
+            kernel.CloseHandle(handle)
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode, output)
+        self.assertIn('Saved preview differs from the assembled template', output)
+        self.assertEqual(before, self.preview.read_bytes())
+        self.assertFalse((assembly.parent / 'validation.txt').exists())
         self.assertEqual(self.inputs, {p: p.read_bytes() for p in self.inputs})
 
 

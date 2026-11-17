@@ -1,5 +1,7 @@
 import argparse
+import ctypes
 import hashlib
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -21,6 +23,9 @@ class DeepenWaterTests(unittest.TestCase):
         self.output = self.work / 'deep.aseprite'
         self.canonical = self.work / 'assets/source/deep-water.aseprite'
         self.canonical.parent.mkdir(parents=True)
+        helper = self.work / 'tools/tile_art/source_files.lua'
+        helper.parent.mkdir(parents=True)
+        helper.write_bytes((ROOT / 'tools/tile_art/source_files.lua').read_bytes())
         self.run_lua('''
 local s=Sprite(512,320,ColorMode.RGB)
 s.layers[1].name='Draw here'
@@ -42,7 +47,7 @@ labels:putPixel(12,8,app.pixelColor.rgba(40,50,60,255))
 labels:saveAs(app.params.labels)
 ''')
 
-    def command(self, script):
+    def command(self, script, install='yes'):
         command = [args.aseprite, '--batch']
         for value in (
             'root=' + self.work.as_posix() + '/',
@@ -50,7 +55,7 @@ labels:saveAs(app.params.labels)
             'source=' + self.source.as_posix(),
             'out=' + self.output.as_posix(),
             'labels=' + (self.work / 'labels.png').as_posix(),
-            'install=yes',
+            'install=' + install,
         ):
             command += ['--script-param', value]
         return subprocess.run(command + ['--script', str(script)], capture_output=True, text=True)
@@ -86,6 +91,7 @@ s:saveAs(app.params.out); s:close()
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertTrue(self.output.is_file())
         self.assertTrue(self.canonical.is_file())
+        self.assertEqual(self.output.read_bytes(), self.canonical.read_bytes())
         self.assertEqual(source_before, self.source.read_bytes())
         self.run_lua('''
 local pc=app.pixelColor
@@ -124,6 +130,42 @@ for _,path in ipairs({app.params.out,app.params.root..'assets/source/deep-water.
 end
 source:close()
 ''')
+
+    def test_blocked_canonical_destination_fails_without_success_report(self):
+        self.canonical.mkdir()
+        source_before = self.source.read_bytes()
+        result = self.command(ROOT / 'tools/tile_art/deepen_water.lua')
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(source_before, self.source.read_bytes())
+        self.assertTrue(self.canonical.is_dir())
+        self.assertTrue(self.output.is_file())
+        self.assertFalse((self.work / 'water-depth-validation.txt').exists())
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows file sharing failure')
+    def test_locked_stale_draft_with_missing_artwork_cannot_pass_validation(self):
+        self.run_lua('''
+local s=Sprite(512,320,ColorMode.RGB)
+s.layers[1].name='Unrelated old draft'
+s:saveAs(app.params.work..'/deep-water-draft.aseprite'); s:close()
+''')
+        draft = self.work / 'deep-water-draft.aseprite'
+        before = draft.read_bytes()
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                                      ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                                      ctypes.c_void_p]
+        kernel.CreateFileW.restype = ctypes.c_void_p
+        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+        handle = kernel.CreateFileW(str(draft), 0x80000000, 1, None, 3, 0, None)
+        self.assertNotEqual(ctypes.c_void_p(-1).value, handle, ctypes.get_last_error())
+        try:
+            result = self.command(ROOT / 'tools/tile_art/deepen_water.lua', install='no')
+        finally:
+            kernel.CloseHandle(handle)
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(before, draft.read_bytes())
+        self.assertFalse(self.canonical.exists())
+        self.assertFalse((self.work / 'water-depth-validation.txt').exists())
 
 
 if __name__ == '__main__':

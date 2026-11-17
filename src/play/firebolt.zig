@@ -33,11 +33,10 @@ pub const Bolt = struct {
         return c;
     }
 
-    /// Thrown from a cell on the map, along a line at least `range` long and no longer than `range` past the map's breadth, no farther out than that line runs.
     pub fn valid(b: Bolt, range: i32) bool {
         if (!grid.Level.inside(b.from) or b.from.eq(b.toward)) return false;
         const far = @max(@abs(@as(i64, b.toward.x) - b.from.x), @abs(@as(i64, b.toward.y) - b.from.y));
-        return far >= range and far <= @as(i64, range) + @max(grid.W, grid.H) and b.flown <= far;
+        return far >= range and far <= @as(i64, range) + @max(grid.W, grid.H) and b.flown < range and grid.Level.inside(b.at());
     }
 
     pub fn at(b: Bolt) P {
@@ -128,6 +127,20 @@ test "a bolt is valid only along a line its range could aim" {
     try std.testing.expect(!(Bolt{ .from = from, .toward = from.add(.{ .x = 2, .y = 0 }), .flown = 3 }).valid(TEST_HURL.range));
     try std.testing.expect(!(Bolt{ .from = from, .toward = from.add(.{ .x = TEST_HURL.range - 1, .y = 0 }) }).valid(TEST_HURL.range));
     for (1..8) |d| try std.testing.expect(Bolt.aimed(from, from.add(.{ .x = @intCast(d), .y = 1 }), TEST_HURL.range).valid(TEST_HURL.range));
+}
+
+test "a saved bolt must still be in flight inside the map" {
+    var b = Bolt.aimed(.{ .x = 10, .y = 10 }, .{ .x = 14, .y = 10 }, TEST_HURL.range);
+    b.flown = TEST_HURL.range - 1;
+    try std.testing.expect(b.valid(TEST_HURL.range));
+    b.flown = TEST_HURL.range;
+    try std.testing.expect(!b.valid(TEST_HURL.range));
+    b.flown += 1;
+    try std.testing.expect(!b.valid(TEST_HURL.range));
+    b = Bolt.aimed(.{ .x = 0, .y = 10 }, .{ .x = -1, .y = 10 }, TEST_HURL.range);
+    try std.testing.expect(b.valid(TEST_HURL.range));
+    b.flown = 1;
+    try std.testing.expect(!b.valid(TEST_HURL.range));
 }
 
 test "a bolt enters a body's or barrel's cell, stops short of a wall, and never leaves its line" {

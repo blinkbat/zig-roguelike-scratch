@@ -892,6 +892,60 @@ test "a braced line, a stuck turn and a firebolt in flight survive a portable sa
     try std.testing.expectError(error.Damaged, read(buf.items, back, into));
 }
 
+test "portable saves reject expired and off-map bolts in active and visited levels without mutation" {
+    const alloc = std.testing.allocator;
+    const world = try testMap();
+    defer alloc.destroy(world);
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    try fixture(source, world);
+    const snapshot = try alloc.create(format.Snapshot);
+    defer alloc.destroy(snapshot);
+    try format.capture(source, snapshot);
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    game.begin(target, 91);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    into.* = .{};
+    const map_hash = store.sum(std.mem.asBytes(into));
+    var before = std.ArrayList(u8).init(alloc);
+    defer before.deinit();
+    try sealed(target, &before);
+    var corrupt = std.ArrayList(u8).init(alloc);
+    defer corrupt.deinit();
+    var after = std.ArrayList(u8).init(alloc);
+    defer after.deinit();
+    const range = actor.row(.cinder_imp).hurls.?.range;
+    for ([_]bool{ false, true }) |visited| {
+        for ([_]@import("play/firebolt.zig").Bolt{
+            .{ .from = .{ .x = 10, .y = 10 }, .toward = .{ .x = 30, .y = 10 }, .flown = @intCast(range) },
+            .{ .from = .{ .x = 10, .y = 10 }, .toward = .{ .x = 30, .y = 10 }, .flown = @intCast(range + 1) },
+            .{ .from = .{ .x = 0, .y = 10 }, .toward = .{ .x = -range, .y = 10 }, .flown = 1 },
+        }) |bolt| {
+            try format.capture(source, snapshot);
+            const pool = if (visited) &snapshot.visits[0].?.pool else &snapshot.run.pool;
+            try std.testing.expect(pool.n > 1);
+            pool.items[1].kind = .cinder_imp;
+            pool.items[1].bolt = bolt;
+            pool.items[1].bolt.?.flown = 0;
+            corrupt.clearRetainingCapacity();
+            try format.writeSnapshot(snapshot, &corrupt);
+            format.seal(&corrupt);
+            const valid = try format.parse(corrupt.items);
+            std.heap.page_allocator.destroy(valid);
+            pool.items[1].bolt = bolt;
+            corrupt.clearRetainingCapacity();
+            try format.writeSnapshot(snapshot, &corrupt);
+            format.seal(&corrupt);
+            try std.testing.expectError(error.Damaged, read(corrupt.items, target, into));
+            try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
+            try sealed(target, &after);
+            try std.testing.expectEqualSlices(u8, before.items, after.items);
+        }
+    }
+}
+
 test "legacy saves convert on load and reject invalid native tags before changing the run" {
     const alloc = std.testing.allocator;
     const world = try testMap();

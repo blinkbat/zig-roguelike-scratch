@@ -251,7 +251,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
         const hit = attacks.heroScaled(&g.sim, act, raw);
         combat.wound(g, id, hit.against(g.sim.combatStats(a).elements), Skill.VERB, s);
     }
-    if (comptime Skill.ELEMENT == .fire) combat.fireLands(g, at, Skill.REACH, Skill.KINDLE, s.wait);
+    if (comptime Skill.ELEMENT == .fire) combat.fireLands(g, at, Skill.REACH + g.sim.wider(), Skill.KINDLE, s.wait);
     if (comptime Skill.ELEMENT == .cold) combat.coldLands(g, &area, s.wait);
 }
 

@@ -9,6 +9,7 @@ const atlas = @import("../map/atlas.zig");
 const listing = @import("../map/listing.zig");
 const lume = @import("../map/lume.zig");
 const gas = @import("../map/gas.zig");
+const fire = @import("../map/fire.zig");
 const actor = @import("../play/actor.zig");
 const firebolt = @import("../play/firebolt.zig");
 const windup = @import("../play/windup.zig");
@@ -226,7 +227,14 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             f.put("{s}; {s}", .{ if (t.solid()) "Blocks a step" else "Walked on", if (t.blind()) "blocks sight" else "seen through" });
             if (t.liquid()) f.put("A liquid: gas spreads over it, a trail bridges it", .{});
             if (t.wet()) f.put("Fire landing on it boils off as " ++ gas.STEAM_NAME, .{});
-            if (t.burns()) f.put("Catches fire, spreads it and burns down to dirt", .{});
+            if (t.burns()) {
+                const ash = fire.ashes(t);
+                if (ash[0] == ash[1]) {
+                    f.put("Catches fire, spreads it and burns down to {s}", .{menu.word(ash[0])});
+                } else {
+                    f.put("Catches fire, spreads it and burns down to {s} or {s}", .{ menu.word(ash[0]), menu.word(ash[1]) });
+                }
+            }
             if (look.under(t)) |u| f.put("Drawn over the ground beside it, else {s}", .{menu.word(u)});
             if (dual.of(t)) |gr| if (sprite_assets.GROUND_SHEETS.contains(gr)) f.put("Ground {s}: its edges meet the grounds below it", .{@tagName(gr)});
             if (look.castsPicture(t)) f.put("Stands up and throws a shadow", .{});

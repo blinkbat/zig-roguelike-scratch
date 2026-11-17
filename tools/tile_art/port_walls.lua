@@ -115,6 +115,8 @@ sprite:saveAs(path)
 sprite:saveCopyAs(work..'regular-walls-current.png')
 sprite:close()
 local reopened=assert(app.open(path))
+assert(reopened.width==512 and reopened.height==448,'Saved sheet dimensions changed')
+sourceFiles.checkLayer(reopened,'Extension - ported painted edges',completed,Point(0,0))
 local preserved=false
 for _,layer in ipairs(reopened.layers) do
   if layer.name=='Layer 1' then

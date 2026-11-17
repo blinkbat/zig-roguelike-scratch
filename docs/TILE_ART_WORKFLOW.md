@@ -58,6 +58,10 @@ brick runs and face ends; `look.WALL_FACE_PX` must match the exporter's face hei
 `port_walls.lua` also regenerates the Desktop extension. Both sample the original
 layer, so incorporate later edits before regeneration.
 
+Wall export reopens the runtime PNG and checks its pixels before reporting success.
+Verify read-only destination failures with
+`python -B tools/tile_art/test_export_walls.py --aseprite <aseprite.exe>`; fixtures stay in TEMP.
+
 Forest export preserves native canopy/trunk geometry and the separate extension.
 `port_forest.lua` constructs connections from native canopy copies and refuses an
 existing extension. `tone_forest.lua` records the owner-requested forest palette
@@ -113,9 +117,22 @@ Forest toning and HUD border export use the same checked reads and backups befor
 overwriting artwork. Verify their failure paths with
 `python -B tools/tile_art/test_backup_failures.py --aseprite <aseprite.exe>`; all fixtures stay in TEMP.
 
+Ground, bridge and forest ports, deep-water installation and forest toning publish
+the reopened working source through checked byte-copy I/O. A failed canonical or
+Desktop write aborts before the success report; the installed copy contains the
+exact validated source bytes.
+The water-cliff edit port verifies the reopened layered composite before exporting
+its preview or reporting that the edits were saved.
+Verify publication failures and exact copies with
+`python -B tools/tile_art/test_install_sources.py --aseprite <aseprite.exe>`;
+deep-water stale drafts are covered by `test_deepen_water.py` with the same argument.
+Wall guides, ideas, wall extensions and both shallow-cliff updates also verify
+their generated layers after reopening; `test_saved_layers.py` exercises failed
+saves with the same argument.
+
 Wall guide/idea updates, wall and forest ports, and replacement ground/water-edge
-templates also use checked byte-copy backups. Aseprite's `saveCopyAs` can return
-success after a failed save, so it cannot guard an overwrite. Verify these callers
+templates also use checked byte-copy backups. Aseprite's `saveAs` and `saveCopyAs`
+can return success after a failed save, so their return values cannot guard an overwrite. Verify these callers
 with `python -B tools/tile_art/test_legacy_backups.py --aseprite <aseprite.exe>`.
 
 Deep water is derived by `deepen_water.lua` from the shallow sheet with a 60% RGB

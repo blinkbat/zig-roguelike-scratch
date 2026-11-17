@@ -193,7 +193,7 @@ pub fn keys(ed: *editor.Editor) void {
         s.focus = null;
         if (d.undo) ed.undo() else ed.redo();
     }
-    if (d.clicked()) ed.gesture();
+    if (d.clicked()) ed.gesture() catch return;
     if (d.undo or d.redo) return;
     if (s.preview != null) {
         if (interaction.backed(d)) s.preview = null;

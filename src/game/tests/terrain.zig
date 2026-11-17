@@ -650,6 +650,34 @@ test "fire landing on frozen shallows melts them and boils them into steam" {
     try std.testing.expect(g.sim.lv.volumeAt(.steam, at) > 0);
 }
 
+test "Sweeping widens Combustion melting and boiling with its explosion" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 22, .y = 20 };
+    const edge = P{ .x = 24, .y = 20 };
+    const outside = P{ .x = 25, .y = 20 };
+    for ([_]bool{ false, true }) |wide| {
+        harness.heroArena(g, .wizard, from, &.{at});
+        harness.toughenFoes(g);
+        harness.foes(g)[0].burn.turns = 3;
+        if (wide) g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .area, .value = 1 }));
+        for ([_]P{ edge, outside }) |p| {
+            g.sim.lv.set(p, .shallows);
+            const area = areas.patch(&g.sim.lv, p, 0);
+            try std.testing.expect(rewards.freezeRound(&g.sim, &area));
+        }
+        game.settle(g);
+        harness.aimAt(g, .combustion, at);
+        try std.testing.expectEqual(!wide, g.sim.lv.frozen(edge));
+        try std.testing.expect(g.sim.lv.frozen(outside));
+        try std.testing.expectEqual(grid.Tile.ice, g.pic.tileShown(&g.sim, edge));
+        harness.drawnOut(g);
+        try std.testing.expectEqual(if (wide) grid.Tile.shallows else grid.Tile.ice, g.pic.tileShown(&g.sim, edge));
+        try std.testing.expectEqual(wide, g.sim.lv.volumeAt(.steam, edge) > 0);
+    }
+}
+
 test "a pyre bloat's melted ice stays drawn until its death burst lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

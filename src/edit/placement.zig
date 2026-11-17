@@ -341,7 +341,7 @@ pub fn clearSelection(ed: *Editor) void {
     const s = ed.selection orelse return;
     const b = ed.painted() orelse return ed.say(editor.GENERATED, .{});
     ed.drop();
-    ed.gesture();
+    ed.gesture() catch return;
     const Standing = struct {
         in: std.StaticBitSet(script.MAX_NPCS) = .initEmpty(),
         pub fn drops(self: @This(), i: usize, _: *const script.Npc) bool {

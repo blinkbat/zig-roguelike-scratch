@@ -87,6 +87,9 @@ app.layer=drawing
 sprite:saveAs(path)
 sprite:close()
 local reopened=assert(app.open(path))
+assert(reopened.width==512 and reopened.height==448,'Saved sheet dimensions changed')
+sourceFiles.checkLayer(reopened,'Underdrawing (25%)',sheet(true),Point(0,0))
+sourceFiles.checkLayer(reopened,'Exact connection guide (hidden)',sheet(false),Point(0,0))
 for _,layer in ipairs(reopened.layers) do
   if layer.name=='Draw here' then assert(layer:cel(1).image:isEqual(drawn)) end
 end

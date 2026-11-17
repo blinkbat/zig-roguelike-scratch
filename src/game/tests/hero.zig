@@ -1009,6 +1009,33 @@ test "a Skewering shot through its one foe into a barrel strikes both" {
     try std.testing.expect(!g.sim.lv.hasBarrel(barrel));
 }
 
+test "unfocused recovery turns wait for focus while the current picture finishes" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]bool{ false, true }) |character_open| {
+        for ([_]bool{ false, true }) |stunned| {
+            harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+            const h = g.sim.heroActor().?;
+            if (stunned) h.clock.stun() else h.clock.delay(@import("../../play/clock.zig").TURN);
+            if (character_open) character.openCharacter(g);
+            const clock = h.clock;
+            const world_clock = g.sim.clock;
+            const rng = g.sim.rng;
+            g.pic.busy = game.GLIDE_S;
+            g.st = .{ .focused = false };
+            for (0..3) |_| game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+            try std.testing.expect(g.pic.quiet());
+            try std.testing.expectEqualDeep(clock, h.clock);
+            try std.testing.expectEqualDeep(world_clock, g.sim.clock);
+            try std.testing.expectEqualDeep(rng, g.sim.rng);
+            g.st = .{};
+            game.update(g, 0);
+            try std.testing.expectEqualDeep(harness.turned(world_clock, 1), g.sim.clock);
+            try std.testing.expect(!h.clock.owes());
+        }
+    }
+}
+
 test "a stunned hero shows stunned through the turn it loses and not once it can act" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

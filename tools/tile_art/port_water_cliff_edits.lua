@@ -87,12 +87,26 @@ for y=0,owner.height-1 do
   end
  end
 end
+local layerCount=#s.layers
+local slices={}
+for _,slice in ipairs(s.slices) do
+ slices[slice.name]={x=slice.bounds.x,y=slice.bounds.y,width=slice.bounds.width,height=slice.bounds.height}
+end
 s:saveAs(output)
-s:saveCopyAs(preview)
-assert(Image{fromFile=preview}:isEqual(final),'Saved composite differs from expected pixel edits')
 s:close()
 local saved=assert(app.open(output))
 assert(#saved.slices==54,'Slice layout changed')
+assert(#saved.layers==layerCount,'Saved artwork layers changed')
+for _,slice in ipairs(saved.slices) do
+ local expected=assert(slices[slice.name],'Saved slice name changed')
+ local bounds=slice.bounds
+ assert(bounds.x==expected.x and bounds.y==expected.y and bounds.width==expected.width and bounds.height==expected.height,'Saved slice bounds changed')
+end
+local savedComposite=Image(saved.width,saved.height,ColorMode.RGB)
+savedComposite:drawSprite(saved,1)
+assert(savedComposite:isEqual(final),'Saved layered source differs from expected pixel edits')
+saved:saveCopyAs(preview)
+assert(Image{fromFile=preview}:isEqual(final),'Saved composite differs from expected pixel edits')
 saved:close()
 local f=assert(io.open(report,'w'))
 f:write(string.format('Owner edit pixels preserved: %d; shallow edits transferred: %d; deep end pixels extended: %d; outside-middle pixels unchanged: %d. 54 slices retained.\n',changed,derived,extended,outside))

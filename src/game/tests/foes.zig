@@ -1419,6 +1419,40 @@ test "a pyre bloat sets its neighbours alight as its death lands, not before" {
     try std.testing.expect(frames > 0);
 }
 
+test "successive pyre bursts retain each neighbour snapshot until its own impact" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    var repeated: usize = 0;
+    for (0..8) |seed| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        g.sim.rng = mathx.Rng.init(seed);
+        const first = harness.spawnAt(g, .pyre_bloat, .{ .x = 21, .y = 20 }, true);
+        const second = harness.spawnAt(g, .pyre_bloat, .{ .x = 19, .y = 20 }, true);
+        for ([_]u16{ first, second }) |id| g.sim.pool.get(id).?.pin.extend(20);
+        game.settle(g);
+        combat.passTurn(g);
+        try std.testing.expect(g.sim.pool.get(first) == null and g.sim.pool.get(second) == null);
+        if (g.sim.heroActor().?.resilience.meters.get(.burn).percent < 50) continue;
+        repeated += 1;
+        g.st = .{};
+        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        const first_slot = actor.Pool.slot(g.sim.order[0]);
+        const second_slot = actor.Pool.slot(g.sim.order[1]);
+        var frames: usize = 0;
+        while (!g.pic.pictured[first_slot].down()) : (frames += 1) {
+            try std.testing.expect(frames < 200);
+            try std.testing.expectEqual(@as(u8, 0), g.pic.heroShown(&g.sim).?.status.get(.burning));
+            game.update(g, harness.TEST_DT);
+        }
+        try std.testing.expect(!g.pic.pictured[second_slot].down());
+        try std.testing.expect(g.pic.heroShown(&g.sim).?.status.get(.burning) > 0);
+        try std.testing.expectEqual(@as(u8, 25), g.pic.heroShown(&g.sim).?.resilience.meters.get(.burn).percent);
+        harness.drawnOut(g);
+        try std.testing.expectEqual(@as(u8, 50), g.pic.heroShown(&g.sim).?.resilience.meters.get(.burn).percent);
+    }
+    try std.testing.expect(repeated > 0);
+}
+
 test "a pyre bloat bursting on its own turn scalds a body on the water it boils only as the burst lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

@@ -80,16 +80,18 @@ fn benchHistory() !void {
     defer ed.destroy();
     const created = timer.lap();
     for (0..history.CAPACITY) |_| {
-        ed.gesture();
+        try ed.gesture();
         ed.map.node[0].pos.x += 1;
         ed.bank();
     }
     const edits = timer.lap();
-    for (0..history.CAPACITY) |_| if (!ed.history.undo(ed.map)) return error.MissingHistory;
+    const retained = ed.history.retainedBytes();
+    for (0..history.CAPACITY) |_| if (!try ed.history.undo(ed.map)) return error.MissingHistory;
     const undone = timer.lap();
-    for (0..history.CAPACITY) |_| if (!ed.history.redo(ed.map)) return error.MissingHistory;
+    for (0..history.CAPACITY) |_| if (!try ed.history.redo(ed.map)) return error.MissingHistory;
     const redone = timer.read();
     std.debug.print("editor history: Atlas {d} bytes, capacity {d}, create {d:.3} ms; edit {d:.3}, undo {d:.3}, redo {d:.3} ms each\n", .{ @sizeOf(atlas.Atlas), history.CAPACITY, ms(created), ms(edits / history.CAPACITY), ms(undone / history.CAPACITY), ms(redone / history.CAPACITY) });
+    std.debug.print("editor history retained: {d} bytes\n", .{retained});
 }
 
 fn benchStrand(g: *game.Game, target: rl.RenderTexture2D) !void {

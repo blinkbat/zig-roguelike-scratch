@@ -16,8 +16,8 @@ pub const Dying = struct { dark: f32 = 0, alpha: f32 = 1 };
 pub const OWED_KINDS: usize = 16;
 /// A burst and a puff.
 const LOOSE_DUE: usize = 2;
-/// Capacity for every body's turn effects, hero hit and sweep, plus a burst and a puff, or chain jumps.
-const DUE: usize = actor.MAX * (OWED_KINDS + actor.SWEEP_CELLS) + @max(LOOSE_DUE, chain.JUMPS);
+/// Capacity for turn effects, hero hits, sweeps, source-target death consequences and loose effects.
+const DUE: usize = actor.MAX * (OWED_KINDS + actor.SWEEP_CELLS + actor.MAX) + @max(LOOSE_DUE, chain.JUMPS);
 
 pub const Event = union(enum) {
     blow: state.Blow,

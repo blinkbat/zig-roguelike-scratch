@@ -1,8 +1,10 @@
 local root=assert(app.params.root,'root=<repo with trailing slash>')
 local work=assert(app.params.work,'work=<backup folder with trailing slash>')
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 if app.params.shots then
  local shots=app.params.shots
  local s=assert(app.open(work..'water-cliff-connections.aseprite'))
+ local replacements={}
  local function replace(name,im,at)
   local old
   for _,l in ipairs(s.layers) do if l.name==name then old=l break end end
@@ -11,6 +13,7 @@ if app.params.shots then
   old.isVisible=false
   local l=s:newLayer(); l.name=name
   s:newCel(l,1,im,at)
+  replacements[name]={image=im,position=at}
  end
  for i,name in ipairs({'Ground','Cliff faces','Lip and cap fill'}) do
   replace('Land to shallows - '..name,Image{fromFile=shots..'template-0-layer-'..i..'.png'},Point(32,104))
@@ -25,9 +28,19 @@ if app.params.shots then
  owner:drawImage(Image{fromFile=shots..'template-0-layer-4.png'},Point(32,104))
  replace('Owner flat border edits',owner,Point(0,0))
  local preview=work..'updated-template.png'
+ local width,height=s.width,s.height
  s:saveAs(root..'assets/source/water-cliff-connections.aseprite')
- s:saveCopyAs(preview)
  s:close()
+ local saved=assert(app.open(root..'assets/source/water-cliff-connections.aseprite'))
+ assert(saved.width==width and saved.height==height,'Saved sheet dimensions changed')
+ for name,expected in pairs(replacements) do
+  sourceFiles.checkLayer(saved,name,expected.image,expected.position)
+  for _,layer in ipairs(saved.layers) do
+   if layer.name=='Before shallow pinch - '..name then assert(not layer.isVisible,'Original layer was not hidden') end
+  end
+ end
+ saved:saveCopyAs(preview)
+ saved:close()
  local after=Image{fromFile=preview}
  local before=Image{fromFile=work..'desktop-before.png'}
  local expected=Image{fromFile=shots..'template-0.png'}
@@ -78,8 +91,14 @@ assert(columns>0)
 s.layers[8].isVisible=false
 local l=s:newLayer(); l.name='Shallow cliff - half height'
 s:newCel(l,1,compressed,Point(0,0))
+local width,height=s.width,s.height
 s:saveAs(root..'assets/source/water-cliff-edge.aseprite')
 s:close()
+local saved=assert(app.open(root..'assets/source/water-cliff-edge.aseprite'))
+assert(saved.width==width and saved.height==height,'Saved sheet dimensions changed')
+sourceFiles.checkLayer(saved,'Shallow cliff - half height',compressed,Point(0,0))
+assert(not saved.layers[8].isVisible,'Original layer was not hidden')
+saved:close()
 local old=Image{fromFile=work..'dirt-shallows-edges.png'}
 local edges=Image(old)
 assert(faces.width==256 and faces.height==256 and old.width==1280)

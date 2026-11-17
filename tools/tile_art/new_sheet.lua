@@ -10,17 +10,28 @@ for _,layer in ipairs(sprite.layers) do
   if layer.name=='Ideas - hide before export' then ideas=layer end
 end
 assert(labels and drawing)
-local image=Image(labels:cel(1).image)
-local at=labels:cel(1).position
-for y=0,34 do for x=0,511 do image:putPixel(x-at.x,y-at.y,app.pixelColor.rgba(0,0,0,0)) end end
+local image=Image(sprite.width,sprite.height,ColorMode.RGB)
+local cel=assert(labels:cel(1))
+image:drawImage(cel.image,cel.position)
+for y=0,34 do for x=0,511 do image:putPixel(x,y,app.pixelColor.rgba(0,0,0,0)) end end
 for y=0,34 do for x=0,511 do
   local p=title:getPixel(x,y)
-  if app.pixelColor.rgbaA(p)>0 then image:putPixel(x-at.x,y-at.y,p) end
+  if app.pixelColor.rgbaA(p)>0 then image:putPixel(x,y,p) end
 end end
 labels:cel(1).image=image
-labels:cel(1).position=at
+labels:cel(1).position=Point(0,0)
 if ideas then sprite:deleteLayer(ideas) end
 drawing:cel(1).image=Image(sprite.width,sprite.height,ColorMode.RGB)
 drawing:cel(1).position=Point(0,0)
 sprite:saveAs(path)
 sprite:close()
+local saved=assert(app.open(path),'New sheet was not saved')
+local saved_labels
+for _,layer in ipairs(saved.layers) do
+  if layer.name=='Labels - hide before export' then saved_labels=layer end
+end
+local saved_cel=assert(saved_labels and saved_labels:cel(1),'New sheet labels missing')
+local actual=Image(saved.width,saved.height,ColorMode.RGB)
+actual:drawImage(saved_cel.image,saved_cel.position)
+assert(actual:isEqual(image),'New sheet labels changed')
+saved:close()

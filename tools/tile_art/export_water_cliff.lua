@@ -1,5 +1,6 @@
 local source=app.params.source or 'C:/Users/DavidBennett/Desktop/water-cliff-edge.aseprite'
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local depth=app.params.depth or 'shallow'
 assert(depth=='shallow' or depth=='deep','depth=shallow|deep')
 local out=app.params.out or root..'assets/water/'..(depth=='shallow' and 'shallows' or 'water')..'-cliff.png'
@@ -90,12 +91,8 @@ for x=0,191 do
  feet[#feet+1]=tostring(foot)
  lips[#lips+1]=tostring(lip)
 end
-local profile=assert(io.open(stem..'-foot.txt','wb'))
-profile:write(table.concat(feet,',')..'\n')
-profile:close()
-local lip_profile=assert(io.open(stem..'-lip.txt','wb'))
-lip_profile:write(table.concat(lips,',')..'\n')
-lip_profile:close()
+sourceFiles.write(stem..'-foot.txt',table.concat(feet,',')..'\n')
+sourceFiles.write(stem..'-lip.txt',table.concat(lips,',')..'\n')
 local cap_out=stem..'-cap.png'
 cap:saveAs(cap_out)
 assert(Image{fromFile=cap_out}:isEqual(cap),'cap mask changed')

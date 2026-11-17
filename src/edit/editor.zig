@@ -228,10 +228,8 @@ pub const Editor = struct {
         errdefer alloc.destroy(w);
         const s = try alloc.create(atlas.Atlas);
         errdefer alloc.destroy(s);
-        const h = try alloc.create([UNDO_CAP]atlas.Atlas);
-        errdefer alloc.destroy(h);
         const ed = try alloc.create(Editor);
-        ed.* = .{ .alloc = alloc, .map = w, .history = .{ .transaction = .{ .before = s }, .states = h } };
+        ed.* = .{ .alloc = alloc, .map = w, .history = .{ .alloc = alloc, .transaction = .{ .before = s } } };
         freshMap(w);
         return ed;
     }
@@ -242,7 +240,7 @@ pub const Editor = struct {
         ed.thumbnails.deinit();
         const alloc = ed.alloc;
         if (ed.effects) |v| alloc.destroy(v);
-        alloc.destroy(ed.history.states);
+        ed.history.deinit();
         alloc.destroy(ed.history.transaction.before);
         alloc.destroy(ed.map);
         alloc.destroy(ed);
@@ -317,8 +315,13 @@ pub const Editor = struct {
         ed.said_t = SAY_S;
     }
 
-    pub fn gesture(ed: *Editor) void {
-        ed.history.begin(ed.map);
+    pub fn gesture(ed: *Editor) !void {
+        ed.history.begin(ed.map) catch |err| {
+            ed.fresh = true;
+            ed.desk = .{};
+            ed.letGo();
+            return err;
+        };
     }
 
     pub fn bank(ed: *Editor) void {
@@ -367,7 +370,7 @@ pub const Editor = struct {
         ed.keepDrag();
         if (ed.history.at == 0) return ed.say("Nothing to undo", .{});
         ed.dropHeld();
-        _ = ed.history.undo(ed.map);
+        _ = ed.history.undo(ed.map) catch return;
         ed.changedHistory();
         ed.say("Undone ({d} more)", .{ed.history.at});
     }
@@ -376,7 +379,7 @@ pub const Editor = struct {
         if (ed.history.at < ed.history.len) ed.drop() else ed.keepDrag();
         if (ed.history.at == ed.history.len) return ed.say("Nothing to redo", .{});
         ed.dropHeld();
-        _ = ed.history.redo(ed.map);
+        _ = ed.history.redo(ed.map) catch return;
         ed.changedHistory();
         ed.say("Redone ({d} more)", .{ed.history.len - ed.history.at});
     }
@@ -689,7 +692,7 @@ pub const Editor = struct {
 
     pub fn startRename(ed: *Editor) void {
         ed.keepDrag();
-        ed.gesture();
+        ed.gesture() catch return;
         ed.typeName();
     }
 
@@ -1097,6 +1100,8 @@ pub fn capture(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8
     try snap(ed, g, target, objects_path);
     ed.seen_at = seenIndex(.{ .body = .beefy_pib });
     try snapAs(ed, g, target, "{s}/edit-beefy-pib.png", .{dir});
+    ed.seen_at = seenIndex(.{ .tile = .bridge });
+    try snapAs(ed, g, target, "{s}/edit-bridge.png", .{dir});
     for (EFFECT_POSES) |q| {
         try effects_view.pose(ed, q.sample, q.seconds);
         try snapAs(ed, g, target, "{s}/edit-effects-{s}.png", .{ dir, q.name });

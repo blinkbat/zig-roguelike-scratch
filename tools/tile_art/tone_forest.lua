@@ -14,6 +14,7 @@ local colours={
 assert(sourceFiles.read(source)==sourceFiles.read(desktop),'Desktop has different edits; reconcile before toning')
 local sprite=assert(app.open(source))
 local changed=0
+local tonedLayers={}
 for _,layer in ipairs(sprite.layers) do
   if layer.name=='Draw here' or layer.name=='Forest extensions' then
     local cel=assert(layer:cel(1))
@@ -23,6 +24,7 @@ for _,layer in ipairs(sprite.layers) do
       if toned then pixel(toned); changed=changed+1 end
     end
     cel.image=image
+    tonedLayers[layer.name]={image=image,position=Point(cel.position.x,cel.position.y)}
   end
 end
 assert(changed>0,'Forest palette already toned or owner palette changed')
@@ -30,8 +32,16 @@ sourceFiles.copy(source,root..'assets/backup/forest-tree-walls-before-tone.'..st
 sourceFiles.copy(root..'assets/walls/forest-tree-walls.png',root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.png')
 sourceFiles.copy(root..'assets/ground/grass.png',root..'assets/backup/grass.'..stamp..'.png')
 sprite:saveAs(source)
-sprite:saveCopyAs(desktop)
 sprite:close()
+local reopened=assert(app.open(source))
+for name,expected in pairs(tonedLayers) do
+  local saved
+  for _,layer in ipairs(reopened.layers) do if layer.name==name then saved=layer:cel(1) end end
+  assert(saved and saved.image:isEqual(expected.image),'Saved forest pixels changed')
+  assert(saved.position.x==expected.position.x and saved.position.y==expected.position.y,'Saved forest cel moved')
+end
+reopened:close()
+sourceFiles.copy(source,desktop)
 local grass=Image{fromFile=root..'assets/ground/grass.png'}
 for pixel in grass:pixels() do
   local p=pixel()

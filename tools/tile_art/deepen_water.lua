@@ -2,6 +2,7 @@ local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-
 local source=app.params.source or 'C:/Users/DavidBennett/Desktop/water.aseprite'
 local desktop=app.params.out or 'C:/Users/DavidBennett/Desktop/deep-water.aseprite'
 local canonical=root..'assets/source/deep-water.aseprite'
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
 app.fs.makeAllDirectories(work)
 local percent=tonumber(app.params.percent) or 60
@@ -50,9 +51,9 @@ end
 assert(snapshots['Draw here'] and snapshots['Water extensions'] and changed>0)
 local path=install and desktop or work..'deep-water-draft.aseprite'
 s:saveAs(path)
-if install then s:saveCopyAs(canonical) end
 s:close()
 local back=assert(app.open(path))
+local verified={}
 for _,l in ipairs(back.layers) do
   local expected=snapshots[l.name]
   if expected then
@@ -62,9 +63,12 @@ for _,l in ipairs(back.layers) do
     for y=0,cel.image.height-1 do for x=0,cel.image.width-1 do
       assert(cel.image:getPixel(x,y)==toned(expected.original:getPixel(x,y)),'Wrong tone or alpha')
     end end
+    verified[l.name]=true
   end
 end
+for name in pairs(snapshots) do assert(verified[name],'Saved source is missing artwork layers') end
 back:close()
+if install then sourceFiles.copy(path,canonical) end
 shallow:saveAs(work..'shallows-atlas.png')
 deep:saveAs(work..'deep-water-atlas.png')
 local preview=Image(512,256,ColorMode.RGB)

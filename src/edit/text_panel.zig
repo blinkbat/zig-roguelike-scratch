@@ -223,23 +223,37 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
             if (f.layout_valid and f.layout_width == width and std.meta.eql(f.layout_font, key)) return false;
             var lines: usize = 0;
             var pos: usize = 0;
+            var line_end: usize = 0;
+            var printable = true;
             var buf: [N + 1]u8 = undefined;
+            @memcpy(buf[0..f.n], f.buf[0..f.n]);
+            buf[f.n] = 0;
+            displayBytes(buf[0..f.n]);
             while (true) {
                 f.starts[lines] = pos;
-                var end = pos;
-                var last_space: ?usize = null;
-                while (end < f.n and f.buf[end] != '\n') {
-                    const next = end + 1;
-                    @memcpy(buf[0 .. next - pos], f.buf[pos..next]);
-                    buf[next - pos] = 0;
-                    if (end > pos and displayWidth(face, buf[0 .. next - pos :0]) > width) break;
-                    if (f.buf[end] == ' ') last_space = next;
-                    end = next;
+                if (pos >= line_end) {
+                    line_end = std.mem.indexOfScalarPos(u8, f.buf[0..f.n], pos, '\n') orelse f.n;
+                    printable = for (buf[pos..line_end]) |c| {
+                        if (c < ' ' or c > '~') break false;
+                    } else true;
                 }
-                if (end < f.n and f.buf[end] != '\n') {
-                    if (last_space) |space| if (space > pos) {
-                        end = space;
-                    };
+                var end = @min(pos + 1, line_end);
+                var next = @min(pos + 2, line_end);
+                while (end < line_end) {
+                    if (widthTo(face, buf[pos..], next - pos) > width) {
+                        if (!printable) break;
+                        var hi = next - 1;
+                        while (end < hi) {
+                            const mid = end + (hi - end + 1) / 2;
+                            if (widthTo(face, buf[pos..], mid - pos) <= width) end = mid else hi = mid - 1;
+                        }
+                        break;
+                    }
+                    end = next;
+                    next = if (printable) pos + @min((next - pos) * 2, line_end - pos) else @min(next + 1, line_end);
+                }
+                if (end < line_end) {
+                    if (std.mem.lastIndexOfScalar(u8, f.buf[pos..end], ' ')) |space| end = pos + space + 1;
                 }
                 lines += 1;
                 if (end == f.n) break;
@@ -1065,11 +1079,52 @@ test "text field undo and redo retain edits and replace an abandoned redo" {
     try std.testing.expectEqualStrings("Bow?", f.text());
 }
 
+test "text field wrapping preserves word breaks empty lines and rounded variable glyph widths" {
+    const Measure = struct {
+        fn width(_: @This(), text: [:0]const u8, _: i32) i32 {
+            if (std.mem.indexOfScalar(u8, text, '\r') != null) return 0;
+            var units: i32 = 0;
+            for (text) |c| {
+                std.debug.assert(c != input.GLYPH_OPEN and c != input.GLYPH_CLOSE and c != '\t');
+                units += switch (c) {
+                    'W' => 7,
+                    'i' => 1,
+                    ' ' => 2,
+                    else => 3,
+                };
+            }
+            return @divTrunc(units, 2);
+        }
+    };
+    const cases = [_]struct { text: []const u8, width: i32, starts: []const usize }{
+        .{ .text = "Wi Wi\n\nUse \x1eA\x1f\tX\n", .width = 3, .starts = &.{ 0, 1, 3, 4, 6, 7, 9, 11, 13, 15, 17, 17 } },
+        .{ .text = "Wi Wi\n\nUse \x1eA\x1f\tX\n", .width = 6, .starts = &.{ 0, 3, 6, 7, 11, 15, 17, 17 } },
+        .{ .text = "Wi Wi\n\nUse \x1eA\x1f\tX\n", .width = 20, .starts = &.{ 0, 6, 7, 17, 17 } },
+        .{ .text = " abc  de ", .width = 3, .starts = &.{ 0, 1, 3, 6, 8, 9 } },
+        .{ .text = " abc  de ", .width = 6, .starts = &.{ 0, 5, 9 } },
+        .{ .text = "iiiiWWii", .width = -1, .starts = &.{ 0, 1, 2, 3, 4, 5, 6, 7, 8 } },
+        .{ .text = "iiiiWWii", .width = 0, .starts = &.{ 0, 1, 2, 3, 4, 5, 6, 7, 8 } },
+        .{ .text = "iiiiWWii", .width = 6, .starts = &.{ 0, 5, 8 } },
+        .{ .text = "iiW\rZ", .width = 2, .starts = &.{ 0, 2, 5 } },
+        .{ .text = "\n\n", .width = 3, .starts = &.{ 0, 1, 2, 2 } },
+        .{ .text = "", .width = 3, .starts = &.{ 0, 0 } },
+    };
+    var f = FieldOf(64, catalog.supported){};
+    for (cases) |case| {
+        f.set(case.text);
+        try std.testing.expect(f.layout(case.width, FontKey.of(&.{}), Measure{}));
+        try std.testing.expectEqualSlices(usize, case.starts, f.starts[0 .. f.lines + 1]);
+        try std.testing.expectEqualStrings(case.text, f.text());
+    }
+}
+
 test "text field wrap cache retains idle measurements and invalidates edits width and fonts" {
     const Measure = struct {
         calls: usize = 0,
+        characters: usize = 0,
         fn width(m: *@This(), text: [:0]const u8, _: i32) i32 {
             m.calls += 1;
+            m.characters += text.len;
             for (text) |c| std.debug.assert(c != input.GLYPH_OPEN and c != input.GLYPH_CLOSE and c != '\t');
             return @intCast(text.len);
         }
@@ -1109,7 +1164,9 @@ test "text field wrap cache retains idle measurements and invalidates edits widt
     try std.testing.expect(f.feed(&.{ .redo = true }, true));
     try std.testing.expect(f.layout(30, key, &measure));
     f.set("x" ** catalog.MAX_TEXT);
+    const before_long = measure.characters;
     try std.testing.expect(f.layout(60, key, &measure));
+    try std.testing.expect(measure.characters - before_long < catalog.MAX_TEXT * 10);
     const long_calls = measure.calls;
     for (0..60) |_| try std.testing.expect(!f.layout(60, key, &measure));
     try std.testing.expectEqual(long_calls, measure.calls);

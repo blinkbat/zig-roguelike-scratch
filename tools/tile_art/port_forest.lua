@@ -79,24 +79,28 @@ drawing.stackIndex=#sprite.layers
 app.layer=extension
 local destination=app.params.install=='yes' and path or work..'forest-tree-walls-draft.aseprite'
 sprite:saveAs(destination)
-if app.params.install=='yes' then sprite:saveCopyAs(canonical) end
 sprite:saveCopyAs(work..'forest-tree-walls-sheet.png')
 sprite:close()
 local reopened=assert(app.open(destination))
+local originalSaved,extensionSaved=false,false
 for _,layer in ipairs(reopened.layers) do
   if layer.name=='Draw here' then
     local cel=assert(layer:cel(1))
     assert(cel.image:isEqual(saved),'Original painting changed after saving')
     assert(cel.position.x==position.x and cel.position.y==position.y,'Original painting moved')
+    originalSaved=true
   end
   if layer.name=='Forest extensions' then
     local actual=Image(512,448,ColorMode.RGB)
     local cel=assert(layer:cel(1))
     actual:drawImage(cel.image,cel.position)
     assert(actual:isEqual(sheet),'Extensions changed after saving')
+    extensionSaved=true
   end
 end
+assert(originalSaved and extensionSaved,'Saved source is missing artwork layers')
 reopened:close()
+if app.params.install=='yes' then sourceFiles.copy(destination,canonical) end
 atlas:saveAs(work..'forest-tree-walls-art.png')
 source:saveAs(work..'forest-tree-walls-original.png')
 local map={

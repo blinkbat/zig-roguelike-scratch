@@ -132,6 +132,7 @@ screen, window-size and run/turn resets. Gameplay rules never read it.
 - Each body's schedule runs motion/projectile timing, blows and mending, reactions, knockback, then status harm.
 - `turn_schedule.Body.impact_in` and `finishes_in` are seconds from the current frame; `starts_at` and `Turn.next_at` keep the turn origin; `late` converts.
 - New effects record their resolved snapshot once and join a stage; gameplay never writes the queue's landed state or timers.
+- Death consequences keep a snapshot per source and affected body, so successive explosions land their status changes independently.
 
 `game/turn_schedule.zig`
 - Owns motion deadlines, projectile completion, reaction timing, knockback ordering and the recovery deadline.
@@ -262,6 +263,9 @@ History records the starting map on the first actual change and keeps later chan
 in that same step. A no-op gesture does not truncate redo. Graph movement uses
 `Transaction.previewNode`, then `commitPreview` or `cancelPreview`: cancellation
 restores the starting map without modifying the history ring or saved position.
+Retained history copies active nodes and encodes only active script entries and text;
+it preserves unfinished authoring values without save validation. Gesture preparation
+and undo/redo allocate their snapshots before changing the map or history.
 Undo/redo swaps invalidate only affected thumbnails, or all thumbnails when node
 identity changes. Source wording and attribution remain separate transactions in
 `text_catalog.zig` and `text_panel.zig`; map undo never rewrites source files.

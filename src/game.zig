@@ -785,7 +785,7 @@ fn takeQueued(g: *Game, comptime tag: std.meta.Tag(Queued)) ?std.meta.TagPayload
 }
 
 fn stunnedTurn(g: *Game) bool {
-    if (!g.pic.quiet() or g.sim.travel != null) return false;
+    if (!g.st.focused or !g.pic.quiet() or g.sim.travel != null) return false;
     if (g.mode != .play and !characterShown(g)) return false;
     const h = g.sim.heroActor() orelse return false;
     if (!h.clock.owes()) {

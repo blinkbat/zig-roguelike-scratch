@@ -344,22 +344,26 @@ for _,layer in ipairs(s.layers) do if layer.name=='Underdrawing (25%)' then laye
 app.layer=l
 local dest=app.params.install=='yes' and path or work..'bridge-draft.aseprite'
 s:saveAs(dest)
-if app.params.install=='yes' then s:saveCopyAs(canonical) end
 s:close()
 local back=assert(app.open(dest))
+local originalSaved,extensionSaved=false,false
 for _,layer in ipairs(back.layers) do
   if layer.name=='Draw here' then
     local cel=assert(layer:cel(1))
     assert(cel.image:isEqual(original) and cel.position.x==position.x and cel.position.y==position.y,'Original altered')
+    originalSaved=true
   end
   if layer.name=='Bridge extensions' then
     local cel=assert(layer:cel(1))
     local img=Image(512,320,ColorMode.RGB)
     img:drawImage(cel.image,cel.position)
     assert(img:isEqual(extension),'Extension changed')
+    extensionSaved=true
   end
 end
+assert(originalSaved and extensionSaved,'Saved source is missing artwork layers')
 back:close()
+if app.params.install=='yes' then sourceFiles.copy(dest,canonical) end
 atlas:saveAs(work..'bridge-atlas.png')
 local zoom=Image(atlas)
 zoom:resize(1024,1024)

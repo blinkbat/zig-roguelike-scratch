@@ -39,7 +39,7 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
         if (ed.renaming or !desk.clicked() or over_canvas) return;
     } else if (desk.back) {
         escape(ed);
-        if (desk.clicked()) ed.gesture();
+        if (desk.clicked()) ed.gesture() catch return;
         return;
     }
     const view = ed.view;
@@ -56,10 +56,10 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
         if (editor.popupScrolls(pp.which) and desk.wheel != 0) ed.popup_top = mathx.scrollTop(ed.popup_top, desk.notch(), editor.popupLen(ed, pp.which), editor.popupShown(ed, pp.which, screen_height));
         if (desk.clicked() and !ed.mouseIn(editor.popupRect(ed, pp, screen_height))) {
             ed.dismiss();
-        } else if (desk.clicked()) ed.gesture();
+        } else if (desk.clicked()) ed.gesture() catch return;
         return;
     }
-    if (desk.clicked()) ed.gesture();
+    if (desk.clicked()) ed.gesture() catch return;
     if (desk.clicked() and (ed.view != view or ed.node != node)) return;
     moveViewport(ed, bounds, over_canvas, dt);
     scrollPanel(ed);
@@ -247,7 +247,7 @@ pub fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (!held) {
         if (ed.span) |s| {
             placement.laySpan(ed, s, grid.Level.clamp(p));
-            if (d.clicked()) ed.gesture();
+            if (d.clicked()) ed.gesture() catch return;
         }
         ed.letGo();
     }

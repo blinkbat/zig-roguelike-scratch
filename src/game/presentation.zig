@@ -40,7 +40,10 @@ pub const Knock = struct { from: P, to: P };
 
 pub const Mended = struct { slot: ?actor.ActorSlot = null, after: ?fx.After = null };
 
-pub const Befallen = struct { by: usize, after: fx.After };
+pub const Befallen = struct {
+    slots: std.StaticBitSet(actor.MAX) = .initEmpty(),
+    after: [actor.MAX]fx.After = undefined,
+};
 
 /// `was` stands at `at` for `left` seconds more.
 pub const Bursting = struct { at: P, was: grid.Tile, left: f32 };
@@ -191,7 +194,7 @@ pub const Presentation = struct {
     under: std.StaticBitSet(actor.MAX) = .initEmpty(),
     /// Indexed by pool slot: seconds until a body that surfaced or dived this turn is drawn so.
     dives: [actor.MAX]?f32 = @splat(null),
-    befallen: [actor.MAX]?Befallen = @splat(null),
+    befallen: [actor.MAX]Befallen = @splat(.{}),
     owed: [actor.MAX]Owed = @splat(.{}),
     shot: ?Shot = null,
     foe_shots: [actor.MAX]?Shot = @splat(null),
@@ -350,17 +353,21 @@ pub const Presentation = struct {
     }
 
     fn befall(self: *Presentation, sim: *const Simulation, by: usize, slots: std.StaticBitSet(actor.MAX)) void {
+        const consequences = &self.befallen[by];
         var each = slots.iterator(.{});
-        while (each.next()) |slot| self.befallen[slot] = .{ .by = by, .after = self.afterOf(sim, .fromIndex(slot)) };
+        while (each.next()) |slot| {
+            consequences.slots.set(slot);
+            consequences.after[slot] = self.afterOf(sim, .fromIndex(slot));
+        }
     }
 
     fn landBefallen(self: *Presentation, fallen: usize, wait: f32) void {
-        for (&self.befallen, 0..) |*b, slot| {
-            const was = b.* orelse continue;
-            if (was.by != fallen) continue;
-            self.fx.settle(wait, .{ .slot = .fromIndex(slot), .after = was.after });
-            b.* = null;
+        const consequences = &self.befallen[fallen];
+        var each = consequences.slots.iterator(.{});
+        while (each.next()) |slot| {
+            self.fx.settle(wait, .{ .slot = .fromIndex(slot), .after = consequences.after[slot] });
         }
+        consequences.slots = .initEmpty();
     }
 
     pub fn recordFoeAttack(self: *Presentation, by: actor.ActorId, outcome: FoeHit, flight: ?bow.Flight) void {
@@ -1034,7 +1041,7 @@ pub const Presentation = struct {
             const start = if (self.split_from[i]) |p| @max(hero_done, part[p], self.fx.impacts.revealsIn(.fromIndex(i))) else hero_done;
             part[i] = self.stagger(sim, gas, actor.ActorSlot.fromIndex(i).id(), start, &turn);
         }
-        self.befallen = @splat(null);
+        for (&self.befallen) |*consequences| consequences.slots = .initEmpty();
         if (warded) |c| self.recordRecovery(sim, std.mem.max(f32, part[0..sim.pool.n]), c);
         for (sim.pool.constSlice(), 0..) |*a, i| {
             if (!self.glide[i].to.eq(a.at)) self.glide[i] = self.glide[i].toward(a.at, late);
