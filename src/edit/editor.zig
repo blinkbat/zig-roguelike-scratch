@@ -490,7 +490,7 @@ pub const Editor = struct {
 
     fn leaveSelect(ed: *Editor) void {
         if (ed.shape != .select) return;
-        ed.release();
+        ed.keepAndRelease();
         ed.shape = .brush;
     }
 

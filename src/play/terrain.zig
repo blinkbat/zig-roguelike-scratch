@@ -144,7 +144,7 @@ pub const Stats = struct {
 
     pub fn misses(attacker: Stats, defender: Stats, rng: *mathx.Rng) bool {
         if (attacker.hit < mathx.PERCENT and (attacker.hit == 0 or !rng.percent(attacker.hit))) return true;
-        return defender.dodge > 0 and rng.percent(defender.dodge);
+        return damage.procs(rng, defender.dodge);
     }
 };
 

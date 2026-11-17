@@ -303,11 +303,13 @@ pub const Scroll = struct {
     box: rl.Rectangle,
     top: *i32,
     most: *i32,
+    drawn: *i32,
 
     pub fn begin(s: Scroll, clip: *?rl.Rectangle) i32 {
         clip.* = s.box;
         scissor(s.box);
         s.top.* = std.math.clamp(s.top.*, 0, s.most.*);
+        s.drawn.* = s.top.*;
         return raster.top(s.box) - s.top.*;
     }
 
@@ -316,7 +318,7 @@ pub const Scroll = struct {
     }
 
     fn fit(s: Scroll, bottom: i32, margin: i32) void {
-        s.most.* = @max(0, bottom + margin + s.top.* - raster.top(s.box) - s.shown());
+        s.most.* = @max(0, bottom + margin + s.drawn.* - raster.top(s.box) - s.shown());
     }
 
     pub fn reveal(s: Scroll, at: i32, h: i32) void {
@@ -341,10 +343,11 @@ pub const Scrolled = struct {
     box: rl.Rectangle = NO_BOX,
     top: i32 = 0,
     most: i32 = 0,
+    drawn: i32 = 0,
 
     pub fn at(s: *Scrolled, box: rl.Rectangle) Scroll {
         s.box = box;
-        return .{ .box = box, .top = &s.top, .most = &s.most };
+        return .{ .box = box, .top = &s.top, .most = &s.most, .drawn = &s.drawn };
     }
 
     pub fn wheel(s: *Scrolled, mouse: P, notches: i32) void {

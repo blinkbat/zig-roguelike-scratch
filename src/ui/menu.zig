@@ -312,10 +312,13 @@ pub fn listWidth(screen: mathx.P) i32 {
     return @min(LIST_W, @max(1, screen.x - 2 * SCREEN_MARGIN));
 }
 
+pub fn listLeft(screen: mathx.P) i32 {
+    return @divTrunc(screen.x - listWidth(screen), 2);
+}
+
 pub fn rowBox(screen: mathx.P, win: Window, i: usize) rl.Rectangle {
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(win.len)) * ROW_STEP, 2);
-    const width = listWidth(screen);
-    return raster.rect(@divTrunc(screen.x - width, 2), top + ROWS_DY + @as(i32, @intCast(i - win.from)) * ROW_STEP - ROW_INSET, width, ROW_STEP);
+    return raster.rect(listLeft(screen), top + ROWS_DY + @as(i32, @intCast(i - win.from)) * ROW_STEP - ROW_INSET, listWidth(screen), ROW_STEP);
 }
 
 pub fn rowTextY(box: rl.Rectangle) i32 {

@@ -128,10 +128,6 @@ comptime {
         if (std.meta.eql(NodeKey.of(node), NodeKey.of(other))) @compileError("passive save identities must be unique");
     };
     keepsAllBut(SavedProgress, progress.State, BY_IDENTITY);
-    for (std.meta.fields(progress.State)) |f| {
-        if (std.mem.eql(u8, f.name, BY_IDENTITY)) continue;
-        if (!std.meta.eql(@field(SavedProgress{}, f.name), f.defaultValue().?)) @compileError("SavedProgress defaults progress.State." ++ f.name ++ " differently");
-    }
 }
 
 /// An NPC as kept: where it stands in `spot`, or, written before NPCs stood anywhere but a painted cell, in `at`.
@@ -167,9 +163,11 @@ fn copyAllBut(comptime T: type, comptime except: []const u8, into: anytype, from
 }
 
 fn keepsAllBut(comptime Saved: type, comptime Live: type, comptime except: []const u8) void {
+    @setEvalBranchQuota(100_000);
     for (std.meta.fields(Live)) |f| {
         if (std.mem.eql(u8, f.name, except)) continue;
         if (!@hasField(Saved, f.name) or @FieldType(Saved, f.name) != f.type) @compileError(@typeName(Saved) ++ " does not keep " ++ @typeName(Live) ++ "." ++ f.name);
+        if (!std.meta.eql(@field(Saved{}, f.name), f.defaultValue().?)) @compileError(@typeName(Saved) ++ " defaults " ++ @typeName(Live) ++ "." ++ f.name ++ " differently");
     }
 }
 

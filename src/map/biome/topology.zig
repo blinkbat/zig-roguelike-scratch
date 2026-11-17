@@ -19,10 +19,10 @@ const SIDE_CLEARING: f32 = 0.6;
 /// A grid layout's paths left out, so it is no lattice.
 const GRID_GAP: f32 = 0.3;
 const RIM_GAP: i32 = 2;
-/// Of the box's shorter side, a bowl's and the lakebed's half-width.
+/// Of the box's shorter side, a bowl's and the arena's half-width.
 const BOWL_OF: f32 = 0.22;
 const ARENA_OF: f32 = 0.42;
-/// Of a clearing's radius, how far noise moves its edge in or out; less for a bowl or the lakebed.
+/// Of a clearing's radius, how far noise moves its edge in or out; less for a bowl or the arena.
 const FRAY: f32 = 0.6;
 const BIG_FRAY: f32 = 0.25;
 

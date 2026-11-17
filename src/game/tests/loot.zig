@@ -1151,9 +1151,9 @@ test "blindness does not make daylight or distant torchlight count as darkness" 
         try std.testing.expect(!g.sim.inDark(at));
         g.sim.inventory.gear.slots.set(.helm, harness.affixed(.cap, .{ .kind = .nightstalker, .value = 30 }));
         const foe = g.sim.pool.get(harness.foeId(0)).?;
-        harness.setLife(foe, 100, 100);
+        harness.toughen(foe);
         combat.wound(g, harness.foeId(0), .{ .dmg = 10, .physical = 10, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
-        try std.testing.expectEqual(@as(i32, 90), foe.hp);
+        try std.testing.expectEqual(harness.TEST_HP - 10, foe.hp);
     }
 }
 

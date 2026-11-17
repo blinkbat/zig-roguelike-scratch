@@ -64,8 +64,7 @@ fn mainLabel(r: MainRow) [:0]const u8 {
 }
 
 fn saveRowBox(screen: mathx.P, i: usize) rl.Rectangle {
-    const width = menu.listWidth(screen);
-    return raster.rect(@divTrunc(screen.x - width, 2), @divTrunc(screen.y - SAVE_ROW_H * @as(i32, save.SLOTS), 2) + @as(i32, @intCast(i)) * SAVE_ROW_H, width, SAVE_ROW_H);
+    return raster.rect(menu.listLeft(screen), @divTrunc(screen.y - SAVE_ROW_H * @as(i32, save.SLOTS), 2) + @as(i32, @intCast(i)) * SAVE_ROW_H, menu.listWidth(screen), SAVE_ROW_H);
 }
 
 fn saveDeleteBox(screen: mathx.P, i: usize) rl.Rectangle {
@@ -463,7 +462,7 @@ const App = struct {
                         app.goPage(.options);
                     },
                     .editor => app.toEdit(),
-                    .quit => return false,
+                    .quit => return app.quitRun(),
                 }
             },
             .map => {
@@ -606,7 +605,7 @@ const App = struct {
         const text_dy = stats_dy + font.BODY_LINE + BONES_GAP;
         const panel_h = text_dy + @as(i32, @intCast(n)) * font.BODY_LINE + pad;
         const lead = menu.TITLE_LEAD;
-        const x = @divTrunc(g.screen.x - w, 2);
+        const x = menu.listLeft(g.screen);
         const top = @divTrunc(g.screen.y - lead - panel_h, 2) + lead;
         var name: [hero.Name.MAX + 1]u8 = undefined;
         menu.pageHeading(g.face, g.screen, menu.shout(&name, "{s}", .{e.name.text()}), top - lead);

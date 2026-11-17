@@ -249,6 +249,7 @@ const TREE_INK = .{ .fg = rgb(0x788650), .mini = rgb(0x667247), .mini_dim = rgb(
 const SHRUB_INK = rgb(0x6f9a4a);
 const STONE_INK = rgb(0x8a7f6a);
 const HIDE_INK = rgb(0xb07a4e);
+const ARCHER_INK = rgb(0x7cc86e);
 const PIB_INK = rgb(0xe89aa6);
 const OPEN_CHEST_INK = rgb(0x96724d);
 
@@ -338,7 +339,7 @@ pub const Mark = enum {
 
 pub fn body(k: actor.Kind) Look {
     return switch (k) {
-        .archer => .{ .ch = '@', .fg = rgb(0x7cc86e) },
+        .archer => .{ .ch = '@', .fg = ARCHER_INK },
         .wizard => .{ .ch = '@', .fg = rgb(0x8f9cf2) },
         .knight => .{ .ch = '@', .fg = rgb(0xd6d9e0) },
         .rat => .{ .ch = 'r', .fg = HIDE_INK },
@@ -359,7 +360,7 @@ pub fn body(k: actor.Kind) Look {
         .chain_gaoler => .{ .ch = 'J', .fg = rgb(0xa8a29a) },
         .cinder_imp => .{ .ch = 'i', .fg = rgb(0xff7a1a) },
         .skeleton => .{ .ch = 'Z', .fg = rgb(0xe8e2cf) },
-        .caravan_guard => .{ .ch = 'G', .fg = rgb(0x7cc86e) },
+        .caravan_guard => .{ .ch = 'G', .fg = ARCHER_INK },
     };
 }
 

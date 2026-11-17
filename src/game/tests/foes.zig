@@ -8,8 +8,10 @@ const fire = @import("../../map/fire.zig");
 const menu = @import("../../ui/menu.zig");
 const actor = @import("../../play/actor.zig");
 const bow = @import("../../play/bow.zig");
+const damage = @import("../../play/damage.zig");
 const firebolt = @import("../../play/firebolt.zig");
 const bleeding = @import("../../play/bleeding.zig");
+const shock = @import("../../play/shock.zig");
 const glacial = @import("../../play/glacial.zig");
 const pack = @import("../../play/pack.zig");
 const items = @import("../../play/items.zig");
@@ -774,12 +776,7 @@ test "a beefy pib's landed blow stuns the archer about a quarter of the time, an
 }
 
 fn sweepMotes(g: *const game.Game) usize {
-    const Sweep = struct {
-        pub fn counts(_: @This(), m: anytype) bool {
-            return std.meta.eql(m.col, look.SWEEP);
-        }
-    };
-    return harness.liveMotes(g, Sweep{});
+    return harness.liveMotes(g, harness.InkMote{ .ink = look.SWEEP });
 }
 
 fn whirling(g: *game.Game, _: usize) bool {
@@ -1273,7 +1270,7 @@ test "a frost wisp's touch chills the hero unless cold-proof, and a chilled hero
     try std.testing.expect(touched);
     for (0..16) |seed| {
         harness.arena(g, from, &.{});
-        g.sim.heroActor().?.resists.set(.cold, 100);
+        g.sim.heroActor().?.resists.set(.cold, damage.RESIST_MAX);
         _ = harness.spawnAt(g, .frost_wisp, .{ .x = 21, .y = 20 }, true);
         game.settle(g);
         g.sim.rng = mathx.Rng.init(seed);
@@ -1403,8 +1400,7 @@ test "a pib shaman holds its orb while a foe stands on or beside its line to the
     const range = actor.row(.pib_shaman).hurls.?.range;
     const line = firebolt.Bolt.aimed(.{ .x = 25, .y = 20 }, hero, range);
     try std.testing.expect(foe_rules.crowded(&g.sim, shaman, line, hero, range));
-    g.sim.pool.get(kin).?.alive = false;
-    g.sim.lv.clear(.{ .x = 23, .y = 21 });
+    _ = g.sim.pool.slay(&g.sim.lv, kin);
     _ = harness.spawnAt(g, .pib, .{ .x = 21, .y = 22 }, true);
     try std.testing.expect(!foe_rules.crowded(&g.sim, shaman, line, hero, range));
 }
@@ -1412,31 +1408,49 @@ test "a pib shaman holds its orb while a foe stands on or beside its line to the
 test "shaman orbs deal chaos damage at impact without burning and respect chaos resistance" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    for ([_]i16{ 0, 100 }) |resistance| {
+    for ([_]i16{ 0, damage.RESIST_MAX }) |resistance| {
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
         const shaman = harness.spawnAt(g, .pib_shaman, .{ .x = 24, .y = 20 }, true);
         const hero = g.sim.heroActor().?;
         hero.resists.set(.chaos, resistance);
-        hero.resists.set(.fire, 100);
+        hero.resists.set(.fire, damage.RESIST_MAX);
         game.settle(g);
         const hp = hero.hp;
         combat.endTurn(g);
         try std.testing.expectEqual(hp, hero.hp);
         harness.drawnOut(g);
-        const caster = g.sim.pool.get(shaman).?;
-        caster.alive = false;
-        g.sim.lv.clear(caster.at);
+        _ = g.sim.pool.slay(&g.sim.lv, shaman);
         combat.endTurn(g);
         try std.testing.expectEqual(hp, hero.hp);
         harness.drawnOut(g);
         combat.endTurn(g);
         const dealt = hp - hero.hp;
-        if (resistance == 100) try std.testing.expectEqual(@as(i32, 0), dealt) else try std.testing.expect(dealt >= actor.row(.pib_shaman).hurls.?.hit.lo and dealt <= actor.row(.pib_shaman).hurls.?.hit.hi);
+        if (resistance == damage.RESIST_MAX) try std.testing.expectEqual(@as(i32, 0), dealt) else try std.testing.expect(dealt >= actor.row(.pib_shaman).hurls.?.hit.lo and dealt <= actor.row(.pib_shaman).hurls.?.hit.hi);
         try std.testing.expectEqual(@as(u8, 0), hero.burn.turns);
         try std.testing.expectEqual(hp, g.pic.heroShown(&g.sim).?.hp);
         harness.drawnOut(g);
         try std.testing.expectEqual(hero.hp, g.pic.heroShown(&g.sim).?.hp);
     }
+}
+
+test "a shaman orb hitting a shocked hero spends the shock" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const shaman = harness.spawnAt(g, .pib_shaman, .{ .x = 24, .y = 20 }, true);
+    const hero = g.sim.heroActor().?;
+    game.settle(g);
+    const hp = hero.hp;
+    combat.endTurn(g);
+    harness.drawnOut(g);
+    _ = g.sim.pool.slay(&g.sim.lv, shaman);
+    combat.endTurn(g);
+    harness.drawnOut(g);
+    hero.shock.start();
+    combat.endTurn(g);
+    try std.testing.expectEqual(@as(u8, 0), hero.shock.turns);
+    const hit = actor.row(.pib_shaman).hurls.?.hit;
+    try std.testing.expect(hp - hero.hp >= mathx.percentCeil(hit.lo, mathx.PERCENT + shock.MORE));
 }
 
 test "a netter clubs at melee range then quicksteps away while its net recovers" {

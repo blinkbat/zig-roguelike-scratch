@@ -203,7 +203,7 @@ test "glacial shot spends only on confirmation and bursts at the first body with
         .{ .x = 27, .y = 21 },
     });
     harness.toughenFoes(g);
-    g.sim.pool.get(harness.foeId(4)).?.resists.set(.cold, 100);
+    g.sim.pool.get(harness.foeId(4)).?.resists.set(.cold, damage.RESIST_MAX);
     g.sim.lv.set(.{ .x = 27, .y = 20 }, .wall);
     game.settle(g);
     const clock = g.sim.clock;
@@ -248,7 +248,7 @@ test "glacial shot uses an intervening body or barrel and an empty shot has no c
     const from = P{ .x = 23, .y = 20 };
     harness.arena(g, from, &.{ .{ .x = 24, .y = 20 }, .{ .x = 28, .y = 20 } });
     const near = g.sim.pool.get(harness.foeId(0)).?;
-    near.resists.set(.cold, 100);
+    near.resists.set(.cold, damage.RESIST_MAX);
     harness.use(g, .glacial_shot);
     g.mode.aim.mark = .{ .x = 28, .y = 20 };
     harness.press(g, CONFIRM);
@@ -331,7 +331,7 @@ test "glacial chill and its cadence follow slime splits without hitting newborn 
     const id = harness.splittable(g, .{ .x = 26, .y = 20 }, true);
     const a = g.sim.pool.get(id).?;
     skipsNext(a);
-    a.resists.set(.cold, -100);
+    a.resists.set(.cold, -damage.RESIST_MAX);
     combat.burstHit(g, .glacial_shot, .{ .body = id }, a.at, .{ .from = g.sim.heroActor().?.at, .wait = 0.2 });
     try std.testing.expectEqual(@as(usize, 3), g.sim.pool.n);
     const half = g.sim.pool.get(id + 1).?;
@@ -385,7 +385,7 @@ test "burning arrow honors fire resistance, refuses insufficient mana and uses t
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 22, .y = 20 }, &.{ .{ .x = 24, .y = 20 }, .{ .x = 27, .y = 20 } });
     const rat = g.sim.pool.get(harness.foeId(0)).?;
-    rat.resists.set(.fire, 100);
+    rat.resists.set(.fire, damage.RESIST_MAX);
     g.sim.mana = burning.COST - 1;
     harness.use(g, .burning_arrow);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
@@ -1812,7 +1812,7 @@ test "resisted chain lightning still holds play until its last jump" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{ .{ .x = 24, .y = 20 }, .{ .x = 26, .y = 21 }, .{ .x = 29, .y = 21 } });
-    for (harness.foes(g)) |*a| a.resists.set(.lightning, 100);
+    for (harness.foes(g)) |*a| a.resists.set(.lightning, damage.RESIST_MAX);
     harness.confirmUse(g, .chain_lightning);
     const last = g.pic.shot.?.lands() + chain.JUMPS * game.ZAP_S;
     try std.testing.expect(g.pic.busy >= last);

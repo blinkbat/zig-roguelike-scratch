@@ -89,9 +89,7 @@ pub fn put(m: *Script, t: Target, s: []const u8) bool {
 }
 
 fn tableName(m: *Script, at: TableAt) *script.Name {
-    return switch (at.t) {
-        inline else => |t| &@field(m.*, @tagName(t))[at.i],
-    };
+    return &m.tableOf(at.t).items[at.i];
 }
 
 pub fn lineOf(m: *Script, at: LineAt) ?*script.Line {

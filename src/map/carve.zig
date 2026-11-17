@@ -412,7 +412,7 @@ pub fn clearRound(lv: *grid.Level, b: grid.Box, pal: Palette) void {
 }
 
 pub fn closes(t: grid.Tile, pal: Palette) bool {
-    return t == pal.solid or (t.solid() and t.ground() != null);
+    return t == pal.solid or (t.solid() and t.ground() != null and !t.prized());
 }
 
 pub const Laid = struct {
@@ -668,7 +668,7 @@ fn barBetween(lv: *const grid.Level, st: *Stretches, main: u16) ?usize {
 }
 
 fn keepsBeside(t: grid.Tile) bool {
-    return t.liquid() or t.isChest();
+    return t.liquid() or t.prized();
 }
 
 fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, laid: Laid) Regions {
@@ -967,7 +967,9 @@ fn hearts(lv: *grid.Level, t: grid.Tile, heart: grid.Tile) void {
         const p = grid.Level.of(i);
         const whole = for (mathx.ALL_DIRS) |d| {
             const q = p.add(d.delta());
-            if (!grid.Level.inside(q) or before[grid.Level.idx(q)] != t) break false;
+            if (!grid.Level.inside(q)) break false;
+            const k = grid.Level.idx(q);
+            if (before[k] != t) break false;
         } else true;
         if (whole) lv.tile[i] = heart;
     }

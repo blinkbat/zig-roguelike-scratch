@@ -885,12 +885,20 @@ pub fn shadowMask(g: *game.Game, target: rl.RenderTexture2D, c: game.scene.Cam, 
     return readTarget(target);
 }
 
-fn checkHiddenShadowMask(g: *game.Game, target: rl.RenderTexture2D, visible: bool) !void {
+pub const BakedView = struct { cam: game.scene.Cam, view: grid.Box };
+
+pub fn bakedView(g: *game.Game) BakedView {
     game.prepare(g);
     const c = game.scene.Cam.of(g);
     const view = game.scene.viewBox(g, c);
     g.light.bake(&g.sim.lv, view.lo, view.hi);
-    const img = try shadowMask(g, target, c, view);
+    return .{ .cam = c, .view = view };
+}
+
+fn checkHiddenShadowMask(g: *game.Game, target: rl.RenderTexture2D, visible: bool) !void {
+    const baked = bakedView(g);
+    const c = baked.cam;
+    const img = try shadowMask(g, target, c, baked.view);
     defer rl.unloadImage(img);
     var hits = std.EnumArray(Hidden, usize).initFill(0);
     var leaked: usize = 0;

@@ -48,7 +48,7 @@ pub const Perf = struct {
     since_s: f32 = 0,
     frames: u32 = 0,
     work_ns: u64 = 0,
-    buf: [32:0]u8 = [_:0]u8{0} ** 32,
+    buf: [32:0]u8 = @splat(0),
     len: usize = 0,
 
     pub fn add(p: *Perf, dt: f32, work_ns: u64) void {

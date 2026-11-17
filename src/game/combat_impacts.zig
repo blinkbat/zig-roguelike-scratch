@@ -88,7 +88,7 @@ pub fn boltHits(g: *game.Game, by: actor.Kind, id: u16, hu: actor.Hurl, s: Strok
     const slot = actor.Pool.slot(id);
     const kind = a.kind;
     const thrower = actor.row(by).name;
-    const dmg = damage.resisted(hu.hit.roll(&g.sim.rng), g.sim.combatStats(a).elements.get(hu.element));
+    const dmg = attacks.landed(false, a, damage.resisted(hu.hit.roll(&g.sim.rng), g.sim.combatStats(a).elements.get(hu.element)));
     const before = a.hp;
     const h = game.hurt(g, .fromInt(id), dmg);
     const hero = id == g.sim.hero;

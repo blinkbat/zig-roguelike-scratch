@@ -15,7 +15,7 @@ pub const Params = struct {
     ground: carve.Ground = .sand,
     /// Hundredths of the noise either side of a crest that stand as ridge.
     ridges: u8 = 6,
-    /// Crest noise over 1 less 2.5 times this percent stands as mesa.
+    /// Crest noise over 1 less `MESA_PER` times this percent stands as mesa.
     mesas: u8 = 4,
     scale: u8 = 18,
 

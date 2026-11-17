@@ -629,6 +629,11 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
     return humanize(a, stem(std.fs.path.basename(path)));
 }
 
+fn leafOf(module: []const u8) []const u8 {
+    const dot = std.mem.lastIndexOfScalar(u8, module, '.');
+    return module[if (dot) |at| at + 1 else 0..];
+}
+
 fn stem(path: []const u8) []const u8 {
     return if (std.mem.endsWith(u8, path, ZIG)) path[0 .. path.len - ZIG.len] else path;
 }
@@ -768,10 +773,7 @@ const ContextScan = struct {
             category = SKILLS_CATEGORY;
             owner = name;
         }
-        if (owner == null) {
-            const dot = std.mem.lastIndexOfScalar(u8, s.module, '.') orelse 0;
-            owner = try humanize(s.a, s.module[if (dot > 0) dot + 1 else 0..]);
-        }
+        if (owner == null) owner = try humanize(s.a, leafOf(s.module));
         if (call) |name| {
             try identity.appendSlice(" > ");
             try identity.appendSlice(name);
@@ -779,8 +781,7 @@ const ContextScan = struct {
                 (std.mem.eql(u8, s.module, "play.log") and (std.mem.eql(u8, name, "say") or std.mem.eql(u8, name, "add"))))
             {
                 category = LOG_LINES;
-                const dot = std.mem.lastIndexOfScalar(u8, s.module, '.');
-                role = try humanize(s.a, s.module[if (dot) |at| at + 1 else 0..]);
+                role = try humanize(s.a, leafOf(s.module));
             }
         }
         return .{ .category = category, .owner = owner.?, .role = role, .context = try identity.toOwnedSlice() };

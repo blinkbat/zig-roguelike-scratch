@@ -119,6 +119,8 @@ pub const Owed = struct {
     }
 };
 
+const NOTHING_OWED: Owed = .{};
+
 /// A blow one body lands on another, neither the hero; `impact` null is a miss.
 pub const Struck = struct { at: P, impact: ?fx.Impact = null };
 
@@ -1055,8 +1057,14 @@ pub const Presentation = struct {
     }
 
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, target: actor.ActorId, start: f32, turn: *schedule.Turn) f32 {
-        const owed = self.owed[target.slot().index];
-        self.owed[target.slot().index] = .{};
+        const slot = target.slot().index;
+        if (!self.owed[slot].any()) return self.scheduleOwed(sim, gas, target, &NOTHING_OWED, start, turn);
+        const owed = self.owed[slot];
+        self.owed[slot] = .{};
+        return self.scheduleOwed(sim, gas, target, &owed, start, turn);
+    }
+
+    fn scheduleOwed(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, target: actor.ActorId, owed: *const Owed, start: f32, turn: *schedule.Turn) f32 {
         var timing = self.scheduleMotion(sim, target, owed, start, turn) orelse return start;
         self.scheduleBlows(sim, gas, owed, &timing);
         const countered = self.scheduleReaction(sim, gas, owed, &timing, turn);
@@ -1064,7 +1072,7 @@ pub const Presentation = struct {
         return self.scheduleHarm(sim, gas, owed, &timing, turn);
     }
 
-    fn scheduleMotion(self: *Presentation, sim: *const Simulation, target: actor.ActorId, owed: Owed, start: f32, turn: *schedule.Turn) ?BodyTiming {
+    fn scheduleMotion(self: *Presentation, sim: *const Simulation, target: actor.ActorId, owed: *const Owed, start: f32, turn: *schedule.Turn) ?BodyTiming {
         const slot = target.slot().index;
         const body = &sim.pool.items[slot];
         const motion = &self.glide[slot];
@@ -1123,7 +1131,7 @@ pub const Presentation = struct {
         };
     }
 
-    fn scheduleBlows(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming) void {
+    fn scheduleBlows(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: *const Owed, timing: *BodyTiming) void {
         if (owed.foe_hit) |b| switch (b) {
             .hurt, .kill => |after| self.strikeBody(sim, gas, sim.heroActorSlot().?, timing.hero_at, b == .kill, after, .{ .from = timing.body.at, .wait = timing.clock.impact_in, .element = strikeElement(timing.body.kind) }),
             .burst => |after| self.strikeBody(sim, gas, timing.slot, timing.body.at, true, after, .{ .from = timing.hero_at, .wait = timing.clock.impact_in }),
@@ -1158,7 +1166,7 @@ pub const Presentation = struct {
         };
     }
 
-    fn scheduleReaction(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming, turn: *schedule.Turn) f32 {
+    fn scheduleReaction(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: *const Owed, timing: *BodyTiming, turn: *schedule.Turn) f32 {
         var countered = timing.clock.impact_in;
         if (owed.reaction) |r| {
             const release = timing.clock.reactionRelease();
@@ -1187,7 +1195,7 @@ pub const Presentation = struct {
         return .{ .lands = release + s.lands(), .ends = release + s.ends() };
     }
 
-    fn scheduleKnock(self: *Presentation, sim: *const Simulation, owed: Owed, countered: f32, timing: *BodyTiming, turn: *schedule.Turn) void {
+    fn scheduleKnock(self: *Presentation, sim: *const Simulation, owed: *const Owed, countered: f32, timing: *BodyTiming, turn: *schedule.Turn) void {
         if (owed.knock) |k| {
             const shoved = &self.glide[sim.heroSlot().?];
             shoved.* = shoved.toward(k.to, -countered);
@@ -1196,7 +1204,7 @@ pub const Presentation = struct {
         }
     }
 
-    fn scheduleHarm(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: Owed, timing: *BodyTiming, turn: *const schedule.Turn) f32 {
+    fn scheduleHarm(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, owed: *const Owed, timing: *BodyTiming, turn: *const schedule.Turn) f32 {
         timing.clock.finishAfter(self.fx.impacts.landsIn(timing.slot));
         inline for (comptime std.enums.values(simulation.Tick)) |t| {
             if (comptime @FieldType(Owed, @tagName(t)) == ?Harm) if (@field(owed, @tagName(t))) |h| {

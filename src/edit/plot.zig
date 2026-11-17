@@ -108,6 +108,7 @@ pub const State = struct {
     detail: widgets.Scrolled = .{},
     lines: widgets.Scrolled = .{},
     reveal_line: bool = false,
+    reveal_pick: bool = false,
     field_box: rl.Rectangle = widgets.NO_BOX,
     /// The script's lists as the page last drew them; a picked index means nothing once they changed elsewhere.
     seen: Seen = .{},
@@ -354,8 +355,7 @@ fn frameOf(ed: *editor.Editor, g: *game.Game, p: Page) Frame {
 }
 
 fn listHead(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, comptime title: []const u8, n: usize, most: usize, add_w: i32, label: []const u8, tip: [:0]const u8) bool {
-    countHeading(g, f.x, y, f.listW(), title, n, most);
-    return rightButton(ed, g, f.x + f.listW() - GAP, y, add_w, label, n < most, tip);
+    return countHead(ed, g, f.x, y, f.listW() - GAP, title, n, most, add_w, label, tip);
 }
 
 fn listRow(ed: *editor.Editor, g: *game.Game, x: i32, w: i32, y: i32, label: []const u8, on: bool, tip: ?[:0]const u8) bool {
@@ -367,6 +367,13 @@ fn listRow(ed: *editor.Editor, g: *game.Game, x: i32, w: i32, y: i32, label: []c
 fn added(ed: *editor.Editor) void {
     ed.bank();
     ed.plot.detail.top = 0;
+    ed.plot.reveal_pick = true;
+}
+
+fn revealPicked(due: *bool, list: widgets.Scroll, y: i32, picked: bool) void {
+    if (!picked or !due.*) return;
+    due.* = false;
+    list.reveal(y - (raster.top(list.box) - list.drawn.*), STEP);
 }
 
 fn detailPane(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32, bottom: i32, comptime body: fn (*editor.Editor, *game.Game, u8, i32, i32, i32) i32, i: u8) void {
@@ -534,7 +541,9 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     }
     y += STEP;
     for (m.dialogs(), 0..) |*dl, i| {
-        if (listRow(ed, g, f.x, lw, y, dl.name.text(), s.pick == .dialog and s.pick.dialog == i, "Its lines, what they say and where each choice goes")) s.pickDialog(@intCast(i));
+        const picked = s.pick == .dialog and s.pick.dialog == i;
+        revealPicked(&s.reveal_pick, list, y, picked);
+        if (listRow(ed, g, f.x, lw, y, dl.name.text(), picked, "Its lines, what they say and where each choice goes")) s.pickDialog(@intCast(i));
         y += STEP;
     }
     const right = rightOf(ed, f, list, y);
@@ -703,6 +712,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
         }
     }
     y += STEP + GAP;
+    const body = y;
     const lx = x;
     const line_area = s.lines.at(raster.rect(lx, y, lines_w, bottom - y - STEP - GAP));
     y = line_area.begin(&ed.clip);
@@ -713,15 +723,12 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
         const speech = ln.say.text();
         const first = if (speech.len > 0) speech[0 .. std.mem.indexOfScalar(u8, speech, '\n') orelse speech.len] else SILENT;
         const label = std.fmt.bufPrintZ(&line_buf, "{s}{s}: {s}", .{ if (i == 0) "> " else "", ln.name.text(), first }) catch "";
+        revealPicked(&s.reveal_line, line_area, y, s.line == i);
         if (listRow(ed, g, lx, lines_w, y, label, s.line == i, if (i == 0) "Where it opens" else null)) s.line = @intCast(i);
         y += STEP;
     }
     const tools_w = lines_w - GAP;
     line_area.close(&ed.clip, y, 0);
-    if (s.reveal_line) {
-        s.reveal_line = false;
-        line_area.reveal(STEP * (@as(i32, s.line) + 1), STEP);
-    }
     var tools = widgets.Across{ .x = lx, .span = tools_w, .y = bottom - STEP, .n = 3 };
     if (button(ed, g, tools.next(), "+ Line", false, d.line_n < script.MAX_LINES, "Another line, reached by a choice or a then")) {
         if (d.addLine()) |l| {
@@ -733,6 +740,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     if (button(ed, g, tools.next(), "Up", false, s.line > 0, "Earlier in the list; the first is where it opens")) {
         d.swapLines(s.line, s.line - 1);
         s.line -= 1;
+        s.reveal_line = true;
         ed.bank();
     }
     if (button(ed, g, tools.next(), "Delete", false, d.line_n > 1, "Delete this line; every way into it ends the dialog instead")) {
@@ -741,8 +749,8 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
         ed.bank();
     }
     tools.done();
-    const dx = widgets.besides(x, lines_w, top + STEP + GAP, bottom);
-    detailPane(ed, g, dx, top + STEP + GAP, x + w - dx, bottom, drawLine, di);
+    const dx = widgets.besides(x, lines_w, body, bottom);
+    detailPane(ed, g, dx, body, x + w - dx, bottom, drawLine, di);
 }
 
 fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32) i32 {
@@ -857,14 +865,15 @@ fn refOk(m: *const Script, r: ?script.Ref) bool {
 }
 
 fn fitRef(m: *Script, r: script.Ref, slot: *u8) void {
-    switch (r) {
-        .table => |t| fitSlot(m, t, slot),
-        .npc, .dialog, .quest => slot.* = @intCast(@min(slot.*, m.refLen(r) - 1)),
+    const n = m.refLen(r);
+    if (n > 0) {
+        slot.* = @intCast(@min(slot.*, n - 1));
+        return;
     }
-}
-
-fn fitSlot(m: *Script, t: script.Table, slot: *u8) void {
-    if (m.names(t).len == 0) slot.* = m.coin(t) orelse 0 else slot.* = @min(slot.*, @as(u8, @intCast(m.names(t).len - 1)));
+    slot.* = switch (r) {
+        .table => |t| m.coin(t) orelse 0,
+        .npc, .dialog, .quest => 0,
+    };
 }
 
 fn kindW(w: i32) i32 {
@@ -937,18 +946,18 @@ fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.
         .text => words(ed, g, widgets.row(fx, y, fw), .{ .note = at }, "(the line the log shows)"),
         .flag => {
             const ws = splitBy(fw, NAME_SETOP);
-            tableStep(ed, g, lay.take(ws[0]), script.actRef(a.kind).?.table, &a.slot);
+            tableStep(ed, g, lay.take(ws[0]), script.actTable(a.kind).?, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Setop, &a.setop, &SETOP_WORDS, null);
         },
         .counter => {
             const ws = splitBy(fw, NAME_OP_NUMBER);
-            tableStep(ed, g, lay.take(ws[0]), script.actRef(a.kind).?.table, &a.slot);
+            tableStep(ed, g, lay.take(ws[0]), script.actTable(a.kind).?, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Countop, &a.countop, &COUNTOP_WORDS, null);
             numberStep(ed, g, lay.take(ws[2]), &a.n, a.kind.span(), "", "By how much");
         },
         .timer => {
             const ws = splitBy(fw, NAME_UNITS);
-            tableStep(ed, g, lay.take(ws[0]), script.actRef(a.kind).?.table, &a.slot);
+            tableStep(ed, g, lay.take(ws[0]), script.actTable(a.kind).?, &a.slot);
             numberStep(ed, g, lay.take(ws[1]), &a.n, a.kind.span(), " turns", "Turns it runs before it is done");
         },
         .wait => numberStep(ed, g, widgets.row(fx, y, UNIT_W), &a.n, a.kind.span(), " turns", "Spent turns held before the next action"),
@@ -1126,7 +1135,9 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     y += STEP;
     for (m.triggers(), 0..) |*t, i| {
         const label = std.fmt.bufPrint(&buf, "{s}{s}", .{ t.name.text(), if (t.parked) "  (parked)" else "" }) catch "";
-        if (listRow(ed, g, f.x, lw, y, label, if (s.trigger) |at| at == i else false, "When it fires and what it does")) s.trigger = @intCast(i);
+        const picked = if (s.trigger) |at| at == i else false;
+        revealPicked(&s.reveal_pick, list, y, picked);
+        if (listRow(ed, g, f.x, lw, y, label, picked, "When it fires and what it does")) s.trigger = @intCast(i);
         y += STEP;
     }
     inline for (comptime std.enums.values(script.Table)) |t| {
@@ -1213,7 +1224,9 @@ fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
     }
     y += STEP;
     for (m.quests(), 0..) |*q, i| {
-        if (listRow(ed, g, f.x, f.listW(), y, q.titled(), if (s.quest) |at| at == i else false, "Its title and what each stage asks")) s.quest = @intCast(i);
+        const picked = if (s.quest) |at| at == i else false;
+        revealPicked(&s.reveal_pick, list, y, picked);
+        if (listRow(ed, g, f.x, f.listW(), y, q.titled(), picked, "Its title and what each stage asks")) s.quest = @intCast(i);
         y += STEP;
     }
     const right = rightOf(ed, f, list, y);

@@ -119,13 +119,9 @@ pub const Cam = struct {
     }
 };
 
-fn spriteRect(t: rl.Texture2D, sx: i32, sy: i32) rl.Rectangle {
+fn spriteRect(t: rl.Texture2D, s: P) rl.Rectangle {
     const k = @max(1, @divTrunc(game.CELL, t.width));
-    return raster.rect(sx + @divTrunc(game.CELL - t.width * k, 2), sy + @divTrunc(game.CELL - t.height * k, 2), t.width * k, t.height * k);
-}
-
-fn drawSprite(t: rl.Texture2D, sx: i32, sy: i32) void {
-    raster.stretch(t, spriteRect(t, sx, sy), look.LIT);
+    return raster.rect(s.x + @divTrunc(game.CELL - t.width * k, 2), s.y + @divTrunc(game.CELL - t.height * k, 2), t.width * k, t.height * k);
 }
 
 fn tileRect(kind: grid.Tile, tex: rl.Texture2D, c: Cam, p: P) rl.Rectangle {
@@ -137,7 +133,7 @@ fn cellInk(g: *const game.Game, p: P) rl.Color {
 }
 
 fn drawShining(g: *const game.Game, t: rl.Texture2D, c: Cam, p: P, loot_glow: bool) void {
-    const rect = spriteRect(t, c.sx(p), c.sy(p));
+    const rect = spriteRect(t, c.corner(p));
     const ink = cellInk(g, p);
     raster.stretch(t, rect, ink);
     shineOver(g, t, rect, p, ink, loot_glow);
@@ -149,8 +145,8 @@ fn shineOver(g: *const game.Game, t: rl.Texture2D, rect: rl.Rectangle, p: P, col
     g.sprites.drawShine(t, rect, sweep, col, if (loot_glow) look.LOOT_GLOW else 0);
 }
 
-fn drawGlyph(g: *game.Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void {
-    g.face.glyph(ch, sx + game.HALF_CELL, sy + game.HALF_CELL, game.GLYPH, col);
+fn drawGlyph(g: *game.Game, ch: u8, s: P, col: rl.Color) void {
+    g.face.glyph(ch, s.x + game.HALF_CELL, s.y + game.HALF_CELL, game.GLYPH, col);
 }
 
 fn drawFigureGlyph(g: *game.Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void {
@@ -276,7 +272,7 @@ const Barrels = struct {
 
 fn drawLit(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, opacity: f32, fade: [2]f32) void {
     if (tex) |t| {
-        g.light.drawBody(t, spriteRect(t, s.x, s.y), left, mid, shine, flash, opacity, fade);
+        g.light.drawBody(t, spriteRect(t, s), left, mid, shine, flash, opacity, fade);
     } else drawFigureLetter(g, l, s, flash, opacity);
 }
 
@@ -286,7 +282,7 @@ fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool,
     defer cloud.Cloud.endVeil();
     const ink = look.fade(look.LIT, opacity);
     if (tex) |t| {
-        raster.blit(t, raster.facing(t, left), spriteRect(t, s.x, s.y), ink);
+        raster.blit(t, raster.facing(t, left), spriteRect(t, s), ink);
     } else drawFigureGlyph(g, l.ch, s.x, s.y, ink);
 }
 
@@ -312,7 +308,7 @@ fn drawGroundPass(g: *game.Game, c: Cam, ground: *const grid.Level, beds: *const
         if (!terrainSeen(g, p)) continue;
         const here = ground.at(p);
         if (sprite.glyphGround(here, &g.sprites)) inkCell(g, c, p, here, stood);
-        if (g.sim.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
+        if (g.sim.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.corner(p), look.DOOR.fg);
     }
 }
 
@@ -344,7 +340,7 @@ fn drawBurntStanding(g: *game.Game, c: Cam, old: *const grid.Level, occluding: b
         if (occluding) {
             raster.stretch(tex, tileRect(was, tex, c, p), look.fade(sceneryTint(g, p), a));
             if (flamesSeen(g, p)) drawCellFlames(g, c, p);
-        } else raster.stretch(tex, spriteRect(tex, c.sx(p), c.sy(p)), look.fade(look.LIT, a));
+        } else raster.stretch(tex, spriteRect(tex, c.corner(p)), look.fade(look.LIT, a));
     }
 }
 
@@ -382,9 +378,10 @@ fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P,
         if (!look.standsOver(here)) continue;
         if (tileTexture(g, ground, here, p, bags)) |t| {
             const focus = g.cinema.beginFocus(here, t, mathx.centre(p), g.light.carrier);
-            drawSprite(t, c.sx(p), c.sy(p));
+            const rect = spriteRect(t, c.corner(p));
+            raster.stretch(t, rect, look.LIT);
             if (focus != null) rl.endShaderMode();
-            if (chestShines(here, p, bags)) shineOver(g, t, spriteRect(t, c.sx(p), c.sy(p)), p, cellInk(g, p), here == .chest_open);
+            if (chestShines(here, p, bags)) shineOver(g, t, rect, p, cellInk(g, p), here == .chest_open);
             if (look.veiled(here)) veilSprite(g, t, c, p, focus orelse .sharp, look.LIT);
             continue;
         }
@@ -399,7 +396,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P,
 
 fn veilSprite(g: *game.Game, t: rl.Texture2D, c: Cam, p: P, focus: look.Focused, ink: rl.Color) void {
     if (!g.cloud.beginVeil(ink, focus)) return;
-    raster.stretch(t, spriteRect(t, c.sx(p), c.sy(p)), ink);
+    raster.stretch(t, spriteRect(t, c.corner(p)), ink);
     cloud.Cloud.endVeil();
 }
 
@@ -443,14 +440,14 @@ fn drawShadows(g: *game.Game, c: Cam, ground: *const grid.Level, cast: grid.Box,
         const s = c.px(at);
         const mid = game.middle(at);
         const shine = g.light.onCaster(mid, g.sim.isHero(i));
-        g.light.drawShadows(t, spriteRect(t, s.x, s.y), body.facing == .left, mid, &shine, opacity);
+        g.light.drawShadows(t, spriteRect(t, s), body.facing == .left, mid, &shine, opacity);
     }
 }
 
 fn propShadow(g: *game.Game, c: Cam, p: P, tex: ?rl.Texture2D, opacity: f32) void {
     const t = tex orelse return;
     const b = Prop.at(g, c, p, true);
-    g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), false, b.mid, &b.shine, opacity);
+    g.light.drawShadows(t, spriteRect(t, b.s), false, b.mid, &b.shine, opacity);
 }
 
 pub fn viewBox(g: *const game.Game, c: Cam) grid.Box {
@@ -481,12 +478,12 @@ const GLYPH_FOOT: f32 = 0.8;
 
 fn footOf(g: *const game.Game, tex: ?rl.Texture2D, s: P) f32 {
     const t = tex orelse return @as(f32, @floatFromInt(s.y)) + game.CELL_F * GLYPH_FOOT;
-    return g.light.footY(t, spriteRect(t, s.x, s.y));
+    return g.light.footY(t, spriteRect(t, s));
 }
 
 fn drawMirrored(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, stands: P, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, opacity: f32) void {
     const foot = footOf(g, tex, stands);
-    const top = if (tex) |t| g.light.topY(t, spriteRect(t, s.x, s.y)) else @as(f32, @floatFromInt(font.Face.topFor(s.y + game.HALF_CELL, game.GLYPH)));
+    const top = if (tex) |t| g.light.topY(t, spriteRect(t, s)) else @as(f32, @floatFromInt(font.Face.topFor(s.y + game.HALF_CELL, game.GLYPH)));
     const bounds = mirrorFade(g, foot, top, footOf(g, tex, s));
     const r = Reflection.begin(g, foot, if (tex == null) bounds else null);
     defer r.end();
@@ -727,7 +724,7 @@ pub fn drawMap(g: *game.Game) void {
     var barrels = Barrels.of(g, c, lo, hi);
     while (barrels.next()) |b| {
         drawBarrel(g, &b, false);
-        if (g.sprites.barrel) |t| shineOver(g, t, spriteRect(t, b.s.x, b.s.y), mathx.cellOf(b.mid), b.shine.tint(look.LIT), false);
+        if (g.sprites.barrel) |t| shineOver(g, t, spriteRect(t, b.s), mathx.cellOf(b.mid), b.shine.tint(look.LIT), false);
     }
     var npc_cells = grid.Cells.of(lo, hi);
     while (npc_cells.next()) |p| {
@@ -834,7 +831,7 @@ fn drawOccluder(g: *game.Game, c: Cam, ground: *const grid.Level, p: P, kind: gr
     const tex = g.sprites.tileAt(ground, p) orelse {
         run.end();
         const l = look.tile(kind);
-        drawGlyph(g, l.ch, c.sx(p), c.sy(p), look.fade(g.light.onBody(mathx.centre(p), false).tint(l.fg), look.occlusionAlpha(hidden)));
+        drawGlyph(g, l.ch, c.corner(p), look.fade(g.light.onBody(mathx.centre(p), false).tint(l.fg), look.occlusionAlpha(hidden)));
         return;
     };
     const rect = tileRect(kind, tex, c, p);
@@ -982,11 +979,19 @@ fn drawOrbLanes(g: *game.Game, c: Cam, ground: *const grid.Level) void {
         const at = b.view.at orelse continue;
         const hu = actor.row(g.sim.pool.items[i].kind).hurls orelse continue;
         const here = mathx.cellOf(at);
-        var start: usize = if (here.eq(b.line.from)) 0 else b.line.flown;
+        var start: usize = 0;
+        var near = mathx.dist(here, b.line.from);
+        var seek = grid.Ray.init(b.line.from, b.line.toward);
+        for (1..@as(usize, b.line.flown) + 1) |k| {
+            const p = seek.next() orelse break;
+            if (mathx.dist(p, here) < near) {
+                near = mathx.dist(p, here);
+                start = k;
+            }
+        }
         var ray = grid.Ray.init(b.line.from, b.line.toward);
         for (1..@as(usize, @intCast(hu.range)) + 1) |k| {
             const p = ray.next() orelse break;
-            if (k < start and p.eq(here)) start = k;
             if (k <= start) continue;
             const e = firebolt.entryOf(ground, p, grid.Level.inside(p) and barrelShownAt(g, p));
             if (!firebolt.enters(e)) break;
@@ -1101,7 +1106,7 @@ fn drawPlants(g: *game.Game, c: Cam, flames: []const light.Flame) void {
         const t = g.pic.tileShown(&g.sim, p);
         if (g.sprites.tileOf(t, null) != null) continue;
         const l = look.tile(t);
-        drawGlyph(g, l.ch, c.sx(p), c.sy(p), look.fade(l.fg, flameLit(f)));
+        drawGlyph(g, l.ch, c.corner(p), look.fade(l.fg, flameLit(f)));
     };
 }
 

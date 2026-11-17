@@ -167,7 +167,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots:
 }
 
 fn campSpace(lots: *buildings.Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, apart: u8, pal: carve.Palette) ?grid.Box {
-    const gap = @max(buildings.Lots.GAP, 2 * @as(i32, apart));
+    const gap = gapFor(apart);
     for (0..SITE_TRIES) |_| {
         const b = grid.Box.sized(SITE_BOX.rollFor(rng, w, h), w, h);
         if (!lots.canTake(lv, b, gap, pal)) continue;
@@ -238,13 +238,16 @@ fn niche(lv: *grid.Level, rng: *mathx.Rng, pal: carve.Palette, lots: *buildings.
     }
 }
 
-fn spaced(lots: *buildings.Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, apart: i32, pal: carve.Palette) ?grid.Box {
-    const least = buildings.Lots.GAP;
-    var gap = @max(least, 2 * apart);
+fn spaced(lots: *buildings.Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, apart: u8, pal: carve.Palette) ?grid.Box {
+    var gap = gapFor(apart);
     while (true) : (gap = @divTrunc(gap, 2)) {
         if (lots.takeApart(lv, rng, w, h, gap, pal)) |r| return r;
-        if (gap <= least) return null;
+        if (gap <= buildings.Lots.GAP) return null;
     }
+}
+
+fn gapFor(apart: u8) i32 {
+    return @max(buildings.Lots.GAP, 2 * @as(i32, apart));
 }
 
 /// Stamped, its gaps and the ring round it opened, so no thicket or rock seals its ground in.

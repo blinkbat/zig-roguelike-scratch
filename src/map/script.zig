@@ -597,7 +597,7 @@ pub const Script = struct {
         };
     }
 
-    fn tableOf(self: *Script, t: Table) struct { items: []Name, n: *u8 } {
+    pub fn tableOf(self: *Script, t: Table) struct { items: []Name, n: *u8 } {
         return switch (t) {
             inline else => |tag| .{ .items = &@field(self, @tagName(tag)), .n = &@field(self, @tagName(tag) ++ "_n") },
         };
@@ -966,12 +966,19 @@ comptime {
     for (std.enums.values(ActKind)) |k| std.debug.assert(!refersTo(actRef(k), .npc));
 }
 
-pub fn condTable(k: CondKind) ?Table {
-    const r = condRef(k) orelse return null;
-    return switch (r) {
+fn tableIn(r: ?Ref) ?Table {
+    return switch (r orelse return null) {
         .table => |t| t,
         .npc, .dialog, .quest => null,
     };
+}
+
+pub fn condTable(k: CondKind) ?Table {
+    return tableIn(condRef(k));
+}
+
+pub fn actTable(k: ActKind) ?Table {
+    return tableIn(actRef(k));
 }
 
 /// Every condition in a script: the triggers', each dialog's choice gates, then what each NPC stands while.

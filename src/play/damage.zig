@@ -26,7 +26,7 @@ pub fn resistedChance(pc: u32, resist: i16) u32 {
     return @intCast(@min(mathx.PERCENT, resisted(std.math.lossyCast(i32, pc), resist)));
 }
 
-/// A foe's blow landing its status `pc` percent of the time; never, drawing nothing.
+/// Lands `pc` percent of the time; at 0, never, drawing nothing.
 pub fn procs(rng: *mathx.Rng, pc: u32) bool {
     return pc > 0 and rng.percent(pc);
 }

@@ -57,7 +57,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     carve.field(lv, pal);
     const curtain = curtainOf(p);
     const m: i32 = p.moat;
-    const berm = bermOf(p);
+    const berm = bermOf(p.towers);
     if (m > 0) {
         carve.box(lv, curtain.grown(reachOf(p.towers, p.moat)), .water);
         carve.box(lv, curtain.grown(berm), out);
@@ -125,12 +125,12 @@ fn yardOf(p: Params) grid.Box {
     return curtainOf(p).shrunk(CURTAIN);
 }
 
-fn bermOf(p: Params) i32 {
-    return BERM + towerReach(p.towers);
+fn bermOf(towers: u8) i32 {
+    return BERM + towerReach(towers);
 }
 
 fn reachOf(towers: u8, moat: u8) i32 {
-    return BERM + towerReach(towers) + moat;
+    return bermOf(towers) + moat;
 }
 
 fn towerReach(towers: u8) i32 {

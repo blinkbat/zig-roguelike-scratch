@@ -573,13 +573,14 @@ test "leaving or closing mid graph drag keeps the move and asks before discardin
 }
 
 test "a tool key, a shape key or Tab mid graph drag keeps the move as its own undo" {
-    for ([_]enum { tool, shape, view }{ .tool, .shape, .view }) |by| {
+    for ([_]enum { tool, select_tool, shape, view }{ .tool, .select_tool, .shape, .view }) |by| {
         const ed = try testBespoke();
         defer ed.destroy();
+        if (by == .select_tool) ed.setShape(.select);
         const was = dragFirstBox(ed);
         const moved = ed.map.node[0].pos;
         switch (by) {
-            .tool => ed.takeTool(for (editor.TOOLS) |t| {
+            .tool, .select_tool => ed.takeTool(for (editor.TOOLS) |t| {
                 if (!t.eql(ed.tool) and t.fits(ed.here())) break t;
             } else unreachable),
             .shape => ed.setShape(for (editor.SHAPES) |s| {

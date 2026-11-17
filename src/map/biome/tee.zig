@@ -277,12 +277,16 @@ fn wetSpan(lv: *const grid.Level, from: P) ?[2]i32 {
 }
 
 fn lowestFor(width: u8) i32 {
-    return BAR_FLOOR - 1 - carve.discReach(carve.laneRadius(width) + SHOULDER);
+    return BAR_FLOOR - 1 - roadReach(width);
+}
+
+fn roadReach(width: u8) i32 {
+    return carve.discReach(carve.laneRadius(width) + SHOULDER);
 }
 
 fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lowest: i32, kept: *grid.CellSet) void {
     const r = carve.laneRadius(width);
-    const clear = carve.discReach(r + SHOULDER);
+    const clear = roadReach(width);
     const above = grid.Box{ .lo = .{ .x = std.math.minInt(i32), .y = std.math.minInt(i32) }, .hi = .{ .x = std.math.maxInt(i32), .y = lowest + 1 } };
     var m = carve.Meander.init(a, b, wander).within(above);
     const length = @max(1, mathx.distEuclid(a, b));
