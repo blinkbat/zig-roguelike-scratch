@@ -58,6 +58,8 @@ pub const Sprites = struct {
     skills: ?rl.Texture2D = null,
     item_icons: ?rl.Texture2D = null,
     hud_border: ?rl.Texture2D = null,
+    hud_life_frame: ?rl.Texture2D = null,
+    hud_mana_frame: ?rl.Texture2D = null,
     log_fade: ?sprite_materials.FadeShader = null,
     water: ?sprite_materials.WaterShader = null,
     bank_cap: ?sprite_materials.BankCapShader = null,
@@ -72,6 +74,8 @@ pub const Sprites = struct {
         self.skills = line_icons.skillIcons();
         self.item_icons = line_icons.itemIcons();
         self.loadBorder();
+        if (self.hud_life_frame == null) self.hud_life_frame = texture(sprite_assets.HUD_LIFE_FRAME_PNG);
+        if (self.hud_mana_frame == null) self.hud_mana_frame = texture(sprite_assets.HUD_MANA_FRAME_PNG);
         self.log_fade = shaders.program(sprite_materials.FadeShader, sprite_materials.FADE_FS);
         self.water = shaders.program(sprite_materials.WaterShader, sprite_materials.WATER_FS);
         self.bank_cap = shaders.program(sprite_materials.BankCapShader, sprite_materials.BANK_CAP_FS);
@@ -511,7 +515,7 @@ pub const Sprites = struct {
 comptime {
     for (std.meta.fields(Sprites)) |f| {
         if (f.type != ?rl.Texture2D or @hasField(sprite_assets.Assets, f.name)) continue;
-        for ([_][]const u8{ "skills", "item_icons", "hud_border" }) |baked| {
+        for ([_][]const u8{ "skills", "item_icons", "hud_border", "hud_life_frame", "hud_mana_frame" }) |baked| {
             if (std.mem.eql(u8, baked, f.name)) break;
         } else @compileError("Sprites." ++ f.name ++ " has no Assets field, so sync never loads it");
     }

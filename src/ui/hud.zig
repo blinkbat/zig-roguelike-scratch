@@ -12,10 +12,10 @@ const keywords = @import("keywords.zig");
 pub const WIDTH: i32 = 640;
 const HEIGHT: i32 = 180;
 pub const EDGE: i32 = 12;
-const BOTTOM: i32 = EDGE;
+const BOTTOM: i32 = EDGE - 8;
 pub const COVER: i32 = BOTTOM + HEIGHT;
 const ORB_R: i32 = 48;
-const FILL_INSET: i32 = 8;
+const FILL_INSET: i32 = 6;
 const FILL_R: i32 = ORB_R - FILL_INSET;
 const ORB_INSET: i32 = 60;
 const ORB_Y: i32 = 121;
@@ -28,23 +28,23 @@ const SHADOW_DROP: i32 = 3;
 const PLATE_SHADOW_GROW: i32 = 2;
 const ORB_SHADOW_DY: i32 = 4;
 const ORB_SHADOW_GROW: i32 = 2;
-const STATUS_Y: i32 = 4;
+const STATUS_Y: i32 = XP_Y - XP_PLATE_GAP - STATUS_PX;
 const PLATE_SHADOW_A: f32 = 0.25;
 const ORB_SHADOW_A: f32 = 0.6;
 const ORB_RIM: i32 = 2;
 const ORB_RING: i32 = 5;
 const WELL_RIM_W: i32 = 2;
+const FRAME_INNER_R: i32 = 47;
 const SURFACE_A: f32 = 0.8;
 const GLINT_AT = mathx.P{ .x = -20, .y = -24 };
 const GLINT_R = [2]f32{ 3, 6 };
 const GLINT_A: f32 = 0.16;
-const LABEL_RISE: i32 = font.SMALL + 3;
+const LABEL_RISE: i32 = font.SMALL + 16;
 const ICON_AT = mathx.P{ .x = 14, .y = 15 };
 const COUNT_INSET = mathx.P{ .x = 7, .y = 6 };
 
 comptime {
     std.debug.assert(STATUS_Y + STATUS_PX < PLATE_Y);
-    std.debug.assert(STATUS_Y + STATUS_PX < ORB_Y - ORB_R - LABEL_RISE);
     std.debug.assert(ORB_Y - ORB_R <= PLATE_Y and PLATE_Y + PLATE_H < ORB_Y + ORB_R);
     std.debug.assert(ORB_Y + ORB_R + ORB_SHADOW_DY + ORB_SHADOW_GROW <= HEIGHT);
 }
@@ -105,22 +105,32 @@ fn shadow(x: i32, y: i32, width: i32, height: i32) void {
 pub const LIFE = "Life";
 pub const MANA = "Mana";
 
-pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32, life_fill: f32, mana_fill: f32) void {
-    orb(face, layout.life, LIFE, hp, hp_max, life_fill, LIFE_CORE, LIFE_EDGE);
-    orb(face, layout.mana, MANA, mana, mana_max, mana_fill, MANA_CORE, MANA_EDGE);
+pub const Frame = struct { tex: ?rl.Texture2D, middle: mathx.P };
+
+pub const LIFE_FRAME_MIDDLE = mathx.P{ .x = 55, .y = 65 };
+pub const MANA_FRAME_MIDDLE = mathx.P{ .x = 52, .y = 64 };
+
+pub fn resources(layout: Layout, face: *const font.Face, life_frame: Frame, mana_frame: Frame, hp: i32, hp_max: i32, mana: i32, mana_max: i32, life_fill: f32, mana_fill: f32) void {
+    orb(face, layout.life, LIFE, life_frame, hp, hp_max, life_fill, LIFE_CORE, LIFE_EDGE);
+    orb(face, layout.mana, MANA, mana_frame, mana, mana_max, mana_fill, MANA_CORE, MANA_EDGE);
 }
 
 fn fillHeight(fill: f32) i32 {
     return @intFromFloat(@round(std.math.clamp(fill, 0, 1) * (FILL_R * 2)));
 }
 
-fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, max: i32, fill: f32, core: rl.Color, edge: rl.Color) void {
+fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, art: Frame, value: i32, max: i32, fill: f32, core: rl.Color, edge: rl.Color) void {
     const x = centre.x;
     const y = centre.y;
     rl.drawCircle(x, y + ORB_SHADOW_DY, ORB_R + ORB_SHADOW_GROW, look.fade(rl.Color.black, ORB_SHADOW_A));
-    rl.drawCircle(x, y, ORB_R, FRAME_DARK);
-    rl.drawCircle(x, y, ORB_R - ORB_RIM, FRAME);
-    rl.drawCircle(x, y, ORB_R - ORB_RING, FRAME_DARK);
+    if (art.tex) |tex| {
+        rl.drawCircle(x, y, FRAME_INNER_R, FRAME_DARK);
+        rl.drawTexture(tex, x - art.middle.x, y - art.middle.y, look.LIT);
+    } else {
+        rl.drawCircle(x, y, ORB_R, FRAME_DARK);
+        rl.drawCircle(x, y, ORB_R - ORB_RIM, FRAME);
+        rl.drawCircle(x, y, ORB_R - ORB_RING, FRAME_DARK);
+    }
     rl.drawCircle(x, y, FILL_R + WELL_RIM_W, WELL_RIM);
     rl.drawCircle(x, y, FILL_R, WELL);
     const filled = fillHeight(fill);
@@ -182,16 +192,20 @@ pub fn shownStatuses(status: std.EnumArray(fx.Status, u8), out: *Shown) []const 
 }
 
 pub fn statusBox(layout: Layout, count: usize, k: usize) rl.Rectangle {
-    const n: i32 = @intCast(count);
-    const x = layout.left + @divTrunc(WIDTH - n * (STATUS_PX + STATUS_GAP) + STATUS_GAP, 2) + @as(i32, @intCast(k)) * (STATUS_PX + STATUS_GAP);
-    return raster.rect(x, layout.top + STATUS_Y, STATUS_PX, STATUS_PX);
+    const step = STATUS_PX + STATUS_GAP;
+    const per_row: usize = @intCast(@max(1, @divTrunc(layout.skills_w + STATUS_GAP, step)));
+    const row = k / per_row;
+    const n: i32 = @intCast(@min(per_row, count - row * per_row));
+    const col: i32 = @intCast(k % per_row);
+    const x = layout.left + @divTrunc(WIDTH - n * step + STATUS_GAP, 2) + col * step;
+    return raster.rect(x, layout.top + STATUS_Y - @as(i32, @intCast(row)) * step, STATUS_PX, STATUS_PX);
 }
 
 pub fn orbBox(centre: mathx.P) rl.Rectangle {
     return raster.rect(centre.x - ORB_R, centre.y - ORB_R, 2 * ORB_R, 2 * ORB_R);
 }
 
-pub fn statuses(layout: Layout, sprites: *const sprite.Sprites, face: *const font.Face, status: std.EnumArray(fx.Status, u8), resistance: u8) void {
+pub fn statuses(layout: Layout, face: *const font.Face, status: std.EnumArray(fx.Status, u8), resistance: u8) void {
     var buf_shown: Shown = undefined;
     const shown = shownStatuses(status, &buf_shown);
     for (shown, 0..) |s, k| {
@@ -199,7 +213,7 @@ pub fn statuses(layout: Layout, sprites: *const sprite.Sprites, face: *const fon
         const box = statusBox(layout, shown.len, k);
         const x = raster.left(box);
         const y = raster.top(box);
-        sprite.backingIn(sprites, box);
+        menu.boxed(box, look.backingAt(.hud), look.BORDER);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         if (s == .resistant) {
             raster.meter(x + RESIST_INSET, y + STATUS_PX - RESIST_RISE, RESIST_W, RESIST_H, resistance, mathx.PERCENT, look.EDGE, look.UI_GOLD);
@@ -235,7 +249,7 @@ pub fn focus(box: rl.Rectangle, round: bool) void {
 }
 
 pub fn focusGrown(box: rl.Rectangle, grow: f32) void {
-    rl.drawRectangleLinesEx(raster.grown(box, grow), FOCUS_W, look.UI_FOCUS);
+    menu.border(raster.grown(box, grow), look.UI_FOCUS);
 }
 
 const TIP_SEP = font.TABLE_SEP;

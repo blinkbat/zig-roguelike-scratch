@@ -508,8 +508,8 @@ pub const Editor = struct {
     pub fn select(ed: *Editor, n: usize) void {
         if (ed.renaming) ed.commitRename();
         ed.drop();
+        if (n != ed.node) ed.scene.invalidate();
         ed.node = n;
-        ed.scene.invalidate();
         ed.enterNode();
     }
 

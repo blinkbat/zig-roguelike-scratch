@@ -608,7 +608,7 @@ pub fn drawMirrors(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.
     return g.sprites.endMirror(g.framebuffer);
 }
 
-pub fn drawMap(g: *game.Game) void {
+pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     const lens_outer = g.framebuffer;
     const lens_active = g.cinema.lens.begin(g.screen, lens_outer);
     if (lens_active) g.framebuffer = g.cinema.lens.scene.?.id;
@@ -617,7 +617,6 @@ pub fn drawMap(g: *game.Game) void {
         g.framebuffer = lens_outer;
     };
     g.light.composed = g.cinema.options.composed_lighting;
-    const ground = g.pic.groundShown(&g.sim);
     effectLights(g, ground);
     const c = Cam.of(g);
     const view = viewBox(g, c);
@@ -654,7 +653,8 @@ pub fn drawMap(g: *game.Game) void {
     g.light.bake(ground, lo, hi);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;
     const flames = g.light.flames(ground, &flame_buf);
-    g.cinema.prepare(ground, g.light, view, flames, &g.sim.locations, if (g.debug.visuals.weather) g.pic.local_weather_shown else climate.CALM);
+    g.weather_blend.follow(&g.sim.locations);
+    g.cinema.prepare(ground, g.light, view, flames, &g.weather_blend, if (g.debug.visuals.weather) g.pic.local_weather_shown else climate.CALM);
     const outer = g.framebuffer;
     const blooming = g.cinema.beginScene(g.screen, outer);
     if (blooming) g.framebuffer = g.cinema.scene.?.id;
@@ -744,9 +744,12 @@ pub fn drawMap(g: *game.Game) void {
         const l = if (body) |k| look.body(k) else look.NPC;
         drawFigure(g, tex, l, f.s, false, f.mid, &f.shine, 0, cell.alpha);
     }
-    std.sort.insertion(Shown, bodies, {}, struct {
-        fn less(_: void, a: Shown, b: Shown) bool {
-            return a.mid[1] < b.mid[1];
+    var order_buf: [actor.MAX]u8 = undefined;
+    const order = order_buf[0..n];
+    for (order, 0..) |*o_i, i| o_i.* = @intCast(i);
+    std.sort.insertion(u8, order, bodies, struct {
+        fn less(all: []const Shown, a: u8, b: u8) bool {
+            return all[a].mid[1] < all[b].mid[1];
         }
     }.less);
     if (burnt) |old| drawBurntStanding(g, c, old, true);
@@ -757,9 +760,9 @@ pub fn drawMap(g: *game.Game) void {
         const kind = ground.at(p);
         if (!look.occludes(kind) or !footprintSeen(g, p, kind)) continue;
         const depth = mathx.centre(p)[1];
-        while (next_body < bodies.len and bodies[next_body].mid[1] <= depth) : (next_body += 1) {
+        while (next_body < order.len and bodies[order[next_body]].mid[1] <= depth) : (next_body += 1) {
             run.end();
-            drawStandingBody(g, &bodies[next_body]);
+            drawStandingBody(g, &bodies[order[next_body]]);
         }
         drawOccluder(g, c, ground, p, kind, &run);
         if (flamesSeen(g, p)) {
@@ -768,12 +771,12 @@ pub fn drawMap(g: *game.Game) void {
         }
     }
     run.end();
-    for (bodies[next_body..]) |*b| drawStandingBody(g, b);
+    for (order[next_body..]) |i| drawStandingBody(g, &bodies[i]);
 
     drawTorches(g, c, flames);
     g.pic.fx.drawGlow(ground, &g.light.visibility.sight, o[0], o[1], game.CELL_F);
     if (level_up_at) |at| g.pic.fx.level_up.drawSparks(at, o[0], o[1], game.CELL_F);
-    if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), g.pic.local_weather_shown, &g.sim.locations, &g.light.visibility.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
+    if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), g.pic.local_weather_shown, &g.weather_blend, &g.light.visibility.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
 
     if (g.pic.shot) |s| if (s.started()) drawShot(g, s, c);
     for (&g.pic.foe_shots) |*pending| {
@@ -791,7 +794,8 @@ pub fn drawMap(g: *game.Game) void {
         g.framebuffer = outer;
     }
 
-    for (bodies) |*b| {
+    for (order) |i| {
+        const b = &bodies[i];
         if (b.pic.kind.hero() or b.pic.down()) continue;
         const x_bar = b.s.x + BODY_BAR_INSET;
         const y_bar = b.s.y + game.CELL - BODY_BAR_H - BODY_BAR_LIFT;
@@ -807,7 +811,8 @@ pub fn drawMap(g: *game.Game) void {
     if (aim_from != null) outline(c, g.mode.aim.mark, if (aim_legal) look.RETICLE else look.RETICLE_BLOCKED);
     if (game.playShown(g) and g.st.lean) drawLean(g, c, ground, &stood);
 
-    for (bodies) |*b| {
+    for (order) |i| {
+        const b = &bodies[i];
         g.pic.fx.drawSpeech(&g.face, b.slot, b.lifted.x, b.lifted.y, game.CELL_F, b.shine.sight * b.sighted);
     }
     if (level_up_at) |at| g.pic.fx.level_up.drawText(at, &g.face, o[0], o[1], game.CELL_F);
@@ -1180,14 +1185,13 @@ fn miniDot(o: P, p: P, grow: i32, col: rl.Color) void {
     rl.drawRectangleRec(raster.grown(raster.rect(o.x + p.x * MINI, o.y + p.y * MINI, MINI, MINI), @floatFromInt(grow)), col);
 }
 
-pub fn drawMinimap(g: *game.Game) void {
+pub fn drawMinimap(g: *game.Game, ground: *const grid.Level) void {
     const o = miniOrigin(g.screen.x);
     const map = miniBox(g.screen.x);
     sprite.hudPanelIn(&g.sprites, miniFrame(g.screen.x), look.MINI_BG, look.LIT);
     if (g.mini.tex) |t| {
         const pictured = g.pic.pictureKey();
         if (g.mini.stale or g.mini.fading or !std.meta.eql(pictured, g.mini.pictured)) {
-            const ground = g.pic.groundShown(&g.sim);
             g.mini.fading = false;
             for (&g.mini.px, &ground.tile, &ground.seen, &ground.lit, &g.light.visibility.memory, &g.light.visibility.sight) |*c, tile, seen, lit, memory, sight| {
                 c.* = look.fade(look.mixed(look.mini(tile, false), look.mini(tile, true), sight), memory);

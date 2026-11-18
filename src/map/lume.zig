@@ -72,7 +72,7 @@ pub fn see(lv: *grid.Level, viewer: P, sight: i32, sky: f32, carried: []const So
     const was = lv.seen;
     fov.cast(lv, viewer, sight);
     var lit_by: [grid.CELLS]bool = undefined;
-    pools(lv, viewer, sight, carried, &lit_by);
+    if (sky < @as(f32, @floatFromInt(sight))) pools(lv, viewer, sight, carried, &lit_by) else @memset(&lit_by, false);
     dim(lv, viewer, sky, &lit_by, &was);
 }
 

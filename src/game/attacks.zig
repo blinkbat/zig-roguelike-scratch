@@ -193,8 +193,12 @@ pub fn opportune(sim: *const Simulation, a: *const actor.Actor) i32 {
 
 /// What `resolve` deals `target` past armour for a blow carrying `applied`, spending nothing.
 pub fn dealt(sim: *const Simulation, target: *const actor.Actor, dmg: i32, applied: ?resilience.Kind) i32 {
+    return dealtWith(sim, target, opportune(sim, target), dmg, applied);
+}
+
+fn dealtWith(sim: *const Simulation, target: *const actor.Actor, opportunity: i32, dmg: i32, applied: ?resilience.Kind) i32 {
     var s = target.shock;
-    return blowOn(heroWeak(sim), opportune(sim, target), &s, dmg, applied);
+    return blowOn(heroWeak(sim), opportunity, &s, dmg, applied);
 }
 
 pub fn foeRoll(rng: *mathx.Rng, attacker: terrain.Stats, defender: terrain.Stats, s: actor.Strike) ?i32 {
@@ -331,8 +335,8 @@ fn leeched(sim: *Simulation, dmg: i32) i32 {
 
 pub const Chosen = struct { roll: Roll, takes: bool };
 
-fn survives(sim: *const Simulation, a: *const actor.Actor, dmg: i32, ailment: resilience.Kind) bool {
-    const d = dealt(sim, a, dmg, ailment);
+fn survives(sim: *const Simulation, a: *const actor.Actor, opportunity: i32, dmg: i32, ailment: resilience.Kind) bool {
+    const d = dealtWith(sim, a, opportunity, dmg, ailment);
     return d > 0 and d < a.hp;
 }
 
@@ -344,7 +348,7 @@ pub fn chosenBlow(sim: *Simulation, target: *actor.Actor, raw: Roll, comptime ac
     roll.opportunity = opportune(sim, target);
     var takes = false;
     if (comptime act.afflicts()) {
-        const can_afflict = through and survives(sim, target, roll.burnt(stats.elements).dmg, M.AILMENT);
+        const can_afflict = through and survives(sim, target, roll.opportunity.?, roll.burnt(stats.elements).dmg, M.AILMENT);
         takes = afflicted(sim, target, M, can_afflict, resist);
         if (takes) roll.applied = M.AILMENT;
     }

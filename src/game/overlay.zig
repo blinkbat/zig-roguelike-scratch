@@ -35,7 +35,6 @@ const plural = mathx.plural;
 const SLOT_MID: i32 = @divTrunc(game.SLOT_PX, 2);
 const CLEAR_GLYPH: i32 = @divTrunc(game.SLOT_PX, 2);
 const SLOT_EDGE_INSET: i32 = sprite.HUD_BORDER_CUT - 3;
-const SLOT_EDGE_W: f32 = 2;
 const BIND_TOP: i32 = menu.PANEL_PAD;
 const BIND_X0: i32 = @divTrunc(BIND_W - game.SKILLS_W, 2);
 const BIND_TITLE: i32 = 32;
@@ -124,7 +123,7 @@ fn drawSlot(g: *game.Game, box: rl.Rectangle, s: SlotLook) void {
     const a: f32 = if (s.faded) look.FADED_A else 1;
     sprite.hudPanelIn(&g.sprites, box, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a), look.fade(look.LIT, a));
     if (s.edge) |edge| {
-        rl.drawRectangleLinesEx(raster.grown(box, @floatFromInt(-SLOT_EDGE_INSET)), SLOT_EDGE_W, look.fade(edge, a));
+        menu.border(raster.grown(box, @floatFromInt(-SLOT_EDGE_INSET)), look.fade(edge, a));
     }
     if (s.act) |act| {
         const inset = @divTrunc(game.SLOT_PX - line_icons.SKILL_PX, 2);
@@ -208,7 +207,7 @@ pub fn bindPicker(b: binds.Binds, picks: usize) BindPicker {
 
 pub fn drawBinds(g: *game.Game) void {
     game.character.veil(g);
-    const panel = bindPanel(g);
+    const panel = g.binds.panel;
     const desc_face = bindFace(g);
     const surface = bindSurface(g, panel);
     surface.beginPanel(&g.sprites, panel);
@@ -287,10 +286,10 @@ pub fn drawHud(g: *game.Game) void {
     const layout = hudLayout(g);
     hud.frame(layout, &g.sprites);
     const life = g.pic.lifeShown(&g.sim);
-    hud.resources(layout, &g.face, life.hp, life.max, g.pic.manaShown(&g.sim), g.sim.manaMax(), g.pic.life_fill, g.pic.mana_fill);
+    hud.resources(layout, &g.face, .{ .tex = g.sprites.hud_life_frame, .middle = hud.LIFE_FRAME_MIDDLE }, .{ .tex = g.sprites.hud_mana_frame, .middle = hud.MANA_FRAME_MIDDLE }, life.hp, life.max, g.pic.manaShown(&g.sim), g.sim.manaMax(), g.pic.life_fill, g.pic.mana_fill);
     drawSkills(g, layout);
     hud.experience(layout, g.pic.xp_shown - @floor(g.pic.xp_shown));
-    if (g.pic.heroShown(&g.sim)) |h| hud.statuses(layout, &g.sprites, &g.face, h.status, @intCast(h.resilience.peak().percent));
+    if (g.pic.heroShown(&g.sim)) |h| hud.statuses(layout, &g.face, h.status, @intCast(h.resilience.peak().percent));
     game.mouseControls.draw(g);
 }
 

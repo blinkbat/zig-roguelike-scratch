@@ -81,7 +81,7 @@ const CAPTION_STEP: i32 = font.SMALL_LINE + 1;
 const NEXT_GAP: i32 = 8;
 const BACK = look.rgb(0x0c0e12);
 const TILE = look.rgb(0x15171c);
-const BORDER = look.rgb(0x34373d);
+const BORDER = look.BORDER;
 const LOCKED = look.rgb(0x9698a3);
 const AVAILABLE = look.rgb(0xbcc9ba);
 const OWNED = look.UI_GOLD;
@@ -177,9 +177,10 @@ fn backdrop(box: rl.Rectangle) void {
     menu.boxed(box, BACK, BORDER);
 }
 
-fn button(face: *const font.Face, box: rl.Rectangle, label: [:0]const u8, enabled: bool, on_width: f32, on_ink: rl.Color) void {
+fn button(face: *const font.Face, box: rl.Rectangle, label: [:0]const u8, enabled: bool, on_ink: rl.Color, small: bool) void {
     rl.drawRectangleRec(box, TILE);
-    rl.drawRectangleLinesEx(box, if (enabled) on_width else 1, if (enabled) on_ink else BORDER);
+    const ink = if (enabled) on_ink else BORDER;
+    if (small) menu.hairline(box, ink) else menu.border(box, ink);
     const mid = raster.middleAt(box);
     face.centred(label, mid.x, mid.y, font.BODY, if (enabled) look.TEXT else LOCKED);
 }
@@ -259,11 +260,11 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         const mid = raster.middleAt(box);
         const ink = skillInk(class, growth, s);
         rl.drawRectangleRec(box, TILE);
-        rl.drawRectangleLinesEx(box, 2, ink);
+        menu.border(box, ink);
         if (i == cursor and view.focused) hud.focusGrown(box, FOCUS_GROW);
         line_icons.drawSkill(sprites, s.act, mid.x - line_icons.SKILL_PX / 2, mid.y - line_icons.SKILL_PX / 2, skillAlpha(class, growth, s));
         const plaque = raster.rect(mid.x + PLAQUE_AT.x, mid.y + PLAQUE_AT.y, PLAQUE_W, PLAQUE_H);
-        menu.boxed(plaque, BACK, ink);
+        menu.boxedSmall(plaque, BACK, ink);
         var rank: menu.Note(16) = .{};
         if (progress.basic(s.act)) rank.say("Basic", .{}) else rank.say("{d}/{d}", .{ growth.ranks.get(s.act), progress.rankLimit(s.act) });
         const pm = raster.middleAt(plaque);
@@ -285,7 +286,7 @@ fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Ski
 }
 
 fn drawAction(face: *const font.Face, label: [:0]const u8, enabled: bool) void {
-    button(face, actionBox(), label, enabled, 2, OWNED);
+    button(face, actionBox(), label, enabled, OWNED, false);
 }
 
 const Hit = progress.Hit;
@@ -322,7 +323,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     s.act.describe(desc.writer(), loadout.gear.draughtsOver(growth.perks()), s.act.reachWith(loadout.gear.bounding()));
     const end = paragraph(face, desc.text(), x, DESC_Y, TEXT_W, look.TEXT);
     var top: i32 = @max(RULE_MIN_Y, end + RULE_GAP);
-    rl.drawLine(x, top, x + TEXT_W, top, BORDER);
+    menu.edgeRule(x, top, TEXT_W);
     top += RULE_GAP;
     face.draw(if (progress.basic(s.act)) "ATTACK" else if (learned) "CURRENT RANK" else "FIRST RANK", x, top, font.SMALL, look.DIM);
     top += CAPTION_STEP;
@@ -535,7 +536,7 @@ const Positions = [passives.N]rl.Vector2;
 
 fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progress.State, view: View, surface: menu.Surface, device: input.Device) void {
     backdrop(CANVAS);
-    rl.drawLine(raster.left(DETAIL), DETAIL_TOP, raster.left(DETAIL), CANVAS_BOTTOM, BORDER);
+    menu.edgeColumn(raster.left(DETAIL), DETAIL_TOP, CANVAS_BOTTOM);
     drawPoints(face, growth.passive_points, false);
     const layout = wheelLayout(view);
     var pos: Positions = undefined;
@@ -572,7 +573,7 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
     rl.endScissorMode();
     for ([_]bool{ false, true }) |increase| {
         const enabled = if (increase) view.zoom < ZOOM_MAX else view.zoom > ZOOM_MIN;
-        button(face, zoomBox(increase), if (increase) "+" else "-", enabled, 1, AVAILABLE);
+        button(face, zoomBox(increase), if (increase) "+" else "-", enabled, AVAILABLE, true);
     }
     menu.action(face, overviewBox(), overviewPrompt(device), OVERVIEW);
     passiveDetails(face, class, growth, view.cursor);

@@ -18,6 +18,7 @@ pub const Binds = struct {
     col: usize = 0,
     menu: Menu = .browse,
     assigning: ?skillbar.Act = null,
+    panel: P = .{ .x = 0, .y = 0 },
 
     pub const Menu = union(enum) { browse, pick: usize };
 
@@ -67,6 +68,7 @@ pub fn pickStep(i: usize, d: P, n: usize) usize {
 pub fn openBinds(g: *game.Game) void {
     g.binds.menu = .browse;
     g.binds.assigning = null;
+    g.binds.panel = overlay.bindPanel(g);
     g.mode = .bind;
 }
 
@@ -81,7 +83,7 @@ pub fn bindStep(g: *game.Game) void {
     var kit_buf: skillbar.KitBuf = undefined;
     const kit = g.sim.growth.kit(g.sim.class, &kit_buf);
     if (state.pointing()) if (state.pointer) |pointer| {
-        const panel = overlay.bindPanel(g);
+        const panel = b.panel;
         const p = overlay.bindSurface(g, panel).point(pointer);
         for (overlay.BIND_ACTIONS, 0..) |action, i| {
             if (!action.shown(b)) continue;

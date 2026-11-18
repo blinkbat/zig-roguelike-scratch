@@ -115,10 +115,12 @@ pub fn fill(ed: *Editor, p: P, second: bool) void {
     const npc_before = ed.map.script.npc_n;
     var spread = grid.Spread(Same, Same.has){ .ctx = .{ .tile = &b.tile, .was = from }, .steps = &mathx.CARDINALS, .seen = &seen, .queue = &queue };
     spread.seed(p);
+    var touched = false;
     while (spread.next()) |here| {
         if (ed.doorAt(here) == null) filled += 1;
-        paintTile(ed, here, to);
+        if (paintInto(ed.here(), b, here, to)) touched = true;
     }
+    if (touched) ed.changed();
     const npc_went = ed.map.script.npc_n < npc_before;
     ed.say("Filled {d} cells of {s} with {s}{s}", .{ filled, @tagName(from), @tagName(to), if (npc_went) "; NPCs standing there went" else "" });
 }
@@ -207,10 +209,14 @@ fn putBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) bool {
 }
 
 fn takeBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) void {
+    if (barrelTaken(b, p)) ed.changed();
+}
+
+fn barrelTaken(b: *atlas.Bespoke, p: P) bool {
     const i = grid.Level.idx(p);
-    if (!b.barrel[i]) return;
+    if (!b.barrel[i]) return false;
     b.barrel[i] = false;
-    ed.changed();
+    return true;
 }
 
 fn takeTorch(ed: *Editor, b: *atlas.Bespoke, p: P) void {
@@ -218,8 +224,12 @@ fn takeTorch(ed: *Editor, b: *atlas.Bespoke, p: P) void {
 }
 
 fn takeFoe(ed: *Editor, b: *atlas.Bespoke, p: P) void {
-    b.dropFoe(b.foeAt(p) orelse return);
-    ed.changed();
+    if (foeTaken(b, p)) ed.changed();
+}
+
+fn foeTaken(b: *atlas.Bespoke, p: P) bool {
+    b.dropFoe(b.foeAt(p) orelse return false);
+    return true;
 }
 
 fn takeNpc(ed: *Editor, p: P) void {
@@ -355,12 +365,14 @@ pub fn clearSelection(ed: *Editor) void {
     }
     if (ed.map.script.dropNpcsWhere(standing)) ed.changed();
     cells = s.cells();
+    var touched = false;
     while (cells.next()) |p| {
-        takeBarrel(ed, b, p);
-        takeTorch(ed, b, p);
-        takeFoe(ed, b, p);
-        paintTile(ed, p, ed.ink.get(.second));
+        if (barrelTaken(b, p)) touched = true;
+        if (b.torch.remove(p)) touched = true;
+        if (foeTaken(b, p)) touched = true;
+        if (paintInto(ed.here(), b, p, ed.ink.get(.second))) touched = true;
     }
+    if (touched) ed.changed();
     ed.say("Cleared to {s}", .{@tagName(ed.ink.get(.second))});
 }
 

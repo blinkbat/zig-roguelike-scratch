@@ -155,7 +155,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const dx = x + widgets.PAD + grid_w + widgets.PAD;
     var dy = y;
     seenPicture(g, s, raster.rect(dx, dy, VIEW_BIG, VIEW_BIG));
-    rl.drawRectangleLines(dx, dy, VIEW_BIG, VIEW_BIG, look.EDGE);
+    menu.border(raster.rect(dx, dy, VIEW_BIG, VIEW_BIG), look.BORDER);
     dy += VIEW_BIG + widgets.PAD;
     widgets.textFace(&g.face).draw(seenName(s), dx, dy, TITLE, look.TEXT);
     dy += TITLE + widgets.GAP;

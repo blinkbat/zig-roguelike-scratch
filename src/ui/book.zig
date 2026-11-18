@@ -706,7 +706,7 @@ fn pageStep(st: *const input.State) ?i32 {
 }
 
 fn divider(top: i32, foot: i32) void {
-    rl.drawLine(layout.DIVIDER_X, top, layout.DIVIDER_X, foot, look.EDGE);
+    menu.edgeColumn(layout.DIVIDER_X, top, foot);
 }
 fn header(face: *const font.Face, text: [:0]const u8) void {
     face.engraved(text, layout.LIST_X, font.Face.topFor(layout.HEADER_MID, font.HEAD), font.HEAD, look.TEXT);

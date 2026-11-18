@@ -199,7 +199,7 @@ pub const State = struct {
         }
         self.hover = i;
         const link = self.links[i];
-        rl.drawRectangleLinesEx(raster.grown(link.box, HIT_SLOP), 1, look.UI_FOCUS);
+        menu.hairline(raster.grown(link.box, HIT_SLOP), look.UI_FOCUS);
         var wrapped: font.Wrapped = undefined;
         var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
         const width = @min(WIDTH, screen.x - 2 * MARGIN);

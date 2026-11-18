@@ -157,6 +157,10 @@ pub const FLASH_RGB = [3]f32{ 0.88, 0.38, 0.30 };
 pub const MEMORY_LIGHT = rgb(0x2b2f4e);
 const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
+/// The painted `hud-border.png` rail's gold.
+pub const BORDER = rgb(0x908058);
+pub const BORDER_W: f32 = 2;
+pub const HAIRLINE_W: f32 = 1;
 pub const UI_GOLD = rgb(0xbca06b);
 pub const UI_FOCUS = rgb(0xd0b581);
 pub const LOSS = rgb(0xe18c83);

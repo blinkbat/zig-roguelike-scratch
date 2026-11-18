@@ -164,7 +164,7 @@ pub const SeenCell = struct {
 /// When each `Presentation` field is reset, every field in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
-    pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "sight_held", "lit_kindled", "tiles", "embers", "burnt", "busy", "lead", "bolt_lands", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
+    pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "sight_held", "lit_kindled", "tiles", "embers", "embers_lit", "burnt", "busy", "lead", "bolt_lands", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
     pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
     pub const facing = [_][]const u8{"facing"};
     pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "seen_bodies", "seen_cells", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown", "local_weather_shown" };
@@ -211,6 +211,7 @@ pub const Presentation = struct {
     flames_shown: [grid.CELLS]u8 = @splat(0),
     tiles_drawn: [grid.CELLS]grid.Tile = @splat(.floor),
     embers: [grid.CELLS]f32 = @splat(0),
+    embers_lit: bool = false,
     burnt: [grid.CELLS]?grid.Tile = @splat(null),
     barrier_shown: [grid.CELLS]u8 = @splat(0),
     caltrops_shown: @FieldType(grid.Level, "caltrops") = @splat(.{}),
@@ -725,6 +726,7 @@ pub const Presentation = struct {
 
     /// Null while no tile is still fading from a fire.
     pub fn burntShown(self: *Presentation, ground: *const grid.Level) ?*const grid.Level {
+        if (!self.embers_lit) return null;
         self.burnt_box = (grid.boundsWhere(@as(*const Presentation, self), burntAt) orelse return null).grown(1);
         self.burnt_ground = ground.*;
         for (&self.burnt_ground.tile, 0..) |*t, i| if (self.fadingBurnt(i)) |was| {
@@ -741,6 +743,7 @@ pub const Presentation = struct {
         for (&self.flames_shown, &lv.flames, &self.tiles_drawn, &lv.tile, 0..) |was, now, before, after, i| {
             if (was == 0 or now > 0) continue;
             self.embers[i] = EMBER_S;
+            self.embers_lit = true;
             self.burnt[i] = if (before != after and fire.burntDown(before, after)) before else null;
         }
     }
@@ -864,7 +867,7 @@ pub const Presentation = struct {
     pub fn easeOver(self: *Presentation, sim: *const Simulation, ground: *const grid.Level, dt: f32) void {
         self.stepOcclusion(sim, &ground.tile, dt);
         self.stepSighted(sim, dt);
-        self.stepSeenCells(sim, mathx.easing(dt, visibility.REVEAL));
+        self.stepSeenCells(sim, &ground.lit, mathx.easing(dt, visibility.REVEAL));
         self.hour_shown = day.wrapHour(self.hour_shown + day.toward(self.hour_shown, sim.clock.hour()) * mathx.easing(dt, HOUR_EASE));
         self.weather_shown = climate.eased(self.weather_shown, sim.weatherHere(), mathx.easing(dt, WEATHER_EASE));
         const local_weather = sim.localWeather();
@@ -908,18 +911,16 @@ pub const Presentation = struct {
 
     pub fn snapSight(self: *Presentation, sim: *const Simulation) void {
         self.stepSighted(sim, 1);
-        self.stepSeenCells(sim, 1);
+        self.stepSeenCells(sim, &self.groundShown(sim).lit, 1);
     }
 
-    fn stepSeenCells(self: *Presentation, sim: *const Simulation, k: f32) void {
-        for (&self.seen_cells, 0..) |*v, i| {
-            const p = grid.Level.of(i);
-            const visible = self.litShown(sim, p);
+    fn stepSeenCells(self: *Presentation, sim: *const Simulation, lit: *const [grid.CELLS]bool, k: f32) void {
+        for (&self.seen_cells, lit, &self.npc_shown, 0..) |*v, visible, npc, i| {
             v.alpha = mathx.easeTo(v.alpha, visible, k);
             if (!visible) continue;
             v.bag = false;
             v.coins = 0;
-            v.npc = self.npcShown(p);
+            v.npc = if (npc == grid.NO_NPC) null else npc - 1;
             v.flame = if (self.flamesShown(i)) 1 else self.ember(i);
             v.barrier = self.barrier_shown[i] > 0;
             v.caltrops = self.caltrops_shown[i].turns > 0;
@@ -952,6 +953,7 @@ pub const Presentation = struct {
         }
         const k = mathx.easing(dt, OCCLUSION_EASE);
         for (tiles, &self.occlusion, 0..) |t, *hidden, i| {
+            if (hidden.* == 0 and !covered.isSet(i)) continue;
             hidden.* = if (look.occludes(t)) mathx.easeTo(hidden.*, covered.isSet(i), k) else 0;
         }
     }
@@ -974,9 +976,16 @@ pub const Presentation = struct {
         if (self.bursting) |*b| b.left -= dt;
         self.sight_held.tick(dt);
         self.tiles.tick(dt);
-        for (&self.embers) |*e| e.* = @max(0, e.* - dt);
+        if (self.embers_lit) {
+            var lit = false;
+            for (&self.embers) |*e| {
+                e.* = @max(0, e.* - dt);
+                lit = lit or e.* > 0;
+            }
+            self.embers_lit = lit;
+        }
         if (!self.tiles.on()) {
-            self.goneOut(&sim.lv);
+            if (!std.mem.allEqual(u8, &self.flames_shown, 0)) self.goneOut(&sim.lv);
             self.showLaid(&sim.lv);
         }
         for (self.glide[0..sim.pool.n]) |*gl| gl.t += dt;

@@ -144,7 +144,7 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
     for (l.rows[0..l.row_n], v.choices[0..l.row_n], 0..) |r, label, i| {
         if (r.height == 0) continue;
         const on = i == v.cursor;
-        menu.boxed(r, look.fade(if (on) look.UI_GOLD else look.BG, if (on) ROW_ON_A else ROW_OFF_A), look.fade(if (on) look.UI_GOLD else look.EDGE, ROW_EDGE_A));
+        menu.boxedSmall(r, look.fade(if (on) look.UI_GOLD else look.BG, if (on) ROW_ON_A else ROW_OFF_A), look.fade(if (on) look.UI_GOLD else look.EDGE, ROW_EDGE_A));
         if (on) rl.drawRectangle(raster.left(r), raster.top(r), ROW_BAR_W, raster.height(r), look.UI_GOLD);
         face.text(std.fmt.bufPrintZ(&buf, "{d}.", .{i + 1}) catch "", l.text_x, raster.top(r) + ROW_RISE, BODY, look.UI_GOLD);
         drawPassage(face, label, l.text_x + NUMBER_W, l.text_w - NUMBER_W, l.starts[i], l, if (on) look.UI_FOCUS else look.TEXT);
@@ -204,7 +204,7 @@ fn nextLine(face: anytype, body: []const u8, offset: *usize, w: i32, buf: *[font
 }
 
 fn drawFigure(face: *const font.Face, r: rl.Rectangle, f: Figure) void {
-    menu.boxed(r, look.fade(look.BG, FIGURE_WELL_A), look.EDGE);
+    menu.boxed(r, look.fade(look.BG, FIGURE_WELL_A), look.BORDER);
     const inner = FIGURE_BOX - 2 * FIGURE_INSET;
     const t = f.tex orelse {
         const m = raster.middleAt(r);

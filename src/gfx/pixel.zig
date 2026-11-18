@@ -192,6 +192,65 @@ pub fn line(a: rl.Vector2, b: rl.Vector2, width: f32, scale: f32, col: rl.Color)
     trace(a, b, width, scale, Filler{ .col = col });
 }
 
+/// The quads `rl.drawRectangle` would draw, in one session: nothing else may draw until `end`.
+pub const Quads = struct {
+    u0: f32,
+    v0: f32,
+    u1: f32,
+    v1: f32,
+
+    pub fn begin() Quads {
+        const tex = rl.getShapesTexture();
+        const r = rl.getShapesTextureRectangle();
+        const w: f32 = @floatFromInt(tex.width);
+        const h: f32 = @floatFromInt(tex.height);
+        rl.gl.rlSetTexture(tex.id);
+        rl.gl.rlBegin(rl.gl.rl_quads);
+        rl.gl.rlNormal3f(0, 0, 1);
+        return .{ .u0 = r.x / w, .v0 = r.y / h, .u1 = (r.x + r.width) / w, .v1 = (r.y + r.height) / h };
+    }
+
+    pub fn end(_: Quads) void {
+        rl.gl.rlEnd();
+        rl.gl.rlSetTexture(0);
+    }
+
+    fn put(q: Quads, b: Box, col: rl.Color) void {
+        if (b.w <= 0 or b.h <= 0 or col.a == 0) return;
+        const x: f32 = @floatFromInt(b.x);
+        const y: f32 = @floatFromInt(b.y);
+        const w: f32 = @floatFromInt(b.w);
+        const h: f32 = @floatFromInt(b.h);
+        rl.gl.rlColor4ub(col.r, col.g, col.b, col.a);
+        rl.gl.rlTexCoord2f(q.u0, q.v0);
+        rl.gl.rlVertex2f(x, y);
+        rl.gl.rlTexCoord2f(q.u0, q.v1);
+        rl.gl.rlVertex2f(x, y + h);
+        rl.gl.rlTexCoord2f(q.u1, q.v1);
+        rl.gl.rlVertex2f(x + w, y + h);
+        rl.gl.rlTexCoord2f(q.u1, q.v0);
+        rl.gl.rlVertex2f(x + w, y);
+    }
+
+    const Sink = struct {
+        q: Quads,
+        col: rl.Color,
+
+        fn put(s: Sink, b: Box) void {
+            s.q.put(b, s.col);
+        }
+    };
+
+    pub fn line(q: Quads, a: rl.Vector2, b: rl.Vector2, width: f32, scale: f32, col: rl.Color) void {
+        if (col.a == 0) return;
+        trace(a, b, width, scale, Sink{ .q = q, .col = col });
+    }
+
+    pub fn rect(q: Quads, at: rl.Vector2, w: f32, h: f32, scale: f32, col: rl.Color) void {
+        q.put(boxOf(at, w, h, scale), col);
+    }
+};
+
 pub fn bend(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, width: f32, scale: f32, col: rl.Color) void {
     line(a, b, width, scale, col);
     line(b, c, width, scale, col);

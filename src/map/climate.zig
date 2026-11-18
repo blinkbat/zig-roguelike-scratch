@@ -64,6 +64,100 @@ pub fn placeAt(field: *const Field, p: mathx.P) Location {
     return grid.cellOr(Location, field, p, .inland);
 }
 
+const BLEND_R: usize = 3;
+const BLEND_PASSES = 2;
+const COLS: usize = grid.W;
+const ROWS: usize = grid.H;
+
+pub const Blend = struct {
+    of: Field = @splat(.inland),
+    weight: std.EnumArray(Location, [grid.CELLS]f32) = .init(.{ .inland = @splat(1), .coast = @splat(0), .forest = @splat(0) }),
+    scratch: [grid.CELLS]f32 = undefined,
+
+    pub fn follow(self: *Blend, field: *const Field) void {
+        if (std.mem.eql(Location, &self.of, field)) return;
+        self.of = field.*;
+        for (std.enums.values(Location)) |place| {
+            const w = self.weight.getPtr(place);
+            for (w, field) |*v, f| v.* = if (f == place) 1 else 0;
+            for (0..BLEND_PASSES) |_| {
+                blurAlong(w, &self.scratch, 1, COLS);
+                blurAlong(&self.scratch, w, COLS, ROWS);
+            }
+        }
+    }
+
+    fn blurAlong(from: *const [grid.CELLS]f32, to: *[grid.CELLS]f32, stride: usize, n: usize) void {
+        const lines = grid.CELLS / n;
+        const across: usize = if (stride == 1) COLS else 1;
+        const k: f32 = 1 / @as(f32, @floatFromInt(2 * BLEND_R + 1));
+        for (0..lines) |line| {
+            const base = line * across;
+            for (0..n) |i| {
+                var sum: f32 = 0;
+                for (0..2 * BLEND_R + 1) |d| {
+                    const j = std.math.clamp(@as(isize, @intCast(i + d)) - @as(isize, BLEND_R), 0, @as(isize, @intCast(n - 1)));
+                    sum += from[base + @as(usize, @intCast(j)) * stride];
+                }
+                to[base + i * stride] = sum * k;
+            }
+        }
+    }
+
+    pub fn cell(self: *const Blend, weather: Local, i: usize) Now {
+        var result = Now.initFill(0);
+        for (std.enums.values(Location)) |place| addShare(&result, weather.get(place), self.weight.getPtrConst(place)[i]);
+        return result;
+    }
+
+    /// `at` in cells, a cell spanning [p, p + 1).
+    pub fn at(self: *const Blend, weather: Local, c: [2]f32) Now {
+        const fx = std.math.clamp(c[0] - 0.5, 0, @as(f32, COLS - 1));
+        const fy = std.math.clamp(c[1] - 0.5, 0, @as(f32, ROWS - 1));
+        const x0: usize = @intFromFloat(@floor(fx));
+        const y0: usize = @intFromFloat(@floor(fy));
+        const x1 = @min(x0 + 1, COLS - 1);
+        const y1 = @min(y0 + 1, ROWS - 1);
+        const tx = fx - @as(f32, @floatFromInt(x0));
+        const ty = fy - @as(f32, @floatFromInt(y0));
+        var result = Now.initFill(0);
+        for (std.enums.values(Location)) |place| {
+            const w = self.weight.getPtrConst(place);
+            const top = mathx.lerpF(w[y0 * COLS + x0], w[y0 * COLS + x1], tx);
+            const bottom = mathx.lerpF(w[y1 * COLS + x0], w[y1 * COLS + x1], tx);
+            addShare(&result, weather.get(place), mathx.lerpF(top, bottom, ty));
+        }
+        return result;
+    }
+
+    fn addShare(into: *Now, n: Now, share: f32) void {
+        if (share <= 0) return;
+        for (std.enums.values(Layer)) |l| into.set(l, into.get(l) + n.get(l) * share);
+    }
+};
+
+test "weather fades across a few cells where locations meet and is whole away from the edge" {
+    var field: Field = @splat(.inland);
+    for (&field, 0..) |*f, i| if (grid.Level.of(i).x >= 40) {
+        f.* = .coast;
+    };
+    var blend: Blend = .{};
+    blend.follow(&field);
+    var weather = CALM;
+    weather.getPtr(.coast).set(.rain, 1);
+    const y: f32 = 20.5;
+    try std.testing.expectApproxEqAbs(@as(f32, 0), blend.at(weather, .{ 30.5, y }).get(.rain), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), blend.at(weather, .{ 50.5, y }).get(.rain), 1e-5);
+    var last: f32 = 0;
+    var x: f32 = 33;
+    while (x < 47) : (x += 0.25) {
+        const r = blend.at(weather, .{ x, y }).get(.rain);
+        try std.testing.expect(r >= last - 1e-6 and r - last < 0.06);
+        last = r;
+    }
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), blend.at(weather, .{ 40, y }).get(.rain), 1e-5);
+}
+
 pub fn local(c: Climate, overrides: Locations, seed: u64, minutes: u64) Local {
     var result = Local.initUndefined();
     for (std.enums.values(Location)) |place| result.set(place, c.in(overrides, place).now(seed, minutes));

@@ -201,6 +201,7 @@ pub const Game = struct {
     vignette: vignette.Vignette = .{},
     cinema: cinema.Cinema = .{},
     rain: weather.Weather = .{},
+    weather_blend: climate.Blend = .{},
     mini: scene.Minimap = .{},
     sprites: sprite.Sprites = .{},
     graphics_ready: bool = false,
@@ -272,7 +273,7 @@ pub const Fields = struct {
     pub const graphics = [_][]const u8{ "light", "cloud", "vignette", "mini", "cinema" };
     /// Given their values by hand.
     pub const set = [_][]const u8{ "died_in", "pause_menu", "pause_page", "display", "debug", "back", "permadeath", "hall", "perf", "st", "mouse", "binds", "cam", "screen", "framebuffer", "rain", "sprites", "graphics_ready", "art", "face" };
-    pub const scratch = [_][]const u8{ "nearby", "journal" };
+    pub const scratch = [_][]const u8{ "nearby", "journal", "weather_blend" };
 };
 const SimFields = simulation.Fields;
 
@@ -879,6 +880,7 @@ pub fn update(g: *Game, dt: f32) void {
     const want = camWant(g);
     const k = mathx.easing(dt, CAM_EASE);
     g.cam = g.cam.lerp(want, k);
+    g.weather_blend.follow(&g.sim.locations);
     const ground = g.pic.groundShown(&g.sim);
     g.pic.easeOver(&g.sim, ground, dt);
     g.light.sky = skyNow(g);
@@ -909,8 +911,8 @@ pub fn weatherNow(g: *const Game) ?climate.Now {
 
 fn weatherByHero(g: *const Game) climate.Now {
     const hero = g.sim.heroSlot() orelse return g.pic.weather_shown;
-    const at = g.pic.drawnCell(&g.sim, hero) orelse return g.pic.weather_shown;
-    return g.pic.local_weather_shown.get(climate.placeAt(&g.sim.locations, at));
+    const at = g.pic.drawnAt(&g.sim, hero) orelse return g.pic.weather_shown;
+    return g.weather_blend.at(g.pic.local_weather_shown, middle(at));
 }
 
 fn drawnTurn(g: *Game) void {
@@ -1012,9 +1014,10 @@ pub fn drawFrame(g: *Game) void {
     g.keywords.beginFrame(&g.st, g.screen);
     defer g.keywords.draw(&g.face, &g.sprites, g.screen, &g.st);
     rl.clearBackground(look.FOG);
-    scene.drawMap(g);
+    const ground = g.pic.groundShown(&g.sim);
+    scene.drawMap(g, ground);
     g.vignette.draw(g.screen.x, g.screen.y);
-    scene.drawMinimap(g);
+    scene.drawMinimap(g, ground);
     scene.drawDayNight(g);
     if (modeShown(g) == .talk) return talking.draw(g);
     overlay.drawHud(g);

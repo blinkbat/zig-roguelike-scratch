@@ -51,10 +51,15 @@ test "hidden projectile motion retains its last visible position until fully fad
 }
 
 const FLIGHT_S: f32 = 0.022;
+const SPARK_FLIGHT_S: f32 = 0.028;
 const TRAIL_PER_CELL: usize = 12;
 
 pub fn flown(n: usize) f32 {
-    return @as(f32, @floatFromInt(n)) * FLIGHT_S;
+    return flownAt(n, FLIGHT_S);
+}
+
+fn flownAt(n: usize, cell_s: f32) f32 {
+    return @as(f32, @floatFromInt(n)) * cell_s;
 }
 
 /// Presentation only: the hit already resolved when this was made.
@@ -69,11 +74,15 @@ pub const Shot = struct {
     trail_t: f32 = 0,
 
     pub fn lands(self: *const Shot) f32 {
-        return flown(self.flight.len -| 1);
+        return flownAt(self.flight.len -| 1, self.cellS());
     }
 
     pub fn ends(self: *const Shot) f32 {
-        return flown(self.flight.len);
+        return flownAt(self.flight.len, self.cellS());
+    }
+
+    fn cellS(self: *const Shot) f32 {
+        return if (fx.sparkFlies(self.act)) SPARK_FLIGHT_S else FLIGHT_S;
     }
 
     pub fn position(self: *const Shot, time: f32) [2]f32 {

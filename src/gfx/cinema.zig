@@ -160,7 +160,7 @@ pub const Cinema = struct {
         raster.unloadAll(self);
     }
 
-    pub fn prepare(self: *Cinema, lv: *const grid.Level, l: *const light.Light, view: grid.Box, flames: []const light.Flame, locations: *const climate.Field, weather: climate.Local) void {
+    pub fn prepare(self: *Cinema, lv: *const grid.Level, l: *const light.Light, view: grid.Box, flames: []const light.Flame, blend: *const climate.Blend, weather: climate.Local) void {
         self.active_bloom = false;
         self.active_beams = false;
         const air_on = self.airs();
@@ -182,7 +182,7 @@ pub const Cinema = struct {
             }
             if (look.crowned(t)) @field(pixel, FIELD.crown) = 255;
             if (air_on) {
-                const local = weather.get(locations[i]);
+                const local = blend.cell(weather, i);
                 const beam = unitByte(local.get(.beams));
                 self.active_beams = self.active_beams or beam > 0;
                 const cell = &weather_pixels[i];

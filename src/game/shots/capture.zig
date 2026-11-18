@@ -108,14 +108,15 @@ pub fn outOfTarget(g: *game.Game) void {
 pub fn drawMapInto(g: *game.Game, target: rl.RenderTexture2D, clear: rl.Color) void {
     intoTarget(g, target);
     rl.clearBackground(clear);
-    game.scene.drawMap(g);
+    game.scene.drawMap(g, g.pic.groundShown(&g.sim));
     outOfTarget(g);
 }
 
 /// The atmosphere pass alone over `clear`; the caller unloads it.
 pub fn airImage(g: *game.Game, target: rl.RenderTexture2D, clear: rl.Color, reflections: bool) !rl.Image {
     const c = game.scene.Cam.of(g);
-    g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{}, &g.sim.locations, g.pic.local_weather_shown);
+    g.weather_blend.follow(&g.sim.locations);
+    g.cinema.prepare(&g.sim.lv, g.light, game.scene.viewBox(g, c), &.{}, &g.weather_blend, g.pic.local_weather_shown);
     intoTarget(g, target);
     rl.clearBackground(clear);
     g.cinema.drawAir(g.light, c.origin(), game.CELL_F, g.screen, g.pic.hour_shown, reflections);

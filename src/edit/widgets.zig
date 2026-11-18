@@ -182,17 +182,17 @@ pub fn fitBefore(face: *const font.Face, buf: []u8, fit_buf: []u8, s: []const u8
 }
 
 pub fn well(r: rl.Rectangle, focused: bool) P {
-    menu.boxed(r, PANEL_BG, if (focused) look.UI_FOCUS else look.EDGE);
+    menu.boxed(r, PANEL_BG, if (focused) look.UI_FOCUS else look.BORDER);
     return .{ .x = textX(r), .y = raster.top(r) + GAP };
 }
 
 pub fn plate(r: rl.Rectangle, on: bool, hot_: bool) void {
     if (on or hot_) rl.drawRectangleRec(r, ROW_ON);
-    if (on) rl.drawRectangleLinesEx(r, 1, ON);
+    if (on) menu.hairline(r, ON);
 }
 
 pub fn hoverEdge(r: rl.Rectangle, hot_: bool) void {
-    if (hot_) rl.drawRectangleLinesEx(r, 1, HOVER);
+    if (hot_) menu.hairline(r, HOVER);
 }
 
 pub fn hoverHit(controls: Controls, r: rl.Rectangle, modal: bool, tip: ?[:0]const u8) Hot {
@@ -423,11 +423,11 @@ pub fn hrule(x: i32, y: i32, w: i32) void {
 }
 
 pub fn vrule(x: i32, top: i32, bottom: i32) void {
-    rl.drawRectangle(x, top, 1, bottom - top, look.EDGE);
+    menu.edgeColumn(x, top, bottom);
 }
 
 pub fn outline(r: rl.Rectangle) void {
-    rl.drawRectangleLinesEx(raster.grown(r, 1), 1, look.EDGE);
+    menu.hairline(raster.grown(r, look.HAIRLINE_W), look.BORDER);
 }
 
 pub fn drawRight(face: *const font.Face, s: [:0]const u8, size: i32, right: i32, y: i32, col: rl.Color) i32 {
@@ -455,7 +455,7 @@ pub fn tagSize(face: *const font.Face, s: [:0]const u8, pad: P) P {
 pub fn drawTag(face: *const font.Face, s: [:0]const u8, at: P, pad: P, bg: rl.Color, edge: ?rl.Color) void {
     const size = tagSize(face, s, pad);
     rl.drawRectangle(at.x, at.y, size.x, size.y, bg);
-    if (edge) |e| rl.drawRectangleLines(at.x, at.y, size.x, size.y, e);
+    if (edge) |e| menu.hairline(raster.rect(at.x, at.y, size.x, size.y), e);
     textFace(face).draw(s, at.x + pad.x, at.y + pad.y, DETAIL, look.TEXT);
 }
 
@@ -468,8 +468,7 @@ pub fn cellRect(o: [2]f32, p: P, cell: f32) rl.Rectangle {
 }
 
 pub fn framed(x: i32, y: i32, w: i32, h: i32) void {
-    rl.drawRectangle(x, y, w, h, PANEL_BG);
-    rl.drawRectangleLines(x, y, w, h, look.EDGE);
+    menu.boxed(raster.rect(x, y, w, h), PANEL_BG, look.BORDER);
 }
 
 pub const Frame = struct {

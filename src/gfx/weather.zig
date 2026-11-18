@@ -113,36 +113,39 @@ pub const Weather = struct {
         return .{ .x = x, .y = y, .land = land, .since = -1 };
     }
 
-    pub fn draw(self: *const Weather, now: ?climate.Now, local: climate.Local, locations: *const climate.Field, sight: *const [grid.CELLS]f32, ox: f32, oy: f32, cell: f32, bright: f32) void {
+    pub fn draw(self: *const Weather, now: ?climate.Now, local: climate.Local, blend: *const climate.Blend, sight: *const [grid.CELLS]f32, ox: f32, oy: f32, cell: f32, bright: f32) void {
         const n = now orelse return;
         const fall = fallOf(n.get(.rain)) orelse return;
         if (self.n == 0 or self.w <= 0 or self.h <= 0) return;
         const scale = look.pxScale(cell);
         const lean = fall.drift / fall.speed;
         const len = fall.len * scale;
+        const quads = pixel.Quads.begin();
+        defer quads.end();
         for (self.drop[0..self.n]) |d| {
             const x = @mod(d.x + ox, self.w);
             const y = @mod(d.y + oy, self.h);
-            const at = mathx.cellOf(look.cellOfScreen(.{ .x = x, .y = y }, ox, oy, cell));
-            const place = climate.placeAt(locations, at);
-            const rain = local.get(place).get(.rain);
+            const in_cells = look.cellOfScreen(.{ .x = x, .y = y }, ox, oy, cell);
+            const at = mathx.cellOf(in_cells);
+            const rain = blend.at(local, in_cells).get(.rain);
             if (rain <= 0) continue;
             const seen = grid.cellOr(f32, sight, at, 0) * @min(1, rain / n.get(.rain));
             if (seen <= 0) continue;
             const a = fall.alpha * std.math.clamp(bright, DIM_FLOOR, 1) * seen;
             if (d.since < 0) {
                 const tail = rl.Vector2{ .x = x - lean * len, .y = y - len };
-                pixel.line(tail, .{ .x = x, .y = y }, fall.width, scale, look.fade(INK, a));
+                quads.line(tail, .{ .x = x, .y = y }, fall.width, scale, look.fade(INK, a));
             } else {
                 const k = d.since / fall.splash_s;
                 const r = mathx.lerpF(1, fall.ring, k) * scale;
                 for (0..SPLASH_DROPS) |i| {
                     const angle = mathx.spoke(@floatFromInt(i), SPLASH_DROPS);
-                    pixel.rect(.{ .x = x + @cos(angle) * r, .y = y + @sin(angle) * r * 0.5 }, 1, 1, scale, look.fade(INK, a * (1 - k)));
+                    quads.rect(.{ .x = x + @cos(angle) * r, .y = y + @sin(angle) * r * 0.5 }, 1, 1, scale, look.fade(INK, a * (1 - k)));
                 }
             }
         }
     }
+
 };
 
 fn raining(rain: f32) climate.Now {

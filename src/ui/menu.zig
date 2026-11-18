@@ -116,12 +116,61 @@ test "panel surfaces stay invertible when the window shrinks below its margins" 
 }
 
 pub fn outline(r: rl.Rectangle, on: bool) void {
-    rl.drawRectangleLinesEx(r, if (on) 2 else 1, if (on) look.UI_FOCUS else look.EDGE);
+    hairline(r, if (on) look.UI_FOCUS else look.BORDER);
+}
+
+pub fn border(r: rl.Rectangle, col: rl.Color) void {
+    lines(r, look.BORDER_W, col);
+}
+
+pub fn hairline(r: rl.Rectangle, col: rl.Color) void {
+    lines(r, look.HAIRLINE_W, col);
 }
 
 pub fn edgeRule(x: i32, y: i32, width: i32) void {
-    rl.drawLine(x, y, x + width, y, look.EDGE);
+    const s = ScreenPx.now();
+    const left = s.x(@floatFromInt(x));
+    const top = s.y(@floatFromInt(y));
+    rl.drawRectangleRec(.{ .x = left, .y = top, .width = s.x(@floatFromInt(x + width)) - left, .height = s.of(look.BORDER_W) }, look.BORDER);
 }
+
+pub fn edgeColumn(x: i32, top: i32, foot: i32) void {
+    const s = ScreenPx.now();
+    const left = s.x(@floatFromInt(x));
+    const y = s.y(@floatFromInt(top));
+    rl.drawRectangleRec(.{ .x = left, .y = y, .width = s.of(look.BORDER_W), .height = s.y(@floatFromInt(foot)) - y }, look.BORDER);
+}
+
+fn lines(r: rl.Rectangle, w: f32, col: rl.Color) void {
+    const s = ScreenPx.now();
+    const left = s.x(r.x);
+    const top = s.y(r.y);
+    rl.drawRectangleLinesEx(.{ .x = left, .y = top, .width = s.x(r.x + r.width) - left, .height = s.y(r.y + r.height) - top }, s.of(w), col);
+}
+
+/// Panels draw under a zoomed camera: borders are measured in, and snapped to, whole screen pixels.
+const ScreenPx = struct {
+    scale: f32,
+    dx: f32,
+    dy: f32,
+
+    fn now() ScreenPx {
+        const m = rl.gl.rlGetMatrixModelview();
+        return .{ .scale = if (m.m0 > 0) m.m0 else 1, .dx = m.m12, .dy = m.m13 };
+    }
+
+    fn x(s: ScreenPx, v: f32) f32 {
+        return (@round(v * s.scale + s.dx) - s.dx) / s.scale;
+    }
+
+    fn y(s: ScreenPx, v: f32) f32 {
+        return (@round(v * s.scale + s.dy) - s.dy) / s.scale;
+    }
+
+    fn of(s: ScreenPx, px: f32) f32 {
+        return px / s.scale;
+    }
+};
 
 pub fn titledCard(face: *const font.Face, sprites: *const sprite.Sprites, x: i32, y: i32, w: i32, h: i32, depth: look.Depth, pad: i32, title: [:0]const u8) void {
     sprite.layeredBacking(sprites, x, y, w, h, depth);
@@ -137,11 +186,16 @@ pub const PANEL_PAD: i32 = 24;
 
 pub fn boxed(r: rl.Rectangle, fill: rl.Color, edge: rl.Color) void {
     rl.drawRectangleRec(r, fill);
-    rl.drawRectangleLinesEx(r, 1, edge);
+    border(r, edge);
+}
+
+pub fn boxedSmall(r: rl.Rectangle, fill: rl.Color, edge: rl.Color) void {
+    rl.drawRectangleRec(r, fill);
+    hairline(r, edge);
 }
 
 pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon.Prompt, label: [:0]const u8) void {
-    boxed(r, look.PICK_BG, look.EDGE);
+    boxed(r, look.PICK_BG, look.BORDER);
     const text_x = actionPrompt(face, r, prompt, 1);
     const text_w = raster.right(r) - ACTION_PAD - text_x;
     face.centred(label, text_x + @divTrunc(text_w, 2), raster.middleAt(r).y, font.BODY, look.TEXT);

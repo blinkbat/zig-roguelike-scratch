@@ -1055,28 +1055,39 @@ pub fn sparkFlies(act: skillbar.Act) bool {
     return missileOf(act).spark;
 }
 
-/// A spark is a short piece of a chain arc: its kinks at `ARC_STEP`, and the tail's share of the head's alpha.
-const SPARK_KINKS: usize = 5;
-const SPARK_TAIL_A: f32 = 0.6;
+const SPARK_TENDRILS: usize = 6;
+const SPARK_KINKS: usize = 3;
+const SPARK_STEP: f32 = 0.11;
+const SPARK_JITTER: f32 = 0.05;
+const SPARK_TWIST: f32 = 0.4;
+const SPARK_SHORTEST: f32 = 0.65;
+const SPARK_TAIL_A: f32 = 0.35;
+const SPARK_HEART_PX: f32 = 2;
 const SPARK_SEED: u64 = 0x5BA2C;
-const SPARK_LIGHT = light.Reach{ .radius = 1.2, .gain = 0.55 };
+const SPARK_LIGHT = light.Reach{ .radius = 1.1, .gain = 0.4 };
 
 fn drawSpark(at: [2]f32, dir: [2]f32, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     const k = pxScale(cell);
     const frame: u64 = @intFromFloat(@max(0, t) / ARC_FLICKER_S);
     var rng = mathx.Rng.init(SPARK_SEED +% frame);
-    const across = [2]f32{ -dir[1], dir[0] };
-    var prev = projected(at, ox, oy, cell);
-    for (1..SPARK_KINKS + 1) |i| {
-        const f = @as(f32, @floatFromInt(i)) / SPARK_KINKS;
-        const back = ARC_STEP * @as(f32, @floatFromInt(i));
-        const on = [2]f32{ at[0] - dir[0] * back, at[1] - dir[1] * back };
-        const q = if (i == SPARK_KINKS) on else kink(&rng, on, across);
-        const w = projected(q, ox, oy, cell);
-        const ink = look.fade(look.SPARK_CORE, alpha * mathx.lerpF(1, SPARK_TAIL_A, f));
-        drawBolt(prev, w, if (forks(i)) forkTip(prev, w, rng.coin()) else null, .{ ox, oy }, k, ink, ink, i > 1);
-        prev = w;
+    const head = projected(at, ox, oy, cell);
+    const facing = std.math.atan2(dir[1], dir[0]);
+    for (0..SPARK_TENDRILS) |n| {
+        const a = facing + mathx.spoke(@floatFromInt(n), SPARK_TENDRILS) + rng.spread(SPARK_TWIST);
+        const out = [2]f32{ @cos(a), @sin(a) };
+        const across = [2]f32{ -out[1], out[0] };
+        const step = SPARK_STEP * rng.between(SPARK_SHORTEST, 1);
+        var prev = head;
+        for (1..SPARK_KINKS + 1) |i| {
+            const f = @as(f32, @floatFromInt(i)) / SPARK_KINKS;
+            const reach = step * @as(f32, @floatFromInt(i));
+            const off = rng.spread(SPARK_JITTER);
+            const w = projected(.{ at[0] + out[0] * reach + across[0] * off, at[1] + out[1] * reach + across[1] * off }, ox, oy, cell);
+            pixel.gridLine(prev, w, .{ ox, oy }, k, look.fade(look.SPARK_CORE, alpha * mathx.lerpF(1, SPARK_TAIL_A, f)), true);
+            prev = w;
+        }
     }
+    pixel.rect(head, SPARK_HEART_PX, SPARK_HEART_PX, k, look.fade(look.SPARK_CORE, alpha));
 }
 
 fn forks(i: usize) bool {
@@ -1130,10 +1141,15 @@ pub fn drawHurl(at: [2]f32, dir: [2]f32, element: damage.Element, t: f32, ox: f3
     const pulse = 1 + @sin(t * CHAOS_ORB_PULSE_RAD_S) * CHAOS_ORB_PULSE;
     for (0..CHAOS_ORB_RINGS) |i| {
         const f: f32 = @floatFromInt(i);
-        pixel.fleck(p, (CHAOS_ORB_HALO_PX - f * CHAOS_ORB_RING_PX) * pulse, k, look.fade(look.CHAOS_GLOW, alpha * CHAOS_ORB_HALO_A));
+        const ring = 2 * (CHAOS_ORB_HALO_PX - f * CHAOS_ORB_RING_PX) * pulse;
+        pixel.oval(p, ring, ring, k, look.fade(look.CHAOS, alpha * CHAOS_ORB_HALO_A));
     }
-    pixel.fleck(p, CHAOS_ORB_R_PX * pulse, k, look.fade(look.CHAOS, alpha));
-    drawHeart(p, k, CHAOS_ORB_CORE_PX, look.CHAOS_CORE, CHAOS_ORB_HEART_PX, alpha);
+    const body = @round(2 * CHAOS_ORB_R_PX * pulse);
+    pixel.oval(p, body, body, k, look.fade(look.CHAOS_CORE, alpha));
+    pixel.oval(p, body - 2 * CHAOS_ORB_RIM_PX, body - 2 * CHAOS_ORB_RIM_PX, k, look.fade(look.CHAOS_GLOW, alpha));
+    const shine = rl.Vector2{ .x = p.x - CHAOS_ORB_SHINE_AT * body * 0.5 * k, .y = p.y };
+    pixel.oval(shine, CHAOS_ORB_SHINE_PX, CHAOS_ORB_SHINE_PX, k, look.fade(look.CHAOS_CORE, alpha));
+    pixel.rect(shine, CHAOS_ORB_HEART_PX, CHAOS_ORB_HEART_PX, k, look.fade(rl.Color.white, alpha));
 }
 
 fn drawHeart(p: rl.Vector2, k: f32, core_px: f32, core: rl.Color, heart_px: f32, alpha: f32) void {
@@ -1147,13 +1163,15 @@ const CHAOS_ORB_TRAIL_BACK: f32 = 0.4;
 const CHAOS_ORB_TRAIL_RISE: f32 = 0.06;
 const CHAOS_ORB_TRAIL_R = [2]f32{ 0.5, 1 };
 const CHAOS_ORB_TRAIL_DRAG: f32 = 3;
-const CHAOS_ORB_HEART_PX: f32 = 3;
-const CHAOS_ORB_HALO_PX: f32 = 17;
-const CHAOS_ORB_HALO_A: f32 = 0.22;
+const CHAOS_ORB_HEART_PX: f32 = 2;
+const CHAOS_ORB_HALO_PX: f32 = 16;
+const CHAOS_ORB_HALO_A: f32 = 0.18;
 const CHAOS_ORB_RINGS: usize = 3;
-const CHAOS_ORB_RING_PX: f32 = 2.5;
+const CHAOS_ORB_RING_PX: f32 = 2;
 const CHAOS_ORB_R_PX: f32 = 10;
-const CHAOS_ORB_CORE_PX: f32 = 6;
+const CHAOS_ORB_RIM_PX: f32 = 1;
+const CHAOS_ORB_SHINE_PX: f32 = 5;
+const CHAOS_ORB_SHINE_AT: f32 = 0.5;
 const CHAOS_ORB_PULSE: f32 = 0.08;
 const CHAOS_ORB_PULSE_RAD_S: f32 = 14;
 

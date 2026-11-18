@@ -65,7 +65,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
     if (drop) |i| _ = fo.dropMakeup(i);
     if (editor.button(ed, g, col.row(y), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
     panel.closePane(ed, .inspector, y + widgets.ROW_H);
-    refit(ed, pg, was);
+    refit(ed, pg, &was);
 }
 
 fn locationRows(ed: *editor.Editor, g: *game.Game, y: *i32, live: bool) void {
@@ -95,7 +95,7 @@ pub fn choiceRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, which: e
         .algo => popupRows(ed, g, atlas.Floor, &pg.floor, box, which, top, shown),
         .node, .file => unreachable,
     }
-    if (ed.popup == null) refit(ed, pg, was);
+    if (ed.popup == null) refit(ed, pg, &was);
 }
 
 fn popupRows(ed: *editor.Editor, g: *game.Game, comptime U: type, v: *U, box: rl.Rectangle, which: editor.Which, top: usize, shown: usize) void {
@@ -112,9 +112,13 @@ fn retag(comptime U: type, v: *U, tag: std.meta.Tag(U)) void {
     if (tag != std.meta.activeTag(v.*)) v.* = U.of(tag);
 }
 
-fn refit(ed: *editor.Editor, pg: *atlas.Procgen, was: atlas.Procgen) void {
+fn refit(ed: *editor.Editor, pg: *atlas.Procgen, was: *const atlas.Procgen) void {
     pg.* = pg.fit();
-    if (!std.meta.eql(was, pg.*)) ed.changed();
+    inline for (std.meta.fields(atlas.Procgen)) |f| {
+        // No knob edits the painted section; comparing its cells cost more than the whole pane.
+        if (comptime std.mem.eql(u8, f.name, "section")) continue;
+        if (!std.meta.eql(@field(was, f.name), @field(pg, f.name))) return ed.changed();
+    }
 }
 
 fn column(g: *const game.Game) widgets.Column {
