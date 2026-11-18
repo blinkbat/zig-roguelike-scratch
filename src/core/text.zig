@@ -19,6 +19,17 @@ pub fn count(list: []const []const u8, name: []const u8) usize {
     return n;
 }
 
+pub const Conjunction = enum { @"and", @"or" };
+
+pub fn listSep(i: usize, n: usize, last: Conjunction) []const u8 {
+    if (i == 0) return "";
+    if (i + 1 < n) return ", ";
+    return switch (last) {
+        .@"and" => " and ",
+        .@"or" => " or ",
+    };
+}
+
 pub fn Note(comptime N: usize) type {
     return struct {
         const Self = @This();

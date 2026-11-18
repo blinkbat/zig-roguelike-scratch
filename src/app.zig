@@ -382,7 +382,7 @@ const App = struct {
                     .quit => if (g.back == .editor) {
                         app.scene = .edit;
                         app.ed.?.request(.quit);
-                        return app.ed.?.action != .quit;
+                        return if (app.ed.?.action == .quit) app.quitRun() else true;
                     } else return app.quitRun(),
                 }
             },
@@ -457,9 +457,7 @@ const App = struct {
                         app.goPage(.load);
                     },
                     .ossuary => app.goPage(.ossuary),
-                    .options => {
-                        app.goPage(.options);
-                    },
+                    .options => app.goPage(.options),
                     .editor => app.toEdit(),
                     .quit => return app.quitRun(),
                 }

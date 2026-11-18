@@ -21,7 +21,7 @@ local pixels=0
 for i,mask in ipairs(masks) do
   local x,y=masks.at(i)
   local count=0
-  for yy=0,63 do for xx=0,63 do
+  for yy=0,masks.CELL-1 do for xx=0,masks.CELL-1 do
     local a=app.pixelColor.rgbaA(atlas:getPixel(x+xx,y+yy))
     assert(a==0 or a==255,'Partial alpha in mask '..mask)
     if a>0 then count=count+1 end
@@ -34,6 +34,6 @@ for y=unusedY,unusedY+masks.CELL-1 do for x=unusedX,unusedX+masks.CELL-1 do asse
 sourceFiles.savePng(atlas,root..'assets/walls/forest-tree-walls.png','Export changed the visible artwork')
 sprite:close()
 local report=sourceFiles.report(work..'forest-tree-walls-export.txt')
-report:write(('47 cells exported, 64x64 each, %d opaque pixels; unused cell clear.\n'):format(pixels))
+report:write(('%d cells exported, %dx%d each, %d opaque pixels; unused cell clear.\n'):format(#masks,masks.CELL,masks.CELL,pixels))
 report:write('Only Draw here and Forest extensions; PNG pixels verified after reopening.\nSource: '..path..'\n')
 report:close()

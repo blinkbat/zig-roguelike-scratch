@@ -259,8 +259,9 @@ test "keyword hit regions follow scaled panels and popups remain inside the scre
 }
 
 test "keyword hover retains its parent and dismisses only its definition" {
+    const display = @import("../core/window.zig");
     var state = State{
-        .screen = .{ .x = 1280, .y = 720 },
+        .screen = display.SCREEN_720,
         .root = raster.rect(100, 300, 380, 150),
         .popup = raster.rect(300, 150, 360, 140),
         .hover = 0,
@@ -276,6 +277,6 @@ test "keyword hover retains its parent and dismisses only its definition" {
     try std.testing.expect(state.popup == null and state.root != null);
     try std.testing.expectEqual(@as(?usize, 0), state.dismissed);
     state.focus = 0;
-    state.beginFrame(&keys, .{ .x = 1920, .y = 1080 });
+    state.beginFrame(&keys, display.SCREEN_1080);
     try std.testing.expect(state.focus == null and state.n == 0 and state.root == null);
 }

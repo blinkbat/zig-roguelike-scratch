@@ -441,7 +441,8 @@ pub const Actor = struct {
     under: grid.Tile = .floor,
 
     pub fn of(k: Kind, at: P) Actor {
-        return .{ .kind = k, .at = at, .hp = row(k).hp, .max = row(k).hp, .resists = row(k).resists, .submerged = row(k).lurks, .disguised = row(k).disguised };
+        const r = row(k);
+        return .{ .kind = k, .at = at, .hp = r.hp, .max = r.hp, .resists = r.resists, .submerged = r.lurks, .disguised = r.disguised };
     }
 
     pub fn livingAlly(self: Actor) bool {

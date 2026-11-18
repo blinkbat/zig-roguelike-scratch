@@ -172,7 +172,7 @@ pub fn step(g: *game.Game) bool {
         if (!foe.seenFoe(&g.sim.lv)) return true;
         at = foe.at;
         if (attack(g, at)) return true;
-        if (mathx.dist(h.at, at) <= 1) {
+        if (mathx.adjacent(h.at, at)) {
             game.heroStep(g, mathx.dirTo(h.at, at).?, 0);
             return true;
         }

@@ -184,9 +184,12 @@ pub const Gear = struct {
         return if (item_bases.spec(it.kind).quiver) it else null;
     }
 
+    fn mainSpec(self: Gear) ?item_bases.Spec {
+        return item_bases.spec((self.slots.get(.right_hand) orelse return null).kind);
+    }
+
     pub fn implement(self: Gear) bool {
-        const it = self.slots.get(.right_hand) orelse return false;
-        return item_bases.spec(it.kind).caster;
+        return (self.mainSpec() orelse return false).caster;
     }
 
     pub fn shield(self: Gear) bool {
@@ -212,7 +215,7 @@ pub const Gear = struct {
 
     fn handsFit(self: Gear) bool {
         const off = self.slots.get(.left_hand) orelse return true;
-        const main = item_bases.spec((self.slots.get(.right_hand) orelse return true).kind);
+        const main = self.mainSpec() orelse return true;
         if (item_bases.spec(off.kind).quiver) return main.attack == .ranged;
         return !main.two_handed;
     }
@@ -268,8 +271,7 @@ pub const Gear = struct {
     }
 
     fn wielded(self: Gear, attack: attrs.Attack) ?item_bases.Spec {
-        const it = self.slots.get(.right_hand) orelse return null;
-        const s = item_bases.spec(it.kind);
+        const s = self.mainSpec() orelse return null;
         return if (s.wields(attack)) s else null;
     }
 
@@ -278,8 +280,8 @@ pub const Gear = struct {
     }
 
     pub fn scaling(self: Gear, attack: attrs.Attack) attrs.Scaling {
-        const it = self.slots.get(.right_hand) orelse return attack.defaultScaling();
-        return item_bases.spec(it.kind).scalingFor(attack) orelse attack.defaultScaling();
+        const s = self.mainSpec() orelse return attack.defaultScaling();
+        return s.scalingFor(attack) orelse attack.defaultScaling();
     }
 };
 

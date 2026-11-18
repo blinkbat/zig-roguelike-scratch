@@ -16,7 +16,7 @@ local cel = assert(layer:cel(1))
 assert(cel.opacity == 255 and cel.position.x == 1 and cel.position.y == 1)
 assert(cel.image.width == W and cel.image.height == H)
 local painted = Image(cel.image)
-local art = Image(128, 128, ColorMode.RGB)
+local art = Image(sprite.width, sprite.height, ColorMode.RGB)
 art:drawImage(cel.image, cel.position)
 local border = Image(art, Rectangle(1, 1, W, H))
 for y = CUT, H - CUT - 1 do

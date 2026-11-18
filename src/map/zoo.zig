@@ -179,8 +179,11 @@ pub const Spec = struct {
         lv.set(s.door(), if (s.key != null) .locked_gate else .gate);
         grid.mendProps(&lv.tile);
         gen.reshape(lv);
+        var x = inner.lo.x;
+        while (x < inner.hi.x and !gen.bearsTorch(lv, lume.torchOver(inner, x))) x += 1;
+        if (x == inner.hi.x) return;
         lv.torch.spare(1);
-        lv.addTorch(lume.torchOver(inner, inner.lo.x));
+        lv.addTorch(lume.torchOver(inner, x));
     }
 
     fn relate(lv: *const grid.Level, stretches: *const carve.Stretches, related: *carve.Regions, near: anytype) void {
@@ -444,6 +447,16 @@ test "every zoo entrance keeps its walls and room hidden before opening" {
         it = s.inside().cells();
         while (it.next()) |p| try std.testing.expect(seen[grid.Level.idx(p)]);
     }
+}
+
+test "a zoo torch never hangs over one of its chests" {
+    for (std.enums.values(Side)) |side| for (5..11) |w| for (5..11) |h| {
+        const s = Spec{ .side = side, .width = @intCast(w), .height = @intCast(h) };
+        var lv = grid.openFloor();
+        s.stamp(&lv);
+        try std.testing.expect(lv.torch.n > 0);
+        for (lv.torch.slice()) |t| try std.testing.expect(gen.bearsTorch(&lv, t));
+    };
 }
 
 test "placing a zoo leaves an unrelated sealed room sealed" {

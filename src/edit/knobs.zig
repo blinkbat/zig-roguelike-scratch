@@ -69,7 +69,6 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
 }
 
 fn locationRows(ed: *editor.Editor, g: *game.Game, y: *i32, live: bool) void {
-    const choices = comptime std.enums.values(climate.Weather);
     for (std.enums.values(climate.Location)) |place| {
         const at = y.*;
         y.* += widgets.ROW_STEP;
@@ -80,8 +79,7 @@ fn locationRows(ed: *editor.Editor, g: *game.Game, y: *i32, live: bool) void {
         const tip = "Weather in this location; inherit uses the node's weather";
         const by = stepper(ed, g, valueSlot(g, at, 0, 1), label, widgets.Step.both(tip, live));
         if (by == 0) continue;
-        const index: ?usize = if (value) |v| @intFromEnum(v) else null;
-        ed.here().locations.set(place, if (mathx.wrapOptional(usize, index, std.math.sign(by), choices.len)) |i| choices[i] else null);
+        ed.here().locations.set(place, mathx.cycleOptional(climate.Weather, value, std.math.sign(by)));
         ed.changed();
     }
 }

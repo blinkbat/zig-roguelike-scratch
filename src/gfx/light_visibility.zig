@@ -27,7 +27,7 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
 
 /// Bilinear self-weight is at least 1/4, keeping remembered open ground whole.
 const OPEN_WHOLE: f32 = 4;
-pub const SightTexel = extern struct { r: f32 = 0, g: f32 = 0, b: f32 = 0, a: f32 = 0 };
+const SightTexel = extern struct { r: f32 = 0, g: f32 = 0, b: f32 = 0, a: f32 = 0 };
 pub const SightPixels = [grid.CELLS]SightTexel;
 const SIGHT = .{ .soft = "r", .open = "g", .weight = "b", .ground = "a" };
 pub const SIGHT_FS = shaders.channelDefines(SIGHT) ++ shaders.glslConsts(.{ .OPEN_WHOLE = OPEN_WHOLE }) ++

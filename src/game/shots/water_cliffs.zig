@@ -21,6 +21,7 @@ const capturef = @import("capture.zig").capturef;
 const drawInto = @import("capture.zig").drawInto;
 const airImage = @import("capture.zig").airImage;
 const drawMapInto = @import("capture.zig").drawMapInto;
+const drawOver = @import("capture.zig").drawOver;
 const exportImage = @import("capture.zig").exportImage;
 const exportTarget = @import("capture.zig").exportTarget;
 const intoTarget = @import("capture.zig").intoTarget;
@@ -271,8 +272,7 @@ fn checkWaterCapTint(g: *game.Game) !void {
                 t.* = .water;
             };
             beds.fill(&lv, beds.lo, beds.hi, false);
-            rl.beginTextureMode(target);
-            rl.clearBackground(rl.Color.blank);
+            drawOver(target, rl.Color.blank);
             g.sprites.drawWaterCliffCaps(&beds, origin, game.CELL_F, view);
             rl.endTextureMode();
             const cap = try readTarget(target);
@@ -310,8 +310,7 @@ fn waterCliffTemplates(g: *game.Game) !void {
         g.sprites.sync(sprite_assets.Assets.of(&lv));
         const origin = [2]f32{ SWATCH_ORIGIN, SWATCH_ORIGIN };
         for (std.enums.values(TemplateLayer)) |pass| {
-            rl.beginTextureMode(target);
-            rl.clearBackground(rl.Color.blank);
+            drawOver(target, rl.Color.blank);
             switch (pass) {
                 .ground => g.sprites.drawGround(&lv, &beds, origin, game.CELL_F, null),
                 .bare => {
@@ -341,8 +340,7 @@ fn waterCliffTemplates(g: *game.Game) !void {
 }
 
 fn waterSample(g: *game.Game, target: rl.RenderTexture2D, lv: *const grid.Level, beds: *const ground.Beds, view: ?sprite.WaterView, origin: [2]f32) !rl.Image {
-    rl.beginTextureMode(target);
-    rl.clearBackground(rl.Color.blank);
+    drawOver(target, rl.Color.blank);
     g.sprites.drawGround(lv, beds, origin, game.CELL_F, view);
     rl.endTextureMode();
     return readTarget(target);
@@ -384,8 +382,7 @@ pub fn checkWaterSurface(g: *game.Game) !void {
     defer rl.unloadRenderTexture(target);
     const mirror = try rl.loadRenderTexture(width, height);
     defer rl.unloadRenderTexture(mirror);
-    rl.beginTextureMode(mirror);
-    rl.clearBackground(look.rgb(0x1010ff));
+    drawOver(mirror, look.rgb(0x1010ff));
     rl.drawRectangle(0, game.CELL, width, game.CELL, look.rgb(0xff1010));
     rl.endTextureMode();
     var lv = grid.Level.blank();

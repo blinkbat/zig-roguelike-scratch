@@ -15,7 +15,8 @@ const SPLIT_TRIES: usize = 8;
 const BARREL_TRIES: usize = 40;
 /// Rooms `partition` holds waiting to be cut; past that, a room is left whole.
 const PARTS_MAX: usize = 64;
-pub const SITE_MARGIN: i32 = 2;
+const SITE_MARGIN: i32 = 2;
+pub const SITE_BOX = grid.Box.inMap(SITE_MARGIN);
 
 pub const Params = struct {
     count: u8 = 6,
@@ -88,7 +89,7 @@ pub const Lots = struct {
     }
 
     fn site(self: *const Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
-        if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
+        if (w > SITE_BOX.width() or h > SITE_BOX.height()) return null;
         const Site = struct {
             lots: *const Lots,
             lv: *const grid.Level,
@@ -102,7 +103,7 @@ pub const Lots = struct {
                 return s.lots.clear(b, s.gap) and fits(s.lv, b, s.pal);
             }
         };
-        const lo = Box.inMap(SITE_MARGIN).rollForWhere(rng, w, h, TRIES, Site{ .lots = self, .lv = lv, .w = w, .h = h, .gap = gap, .pal = pal }, Site.at) orelse return null;
+        const lo = SITE_BOX.rollForWhere(rng, w, h, TRIES, Site{ .lots = self, .lv = lv, .w = w, .h = h, .gap = gap, .pal = pal }, Site.at) orelse return null;
         return Box.sized(lo, w, h);
     }
 

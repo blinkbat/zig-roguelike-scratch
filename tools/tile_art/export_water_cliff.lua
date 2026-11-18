@@ -30,8 +30,10 @@ for i,name in ipairs(names) do
 end
 local cap=Image(atlas.width,atlas.height,ColorMode.RGB)
 local pc=app.pixelColor
-for x=0,191 do
- for y=0,63 do
+local LAST=CELL-1
+local HALF=CELL//2
+for x=0,atlas.width-1 do
+ for y=0,LAST do
   if pc.rgbaA(atlas:getPixel(x,y))>0 then
    for above=0,y-1 do cap:putPixel(x,above,pc.rgba(255,255,255,255)) end
    break
@@ -39,44 +41,44 @@ for x=0,191 do
  end
 end
 local taper=depth=='shallow' and 4 or 8
-for _,piece in ipairs({{x=0,left=true},{x=128,left=false}}) do
+for _,piece in ipairs({{x=0,left=true},{x=(#names-1)*CELL,left=false}}) do
  local head,start,foot,tip
- for y=0,63 do
+ for y=0,LAST do
   local edge
-  for step=0,63 do
-   local x=piece.left and step or 63-step
+  for step=0,LAST do
+   local x=piece.left and step or LAST-step
    if pc.rgbaA(atlas:getPixel(piece.x+x,y))>0 then edge=x break end
   end
   if edge then
-   edge=piece.left and math.min(edge,32) or math.max(edge,31)
+   edge=piece.left and math.min(edge,HALF) or math.max(edge,HALF-1)
    if not head then head,start=y,edge end
    foot,tip=y,edge
    local first=piece.left and 0 or edge+1
-   local last=piece.left and edge-1 or 63
+   local last=piece.left and edge-1 or LAST
    for x=first,last do cap:putPixel(piece.x+x,y,pc.rgba(255,255,255,255)) end
   end
  end
  for y=0,head-1 do
   local first=piece.left and 0 or start+1
-  local last=piece.left and start-1 or 63
+  local last=piece.left and start-1 or LAST
   for x=first,last do cap:putPixel(piece.x+x,y,pc.rgba(255,255,255,255)) end
  end
  for step=1,taper do
   local y=foot+step
-  if y<64 then
+  if y<CELL then
    local edge=piece.left and tip-step or tip+step
    local first=piece.left and 0 or edge+1
-   local last=piece.left and edge-1 or 63
-   for x=math.max(0,first),math.min(63,last) do cap:putPixel(piece.x+x,y,pc.rgba(255,255,255,255)) end
+   local last=piece.left and edge-1 or LAST
+   for x=math.max(0,first),math.min(LAST,last) do cap:putPixel(piece.x+x,y,pc.rgba(255,255,255,255)) end
   end
  end
 end
 local feet={}
 local lips={}
-for x=0,191 do
+for x=0,atlas.width-1 do
  local foot=0
  local lip=0
- for y=0,63 do
+ for y=0,LAST do
   if pc.rgbaA(atlas:getPixel(x,y))>0 then
    if foot==0 then lip=y end
    foot=y+1
@@ -93,4 +95,4 @@ for i,tile in ipairs(pieces) do
  assert(Image(back,Rectangle((i-1)*CELL,0,CELL,CELL)):isEqual(tile),'source tile changed')
 end
 s:close()
-print('Verified '..depth..' cliff: three original 64px crops, unchanged RGBA, no guides or reference tiles')
+print('Verified '..depth..' cliff: three original '..CELL..'px crops, unchanged RGBA, no guides or reference tiles')

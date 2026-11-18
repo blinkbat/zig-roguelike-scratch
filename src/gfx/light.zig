@@ -545,6 +545,7 @@ pub const Light = struct {
         const map = self.texels.getPtr(.map);
         const glints = self.texels.getPtr(.glints);
         const fog = self.texels.getPtr(.fog);
+        const sun_ray: ?*const model.SunRay = if (ray) |*r| r else null;
         var ty = y0;
         while (ty < y1) : (ty += 1) {
             var tx = x0;
@@ -555,10 +556,10 @@ pub const Light = struct {
                 const v = fade.view(patch.sightAt(ground, q[0], q[1]), q);
                 fog[i] = look.fade(rl.Color.white, 1 - v.memory);
                 const cloud = if (ray != null) model.cloudIn(corners, c, q) else 1;
-                const shaded = self.shadeWithSun(lv, &self.banks, torches, effects, q, i, v, if (ray) |*r| r else null, cloud, under);
+                const shaded = self.shadeWithSun(lv, &self.banks, torches, effects, q, i, v, sun_ray, cloud, under);
                 map[i] = model.texelOf(shaded.colour, v.lit);
                 if (self.options.water_glints and wet and v.lit > model.FAINT)
-                    glints[i] = look.colourOf(self.waterGlintWithSun(torches, effects, q, i, if (ray) |*r| r else null, cloud, if (same_terrain) shaded.sun else null), 1);
+                    glints[i] = look.colourOf(self.waterGlintWithSun(torches, effects, q, i, sun_ray, cloud, if (same_terrain) shaded.sun else null), 1);
             }
         }
     }

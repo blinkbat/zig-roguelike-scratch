@@ -70,9 +70,13 @@ pub fn captureEditor(g: *game.Game) !void {
         var dir_buf: [PATH_MAX]u8 = undefined;
         const dir = try std.fmt.bufPrint(&dir_buf, SHOTS_DIR ++ "/editor-{d}x{d}", .{ size.x, size.y });
         try std.fs.cwd().makePath(dir);
-        var paths: [4][PATH_MAX]u8 = undefined;
-        try editor.capture(g, target, try std.fmt.bufPrintZ(&paths[0], "{s}/edit.png", .{dir}), try std.fmt.bufPrintZ(&paths[1], "{s}/edit-graph.png", .{dir}), try std.fmt.bufPrintZ(&paths[2], "{s}/edit-gen.png", .{dir}), try std.fmt.bufPrintZ(&paths[3], "{s}/edit-objects.png", .{dir}));
+        try captureEditorIn(g, target, dir);
     }
+}
+
+pub fn captureEditorIn(g: *game.Game, target: rl.RenderTexture2D, dir: []const u8) !void {
+    var paths: [4][PATH_MAX]u8 = undefined;
+    try editor.capture(g, target, try std.fmt.bufPrintZ(&paths[0], "{s}/edit.png", .{dir}), try std.fmt.bufPrintZ(&paths[1], "{s}/edit-graph.png", .{dir}), try std.fmt.bufPrintZ(&paths[2], "{s}/edit-gen.png", .{dir}), try std.fmt.bufPrintZ(&paths[3], "{s}/edit-objects.png", .{dir}));
 }
 
 pub fn captureUi(g: *game.Game) !void {

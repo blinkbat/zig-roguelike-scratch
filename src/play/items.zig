@@ -154,8 +154,10 @@ fn affix(out: *Item, rng: *mathx.Rng, rare: bool, tier: affixes.Tier) void {
     const count = if (rare) rng.range(affixes.RARE_LEAST, affixes.AFFIXES_MAX) else rng.range(1, affixes.MAGIC_MOST);
     for (0..@intCast(count)) |i| {
         const a = rng.pickWhere(affixes.AffixRoll, &affixes.AFFIXES, Item.Rolling{ .item = out.*, .tier = tier }, Item.allowsRoll).?;
+        var m = affixes.Affix{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.ceiling(tier))) };
         const from = a.kind.elements();
-        out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.ceiling(tier))), .element = if (from.len > 0) rng.pick(damage.Element, from) else .fire };
+        if (from.len > 0) m.element = rng.pick(damage.Element, from);
+        out.mods[i] = m;
     }
 }
 

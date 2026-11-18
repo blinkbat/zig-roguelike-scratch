@@ -175,7 +175,7 @@ pub fn skillHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     if (wet) |*w| w.shocked = blow.roll.applied == .shock;
 }
 
-pub fn conduct(g: *game.Game, at: P, s: Stroke) void {
+fn conduct(g: *game.Game, at: P, s: Stroke) void {
     conductTo(g, at, if (wading(&g.sim, at)) |bodies| .{ .bodies = bodies } else null, s);
 }
 

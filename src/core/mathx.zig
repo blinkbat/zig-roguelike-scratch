@@ -202,6 +202,12 @@ pub fn wrapOptional(comptime T: type, i: ?T, by: i32, n: usize) ?T {
     return if (to == 0) null else @intCast(to - 1);
 }
 
+pub fn cycleOptional(comptime T: type, v: ?T, by: i32) ?T {
+    const all = comptime std.enums.values(T);
+    const at: ?usize = if (v) |x| std.mem.indexOfScalar(T, all, x).? else null;
+    return if (wrapOptional(usize, at, by, all.len)) |i| all[i] else null;
+}
+
 /// As `wrap`, but held at the first and the last instead.
 pub fn nudge(i: usize, by: i32, n: usize) usize {
     if (n == 0) return 0;

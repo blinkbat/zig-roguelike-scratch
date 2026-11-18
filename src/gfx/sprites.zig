@@ -12,7 +12,7 @@ const look = @import("look.zig");
 const sprite_assets = @import("sprite_assets.zig");
 const sprite_materials = @import("sprite_materials.zig");
 
-pub const Piece = struct { tex: rl.Texture2D, src: rl.Rectangle };
+const Piece = struct { tex: rl.Texture2D, src: rl.Rectangle };
 
 pub const Mirrors = struct { live: rl.Texture2D, memory: rl.Texture2D };
 
@@ -561,8 +561,8 @@ fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, t
     const dy = [_]i32{ y, y + cut, y + height - cut };
     const dw = [_]i32{ cut, width - cut * 2, cut };
     const dh = [_]i32{ cut, height - cut * 2, cut };
-    for (0..3) |row| {
-        for (0..3) |col| {
+    for (0..sy.len) |row| {
+        for (0..sx.len) |col| {
             if (row == 1 and col == 1) continue;
             var yy: i32 = 0;
             while (yy < dh[row]) : (yy += sh[row]) {

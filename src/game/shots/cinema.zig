@@ -176,8 +176,7 @@ fn captureGasBagFade(g: *game.Game, target: rl.RenderTexture2D) !void {
     const bag = P{ .x = 23, .y = 20 };
     game.harness.grassArena(g, .{ .x = 20, .y = 20 }, &.{});
     if (!g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = bag })) return error.CaptureLootFull;
-    var cloud = grid.Cells.around(bag, 1);
-    while (cloud.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = shots.VEIL_GAS;
+    shots.veil(&g.sim.lv, grid.Cells.around(bag, 1));
     studyAt(g, true, day.NOON);
     game.prepare(g);
     if (g.sprites.item_bag == null or g.cloud.veil == null) return error.BagVeilMissing;

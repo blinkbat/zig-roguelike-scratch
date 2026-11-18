@@ -1275,3 +1275,24 @@ test "each kill's siphoned mana shows as its own death is drawn, not the turn's 
     g.pic.pictured[harness.foeSlot(0)].hp = 0;
     try std.testing.expectEqual(@as(i32, 2), g.pic.manaShown(&g.sim));
 }
+
+test "an open chest out of sight shows the contents last seen in it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 30, .y = 20 };
+    const i = grid.Level.idx(at);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.lv.set(at, .chest_open);
+    g.pic.snapSight(&g.sim);
+    g.sim.lv.lit[i] = false;
+    g.pic.snapSight(&g.sim);
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
+    try std.testing.expect(scene.bagCells(g).isSet(i));
+    try std.testing.expect(!scene.shownBags(g, &g.sim.lv).isSet(i));
+    g.sim.lv.lit[i] = true;
+    g.pic.snapSight(&g.sim);
+    try std.testing.expect(scene.shownBags(g, &g.sim.lv).isSet(i));
+    g.sim.lv.lit[i] = false;
+    g.pic.snapSight(&g.sim);
+    try std.testing.expect(scene.shownBags(g, &g.sim.lv).isSet(i));
+}

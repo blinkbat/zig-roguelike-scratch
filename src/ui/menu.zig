@@ -153,23 +153,14 @@ pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon
 
 pub const Note = text.Note;
 
-const Conjunction = enum { @"and", @"or" };
-
-pub fn joined(comptime names: anytype, comptime last: Conjunction) [:0]const u8 {
+pub fn joined(comptime names: anytype, comptime last: text.Conjunction) [:0]const u8 {
     comptime var s: [:0]const u8 = "";
     inline for (names, 0..) |nm, i| s = s ++ listSep(i, names.len, last) ++ nm;
     const out = s;
     return out;
 }
 
-pub fn listSep(i: usize, n: usize, last: Conjunction) []const u8 {
-    if (i == 0) return "";
-    if (i + 1 < n) return ", ";
-    return switch (last) {
-        .@"and" => " and ",
-        .@"or" => " or ",
-    };
-}
+pub const listSep = text.listSep;
 
 pub const Menu = struct {
     at: usize = 0,
@@ -474,7 +465,7 @@ fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
 }
 
 test "mouse menus share drawn rows and scrolling keeps long menus reachable" {
-    for ([_]mathx.P{ display.SCREEN_720, display.SCREEN_1080 }) |screen| {
+    for (display.SIZES) |screen| {
         var m = Menu{};
         for (0..6) |i| {
             const p = raster.middleAt(rowBox(screen, window(screen.y, 6, m.at), i));

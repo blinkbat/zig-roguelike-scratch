@@ -4,6 +4,8 @@ const name_field = @import("name_field.zig");
 pub const kindName = tool_catalog.kindName;
 pub const Tool = tool_catalog.Tool;
 pub const TOOLS = tool_catalog.TOOLS;
+pub const Family = tool_catalog.Family;
+pub const FAMILIES = tool_catalog.FAMILIES;
 pub const PALETTE_RULE = tool_catalog.PALETTE_RULE;
 pub const GENERATED = tool_catalog.GENERATED;
 pub const Shape = tool_catalog.Shape;
@@ -85,8 +87,6 @@ pub const View = enum {
     }
 };
 pub const SIDE = widgets.Column{ .x = 0, .w = widgets.SIDE_W };
-pub const Family = tool_catalog.Family;
-pub const FAMILIES = tool_catalog.FAMILIES;
 pub const Inspect = enum {
     things,
     generator,
@@ -353,23 +353,21 @@ pub const Editor = struct {
         ed.renaming = false;
     }
 
-    fn changedHistory(ed: *Editor) void {
+    fn swapHistory(ed: *Editor, comptime step: anytype) bool {
+        ed.dropHeld();
+        const nodes = ed.map.node_n;
+        _ = step(&ed.history, ed.map) catch return false;
         ed.clampSelection();
-        ed.restampSwapped();
-    }
-
-    fn restampSwapped(ed: *Editor) void {
+        if (ed.map.node_n != nodes) ed.enterNode();
         ed.stale();
         ed.thumbnails.changedMap(ed.map, ed.history.transaction.before);
+        return true;
     }
 
     pub fn undo(ed: *Editor) void {
         ed.keepDrag();
         if (ed.history.at == 0) return ed.say("Nothing to undo", .{});
-        ed.dropHeld();
-        _ = ed.history.undo(ed.map) catch return;
-        ed.changedHistory();
-        ed.say("Undone ({d} more)", .{ed.history.at});
+        if (ed.swapHistory(history.History.undo)) ed.say("Undone ({d} more)", .{ed.history.at});
     }
 
     pub fn redo(ed: *Editor) void {
@@ -377,10 +375,7 @@ pub const Editor = struct {
             ed.keepDrag();
             return ed.say("Nothing to redo", .{});
         }
-        ed.dropHeld();
-        _ = ed.history.redo(ed.map) catch return;
-        ed.changedHistory();
-        ed.say("Redone ({d} more)", .{ed.history.len - ed.history.at});
+        if (ed.swapHistory(history.History.redo)) ed.say("Redone ({d} more)", .{ed.history.len - ed.history.at});
     }
 
     pub fn keepDrag(ed: *Editor) void {
@@ -886,6 +881,7 @@ pub fn deleteNode(ed: *Editor) void {
     ed.map.remove(ed.node);
     ed.dropHeld();
     ed.clampSelection();
+    ed.enterNode();
     ed.bank();
     ed.restamp();
 }

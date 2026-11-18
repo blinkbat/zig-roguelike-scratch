@@ -6,6 +6,8 @@ local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 assert(#masks==47)
 local bit=masks.bit
 local W,H=masks.W,masks.H
+local CELL=masks.CELL
+local LAST=CELL-1
 -- Brick courses under the cap's lower edge: 7 courses, 23 rows; src/gfx/look.zig's WALL_FACE_PX.
 local FACE=23
 local sprite=assert(app.open(path))
@@ -25,9 +27,9 @@ for _,r in ipairs({107,108,109}) do faceRows[#faceRows+1]=r end
 assert(#faceRows==FACE)
 local function tile(mask)
   local n,e,s,w,ne,se,sw,nw=masks.sides(mask)
-  local image=Image(64,64,ColorMode.RGB)
-  local foot=s and 64 or 64-FACE
-  for y=0,63 do for x=0,63 do
+  local image=Image(CELL,CELL,ColorMode.RGB)
+  local foot=s and CELL or CELL-FACE
+  for y=0,LAST do for x=0,LAST do
     local pixel=tan
     if y>=foot then
       local row=faceRows[y-foot+1]
@@ -41,8 +43,8 @@ local function tile(mask)
       if not n and y<6 and not w and x<6 then pixel=sample(18+x,83+y) end
       if not n and y<6 and not e and x>=58 then pixel=sample(38+x-58,83+y) end
       -- Hand repair: the face beside a missing south corner meets this cap along an unbroken outline.
-      if s and w and not sw and x==0 and y>=64-FACE-1 then pixel=dark end
-      if s and e and not se and x==63 and y>=64-FACE-1 then pixel=dark end
+      if s and w and not sw and x==0 and y>=CELL-FACE-1 then pixel=dark end
+      if s and e and not se and x==LAST and y>=CELL-FACE-1 then pixel=dark end
     end
     image:putPixel(x,y,pixel)
   end end
@@ -67,8 +69,8 @@ for i,mask in ipairs(masks) do
   local image=tile(mask)
   for a=8,55 do
     if (mask&bit.n)~=0 then assert(pc.rgbaA(image:getPixel(a,0))==255,'north gap '..mask) end
-    if (mask&bit.e)~=0 then assert(pc.rgbaA(image:getPixel(63,a))==255,'east gap '..mask) end
-    if (mask&bit.s)~=0 then assert(pc.rgbaA(image:getPixel(a,63))==255,'south gap '..mask) end
+    if (mask&bit.e)~=0 then assert(pc.rgbaA(image:getPixel(LAST,a))==255,'east gap '..mask) end
+    if (mask&bit.s)~=0 then assert(pc.rgbaA(image:getPixel(a,LAST))==255,'south gap '..mask) end
     if (mask&bit.w)~=0 then assert(pc.rgbaA(image:getPixel(0,a))==255,'west gap '..mask) end
   end
   for _,other in ipairs(cells) do assert(not image:isEqual(other),'duplicate cell '..mask) end
@@ -81,7 +83,7 @@ runtime:newCel(runtime.layers[1],1,atlas,Point(0,0))
 runtime.data='Full-cell walls built from Desktop regular-walls.aseprite Layer 1 strips by tools/tile_art/export_walls.lua; cell i is mask i of wall_masks.lua.'
 for i,mask in ipairs(masks) do
   local x,y=masks.at(i)
-  local slice=runtime:newSlice(Rectangle(x,y,masks.CELL,masks.CELL))
+  local slice=runtime:newSlice(Rectangle(x,y,CELL,CELL))
   slice.name='mask '..mask
 end
 sourceFiles.keep(root..'assets/source/walls.aseprite',sourceFiles.work(),'export',os.date(sourceFiles.STAMP))

@@ -10,7 +10,7 @@ const menu = @import("menu.zig");
 
 const ENTRY_GAP: i32 = 14;
 const LINE_MAX: usize = @max(script.TITLE_MAX, script.NOTE_MAX) + 1;
-const NONE ="No quests yet.";
+const NONE = "No quests yet.";
 
 pub const Entry = struct { title: []const u8, asks: []const u8, done: bool };
 

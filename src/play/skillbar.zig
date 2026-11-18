@@ -268,13 +268,7 @@ pub const Act = enum {
     pub const Arms = contracts.Arms;
 
     pub fn arms(a: Act) ?Arms {
-        return switch (a) {
-            inline else => |t| comptime blk: {
-                if (t.carried()) break :blk null;
-                if (module(t)) |m| if (@hasDecl(m, "ARMS")) break :blk m.ARMS;
-                break :blk if (t.attack()) |at| Arms.of(at) else null;
-            },
-        };
+        return a.contract().arms;
     }
 
     pub fn armed(a: Act, gear: Gear) bool {

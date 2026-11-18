@@ -34,7 +34,9 @@ pub const NONE = "-";
 
 comptime {
     std.debug.assert(MAX_NPCS < std.math.maxInt(u8));
-    std.debug.assert(@max(MAX_FLAGS, MAX_COUNTERS, MAX_TIMERS, MAX_DIALOGS, MAX_LINES, MAX_TRIGGERS, MAX_QUESTS, MAX_STAGES) <= std.math.maxInt(u8));
+    for (.{ Script, Quest, Dialog, Line, Choice, Trigger }) |T| {
+        for (T.COUNTED) |c| std.debug.assert(@typeInfo(@FieldType(T, c[0])).array.len <= std.math.maxInt(@FieldType(T, c[1])));
+    }
 }
 
 /// Printable ascii without its ends' spaces, `N` at most.

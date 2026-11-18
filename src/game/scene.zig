@@ -356,6 +356,16 @@ pub fn bagCells(g: *const game.Game) grid.CellSet {
     return bags;
 }
 
+pub fn shownBags(g: *const game.Game, ground: *const grid.Level) grid.CellSet {
+    var bags = bagCells(g);
+    for (&g.pic.seen_cells, &ground.tile, 0..) |*cell, t, i| {
+        if (t != .chest_open) {
+            bags.setValue(i, cell.bag and cell.alpha > 0);
+        } else if (!g.pic.litShown(&g.sim, grid.Level.of(i))) bags.setValue(i, cell.bag or cell.coins > 0);
+    }
+    return bags;
+}
+
 /// `here` is `ground.at(p)`.
 fn tileTexture(g: *const game.Game, ground: *const grid.Level, here: grid.Tile, p: P, bags: *const grid.CellSet) ?rl.Texture2D {
     if (here == .chest_open and bagged(bags, p)) return g.sprites.chest_item_bag;
@@ -650,11 +660,7 @@ pub fn drawMap(g: *game.Game) void {
     if (blooming) g.framebuffer = g.cinema.scene.?.id;
     var beds: dual.Beds = undefined;
     beds.fill(ground, lo, hi, !g.light.reveal_map);
-    var bags = bagCells(g);
-    for (&g.pic.seen_cells, &ground.tile, 0..) |*cell, t, i| {
-        if (t == .chest_open) continue;
-        bags.setValue(i, cell.bag and cell.alpha > 0);
-    }
+    const bags = shownBags(g, ground);
     const mirror = if (g.debug.visuals.water_reflections and beds.shown.intersectWith(look.REFLECTIVE).count() > 0) drawMirrors(g, c, ground, view, &bags, bodies, flames) else null;
     const burnt = g.pic.burntShown(ground);
     drawGroundPass(g, c, ground, &beds, &stood, mirror, burnt);

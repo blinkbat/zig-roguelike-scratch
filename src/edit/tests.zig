@@ -649,11 +649,15 @@ test "undo and redo disarm deletion when a node index changes owners" {
         _ = ed.map.node[n].rename(name);
     }
     try ed.gesture();
+    ed.recentre = false;
     editor.deleteNode(ed);
+    try std.testing.expect(ed.recentre);
     ed.select(1);
     ed.delete_armed = ed.node;
     try std.testing.expectEqualStrings("Third", ed.here().name());
+    ed.recentre = false;
     ed.undo();
+    try std.testing.expect(ed.recentre);
     try std.testing.expectEqualStrings("Second", ed.here().name());
     try std.testing.expect(ed.delete_armed == null);
     ed.delete_armed = ed.node;
@@ -703,6 +707,22 @@ test "the Dialog page forgets an NPC pick whose list changed while it was shut" 
     ed.map.script.dropNpc(0);
     editor.plot.open(ed, .dialogs);
     try std.testing.expect(ed.plot.pick != .npc);
+}
+
+test "the Dialog page falls back to the first dialog's opening line" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    for (0..2) |_| _ = ed.map.script.addDialog("talk").?;
+    editor.plot.open(ed, .dialogs);
+    ed.plot.seen = editor.plot.Seen.of(&ed.map.script);
+    ed.plot.pick = .{ .dialog = 1 };
+    ed.plot.line = 3;
+    ed.modal = .none;
+    _ = ed.map.script.addNpc(.{ .spot = .{ .at = .{ .x = 2, .y = 2 } } }).?;
+    editor.plot.open(ed, .dialogs);
+    try std.testing.expectEqual(editor.plot.Pick{ .dialog = 0 }, ed.plot.pick);
+    try std.testing.expectEqual(@as(u8, 0), ed.plot.line);
+    try std.testing.expect(ed.plot.reveal_line);
 }
 
 test "a node added is named as it is added, one undo for both" {

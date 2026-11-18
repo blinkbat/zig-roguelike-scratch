@@ -42,8 +42,7 @@ pub fn captureTrees(g: *game.Game) !void {
     g.pic.glide[hero] = still.toward(.{ .x = 25, .y = 18 }, game.GLIDE_S / 2);
     try capture(g, target, TREES_DIR ++ "/behind-midstep.png");
     g.pic.glide[hero] = still;
-    var behind_gas = grid.Cells.of(.{ .x = 23, .y = 17 }, .{ .x = 26, .y = 21 });
-    while (behind_gas.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = VEIL_GAS;
+    veil(&g.sim.lv, grid.Cells.of(.{ .x = 23, .y = 17 }, .{ .x = 26, .y = 21 }));
     g.cloud.settle(&g.sim.lv);
     try capture(g, target, TREES_DIR ++ "/behind-gas.png");
     @memset(&g.sim.lv.gas, 0);
@@ -57,8 +56,7 @@ pub fn captureTrees(g: *game.Game) !void {
     fadeOut(g);
     if (g.pic.occlusion[grid.Level.idx(tree)] > UNFADED) return error.TreeDidNotRestore;
     try capture(g, target, TREES_DIR ++ "/front-opaque.png");
-    var gassed = grid.Cells.of(.{ .x = 21, .y = 17 }, .{ .x = 29, .y = 25 });
-    while (gassed.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = VEIL_GAS;
+    veil(&g.sim.lv, grid.Cells.of(.{ .x = 21, .y = 17 }, .{ .x = 29, .y = 25 }));
     studyLit(g, false, NIGHT);
     try capture(g, target, TREES_DIR ++ "/night-gas.png");
     g.cam.y = @as(f32, @floatFromInt(24 * game.CELL - g.screen.y + game.HALF_CELL));
@@ -112,6 +110,7 @@ const FADED = game.harness.FADED;
 const UNFADED = game.harness.UNFADED;
 const TREES_DIR = SHOTS_DIR ++ "/trees";
 const VEIL_GAS = @import("capture.zig").VEIL_GAS;
+const veil = @import("capture.zig").veil;
 
 fn fadeOut(g: *game.Game) void {
     game.harness.fadeFrames(g, game.update);

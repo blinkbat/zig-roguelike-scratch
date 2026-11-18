@@ -187,10 +187,11 @@ fn refit(ed: *editor.Editor, p: Page) void {
         s.trigger = null;
         s.quest = null;
     }
-    if (p == .dialogs and s.pick == .none and m.dialog_n > 0) s.pick = .{ .dialog = 0 };
+    if (p == .dialogs and s.pick == .none and m.dialog_n > 0) s.pickDialog(0);
     if (p == .script and s.trigger == null and m.trigger_n > 0) s.trigger = 0;
     if (p == .quests and s.quest == null and m.quest_n > 0) s.quest = 0;
     s.reveal_pick = true;
+    s.reveal_line = true;
 }
 
 pub fn keys(ed: *editor.Editor) void {
@@ -631,11 +632,9 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     optCond(ed, g, x, y, w, &npc.shows, "Always stands", "Gone, and talked to by no one, while it does not hold");
     y += STEP;
     caption(g, x, y, LABEL_W, "Looks like", look.TEXT);
-    const kinds = std.enums.values(actor.Kind);
     const looks_by = stepper(ed, g, widgets.row(x + LABEL_W, y, TALK_W), if (npc.looks) |k| actor.row(k).name else "a person", true, "The body it is drawn as", false);
     if (looks_by != 0) {
-        const at: ?usize = if (npc.looks) |k| std.mem.indexOfScalar(actor.Kind, kinds, k).? else null;
-        npc.looks = if (mathx.wrapOptional(usize, at, looks_by, kinds.len)) |k| kinds[k] else null;
+        npc.looks = mathx.cycleOptional(actor.Kind, npc.looks, looks_by);
         ed.bank();
     }
     y += STEP + GAP;

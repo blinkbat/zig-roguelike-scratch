@@ -1265,17 +1265,22 @@ pub fn drawNetFaded(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32)
     }
 }
 
+const ARROW_SHAFT_PX: f32 = 16;
+const ARROW_HEAD_PX: f32 = 4;
+const ARROW_NOCK_PX: f32 = 4;
+const ARROW_FLETCH_PX: f32 = 3;
+
 /// On the art-pixel grid `k` screen pixels a side from `origin`.
 pub fn drawArrow(p: rl.Vector2, dir: [2]f32, col: rl.Color, origin: [2]f32, k: f32) void {
-    const tail = rl.Vector2{ .x = p.x - dir[0] * 16 * k, .y = p.y - dir[1] * 16 * k };
+    const tail = rl.Vector2{ .x = p.x - dir[0] * ARROW_SHAFT_PX * k, .y = p.y - dir[1] * ARROW_SHAFT_PX * k };
     pixel.gridLine(tail, p, origin, k, look.fade(look.SPLINTER, look.alphaOf(col)), false);
-    const back = rl.Vector2{ .x = p.x - dir[0] * 4 * k, .y = p.y - dir[1] * 4 * k };
+    const back = rl.Vector2{ .x = p.x - dir[0] * ARROW_HEAD_PX * k, .y = p.y - dir[1] * ARROW_HEAD_PX * k };
     for ([_]f32{ -2, -1, 0, 1, 2 }) |side| {
         pixel.gridLine(p, .{ .x = back.x - dir[1] * side * k, .y = back.y + dir[0] * side * k }, origin, k, col, false);
     }
-    const nock = rl.Vector2{ .x = tail.x + dir[0] * 4 * k, .y = tail.y + dir[1] * 4 * k };
+    const nock = rl.Vector2{ .x = tail.x + dir[0] * ARROW_NOCK_PX * k, .y = tail.y + dir[1] * ARROW_NOCK_PX * k };
     for ([_]f32{ -1, 1 }) |side| {
-        const feather = rl.Vector2{ .x = tail.x - dir[1] * side * 3 * k, .y = tail.y + dir[0] * side * 3 * k };
+        const feather = rl.Vector2{ .x = tail.x - dir[1] * side * ARROW_FLETCH_PX * k, .y = tail.y + dir[0] * side * ARROW_FLETCH_PX * k };
         pixel.gridLine(feather, nock, origin, k, col, false);
     }
 }
@@ -1297,7 +1302,7 @@ fn tick(m: *Mote, lv: *const grid.Level, dt: f32) void {
     if (!m.stains or m.landed) m.life -= dt;
     if (m.landed) return;
     const k = 1 / (1 + m.drag * dt);
-    for (0..3) |i| m.p[i] += m.v[i] * dt;
+    for (&m.p, m.v) |*p, v| p.* += v * dt;
     m.v[0] *= k;
     m.v[1] *= k;
     m.v[2] = m.v[2] * k - m.grav * dt;

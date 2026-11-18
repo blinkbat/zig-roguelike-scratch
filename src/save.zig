@@ -716,7 +716,7 @@ test "zoo keys doors populations and visits survive portable saves" {
 test "a node saved before zoos defaults to no zoo" {
     const Code = format.Code;
     const alloc = std.testing.allocator;
-    const node =try alloc.create(atlas.Node);
+    const node = try alloc.create(atlas.Node);
     defer alloc.destroy(node);
     node.* = .{ .plan = .{ .procgen = .{} }, .zoo = .{} };
     var bytes = std.ArrayList(u8).init(alloc);

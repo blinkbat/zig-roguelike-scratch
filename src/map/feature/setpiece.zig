@@ -143,7 +143,7 @@ const Niche = struct {
 };
 
 const SITE_TRIES: usize = 400;
-const SITE_BOX = grid.Box.inMap(buildings.SITE_MARGIN);
+const SITE_BOX = buildings.SITE_BOX;
 /// Of a camp's own cells, the quarters that must be walkable.
 const CAMP_OPEN_QUARTERS = 3;
 /// Solid cells round a niche past which a site scores no better.

@@ -64,7 +64,7 @@ pub const Event = union(enum) {
     }
 };
 
-pub const Ready = struct { event: Event, late: f32 };
+const Ready = struct { event: Event, late: f32 };
 
 pub const Queue = struct {
     flash: [actor.MAX]f32 = @splat(0),

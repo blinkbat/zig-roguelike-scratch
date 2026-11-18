@@ -406,7 +406,7 @@ pub fn pressWalking(g: *game.Game, b: input.Button, d: ?mathx.Dir) void {
 pub const TEST_DT = mathx.TEST_DT;
 pub const TEST_TOL: f32 = TEST_DT * 1.5;
 pub const FADING_S: f32 = 0.04;
-pub const FADE_FRAMES = 120;
+const FADE_FRAMES = 120;
 pub const FADED: f32 = 0.99;
 pub const UNFADED: f32 = 0.01;
 

@@ -182,7 +182,7 @@ const FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .PERSPECTIVE = PERSPECTIVE, 
 ;
 
 test "perspective pointer mapping matches the projected source at multiple sizes" {
-    for ([_]mathx.P{ .{ .x = 1280, .y = 720 }, .{ .x = 1920, .y = 1080 } }) |screen| {
+    for (window.SIZES) |screen| {
         for ([_]f32{ 0, 0.25, 1, 2 }) |strength| {
             for ([_]i32{ 0, @divTrunc(screen.y, 2), screen.y - 1 }) |y| {
                 for ([_]i32{ 0, @divTrunc(screen.x, 2), screen.x - 1 }) |x| {

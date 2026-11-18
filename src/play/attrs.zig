@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const wording = @import("../core/wording.zig");
+const text = @import("../core/text.zig");
 const damage = @import("damage.zig");
 
 pub const Attr = enum { strength, dexterity, intelligence };
@@ -74,7 +75,7 @@ pub const Named = struct {
         var i: usize = 0;
         var it = self.scaling.iterator();
         while (it.next()) |s| : (i += 1) {
-            if (i > 0) try w.writeAll(if (i + 1 < n) ", " else " and ");
+            try w.writeAll(text.listSep(i, n, .@"and"));
             try w.writeAll(wording.named(s.attr()));
         }
     }

@@ -9,7 +9,6 @@ const fire = @import("../../map/fire.zig");
 const atlas = @import("../../map/atlas.zig");
 const listing = @import("../../map/listing.zig");
 const playground = @import("../../map/playground.zig");
-const editor = @import("../../edit/editor.zig");
 const menu = @import("../../ui/menu.zig");
 const heroes = @import("../../play/hero.zig");
 const naming = @import("../../ui/naming.zig");
@@ -54,6 +53,7 @@ const checkMapEdge = @import("water_cliffs.zig").checkMapEdge;
 const checkWaterMirrors = @import("water_cliffs.zig").checkWaterMirrors;
 const checkWaterSurface = @import("water_cliffs.zig").checkWaterSurface;
 const captureCharacter = @import("ui.zig").captureCharacter;
+const captureEditorIn = @import("ui.zig").captureEditorIn;
 const captureHud = @import("ui.zig").captureHud;
 const captureLevelUp = @import("ui.zig").captureLevelUp;
 const captureLoot = @import("ui.zig").captureLoot;
@@ -416,7 +416,7 @@ pub fn captureGeneral(g: *game.Game) !void {
         game.begin(g, SHOT_SEED);
     }
 
-    try editor.capture(g, target, SHOTS_DIR ++ "/edit.png", SHOTS_DIR ++ "/edit-graph.png", SHOTS_DIR ++ "/edit-gen.png", SHOTS_DIR ++ "/edit-objects.png");
+    try captureEditorIn(g, target, SHOTS_DIR);
     try captureCharacter(g);
     try captureRares(g);
     try captureLoot(g);
@@ -873,9 +873,8 @@ test "hidden-shadow captures remember the actor before hiding it in every lighti
 
 pub fn shadowMask(g: *game.Game, target: rl.RenderTexture2D, c: game.scene.Cam, cast: grid.Box) !rl.Image {
     {
-        rl.beginTextureMode(target);
+        drawOver(target, rl.Color.white);
         defer rl.endTextureMode();
-        rl.clearBackground(rl.Color.white);
         if (!game.scene.shadowPass(g, c, g.pic.groundShown(&g.sim), cast, &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
     }
     return readTarget(target);
@@ -952,8 +951,7 @@ fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
     for (0..list.n) |i| {
         try w.load(std.heap.c_allocator, list.at(i));
         w.node[w.start.node].stampAt(&g.sim.lv, SHOT_SEED +% i, w.start.at);
-        rl.beginTextureMode(target);
-        rl.clearBackground(look.BG);
+        drawOver(target, look.BG);
         for (0..grid.CELLS) |k| {
             const p = grid.Level.of(k);
             const t = g.sim.lv.tile[k];

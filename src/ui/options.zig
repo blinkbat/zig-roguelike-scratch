@@ -13,7 +13,7 @@ const look = @import("../gfx/look.zig");
 
 pub const Page = enum { main, visuals, display };
 pub const Row = enum { visuals, display, fullscreen, vsync, frame_limit, lens_blur, perspective, vignette, bloom, atmosphere, depth_of_field, saturation, warmth, sepia, film_grain, scanlines, chromatic_aberration, reset_to_defaults, set_all_to_0, debug };
-pub fn rows(page: Page) []const Row {
+fn rows(page: Page) []const Row {
     return switch (page) {
         .main => &.{ .visuals, .display, .debug },
         .display => &.{ .fullscreen, .vsync, .frame_limit },
@@ -250,7 +250,7 @@ test "a diagonal press moves the visuals cursor without nudging the slider it la
     var selection: menu.Menu = .{ .at = 0 };
     var display: window.Display = .{};
     const before = c;
-    _ = step(&c, &selection, &.{ .walk = .se }, .{ .x = 1280, .y = 720 }, .visuals, &display);
+    _ = step(&c, &selection, &.{ .walk = .se }, window.SCREEN_720, .visuals, &display);
     try std.testing.expectEqual(@as(usize, 1), selection.at);
     try std.testing.expectEqualDeep(before, c);
 }
@@ -259,7 +259,7 @@ test "visual sliders clamp, reset and drag without changing other effects" {
     var c: cinema.Cinema = .{};
     var selection: menu.Menu = .{ .at = 0 };
     var display: window.Display = .{};
-    const screen = mathx.P{ .x = 1280, .y = 720 };
+    const screen = window.SCREEN_720;
     _ = step(&c, &selection, &.{ .walk = .e }, screen, .visuals, &display);
     try std.testing.expectApproxEqAbs(@as(f32, 0.15), c.lens.options.lens_blur, 0.0001);
     try std.testing.expectEqual(@as(f32, 0.5), c.lens.options.perspective);

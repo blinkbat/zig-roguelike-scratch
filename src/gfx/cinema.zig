@@ -163,7 +163,7 @@ pub const Cinema = struct {
     pub fn prepare(self: *Cinema, lv: *const grid.Level, l: *const light.Light, view: grid.Box, flames: []const light.Flame, locations: *const climate.Field, weather: climate.Local) void {
         self.active_bloom = false;
         self.active_beams = false;
-        const air_on = self.options.atmosphere and self.strengths.atmosphere > 0;
+        const air_on = self.airs();
         if (!self.options.bloom and !air_on) return;
         const tex = self.field orelse return;
         var pixels: [grid.CELLS]rl.Color = @splat(rl.Color.blank);
@@ -173,7 +173,8 @@ pub const Cinema = struct {
         while (cells.next()) |p| {
             if (!lv.isSeen(p)) continue;
             const t = lv.at(p);
-            const pixel = &pixels[grid.Level.idx(p)];
+            const i = grid.Level.idx(p);
+            const pixel = &pixels[i];
             @field(pixel, FIELD.lit) = if (lv.isLit(p)) 255 else 0;
             if (look.reflects(t)) {
                 @field(pixel, FIELD.water) = 255;
@@ -181,10 +182,10 @@ pub const Cinema = struct {
             }
             if (look.crowned(t)) @field(pixel, FIELD.crown) = 255;
             if (air_on) {
-                const local = weather.get(locations[grid.Level.idx(p)]);
+                const local = weather.get(locations[i]);
                 const beam = unitByte(local.get(.beams));
                 self.active_beams = self.active_beams or beam > 0;
-                const cell = &weather_pixels[grid.Level.idx(p)];
+                const cell = &weather_pixels[i];
                 @field(cell, WEATHER.beam) = beam;
                 @field(cell, WEATHER.mist) = unitByte(local.get(.mist));
                 @field(cell, WEATHER.seen) = 255;
@@ -197,21 +198,23 @@ pub const Cinema = struct {
             if (markEmissive(&pixels, e.source.drawn())) self.active_bloom = true;
         }
         rl.updateTexture(tex, &pixels);
-        if (air_on) {
-            if (self.weather_field) |w| rl.updateTexture(w, &weather_pixels);
-        }
-        if (air_on) if (self.sight_field) |s| {
-            const v = &l.visibility;
-            if (self.sight_of) |was| if (was.from == v and was.revision == v.revision) return;
-            var sight_pixels: light_visibility.SightPixels = undefined;
-            v.sightPixels(&sight_pixels);
-            rl.updateTexture(s, &sight_pixels);
-            self.sight_of = .{ .from = v, .revision = v.revision };
-        };
+        if (!air_on) return;
+        if (self.weather_field) |w| rl.updateTexture(w, &weather_pixels);
+        const s = self.sight_field orelse return;
+        const v = &l.visibility;
+        if (self.sight_of) |was| if (was.from == v and was.revision == v.revision) return;
+        var sight_pixels: light_visibility.SightPixels = undefined;
+        v.sightPixels(&sight_pixels);
+        rl.updateTexture(s, &sight_pixels);
+        self.sight_of = .{ .from = v, .revision = v.revision };
     }
 
     fn blooms(self: *const Cinema) bool {
         return self.options.bloom and self.active_bloom and self.bloom != null and self.field != null;
+    }
+
+    fn airs(self: *const Cinema) bool {
+        return self.options.atmosphere and self.strengths.atmosphere > 0;
     }
 
     pub fn beginScene(self: *Cinema, screen: mathx.P, outer: u32) bool {
@@ -281,7 +284,7 @@ pub const Cinema = struct {
     }
 
     pub fn drawAir(self: *Cinema, l: *light.Light, origin: [2]f32, cell: f32, screen: mathx.P, hour: f32, reflections: bool) void {
-        if (!self.options.atmosphere or self.strengths.atmosphere <= 0) return;
+        if (!self.airs()) return;
         const k = l.sky orelse return;
         const a = self.air orelse return;
         const field = self.field orelse return;

@@ -489,7 +489,7 @@ const ChestSite = struct {
     fn fits(s: ChestSite, q: P) bool {
         if (s.lv.at(q) != .water) return false;
         if (grid.anyNear(q, s.chests, CHEST_APART)) return false;
-        return s.lv.wetAt(q) and grid.allNeighbours(q, s.lv, grid.Level.wetAt);
+        return grid.allNeighbours(q, s.lv, grid.Level.wetAt);
     }
 };
 

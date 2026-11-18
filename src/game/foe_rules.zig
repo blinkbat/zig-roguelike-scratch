@@ -99,7 +99,7 @@ pub fn mend(sim: *Simulation, id: u16, healing: actor.Mend, sight: i32) ?Mended 
         has_sleepers = has_sleepers or !candidate.awake;
         if (!candidate.hurt()) continue;
         if (most_hurt) |previous| {
-            const worst = sim.pool.items[previous];
+            const worst = &sim.pool.items[previous];
             if (@as(i64, candidate.hp) * worst.max >= @as(i64, worst.hp) * candidate.max) continue;
         }
         most_hurt = slot;

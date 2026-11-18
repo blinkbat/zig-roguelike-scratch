@@ -134,6 +134,11 @@ pub const MIN_PIXELS = 100;
 pub const VEIL_GAS = 60;
 pub const sameRgb = look.sameRgb;
 
+pub fn veil(lv: *grid.Level, cells: grid.Cells) void {
+    var each = cells;
+    while (each.next()) |p| lv.gas[grid.Level.idx(p)] = VEIL_GAS;
+}
+
 /// Draws into `target`, whose batch raylib flushes at `endTextureMode`, and saves it.
 pub fn capture(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {
     drawInto(g, target);

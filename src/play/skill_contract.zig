@@ -53,6 +53,7 @@ pub const Contract = struct {
     bolt: ?[]const u8,
     flask_kind: ?flask.Kind,
     supply: ?consumable.Kind,
+    arms: ?Arms,
     free: bool,
     cost: i32,
     cooldown: u8,
@@ -160,6 +161,7 @@ pub fn interpret(comptime name: []const u8, comptime d: Definition) Contract {
     };
     const arrow = d.reticle == .bow and !has(d, "BOLT");
     const elemental = has(d, "ELEMENT");
+    const carried = has(d, "KIND") or has(d, "SUPPLY");
     return .{
         .reticle = d.reticle,
         .delivery = d.delivery,
@@ -171,6 +173,7 @@ pub fn interpret(comptime name: []const u8, comptime d: Definition) Contract {
         .bolt = value(d, "BOLT", @as(?[]const u8, null)),
         .flask_kind = value(d, "KIND", @as(?flask.Kind, null)),
         .supply = value(d, "SUPPLY", @as(?consumable.Kind, null)),
+        .arms = if (carried) null else value(d, "ARMS", if (d.delivery) |at| @as(?Arms, Arms.of(at)) else null),
         .free = value(d, "FREE", false),
         .cost = value(d, "COST", @as(i32, 0)),
         .cooldown = value(d, "COOLDOWN", @as(u8, 0)),

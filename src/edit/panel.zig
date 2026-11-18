@@ -580,14 +580,11 @@ fn clippedH(ed: *const editor.Editor, y: i32, h: i32) bool {
 }
 
 fn thingRow(ed: *editor.Editor, g: *game.Game, col: Column, y: *i32, comptime fmt: []const u8, args: anytype, ink: rl.Color, at: ?P) void {
-    if (clipped(ed, y.*)) {
-        y.* += widgets.ROW_H;
-        return;
-    }
+    defer y.* += widgets.ROW_H;
+    if (clipped(ed, y.*)) return;
     var buf: [widgets.LINE]u8 = undefined;
     const line = std.fmt.bufPrintZ(&buf, fmt, args) catch "";
     if (widgets.flatButton(ed.controls(), &g.face, col.row(y.*), line, ink, false, at != null, false, if (at != null) "Show it on the map" else null)) ed.showCell(editor.Editor.canvas(g), at.?);
-    y.* += widgets.ROW_H;
 }
 
 pub fn toolPicture(g: *const game.Game, t: editor.Tool) ?rl.Texture2D {

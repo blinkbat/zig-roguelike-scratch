@@ -155,7 +155,7 @@ pub const DEATH_RGB = [3]f32{ 0.65, 0.35, 0.32 };
 pub const FLASH_RGB = [3]f32{ 0.88, 0.38, 0.30 };
 /// The light remembered terrain is drawn under, after Brogue's memory colour.
 pub const MEMORY_LIGHT = rgb(0x2b2f4e);
-pub const BLEED = rgb(0xd8483a);
+const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
 pub const UI_GOLD = rgb(0xbca06b);
 pub const UI_FOCUS = rgb(0xd0b581);
