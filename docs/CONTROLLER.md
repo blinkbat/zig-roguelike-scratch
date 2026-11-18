@@ -50,7 +50,7 @@ PS button do nothing; GLFW reads no touchpad.
 | Secondary skill set | hold the slot bound to it (LB) | hold Ctrl |
 | Character | Start / Menu / Options | Tab |
 | Game menu (from play) | Select / View / Share / Create | Esc |
-| Character tabs | LB / RB, or left / right on the tabs | Q / E, or arrows on the tabs |
+| Character tabs | LB / RB | Q / E |
 | Character page back to its tabs, then closed | B | Esc |
 | Equipment / Inventory / Stats / Passives / Skills / Quests directly | Character tabs | F1 / F2 / F3 / F4 / F5 / F7 |
 | Skills: bind selected skill | X | C |
@@ -113,7 +113,7 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   Leap destinations remain freely aimed. Selecting or replacing a target spends nothing and never fires automatically;
   the normal confirmation is still required. A direct mouse click on an enemy is explicit targeting and confirmation.
   Target memory clears on level changes, restarts and save loads.
-- **Character and Game are separate.** Start opens Character inside its last page; another Start press closes Character. Selecting a tab enters it immediately. F1–F5 and F7 open the corresponding Character page, switch pages directly, and close an already open matching page. Their glyphs appear on the tabs when using the keyboard. These shortcuts cancel an unconfirmed reticle and spend no turn. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
+- **Character and Game are separate.** Start opens Character inside its last page; another Start press closes Character. F1–F5 and F7 open the corresponding Character page, switch pages directly, and close an already open matching page. Their glyphs appear on the tabs when using the keyboard. These shortcuts cancel an unconfirmed reticle and spend no turn. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
 - **Binding belongs to Skills.** Its bind action carries a learned skill to the slot screen; select a destination and confirm once. Back returns to Skills. The picker remains available for utility skills and the secondary-set modifier. Clearing a slot is direct. Binding spends no turn.
 - **Pause > Debug** groups controls into Gameplay (Restart Map, Reveal Map, Unkillable), Lighting
   (Composed Lighting, Shadows, Body Lighting, Effect Lights), Effects (Bloom, Atmosphere, Depth Of Field,
@@ -124,7 +124,7 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   Visual effects default on. Debug settings last for the application session and are not saved.
   Reveal changes neither normal sight nor saved exploration. Back returns one submenu at a time,
   retaining the parent selection, before returning to Pause.
-- **Character** contains equipment, inventory, stats, shared passives and class skills. Shoulders / Q and E change pages from anywhere. Clicking a tab enters its content. Back returns from page content to the tabs, then closes Character from the tabs. Equip, unequip, drop and point allocation each take one deliberate action; no action submenu or confirmation modal. Rings have an explicit destination switch and the comparison follows that destination. Successful item actions keep the screen open and still spend one turn. Point allocation is free of simulation turns. The underlying inventory/progression transactions remain authoritative.
+- **Character** contains equipment, inventory, stats, shared passives and class skills. Shoulders / Q and E change pages; the cursor never sits on the tabs. Clicking a tab opens its page. Back closes Character. Equip, unequip, drop and point allocation each take one deliberate action; no action submenu or confirmation modal. Rings have an explicit destination switch and the comparison follows that destination. Successful item actions keep the screen open and still spend one turn. Point allocation is free of simulation turns. The underlying inventory/progression transactions remain authoritative.
 - Loot opening, gold collection and turn accounting follow
   [PROGRESSION.md](PROGRESSION.md#inventory-and-loot-transactions).
   Loot offers Take item on confirm and Take all on change, with glyphs and clickable

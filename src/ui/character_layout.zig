@@ -110,4 +110,5 @@ pub const SLOT_BOX = std.EnumArray(item_bases.Slot, struct { at: P, w: i32, h: i
     .mana_flask = .{ .at = .{ .x = SLOT_X[1] + FLASK_W + SLOT_GUTTER, .y = FLASK_Y }, .w = FLASK_W, .h = SLOT_SMALL },
 });
 pub const SLOT_LABEL = font.SMALL;
-pub const SLOT_INSET = 4;
+pub const SLOT_INSET = 8;
+pub const SMALL_SLOT_INSET = 5;

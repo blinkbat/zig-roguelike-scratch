@@ -1067,6 +1067,7 @@ pub const Presentation = struct {
     /// `late` is seconds since the glides started.
     pub fn stepGlide(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, late: f32) void {
         var turn = schedule.Turn.begin(late, self.lead, self.heroCell(sim).?, PACE);
+        turn.quiet = !self.foeInSight(sim);
         const hero = sim.heroSlot().?;
         const warded = self.owed[hero].worn;
         self.owed[hero].worn = null;
@@ -1088,6 +1089,13 @@ pub const Presentation = struct {
             if (!self.glide[i].to.eq(a.at)) self.glide[i] = self.glide[i].toward(a.at, late);
             if (a.submerged != self.under.isSet(i) and self.dives[i] == null) self.dives[i] = part[i];
         }
+    }
+
+    fn foeInSight(self: *const Presentation, sim: *const Simulation) bool {
+        for (sim.pool.constSlice(), 0..) |*a, i| {
+            if (a.livingFoe() and !self.veiledShown(a, i, false) and self.litShown(sim, a.at)) return true;
+        }
+        return false;
     }
 
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, target: actor.ActorId, start: f32, turn: *schedule.Turn) f32 {
@@ -1128,6 +1136,7 @@ pub const Presentation = struct {
         var facts = schedule.Motion{
             .start_in = start,
             .hero = is_hero,
+            .ally = body.livingAlly(),
             .moved = moved,
             .lunges = lunges,
             .shown = shown,

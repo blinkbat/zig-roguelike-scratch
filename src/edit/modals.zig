@@ -251,7 +251,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             if (r.armour > 0 or r.stun_resist > 0) f.put("Physical reduction {d}%  /  Stun resist {d}%", .{ r.armour, r.stun_resist });
             switch (r.blow) {
                 .strike => |st| {
-                    f.put("{d}-{d} {s} damage ({s})", .{ st.hit.lo, st.hit.hi, if (st.element) |e| menu.word(e) else "physical", st.verb });
+                    f.put("{d} - {d} {s} damage ({s})", .{ st.hit.lo, st.hit.hi, if (st.element) |e| menu.word(e) else "physical", st.verb });
                     if (st.bleeds > 0) f.put("{d}% of its blows open a bleed", .{st.bleeds});
                     if (st.stuns > 0) f.put("{d}% of its blows stun, friend or foe", .{st.stuns});
                 },
@@ -266,12 +266,12 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
                 f.put("Backs away within {d} cells; shoots if cornered", .{ranged.retreat});
             }
             if (r.charges) |c| {
-                f.put("Braces a turn at {d}-{d} cells on an open line, then charges {d} cells", .{ windup.NEAREST, c.range, c.rush });
-                f.put("{d}-{d} damage on contact; stopped short, it loses a turn and its reduction", .{ c.blow.hit.lo, c.blow.hit.hi });
+                f.put("Braces a turn at {d} - {d} cells on an open line, then charges {d} cells", .{ windup.NEAREST, c.range, c.rush });
+                f.put("{d} - {d} damage on contact; stopped short, it loses a turn and its reduction", .{ c.blow.hit.lo, c.blow.hit.hi });
             }
             if (r.hooks) |h| f.put("Braces, then hooks along the line {d} cells every {d} turns, pulling 1 cell", .{ h.range, h.every });
             if (r.hurls) |h| {
-                f.put("{d}-{d} {s} {s}, {d} cells a turn up to {d}; hits any body", .{ h.hit.lo, h.hit.hi, menu.word(h.element), h.name, h.speed, h.range });
+                f.put("{d} - {d} {s} {s}, {d} cells a turn up to {d}; hits any body", .{ h.hit.lo, h.hit.hi, menu.word(h.element), h.name, h.speed, h.range });
                 if (h.burns > 0)
                     f.put("{d}% to burn; moves after each throw, keeps {d} cells off", .{ h.burns, r.keeps })
                 else

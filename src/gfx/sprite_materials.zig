@@ -53,6 +53,18 @@ pub const FADE_FS = shaders.FS_HEAD ++
     \\}
 ;
 
+pub const BoxShineShader = struct { shader: rl.Shader, sweep: i32, size: i32 };
+pub const BOX_SHINE_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .SHINE_SLANT = look.SHINE_SLANT, .BOX_SHINE_WIDTH = look.BOX_SHINE_WIDTH_PX, .BOX_SHINE_GAIN = look.BOX_SHINE_GAIN }) ++
+    \\uniform float sweep;
+    \\uniform vec2 size;
+    \\void main() {
+    \\    vec4 tex = texture(texture0, fragTexCoord);
+    \\    float along = fragTexCoord.x * size.x + fragTexCoord.y * size.y * SHINE_SLANT;
+    \\    float band = 1.0 - smoothstep(0.0, BOX_SHINE_WIDTH, abs(along - sweep));
+    \\    finalColor = vec4(fragColor.rgb, tex.a * fragColor.a * band * BOX_SHINE_GAIN);
+    \\}
+;
+
 pub const ShineShader = struct { shader: rl.Shader, sweep: i32, glow: i32 };
 pub const SHINE_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .SHINE_WIDTH = look.SHINE_WIDTH, .SHINE_SLANT = look.SHINE_SLANT, .SHINE_GAIN = look.SHINE_GAIN }) ++
     \\uniform float sweep;

@@ -618,6 +618,23 @@ test "a slime slides without hopping, a little past its cell, and settles exactl
     try std.testing.expectEqual(to, gl.now().x);
 }
 
+test "with no foe in sight a following ally steps with the hero, and with one in sight it follows a stagger behind" {
+    for ([_]bool{ false, true }) |foe_seen| {
+        const g = try game.boot(std.testing.allocator);
+        defer game.shut(std.testing.allocator, g);
+        harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+        const bones = harness.spawnAt(g, .skeleton, .{ .x = 20 - @import("../../play/tactics.zig").RaiseSkeleton.FOLLOW, .y = 20 }, true);
+        if (foe_seen) _ = harness.spawnAt(g, .rat, .{ .x = 25, .y = 23 }, false);
+        game.settle(g);
+        const was = g.sim.pool.get(bones).?.at;
+        harness.nudge(g, .e);
+        try std.testing.expect(!g.sim.pool.get(bones).?.at.eq(was));
+        const hero_t = g.pic.glide[g.sim.heroSlot().?].t;
+        const bones_t = g.pic.glide[actor.Pool.slot(bones)].t;
+        try std.testing.expectApproxEqAbs(if (foe_seen) hero_t - game.STAGGER_S else hero_t, bones_t, 1e-6);
+    }
+}
+
 test "a turn's glides start the archer first, then each foe in sight a stagger behind, and the next walk waits for the last" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

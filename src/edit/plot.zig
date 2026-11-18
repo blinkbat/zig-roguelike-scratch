@@ -468,7 +468,7 @@ fn heading(g: *game.Game, x: i32, y: i32, w: i32, s: []const u8) void {
 
 fn countHeading(g: *game.Game, x: i32, y: i32, w: i32, comptime title: []const u8, n: usize, most: usize) void {
     var buf: [widgets.LINE]u8 = undefined;
-    heading(g, x, y, w, std.fmt.bufPrint(&buf, title ++ " {d}/{d}", .{ n, most }) catch "");
+    heading(g, x, y, w, std.fmt.bufPrint(&buf, title ++ " {d} / {d}", .{ n, most }) catch "");
 }
 
 fn countHead(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, comptime title: []const u8, n: usize, most: usize, add_w: i32, label: []const u8, tip: [:0]const u8) bool {

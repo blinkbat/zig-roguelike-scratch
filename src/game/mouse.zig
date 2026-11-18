@@ -507,9 +507,6 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);
     try game.harness.expectMode(g, .pause);
     game.harness.rightClick(g);
-    try std.testing.expect(g.character.tabbing);
-    try game.harness.expectMode(g, .pause);
-    game.harness.rightClick(g);
     try game.harness.expectMode(g, .play);
     g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, menu.PAUSE)) };
     game.update(g, 0);

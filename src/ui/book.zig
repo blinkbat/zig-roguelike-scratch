@@ -71,7 +71,6 @@ pub const Book = struct {
     mouse_panning: bool = false,
     message: menu.Note(80) = .{},
     advanced: bool = false,
-    tabbing: bool = false,
     /// On the trade page: the hero's goods listed, not the merchant's.
     selling: bool = false,
 
@@ -82,7 +81,6 @@ pub const Book = struct {
             self.cursor = cursor;
         }
         self.resetView();
-        self.tabbing = false;
     }
     pub fn direct(self: *const Book) bool {
         return self.page.direct();
@@ -95,7 +93,6 @@ pub const Book = struct {
         self.page = page;
         self.cursor = 0;
         self.top = 0;
-        self.tabbing = false;
         self.selling = false;
         self.resetView();
     }
@@ -157,7 +154,7 @@ pub const Book = struct {
         };
     }
     fn treeView(self: *const Book) trees.View {
-        return .{ .cursor = self.cursor, .zoom = self.zoom, .pan = self.pan, .focused = self.focused() };
+        return .{ .cursor = self.cursor, .zoom = self.zoom, .pan = self.pan, .focused = true };
     }
     fn zoomBy(self: *Book, amount: f32) void {
         self.zoom = std.math.clamp(self.zoom + amount, trees.ZOOM_MIN, trees.ZOOM_MAX);
@@ -168,7 +165,7 @@ pub const Book = struct {
         self.pan = trees.clampPan(self.treeView());
     }
     pub fn treeActive(self: *const Book) bool {
-        return self.page == .passives and !self.tabbing;
+        return self.page == .passives;
     }
     fn inWindow(self: *const Book, i: usize) bool {
         return !self.listed() or (i >= self.top and i < self.top + self.visibleRows());
@@ -183,9 +180,6 @@ pub const Book = struct {
     }
     fn turnBy(self: *Book, d: i32, view: View) void {
         self.turnTo(mathx.stepIn(Page, &PAGES, self.page, d, 0), view);
-    }
-    fn focused(self: *const Book) bool {
-        return !self.tabbing;
     }
     /// The bag item under the cursor; carried consumables list above the bag.
     fn bagIndex(self: *const Book, view: View) ?usize {
@@ -274,14 +268,7 @@ pub const Book = struct {
             if (b == menu.BACK) return .close;
             if (self.page == .passives and b == input.TreeKeys.PAD_OVERVIEW) local.tree.reset = true else local.pressed.insert(b);
             local.click = false;
-            self.tabbing = false;
         };
-        if (local.click) self.tabbing = false;
-        if (self.tabbing) return self.stepTabs(st, view);
-        if (!self.direct() and menu.backed(st)) {
-            self.tabbing = true;
-            return null;
-        }
         if (menu.closed(st)) return .close;
         if (self.page == .loot and self.count(view) > 0 and st.hit(menu.CHANGE)) return .take_all;
         if (self.page == .trade and st.hit(menu.CHANGE)) {
@@ -364,27 +351,14 @@ pub const Book = struct {
         }
         return null;
     }
-    fn stepTabs(self: *Book, st: *const input.State, view: View) ?Command {
-        if (menu.closed(st)) return .close;
-        const walked: ?i32 = if (st.walk) |w| (if (w.delta().x != 0) w.delta().x else null) else null;
-        if (walked orelse pageStep(st)) |d| {
-            self.turnBy(d, view);
-            return null;
-        }
-        if (st.hit(menu.CONFIRM)) self.tabbing = false;
-        return null;
-    }
     fn buttonAt(self: *const Book, p: P, view: View) ?input.Button {
         if (!self.direct()) {
             if (raster.holds(layout.shoulderBox(false), p)) return menu.PAGE_PREV;
             if (raster.holds(layout.shoulderBox(true), p)) return menu.PAGE_NEXT;
         }
         const shown = self.controls(view);
-        for (shown.all[0..shown.n]) |c| if ((self.labelled(c) or c.shown != .label) and raster.holds(c.box, p)) return c.button;
+        for (shown.all[0..shown.n]) |c| if (raster.holds(c.box, p)) return c.button;
         return null;
-    }
-    fn labelled(self: *const Book, c: Control) bool {
-        return !self.tabbing or c.button == menu.BACK;
     }
     fn controls(self: *const Book, view: View) Controls {
         var c: Controls = .{};
@@ -466,12 +440,18 @@ pub const Book = struct {
             self.drawDirect(face, sprites, view);
         } else {
             var who: menu.Note(100) = .{};
-            if (std.ascii.eqlIgnoreCase(view.name, view.class.title())) who.say("{s}", .{view.name}) else who.say("{s}" ++ menu.SEP ++ "{s}", .{ view.name, view.class.title() });
-            header(face, who.text());
-            var xp: menu.Note(100) = .{};
-            xp.say("Level  {d}     XP  {d} / {d}", .{ view.growth.level, view.growth.xp, view.growth.needed() });
-            face.drawMiddle(xp.text(), layout.DETAIL_X, layout.HEADER_MID, font.SMALL, look.DIM);
-            for (PAGES, 0..) |page, i| tab(face, layout.tabBox(i), page, self.page == page, view.device);
+            who.say("{s}", .{view.name});
+            face.engraved(who.text(), layout.LIST_X, font.Face.topFor(layout.HEADER_MID, NAME_SIZE), NAME_SIZE, look.TEXT);
+            var rank: menu.Note(60) = .{};
+            rank.say("Level {d} {s}", .{ view.growth.level, view.class.title() });
+            var xp: menu.Note(60) = .{};
+            xp.say("{d} / {d} Experience", .{ view.growth.xp, view.growth.needed() });
+            const line_w = face.width(rank.text(), font.SMALL) + menu.MIDDOT_W + face.width(xp.text(), font.SMALL);
+            const line_x = @divTrunc(layout.SIZE.x - line_w, 2);
+            face.drawMiddle(rank.text(), line_x, layout.HEADER_MID, font.SMALL, look.DIM);
+            const after = menu.middot(line_x + face.width(rank.text(), font.SMALL), layout.HEADER_MID, look.DIM);
+            face.drawMiddle(xp.text(), after, layout.HEADER_MID, font.SMALL, look.DIM);
+            for (PAGES, 0..) |page, i| tab(face, sprites, layout.tabBox(i), page, self.page == page, view);
             if (self.treePanel() == null and self.page != .quests) divider(layout.CONTENT_TOP, layout.DIVIDER_FOOT);
             if (self.page == .quests) {
                 quest_log.draw(face, view.quests.entries, self.top, layout.AREA);
@@ -489,7 +469,6 @@ pub const Book = struct {
         }
         const shown = self.controls(view);
         for (shown.all[0..shown.n]) |c| {
-            if (!self.labelled(c)) continue;
             const prompt = prompt_icon.Prompt.menuOn(view.device, c.button);
             switch (c.shown) {
                 .label => |label| menu.action(face, c.box, prompt, label),
@@ -581,19 +560,24 @@ pub const Book = struct {
             const x = raster.left(r);
             const y = raster.top(r);
             const row_mid = y + layout.ROW_HEIGHT / 2;
-            const chosen = i == self.cursor and self.focused();
+            const chosen = i == self.cursor;
+            defer if (chosen) menu.shimmer(sprites, r, view.seconds, CELL_SHINE_KEY + i);
             rl.drawRectangleRec(r, look.BG);
-            menu.outline(r, chosen);
+            if (self.page == .equipment) {
+                if (chosen) rl.drawRectangleRec(r, look.fade(look.UI_GOLD, TAB_ON_FILL_A));
+                slotBorder(sprites, r, item_bases.SLOTS[i]);
+            } else menu.outline(r, chosen);
             switch (self.page) {
                 .equipment => {
                     const slot = item_bases.SLOTS[i];
-                    const inner = raster.width(r) - 2 * layout.SLOT_INSET;
+                    const inset = slotInset(slot);
+                    const inner = raster.width(r) - 2 * inset;
                     var fitted: [items.NAME_MAX]u8 = undefined;
-                    face.draw(face.fit(&fitted, slotLabel(slot), layout.SLOT_LABEL, inner, false), x + layout.SLOT_INSET, y + layout.SLOT_INSET, layout.SLOT_LABEL, look.DIM);
+                    face.draw(face.fit(&fitted, slotLabel(slot), layout.SLOT_LABEL, inner, false), x + inset, y + inset, layout.SLOT_LABEL, look.DIM);
                     const it = view.inventory.gear.slots.get(slot);
                     const named = r.height >= layout.NAMED_CELL_H;
-                    const foot = y + raster.height(r) - (if (named) layout.SLOT_INSET + font.SMALL else 0);
-                    const glyph = P{ .x = raster.middleAt(r).x, .y = @divTrunc(y + layout.SLOT_INSET + layout.SLOT_LABEL + foot, 2) };
+                    const foot = y + raster.height(r) - (if (named) inset + font.SMALL else 0);
+                    const glyph = P{ .x = raster.middleAt(r).x, .y = @divTrunc(y + inset + layout.SLOT_LABEL + foot, 2) };
                     const side: line_icons.ItemSize = if (named) .cell else .row;
                     const name_mid = foot + font.SMALL / 2;
                     if (offhandWeapon(view.inventory.gear, slot)) |weapon| {
@@ -804,19 +788,42 @@ fn slotGlyph(s: item_bases.Slot) item_bases.Kind {
         .mana_flask => .mana_flask,
     };
 }
-fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: input.Device) void {
-    menu.outline(r, on);
+fn tab(face: *const font.Face, sprites: *const sprite.Sprites, r: rl.Rectangle, page: Page, on: bool, view: View) void {
+    if (on) {
+        rl.drawRectangleRec(r, look.fade(look.UI_GOLD, TAB_ON_FILL_A));
+        menu.border(r, look.UI_FOCUS);
+    } else menu.outline(r, false);
     const m = raster.middleAt(r);
     const text = menu.named(page);
     const ink = if (on) look.TEXT else look.DIM;
     const size = layout.TAB_TEXT;
-    if (!device.pad()) {
+    if (!view.device.pad()) {
         const prompt = tabPrompt(page);
         const left = m.x - @divTrunc(tabWidth(face, page), 2);
         const after = prompt.drawFrom(face, left, m.y, size, if (on) 1 else layout.OFF_TAB_A);
         face.drawMiddle(text, after + menu.PROMPT_GAP, m.y, size, ink);
     } else face.centred(text, m.x, m.y, size, ink);
+    if (on) menu.shimmer(sprites, r, view.seconds, @intFromEnum(page));
 }
+
+const TAB_ON_FILL_A: f32 = 0.16;
+const NAME_SIZE: i32 = 32;
+
+fn grandSlot(slot: item_bases.Slot) bool {
+    return switch (slot) {
+        .helm, .chest, .left_hand, .right_hand, .gloves, .boots => true,
+        .belt, .left_ring, .right_ring, .amulet, .life_flask, .mana_flask => false,
+    };
+}
+
+fn slotBorder(sprites: *const sprite.Sprites, r: rl.Rectangle, slot: item_bases.Slot) void {
+    if (grandSlot(slot)) sprite.hudBorderIn(sprites, r, look.LIT) else menu.border(r, look.BORDER);
+}
+
+fn slotInset(slot: item_bases.Slot) i32 {
+    return if (grandSlot(slot)) layout.SLOT_INSET else layout.SMALL_SLOT_INSET;
+}
+const CELL_SHINE_KEY: usize = PAGES.len;
 fn tabWidth(face: *const font.Face, page: Page) i32 {
     return tabPrompt(page).width(face, layout.TAB_TEXT) + menu.PROMPT_GAP + face.width(menu.named(page), layout.TAB_TEXT);
 }
@@ -864,7 +871,6 @@ test "character actions need one press and tabs are directly reachable" {
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.REMOVE) }, screen, view).? == .drop);
     _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, view);
     try std.testing.expectEqual(Page.stats, book.page);
-    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
     book.choose(.inventory);
     const surface = book.surface(screen, view);
@@ -908,12 +914,10 @@ test "stats change between main and advanced by button and by click, and back st
     _ = book.step(&.{ .click = true, .pointer = p }, screen, view);
     try std.testing.expect(!book.advanced);
     book.advanced = true;
-    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
-    try std.testing.expect(book.tabbing);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
 }
 
-test "the book opens inside its last tab and choosing another tab enters it immediately" {
+test "the book reopens on its last page, page keys turn straight into the next page, and back closes" {
     var inv = inventory.Inventory{};
     try std.testing.expect(inv.add(.{ .kind = .cap }));
     var growth = progress.State.of(.archer);
@@ -921,25 +925,19 @@ test "the book opens inside its last tab and choosing another tab enters it imme
     var book = Book{};
     const screen = display.WINDOW;
     book.open();
-    try std.testing.expect(!book.tabbing);
-    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
-    try std.testing.expect(book.tabbing);
     try std.testing.expect(book.step(&.{ .walk = .e }, screen, view) == null);
+    try std.testing.expectEqual(Page.equipment, book.page);
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, view) == null);
     try std.testing.expectEqual(Page.inventory, book.page);
-    try std.testing.expect(!book.tabbing);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).? == .equip);
-    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view) == null);
-    try std.testing.expect(book.tabbing);
-    try std.testing.expectEqual(Page.inventory, book.page);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view).? == .close);
     book.open();
-    try std.testing.expect(!book.tabbing and book.page == .inventory);
-    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
+    try std.testing.expectEqual(Page.inventory, book.page);
     _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, view);
-    try std.testing.expect(!book.tabbing and book.page == .stats);
+    try std.testing.expectEqual(Page.stats, book.page);
 }
 
-test "the quests tab is chosen from the tabs, scrolls once entered, and backs out to the tabs" {
+test "the quests page is turned to by the page keys and scrolls at once" {
     const inv = inventory.Inventory{};
     const growth = progress.State.of(.archer);
     var view = testView(&inv, &growth);
@@ -950,21 +948,18 @@ test "the quests tab is chosen from the tabs, scrolls once entered, and backs ou
     const screen = display.WINDOW;
     var book = Book{ .page = .skills };
     book.open();
-    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
-    _ = book.step(&.{ .walk = .e }, screen, view);
-    try std.testing.expect(!book.tabbing and book.page == .quests);
+    _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, view);
+    try std.testing.expectEqual(Page.quests, book.page);
     try std.testing.expectEqual(@as(usize, 0), book.top);
     _ = book.step(&.{ .walk = .s }, screen, view);
     try std.testing.expectEqual(@as(usize, 1), book.top);
     _ = book.step(&.{ .scroll = -100 }, screen, view);
     try std.testing.expectEqual(view.quests.last_top, book.top);
-    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
-    try std.testing.expect(book.tabbing and book.page == .quests);
-    _ = book.step(&.{ .walk = .w }, screen, view);
+    _ = book.step(&.{ .pressed = .initOne(menu.PAGE_PREV) }, screen, view);
     try std.testing.expectEqual(Page.skills, book.page);
 }
 
-test "the passives tab reads menu input until entered, and a click on its drawn zoom enters and zooms" {
+test "the passives tree reads input as soon as it is turned to, and a click on its drawn zoom zooms" {
     var inv = inventory.Inventory{};
     var growth = progress.State.of(.archer);
     const view = testView(&inv, &growth);
@@ -972,24 +967,12 @@ test "the passives tab reads menu input until entered, and a click on its drawn 
     var book = Book{};
     book.open();
     book.choose(.passives);
-    book.tabbing = true;
-    try std.testing.expect(!book.treeActive());
-    _ = book.step(&.{ .walk = .e }, screen, view);
-    try std.testing.expect(!book.tabbing and book.page == .skills);
-    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
-    _ = book.step(&.{ .walk = .w }, screen, view);
-    try std.testing.expect(!book.tabbing and book.page == .passives);
-    _ = book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, view);
+    try std.testing.expect(book.treeActive());
     const zoom = book.zoom;
     const box = trees.zoomBox(true);
     const p = book.surface(screen, view).screenOf(raster.middle(box));
     _ = book.step(&.{ .click = true, .pointer = p }, screen, view);
-    try std.testing.expect(!book.tabbing and book.treeActive() and book.zoom > zoom);
-    book.choose(.stats);
-    book.tabbing = true;
-    const hidden = book.actionBox(menu.CHANGE, view);
-    _ = book.step(&.{ .click = true, .pointer = book.surface(screen, view).screenOf(.{ .x = hidden.x + 20, .y = hidden.y + 20 }) }, screen, view);
-    try std.testing.expect(!book.tabbing and !book.advanced);
+    try std.testing.expect(book.treeActive() and book.zoom > zoom);
 }
 
 test "loot exposes single pickup and take all through controller and mouse controls" {
@@ -1171,7 +1154,6 @@ test "mouse character browsing and passive dragging preserve points and scaled h
         try std.testing.expectEqual(rl.Vector2{ .x = 0, .y = 0 }, book.pan);
         try std.testing.expectEqual(@as(u16, 2), growth.active_points);
         try std.testing.expectEqual(@as(u16, 2), growth.passive_points);
-        try std.testing.expect(book.step(&.{ .right_click = true }, screen, view) == null);
         try std.testing.expect(book.step(&.{ .right_click = true }, screen, view).? == .close);
     }
 }

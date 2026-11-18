@@ -120,28 +120,19 @@ test "a way held into or out of Character moves nothing until let go" {
     try std.testing.expectEqual(at, g.sim.heroActor().?.at);
 }
 
-test "a way held between a Character page and its tabs turns no page and moves no cursor until let go" {
+test "a way held across a Character page turn moves no cursor on the new page until let go" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     g.st = .{};
     character.openCharacter(g);
-    try std.testing.expect(!g.character.tabbing);
-    harness.pressWalking(g, BACK, null);
-    try std.testing.expect(g.character.tabbing);
     for (0..10) |_| harness.walkFrame(g, harness.TEST_DT, .s);
-    harness.pressWalking(g, CONFIRM, .s);
-    try std.testing.expect(!g.character.tabbing);
+    const page = g.character.page;
+    harness.pressWalking(g, menu.PAGE_NEXT, .s);
+    try std.testing.expect(g.character.page != page);
     const cursor = g.character.cursor;
     harness.walkFor(g, 1, .s);
     try std.testing.expectEqual(cursor, g.character.cursor);
-    harness.walkFrame(g, harness.TEST_DT, null);
-    for (0..10) |_| harness.walkFrame(g, harness.TEST_DT, .e);
-    const page = g.character.page;
-    harness.pressWalking(g, BACK, .e);
-    try std.testing.expect(g.character.tabbing);
-    harness.walkFor(g, 1, .e);
-    try std.testing.expectEqual(page, g.character.page);
 }
 
 test "a way held into or out of the skill picker moves neither cursor until let go" {
@@ -299,8 +290,6 @@ test "Character and Game have separate shortcuts and never spend a turn" {
     harness.press(g, menu.CHARACTER);
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);
     try std.testing.expectEqual(book.Page.inventory, g.character.page);
-    harness.press(g, BACK);
-    try std.testing.expect(g.character.tabbing);
     harness.press(g, BACK);
     try harness.expectMode(g, .play);
     try std.testing.expectEqual(clock, g.sim.clock);

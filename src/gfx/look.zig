@@ -591,6 +591,18 @@ pub const SHINE_GAIN: f32 = 0.18;
 pub const LOOT_GLOW: f32 = 0.1;
 const SHINE_SEED: u64 = 0x5417E;
 const SHINE_PHASES = 1000;
+pub const BOX_SHINE_WIDTH_PX: f32 = 20;
+pub const BOX_SHINE_GAIN: f32 = 0.05;
+const BOX_SHINE_SEED: u64 = 0xB0C5;
+
+/// How far through its wipe a box's shine is; each `key` keeps its own phase.
+pub fn boxShine(seconds: f32, key: usize) ?f32 {
+    const phase = mathx.cellRoll(BOX_SHINE_SEED, SHINE_PHASES, .{ .x = @intCast(key), .y = 0 });
+    const t = @mod(seconds + @as(f32, @floatFromInt(phase)) / SHINE_PHASES * SHINE_PERIOD_S, SHINE_PERIOD_S);
+    if (t >= SHINE_WIPE_S) return null;
+    return t / SHINE_WIPE_S;
+}
+
 pub fn shineSweep(seconds: f32, p: mathx.P) ?f32 {
     const phase = mathx.cellRoll(SHINE_SEED, SHINE_PHASES, p);
     const t = @mod(seconds + @as(f32, @floatFromInt(phase)) / SHINE_PHASES * SHINE_PERIOD_S, SHINE_PERIOD_S);

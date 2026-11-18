@@ -65,6 +65,7 @@ pub const Sprites = struct {
     bank_cap: ?sprite_materials.BankCapShader = null,
     water_face: ?sprite_materials.WaterFaceShader = null,
     shine: ?sprite_materials.ShineShader = null,
+    box_shine: ?sprite_materials.BoxShineShader = null,
     scenery: ?sprite_materials.SceneryShader = null,
     mirror: ?rl.RenderTexture2D = null,
     mirror_memory: ?rl.RenderTexture2D = null,
@@ -81,11 +82,13 @@ pub const Sprites = struct {
         self.bank_cap = shaders.program(sprite_materials.BankCapShader, sprite_materials.BANK_CAP_FS);
         self.water_face = shaders.program(sprite_materials.WaterFaceShader, sprite_materials.WATER_FACE_FS);
         self.shine = shaders.program(sprite_materials.ShineShader, sprite_materials.SHINE_FS);
+        self.box_shine = shaders.program(sprite_materials.BoxShineShader, sprite_materials.BOX_SHINE_FS);
         self.scenery = shaders.program(sprite_materials.SceneryShader, sprite_materials.SCENERY_FS);
     }
 
     pub fn loadBorder(self: *Sprites) void {
         if (self.hud_border == null) self.hud_border = texture(HUD_BORDER_PNG);
+        if (small_border == null) small_border = texture(sprite_assets.HUD_BORDER_SMALL_PNG);
     }
 
     pub fn drawScenery(self: *const Sprites, tex: rl.Texture2D, dest: rl.Rectangle, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: look.Occlusion, focus: look.Focused) bool {
@@ -110,6 +113,17 @@ pub const Sprites = struct {
         shaders.setUniform(s.shader, s.sweep, sweep);
         shaders.setUniform(s.shader, s.glow, glow);
         raster.stretch(t, dest, col);
+    }
+
+    /// `size` and `sweep` in screen pixels, so the band keeps its slant on any box.
+    pub fn shineBox(self: *const Sprites, dest: rl.Rectangle, size: [2]f32, sweep: f32) void {
+        const s = self.box_shine orelse return;
+        rl.beginShaderMode(s.shader);
+        defer rl.endShaderMode();
+        shaders.setUniform(s.shader, s.sweep, sweep);
+        shaders.setUniform(s.shader, s.size, size);
+        const white = rl.Texture2D{ .id = rl.gl.rlGetTextureIdDefault(), .width = 1, .height = 1, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+        raster.stretch(white, dest, look.UI_GOLD);
     }
 
     pub fn sync(self: *Sprites, need: sprite_assets.Assets) void {
@@ -435,6 +449,8 @@ pub const Sprites = struct {
 
     pub fn unload(self: *Sprites) void {
         raster.unloadAll(self);
+        if (small_border) |t| rl.unloadTexture(t);
+        small_border = null;
     }
 
     pub fn body(self: *const Sprites, k: actor.Kind) ?rl.Texture2D {
@@ -523,6 +539,10 @@ comptime {
 
 const HUD_BORDER_PNG = sprite_assets.HUD_BORDER_PNG;
 pub const HUD_BORDER_CUT: i32 = 9;
+/// Loaded with the hud border: `menu.border` draws boxes that hold no `Sprites`.
+pub var small_border: ?rl.Texture2D = null;
+pub const SMALL_BORDER_CUT: f32 = 4;
+pub const SMALL_BORDER_SIZE = sprite_assets.pngSize(sprite_assets.HUD_BORDER_SMALL_PNG);
 
 fn hudPanel(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, fill: rl.Color, tint: rl.Color) void {
     rl.drawRectangle(x, y, width, height, fill);
@@ -547,6 +567,10 @@ pub fn layeredBacking(sprites: *const Sprites, x: i32, y: i32, width: i32, heigh
 
 pub fn layeredBackingIn(sprites: *const Sprites, r: rl.Rectangle, depth: look.Depth) void {
     hudPanelIn(sprites, r, look.backingAt(depth), look.LIT);
+}
+
+pub fn hudBorderIn(sprites: *const Sprites, r: rl.Rectangle, tint: rl.Color) void {
+    hudBorder(sprites, raster.left(r), raster.top(r), raster.width(r), raster.height(r), tint);
 }
 
 fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, tint: rl.Color) void {

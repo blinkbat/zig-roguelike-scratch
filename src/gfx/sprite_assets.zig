@@ -276,6 +276,7 @@ comptime {
 const WALLS_PNG = @embedFile("walls.png");
 const FOREST_PNG = @embedFile("forest-tree-walls.png");
 pub const HUD_BORDER_PNG = @embedFile("hud-border.png");
+pub const HUD_BORDER_SMALL_PNG = @embedFile("hud-border-small.png");
 pub const HUD_LIFE_FRAME_PNG = @embedFile("hud-life-frame.png");
 pub const HUD_MANA_FRAME_PNG = @embedFile("hud-mana-frame.png");
 

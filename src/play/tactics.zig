@@ -191,7 +191,7 @@ pub const Imbue = struct {
         return laidFor(TURNS);
     }
     pub fn writeRank(rank: u8, w: anytype) void {
-        w.print("{d}-{d} fire damage; {d}% ignite chance.", .{ FIRE.lo, FIRE.hi, ignites(rank) }) catch {};
+        w.print("{d} - {d} fire damage; {d}% ignite chance.", .{ FIRE.lo, FIRE.hi, ignites(rank) }) catch {};
     }
 };
 pub const Bide = struct {

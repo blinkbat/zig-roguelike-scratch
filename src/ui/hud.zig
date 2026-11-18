@@ -147,7 +147,7 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, art: Frame, va
     }
     rl.drawEllipse(x + GLINT_AT.x, y + GLINT_AT.y, GLINT_R[0], GLINT_R[1], look.fade(look.TEXT, GLINT_A));
     var buf: [48]u8 = undefined;
-    const label = std.fmt.bufPrintZ(&buf, "{s} {d}/{d}", .{ name, @max(0, value), @max(0, max) }) catch "";
+    const label = std.fmt.bufPrintZ(&buf, "{s} {d} / {d}", .{ name, @max(0, value), @max(0, max) }) catch "";
     face.textMid(label, x, y - ORB_R - LABEL_RISE, font.SMALL, look.TEXT);
 }
 

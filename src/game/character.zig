@@ -183,6 +183,7 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     };
     v.quests = book.journalOn(g.screen, g.face, questEntries(g, &g.journal));
     if (g.character.page == .trade) v.dealer = dealerOf(g);
+    v.seconds = g.pic.fx.seconds.at();
     return v;
 }
 

@@ -11,7 +11,7 @@ pub const VERB = "pins";
 pub const TAKES = "is pinned";
 pub const SLIP: u32 = 30;
 pub const STATUS = std.fmt.comptimePrint("Cannot move. Can still attack. Each struggle has a {d}% chance to break free.", .{SLIP});
-pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. Pins for {d}-{d} turns.", .{ TURNS_LO, TURNS_HI });
+pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. Pins for {d} - {d} turns.", .{ TURNS_LO, TURNS_HI });
 
 pub const Pin = struct {
     turns: u8 = 0,

@@ -121,6 +121,7 @@ pub const View = struct {
     defence: ?Defence = null,
     quests: quest_log.Journal = .{},
     dealer: ?Dealer = null,
+    seconds: f32 = 0,
 
     pub fn stats(v: View) attr.Attrs {
         var out = v.inventory.gear.stats(v.base);

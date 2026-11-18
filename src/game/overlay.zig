@@ -237,7 +237,7 @@ pub fn drawBinds(g: *game.Game) void {
             shown = binds.pickAct(kit, pick);
             const picker = bindPicker(b, binds.picksOf(kit));
             var label: menu.Note(100) = .{};
-            label.say("{d}-{d} of {d}", .{ picker.first() + 1, picker.end(), picker.picks });
+            label.say("{d} - {d} of {d}", .{ picker.first() + 1, picker.end(), picker.picks });
             g.face.draw(label.text(), picker.x, picker.y - font.LABEL - BIND_POP_DY, font.LABEL, look.DIM);
             sprite.layeredBackingIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)), .menu);
             for (picker.first()..picker.end()) |i| {
@@ -517,7 +517,7 @@ fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip 
     const tile = g.pic.tileShown(&g.sim, at);
     var stream = std.io.fixedBufferStream(body_buf);
     const w = stream.writer();
-    w.print("{d}/{d} HP\n" ++ hud.TIP_RULE ++ "\n{s}", .{ pictured.hp, pictured.max, menu.titleOf(tile) }) catch {};
+    w.print("{d} / {d} HP\n" ++ hud.TIP_RULE ++ "\n{s}", .{ pictured.hp, pictured.max, menu.titleOf(tile) }) catch {};
     terrain.of(tile).write(w);
     const rain = g.sim.rainAt(at);
     if (terrain.rainTitle(rain)) |t| {

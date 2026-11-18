@@ -6,6 +6,7 @@ pub const Pace = struct { stagger: f32, bump_lands: f32 };
 pub const Motion = struct {
     start_in: f32,
     hero: bool,
+    ally: bool = false,
     moved: bool,
     lunges: bool,
     shown: bool,
@@ -50,6 +51,8 @@ pub const Turn = struct {
     next_at: f32,
     hero_cell: P,
     pace: Pace,
+    /// No foe in sight: allies that only walk keep step with the hero instead of following in turn.
+    quiet: bool = false,
 
     pub fn begin(late: f32, lead_in: ?f32, hero_cell: P, pace: Pace) Turn {
         return .{
@@ -65,7 +68,8 @@ pub const Turn = struct {
     }
 
     pub fn motion(self: *Turn, facts: Motion) Body {
-        const staggered = staggers(facts);
+        const in_step = self.quiet and facts.ally and facts.moved and !facts.lunges;
+        const staggered = staggers(facts) and !in_step;
         var starts_at = if (staggered) self.next_at else 0;
         if (staggered and !facts.hero and (facts.moved or facts.lunges)) starts_at = @max(starts_at, self.late + facts.motion_left);
         if (staggered and facts.moved and !facts.hero) starts_at = @max(starts_at, self.late + facts.clear_in);

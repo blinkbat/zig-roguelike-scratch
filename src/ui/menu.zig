@@ -120,7 +120,48 @@ pub fn outline(r: rl.Rectangle, on: bool) void {
 }
 
 pub fn border(r: rl.Rectangle, col: rl.Color) void {
-    lines(r, look.BORDER_W, col);
+    const tex = sprite.small_border orelse return lines(r, look.BORDER_W, col);
+    const tint = if (std.meta.eql(col, look.BORDER)) look.LIT else col;
+    const s = ScreenPx.now();
+    const cut = sprite.SMALL_BORDER_CUT;
+    const size = sprite.SMALL_BORDER_SIZE;
+    const tex_w: f32 = @floatFromInt(size.x);
+    const tex_h: f32 = @floatFromInt(size.y);
+    const left = s.x(r.x);
+    const top = s.y(r.y);
+    const right = s.x(r.x + r.width);
+    const bottom = s.y(r.y + r.height);
+    const c = s.of(cut);
+    if (right - left < 2 * c or bottom - top < 2 * c) return lines(r, look.BORDER_W, col);
+    const src_x = [_]f32{ 0, cut, tex_w - cut };
+    const src_y = [_]f32{ 0, cut, tex_h - cut };
+    const src_w = [_]f32{ cut, tex_w - 2 * cut, cut };
+    const src_h = [_]f32{ cut, tex_h - 2 * cut, cut };
+    const at_x = [_]f32{ left, left + c, right - c };
+    const at_y = [_]f32{ top, top + c, bottom - c };
+    const span_x = [_]f32{ c, right - left - 2 * c, c };
+    const span_y = [_]f32{ c, bottom - top - 2 * c, c };
+    for (0..3) |row| for (0..3) |col_i| {
+        if (row == 1 and col_i == 1) continue;
+        var yy: f32 = 0;
+        while (yy < span_y[row] - 1e-3) : (yy += s.of(src_h[row])) {
+            const h = @min(src_h[row], (span_y[row] - yy) * s.scale);
+            var xx: f32 = 0;
+            while (xx < span_x[col_i] - 1e-3) : (xx += s.of(src_w[col_i])) {
+                const w = @min(src_w[col_i], (span_x[col_i] - xx) * s.scale);
+                const src = rl.Rectangle{ .x = src_x[col_i], .y = src_y[row], .width = w, .height = h };
+                rl.drawTexturePro(tex, src, .{ .x = at_x[col_i] + xx, .y = at_y[row] + yy, .width = s.of(w), .height = s.of(h) }, .{ .x = 0, .y = 0 }, 0, tint);
+            }
+        }
+    };
+}
+
+pub fn shimmer(sprites: *const sprite.Sprites, r: rl.Rectangle, seconds: f32, key: usize) void {
+    const t = look.boxShine(seconds, key) orelse return;
+    const s = ScreenPx.now();
+    const size = [2]f32{ r.width * s.scale, r.height * s.scale };
+    const span = size[0] + size[1] * look.SHINE_SLANT;
+    sprites.shineBox(r, size, mathx.lerpF(-look.BOX_SHINE_WIDTH_PX, span + look.BOX_SHINE_WIDTH_PX, t));
 }
 
 pub fn hairline(r: rl.Rectangle, col: rl.Color) void {
@@ -131,15 +172,31 @@ pub fn edgeRule(x: i32, y: i32, width: i32) void {
     const s = ScreenPx.now();
     const left = s.x(@floatFromInt(x));
     const top = s.y(@floatFromInt(y));
-    rl.drawRectangleRec(.{ .x = left, .y = top, .width = s.x(@floatFromInt(x + width)) - left, .height = s.of(look.BORDER_W) }, look.BORDER);
+    rl.drawRectangleRec(.{ .x = left, .y = top, .width = s.x(@floatFromInt(x + width)) - left, .height = s.of(look.HAIRLINE_W) }, divider());
 }
 
 pub fn edgeColumn(x: i32, top: i32, foot: i32) void {
     const s = ScreenPx.now();
     const left = s.x(@floatFromInt(x));
     const y = s.y(@floatFromInt(top));
-    rl.drawRectangleRec(.{ .x = left, .y = y, .width = s.of(look.BORDER_W), .height = s.y(@floatFromInt(foot)) - y }, look.BORDER);
+    rl.drawRectangleRec(.{ .x = left, .y = y, .width = s.of(look.HAIRLINE_W), .height = s.y(@floatFromInt(foot)) - y }, divider());
 }
+
+const DIVIDER_A: f32 = 0.5;
+
+fn divider() rl.Color {
+    return look.fade(look.BORDER, DIVIDER_A);
+}
+
+/// A square dot centred on `mid_y` at `x`; returns where text after it starts.
+pub fn middot(x: i32, mid_y: i32, col: rl.Color) i32 {
+    rl.drawRectangle(x + DOT_GAP, mid_y - @divTrunc(DOT, 2), DOT, DOT, col);
+    return x + MIDDOT_W;
+}
+
+const DOT: i32 = 3;
+const DOT_GAP: i32 = 8;
+pub const MIDDOT_W: i32 = DOT_GAP * 2 + DOT;
 
 fn lines(r: rl.Rectangle, w: f32, col: rl.Color) void {
     const s = ScreenPx.now();

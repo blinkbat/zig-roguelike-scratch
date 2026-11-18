@@ -132,7 +132,7 @@ test "rain out of doors dampens fire hits and ignition, and the card names it be
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
     const tip = overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body).?;
     var expected: [256]u8 = undefined;
-    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d}/{d} HP\n---\nFloor\nNo Effects\nDrizzle\n+5% Fire Resistance\n-10% Chance To Burn", .{ g.pic.pictured[harness.foeSlot(0)].hp, a.max }), tip.body);
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d} / {d} HP\n---\nFloor\nNo Effects\nDrizzle\n+5% Fire Resistance\n-10% Chance To Burn", .{ g.pic.pictured[harness.foeSlot(0)].hp, a.max }), tip.body);
 }
 
 test "terrain reeds affect real hero hits without applying harm or statuses on misses" {
@@ -179,7 +179,7 @@ test "terrain inspection uses pictured characters and tiles while excluding hidd
     const tip = overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body).?;
     var expected: [256]u8 = undefined;
     try std.testing.expectEqualStrings("Rat", tip.title);
-    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d}/{d} HP\n---\nShallows\n+25% Fire Resistance\n-25% Lightning Resistance\n-25% Chance To Burn", .{ shown, a.max }), tip.body);
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d} / {d} HP\n---\nShallows\n+25% Fire Resistance\n-25% Lightning Resistance\n-25% Chance To Burn", .{ shown, a.max }), tip.body);
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "Burning:") == null);
     var parts: [overlay.SPOTS_MAX]overlay.Part = undefined;
     var found: usize = 0;
@@ -299,10 +299,10 @@ test "foe inspection keeps basic health separate from terrain effects" {
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
     const tip = overlay.tipOf(g, .{ .actor = id }, &title, &body).?;
     try std.testing.expectEqualStrings("Beefy Pib", tip.title);
-    try std.testing.expectEqualStrings("12/40 HP\n---\nGrass\n-15% Fire Resistance\n+15% Chance To Burn", tip.body);
+    try std.testing.expectEqualStrings("12 / 40 HP\n---\nGrass\n-15% Fire Resistance\n+15% Chance To Burn", tip.body);
     g.sim.lv.set(at, .floor);
     const neutral = overlay.tipOf(g, .{ .actor = id }, &title, &body).?;
-    try std.testing.expectEqualStrings("12/40 HP\n---\nFloor\nNo Effects", neutral.body);
+    try std.testing.expectEqualStrings("12 / 40 HP\n---\nFloor\nNo Effects", neutral.body);
 }
 
 test "projectiles fire at empty dark cells in line of sight and stop at the first actor even on a miss" {

@@ -16,7 +16,7 @@ pub const LIFE_REGEN_TURNS: i32 = 5;
 pub fn manaRegen(perks: @import("passives.zig").Perks) i32 {
     return MANA_REGEN + perks.mana_regen;
 }
-pub const HP_FMT = "HP {d}/{d}";
+pub const HP_FMT = "HP {d} / {d}";
 pub const GOLD_FMT = "Gold {d}";
 pub const COINS_FMT = "{d} gold";
 

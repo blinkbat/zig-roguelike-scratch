@@ -922,11 +922,11 @@ fn drawnTurn(g: *Game) void {
     g.pic.showProgress(&g.sim);
 }
 
-const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, tabbing: bool, binds: std.meta.Tag(binds.Binds.Menu), talk: ?[2]u8 };
+const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, binds: std.meta.Tag(binds.Binds.Menu), talk: ?[2]u8 };
 
 fn screenOf(g: *const Game) Screen {
     const talk: ?[2]u8 = if (g.sim.plot.talk) |t| .{ t.dialog, t.line } else null;
-    return .{ .mode = std.meta.activeTag(g.mode), .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .tabbing = g.character.tabbing, .binds = std.meta.activeTag(g.binds.menu), .talk = talk };
+    return .{ .mode = std.meta.activeTag(g.mode), .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .binds = std.meta.activeTag(g.binds.menu), .talk = talk };
 }
 
 pub fn holdWalk(g: *Game) void {

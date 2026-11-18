@@ -897,7 +897,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         yy += widgets.DETAIL_STEP;
         widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, yy, look.DIM);
         yy += widgets.DETAIL_STEP + HINT_GAP;
-        const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
+        const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d} / {d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
         widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
         yy += DETAIL + LEAD;
         const field_h = @max(fieldHeight(1), bottom - yy - (DETAIL + LEAD + 2 * widgets.ROW_STEP + DETAIL + LEAD));
