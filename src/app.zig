@@ -129,8 +129,7 @@ const App = struct {
     }
 
     fn goPage(app: *App, p: Page) void {
-        game.holdWalk(app.g);
-        app.g.keywords = .{};
+        game.leftScreen(app.g);
         app.unsay();
         app.page = p;
     }
@@ -395,7 +394,7 @@ const App = struct {
                     .fight => |kind| app.fight(kind),
                     .playground => app.sandbox(),
                     .leave => app.toTitle(),
-                    .quit => return false,
+                    .quit => return app.quitRun(),
                 }
             },
         }
@@ -675,8 +674,7 @@ pub fn captureHeroes(g: *game.Game) !void {
 fn capturePage(app: *App, target: rl.RenderTexture2D, path: [:0]const u8) !void {
     rl.beginTextureMode(target);
     _ = app.titleStep();
-    rl.endTextureMode();
-    try capture.exportTarget(target, path);
+    try capture.exportDrawn(target, path);
 }
 
 var start_edit: ?[]const u8 = null;
@@ -787,11 +785,9 @@ pub fn captureMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
     try capturePage(&empty, target, MOUSE_DIR ++ "/title-ossuary-empty.png");
     var longest: [listing.STEM_MAX + 1]u8 = @splat('W');
     longest[listing.STEM_MAX] = 0;
-    rl.beginTextureMode(target);
-    rl.clearBackground(look.BG);
+    capture.drawOver(target, look.BG);
     menu.draw(g.face, &g.sprites, g.screen, CHOOSE_MAP, &.{longest[0..listing.STEM_MAX :0]}, 0, null);
-    rl.endTextureMode();
-    try capture.exportTarget(target, MOUSE_DIR ++ "/title-long-row.png");
+    try capture.exportDrawn(target, MOUSE_DIR ++ "/title-long-row.png");
 }
 
 test "an editor arena uses a separate map and never opens a save slot" {

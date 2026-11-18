@@ -11,8 +11,8 @@ const P = mathx.P;
 const SHOTS_DIR = @import("capture.zig").SHOTS_DIR;
 const capture = @import("capture.zig").capture;
 const readTarget = @import("capture.zig").readTarget;
-const redrawnDiff = @import("capture.zig").redrawnDiff;
 const renderTarget = @import("capture.zig").renderTarget;
+const toggled = @import("capture.zig").toggled;
 const NIGHT = @import("poses.zig").NIGHT;
 const poseWaterMirrors = @import("poses.zig").poseWaterMirrors;
 const studyLit = @import("poses.zig").studyLit;
@@ -91,13 +91,10 @@ pub fn captureTrees(g: *game.Game) !void {
     try capture(g, target, TREES_DIR ++ "/grass-clear.png");
     const faded_grass = try readTarget(target);
     defer rl.unloadImage(faded_grass);
-    const grass_hidden = g.pic.occlusion[grid.Level.idx(grass)];
-    g.pic.occlusion[grid.Level.idx(grass)] = 0;
-    const grass_pixels = try redrawnDiff(g, target, faded_grass);
-    if (grass_pixels == 0) return error.GrassOcclusionDidNotChangeFrame;
-    g.pic.occlusion[grid.Level.idx(grass)] = grass_hidden;
-    if (try redrawnDiff(g, target, faded_grass) != 0) return error.GrassOcclusionDidNotRestoreFrame;
-    std.debug.print("reed occlusion GPU check: {d} pixels changed, exact restoration\n", .{grass_pixels});
+    const shown = try toggled(g, target, faded_grass, &g.pic.occlusion[grid.Level.idx(grass)], 0, null);
+    if (shown.changed == 0) return error.GrassOcclusionDidNotChangeFrame;
+    if (!shown.restored) return error.GrassOcclusionDidNotRestoreFrame;
+    std.debug.print("reed occlusion GPU check: {d} pixels changed, exact restoration\n", .{shown.changed});
     g.sim.lv.gas[grid.Level.idx(grass)] = VEIL_GAS;
     g.cloud.settle(&g.sim.lv);
     try capture(g, target, TREES_DIR ++ "/grass-gas.png");
@@ -111,12 +108,11 @@ pub fn captureTrees(g: *game.Game) !void {
 }
 
 const FADING_S = game.harness.FADING_S;
-const FADE_FRAMES = game.harness.FADE_FRAMES;
 const FADED = game.harness.FADED;
 const UNFADED = game.harness.UNFADED;
 const TREES_DIR = SHOTS_DIR ++ "/trees";
 const VEIL_GAS = @import("capture.zig").VEIL_GAS;
 
 fn fadeOut(g: *game.Game) void {
-    for (0..FADE_FRAMES) |_| game.update(g, mathx.TEST_DT);
+    game.harness.fadeFrames(g, game.update);
 }

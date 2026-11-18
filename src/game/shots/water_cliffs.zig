@@ -189,7 +189,7 @@ fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
         var image_n: usize = 0;
         defer for (images[0..image_n]) |im| rl.unloadImage(im);
         for (0..2) |i| {
-            images[i] = try shadowMask(g, target, c, if (i == 0) view else grid.Box.inMap(0));
+            images[i] = try shadowMask(g, target, c, if (i == 0) view else grid.MAP);
             image_n += 1;
         }
         var different: usize = 0;

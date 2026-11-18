@@ -533,7 +533,7 @@ const Ground = struct {
     }
 
     fn leadable(g: Ground, p: P, k: actor.Kind) bool {
-        return grid.Box.inMap(1).holds(p) and g.clear(p, k);
+        return grid.INNER.holds(p) and g.clear(p, k);
     }
 
     fn leadSpot(g: Ground, rng: *mathx.Rng, by: ?P, k: actor.Kind) ?P {
@@ -545,7 +545,7 @@ const Ground = struct {
                 return l.ground.leadable(p, l.k);
             }
         };
-        const box = if (by) |d| grid.Box.around(d, EXIT_REACH) else grid.Box.inMap(1);
+        const box = if (by) |d| grid.Box.around(d, EXIT_REACH) else grid.INNER;
         return box.rollWhere(rng, SPOT_TRIES, Lead{ .ground = g, .k = k }, Lead.at);
     }
 

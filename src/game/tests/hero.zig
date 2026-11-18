@@ -114,7 +114,7 @@ test "a frost vial thrown from the bag splashes cold on every foe round its mark
     character.openCharacter(g);
     g.character.choose(.inventory);
     harness.press(g, menu.CONFIRM);
-    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .aim);
     try std.testing.expect(g.bar.slotOf(.frost_vial) == null and g.mode.aim.by == null);
     try std.testing.expectEqual(@as(u8, 2), g.sim.inventory.stacks.get(.frost_vial));
     const next = harness.turned(g.sim.clock, 1);
@@ -441,7 +441,7 @@ test "a hero bitten to death gets an epitaph naming the rat, entombed only while
     var hall = game.ossuary.Hall{};
     g.hall = &hall;
     harness.bittenToDeath(g);
-    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .dead);
     const said = g.epitaph.?.text();
     try std.testing.expect(std.mem.startsWith(u8, said, "Archer was bitten to death by a rat on a nameless floor."));
     try std.testing.expect(std.mem.endsWith(u8, said, " " ++ game.ossuary.ENTOMBED));

@@ -10,7 +10,8 @@ const ORIGIN = P{ .x = 0, .y = 0 };
 
 pub const MAX_FOES: usize = actor.MAX - actor.most(actor.HERO);
 /// Every roll seals the rim, so a section paints inside it.
-pub const ROOM = grid.Box.inMap(1);
+pub const ROOM = grid.INNER;
+const TORCH_APART: i32 = 1;
 pub const UNPAINTED: u8 = '_';
 
 comptime {
@@ -31,6 +32,23 @@ pub fn foeIn(foes: []const Foe, p: P) ?usize {
         if (f.at.eq(p)) return i;
     }
     return null;
+}
+
+pub fn foesOf(store: anytype) []const Foe {
+    return store.foe[0..store.foe_n];
+}
+
+pub fn barrelOf(store: anytype, p: P) bool {
+    return grid.cellOr(bool, &store.barrel, p, false);
+}
+
+pub fn addFoeTo(store: anytype, f: Foe, fits: bool) bool {
+    if (foeIn(foesOf(store), f.at) != null or !fits) return false;
+    return mathx.push(Foe, &store.foe, &store.foe_n, f);
+}
+
+pub fn dropFoeOf(store: anytype, i: usize) void {
+    mathx.removeAt(Foe, &store.foe, &store.foe_n, i, NO_FOE);
 }
 
 pub fn prune(fits: anytype, store: anytype, p: P) void {
@@ -73,7 +91,7 @@ pub const Section = struct {
     }
 
     pub fn barrelAt(self: *const Section, p: P) bool {
-        return grid.cellOr(bool, &self.barrel, p, false);
+        return barrelOf(self, p);
     }
 
     pub fn box(self: *const Section) ?grid.Box {
@@ -117,11 +135,11 @@ pub const Section = struct {
     }
 
     pub fn addTorch(self: *Section, w: P) bool {
-        return self.torchFits(w) and self.torch.add(w);
+        return self.torchFits(w) and !grid.anyNear(w, self.torch.slice(), TORCH_APART) and self.torch.add(w);
     }
 
     pub fn foes(self: *const Section) []const Foe {
-        return self.foe[0..self.foe_n];
+        return foesOf(self);
     }
 
     pub fn foeAt(self: *const Section, p: P) ?usize {
@@ -138,12 +156,11 @@ pub const Section = struct {
     }
 
     pub fn addFoe(self: *Section, f: Foe) bool {
-        if (self.foeAt(f.at) != null or !self.foeFits(f.at, f.kind) or !actor.roomFor(self.bodies(), f.kind)) return false;
-        return mathx.push(Foe, &self.foe, &self.foe_n, f);
+        return addFoeTo(self, f, self.foeFits(f.at, f.kind) and actor.roomFor(self.bodies(), f.kind));
     }
 
     pub fn dropFoe(self: *Section, i: usize) void {
-        mathx.removeAt(Foe, &self.foe, &self.foe_n, i, NO_FOE);
+        dropFoeOf(self, i);
     }
 
     pub fn valid(self: *const Section) bool {
@@ -157,7 +174,7 @@ pub const Section = struct {
         }
         if (!grid.propsWhole(&whole)) return false;
         for (self.torch.slice(), 0..) |w, i| {
-            if (!self.torchFits(w) or grid.anyNear(w, self.torch.slice()[0..i], 1)) return false;
+            if (!self.torchFits(w) or grid.anyNear(w, self.torch.slice()[0..i], TORCH_APART)) return false;
         }
         for (self.foes(), 0..) |f, i| {
             if (!self.foeFits(f.at, f.kind) or self.foeAt(f.at).? != i) return false;
@@ -238,7 +255,7 @@ pub const Placed = struct {
         }
         const painted = self.cells();
         lv.torch.keep(&painted, unpainted);
-        lv.torch.n = @min(lv.torch.n, grid.MAX_TORCHES - s.torch.n);
+        lv.torch.spare(s.torch.n);
         for (s.torch.slice()) |w| lv.addTorch(self.at(w));
     }
 };

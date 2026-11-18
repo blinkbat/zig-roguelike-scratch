@@ -155,8 +155,17 @@ pub fn pickPause(g: *game.Game, row: game.PauseRow) void {
     press(g, CONFIRM);
 }
 
+pub fn expectMode(g: *const game.Game, want: game.Mode) !void {
+    try std.testing.expectEqual(want, std.meta.activeTag(g.mode));
+}
+
 pub fn clickAt(g: *game.Game, p: P) void {
     g.st = .{ .device = .keys, .click = true, .pointer = p };
+    game.update(g, 0);
+}
+
+pub fn rightClick(g: *game.Game) void {
+    g.st = .{ .right_click = true };
     game.update(g, 0);
 }
 
@@ -504,6 +513,10 @@ pub const FADED_S: f32 = 0.6;
 
 pub fn ease(g: *game.Game, dt: f32) void {
     g.pic.easeOver(&g.sim, g.pic.groundShown(&g.sim), dt);
+}
+
+pub fn fadeFrames(g: *game.Game, comptime step: fn (*game.Game, f32) void) void {
+    for (0..FADE_FRAMES) |_| step(g, TEST_DT);
 }
 
 pub fn turned(clock: day.Clock, n: usize) day.Clock {

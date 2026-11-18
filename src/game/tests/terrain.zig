@@ -315,7 +315,7 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
         harness.heroArena(g, if (act == .spark) .wizard else .archer, from, &.{});
         const clock = g.sim.clock;
         harness.use(g, act);
-        try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+        try harness.expectMode(g, .aim);
         try std.testing.expectEqual(clock, g.sim.clock);
         g.mode.aim.mark = far;
         g.sim.lv.lit[grid.Level.idx(far)] = false;
@@ -324,7 +324,7 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
         try std.testing.expect(g.mode == .aim and g.mode.aim.askedHere());
         try std.testing.expectEqual(clock, g.sim.clock);
         skills.confirmAim(g);
-        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+        try harness.expectMode(g, .play);
         try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
         try std.testing.expect(g.pic.shot.?.flight.struck == null);
 
@@ -347,7 +347,7 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
         const before = g.sim.clock;
         const mana = g.sim.mana;
         skills.confirmAim(g);
-        try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+        try harness.expectMode(g, .aim);
         try std.testing.expectEqual(before, g.sim.clock);
         try std.testing.expectEqual(mana, g.sim.mana);
     }

@@ -31,6 +31,10 @@ pub const Roll = struct {
     /// Imbue's fire, past armour, still to meet the target's fire resistance; not in `dmg` yet.
     fire: i32 = 0,
 
+    pub fn fixed(dmg: i32, opportunity: ?i32) Roll {
+        return .{ .dmg = dmg, .physical = dmg, .hit_checked = true, .opportunity = opportunity };
+    }
+
     pub fn against(self: Roll, armour: i32, rng: *mathx.Rng) Roll {
         var out = self;
         out.dmg -= self.physical - attrs.armoured(armour - self.effect.penetration, self.physical, rng);
@@ -152,7 +156,7 @@ pub fn afflicted(sim: *Simulation, a: *actor.Actor, comptime M: type, lands: boo
         M.procs(&sim.rng, resist) and sim.takeStatus(a, M.AILMENT);
     if (takes) {
         M.afflict(a, &sim.rng);
-        if (comptime M.AILMENT == .bleed) a.bleed.move_bonus = @max(a.bleed.move_bonus, sim.grievous());
+        if (comptime M.AILMENT == .bleed) sim.grieve(&a.bleed);
     }
     return takes;
 }
@@ -232,7 +236,6 @@ pub fn strikeHero(sim: *Simulation, attacker_id: actor.ActorId, strike: actor.St
     if (sim.heroBlocks()) return .blocked;
     const blow = foeBlow(sim, attacker, hero, strike, weak) orelse return .dodged;
     const hp_before = hero.hp;
-    const defended = sim.combatStats(hero);
     const harm = sim.resolveDamage(.fromInt(sim.hero), blow.dealt);
     var outcome = HeroStrike{ .hit = .{
         .damage = harm,
@@ -248,8 +251,7 @@ pub fn strikeHero(sim: *Simulation, attacker_id: actor.ActorId, strike: actor.St
         hero.clock.stun();
         outcome.hit.stunned = true;
     }
-    const chill_chance = damage.resistedChance(strike.chills, defended.elements.get(glacial.ELEMENT));
-    if (sim.procStatus(hero, glacial.AILMENT, chill_chance)) {
+    if (sim.procResisted(hero, glacial.AILMENT, strike.chills, glacial.ELEMENT)) {
         hero.chill.apply();
         outcome.hit.chilled = true;
     }
@@ -293,15 +295,15 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     if (!culled and r.dmg > 0 and r.dmg < a.hp) {
         if (r.applied != .bleed and sim.procStatus(a, .bleed, r.effect.bleed)) {
             bled = a.bleed.said();
-            a.bleed.startWound(r.effect.bleed_damage, sim.grievous());
+            a.bleed.startWith(r.effect.bleed_damage);
+            sim.grieve(&a.bleed);
         }
         if (r.applied != .stun and sim.procStatus(a, .stun, r.effect.stun)) {
             a.clock.stun();
             stunned = true;
         }
         inline for (IMBUED, affixes.IMBUES) |M, e| {
-            const chance = damage.resistedChance(r.effect.chance(M.AILMENT), stats.elements.get(e));
-            if (r.applied != M.AILMENT and sim.procStatus(a, M.AILMENT, chance)) {
+            if (r.applied != M.AILMENT and sim.procStatus(a, M.AILMENT, damage.resistedChance(r.effect.chance(M.AILMENT), stats.elements.get(e)))) {
                 M.afflict(a, &sim.rng);
                 imbued.insert(M.AILMENT);
             }
@@ -317,7 +319,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
         .bled = bled,
         .stunned = stunned,
         .imbued = imbued,
-        .recovery = if (h.dmg > 0) perks.life_on_hit + leeched(sim, h.dmg) + if (h.lethal and !a.raider) perks.life_on_kill else 0 else 0,
+        .recovery = if (h.dmg > 0) perks.life_on_hit + leeched(sim, h.dmg) + if (h.lethal and a.spoils()) perks.life_on_kill else 0 else 0,
     } };
 }
 

@@ -50,6 +50,7 @@ const PATH_WANDER: f32 = 0.85;
 /// A road's sideways arc, per cell of its length, and its cap.
 const ARC_PER_CELL: f32 = 0.18;
 const ARC_MAX: f32 = 7;
+const ARC_LEFT_PERCENT: u32 = 50;
 /// Cells from either end over which a road eases into its wander.
 const BEND_REACH: f32 = 10;
 /// Extra radius a road swells by, and how fast that swell cycles per step.
@@ -290,7 +291,7 @@ fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lo
     const above = grid.Box{ .lo = .{ .x = std.math.minInt(i32), .y = std.math.minInt(i32) }, .hi = .{ .x = std.math.maxInt(i32), .y = lowest + 1 } };
     var m = carve.Meander.init(a, b, wander).within(above);
     const length = @max(1, mathx.distEuclid(a, b));
-    const arc = @min(length * ARC_PER_CELL, ARC_MAX) * wander * (if (rng.percent(50)) @as(f32, 1) else -1);
+    const arc = @min(length * ARC_PER_CELL, ARC_MAX) * wander * (if (rng.percent(ARC_LEFT_PERCENT)) @as(f32, 1) else -1);
     while (m.next(rng)) |step| {
         const phase = @min(1, mathx.distEuclid(step, a) / length) * std.math.pi;
         const offset = arc * std.math.pow(f32, @sin(phase), 2);
@@ -488,9 +489,7 @@ const ChestSite = struct {
     fn fits(s: ChestSite, q: P) bool {
         if (s.lv.at(q) != .water) return false;
         if (grid.anyNear(q, s.chests, CHEST_APART)) return false;
-        var round = grid.Cells.around(q, 1);
-        while (round.next()) |n| if (!s.lv.at(n).wet()) return false;
-        return true;
+        return s.lv.wetAt(q) and grid.allNeighbours(q, s.lv, grid.Level.wetAt);
     }
 };
 

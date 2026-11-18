@@ -107,7 +107,7 @@ pub const Cloud = struct {
     pub fn draw(self: *Cloud, lv: *const grid.Level, on_screen: grid.Box, ox: i32, oy: i32, cell: i32, screen: mathx.P) void {
         self.visible = false;
         const tex = self.tex orelse return;
-        if (!self.tinted(grid.Box.inMap(0))) {
+        if (!self.tinted(grid.MAP)) {
             self.t = .{};
             return;
         }
@@ -136,11 +136,8 @@ pub const Cloud = struct {
         if (!self.visible) return false;
         const tex = self.tex orelse return false;
         const s = self.veil orelse return false;
-        rl.beginShaderMode(s.shader);
-        focus.set(s);
-        occlusion.set(s);
+        shaders.beginOverMap(s, self.map_view, occlusion, focus);
         shaders.setUniform(s.shader, s.time, self.t.at());
-        shaders.setMapView(s, self.map_view);
         const rgb: [3]f32 = look.rgbOf(lit);
         shaders.setUniform(s.shader, s.lit, rgb);
         rl.setShaderValueTexture(s.shader, s.cloud, tex);
@@ -340,12 +337,12 @@ test "gas remembered off screen leaves the view untinted, gas a wall away from i
     defer alloc.destroy(c);
     const view = grid.Box.sized(.{ .x = 10, .y = 10 }, 20, 12);
     const reads = view.grown(2);
-    try std.testing.expect(!c.tinted(grid.Box.inMap(0)));
+    try std.testing.expect(!c.tinted(grid.MAP));
     c.tint.getPtr(.smoke)[grid.CELLS - 1] = 0.5;
-    try std.testing.expect(c.tinted(grid.Box.inMap(0)));
+    try std.testing.expect(c.tinted(grid.MAP));
     c.tint.getPtr(.smoke)[grid.CELLS - 1] = 0;
     c.tint.getPtr(.caustic)[grid.Level.idx(.{ .x = 50, .y = 40 })] = 0.5;
-    try std.testing.expect(c.tinted(grid.Box.inMap(0)));
+    try std.testing.expect(c.tinted(grid.MAP));
     try std.testing.expect(!c.tinted(reads));
     c.tint.getPtr(.healing)[grid.Level.idx(.{ .x = view.hi.x + 1, .y = view.lo.y })] = 0.5;
     try std.testing.expect(c.tinted(reads));

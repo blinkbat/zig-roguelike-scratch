@@ -188,7 +188,7 @@ test "wording aliases share record replacement lookup and display casing" {
     try std.testing.expect(allowed("play.skillbar.Act", "shoot"));
     try std.testing.expect(!allowed("play.skillbar.Act", "secondary"));
     try std.testing.expect(allowed("game.PauseRow", "quit"));
-    try std.testing.expect(!allowed("game.PauseRow", "resume"));
+    try std.testing.expect(!allowed("game.PauseRow", "resume_"));
     try std.testing.expect(!allowed("internal.Kind", "any"));
 }
 

@@ -328,6 +328,15 @@ pub const Act = enum {
         return a.declares("FUEL_DAMAGE");
     }
 
+    /// A stance kept on or off in the `tactics.State` field of its own name.
+    pub fn toggles(a: Act) bool {
+        return a.declares("DRAIN");
+    }
+
+    pub fn drain(a: Act) i32 {
+        return a.contract().drain;
+    }
+
     pub fn cooldown(a: Act) u8 {
         return a.contract().cooldown;
     }

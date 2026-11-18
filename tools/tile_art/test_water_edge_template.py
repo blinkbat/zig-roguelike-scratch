@@ -1,7 +1,7 @@
 import hashlib
 from pathlib import Path
 
-from art_support import SCRIPTS, WorkTest, arguments, aseprite, generate, main
+from art_support import WorkTest, arguments, aseprite, generate, main
 
 
 args, remaining = arguments()
@@ -14,7 +14,7 @@ class WaterTemplateTests(WorkTest):
         self.generate()
 
     def generate(self, replace=False, expected=0, temporary=None):
-        generated = generate(SCRIPTS / 'water_edge_template.py', '--output', self.sheet,
+        generated = generate(args.scripts_dir / 'water_edge_template.py', '--output', self.sheet,
                              *(['--replace-blank'] if replace else []), temp=temporary or self.work)
         self.assertEqual(0, generated.returncode, generated.stdout + generated.stderr)
         assembly = Path(generated.stdout.strip()) / 'assemble.lua'

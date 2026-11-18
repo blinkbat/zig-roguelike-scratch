@@ -473,7 +473,7 @@ test "map assets retain the water artwork beneath temporary ice" {
 
 test "map assets hold the grass decor a glowbulb leaves when it bursts" {
     var checked: usize = 0;
-    var cells = grid.Box.inMap(1).cells();
+    var cells = grid.INNER.cells();
     while (cells.next()) |p| {
         const d = grassDecor(.grass, p) orelse continue;
         var lv = grid.openFloor();

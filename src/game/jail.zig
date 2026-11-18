@@ -35,17 +35,38 @@ pub fn interact(g: *game.Game, at: P) bool {
     return true;
 }
 
-const CARAVAN = @import("../map/atlas.zig").CARAVAN_NODE;
-const startAtlas = @import("../map/atlas.zig").testStart;
+const atlas = @import("../map/atlas.zig");
+const CARAVAN = atlas.CARAVAN_NODE;
+
+const Caravan = struct {
+    g: *game.Game,
+    map: *atlas.Atlas,
+    z: atlas.zoo.Spec,
+
+    fn init() !Caravan {
+        const g = try game.boot(std.testing.allocator);
+        errdefer game.shut(std.testing.allocator, g);
+        const map = try atlas.testStart();
+        return .{ .g = g, .map = map, .z = map.node[CARAVAN].zoo.? };
+    }
+
+    fn begin(c: Caravan, at: P) void {
+        game.beginMapAt(c.g, c.map, .{ .node = CARAVAN, .at = at }, 77);
+    }
+
+    fn deinit(c: Caravan) void {
+        std.testing.allocator.destroy(c.map);
+        game.shut(std.testing.allocator, c.g);
+    }
+};
 
 test "the caravan zoo opens by bump or interact and only spends a turn after unlocking" {
     const h = game.harness;
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    const map = try startAtlas();
-    defer std.testing.allocator.destroy(map);
-    const z = map.node[CARAVAN].zoo.?;
-    game.beginMapAt(g, map, .{ .node = CARAVAN, .at = z.approach() }, 77);
+    const c = try Caravan.init();
+    defer c.deinit();
+    const g = c.g;
+    const z = c.z;
+    c.begin(z.approach());
     h.toughen(g.sim.heroActor().?);
     const before = g.sim.clock;
     const toward = mathx.dirTo(g.sim.heroAt().?, z.door()).?;
@@ -63,31 +84,29 @@ test "the caravan zoo opens by bump or interact and only spends a turn after unl
 
 test "interact beside a locked jail gate still reaches a bag lying in reach" {
     const book = @import("../ui/book.zig");
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    const map = try startAtlas();
-    defer std.testing.allocator.destroy(map);
-    const z = map.node[CARAVAN].zoo.?;
+    const c = try Caravan.init();
+    defer c.deinit();
+    const g = c.g;
+    const z = c.z;
     const at = z.approach();
-    game.beginMapAt(g, map, .{ .node = CARAVAN, .at = at }, 77);
+    c.begin(at);
     try std.testing.expect(beside(g) != null);
     try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = at }));
     game.harness.pressInteract(g);
-    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .pause);
     try std.testing.expectEqual(book.Page.loot, g.character.page);
     try std.testing.expectEqual(grid.Tile.locked_gate, g.sim.lv.at(z.door()));
     try std.testing.expect(!game.harness.logged(g, "locked"));
 }
 
 test "a chest holds a Small Key and keyboard controller and mouse can release the room" {
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    const map = try startAtlas();
-    defer std.testing.allocator.destroy(map);
-    const z = map.node[CARAVAN].zoo.?;
+    const c = try Caravan.init();
+    defer c.deinit();
+    const g = c.g;
+    const z = c.z;
     const Mode = enum { bump, interact, mouse };
     for (std.enums.values(Mode)) |mode| {
-        game.beginMapAt(g, map, .{ .node = CARAVAN, .at = z.key.?.add(.{ .x = 0, .y = 1 }) }, 77);
+        c.begin(z.key.?.add(.{ .x = 0, .y = 1 }));
         try std.testing.expectEqual(grid.Tile.chest, g.sim.lv.at(z.key.?));
         try std.testing.expectEqual(@as(usize, 0), g.sim.inventory.n);
         try std.testing.expectEqual(rewards.Chest.opened, rewards.openChest(&g.sim, z.key.?));

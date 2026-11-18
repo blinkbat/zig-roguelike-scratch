@@ -192,6 +192,34 @@ fn testWorld(text: []const u8) !*atlas.Atlas {
 const press = harness.press;
 const SEED = 9;
 
+const Fixture = struct {
+    w: *atlas.Atlas,
+    g: *game.Game,
+
+    fn init(text: []const u8) !Fixture {
+        return start(try testWorld(text));
+    }
+
+    fn start(w: *atlas.Atlas) !Fixture {
+        errdefer std.testing.allocator.destroy(w);
+        const g = try game.boot(std.testing.allocator);
+        game.beginMapAt(g, w, w.start, SEED);
+        return .{ .w = w, .g = g };
+    }
+
+    fn deinit(f: Fixture) void {
+        game.shut(std.testing.allocator, f.g);
+        std.testing.allocator.destroy(f.w);
+    }
+};
+
+fn stamped(w: *const atlas.Atlas, lv: *grid.Level, shown: anytype) script.Stood {
+    var stood: script.Stood = @splat(null);
+    w.node[0].sketch(lv);
+    w.stampNpcs(0, lv, 0, &stood, shown);
+    return stood;
+}
+
 const WENNA =
     \\flag met
     \\dialog wenna
@@ -207,11 +235,9 @@ const WENNA =
 ;
 
 test "bumping an NPC opens its conversation without a turn; it closes only through an ending" {
-    const w = try testWorld(WENNA ++ "\nnpc 0 5 6 -");
-    defer std.testing.allocator.destroy(w);
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    const f = try Fixture.init(WENNA ++ "\nnpc 0 5 6 -");
+    defer f.deinit();
+    const g = f.g;
     try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(.{ .x = 6, .y = 5 }));
     try std.testing.expect(!g.sim.lv.vacant(.{ .x = 6, .y = 5 }));
     const turns = g.sim.plot.turns;
@@ -219,31 +245,30 @@ test "bumping an NPC opens its conversation without a turn; it closes only throu
     try std.testing.expectEqual(game.Move.talk, game.heroMove(g, .e));
     game.heroStep(g, .e, 0);
     try std.testing.expect(g.sim.heroActor().?.at.eq(at));
-    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .talk);
     try std.testing.expectEqual(turns, g.sim.plot.turns);
     press(g, menu.BACK);
-    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .talk);
     press(g, menu.CONFIRM);
     try std.testing.expect(g.sim.plot.flags[0]);
     press(g, menu.CONFIRM);
     g.st.walk = .s;
     game.update(g, harness.TEST_DT);
     press(g, menu.CONFIRM);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
     try std.testing.expect(g.sim.plot.talked[0]);
     try std.testing.expect(g.sim.plot.talk == null);
     game.heroStep(g, .s, 0);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
     try std.testing.expectEqualStrings("Stranger has nothing to say.", g.sim.log.line(0).?);
 }
 
 test "a long speech is never split: confirm answers its reply at once" {
     const w = try testWorld(WENNA);
-    defer std.testing.allocator.destroy(w);
     _ = w.script.dialog[0].line[0].say.set("The road remembers every traveller. " ** 100);
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    const f = try Fixture.start(w);
+    defer f.deinit();
+    const g = f.g;
     game.heroStep(g, .e, 0);
     press(g, menu.CONFIRM);
     try std.testing.expect(g.sim.plot.flags[0]);
@@ -251,13 +276,11 @@ test "a long speech is never split: confirm answers its reply at once" {
 }
 
 test "a choice clicked while confirm is pressed is one pick" {
-    const w = try testWorld(WENNA);
-    defer std.testing.allocator.destroy(w);
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    const f = try Fixture.init(WENNA);
+    defer f.deinit();
+    const g = f.g;
     game.heroStep(g, .e, 0);
-    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .talk);
     var shown: Shown = .{ .view = undefined };
     try std.testing.expect(shownOf(g, g.sim.script().?, &shown));
     g.st = .{ .device = .keys, .click = true, .pointer = raster.middleAt(shown.layout.rows[0]), .pressed = .initOne(menu.CONFIRM) };
@@ -266,7 +289,7 @@ test "a choice clicked while confirm is pressed is one pick" {
 }
 
 test "a direction held as the conversation moves to another line does not walk the new line's choices" {
-    const w = try testWorld(
+    const f = try Fixture.init(
         \\dialog wenna
         \\line root
         \\say Nobody comes down the well.
@@ -277,12 +300,10 @@ test "a direction held as the conversation moves to another line does not walk t
         \\ask Go. -> end
         \\npc 0 6 5 wenna Old Wenna
     );
-    defer std.testing.allocator.destroy(w);
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    defer f.deinit();
+    const g = f.g;
     game.heroStep(g, .e, 0);
-    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .talk);
     g.st = .{ .device = .keys, .walk = .s, .pressed = .initOne(menu.CONFIRM) };
     game.update(g, 0);
     try std.testing.expectEqual(@as(u8, 1), g.sim.plot.talk.?.line);
@@ -290,7 +311,7 @@ test "a direction held as the conversation moves to another line does not walk t
 }
 
 test "a dialog no way through ends never opens, while one whose way out is gated does" {
-    const w = try testWorld(
+    const f = try Fixture.init(
         \\flag met
         \\dialog loop
         \\line root
@@ -304,21 +325,20 @@ test "a dialog no way through ends never opens, while one whose way out is gated
         \\npc 0 6 5 loop Looper
         \\npc 0 5 6 gated Keeper
     );
-    defer std.testing.allocator.destroy(w);
+    defer f.deinit();
+    const w = f.w;
     try std.testing.expect(!w.script.dialog[0].ends());
     try std.testing.expect(w.script.dialog[1].ends());
     try std.testing.expectEqual(@as(usize, 1), w.script.endless());
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    const g = f.g;
     game.heroStep(g, .e, 0);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
     game.heroStep(g, .s, 0);
-    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .talk);
 }
 
 test "a dialog with a reachable line no way out of never opens, though its first line can end" {
-    const w = try testWorld(
+    const f = try Fixture.init(
         \\dialog trap
         \\line root
         \\say Choose.
@@ -329,14 +349,12 @@ test "a dialog with a reachable line no way out of never opens, though its first
         \\then held
         \\npc 0 6 5 trap Trapper
     );
-    defer std.testing.allocator.destroy(w);
-    try std.testing.expect(!w.script.dialog[0].ends());
-    try std.testing.expectEqual(@as(usize, 1), w.script.endless());
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    defer f.deinit();
+    try std.testing.expect(!f.w.script.dialog[0].ends());
+    try std.testing.expectEqual(@as(usize, 1), f.w.script.endless());
+    const g = f.g;
     game.heroStep(g, .e, 0);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
     try std.testing.expectEqualStrings("Trapper has nothing to say.", g.sim.log.line(0).?);
 }
 
@@ -366,7 +384,7 @@ test "a dialog whose only way out is gated beside an ungated loop never opens, n
 }
 
 test "a way out that never shows ends nothing: its NPC has nothing to say and a trigger asking for it goes on" {
-    const w = try testWorld(
+    const f = try Fixture.init(
         \\flag reward
         \\dialog stuck
         \\line root
@@ -380,14 +398,12 @@ test "a way out that never shows ends nothing: its NPC has nothing to say and a 
         \\do dialog stuck
         \\do flag reward on
     );
-    defer std.testing.allocator.destroy(w);
-    try std.testing.expect(!w.script.dialog[0].ends());
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    defer f.deinit();
+    try std.testing.expect(!f.w.script.dialog[0].ends());
+    const g = f.g;
     try std.testing.expectEqual(@as(?usize, null), beside(g));
     game.heroStep(g, .e, 0);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
     try std.testing.expectEqualStrings("Stuck has nothing to say.", g.sim.log.line(0).?);
     game.heroStep(g, .s, 0);
     try std.testing.expectEqual(@as(?u8, null), g.sim.plot.asked);
@@ -429,12 +445,11 @@ test "NPCs stand by a prop and far off; a quest given, carried and finished take
         \\npc 0 by chest - Baby pib
         \\shows quest pib done
     );
-    defer std.testing.allocator.destroy(w);
     const chest = P{ .x = 10, .y = 6 };
     w.node[0].plan.bespoke.tile[grid.Level.idx(chest)] = .chest;
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    const f = try Fixture.start(w);
+    defer f.deinit();
+    const g = f.g;
     try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(.{ .x = 9, .y = 7 }));
     const far = g.sim.plot.spots[1] orelse return error.NoPlace;
     try std.testing.expectEqual(@as(?usize, 1), g.sim.lv.npcAt(far));
@@ -447,7 +462,7 @@ test "NPCs stand by a prop and far off; a quest given, carried and finished take
     try std.testing.expectEqualStrings("New quest: The Stolen Pib.", g.sim.log.line(0).?);
     speak(g, 1);
     press(g, menu.CONFIRM);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
     try std.testing.expectEqual(@as(?usize, null), g.sim.lv.npcAt(far));
     try std.testing.expectEqual(@as(u8, 2), g.sim.plot.quests[0].stage);
     speak(g, 0);
@@ -472,15 +487,9 @@ test "an NPC's found spot keeps off the node's painted foes and what lies on the
     );
     defer std.testing.allocator.destroy(w);
     var lv: grid.Level = undefined;
-    var stood: script.Stood = @splat(null);
-    w.node[0].sketch(&lv);
-    w.stampNpcs(0, &lv, 0, &stood, atlas.EVERY_NPC);
-    const first = stood[0] orelse return error.NoPlace;
+    const first = stamped(w, &lv, atlas.EVERY_NPC)[0] orelse return error.NoPlace;
     try std.testing.expect(w.node[0].plan.bespoke.addFoe(.{ .kind = .rat, .at = first }));
-    stood = @splat(null);
-    w.node[0].sketch(&lv);
-    w.stampNpcs(0, &lv, 0, &stood, atlas.EVERY_NPC);
-    const second = stood[0] orelse return error.NoPlace;
+    const second = stamped(w, &lv, atlas.EVERY_NPC)[0] orelse return error.NoPlace;
     try std.testing.expect(!second.eq(first));
     const Lying = struct {
         cell: P,
@@ -493,10 +502,7 @@ test "an NPC's found spot keeps off the node's painted foes and what lies on the
             return cells;
         }
     };
-    stood = @splat(null);
-    w.node[0].sketch(&lv);
-    w.stampNpcs(0, &lv, 0, &stood, Lying{ .cell = second });
-    const third = stood[0] orelse return error.NoPlace;
+    const third = stamped(w, &lv, Lying{ .cell = second })[0] orelse return error.NoPlace;
     try std.testing.expect(!third.eq(first) and !third.eq(second));
 }
 
@@ -506,17 +512,11 @@ test "an NPC's found spot keeps off a painted NPC listed after it" {
     );
     defer std.testing.allocator.destroy(alone);
     var lv: grid.Level = undefined;
-    var stood: script.Stood = @splat(null);
-    alone.node[0].sketch(&lv);
-    alone.stampNpcs(0, &lv, 0, &stood, atlas.EVERY_NPC);
-    const far = stood[0] orelse return error.NoPlace;
+    const far = stamped(alone, &lv, atlas.EVERY_NPC)[0] orelse return error.NoPlace;
     var text: [64]u8 = undefined;
     const w = try testWorld(try std.fmt.bufPrint(&text, "npc 0 far - Hermit\nnpc 0 {d} {d} - Painted", .{ far.x, far.y }));
     defer std.testing.allocator.destroy(w);
-    stood = @splat(null);
-    w.node[0].sketch(&lv);
-    w.stampNpcs(0, &lv, 0, &stood, atlas.EVERY_NPC);
-    const hermit = stood[0] orelse return error.NoPlace;
+    const hermit = stamped(w, &lv, atlas.EVERY_NPC)[0] orelse return error.NoPlace;
     try std.testing.expect(!hermit.eq(far));
     try std.testing.expectEqual(@as(?usize, 1), lv.npcAt(far));
     try std.testing.expectEqual(@as(?usize, 0), lv.npcAt(hermit));
@@ -537,15 +537,13 @@ const MERCHANT =
 ;
 
 test "a choice that trades opens the merchant's wares without a turn; buying spends gold and closing returns to play" {
-    const w = try testWorld(MERCHANT);
-    defer std.testing.allocator.destroy(w);
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    const f = try Fixture.init(MERCHANT);
+    defer f.deinit();
+    const g = f.g;
     game.heroStep(g, .e, 0);
     const turns = g.sim.plot.turns;
     press(g, menu.CONFIRM);
-    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .pause);
     try std.testing.expectEqual(book.Page.trade, g.character.page);
     try std.testing.expect(g.sim.plot.talk == null and g.sim.plot.trading == null);
     const shelf = &g.sim.plot.wares[0].?;
@@ -566,7 +564,7 @@ test "a choice that trades opens the merchant's wares without a turn; buying spe
     try std.testing.expectEqual(@as(u8, 0), g.sim.inventory.stacks.get(k));
     try std.testing.expectEqual(100 - trade.supplyPrice(k) + trade.offered(trade.supplyPrice(k)), g.sim.gold);
     press(g, menu.BACK);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
     try std.testing.expectEqual(turns, g.sim.plot.turns);
     game.heroStep(g, .e, 0);
     press(g, menu.CONFIRM);
@@ -623,20 +621,18 @@ test "the caravan merchant trades only after the stolen pib is returned" {
     press(g, menu.CONFIRM);
     speak(g, merchant);
     try Pick.reply(g, "Show me your wares.");
-    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .pause);
     try std.testing.expectEqual(book.Page.trade, g.character.page);
     try std.testing.expect(g.sim.plot.wares[merchant] != null);
     try std.testing.expectEqual(turns, g.sim.plot.turns);
     press(g, menu.BACK);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
 }
 
 test "a trade taken on the way to another line hands back to the conversation" {
-    const w = try testWorld(MERCHANT);
-    defer std.testing.allocator.destroy(w);
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    const f = try Fixture.init(MERCHANT);
+    defer f.deinit();
+    const g = f.g;
     game.heroStep(g, .e, 0);
     g.st = .{ .device = .keys, .walk = .s };
     game.update(g, 0);
@@ -644,24 +640,22 @@ test "a trade taken on the way to another line hands back to the conversation" {
     try std.testing.expectEqual(book.Page.trade, g.character.page);
     try std.testing.expectEqual(@as(u8, 1), g.sim.plot.talk.?.line);
     press(g, menu.BACK);
-    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .talk);
     press(g, menu.CONFIRM);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
 }
 
 test "the Character button on a trade with a conversation beneath closes back to the conversation" {
-    const w = try testWorld(MERCHANT);
-    defer std.testing.allocator.destroy(w);
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    const f = try Fixture.init(MERCHANT);
+    defer f.deinit();
+    const g = f.g;
     game.heroStep(g, .e, 0);
     g.st = .{ .device = .keys, .walk = .s };
     game.update(g, 0);
     press(g, menu.CONFIRM);
     try std.testing.expectEqual(book.Page.trade, g.character.page);
     press(g, menu.CHARACTER);
-    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .talk);
 }
 
 test "a trigger may not trade, and a conversation a trigger opened has no one to trade with" {
@@ -677,7 +671,7 @@ test "a trigger may not trade, and a conversation a trigger opened has no one to
 }
 
 test "a trigger's conversation waits for the turn to be drawn, then takes the screen" {
-    const w = try testWorld(
+    const f = try Fixture.init(
         \\dialog warn
         \\line root
         \\say Turn back.
@@ -686,10 +680,8 @@ test "a trigger's conversation waits for the turn to be drawn, then takes the sc
         \\do dialog warn
         \\do text The voice fades.
     );
-    defer std.testing.allocator.destroy(w);
-    const g = try game.boot(std.testing.allocator);
-    defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, SEED);
+    defer f.deinit();
+    const g = f.g;
     try std.testing.expectEqual(@as(?u8, null), g.sim.plot.asked);
     game.heroStep(g, .e, 0);
     try std.testing.expectEqual(@as(?u8, 0), g.sim.plot.asked);
@@ -697,8 +689,8 @@ test "a trigger's conversation waits for the turn to be drawn, then takes the sc
         if (g.mode == .talk) break;
         game.update(g, harness.TEST_DT);
     }
-    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .talk);
     press(g, menu.CONFIRM);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
     try std.testing.expectEqualStrings("The voice fades.", g.sim.log.line(0).?);
 }

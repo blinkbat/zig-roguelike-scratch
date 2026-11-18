@@ -9,7 +9,7 @@ local W,H=masks.W,masks.H
 -- Brick courses under the cap's lower edge: 7 courses, 23 rows; src/gfx/look.zig's WALL_FACE_PX.
 local FACE=23
 local sprite=assert(app.open(path))
-assert(sprite.width==W and sprite.height==masks.HEAD+H)
+assert(sprite.width==W and sprite.height==masks.SHEET_H)
 local painted=sourceFiles.layer(sprite,'Layer 1')
 local wall=dofile(root..'tools/tile_art/wall_strips.lua')(assert(painted,'no Layer 1'):cel(1).image,painted:cel(1).position)
 sprite:close()
@@ -24,8 +24,7 @@ for k=1,6 do local s=(k%2==1) and 101 or 104; faceRows[#faceRows+1]=s; faceRows[
 for _,r in ipairs({107,108,109}) do faceRows[#faceRows+1]=r end
 assert(#faceRows==FACE)
 local function tile(mask)
-  local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
-  local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
+  local n,e,s,w,ne,se,sw,nw=masks.sides(mask)
   local image=Image(64,64,ColorMode.RGB)
   local foot=s and 64 or 64-FACE
   for y=0,63 do for x=0,63 do
@@ -89,8 +88,6 @@ sourceFiles.keep(root..'assets/source/walls.aseprite',sourceFiles.work(),'export
 runtime:saveAs(root..'assets/source/walls.aseprite')
 runtime:close()
 local check=assert(app.open(root..'assets/source/walls.aseprite'))
-local exported=Image(W,H,ColorMode.RGB)
-exported:drawImage(check.layers[1]:cel(1).image,check.layers[1]:cel(1).position)
+sourceFiles.checkLayer(check,'Runtime walls',atlas,Point(0,0))
 check:close()
-assert(exported:isEqual(atlas))
-sourceFiles.savePng(exported,root..'assets/walls/walls.png','Wall PNG export changed pixels or did not save')
+sourceFiles.savePng(atlas,root..'assets/walls/walls.png','Wall PNG export changed pixels or did not save')

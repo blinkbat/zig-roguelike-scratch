@@ -1,19 +1,22 @@
 import sys
 from PIL import Image, ImageDraw
 
-from art_support import arial, corner_order
+sys.dont_write_bytecode = True
+from art_support import arial, corner_order, ground_layout
 
 out, title = sys.argv[1], sys.argv[2]
 order = corner_order()
+layout = ground_layout()
 
 INK = (50, 50, 50, 255)
-W, H, HEAD, CELL = 512, 320, 64, 64
+W, HEAD, CELL, COLS = layout['W'], layout['HEAD'], layout['CELL'], layout['COLS']
+H = HEAD + COLS * CELL
 image = Image.new('RGBA', (W, H))
 draw = ImageDraw.Draw(image)
 draw.text((12, 8), title, font=arial(23, True), fill=INK)
 small = arial(11)
 for i, mask in enumerate(order):
-    x, y = (i % 4) * CELL, HEAD + (i // 4) * CELL
+    x, y = (i % COLS) * CELL, HEAD + (i // COLS) * CELL
     if mask:
         draw.text((x + 3, y + 2), str(mask), font=small, fill=INK)
 notes = [

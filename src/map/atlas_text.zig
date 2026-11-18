@@ -331,21 +331,7 @@ fn finished(self: *atlas.Atlas, rows: usize) Error!void {
     const nd = &self.node[self.node_n - 1];
     if (!nd.zooFits()) return error.BadLine;
     switch (nd.plan) {
-        .bespoke => |*b| {
-            if (rows != ROWS or !grid.propsWhole(&b.tile)) return error.BadLine;
-            for (nd.doors()) |d| {
-                if (!nd.doorFits(b, d.at)) return error.BadLine;
-            }
-            for (b.foes()) |f| {
-                if (!nd.foeFits(b, f.at, f.kind)) return error.BadLine;
-            }
-            for (b.torches()) |t| {
-                if (!nd.torchFits(b, t)) return error.BadLine;
-            }
-            for (b.barrel, 0..) |on, i| {
-                if (on and !nd.barrelFits(b, grid.Level.of(i))) return error.BadLine;
-            }
-        },
+        .bespoke => |*b| if (rows != ROWS or !grid.propsWhole(&b.tile) or !nd.bespokeValid(b)) return error.BadLine,
         .procgen => |*pg| if (!pg.valid() or !pg.section.valid()) return error.BadLine,
     }
 }

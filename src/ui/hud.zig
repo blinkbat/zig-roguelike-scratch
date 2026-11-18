@@ -211,7 +211,7 @@ pub fn statuses(layout: Layout, sprites: *const sprite.Sprites, face: *const fon
 pub fn counter(face: *const font.Face, box: rl.Rectangle, n: u32) void {
     var buf: [12]u8 = undefined;
     const label = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch "";
-    face.text(label, raster.right(box) - face.width(label, font.SMALL) - COUNT_INSET.x, raster.bottom(box) - font.SMALL - COUNT_INSET.y, font.SMALL, look.TEXT);
+    face.textRight(label, raster.right(box) - COUNT_INSET.x, raster.bottom(box) - font.SMALL - COUNT_INSET.y, font.SMALL, look.TEXT);
 }
 
 const FOCUS_GROW: f32 = 4;
@@ -231,10 +231,14 @@ pub fn focus(box: rl.Rectangle, round: bool) void {
         rl.drawRing(raster.middle(box), r - FOCUS_W, r, 0, 360, FOCUS_SEGMENTS, look.UI_FOCUS);
         return;
     }
-    rl.drawRectangleLinesEx(raster.grown(box, FOCUS_GROW), FOCUS_W, look.UI_FOCUS);
+    focusGrown(box, FOCUS_GROW);
 }
 
-const TIP_SEP = '|';
+pub fn focusGrown(box: rl.Rectangle, grow: f32) void {
+    rl.drawRectangleLinesEx(raster.grown(box, grow), FOCUS_W, look.UI_FOCUS);
+}
+
+const TIP_SEP = font.TABLE_SEP;
 pub const TIP_RULE = "---";
 
 pub fn table(comptime rows: anytype) []const u8 {
@@ -249,18 +253,7 @@ const TIP_VALUE_X = @divTrunc(TIP_W, 2) + TIP_VALUE_DX;
 pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize, words: ?*keywords.State) usize {
     var buf: [TIP_LINES_MAX][font.WRAP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
-    var n: usize = 0;
-    var rows = std.mem.splitScalar(u8, body, '\n');
-    while (rows.next()) |r| {
-        if (n == TIP_LINES_MAX) break;
-        if (std.mem.indexOfScalar(u8, r, TIP_SEP) != null or r.len == 0) {
-            const len = @min(r.len, font.WRAP_COLS_MAX);
-            @memcpy(buf[n][0..len], r[0..len]);
-            buf[n][len] = 0;
-            lines[n] = buf[n][0..len :0];
-            n += 1;
-        } else n = font.wrapAppend(face, r, font.SMALL, TIP_W - 2 * TIP_PAD, &buf, &lines, n);
-    }
+    const n = font.wrapRows(face, body, font.SMALL, TIP_W - 2 * TIP_PAD, &buf, &lines);
     const limit: usize = @intCast(@max(1, @divTrunc(screen.y - 2 * TIP_MARGIN - TIP_BODY_Y - TIP_PAD, TIP_LINE)));
     const shown = @min(n, limit);
     const first = @min(scroll, n - shown);
@@ -273,8 +266,7 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
             y = onScreen(raster.top(over) - @divTrunc(h, 2), h, screen.y);
         }
     }
-    sprite.layeredBacking(sprites, x, y, TIP_W, h, .menu);
-    face.richText(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
+    menu.titledCard(face, sprites, x, y, TIP_W, h, .menu, TIP_PAD, title);
     var rich = font.Rich.init(body);
     for (lines[0..first]) |line| rich.skip(line);
     for (lines[first .. first + shown], first..) |l, i| {

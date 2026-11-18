@@ -1,11 +1,11 @@
 from PIL import Image
 
-from art_support import ROOT, SCRIPTS, WorkTest, arguments, aseprite, main
+from art_support import WorkTest, arguments, aseprite, main
 
 
 args, remaining = arguments()
 
-EXPORTER = SCRIPTS / 'export_water_cliff.lua'
+EXPORTER = args.scripts_dir / 'export_water_cliff.lua'
 
 CLIFF_FIXTURE = '''
 local s=Sprite(192,64,ColorMode.RGB)
@@ -64,7 +64,7 @@ print('EXPECTED_PROFILE_FAILURE')
                     params = dict(source=work / 'source.aseprite', out=work / 'cliff.png',
                                   depth='deep', layer='Paint', failure=failure,
                                   failed=work / f'cliff-{profile}.txt',
-                                  root=ROOT.as_posix() + '/', exporter=EXPORTER)
+                                  root=args.root.as_posix() + '/', exporter=EXPORTER)
                     result = aseprite(args.aseprite, probe, params)
                     output = result.stdout + result.stderr
                     self.assertEqual(0, result.returncode, output)

@@ -115,8 +115,17 @@ test "panel surfaces stay invertible when the window shrinks below its margins" 
     }
 }
 
-pub fn outline(r: rl.Rectangle, on: bool, on_ink: rl.Color, off_ink: rl.Color) void {
-    rl.drawRectangleLinesEx(r, if (on) 2 else 1, if (on) on_ink else off_ink);
+pub fn outline(r: rl.Rectangle, on: bool) void {
+    rl.drawRectangleLinesEx(r, if (on) 2 else 1, if (on) look.UI_FOCUS else look.EDGE);
+}
+
+pub fn edgeRule(x: i32, y: i32, width: i32) void {
+    rl.drawLine(x, y, x + width, y, look.EDGE);
+}
+
+pub fn titledCard(face: *const font.Face, sprites: *const sprite.Sprites, x: i32, y: i32, w: i32, h: i32, depth: look.Depth, pad: i32, title: [:0]const u8) void {
+    sprite.layeredBacking(sprites, x, y, w, h, depth);
+    face.richText(title, x + pad, y + pad, font.BODY, look.UI_FOCUS);
 }
 
 const ACTION_PAD: i32 = 10;
@@ -368,7 +377,7 @@ fn markInset(face: font.Face) i32 {
 pub fn pick(face: font.Face, box: rl.Rectangle, on: bool) i32 {
     const x = raster.left(box) + markInset(face);
     band(box, on);
-    if (on) face.text(MARK_L, x - MARK_GAP - face.width(MARK_L, ROW), rowTextY(box), ROW, look.UI_FOCUS);
+    if (on) face.textRight(MARK_L, x - MARK_GAP, rowTextY(box), ROW, look.UI_FOCUS);
     return x;
 }
 

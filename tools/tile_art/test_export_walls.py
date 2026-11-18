@@ -6,7 +6,7 @@ import unittest
 
 from PIL import Image
 
-from art_support import SCRIPTS, arguments, aseprite, main
+from art_support import arguments, aseprite, main
 
 
 args, remaining = arguments()
@@ -14,8 +14,8 @@ args, remaining = arguments()
 
 class WallExportTests(unittest.TestCase):
     def publish(self, readonly):
-        source = (SCRIPTS / 'export_walls.lua').read_text(encoding='utf-8')
-        publication = source[source.index('sourceFiles.savePng(exported'):]
+        source = (args.scripts_dir / 'export_walls.lua').read_text(encoding='utf-8')
+        publication = source[source.index('sourceFiles.savePng(atlas'):]
         with tempfile.TemporaryDirectory(prefix='cistern-wall-export-test-') as temporary:
             root = Path(temporary)
             output = root / 'assets/walls/walls.png'
@@ -28,13 +28,12 @@ local root=app.params.root..'/'
 local sourceFiles=dofile(app.params.helper)
 local atlas=Image(2,2,ColorMode.RGB)
 atlas:clear(app.pixelColor.rgba(10,20,30,255))
-local exported=Image(atlas)
 ''' + publication + '\nprint("PUBLICATION_COMPLETE")\n', encoding='utf-8')
             if readonly:
                 output.chmod(stat.S_IREAD)
             try:
                 result = aseprite(args.aseprite, script,
-                                  {'root': root, 'helper': SCRIPTS / 'source_files.lua'})
+                                  {'root': root, 'helper': args.scripts_dir / 'source_files.lua'})
                 message = result.stdout + result.stderr
                 if readonly:
                     self.assertNotEqual(0, result.returncode, message)

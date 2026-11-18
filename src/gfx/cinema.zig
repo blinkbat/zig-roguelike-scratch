@@ -152,13 +152,7 @@ pub const Cinema = struct {
         self.weather_field = raster.canvas(grid.W, grid.H, rl.Color.blank, .point);
         var sight_pixels: light_visibility.SightPixels = @splat(.{});
         self.sight_of = null;
-        self.sight_field = raster.clamped(.{
-            .data = &sight_pixels,
-            .width = grid.W,
-            .height = grid.H,
-            .mipmaps = 1,
-            .format = .uncompressed_r32g32b32a32,
-        }, .point);
+        self.sight_field = raster.clamped(raster.image(&sight_pixels, grid.W, grid.H, .uncompressed_r32g32b32a32), .point);
     }
 
     pub fn unload(self: *Cinema) void {

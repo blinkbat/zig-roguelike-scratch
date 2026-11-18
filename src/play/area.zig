@@ -24,8 +24,12 @@ pub fn wetIn(lv: *const grid.Level, at: P, range: i32) Burst {
     return reached(lv, at, range, grid.Level.wetAt, {}, every);
 }
 
+pub fn capped(wanted: i32) i32 {
+    return @min(wanted, BURST_MAX);
+}
+
 fn reached(lv: *const grid.Level, at: P, wanted: i32, comptime ground: fn (*const grid.Level, P) bool, ctx: anytype, comptime keep: fn (@TypeOf(ctx), P) bool) Burst {
-    const range = @min(wanted, BURST_MAX);
+    const range = capped(wanted);
     var out = Burst{};
     var visible: [grid.CELLS]bool = @splat(false);
     fov.castInto(lv, at, castR(range), &visible);

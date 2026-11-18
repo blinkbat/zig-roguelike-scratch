@@ -1,23 +1,20 @@
 import json
-import os
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 import unittest
 
 from PIL import Image
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools/tile_art'))
+from art_support import generate
+
 
 class TemplateTests(unittest.TestCase):
     def test_guides_generate_from_current_runtime_sources(self):
         script = Path(__file__).with_name('create_template.py')
         with tempfile.TemporaryDirectory(prefix='cistern-hud-template-test-') as temporary:
-            env = dict(os.environ, TEMP=temporary, TMP=temporary, PYTHONIOENCODING='utf-8')
-            result = subprocess.run(
-                [sys.executable, '-B', str(script), '--guides-only'],
-                env=env, capture_output=True, text=True, encoding='utf-8', timeout=30,
-            )
+            result = generate(script, '--guides-only', temp=temporary)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             work = Path(temporary) / 'hud-template'
             for name in ('paper', 'under', 'guides', 'labels'):

@@ -636,8 +636,8 @@ test "what stands takes the ground its neighbours bear" {
 
 test "ground sheet cells and corner bits match the art templates independently of installed sheets" {
     try expectLuaList(u4, &ORDER, "tools/tile_art/ground_corners.lua", "return {");
-    try expectLuaList(u4, &.{ NW, NE, SW, SE }, "tools/tile_art/ground_sheet.lua", "local NW,NE,SW,SE=");
-    try expectLuaList(i32, &.{ look.SPRITE_PX, COLS }, "tools/tile_art/ground_port.lua", "port.CELL,port.COLS=");
+    try expectLuaList(u4, &.{ NW, NE, SW, SE }, "tools/tile_art/ground_layout.lua", "layout.NW,layout.NE,layout.SW,layout.SE=");
+    try expectLuaList(i32, &.{ look.SPRITE_PX, COLS }, "tools/tile_art/ground_layout.lua", "layout.CELL,layout.COLS=");
     try std.testing.expectEqual(P{ .x = 1, .y = 1 }, CELL_OF[FULL]);
 }
 

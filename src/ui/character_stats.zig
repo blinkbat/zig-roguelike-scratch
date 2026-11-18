@@ -165,7 +165,7 @@ const Column = struct {
     fn heading(column: *Column, title: [:0]const u8) void {
         if (!column.dry) {
             column.face.draw(title, column.x, column.y, font.SMALL, look.UI_FOCUS);
-            rl.drawLine(column.x, column.y + SECTION_RULE, column.x + column.width, column.y + SECTION_RULE, look.EDGE);
+            menu.edgeRule(column.x, column.y + SECTION_RULE, column.width);
         }
         column.y += SECTION_ROWS;
     }

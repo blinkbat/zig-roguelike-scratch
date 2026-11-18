@@ -5,7 +5,7 @@ Browse an expandable tree by concern, text type, then skill, item, screen or sou
 For example, Items contains Name and Description branches; Log lines contains gameplay
 subgroups and individual message owners. Branches show matching passage counts and
 stay in the tree when another branch expands. Passages identify their
-purpose, such as Name, Description, Flavor or Tooltip, before showing the wording. The
+purpose, such as Name, Description, Title or Tooltip, before showing the wording. The
 inspector keeps the owner, purpose, exact source declaration and file/line visible above
 the draft. Search matches wording, concern, owner, purpose and source identifiers. Clear
 the query or select All text to broaden the results. The tree, passage list and writing

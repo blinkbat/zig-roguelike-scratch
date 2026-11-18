@@ -22,27 +22,12 @@ if previous then
   old:close()
 end
 local c=assert(drawing:cel(1))
-local original=Image(c.image)
-local position=Point(c.position.x,c.position.y)
-local painted=Image(W,H,ColorMode.RGB)
-painted:drawImage(original,position)
-local palette={}
-local painted_count=0
-for it in painted:pixels() do
-  if pc.rgbaA(it())>0 then
-    assert(pc.rgbaA(it())==255,'Partial alpha in source')
-    palette[it()]=true
-    painted_count=painted_count+1
-  end
-end
-assert(painted_count==10837,'Source painting changed; inspect the crops before porting')
+local original,position,painted,palette,painted_count=groundPort.painting(c,10837)
 local O=pc.rgba(128,104,78,255)
 local K=pc.rgba(0,0,0,255)
 assert(palette[O] and palette[K])
-local function px(x,y)
-  if x<0 or y<0 or x>=W or y>=H then return 0 end
-  return painted:getPixel(x,y)
-end
+local px=groundPort.reader(painted)
+local NW,NE,SW,SE=groundPort.NW,groundPort.NE,groundPort.SW,groundPort.SE
 local opaque=groundPort.opaque
 local function dark(v) return v==O or v==K end
 
@@ -179,9 +164,9 @@ local function edged(mask)
   local tile=Image(64,64,ColorMode.RGB)
   for ly=0,63 do
     for lx=0,63 do
-      local side=lx>=32 and 1 or 0
-      local lo=(mask&(4<<side))~=0
-      local up=(mask&(1<<side))~=0
+      local east=lx>=32
+      local lo=(mask&(east and SE or SW))~=0
+      local up=(mask&(east and NE or NW))~=0
       local kind=(lo and up and 'both') or (lo and 'lo') or (up and 'up')
       if kind then tile:putPixel(lx,ly,layers[kind][ly][lx]) end
     end
@@ -255,9 +240,8 @@ local function piece(mask)
   local tile=Image(edge)
   for ly=0,63 do for lx=0,63 do
     if opaque(edge:getPixel(lx,ly)) then
-      local side=lx>=32 and 1 or 0
-      local lo=(mask&(4<<side))~=0
-      local up=(mask&(1<<side))~=0
+      local lo=(mask&(lx>=32 and SE or SW))~=0
+      local up=(mask&(lx>=32 and NE or NW))~=0
       local cap=(lo and not up and ly<top[lx]+5) or (up and not lo and ly>bottom[lx]-5)
       local east=lx>=28 and lx<=32 and opaque(edge:getPixel(31,ly)) and not opaque(edge:getPixel(36,ly))
       local west=lx>=32 and lx<=39 and not opaque(edge:getPixel(31,ly)) and opaque(edge:getPixel(36,ly))
@@ -282,22 +266,8 @@ for i,m in ipairs(order) do
   atlas:drawImage(tile,Point(ox,oy-groundPort.HEAD))
 end
 
-local bit=groundPort.bit
-for i,m in ipairs(order) do
-  local sl=groundPort.corner(s,m)
-  local x,y=groundPort.at(i)
-  assert(sl and sl.bounds.x==x and sl.bounds.y==y,'Slice moved: '..m)
-  for _,q in ipairs({{1,8,8},{2,48,8},{4,8,48},{8,48,48}}) do
-    for y=q[3],q[3]+7 do for x=q[2],q[2]+7 do
-      assert(opaque(cells[m]:getPixel(x,y))==bit(m,q[1]),'Wrong quarter in mask '..m)
-    end end
-  end
-  for it in cells[m]:pixels() do
-    if m==0 then assert(not opaque(it()),'Unused cell painted') end
-    if m==15 then assert(opaque(it()),'Fill has a hole') end
-  end
-end
-local edges={{x=63,bits=2|8},{x=0,bits=1|4},{y=63,bits=4|8},{y=0,bits=1|2}}
+groundPort.checkCells(s,order,cells)
+local edges={{x=63,bits=NE|SE},{x=0,bits=NW|SW},{y=63,bits=SW|SE},{y=0,bits=NW|NE}}
 for a=0,15 do for b=0,15 do
   for _,e in ipairs(edges) do
     if (a&e.bits)==(b&e.bits) then

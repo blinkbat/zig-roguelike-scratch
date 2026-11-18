@@ -61,7 +61,7 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
             widgets.textFace(&g.face).draw(widgets.fitBefore(&g.face, &buf, &fit_buf, ed.path(), " has changes that are not saved.", inner), x + widgets.PAD, y, widgets.TEXT, look.TEXT);
             std.debug.assert(y + widgets.TEXT <= buttons_y);
             y = buttons_y;
-            if (editor.modalButton(ed, g, f.button(y, 2), widgets.keyed("Save", Desk.ENTER_CAPTION), false, true, null) and ed.save()) ed.commit();
+            if (editor.modalButton(ed, g, f.button(y, 2), widgets.keyed("Save", Desk.ENTER_CAPTION), false, true, null)) ed.saveAndCommit();
             if (editor.modalButton(ed, g, f.button(y, 1), "Discard", false, true, null)) ed.commit();
             backButton(ed, g, f, y, "Cancel");
         },

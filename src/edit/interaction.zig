@@ -159,7 +159,7 @@ pub fn modalKeys(ed: *Editor) void {
             if (p == .open and !d.erase_hit and (d.back or d.rub) and ed.listing.up()) return ed.showListing();
             if (dismissed(ed)) return;
             switch (p) {
-                .confirm => if (d.enter and ed.save()) ed.commit(),
+                .confirm => if (d.enter) ed.saveAndCommit(),
                 .name => {
                     ed.field.feed(d);
                     if (d.enter) ed.named();

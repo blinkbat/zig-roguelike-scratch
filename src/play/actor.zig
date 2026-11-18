@@ -306,12 +306,21 @@ const CHARGE = Charge{ .range = 5, .rush = 6, .every = 3, .blow = .{ .hit = .{ .
 const HOOK = Hook{ .range = 4, .every = 4, .blow = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "hooks", .slain = "hooked through" } };
 const HURL = Hurl{ .name = "firebolt", .verb = "burns", .range = 7, .speed = 2, .every = 2, .hit = .{ .lo = 3, .hi = 5 }, .burns = 40, .element = .fire };
 const CHAOS_ORB = Hurl{ .name = "chaos orb", .verb = "strikes", .range = 7, .speed = 2, .every = 2, .hit = .{ .lo = 4, .hi = 6 }, .burns = 0, .element = .chaos, .careful = true };
-const ICY = damage.Resists.init(.{ .cold = damage.RESIST_MAX, .fire = -50, .chaos = 0, .lightning = 0 });
-const FIERY = damage.Resists.init(.{ .cold = -50, .fire = damage.RESIST_MAX, .chaos = 0, .lightning = 0 });
+const WEAKNESS: i16 = -50;
+const ICY = damage.Resists.init(.{ .cold = damage.RESIST_MAX, .fire = WEAKNESS, .chaos = 0, .lightning = 0 });
+const FIERY = damage.Resists.init(.{ .cold = WEAKNESS, .fire = damage.RESIST_MAX, .chaos = 0, .lightning = 0 });
+
+const RESIST_SUFFIX = "_resist";
+
+comptime {
+    for (std.meta.fields(Row)) |f| {
+        if (std.mem.endsWith(u8, f.name, RESIST_SUFFIX)) std.debug.assert(@hasField(resilience.Kind, f.name[0 .. f.name.len - RESIST_SUFFIX.len]));
+    }
+}
 
 pub fn innateResist(k: Kind, status: resilience.Kind) u8 {
     return switch (status) {
-        inline else => |t| if (@hasField(Row, @tagName(t) ++ "_resist")) @field(row(k), @tagName(t) ++ "_resist") else 0,
+        inline else => |t| if (@hasField(Row, @tagName(t) ++ RESIST_SUFFIX)) @field(row(k), @tagName(t) ++ RESIST_SUFFIX) else 0,
     };
 }
 
@@ -445,6 +454,10 @@ pub const Actor = struct {
 
     pub fn veiled(self: Actor) bool {
         return self.submerged or self.disguised;
+    }
+
+    pub fn spoils(self: Actor) bool {
+        return !self.kind.ally() and !self.raider;
     }
 
     pub fn seenIn(self: Actor, lv: *const grid.Level) bool {
@@ -599,7 +612,7 @@ pub const Pool = struct {
     fn spent(self: *const Pool, i: usize) bool {
         if (i >= self.n) return false;
         const a = &self.items[i];
-        return !a.alive and (a.kind.ally() or a.raider);
+        return !a.alive and !a.spoils();
     }
 
     pub fn spentFrom(self: *const Pool, start: usize) ?usize {

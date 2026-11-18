@@ -1,4 +1,4 @@
-from art_support import SCRIPTS, WorkTest, arguments, aseprite, main
+from art_support import WorkTest, arguments, aseprite, main
 
 
 args, remaining = arguments()
@@ -31,7 +31,7 @@ env=setmetatable({app={
   end,
 },dofile=function(path)
   local helper=path:match('/tools/tile_art/([^/]+)$')
-  assert(helper=='ground_corners.lua' or helper=='ground_port.lua' or helper=='wall_masks.lua' or helper=='source_files.lua')
+  assert(helper=='ground_corners.lua' or helper=='ground_port.lua' or helper=='ground_layout.lua' or helper=='wall_masks.lua' or helper=='source_files.lua')
   return assert(loadfile(realapp.params.helpers..'/'..helper,'t',env))()
 end},{__index=_G})
 assert(loadfile(realapp.params.script,'t',env))()
@@ -58,7 +58,7 @@ assert(loadfile(realapp.params.script,'t',env))()
                     'work': root / 'work',
                     'install': 'no' if case == 'draft_divergent' else 'yes',
                     'script': (args.scripts_dir / script).resolve(),
-                    'helpers': SCRIPTS,
+                    'helpers': args.scripts_dir,
                 })
                 output = result.stdout + result.stderr
                 self.assertNotEqual(0, result.returncode, output)

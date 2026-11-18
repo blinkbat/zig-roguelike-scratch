@@ -156,11 +156,7 @@ comptime {
 
 fn head(face: *const font.Face, x: i32, y: i32, width: i32, caption: ?[:0]const u8) void {
     if (caption) |c| face.draw(c, x, y, font.LABEL, look.DIM);
-    rule(x, y + CARD_RULE, width);
-}
-
-fn rule(x: i32, y: i32, width: i32) void {
-    rl.drawLine(x, y, x + width, y, look.EDGE);
+    menu.edgeRule(x, y + CARD_RULE, width);
 }
 
 pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consumable.Kind, carried: u8, caption: ?[:0]const u8) void {
@@ -208,7 +204,7 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     }
     if (item.magical()) {
         top += MODS_ABOVE;
-        rule(x, top, width);
+        menu.edgeRule(x, top, width);
         top += MODS_BELOW;
         var shown: Mods = undefined;
         for (modsOf(item, &shown)) |m| {

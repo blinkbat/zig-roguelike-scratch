@@ -3,7 +3,6 @@ local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local source=root..'assets/source/forest-tree-walls.aseprite'
 local desktop=sourceFiles.DESKTOP..'forest-tree-walls.aseprite'
 local stamp=os.date(sourceFiles.STAMP)
-local pc=app.pixelColor
 local rgb=sourceFiles.rgb
 local colours={
   [rgb(107,185,112)]=rgb(82,143,86),
@@ -38,10 +37,7 @@ for name,expected in pairs(tonedLayers) do sourceFiles.checkCel(reopened,name,ex
 reopened:close()
 sourceFiles.copy(source,desktop)
 local grass=Image{fromFile=root..'assets/ground/grass.png'}
-for pixel in grass:pixels() do
-  local p=pixel()
-  pixel(pc.rgba(math.floor(pc.rgbaR(p)*0.85+0.5),math.floor(pc.rgbaG(p)*0.85+0.5),math.floor(pc.rgbaB(p)*0.85+0.5),pc.rgbaA(p)))
-end
+for pixel in grass:pixels() do pixel(sourceFiles.scaleRgb(pixel(),0.85)) end
 sourceFiles.savePng(grass,root..'assets/ground/grass.png')
 dofile(root..'tools/tile_art/export_forest.lua')
 local report=sourceFiles.report(sourceFiles.work()..'forest-tone.txt')

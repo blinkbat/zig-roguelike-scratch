@@ -37,7 +37,7 @@ test "a body faces right until it steps, aims or turns on someone to its left, a
     harness.nudge(g, .e);
     try std.testing.expectEqual(actor.Facing.right, g.pic.facing[hero]);
     harness.use(g, .shoot);
-    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .aim);
     try std.testing.expect(g.mode.aim.mark.x < g.sim.heroActor().?.at.x);
     try std.testing.expectEqual(actor.Facing.left, g.pic.facing[hero]);
 }

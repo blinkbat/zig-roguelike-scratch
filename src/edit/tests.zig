@@ -189,7 +189,7 @@ test "editor zoo reservations keep rejected placements out of saved maps" {
     defer ed.destroy();
     const z = @import("../map/zoo.zig").Spec{ .key = .{ .x = 32, .y = 28 } };
     ed.here().zoo = z;
-    ed.plan().bespoke.fill(grid.Box.inMap(1), .floor);
+    ed.plan().bespoke.fill(grid.INNER, .floor);
     ed.map.start = .{ .node = 0, .at = .{ .x = 10, .y = 10 } };
     const before = ed.map.start;
     for ([_]P{ z.threshold(), z.approach(), z.key.? }) |p| {
@@ -828,7 +828,7 @@ test "the paste's ghost lays aside what the click lays, so a door refuses the ba
 test "a pasted caravan with no room for its part lays its ground and spares what stands under its head" {
     const ed = try editor.Editor.create(std.testing.allocator);
     defer ed.destroy();
-    _ = ed.map.oneRoom(grid.Box.inMap(0), grid.MIDDLE);
+    _ = ed.map.oneRoom(grid.MAP, grid.MIDDLE);
     ed.board.size = .{ .x = 2, .y = 1 };
     ed.board.cells.tile = @splat(.floor);
     ed.board.cells.tile[0] = .caravan;
@@ -856,7 +856,7 @@ test "a pasted caravan with no room for its part lays its ground and spares what
 test "paste previews reuse unchanged content and follow cells clipboard terrain doors nodes and undo" {
     const ed = try editor.Editor.create(std.testing.allocator);
     defer ed.destroy();
-    _ = ed.map.oneRoom(grid.Box.inMap(0), grid.MIDDLE);
+    _ = ed.map.oneRoom(grid.MAP, grid.MIDDLE);
     const at = P{ .x = 30, .y = 20 };
     const beside = at.add(.{ .x = 1, .y = 0 });
     const outside = P{ .x = 50, .y = 40 };

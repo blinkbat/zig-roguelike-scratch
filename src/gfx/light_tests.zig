@@ -61,7 +61,7 @@ fn testLight(lv: *const grid.Level) !*light.Light {
 
 fn added(l: *const light.Light, lv: *const grid.Level, q: [2]f32) f32 {
     var ids: [light.LIGHTS]model.TorchIx = undefined;
-    return lum(l.at(lv, l.near(grid.Box.inMap(0), &ids), q)) - lum(l.at(lv, &.{}, q));
+    return lum(l.at(lv, l.near(grid.MAP, &ids), q)) - lum(l.at(lv, &.{}, q));
 }
 
 test "following new tiles refreshes open light fields even when sight and memory stay settled" {
@@ -296,7 +296,7 @@ test "a glowing plant pools pale blue light round its own cell and draws a glow 
     defer std.testing.allocator.destroy(l);
     try std.testing.expectEqual(@as(usize, 1), l.torch_n);
     var ids: [light.LIGHTS]model.TorchIx = undefined;
-    const near = l.near(grid.Box.inMap(0), &ids);
+    const near = l.near(grid.MAP, &ids);
     const top = l.at(&lv, near, mathx.centre(at)) - l.at(&lv, &.{}, mathx.centre(at));
     var last = std.math.floatMax(f32);
     for ([_]f32{ 1, 2, 3, 4, 5, 6, @floatFromInt(model.REACH) }) |r| {

@@ -78,20 +78,23 @@ pub fn cell(g: *game.Game) ?P {
     return if (grid.Level.inside(at)) at else null;
 }
 
+fn forget(g: *game.Game) void {
+    g.mouse.stop();
+    g.pending = null;
+}
+
 pub fn prepare(g: *game.Game) void {
     if (g.st.device.pad()) g.mouse.secondary = false;
     if (!g.st.focused or g.mode != .play or g.st.walk != null or g.st.interact or g.st.pressed.count() > 0 or g.st.character_page != null) g.mouse.stop();
     if (!g.st.focused or !clickable(std.meta.activeTag(g.mode))) return;
     if (g.st.right_click and g.mode == .play) {
-        g.mouse.stop();
-        g.pending = null;
+        forget(g);
         g.st.pressed.insert(menu.PAUSE);
         return;
     }
     const p = g.st.pointer orelse return;
     if (g.st.click) {
-        g.mouse.stop();
-        g.pending = null;
+        forget(g);
         if (buttonAt(g.screen, p)) |b| {
             g.mode = .play;
             g.st.pressed.insert(b);
@@ -382,7 +385,7 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     const use = game.harness.boundTo(g, .shoot);
     const slot = game.overlay.slotBox(game.overlay.hudLayout(g), binds.Binds.colOf(use.by.?));
     game.harness.clickAt(g, raster.middleAt(slot));
-    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .aim);
     try std.testing.expectEqual(clock, g.sim.clock);
     game.harness.clickAt(g, raster.middleAt(slot));
     try std.testing.expectEqual(clock, g.sim.clock);
@@ -391,13 +394,12 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     game.castSight(g, start);
     clickCell(g, blocked);
     try std.testing.expectEqual(clock, g.sim.clock);
-    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
-    g.st = .{ .right_click = true };
-    game.update(g, 0);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .aim);
+    game.harness.rightClick(g);
+    try game.harness.expectMode(g, .play);
     clickCell(g, target);
     try std.testing.expect(g.pic.shot != null);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .play);
     game.harness.drawnOut(g);
     const after = g.sim.clock;
     game.harness.clickAt(g, raster.middleAt(journal.box(g.screen)));
@@ -415,7 +417,7 @@ test "a mouse release that ends no wall drag leaves a smart-aimed reticle on its
     try std.testing.expectEqual(target, g.mode.aim.mark);
     g.st = .{ .device = .keys, .left_released = true, .pointer = game.scene.Cam.of(g).mid(.{ .x = 20, .y = 23 }) };
     game.update(g, 0);
-    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .aim);
     try std.testing.expectEqual(target, g.mode.aim.mark);
 }
 
@@ -431,7 +433,7 @@ test "mouse attacks skip combustion for unburning foes and cast it on burning fo
         if (other_burning) game.harness.foes(g)[1].burn.start();
         const clock = g.sim.clock.minute;
         clickCell(g, target);
-        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+        try game.harness.expectMode(g, .play);
         try std.testing.expect(g.pic.shot != null);
         try std.testing.expectEqual(skillbar.Act.spark, g.pic.shot.?.act);
         try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
@@ -445,7 +447,7 @@ test "mouse attacks skip combustion for unburning foes and cast it on burning fo
     const hp = foe.hp;
     const clock = g.sim.clock.minute;
     clickCell(g, target);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .play);
     try std.testing.expect(g.pic.shot == null);
     try std.testing.expect(foe.hp < hp);
     try std.testing.expectEqual(@as(u8, 0), foe.burn.turns);
@@ -478,7 +480,7 @@ test "a clicked foe that dived out of sight before the walk resumed draws no ret
     g.mouse.foe = id;
     const clock = g.sim.clock;
     try std.testing.expect(step(g));
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .play);
     try std.testing.expectEqual(clock, g.sim.clock);
 }
 
@@ -496,27 +498,23 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
     game.harness.drawnOut(g);
     clickCell(g, chest);
-    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .pause);
     try std.testing.expectEqual(book.Page.loot, g.character.page);
     try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
-    g.st = .{ .right_click = true };
-    game.update(g, 0);
+    game.harness.rightClick(g);
     g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, menu.CHARACTER)) };
     game.update(g, 0);
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);
-    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
-    g.st = .{ .right_click = true };
-    game.update(g, 0);
+    try game.harness.expectMode(g, .pause);
+    game.harness.rightClick(g);
     try std.testing.expect(g.character.tabbing);
-    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
-    g.st = .{ .right_click = true };
-    game.update(g, 0);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .pause);
+    game.harness.rightClick(g);
+    try game.harness.expectMode(g, .play);
     g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, menu.PAUSE)) };
     game.update(g, 0);
     try std.testing.expectEqual(game.PausePage.main, g.pause_page);
-    g.st = .{ .right_click = true };
-    game.update(g, 0);
+    game.harness.rightClick(g);
     const modifier = game.overlay.slotBox(game.overlay.hudLayout(g), binds.Binds.colOf(g.bar.modifier.?));
     game.harness.clickAt(g, raster.middleAt(modifier));
     try std.testing.expectEqual(skillbar.Set.secondary, skills.activeSet(g));

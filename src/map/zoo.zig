@@ -107,10 +107,11 @@ pub const Spec = struct {
 
     pub fn keyReachable(s: *const Spec, distances: *const [grid.CELLS]i32) bool {
         const at = s.key orelse return true;
-        for (grid.STEPS) |delta| {
-            if (grid.cellOr(i32, distances, at.add(delta), -1) >= 0) return true;
-        }
-        return false;
+        return grid.anyNeighbour(at, distances, reachedAt);
+    }
+
+    fn reachedAt(distances: *const [grid.CELLS]i32, p: P) bool {
+        return grid.cellOr(i32, distances, p, -1) >= 0;
     }
 
     pub fn stamp(s: *const Spec, lv: *grid.Level) void {
@@ -127,15 +128,17 @@ pub const Spec = struct {
         var protected = grid.CellSet.initEmpty();
         var stretches: carve.Stretches = undefined;
         if (stretches.label(lv) > 0) {
-            @memset(stretches.size[0..stretches.n], 0);
+            var counts: [grid.CELLS]u32 = undefined;
+            const sizes = counts[0..stretches.n];
+            @memset(sizes, 0);
             var near = grid.Nearest{ .from = entrance orelse .{ .x = 0, .y = 0 } };
             for (0..grid.CELLS) |i| {
                 const p = grid.Level.of(i);
                 if (!lv.walkable(p) or s.occupies(p)) continue;
-                stretches.size[stretches.region[i]] += 1;
+                sizes[stretches.region[i]] += 1;
                 near.offer(p);
             }
-            var main = stretches.biggest();
+            var main = carve.Stretches.biggestOf(sizes);
             if (entrance != null) {
                 if (near.best) |p| main = stretches.of(p);
             }
@@ -176,6 +179,7 @@ pub const Spec = struct {
         lv.set(s.door(), if (s.key != null) .locked_gate else .gate);
         grid.mendProps(&lv.tile);
         gen.reshape(lv);
+        lv.torch.spare(1);
         lv.addTorch(lume.torchOver(inner, inner.lo.x));
     }
 

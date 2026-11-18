@@ -80,8 +80,7 @@ local function faceTop(x) return kind=='cave' and TOP-1+math.floor(noise(x,8,7)*
 local function canopyFoot(x) return TOP+11-edge(x,0) end
 local function trunk(x) return (x%32)-11 end
 local function cell(mask)
-  local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
-  local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
+  local n,e,s,w,ne,se,sw,nw=masks.sides(mask)
   local R=kind=='cave' and 6 or 10
   local B=kind=='cave' and 4 or 6
   local function within(x,y)
@@ -171,8 +170,7 @@ local function noise2(x,y,step,seed)
 end
 local function shore(t,seed) return 1+math.floor(noise(t,8,seed)*2.99)+math.floor(noise(t,4,seed+50)*1.99) end
 local function liquidCell(mask)
-  local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
-  local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
+  local n,e,s,w,ne,se,sw,nw=masks.sides(mask)
   local R,B=8,5
   local function bankFoot(x) return shore(x,1)+BANK+math.floor(noise(x,8,21)*1.99) end
   local function within(x,y)
@@ -276,14 +274,14 @@ local function liquidCell(mask)
 end
 if LIQUID then cell=liquidCell end
 local sprite=assert(app.open(path))
-assert(sprite.width==masks.W and sprite.height==masks.HEAD+masks.H)
+assert(sprite.width==masks.W and sprite.height==masks.SHEET_H)
 local under=sourceFiles.layer(sprite,'Underdrawing (25%)')
 local drawing=sourceFiles.layer(sprite,'Draw here')
 local ideas=sourceFiles.layer(sprite,'Ideas - hide before export')
 assert(under and drawing)
 local drawn=Image(drawing:cel(1).image)
 local drawnAt=Point(drawing:cel(1).position)
-local sheet=Image(masks.W,masks.HEAD+masks.H,ColorMode.RGB)
+local sheet=Image(masks.W,masks.SHEET_H,ColorMode.RGB)
 local byMask={}
 for i,mask in ipairs(masks) do
   local image=cell(mask)
@@ -298,8 +296,8 @@ for _,a in ipairs(masks) do for _,b in ipairs(masks) do
     end
   end
 end end
-local base=path:match('([^/\\]+)%.aseprite$')
-sourceFiles.copy(path,work..base..'-before-ideas-'..os.date(sourceFiles.STAMP)..'.aseprite')
+local base=app.fs.fileTitle(path)
+sourceFiles.keep(path,work,'ideas',os.date(sourceFiles.STAMP))
 if not ideas then
   ideas=sprite:newLayer()
   ideas.name='Ideas - hide before export'
@@ -314,7 +312,7 @@ app.layer=drawing
 sprite:saveAs(path)
 sprite:close()
 local reopened=assert(app.open(path))
-assert(reopened.width==masks.W and reopened.height==masks.HEAD+masks.H,'Saved sheet dimensions changed')
+assert(reopened.width==masks.W and reopened.height==masks.SHEET_H,'Saved sheet dimensions changed')
 sourceFiles.checkLayer(reopened,'Ideas - hide before export',sheet,Point(0,0))
 sourceFiles.checkCel(reopened,'Draw here',drawn,drawnAt)
 reopened:close()

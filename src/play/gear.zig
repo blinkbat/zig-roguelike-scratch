@@ -126,6 +126,22 @@ pub const Gear = struct {
         return self.floored(.commander);
     }
 
+    pub fn grievous(self: Gear) i32 {
+        return self.floored(.grievous);
+    }
+
+    pub fn stillness(self: Gear) i32 {
+        return self.sum(.stillness);
+    }
+
+    pub fn anchored(self: Gear) bool {
+        return self.sum(.anchorage) >= 1;
+    }
+
+    pub fn cleanses(self: Gear) bool {
+        return self.sum(.cleansing) > 0;
+    }
+
     fn percent(self: Gear, kind: affixes.Mod) i32 {
         return std.math.clamp(self.sum(kind), 0, mathx.PERCENT);
     }

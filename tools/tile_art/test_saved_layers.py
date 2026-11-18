@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import ROOT, SCRIPTS, arguments, aseprite, main
+from art_support import arguments, aseprite, main, run_lua
 
 
 args, remaining = arguments()
@@ -138,9 +138,7 @@ class SavedLayerTests(unittest.TestCase):
         return aseprite(args.aseprite, script, params)
 
     def fixture(self, directory, body, **params):
-        script = directory / 'fixture.lua'
-        script.write_text(body, encoding='utf-8')
-        result = self.run_lua(script, **params)
+        result = run_lua(args.aseprite, directory / 'fixture.lua', body, params)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def publication(self, directory, body, destination, blocked, **params):
@@ -164,12 +162,12 @@ class SavedLayerTests(unittest.TestCase):
             self.assertNotEqual(before, destination.read_bytes())
 
     def wall(self, filename, blocked, existing=False):
-        source = (SCRIPTS / filename).read_text(encoding='utf-8')
+        source = (args.scripts_dir / filename).read_text(encoding='utf-8')
         if filename == 'port_walls.lua':
             body = source[source.index('sourceFiles.copy(path,work'):]
             generated = ''
         else:
-            body = source[source.index('local base=path'):]
+            body = source[source.index('local base='):]
             if filename == 'idea_walls.lua':
                 body = body[:body.index('local map={')]
                 generated = 'local sheet=Image(faced)\n'
@@ -179,7 +177,7 @@ class SavedLayerTests(unittest.TestCase):
             work = Path(temporary)
             destination = work / 'sheet.aseprite'
             params = dict(source=destination, work=work.as_posix() + '/',
-                          root=ROOT.as_posix() + '/')
+                          root=args.root.as_posix() + '/')
             self.fixture(work, WALL_FIXTURE, source=destination,
                          existing='yes' if existing else 'no')
             self.publication(work, WALL_SETUP + generated + body, destination, blocked, **params)
@@ -204,8 +202,8 @@ class SavedLayerTests(unittest.TestCase):
             work = Path(temporary)
             for folder in ('assets/source', 'assets/water', 'shots', 'tools/tile_art'):
                 (work / folder).mkdir(parents=True)
-            for helper in ('source_files.lua', 'water_cliff_layout.lua'):
-                (work / 'tools/tile_art' / helper).write_bytes((SCRIPTS / helper).read_bytes())
+            for helper in ('source_files.lua', 'water_cliff_layout.lua', 'water_cliff_materials.lua'):
+                (work / 'tools/tile_art' / helper).write_bytes((args.scripts_dir / helper).read_bytes())
             params = dict(work=work.as_posix() + '/', root=work.as_posix() + '/',
                           faces=work / 'faces.png')
             if shots:
@@ -213,7 +211,7 @@ class SavedLayerTests(unittest.TestCase):
             self.fixture(work, PINCH_FIXTURE, **params)
             name = 'water-cliff-connections' if shots else 'water-cliff-edge'
             destination = work / 'assets/source' / (name + '.aseprite')
-            body = (SCRIPTS / 'pinch_shallow_cliff.lua').read_text(encoding='utf-8')
+            body = (args.scripts_dir / 'pinch_shallow_cliff.lua').read_text(encoding='utf-8')
             self.publication(work, body, destination, blocked, **params)
             if blocked:
                 self.assertFalse((work / 'pinch.txt').exists())

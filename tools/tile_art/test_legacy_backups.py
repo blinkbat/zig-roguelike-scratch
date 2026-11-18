@@ -1,32 +1,31 @@
 from pathlib import Path
 import re
 
-from art_support import ROOT, SCRIPTS, WorkTest, arguments, aseprite, generate, main, quote
+from art_support import WorkTest, arguments, generate, main, quote, run_lua
 
 
 args, remaining = arguments()
 
 BACKUPS = {
-    'guide_walls.lua': 'before-full-cell-',
-    'idea_walls.lua': 'before-ideas-',
+    'guide_walls.lua': "'full-cell'",
+    'idea_walls.lua': "'ideas'",
     'port_walls.lua': 'before-ported-edges-',
     'port_forest.lua': '(path,backup)',
-    'ground_sheet.lua': 'before-ground-',
+    'ground_sheet.lua': "'ground'",
 }
 
 
 class LegacyBackupTests(WorkTest):
     def run_lua(self, code, **params):
-        script = self.work / 'probe.lua'
-        script.write_text(code, encoding='utf-8')
-        return aseprite(args.aseprite, script, params)
+        return run_lua(args.aseprite, self.work / 'probe.lua', code, params)
 
     def backup_calls(self):
         calls = {}
         for filename, marker in BACKUPS.items():
             source = (args.scripts_dir / filename).read_text(encoding='utf-8')
             candidates = [line.strip() for line in source.splitlines()
-                          if marker in line and ('sourceFiles.copy(' in line or ':saveCopyAs(' in line)]
+                          if marker in line and ('sourceFiles.copy(' in line or 'sourceFiles.keep(' in line
+                                                 or ':saveCopyAs(' in line)]
             if filename == 'port_forest.lua' and not candidates:
                 candidates = [line.strip() for line in source.splitlines()
                               if re.fullmatch(r'\s*\w+:saveCopyAs\(backup\)\s*', line)]
@@ -85,7 +84,7 @@ error('UNSAFE_SOURCE_WRITE')
 '''
                     result = self.run_lua(code, source=source.as_posix(), work=self.work.as_posix(),
                                           failure=failure,
-                                          helper=(SCRIPTS / 'source_files.lua').as_posix())
+                                          helper=(args.scripts_dir / 'source_files.lua').as_posix())
                     output = result.stdout + result.stderr
                     self.assertNotEqual(0, result.returncode, output)
                     self.assertIn('injected ' + failure + ' failure', output)
@@ -127,7 +126,7 @@ assert(loadfile(realapp.params.script,'t',env))()
 print('GUIDE_SCRIPT_COMPLETED')
 '''
         result = self.run_lua(wrapper, source=source.as_posix(), work=self.work.as_posix(),
-                              root=ROOT.as_posix() + '/',
+                              root=args.root.as_posix() + '/',
                               script=(args.scripts_dir / 'guide_walls.lua').as_posix())
         output = result.stdout + result.stderr
         self.assertNotEqual(0, result.returncode, output)
@@ -143,7 +142,7 @@ print('GUIDE_SCRIPT_COMPLETED')
             with self.subTest(script=filename):
                 source.write_bytes(original)
                 code = f'''
-local sourceFiles=dofile({quote(SCRIPTS / 'source_files.lua')})
+local sourceFiles=dofile({quote(args.scripts_dir / 'source_files.lua')})
 local path={quote(source)}
 local work={quote(self.work.as_posix() + '/')}
 local base='source'

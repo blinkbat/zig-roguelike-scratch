@@ -12,8 +12,11 @@ pub const Command = character_view.Command;
 pub const SIZE = layout.SIZE;
 
 pub fn journalOn(screen: P, face: font.Face, entries: []const quest_log.Entry) quest_log.Journal {
-    const drawn = menu.Surface.of(screen, layout.SIZE).faceFor(face);
+    const drawn = tabbedSurface(screen).faceFor(face);
     return quest_log.Journal.of(&drawn, entries, layout.AREA);
+}
+fn tabbedSurface(screen: P) menu.Surface {
+    return menu.Surface.of(screen, layout.SIZE);
 }
 pub const verifyCards = item_card.verify;
 pub const verifyStats = character_stats.verify;
@@ -233,7 +236,7 @@ pub const Book = struct {
         };
     }
     pub fn surface(self: *const Book, screen: P, view: View) menu.Surface {
-        return if (self.direct()) menu.Surface.like(screen, self.size(view), layout.SIZE) else menu.Surface.of(screen, layout.SIZE);
+        return if (self.direct()) menu.Surface.like(screen, self.size(view), layout.SIZE) else tabbedSurface(screen);
     }
     fn directTop(self: *const Book) i32 {
         return if (self.carded()) layout.LOOT_TOP else layout.CLOSE_Y + layout.CLOSE_H + layout.DIRECT_GAP;
@@ -513,7 +516,7 @@ pub const Book = struct {
         if (self.page == .loot and view.loot_gold > 0) {
             var coins: menu.Note(32) = .{};
             coins.say(hero.COINS_FMT, .{view.loot_gold});
-            face.draw(coins.text(), position_x - layout.LOOT_GOLD_GAP - face.width(coins.text(), font.SMALL), note_y, font.SMALL, look.UI_GOLD);
+            face.drawRight(coins.text(), position_x - layout.LOOT_GOLD_GAP, note_y, font.SMALL, look.UI_GOLD);
         }
     }
 
@@ -559,7 +562,7 @@ pub const Book = struct {
 
     fn drawPosition(self: *const Book, face: *const font.Face, view: View, note_y: i32) i32 {
         const position = self.positionOf(view);
-        const x = layout.DIRECT_W - layout.LIST_X - face.width(position.text(), font.SMALL);
+        const x = face.alignRight(position.text(), layout.DIRECT_W - layout.LIST_X, font.SMALL);
         face.draw(position.text(), x, note_y, font.SMALL, look.DIM);
         return x;
     }
@@ -580,7 +583,7 @@ pub const Book = struct {
             const row_mid = y + layout.ROW_HEIGHT / 2;
             const chosen = i == self.cursor and self.focused();
             rl.drawRectangleRec(r, look.BG);
-            menu.outline(r, chosen, look.UI_FOCUS, look.EDGE);
+            menu.outline(r, chosen);
             switch (self.page) {
                 .equipment => {
                     const slot = item_bases.SLOTS[i];
@@ -802,7 +805,7 @@ fn slotGlyph(s: item_bases.Slot) item_bases.Kind {
     };
 }
 fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: input.Device) void {
-    menu.outline(r, on, look.UI_FOCUS, look.EDGE);
+    menu.outline(r, on);
     const m = raster.middleAt(r);
     const text = menu.named(page);
     const ink = if (on) look.TEXT else look.DIM;

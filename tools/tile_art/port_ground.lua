@@ -6,7 +6,6 @@ local material=assert(({
   dirt={pixels=8314,ne=false,west_y=101},
   water={pixels=15304,ne=true,west_y=128,west_h=64,complete={[4]=true,[6]=true,[10]=true,[11]=true}},
 })[name],'name=grass|dirt|water')
-local title=name:gsub('^%l',string.upper)
 local path=app.params.source or (sourceFiles.DESKTOP..name..'.aseprite')
 local canonical=root..'assets/source/'..name..'.aseprite'
 local install=app.params.install=='yes'
@@ -15,11 +14,12 @@ local art_path=app.params.art or path
 local work=sourceFiles.work(app.params.work)
 local order=dofile(root..'tools/tile_art/ground_corners.lua')
 local groundPort=dofile(root..'tools/tile_art/ground_port.lua')
+local layer_name=groundPort.extension(name)
 local pc=app.pixelColor
 local W,H=groundPort.W,groundPort.H
 local s=assert(app.open(path))
 assert(s.width==W and s.height==H and #s.frames==1 and #s.slices==#order)
-assert(not sourceFiles.layer(s,title..' extensions'),'Inspect owner edits before regenerating '..title..' extensions')
+assert(not sourceFiles.layer(s,layer_name),'Inspect owner edits before regenerating '..layer_name)
 local drawing=sourceFiles.layer(s,'Draw here')
 local c=assert(drawing:cel(1))
 if art_path~=path then
@@ -32,24 +32,8 @@ if art_path~=path then
   c.position=Point(source.position.x,source.position.y)
   art:close()
 end
-local original=Image(c.image)
-local position=Point(c.position.x,c.position.y)
-local painted=Image(W,H,ColorMode.RGB)
-painted:drawImage(original,position)
-local palette={}
-local painted_count=0
-for it in painted:pixels() do
-  if pc.rgbaA(it())>0 then
-    assert(pc.rgbaA(it())==255,'Partial alpha in source')
-    palette[it()]=true
-    painted_count=painted_count+1
-  end
-end
-assert(painted_count==material.pixels,'Source painting changed; inspect the crops before porting')
-local function pixel(x,y)
-  if x<0 or y<0 or x>=W or y>=H then return 0 end
-  return painted:getPixel(x,y)
-end
+local original,position,painted,palette,painted_count=groundPort.painting(c,material.pixels)
+local pixel=groundPort.reader(painted)
 local opaque=groundPort.opaque
 local fill=Image(painted,Rectangle(64,128,64,64))
 if name=='water' then
@@ -106,11 +90,12 @@ if name=='water' then
   outer_ne=component(24,0,40,40,60,2,192)
   outer_sw=Image(painted,Rectangle(128,64,64,64))
 end
+local NW,NE,SW,SE=groundPort.NW,groundPort.NE,groundPort.SW,groundPort.SE
 local corners={
-  {bit=1,h=2,v=4,x=0,y=0,outer=outer_nw},
-  {bit=2,h=1,v=8,x=32,y=0,outer=material.ne and outer_ne or nil},
-  {bit=4,h=8,v=1,x=0,y=32,outer=outer_sw},
-  {bit=8,h=4,v=2,x=32,y=32,outer=outer_se},
+  {bit=NW,h=NE,v=SW,x=0,y=0,outer=outer_nw},
+  {bit=NE,h=NW,v=SE,x=32,y=0,outer=material.ne and outer_ne or nil},
+  {bit=SW,h=SE,v=NW,x=0,y=32,outer=outer_sw},
+  {bit=SE,h=SW,v=NE,x=32,y=32,outer=outer_se},
 }
 local cells={}
 local extension=Image(W,H,ColorMode.RGB)
@@ -164,31 +149,17 @@ for i,m in ipairs(order) do
     if not opaque(pixel(ox+x,oy+y)) then extension:putPixel(ox+x,oy+y,tile:getPixel(x,y)) end
   end end
 end
-local bit=groundPort.bit
-for i,m in ipairs(order) do
-  local sl=groundPort.corner(s,m)
-  local x,y=groundPort.at(i)
-  assert(sl and sl.bounds.x==x and sl.bounds.y==y
-    and sl.bounds.width==groundPort.CELL and sl.bounds.height==groundPort.CELL,'Slice moved: '..m)
-  for _,q in ipairs(corners) do
-    local cx,cy=q.x==0 and 8 or 48,q.y==0 and 8 or 48
-    for y=cy,cy+7 do for x=cx,cx+7 do
-      assert(opaque(cells[m]:getPixel(x,y))==bit(m,q.bit),'Wrong quarter in mask '..m)
-    end end
-  end
-  for it in cells[m]:pixels() do
-    assert(pc.rgbaA(it())==0 or pc.rgbaA(it())==255,'Partial alpha')
-    if m==0 then assert(not opaque(it()),'Unused cell painted') end
-    if m==15 then assert(opaque(it()),'Fill has a hole') end
-  end
+for _,m in ipairs(order) do
+  for it in cells[m]:pixels() do assert(pc.rgbaA(it())==0 or pc.rgbaA(it())==255,'Partial alpha') end
 end
+groundPort.checkCells(s,order,cells)
 groundPort.checkJoins(cells)
 local stamp=os.date(sourceFiles.STAMP)
 local backup=work..name..'-before-'..stamp..'.aseprite'
 sourceFiles.copy(path,backup)
 if art_path~=path then sourceFiles.copy(art_path,work..name..'-painting-before-'..stamp..'.aseprite') end
 local l=s:newLayer()
-l.name=title..' extensions'
+l.name=layer_name
 s:newCel(l,1,extension,Point(0,0))
 for _,layer in ipairs(s.layers) do if layer.name=='Underdrawing (25%)' then layer.isVisible=false end end
 drawing.stackIndex=#s.layers
@@ -199,7 +170,7 @@ s:saveCopyAs(work..name..'-sheet.png')
 s:close()
 local back=assert(app.open(dest))
 sourceFiles.checkCel(back,'Draw here',original,position)
-sourceFiles.checkLayer(back,title..' extensions',extension,Point(0,0))
+sourceFiles.checkLayer(back,layer_name,extension,Point(0,0))
 back:close()
 if install then sourceFiles.copy(dest,canonical) end
 atlas:saveAs(work..name..'-atlas.png')

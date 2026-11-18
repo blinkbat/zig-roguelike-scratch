@@ -68,6 +68,22 @@ pub fn redrawnDiff(g: *game.Game, target: rl.RenderTexture2D, base: rl.Image) !u
     return differentPixels(base, now);
 }
 
+pub const Toggled = struct { changed: usize, restored: bool };
+
+pub fn toggled(g: *game.Game, target: rl.RenderTexture2D, base: rl.Image, value: anytype, off: @TypeOf(value.*), path: ?[:0]const u8) !Toggled {
+    const on = value.*;
+    value.* = off;
+    const changed = changed: {
+        defer value.* = on;
+        drawInto(g, target);
+        if (path) |p| try exportTarget(target, p);
+        const now = try readTarget(target);
+        defer rl.unloadImage(now);
+        break :changed differentPixels(base, now);
+    };
+    return .{ .changed = changed, .restored = try redrawnDiff(g, target, base) == 0 };
+}
+
 pub fn pixels(width: i32, height: i32) grid.Cells {
     return grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = width, .y = height });
 }
@@ -143,6 +159,16 @@ pub fn readTarget(target: rl.RenderTexture2D) !rl.Image {
     var img = try rl.loadImageFromTexture(target.texture);
     rl.imageFlipVertical(&img);
     return img;
+}
+
+pub fn drawOver(target: rl.RenderTexture2D, clear: rl.Color) void {
+    rl.beginTextureMode(target);
+    rl.clearBackground(clear);
+}
+
+pub fn exportDrawn(target: rl.RenderTexture2D, path: [:0]const u8) !void {
+    rl.endTextureMode();
+    try exportTarget(target, path);
 }
 
 pub fn exportTarget(target: rl.RenderTexture2D, path: [:0]const u8) !void {

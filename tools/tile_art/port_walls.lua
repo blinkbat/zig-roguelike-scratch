@@ -6,13 +6,10 @@ local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bit=masks.bit
 local sprite=assert(app.open(path))
-assert(sprite.width==masks.W and sprite.height==masks.HEAD+masks.H)
-local authored,extension,drawing
-for _,layer in ipairs(sprite.layers) do
-  if layer.name=='Layer 1' then authored=layer end
-  if layer.name=='Pixel extension - copied colors, chips and bricks' or layer.name=='Extension - ported painted edges' then extension=layer end
-  if layer.name=='Draw here' then drawing=layer end
-end
+assert(sprite.width==masks.W and sprite.height==masks.SHEET_H)
+local authored=sourceFiles.layer(sprite,'Layer 1')
+local extension=sourceFiles.layer(sprite,'Pixel extension - copied colors, chips and bricks') or sourceFiles.layer(sprite,'Extension - ported painted edges')
+local drawing=sourceFiles.layer(sprite,'Draw here')
 assert(authored and extension and drawing)
 local original=Image(authored:cel(1).image)
 local position=Point(authored:cel(1).position)
@@ -62,7 +59,7 @@ local function blob(mask)
   decorate(image,cap,{{24,23},{5,7},{43,7},{8,43},{41,44}})
   return image
 end
-local completed=Image(masks.W,masks.HEAD+masks.H,ColorMode.RGB)
+local completed=Image(masks.W,masks.SHEET_H,ColorMode.RGB)
 local blobs={}
 for i,mask in ipairs(masks) do
   blobs[i]=blob(mask)
@@ -97,7 +94,7 @@ sprite:saveAs(path)
 sprite:saveCopyAs(work..'regular-walls-current.png')
 sprite:close()
 local reopened=assert(app.open(path))
-assert(reopened.width==masks.W and reopened.height==masks.HEAD+masks.H,'Saved sheet dimensions changed')
+assert(reopened.width==masks.W and reopened.height==masks.SHEET_H,'Saved sheet dimensions changed')
 sourceFiles.checkLayer(reopened,'Extension - ported painted edges',completed,Point(0,0))
 sourceFiles.checkCel(reopened,'Layer 1',original,position)
 assert(#reopened.slices==#masks)

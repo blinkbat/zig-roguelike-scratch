@@ -111,7 +111,7 @@ test "thorns kills grant rewards and harvest after a shielded hit without blow r
         try std.testing.expectEqual(kills + 1, g.sim.kills);
         try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].thorns.?.kill);
         if (lethal_hero) {
-            try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
+            try harness.expectMode(g, .dead);
             try std.testing.expect(g.sim.heroActor() == null);
         } else {
             try std.testing.expectEqual(hp + harness.HARVEST_LIFE, g.sim.heroActor().?.hp);

@@ -2,10 +2,11 @@ import hashlib
 import os
 import unittest
 
-from art_support import SCRIPTS, WorkTest, arguments, aseprite, main, read_locked
+from art_support import WorkTest, arguments, aseprite, main, read_locked, run_lua
 
 
 args, remaining = arguments()
+DEEPEN = args.scripts_dir / 'deepen_water.lua'
 
 
 class DeepenWaterTests(WorkTest):
@@ -17,8 +18,8 @@ class DeepenWaterTests(WorkTest):
         self.canonical.parent.mkdir(parents=True)
         helpers = self.work / 'tools/tile_art'
         helpers.mkdir(parents=True)
-        for name in ('source_files.lua', 'ground_port.lua'):
-            (helpers / name).write_bytes((SCRIPTS / name).read_bytes())
+        for name in ('source_files.lua', 'ground_port.lua', 'ground_layout.lua'):
+            (helpers / name).write_bytes((args.scripts_dir / name).read_bytes())
         self.run_lua('''
 local s=Sprite(512,320,ColorMode.RGB)
 s.layers[1].name='Draw here'
@@ -40,20 +41,21 @@ labels:putPixel(12,8,app.pixelColor.rgba(40,50,60,255))
 labels:saveAs(app.params.labels)
 ''')
 
-    def command(self, script, install='yes'):
-        return aseprite(args.aseprite, script, {
+    def params(self, install='yes'):
+        return {
             'root': self.work.as_posix() + '/',
             'work': self.work,
             'source': self.source,
             'out': self.output,
             'labels': self.work / 'labels.png',
             'install': install,
-        }, timeout=None)
+        }
+
+    def command(self, script, install='yes'):
+        return aseprite(args.aseprite, script, self.params(install), timeout=None)
 
     def run_lua(self, source):
-        script = self.work / 'fixture.lua'
-        script.write_text(source, encoding='utf-8')
-        result = self.command(script)
+        result = run_lua(args.aseprite, self.work / 'fixture.lua', source, self.params(), timeout=None)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_existing_reference_paint_is_preserved_without_installing(self):
@@ -68,7 +70,7 @@ s:saveAs(app.params.out); s:close()
 ''')
         before = hashlib.sha256(self.output.read_bytes()).digest()
         source_before = self.source.read_bytes()
-        result = self.command(SCRIPTS / 'deepen_water.lua')
+        result = self.command(DEEPEN)
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn('Preserving existing deep-water artwork', result.stdout + result.stderr)
         self.assertEqual(before, hashlib.sha256(self.output.read_bytes()).digest())
@@ -77,7 +79,7 @@ s:saveAs(app.params.out); s:close()
 
     def test_fresh_destination_installs_toned_pixels_and_preserves_source(self):
         source_before = self.source.read_bytes()
-        result = self.command(SCRIPTS / 'deepen_water.lua')
+        result = self.command(DEEPEN)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertTrue(self.output.is_file())
         self.assertTrue(self.canonical.is_file())
@@ -124,7 +126,7 @@ source:close()
     def test_blocked_canonical_destination_fails_without_success_report(self):
         self.canonical.mkdir()
         source_before = self.source.read_bytes()
-        result = self.command(SCRIPTS / 'deepen_water.lua')
+        result = self.command(DEEPEN)
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(source_before, self.source.read_bytes())
         self.assertTrue(self.canonical.is_dir())
@@ -141,7 +143,7 @@ s:saveAs(app.params.work..'/deep-water-draft.aseprite'); s:close()
         draft = self.work / 'deep-water-draft.aseprite'
         before = draft.read_bytes()
         with read_locked(draft):
-            result = self.command(SCRIPTS / 'deepen_water.lua', install='no')
+            result = self.command(DEEPEN, install='no')
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(before, draft.read_bytes())
         self.assertFalse(self.canonical.exists())

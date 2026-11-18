@@ -46,6 +46,8 @@ const captureAlong = @import("capture.zig").captureAlong;
 const drawInto = @import("capture.zig").drawInto;
 const dropAtlas = @import("capture.zig").dropAtlas;
 const heapAtlas = @import("capture.zig").heapAtlas;
+const drawOver = @import("capture.zig").drawOver;
+const exportDrawn = @import("capture.zig").exportDrawn;
 const exportTarget = @import("capture.zig").exportTarget;
 const readTarget = @import("capture.zig").readTarget;
 const renderTarget = @import("capture.zig").renderTarget;
@@ -150,8 +152,7 @@ fn captureKeywordColors(g: *game.Game) !void {
         defer rl.unloadRenderTexture(target);
         const on = menu.Surface{ .scale = @as(f32, @floatFromInt(size.x)) / @as(f32, @floatFromInt(game.SCREEN_720.x)), .offset = .{ .x = 0, .y = 0 } };
         const face = on.faceFor(g.face);
-        rl.beginTextureMode(target);
-        rl.clearBackground(look.BG);
+        drawOver(target, look.BG);
         on.begin();
         for ([_]rl.Color{ look.TEXT, look.DIM, look.MAGIC }, 0..) |base, column| {
             const x = 24 + @as(i32, @intCast(column)) * 420;
@@ -161,8 +162,7 @@ fn captureKeywordColors(g: *game.Game) !void {
             }
         }
         rl.endMode2D();
-        rl.endTextureMode();
-        try exportTarget(target, SHOTS_DIR ++ std.fmt.comptimePrint("/keyword-colors-{d}.png", .{size.y}));
+        try exportDrawn(target, SHOTS_DIR ++ std.fmt.comptimePrint("/keyword-colors-{d}.png", .{size.y}));
     }
 }
 
@@ -180,11 +180,9 @@ fn captureQuests(g: *game.Game) !void {
         defer rl.unloadRenderTexture(target);
         inline for (.{ "first", "last" }) |at| {
             b.top = if (comptime std.mem.eql(u8, at, "first")) 0 else view.quests.last_top;
-            rl.beginTextureMode(target);
-            rl.clearBackground(look.BG);
+            drawOver(target, look.BG);
             b.draw(&g.face, &g.sprites, size, view);
-            rl.endTextureMode();
-            try exportTarget(target, SHOTS_DIR ++ std.fmt.comptimePrint("/quests-{d}-{s}.png", .{ size.y, at }));
+            try exportDrawn(target, SHOTS_DIR ++ std.fmt.comptimePrint("/quests-{d}-{s}.png", .{ size.y, at }));
         }
     }
 }

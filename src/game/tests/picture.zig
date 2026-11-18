@@ -195,7 +195,7 @@ fn expectFadeAndRestore(g: *game.Game, i: usize, away: P) !void {
     try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
     harness.ease(g, harness.FADING_S);
     try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 1);
-    for (0..harness.FADE_FRAMES) |_| harness.ease(g, mathx.TEST_DT);
+    harness.fadeFrames(g, harness.ease);
     try std.testing.expect(g.pic.occlusion[i] > harness.FADED);
     const hero = g.sim.heroSlot().?;
     g.sim.pool.move(&g.sim.lv, g.sim.hero, away);
@@ -204,7 +204,7 @@ fn expectFadeAndRestore(g: *game.Game, i: usize, away: P) !void {
     g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
     harness.ease(g, harness.FADING_S);
     try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < harness.FADED);
-    for (0..harness.FADE_FRAMES) |_| harness.ease(g, mathx.TEST_DT);
+    harness.fadeFrames(g, harness.ease);
     try std.testing.expect(g.pic.occlusion[i] < harness.UNFADED);
     g.pic.occlusion[i] = 1;
     game.settle(g);
@@ -240,7 +240,7 @@ test "large trees fade around a drawn foe behind them but not an unseen one" {
     const far = grid.Level.idx(unseen.add(.{ .x = 0, .y = 1 }));
     try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(seen))) != null);
     try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(unseen))) == null);
-    for (0..harness.FADE_FRAMES) |_| harness.ease(g, mathx.TEST_DT);
+    harness.fadeFrames(g, harness.ease);
     try std.testing.expect(g.pic.occlusion[near] > harness.FADED);
     try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[far]);
     try std.testing.expectEqual([2]f32{ 24.5, 20.5 }, g.pic.occluder[near]);
@@ -703,7 +703,7 @@ test "the bite that kills the archer leaves it standing and followed until it la
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.bittenToDeath(g);
-    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .dead);
     const hero = g.sim.heroSlot().?;
     try std.testing.expect(g.pic.drawnAt(&g.sim, hero) != null and g.pic.carrierAt(&g.sim) != null);
     const t = harness.framesUntil(g, hero, harness.undrawn);
@@ -720,7 +720,7 @@ test "a foe whose bite kills the archer is not then killed by the gas it stands 
     g.sim.heroActor().?.hp = 1;
     g.sim.lv.addGas(.{ .x = 21, .y = 20 }, harness.TEST_GAS);
     harness.use(g, .wait);
-    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .dead);
     try std.testing.expect(g.sim.pool.get(harness.foeId(0)) != null);
     try std.testing.expectEqual(@as(usize, 0), g.sim.kills);
     try std.testing.expectEqualStrings("Archer dies.", g.sim.log.line(0).?);
@@ -1616,7 +1616,7 @@ test "gas left to eat at the archer kills it" {
     g.sim.lv.addGas(.{ .x = 20, .y = 20 }, harness.TEST_GAS);
     g.sim.heroActor().?.hp = 1;
     harness.use(g, .wait);
-    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .dead);
     try std.testing.expectEqualStrings("Archer dies.", g.sim.log.line(0).?);
     try std.testing.expect(harness.framesUntil(g, g.sim.heroSlot().?, harness.reddened) < harness.TEST_TOL);
 }
@@ -1630,7 +1630,7 @@ test "an unkillable archer keeps 1 hp through gas and bites that would kill it" 
     g.sim.lv.addGas(.{ .x = 20, .y = 20 }, harness.TEST_GAS);
     g.sim.heroActor().?.hp = 2;
     for (0..20) |_| harness.use(g, .wait);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try harness.expectMode(g, .play);
     try std.testing.expectEqual(@as(i32, 1), g.sim.heroActor().?.hp);
 }
 

@@ -16,6 +16,7 @@ const prompt_icon = @import("../gfx/prompt_icon.zig");
 const line_icons = @import("../gfx/line_icons.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
+const hud = @import("hud.zig");
 const input = @import("../core/input.zig");
 const AREA = @import("character_layout.zig").AREA;
 
@@ -186,7 +187,7 @@ fn button(face: *const font.Face, box: rl.Rectangle, label: [:0]const u8, enable
 fn drawPoints(face: *const font.Face, points: u16, right: bool) void {
     var line: menu.Note(64) = .{};
     line.say("{d} point{s} available", .{ points, mathx.plural(points) });
-    const x = if (right) CANVAS_RIGHT - face.width(line.text(), font.SMALL) else CANVAS_LEFT;
+    const x = if (right) face.alignRight(line.text(), CANVAS_RIGHT, font.SMALL) else CANVAS_LEFT;
     face.draw(line.text(), x, TITLE_Y, font.SMALL, if (points > 0) OWNED else look.DIM);
 }
 
@@ -259,7 +260,7 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         const ink = skillInk(class, growth, s);
         rl.drawRectangleRec(box, TILE);
         rl.drawRectangleLinesEx(box, 2, ink);
-        if (i == cursor and view.focused) rl.drawRectangleLinesEx(raster.grown(box, FOCUS_GROW), 2, FOCUS);
+        if (i == cursor and view.focused) hud.focusGrown(box, FOCUS_GROW);
         line_icons.drawSkill(sprites, s.act, mid.x - line_icons.SKILL_PX / 2, mid.y - line_icons.SKILL_PX / 2, skillAlpha(class, growth, s));
         const plaque = raster.rect(mid.x + PLAQUE_AT.x, mid.y + PLAQUE_AT.y, PLAQUE_W, PLAQUE_H);
         menu.boxed(plaque, BACK, ink);

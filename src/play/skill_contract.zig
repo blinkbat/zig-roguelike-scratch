@@ -14,7 +14,7 @@ const MELEE_REACH: i32 = 1;
 
 pub const Reticle = enum { bow, leap, swing, rush, ground };
 pub const Definition = struct { module: ?type, reticle: ?Reticle = null, delivery: ?attrs.Attack = null };
-pub const Declaration = enum { describe, TELEPORTS, arc, ELEMENT, burst, JUMPS, afflict, around, Ward, knocked, PIERCES, length, FUEL_DAMAGE };
+pub const Declaration = enum { describe, TELEPORTS, arc, ELEMENT, burst, JUMPS, afflict, around, Ward, knocked, PIERCES, length, FUEL_DAMAGE, DRAIN };
 pub const Bases = struct { physical: ?damage.Base, element: ?damage.Base };
 pub const Ailment = struct { kind: resilience.Kind, chance: u32 };
 
@@ -56,6 +56,7 @@ pub const Contract = struct {
     free: bool,
     cost: i32,
     cooldown: u8,
+    drain: i32,
     reach: i32,
     nearest: i32,
     done: ?[]const u8,
@@ -173,6 +174,7 @@ pub fn interpret(comptime name: []const u8, comptime d: Definition) Contract {
         .free = value(d, "FREE", false),
         .cost = value(d, "COST", @as(i32, 0)),
         .cooldown = value(d, "COOLDOWN", @as(u8, 0)),
+        .drain = value(d, "DRAIN", @as(i32, 0)),
         .reach = if (d.reticle) |r| switch (r) {
             .bow => value(d, "BOLT_RANGE", bow.RANGE),
             .swing => MELEE_REACH,

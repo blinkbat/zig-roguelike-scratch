@@ -619,19 +619,20 @@ pub fn drawMap(g: *game.Game) void {
     var shown: [actor.MAX]Shown = undefined;
     const stood = stoodNow(g);
     var n: usize = 0;
-    for (0..g.sim.pool.n) |i| {
-        const at = g.pic.bodyAt(&g.sim, i) orelse continue;
-        const body = g.pic.bodyShown(&g.sim, i);
+    var pictured = g.pic.shownBodies(&g.sim);
+    while (pictured.next()) |b| {
+        const at = b.at;
+        const body = b.body;
         const mid = game.middle(at);
         shown[n] = .{
             .pic = body.pic,
-            .slot = i,
-            .sighted = g.pic.sighted[i],
+            .slot = b.slot,
+            .sighted = g.pic.sighted[b.slot],
             .s = c.px(at),
             .lifted = c.px(at).sub(.{ .x = 0, .y = body.lift }),
             .mid = mid,
             .left = body.facing == .left,
-            .shine = g.light.onBody(mid, g.sim.isHero(i)),
+            .shine = g.light.onBody(mid, g.sim.isHero(b.slot)),
             .opacity = body.opacity,
             .dark = body.dark,
             .flash = body.flash,
@@ -956,14 +957,14 @@ fn kinOf(g: *const game.Game, p: P) Kin {
 
 /// The line each pictured braced foe will charge or hook down, faded with its cells and body.
 fn drawBraced(g: *game.Game, c: Cam, ground: *const grid.Level) void {
-    for (0..g.sim.pool.n) |i| {
-        const position = g.pic.bodyAt(&g.sim, i) orelse continue;
-        const b = g.pic.bodyShown(&g.sim, i).pic;
+    var pictured = g.pic.shownBodies(&g.sim);
+    while (pictured.next()) |shown| {
+        const b = shown.body.pic;
         const d = b.braced orelse continue;
         if (b.down()) continue;
-        const at = game.cellUnder(position);
+        const at = game.cellUnder(shown.at);
         const lane = windup.lane(ground, at, d, actor.braceReach(b.kind) orelse continue);
-        for (lane.slice()) |p| laneCell(g, c, p, look.BRACED, g.pic.sighted[i]);
+        for (lane.slice()) |p| laneCell(g, c, p, look.BRACED, g.pic.sighted[shown.slot]);
     }
 }
 
@@ -1066,9 +1067,11 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
     var buf: [EFFECT_SOURCES]light.Emission = undefined;
     for (effectSources(&g.pic.fx, g.pic.carrierAt(&g.sim), null, &buf)) |source| g.light.emit(ground, source);
     if (g.pic.shot) |s| if (s.view.at) |at| if (fx.missileLight(at, s.act)) |source| emitFaded(g, ground, source, s.view.alpha);
-    for (0..g.sim.pool.n) |i| {
-        const at = g.pic.bodyAt(&g.sim, i) orelse continue;
-        const pic = g.pic.bodyShown(&g.sim, i).pic;
+    var pictured = g.pic.shownBodies(&g.sim);
+    while (pictured.next()) |b| {
+        const i = b.slot;
+        const at = b.at;
+        const pic = b.body.pic;
         if (pic.down()) continue;
         if (look.bodyGlow(pic.kind)) |col| {
             const source = fx.BODY_GLOW.lit(game.middle(at), col, 1);
@@ -1190,10 +1193,10 @@ pub fn drawMinimap(g: *game.Game) void {
         }
         raster.stretch(t, map, look.LIT);
     }
-    for (g.sim.pool.slice(), 0..) |a, i| {
-        if (!a.foe()) continue;
-        const at = g.pic.bodyAt(&g.sim, i) orelse continue;
-        miniDot(o, game.cellUnder(at), 0, look.fade(look.MINI_FOE, g.pic.sighted[i] * g.pic.bodyShown(&g.sim, i).opacity));
+    var bodies = g.pic.shownBodies(&g.sim);
+    while (bodies.next()) |b| {
+        if (!g.sim.pool.items[b.slot].foe()) continue;
+        miniDot(o, game.cellUnder(b.at), 0, look.fade(look.MINI_FOE, g.pic.sighted[b.slot] * b.body.opacity));
     }
     if (g.pic.heroNow(&g.sim)) |at| miniDot(o, game.cellUnder(at), MINI_HERO_GROW, look.MINI_HERO);
     const v = miniView(Cam.of(g), g.screen);

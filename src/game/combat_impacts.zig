@@ -50,7 +50,7 @@ fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime ver
     const name = actor.row(hit.kind).name;
     g.sim.chronicle.note(.{ .dealt = .{ .to = hit.kind, .killed = h.lethal, .origin = origin } });
     const slot = target.slot().index;
-    if (h.lethal or !g.sim.pool.items[slot].veiled()) {
+    if (told(h, &g.sim.pool.items[slot])) {
         g.sim.sayAs(.damage, hit.at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.sim.name.text(), name, if (hit.roll.crit) " critically" else "", hit.roll.dmg, if (hit.culled) CUT_DOWN else deathNote(h) });
         if (hit.bled) |said| g.sim.sayAt(hit.at, "The {s} {s}!", .{ name, said });
         if (hit.stunned) g.sim.sayFoeTakes(&g.sim.pool.items[slot], turn_clock.STUNNED);
@@ -94,7 +94,7 @@ pub fn boltHits(g: *game.Game, by: actor.Kind, id: u16, hu: actor.Hurl, s: Strok
     const hero = id == g.sim.hero;
     if (hero) {
         heroHurt(g, "The {s}'s {s} {s} {s} for {d}.", .{ thrower, hu.name, hu.verb, g.sim.name.text(), h.dmg }, .{ .by = .{ .foe = by }, .dmg = h.dmg, .before = before });
-    } else if (h.lethal or !a.veiled()) g.sim.sayAt(at, "The {s}'s {s} {s} the {s} for {d}.{s}", .{ thrower, hu.name, hu.verb, actor.row(kind).name, h.dmg, deathNote(h) });
+    } else if (told(h, a)) g.sim.sayAt(at, "The {s}'s {s} {s} the {s} for {d}.{s}", .{ thrower, hu.name, hu.verb, actor.row(kind).name, h.dmg, deathNote(h) });
     if (!h.lethal and h.dmg > 0) _ = g.sim.igniteFresh(slot, a, hu.burns);
     if (hero) {
         g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(slot), .at = at, .lethal = h.lethal, .after = afterBlow(g, id, h) } }, s);
@@ -125,13 +125,13 @@ pub fn bodyBlow(g: *game.Game, by: u16, target: u16, s: actor.Strike, verb: []co
     return landedImpact(g, target, at, h);
 }
 
-pub fn incomingStrike(g: *game.Game, attacker: actor.ActorId, kind: actor.Kind, row: actor.Row, blow: actor.Strike, verb: []const u8, flight: ?bow.Flight, weak: bool) Incoming {
+pub fn incomingStrike(g: *game.Game, attacker: actor.ActorId, kind: actor.Kind, name: []const u8, blow: actor.Strike, verb: []const u8, flight: ?bow.Flight, weak: bool, melee: bool) Incoming {
     const outcome = attacks.strikeHero(&g.sim, attacker, blow, weak);
     const hit = switch (outcome) {
         .blocked, .dodged => {
-            g.sim.log.say("{s} {s} the {s}.", .{ g.sim.name.text(), if (outcome == .blocked) "blocks" else "dodges", row.name });
+            g.sim.log.say("{s} {s} the {s}.", .{ g.sim.name.text(), if (outcome == .blocked) "blocks" else "dodges", name });
             g.pic.recordFoeAttack(attacker, .miss, flight);
-            if (row.ranged == null) tactics_exec.counter(g, attacker.value);
+            if (melee) tactics_exec.counter(g, attacker.value);
             return .missed;
         },
         .hit => |hit| hit,
@@ -140,7 +140,7 @@ pub fn incomingStrike(g: *game.Game, attacker: actor.ActorId, kind: actor.Kind, 
     const hero_slot = harm.target.slot().index;
     const hero = &g.sim.pool.items[hero_slot];
     game.presentDamage(g, harm);
-    heroHurt(g, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), harm.dmg }, .{ .by = .{ .foe = kind }, .dmg = harm.dmg, .before = hit.hp_before, .best = hit.maximum_roll });
+    heroHurt(g, "The {s} {s} {s} for {d}.", .{ name, verb, g.sim.name.text(), harm.dmg }, .{ .by = .{ .foe = kind }, .dmg = harm.dmg, .before = hit.hp_before, .best = hit.maximum_roll });
     if (hit.bled) |said| g.sim.log.push(.danger, "{s} {s}!", .{ g.sim.name.text(), said });
     if (hit.stunned) {
         g.sim.sayTakes(hero_slot, hero, turn_clock.STUNNED);
@@ -149,10 +149,10 @@ pub fn incomingStrike(g: *game.Game, attacker: actor.ActorId, kind: actor.Kind, 
     if (hit.chilled) g.sim.sayTakes(hero_slot, hero, glacial.TAKES);
     const after = afterBlow(g, g.sim.hero, harm);
     g.pic.recordFoeAttack(attacker, if (harm.lethal) .{ .kill = after } else .{ .hurt = after }, flight);
-    if (row.ranged == null) returnThorns(g, attacker.value, hero.at);
+    if (melee) returnThorns(g, attacker.value, hero.at);
     if (harm.lethal) {
         heroDies(g);
-    } else if (row.ranged == null) {
+    } else if (melee) {
         tactics_exec.counter(g, attacker.value);
     }
     return if (harm.lethal) .killed else .hurt;
@@ -198,10 +198,9 @@ fn recoverLife(g: *game.Game, n: i32) ?fx.After {
 }
 
 fn slain(g: *game.Game, id: u16) ?fx.After {
-    const killed = &g.sim.pool.items[actor.Pool.slot(id)];
-    const spared = killed.kind.ally() or killed.raider;
+    const spoils = g.sim.pool.items[actor.Pool.slot(id)].spoils();
     fell(g, id);
-    if (spared) return null;
+    if (!spoils) return null;
     return recoverLife(g, g.sim.inventory.gear.killRecovery());
 }
 
@@ -276,6 +275,10 @@ fn returnThorns(g: *game.Game, id: u16, from: P) void {
     g.sim.sayAs(.damage, at, "{s}'s thorns hurt the {s} for {d}.{s}", .{ g.sim.name.text(), actor.row(kind).name, h.dmg, deathNote(h) });
     const recovery = if (h.lethal) slain(g, id) else null;
     g.pic.owe(.fromInt(id), .thorns, .{ .kill = h.lethal, .after = after, .recovery = recovery });
+}
+
+fn told(h: Hurt, a: *const actor.Actor) bool {
+    return h.lethal or !a.veiled();
 }
 
 fn deathNote(h: Hurt) []const u8 {

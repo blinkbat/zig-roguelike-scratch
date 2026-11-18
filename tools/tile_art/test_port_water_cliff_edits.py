@@ -3,10 +3,11 @@ import unittest
 
 from PIL import Image
 
-from art_support import ROOT, WorkTest, arguments, aseprite, main, read_locked
+from art_support import WorkTest, arguments, aseprite, main, read_locked, water_cliff_layout
 
 
 args, remaining = arguments()
+LAYOUT = water_cliff_layout(args.scripts_dir)
 
 
 class WaterCliffPortTests(WorkTest):
@@ -21,9 +22,10 @@ class WaterCliffPortTests(WorkTest):
         fixture = self.work / 'fixture.lua'
         fixture.write_text('''
 local w=app.params.work
-local s=Sprite(960,640,ColorMode.RGB)
+local W,H=tonumber(app.params.width),tonumber(app.params.height)
+local s=Sprite(W,H,ColorMode.RGB)
 s.layers[1].name='Base'
-local image=Image(960,640,ColorMode.RGB)
+local image=Image(W,H,ColorMode.RGB)
 image:putPixel(10,10,app.pixelColor.rgba(20,30,40,255))
 image:putPixel(40,110,app.pixelColor.rgba(50,60,70,255))
 image:putPixel(360,110,app.pixelColor.rgba(30,36,42,255))
@@ -31,7 +33,7 @@ s:newCel(s.layers[1],1,image,Point(0,0))
 for _,name in ipairs({'Land to shallows - Cliff faces','Land to deep water - Cliff faces'}) do
  local layer=s:newLayer()
  layer.name=name
- local face=Image(960,640,ColorMode.RGB)
+ local face=Image(W,H,ColorMode.RGB)
  if name=='Land to shallows - Cliff faces' then
   face:putPixel(50,115,app.pixelColor.rgba(50,60,70,255))
  else
@@ -39,7 +41,7 @@ for _,name in ipairs({'Land to shallows - Cliff faces','Land to deep water - Cli
  end
  s:newCel(layer,1,face,Point(0,0))
 end
-for i=1,54 do
+for i=1,tonumber(app.params.slices) do
  local slice=s:newSlice(Rectangle(i,1,1,1))
  slice.name='slice'..i
 end
@@ -47,7 +49,8 @@ s:saveAs(w..'/original.aseprite')
 s:saveCopyAs(w..'/baseline.png')
 s:close()
 ''', encoding='utf-8')
-        result = self.run_lua(fixture, work=self.work.as_posix())
+        result = self.run_lua(fixture, work=self.work.as_posix(), width=LAYOUT['width'],
+                              height=LAYOUT['height'], slices=LAYOUT['slices'])
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         with Image.open(self.baseline) as baseline:
             baseline.save(self.owner)
@@ -62,7 +65,7 @@ s:close()
             original=self.original.as_posix(),
             output=(output or self.output).as_posix(),
             preview=self.preview.as_posix(), report=self.report.as_posix(),
-            root=ROOT.as_posix() + '/',
+            root=args.root.as_posix() + '/',
         )
 
     def paint(self, at, color):
@@ -125,7 +128,7 @@ s:close()
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(original, self.original.read_bytes())
         self.assertTrue(self.output.is_file())
-        self.assertIn('54 slices retained', self.report.read_text(encoding='utf-8'))
+        self.assertIn(f'{LAYOUT["slices"]} slices retained',self.report.read_text(encoding='utf-8'))
         with Image.open(self.owner) as source:
             expected = source.convert('RGBA')
         expected.putpixel((360, 110), (12, 34, 56, 255))

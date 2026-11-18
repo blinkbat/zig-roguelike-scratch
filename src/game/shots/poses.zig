@@ -37,6 +37,8 @@ const SHOT_SEED = @import("capture.zig").SHOT_SEED;
 const capture = @import("capture.zig").capture;
 const captureAlong = @import("capture.zig").captureAlong;
 const dropAtlas = @import("capture.zig").dropAtlas;
+const drawOver = @import("capture.zig").drawOver;
+const exportDrawn = @import("capture.zig").exportDrawn;
 const exportTarget = @import("capture.zig").exportTarget;
 const heapAtlas = @import("capture.zig").heapAtlas;
 const pixels = @import("capture.zig").pixels;
@@ -420,12 +422,10 @@ pub fn captureGeneral(g: *game.Game) !void {
     try captureLoot(g);
 
     const entry = naming.Entry{ .name = heroes.Name.of("Arwen"), .row = 2, .col = 4 };
-    rl.beginTextureMode(target);
-    rl.clearBackground(look.BG);
+    drawOver(target, look.BG);
     var title: [naming.TITLE_MAX]u8 = undefined;
     naming.draw(&entry, g.face, g.screen, naming.titleOf(heroes.DEFAULT, &title), .xbox);
-    rl.endTextureMode();
-    try exportTarget(target, SHOTS_DIR ++ "/name.png");
+    try exportDrawn(target, SHOTS_DIR ++ "/name.png");
 }
 
 pub fn loadStrand(g: *game.Game, w: *atlas.Atlas) !void {
@@ -521,8 +521,7 @@ fn captureParticleShapes() !void {
     const level = grid.openFloor();
     const at = [2]f32{ 20.5, 20.5 };
     const cell: f32 = 256;
-    rl.beginTextureMode(target);
-    rl.clearBackground(.{ .r = 32, .g = 35, .b = 38, .a = 255 });
+    drawOver(target, .{ .r = 32, .g = 35, .b = 38, .a = 255 });
     const Shape = union(enum) { drip: fx.Matter, splash, leaves };
     const shapes = [_]struct { label: [:0]const u8, shape: Shape }{
         .{ .label = "Blood", .shape = .{ .drip = .blood } },
@@ -549,15 +548,13 @@ fn captureParticleShapes() !void {
     const effects = fx.Fx{};
     effects.drawStatus(.bleeding, .{ .x = 20, .y = 450, .cell = cell, .seed = 1, .ink = look.BLOOD, .alpha = 1, .stacks = 1 });
     rl.drawText("Bleeding marks", 300, 650, 20, rl.Color.white);
-    rl.endTextureMode();
-    try exportTarget(target, SHOTS_DIR ++ "/particle-shapes.png");
+    try exportDrawn(target, SHOTS_DIR ++ "/particle-shapes.png");
 }
 
 fn captureArrows() !void {
     const target = try rl.loadRenderTexture(640, 320);
     defer rl.unloadRenderTexture(target);
-    rl.beginTextureMode(target);
-    rl.clearBackground(look.FOG);
+    drawOver(target, look.FOG);
     for ([_]f32{ 1, 2 }, 0..) |scale, row| {
         for (0..16) |i| {
             const angle = @as(f32, @floatFromInt(i)) * std.math.tau / 16;
@@ -567,8 +564,7 @@ fn captureArrows() !void {
             fx.drawArrow(.{ .x = x + dir[0] * 8 * scale, .y = y + dir[1] * 8 * scale }, dir, look.arrowInk(.shoot), .{ 0, 0 }, scale);
         }
     }
-    rl.endTextureMode();
-    try exportTarget(target, SHOTS_DIR ++ "/arrow-directions.png");
+    try exportDrawn(target, SHOTS_DIR ++ "/arrow-directions.png");
 }
 
 const POSE_BURST = P{ .x = 25, .y = 15 };
@@ -869,9 +865,9 @@ test "hidden-shadow captures remember the actor before hiding it in every lighti
         const slot = game.harness.foeSlot(0);
         const at = g.sim.pool.items[slot].at;
         try std.testing.expect(!g.sim.lv.isLit(at));
-        try std.testing.expect(g.pic.casterAt(&g.sim, slot, grid.Box.inMap(0)) != null);
+        try std.testing.expect(g.pic.casterAt(&g.sim, slot, grid.MAP) != null);
         g.pic.snapSight(&g.sim);
-        try std.testing.expect(g.pic.casterAt(&g.sim, slot, grid.Box.inMap(0)) == null);
+        try std.testing.expect(g.pic.casterAt(&g.sim, slot, grid.MAP) == null);
     }
 }
 

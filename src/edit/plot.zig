@@ -175,15 +175,22 @@ pub fn open(ed: *editor.Editor, p: Page) void {
     ed.plot.detail.top = 0;
     ed.plot.list.top = 0;
     ed.plot.lines.top = 0;
-    if (!std.meta.eql(ed.plot.seen, Seen.of(&ed.map.script))) {
-        ed.plot.pick = .none;
-        ed.plot.trigger = null;
-        ed.plot.quest = null;
-    }
-    if (p == .dialogs and ed.plot.pick == .none and ed.map.script.dialog_n > 0) ed.plot.pick = .{ .dialog = 0 };
-    if (p == .script and ed.plot.trigger == null and ed.map.script.trigger_n > 0) ed.plot.trigger = 0;
-    if (p == .quests and ed.plot.quest == null and ed.map.script.quest_n > 0) ed.plot.quest = 0;
+    refit(ed, p);
     ed.ask(.{ .plot = p });
+}
+
+fn refit(ed: *editor.Editor, p: Page) void {
+    const s = &ed.plot;
+    const m = &ed.map.script;
+    if (!std.meta.eql(s.seen, Seen.of(m))) {
+        s.pick = .none;
+        s.trigger = null;
+        s.quest = null;
+    }
+    if (p == .dialogs and s.pick == .none and m.dialog_n > 0) s.pick = .{ .dialog = 0 };
+    if (p == .script and s.trigger == null and m.trigger_n > 0) s.trigger = 0;
+    if (p == .quests and s.quest == null and m.quest_n > 0) s.quest = 0;
+    s.reveal_pick = true;
 }
 
 pub fn keys(ed: *editor.Editor) void {
@@ -193,6 +200,7 @@ pub fn keys(ed: *editor.Editor) void {
     if (d.undo or d.redo) {
         s.focus = null;
         if (d.undo) ed.undo() else ed.redo();
+        refit(ed, ed.modal.plot);
     }
     if (d.clicked()) ed.gesture() catch return;
     if (d.undo or d.redo) return;
@@ -298,7 +306,10 @@ fn drawPreview(ed: *editor.Editor, g: *game.Game, at: LineAt, clicked: bool) voi
     if (chosen == null and !(ln.choice_n == 0 and action)) return;
     const next = if (chosen) |r| ln.choice[r].next else ln.then;
     ed.plot.showPreview(if (next) |n| .{ .d = at.d, .l = n } else null);
-    if (next) |n| ed.plot.line = n;
+    if (next) |n| {
+        ed.plot.line = n;
+        ed.plot.reveal_line = true;
+    }
 }
 
 fn speakerOf(m: *const Script, d: u8) ?*const script.Npc {
@@ -358,7 +369,8 @@ fn listHead(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, comptime title:
     return countHead(ed, g, f.x, y, f.listW() - GAP, title, n, most, add_w, label, tip);
 }
 
-fn listRow(ed: *editor.Editor, g: *game.Game, x: i32, w: i32, y: i32, label: []const u8, on: bool, tip: ?[:0]const u8) bool {
+fn listRow(ed: *editor.Editor, g: *game.Game, due: *bool, list: widgets.Scroll, x: i32, w: i32, y: i32, label: []const u8, on: bool, tip: ?[:0]const u8) bool {
+    revealPicked(due, list, y, on);
     const hit = button(ed, g, widgets.row(x, y, w - GAP), label, on, true, tip);
     if (hit) ed.plot.detail.top = 0;
     return hit;
@@ -382,9 +394,23 @@ fn detailPane(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32, botto
     area.close(&ed.clip, end, 0);
 }
 
+fn pickedPane(ed: *editor.Editor, g: *game.Game, f: Frame, list: widgets.Scroll, y: i32, picked: ?u8, comptime body: fn (*editor.Editor, *game.Game, u8, i32, i32, i32) i32, none: []const u8) void {
+    const right = rightOf(ed, f, list, y);
+    const i = picked orelse return caption(g, right.x, f.y, right.w, none, look.DIM);
+    detailPane(ed, g, right.x, f.y, right.w, f.bottom, body, i);
+}
+
 fn dropLabel(buf: []u8, users: usize, comptime noun: []const u8) [:0]const u8 {
     if (users > 0) return std.fmt.bufPrintZ(buf, "Used {d} times", .{users}) catch "";
     return "Delete " ++ noun;
+}
+
+fn dropUsed(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, comptime noun: [:0]const u8, f: Focus, users: usize, tip: [:0]const u8, comptime dropIt: fn (*Script, u8) bool, i: u8) bool {
+    var buf: [widgets.LINE]u8 = undefined;
+    if (!nameRow(ed, g, x, y, w, comptime menu.capital(noun), f, dropLabel(&buf, users, noun), users == 0, tip, "")) return false;
+    if (!dropIt(&ed.map.script, i)) return false;
+    ed.bank();
+    return true;
 }
 
 fn beforeDrop(w: i32) i32 {
@@ -529,7 +555,8 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     }
     for (m.npcs(), 0..) |*npc, i| {
         const line = std.fmt.bufPrint(&buf, "{s}  (node {d})", .{ npc.called(), npc.node }) catch "";
-        if (listRow(ed, g, f.x, lw, y, line, s.pick == .npc and s.pick.npc == i, "What this NPC is called and which dialog it opens")) s.pick = .{ .npc = @intCast(i) };
+        const picked = s.pick == .npc and s.pick.npc == i;
+        if (listRow(ed, g, &s.reveal_pick, list, f.x, lw, y, line, picked, "What this NPC is called and which dialog it opens")) s.pick = .{ .npc = @intCast(i) };
         y += STEP;
     }
     y += GAP;
@@ -542,8 +569,7 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     y += STEP;
     for (m.dialogs(), 0..) |*dl, i| {
         const picked = s.pick == .dialog and s.pick.dialog == i;
-        revealPicked(&s.reveal_pick, list, y, picked);
-        if (listRow(ed, g, f.x, lw, y, dl.name.text(), picked, "Its lines, what they say and where each choice goes")) s.pickDialog(@intCast(i));
+        if (listRow(ed, g, &s.reveal_pick, list, f.x, lw, y, dl.name.text(), picked, "Its lines, what they say and where each choice goes")) s.pickDialog(@intCast(i));
         y += STEP;
     }
     const right = rightOf(ed, f, list, y);
@@ -580,7 +606,10 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     }
     y += STEP;
     if (npc.dialog) |d| {
-        if (button(ed, g, widgets.row(x + LABEL_W, y, TALK_W), "Edit its dialog", false, true, null)) ed.plot.pickDialog(d);
+        if (button(ed, g, widgets.row(x + LABEL_W, y, TALK_W), "Edit its dialog", false, true, null)) {
+            ed.plot.pickDialog(d);
+            ed.plot.reveal_pick = true;
+        }
         y += STEP;
     }
     caption(g, x, y, LABEL_W, "Stands", look.TEXT);
@@ -699,17 +728,12 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     const s = &ed.plot;
     const m = &ed.map.script;
     const d = &m.dialog[di];
-    var buf: [widgets.LINE]u8 = undefined;
     s.line = @min(s.line, d.line_n - 1);
     const lines_w = widgets.share(w, LINES_PARTS, LINES_MIN_W, LINES_MAX_W);
     var y = top;
-    const users = m.dialogUsers(di);
-    if (nameRow(ed, g, x, y, w, "Dialog", .{ .dialog = di }, dropLabel(&buf, users, "dialog"), users == 0, "Delete it; a dialog an NPC or trigger still names cannot go", "")) {
-        if (m.dropDialog(di)) {
-            ed.bank();
-            s.pick = .none;
-            return;
-        }
+    if (dropUsed(ed, g, x, y, w, "dialog", .{ .dialog = di }, m.dialogUsers(di), "Delete it; a dialog an NPC or trigger still names cannot go", Script.dropDialog, di)) {
+        s.pick = .none;
+        return;
     }
     y += STEP + GAP;
     const body = y;
@@ -723,8 +747,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
         const speech = ln.say.text();
         const first = if (speech.len > 0) speech[0 .. std.mem.indexOfScalar(u8, speech, '\n') orelse speech.len] else SILENT;
         const label = std.fmt.bufPrintZ(&line_buf, "{s}{s}: {s}", .{ if (i == 0) "> " else "", ln.name.text(), first }) catch "";
-        revealPicked(&s.reveal_line, line_area, y, s.line == i);
-        if (listRow(ed, g, lx, lines_w, y, label, s.line == i, if (i == 0) "Where it opens" else null)) s.line = @intCast(i);
+        if (listRow(ed, g, &s.reveal_line, line_area, lx, lines_w, y, label, s.line == i, if (i == 0) "Where it opens" else null)) s.line = @intCast(i);
         y += STEP;
     }
     const tools_w = lines_w - GAP;
@@ -1136,8 +1159,7 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     for (m.triggers(), 0..) |*t, i| {
         const label = std.fmt.bufPrint(&buf, "{s}{s}", .{ t.name.text(), if (t.parked) "  (parked)" else "" }) catch "";
         const picked = if (s.trigger) |at| at == i else false;
-        revealPicked(&s.reveal_pick, list, y, picked);
-        if (listRow(ed, g, f.x, lw, y, label, picked, "When it fires and what it does")) s.trigger = @intCast(i);
+        if (listRow(ed, g, &s.reveal_pick, list, f.x, lw, y, label, picked, "When it fires and what it does")) s.trigger = @intCast(i);
         y += STEP;
     }
     inline for (comptime std.enums.values(script.Table)) |t| {
@@ -1158,9 +1180,7 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
             y += STEP;
         }
     }
-    const right = rightOf(ed, f, list, y);
-    const ti = s.trigger orelse return caption(g, right.x, f.y, right.w, "Pick a trigger: when every condition holds after a turn, its actions run in order", look.DIM);
-    detailPane(ed, g, right.x, f.y, right.w, f.bottom, drawTrigger, ti);
+    pickedPane(ed, g, f, list, y, s.trigger, drawTrigger, "Pick a trigger: when every condition holds after a turn, its actions run in order");
 }
 
 fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i32) i32 {
@@ -1225,13 +1245,10 @@ fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
     y += STEP;
     for (m.quests(), 0..) |*q, i| {
         const picked = if (s.quest) |at| at == i else false;
-        revealPicked(&s.reveal_pick, list, y, picked);
-        if (listRow(ed, g, f.x, f.listW(), y, q.titled(), picked, "Its title and what each stage asks")) s.quest = @intCast(i);
+        if (listRow(ed, g, &s.reveal_pick, list, f.x, f.listW(), y, q.titled(), picked, "Its title and what each stage asks")) s.quest = @intCast(i);
         y += STEP;
     }
-    const right = rightOf(ed, f, list, y);
-    const qi = s.quest orelse return caption(g, right.x, f.y, right.w, "Pick a quest: the journal lists it once an action brings it to a stage", look.DIM);
-    detailPane(ed, g, right.x, f.y, right.w, f.bottom, drawQuest, qi);
+    pickedPane(ed, g, f, list, y, s.quest, drawQuest, "Pick a quest: the journal lists it once an action brings it to a stage");
 }
 
 fn drawQuest(ed: *editor.Editor, g: *game.Game, qi: u8, x: i32, top: i32, w: i32) i32 {
@@ -1239,13 +1256,9 @@ fn drawQuest(ed: *editor.Editor, g: *game.Game, qi: u8, x: i32, top: i32, w: i32
     const q = &m.quest[qi];
     var buf: [widgets.LINE]u8 = undefined;
     var y = top;
-    const users = m.questUsers(qi);
-    if (nameRow(ed, g, x, y, w, "Quest", .{ .quest = qi }, dropLabel(&buf, users, "quest"), users == 0, "Delete it; a quest conditions or actions still name cannot go", "")) {
-        if (m.dropQuest(qi)) {
-            ed.bank();
-            ed.plot.quest = null;
-            return y + STEP;
-        }
+    if (dropUsed(ed, g, x, y, w, "quest", .{ .quest = qi }, m.questUsers(qi), "Delete it; a quest conditions or actions still name cannot go", Script.dropQuest, qi)) {
+        ed.plot.quest = null;
+        return y + STEP;
     }
     y += STEP;
     wordsRow(ed, g, x, y, w, "Title", .{ .title = qi }, "(blank: its name)");

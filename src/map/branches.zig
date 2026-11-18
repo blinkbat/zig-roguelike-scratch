@@ -317,13 +317,15 @@ fn ringJoined(lv: *const grid.Level, p: P) bool {
 
 fn rewardAt(lv: *const grid.Level, p: P) bool {
     if (grid.Level.onRim(p) or !lv.vacant(p) or lv.doorAt(p) != null or lv.torch.has(lume.torchWall(p))) return false;
-    for (mathx.ALL_DIRS) |d| {
-        const q = p.add(d.delta());
-        for (std.enums.values(Reward)) |r| {
-            if (r.has(lv, q)) return false;
-        }
-    }
+    if (grid.anyNeighbour(p, lv, rewardHere)) return false;
     return lv.at(p).rewards();
+}
+
+fn rewardHere(lv: *const grid.Level, p: P) bool {
+    for (std.enums.values(Reward)) |r| {
+        if (r.has(lv, p)) return true;
+    }
+    return false;
 }
 
 fn rewardGoes(lv: *const grid.Level, p: P, kept: *const grid.CellSet) bool {

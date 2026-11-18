@@ -1,6 +1,7 @@
 import sys
 from PIL import Image, ImageDraw
 
+sys.dont_write_bytecode = True
 from art_support import arial
 
 # The wall sheets' header: Arial Bold 23 at (12, 8), matched pixel for pixel against cave-walls.aseprite.

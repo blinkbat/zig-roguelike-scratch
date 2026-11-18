@@ -221,8 +221,7 @@ test "portable autosave snapshots own every byte while the live run changes" {
     _ = world.add(.{ .procgen = .{} });
     world.start = .{ .node = 0, .at = .{ .x = 10, .y = 10 } };
     game.beginMapAt(source, world, world.start, 73);
-    source.sim.visits[0] = .{ .lv = source.sim.lv, .pool = source.sim.pool, .ground = source.sim.ground, .facing = source.pic.facing };
-    source.sim.visited.set(0);
+    game.keepVisit(source, 0);
     const snapshot = try alloc.create(Snapshot);
     defer alloc.destroy(snapshot);
     try capture(source, snapshot);
@@ -284,8 +283,7 @@ test "legacy key migration ignores the stale visit for the active node" {
     const s = legacyKeyRun(current, map);
     while (current.sim.ground.room(deathsToCome(&current.sim.pool))) _ = current.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = s.approach() });
     while (current.sim.inventory.n < inventory.BAG_MAX - 1) try std.testing.expect(current.sim.inventory.add(.{ .kind = .ring }));
-    current.sim.visits[0] = .{ .lv = current.sim.lv, .pool = current.sim.pool, .ground = current.sim.ground, .facing = current.pic.facing };
-    current.sim.visited.set(0);
+    game.keepVisit(current, 0);
     var bytes = std.ArrayList(u8).init(alloc);
     defer bytes.deinit();
     try sealed(current, &bytes);

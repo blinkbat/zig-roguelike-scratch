@@ -203,14 +203,13 @@ pub const State = struct {
         var wrapped: font.Wrapped = undefined;
         var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
         const width = @min(WIDTH, screen.x - 2 * MARGIN);
-        const n = wrapBody(face, link.term.body, width - 2 * PAD, &wrapped, &lines);
+        const n = font.wrapRows(face, link.term.body, font.SMALL, width - 2 * PAD, &wrapped, &lines);
         const height = 2 * PAD + font.BODY + GAP + @as(i32, @intCast(n)) * LINE;
         const box = popupBox(screen, link.box, width, height);
         self.popup = box;
         const x = raster.left(box);
         const y = raster.top(box);
-        sprite.layeredBacking(sprites, x, y, width, height, .definition);
-        face.richText(link.term.title, x + PAD, y + PAD, font.BODY, look.UI_FOCUS);
+        menu.titledCard(face, sprites, x, y, width, height, .definition, PAD, link.term.title);
         var top = y + PAD + font.BODY + GAP;
         var rich = font.Rich.init(link.term.body);
         for (lines[0..n]) |line| {
@@ -222,16 +221,6 @@ pub const State = struct {
 
 fn linkBox(self: *const State, i: usize) rl.Rectangle {
     return self.links[i].box;
-}
-
-fn wrapBody(face: anytype, body: []const u8, width: i32, buf: *font.Wrapped, lines: *[font.WRAP_LINES_MAX][:0]const u8) usize {
-    var n: usize = 0;
-    var rows = std.mem.splitScalar(u8, body, '\n');
-    while (rows.next()) |row| {
-        n = font.wrapAppend(face, row, font.SMALL, width, buf, lines, n);
-        if (n == font.WRAP_LINES_MAX) break;
-    }
-    return n;
 }
 
 fn popupBox(screen: mathx.P, anchor: rl.Rectangle, width: i32, height: i32) rl.Rectangle {

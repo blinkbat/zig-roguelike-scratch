@@ -19,7 +19,10 @@ def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--aseprite', required=True)
     parser.add_argument('--scripts-dir', type=Path, default=SCRIPTS)
-    return parser.parse_known_args()
+    args, remaining = parser.parse_known_args()
+    args.scripts_dir = args.scripts_dir.resolve()
+    args.root = args.scripts_dir.parents[1]
+    return args, remaining
 
 
 def main(remaining):
@@ -42,6 +45,11 @@ def aseprite(executable, script, params=None, timeout=30, temp=None):
     return subprocess.run(command + ['--script', str(script)], capture_output=True, text=True,
                           timeout=timeout, env=environment(temp),
                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+
+
+def run_lua(executable, script, code, params=None, **options):
+    script.write_text(code, encoding='utf-8')
+    return aseprite(executable, script, params, **options)
 
 
 def generate(script, *arguments, temp=None):
@@ -83,13 +91,24 @@ def arial(size, bold=False):
     return ImageFont.truetype('C:/Windows/Fonts/arial' + ('bd' if bold else '') + '.ttf', size)
 
 
-def corner_order():
-    text = (SCRIPTS / 'ground_corners.lua').read_text(encoding='utf-8')
+def corner_order(scripts=SCRIPTS):
+    text = (scripts / 'ground_corners.lua').read_text(encoding='utf-8')
     order = [int(value) for value in re.search(r'return\s*\{([^}]+)\}', text).group(1).split(',') if value.strip()]
     assert sorted(order) == list(range(16))
     return order
 
 
-def water_cliff_layout():
-    text = (SCRIPTS / 'water_cliff_layout.lua').read_text(encoding='utf-8')
+def ground_layout(scripts=SCRIPTS):
+    text = (scripts / 'ground_layout.lua').read_text(encoding='utf-8')
+    layout = {}
+    for names, values in re.findall(r'^((?:layout\.\w+,?)+)=([\d,]+)\s*$', text, re.M):
+        keys = [name.removeprefix('layout.') for name in names.split(',')]
+        numbers = [int(value) for value in values.split(',')]
+        assert len(keys) == len(numbers)
+        layout.update(zip(keys, numbers))
+    return layout
+
+
+def water_cliff_layout(scripts=SCRIPTS):
+    text = (scripts / 'water_cliff_layout.lua').read_text(encoding='utf-8')
     return {key: int(value) for key, value in re.findall(r'(\w+)=(\d+)', re.search(r'return\s*\{([^}]+)\}', text).group(1))}

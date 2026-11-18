@@ -221,6 +221,13 @@ pub fn setMapView(p: anytype, v: MapView) void {
     setFields(p, v);
 }
 
+pub fn beginOverMap(p: anytype, v: MapView, occlusion: look.Occlusion, focus: look.Focused) void {
+    rl.beginShaderMode(p.shader);
+    setMapView(p, v);
+    occlusion.set(p);
+    focus.set(p);
+}
+
 pub fn setFields(p: anytype, v: anytype) void {
     inline for (std.meta.fields(@TypeOf(v))) |f| setUniform(p.shader, @field(p, f.name), @field(v, f.name));
 }

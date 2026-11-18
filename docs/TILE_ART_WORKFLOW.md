@@ -74,7 +74,7 @@ separate for lighting. Inspect `forest.png` and relevant `shadows-*.png` capture
 ## Ground transitions
 
 Ground uses a dual grid: each 64px piece spans the corners of four map cells.
-Masks are NW=1, NE=2, SW=4, SE=8 in `ground_corners.lua` / `ground.ORDER` order.
+Masks are NW=1, NE=2, SW=4, SE=8 (`ground_layout.lua`) in `ground_corners.lua` / `ground.ORDER` order.
 Each material overlays lower-ranked ground. Mask 15 is the wrapping fill;
 mask 0 is empty. Templates are 512x320 with a 64px header and a 4x4 art block;
 runtime exports crop that block to 256x256.

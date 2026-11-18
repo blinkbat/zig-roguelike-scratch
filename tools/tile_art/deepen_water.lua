@@ -1,9 +1,11 @@
 local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local groundPort=dofile(root..'tools/tile_art/ground_port.lua')
-local source=app.params.source or sourceFiles.DESKTOP..'water.aseprite'
-local desktop=app.params.out or sourceFiles.DESKTOP..'deep-water.aseprite'
-local canonical=root..'assets/source/deep-water.aseprite'
+local shallow_name,deep_name=groundPort.source('shallows'),groundPort.source('water')
+local extension=groundPort.extension(shallow_name)
+local source=app.params.source or sourceFiles.DESKTOP..shallow_name..'.aseprite'
+local desktop=app.params.out or sourceFiles.DESKTOP..deep_name..'.aseprite'
+local canonical=root..'assets/source/'..deep_name..'.aseprite'
 local work=sourceFiles.work(app.params.work)
 assert(app.params.percent==nil or tonumber(app.params.percent),'percent must be a number')
 local percent=tonumber(app.params.percent) or 60
@@ -25,12 +27,11 @@ local deep=Image(size,size,ColorMode.RGB)
 local changed=0
 local function toned(p)
   if pc.rgbaA(p)==0 then return p end
-  local function channel(v) return math.floor(v*percent/100+0.5) end
-  return pc.rgba(channel(pc.rgbaR(p)),channel(pc.rgbaG(p)),channel(pc.rgbaB(p)),pc.rgbaA(p))
+  return sourceFiles.scaleRgb(p,percent,100)
 end
 for _,l in ipairs(s.layers) do
   local cel=l:cel(1)
-  if l.name=='Draw here' or l.name=='Water extensions' then
+  if l.name=='Draw here' or l.name==extension then
     assert(cel and l.opacity==255 and cel.opacity==255)
     local original=Image(cel.image)
     local image=Image(original)
@@ -50,7 +51,7 @@ for _,l in ipairs(s.layers) do
     cel.position=Point(0,0)
   end
 end
-assert(snapshots['Draw here'] and snapshots['Water extensions'] and changed>0)
+assert(snapshots['Draw here'] and snapshots[extension] and changed>0)
 local path=install and desktop or work..'deep-water-draft.aseprite'
 s:saveAs(path)
 s:close()

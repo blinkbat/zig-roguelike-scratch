@@ -59,20 +59,20 @@ pub const Prompt = union(enum) {
     pub fn draw(p: Prompt, face: *const font.Face, cx: i32, cy: i32, h: i32, alpha: f32) void {
         const w = p.width(face, h);
         const box = raster.rect(cx - @divTrunc(w, 2), cy - @divTrunc(h, 2), w, h);
-        const ink = look.fade(PROMPT_INK, alpha);
+        const ink = look.fade(look.PROMPT_INK, alpha);
         switch (p) {
             .stick => |side| {
                 const c = raster.vec(.{ .x = cx, .y = cy });
                 const radius: f32 = @as(f32, @floatFromInt(h)) * 0.46;
-                rl.drawCircleV(c, radius, look.fade(PROMPT_BODY, alpha));
-                rl.drawRing(c, radius - STICK_RIM_PX, radius, 0, 360, 24, look.fade(PROMPT_EDGE, alpha));
+                rl.drawCircleV(c, radius, look.fade(look.PROMPT_BODY, alpha));
+                rl.drawRing(c, radius - STICK_RIM_PX, radius, 0, 360, 24, look.fade(look.PROMPT_EDGE, alpha));
                 face.centred(if (side == .left) "L" else "R", cx, cy, labelPx(h), ink);
             },
             .dpad, .arrows => {
                 const step = @divTrunc(h, 3);
                 for (input.DPAD) |d| {
                     const offset = d.delta();
-                    const arm = if (p == .dpad and offset.x != 0) look.fade(PROMPT_EDGE, alpha) else ink;
+                    const arm = if (p == .dpad and offset.x != 0) look.fade(look.PROMPT_EDGE, alpha) else ink;
                     promptArrow(d, cx + offset.x * step, cy + offset.y * step, arrowPx(h), arm);
                 }
             },
@@ -141,12 +141,6 @@ pub fn labelPx(h: i32) i32 {
     return @divTrunc(h * 11, 16);
 }
 
-const PROMPT_BODY = look.PROMPT_BODY;
-const PROMPT_FACE = look.PROMPT_FACE;
-const PROMPT_EDGE = look.PROMPT_EDGE;
-const PROMPT_LIP = look.PROMPT_LIP;
-const PROMPT_INK = look.PROMPT_INK;
-
 const FaceButton = enum { a, b, x, y };
 
 fn faceInk(b: FaceButton, sony: bool) rl.Color {
@@ -162,9 +156,9 @@ fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i3
     const r: f32 = @as(f32, @floatFromInt(h)) / 2;
     const c = raster.vec(.{ .x = cx, .y = cy });
     const col = look.fade(faceInk(b, sony), alpha);
-    rl.drawCircleV(c, r, look.fade(PROMPT_LIP, alpha));
-    rl.drawCircleV(c, r - FACE_LIP_PX, look.fade(PROMPT_BODY, alpha));
-    rl.drawCircleV(.{ .x = c.x, .y = c.y - r * 0.12 }, r * 0.78, look.fade(PROMPT_FACE, alpha));
+    rl.drawCircleV(c, r, look.fade(look.PROMPT_LIP, alpha));
+    rl.drawCircleV(c, r - FACE_LIP_PX, look.fade(look.PROMPT_BODY, alpha));
+    rl.drawCircleV(.{ .x = c.x, .y = c.y - r * 0.12 }, r * 0.78, look.fade(look.PROMPT_FACE, alpha));
     rl.drawRing(c, r - FACE_RING_PX, r - FACE_LIP_PX, 0, 360, 32, col);
     if (!sony) {
         const letter = [_:0]u8{std.ascii.toUpper(@tagName(b)[0])};
@@ -212,23 +206,23 @@ fn pill(box: rl.Rectangle, alpha: f32) void {
 }
 
 fn rounded(box: rl.Rectangle, r: Round, alpha: f32) void {
-    r.fill(box, look.fade(PROMPT_BODY, alpha));
-    r.edge(box, look.fade(PROMPT_EDGE, alpha));
+    r.fill(box, look.fade(look.PROMPT_BODY, alpha));
+    r.edge(box, look.fade(look.PROMPT_EDGE, alpha));
 }
 
 fn keycap(box: rl.Rectangle, alpha: f32) void {
     const lip = @max(2, box.height / 8);
-    KEYCAP_ROUND.fill(box, look.fade(PROMPT_LIP, alpha));
+    KEYCAP_ROUND.fill(box, look.fade(look.PROMPT_LIP, alpha));
     const top = rl.Rectangle{ .x = box.x, .y = box.y, .width = box.width, .height = box.height - lip };
-    KEYCAP_ROUND.fill(top, look.fade(PROMPT_FACE, alpha));
-    KEYCAP_ROUND.edge(top, look.fade(PROMPT_EDGE, alpha));
+    KEYCAP_ROUND.fill(top, look.fade(look.PROMPT_FACE, alpha));
+    KEYCAP_ROUND.edge(top, look.fade(look.PROMPT_EDGE, alpha));
 }
 
 fn viewMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
     const s: f32 = @as(f32, @floatFromInt(h)) * 0.22;
     const x: f32 = @floatFromInt(cx);
     const y: f32 = @floatFromInt(cy);
-    const col = look.fade(PROMPT_INK, alpha);
+    const col = look.fade(look.PROMPT_INK, alpha);
     rl.drawRectangleLinesEx(.{ .x = x - s * 1.3, .y = y - s * 1.1, .width = s * 1.6, .height = s * 1.4 }, STROKE_PX, col);
     rl.drawRectangleLinesEx(.{ .x = x - s * 0.3, .y = y - s * 0.3, .width = s * 1.6, .height = s * 1.4 }, STROKE_PX, col);
 }
@@ -237,7 +231,7 @@ fn menuMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
     const s: f32 = @as(f32, @floatFromInt(h)) * 0.24;
     const x: f32 = @floatFromInt(cx);
     const y: f32 = @floatFromInt(cy);
-    for ([_]f32{ -1, 0, 1 }) |k| rl.drawLineEx(.{ .x = x - s, .y = y + k * s * 0.7 }, .{ .x = x + s, .y = y + k * s * 0.7 }, MARK_PX, look.fade(PROMPT_INK, alpha));
+    for ([_]f32{ -1, 0, 1 }) |k| rl.drawLineEx(.{ .x = x - s, .y = y + k * s * 0.7 }, .{ .x = x + s, .y = y + k * s * 0.7 }, MARK_PX, look.fade(look.PROMPT_INK, alpha));
 }
 
 test "a slot's prompt is its maker's face button or shoulder on a pad, and its key's cap on the keyboard" {

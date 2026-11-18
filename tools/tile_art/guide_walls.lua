@@ -15,7 +15,7 @@ local outline=pc.rgba(34,34,34,255)
 local cap=pc.rgba(152,152,152,255)
 local face=pc.rgba(96,96,96,255)
 local sprite=assert(app.open(path))
-assert(sprite.width==masks.W and sprite.height==masks.HEAD+masks.H and #sprite.slices==#masks)
+assert(sprite.width==masks.W and sprite.height==masks.SHEET_H and #sprite.slices==#masks)
 local under=sourceFiles.layer(sprite,'Underdrawing (25%)')
 local exact=sourceFiles.layer(sprite,'Exact connection guide (hidden)')
 local drawing=sourceFiles.layer(sprite,'Draw here')
@@ -23,8 +23,7 @@ assert(under and exact and drawing)
 local drawn=Image(drawing:cel(1).image)
 local drawnAt=Point(drawing:cel(1).position)
 local function tile(mask,faced)
-  local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
-  local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
+  local n,e,s,w,ne,se,sw,nw=masks.sides(mask)
   local image=Image(64,64,ColorMode.RGB)
   local foot=(s or not faced) and 64 or 64-FACE
   for y=0,63 do for x=0,63 do
@@ -45,7 +44,7 @@ local function tile(mask,faced)
   return image
 end
 local function sheet(faced)
-  local image=Image(masks.W,masks.HEAD+masks.H,ColorMode.RGB)
+  local image=Image(masks.W,masks.SHEET_H,ColorMode.RGB)
   local cells={}
   for i,mask in ipairs(masks) do
     local m=mask
@@ -74,8 +73,8 @@ for _,slice in ipairs(sprite.slices) do
   local x,y=masks.at(i)
   assert(b.x==x and b.y==masks.HEAD+y and b.width==masks.CELL and b.height==masks.CELL,slice.name)
 end
-local base=path:match('([^/\\]+)%.aseprite$')
-sourceFiles.copy(path,work..base..'-before-full-cell-'..os.date(sourceFiles.STAMP)..'.aseprite')
+local base=app.fs.fileTitle(path)
+sourceFiles.keep(path,work,'full-cell',os.date(sourceFiles.STAMP))
 under:cel(1).image=sheet(true)
 under:cel(1).position=Point(0,0)
 exact:cel(1).image=sheet(false)
@@ -86,7 +85,7 @@ app.layer=drawing
 sprite:saveAs(path)
 sprite:close()
 local reopened=assert(app.open(path))
-assert(reopened.width==masks.W and reopened.height==masks.HEAD+masks.H,'Saved sheet dimensions changed')
+assert(reopened.width==masks.W and reopened.height==masks.SHEET_H,'Saved sheet dimensions changed')
 sourceFiles.checkLayer(reopened,'Underdrawing (25%)',sheet(true),Point(0,0))
 sourceFiles.checkLayer(reopened,'Exact connection guide (hidden)',sheet(false),Point(0,0))
 sourceFiles.checkCel(reopened,'Draw here',drawn,drawnAt)

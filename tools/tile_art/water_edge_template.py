@@ -1,9 +1,11 @@
 import argparse
 from pathlib import Path
+import sys
 import tempfile
 
 from PIL import Image, ImageDraw
 
+sys.dont_write_bytecode = True
 from art_support import ROOT, SCRIPTS, arial, quote
 
 
@@ -11,6 +13,7 @@ DESKTOP = Path.home() / 'Desktop'
 OUTPUT = DESKTOP / 'water-cliff-edge.aseprite'
 WORK = Path(tempfile.mkdtemp(prefix='cistern-water-cliff-'))
 SIZE = (512, 512)
+CELL = 64
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=OUTPUT)
 parser.add_argument('--replace-blank', action='store_true')
@@ -86,7 +89,8 @@ layers = [
     ('Labels - hide before export', labels, 255),
     ('64x64 grid - hide before export', grid, 180),
 ]
-lua =[f'local s=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local initial=s.layers[1]', 'local expected={}']
+lua =[f'local sourceFiles=dofile({quote(SCRIPTS / "source_files.lua")})',
+      f'local s=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local initial=s.layers[1]', 'local expected={}']
 for index, (name, image, opacity) in enumerate(layers):
     path = WORK / f'layer-{index}.png'
     image.save(path)
@@ -98,11 +102,10 @@ for index, (name, image, opacity) in enumerate(layers):
     ])
 lua.extend(['s:deleteLayer(initial)', 'local paint=s:newLayer()', 'paint.name="Draw here"', 'app.layer=paint'])
 for name, x, y in slices:
-    lua.extend(['do', f'local slice=s:newSlice(Rectangle({x},{y},64,64))',
+    lua.extend(['do', f'local slice=s:newSlice(Rectangle({x},{y},{CELL},{CELL}))',
                 f'slice.name={quote(name)}', 'end'])
 if args.replace_blank:
     lua.extend([
-        f'local sourceFiles=dofile({quote(SCRIPTS / "source_files.lua")})',
         f'if app.fs.isFile({quote(OUTPUT)}) then',
         f'local old=assert(app.open({quote(OUTPUT)}))',
         f'sourceFiles.checkBlankTemplate(old,{{width=s.width,height=s.height,colorMode=s.colorMode,guides=expected,slices=s.slices}},{quote(OUTPUT)})',
@@ -113,24 +116,22 @@ else:
 lua.extend([
     's.data="Six independent 64px water cliff tiles: left, repeat, right at x12/108/204; shallow y104, deep y232. Lip at local y16; bottom y28 shallow, y40 deep (exclusive). Paint both depths on Draw here. Locked water references at x324/420 are unchanged 64px crops of runtime shallows-ground.png and water-ground.png, masks 12 and 3. No runtime integration."',
     f's:saveAs({quote(OUTPUT)})', 's:close()', f'local saved=assert(app.open({quote(OUTPUT)}))',
-    'assert(saved.width==512 and saved.height==512 and #saved.frames==1)',
-    'assert(#saved.layers==7 and #saved.slices==10)',
+    f'assert(saved.width=={SIZE[0]} and saved.height=={SIZE[1]} and #saved.frames==1)',
+    f'assert(#saved.layers=={len(layers) + 1} and #saved.slices=={len(slices)})',
     'for i,want in ipairs(expected) do', 'local l=saved.layers[i]',
     'assert(l.name==want.name and l.opacity==want.opacity and not l.isEditable)',
     'local im=Image(saved.width,saved.height,ColorMode.RGB)',
     'local cel=assert(l:cel(1)); im:drawImage(cel.image,cel.position)',
     'assert(im:isEqual(want.image),"Guide pixels changed")', 'end',
-    'local p=saved.layers[7]', 'assert(p.name=="Draw here" and p.isEditable and p.isVisible)',
+    f'local p=saved.layers[{len(layers) + 1}]', 'assert(p.name=="Draw here" and p.isEditable and p.isVisible)',
     'assert(not p:cel(1) or p:cel(1).image:isEmpty())',
     'local names={' + ','.join(f'[{quote(name)}]={{{x},{y}}}' for name, x, y in slices) + '}',
     'for _,slice in ipairs(saved.slices) do',
     'local want=assert(names[slice.name])',
-    'assert(want[1]==slice.bounds.x and want[2]==slice.bounds.y and slice.bounds.width==64 and slice.bounds.height==64)',
+    f'assert(want[1]==slice.bounds.x and want[2]==slice.bounds.y and slice.bounds.width=={CELL} and slice.bounds.height=={CELL})',
     'names[slice.name]=nil', 'end', 'assert(next(names)==nil)',
     f'saved:saveCopyAs({quote(WORK / "preview.png")})', 'saved:close()',
-    f'local report=assert(io.open({quote(WORK / "validation.txt")},"w"))',
-    'report:write("Verified saved Aseprite: 512x512, six paint slices and four water reference slices, six locked guide/reference layers preserved pixel-for-pixel, water references at full opacity, blank editable Draw here. No runtime assets exported.\\n")',
-    'report:close()',
+    f'sourceFiles.write({quote(WORK / "validation.txt")},"Verified saved Aseprite: {SIZE[0]}x{SIZE[1]}, six paint slices and four water reference slices, six locked guide/reference layers preserved pixel-for-pixel, water references at full opacity, blank editable Draw here. No runtime assets exported.\\n")',
 ])
 (WORK / 'assemble.lua').write_text('\n'.join(lua), encoding='utf-8')
 print(WORK)

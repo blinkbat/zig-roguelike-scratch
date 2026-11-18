@@ -222,7 +222,7 @@ test "zoo previews show the encounter without marking its locked interior unreac
     try std.testing.expectEqual(grid.Tile.locked_gate, scene.lv.at(z.door()));
     try std.testing.expectEqualSlices(u8, std.mem.asBytes(before), std.mem.asBytes(map));
 
-    _ = map.oneRoom(grid.Box.inMap(1), .{ .x = 5, .y = 5 });
+    _ = map.oneRoom(grid.INNER, .{ .x = 5, .y = 5 });
     map.node[0].zoo = .{};
     scene.invalidate();
     scene.ensure(map, 0);

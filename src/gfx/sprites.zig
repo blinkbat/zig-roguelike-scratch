@@ -93,10 +93,7 @@ pub const Sprites = struct {
 
     pub fn beginScenery(self: *const Sprites, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: look.Occlusion, focus: look.Focused) bool {
         const s = self.scenery orelse return false;
-        rl.beginShaderMode(s.shader);
-        shaders.setMapView(s, view);
-        occlusion.set(s);
-        focus.set(s);
+        shaders.beginOverMap(s, view, occlusion, focus);
         rl.setShaderValueTexture(s.shader, s.lightmap, lightmap);
         rl.setShaderValueTexture(s.shader, s.fogmap, fogmap);
         return true;

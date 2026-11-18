@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import ROOT, SCRIPTS, arguments, aseprite, main
+from art_support import arguments, aseprite, main
 
 
 args, remaining = arguments()
@@ -89,11 +89,11 @@ class BackupFailureTests(unittest.TestCase):
             before = {path: path.read_bytes() if path.exists() else None for path in files.values()}
             wrapper = work / 'probe.lua'
             wrapper.write_text(WRAPPER, encoding='utf-8')
-            script = ROOT / 'tools/hud_art/export_border.lua' if kind == 'border' else SCRIPTS / 'tone_forest.lua'
+            script = args.root / 'tools/hud_art/export_border.lua' if kind == 'border' else args.scripts_dir / 'tone_forest.lua'
             params = dict(root=root.as_posix() + '/', work=(work / 'scratch').as_posix(),
                           source=files['source'].as_posix(), desktop=files['desktop'].as_posix(),
                           desktop_dir=files['desktop'].parent.as_posix() + '/',
-                          script=script.as_posix(), helper=(SCRIPTS / 'source_files.lua').as_posix(),
+                          script=script.as_posix(), helper=(args.scripts_dir / 'source_files.lua').as_posix(),
                           kind=kind, failure=failure, fault_path=files[destination].as_posix(), occurrence=occurrence)
             result = aseprite(args.aseprite, wrapper, params)
             output = result.stdout + result.stderr

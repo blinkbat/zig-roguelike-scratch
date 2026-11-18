@@ -141,10 +141,7 @@ fn crowded(walled: *const Walled, c: usize) bool {
 }
 
 pub fn clearAround(lv: *const grid.Level, p: P) bool {
-    for (mathx.ALL_DIRS) |d| {
-        if (!lv.walkable(p.add(d.delta()))) return false;
-    }
-    return true;
+    return grid.allNeighbours(p, lv, grid.Level.walkable);
 }
 
 pub const Over = struct {
@@ -154,13 +151,7 @@ pub const Over = struct {
     water_clear: u8 = 0,
     land_range: u8 = 0,
 
-    pub const RANGES = blk: {
-        var names: []const []const u8 = &.{};
-        for (std.meta.fields(Over)) |f| {
-            if (f.type == u8) names = names ++ .{f.name};
-        }
-        break :blk names;
-    };
+    pub const RANGES: []const []const u8 = &.{ "water_range", "water_clear", "land_range" };
 
     fn has(o: Over, t: grid.Tile) bool {
         return t == o.tile or (o.decked and !t.solid() and t.ground() == o.tile);
@@ -205,7 +196,7 @@ fn near(lv: *const grid.Level, p: P, r: i32, which: anytype) bool {
 }
 
 pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool) void {
-    scatterIn(lv, rng, per_mille, on, put, lone, grid.Box.inMap(0));
+    scatterIn(lv, rng, per_mille, on, put, lone, grid.MAP);
 }
 
 pub fn scatterIn(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool, within: grid.Box) void {
@@ -538,9 +529,13 @@ pub const Stretches = struct {
     }
 
     pub fn biggest(s: *const Stretches) u16 {
+        return biggestOf(s.size[0..s.n]);
+    }
+
+    pub fn biggestOf(sizes: []const u32) u16 {
         var main: u16 = 0;
-        for (s.size[1..s.n], 1..) |n, r| {
-            if (n > s.size[main]) main = @intCast(r);
+        for (sizes[1..], 1..) |n, r| {
+            if (n > sizes[main]) main = @intCast(r);
         }
         return main;
     }
@@ -885,7 +880,7 @@ pub fn notLiquid(t: grid.Tile) bool {
 }
 
 fn edge(rng: *mathx.Rng, side: mathx.Dir) P {
-    return sideAt(grid.Box.inMap(0), side, middleHalf(rng, alongOf(side, grid.SIZE)));
+    return sideAt(grid.MAP, side, middleHalf(rng, alongOf(side, grid.SIZE)));
 }
 
 fn middleHalf(rng: *mathx.Rng, span: i32) i32 {

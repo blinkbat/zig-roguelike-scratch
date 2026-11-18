@@ -86,64 +86,12 @@ pub const PORTABLE_FIELDS = .{
     .{ .sim, "locations" },
 };
 const PIC = game.presentation.Fields;
+const GAME = game.Fields;
+const SIM = game.simulation.Fields;
 /// Not saved: the picture but the facing, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
-    .game = .{
-        "character",
-        "looted",
-        "loot_gold",
-        "nearby",
-        "pause_page",
-        "journal",
-        "debug",
-        "display",
-        "mode",
-        "died_in",
-        "pause_menu",
-        "back",
-        "exit",
-        "permadeath",
-        "hall",
-        "epitaph",
-        "st",
-        "binds",
-        "target",
-        "cam",
-        "screen",
-        "framebuffer",
-        "pending",
-        "mouse",
-        "vignette",
-        "cinema",
-        "mini",
-        "sprites",
-        "face",
-        "light",
-        "cloud",
-        "graphics_ready",
-        "art",
-        "rain",
-        "inspecting",
-        "inspect_scroll",
-        "stride",
-        "keywords",
-        "perf",
-    },
-    .sim = .{
-        "outdoors",
-        "unkillable",
-        "playground",
-        "unsaved",
-        "travel",
-        "chronicle",
-        "displaced",
-        "order",
-        "order_n",
-        "ran",
-        "flowed",
-        "flow",
-        "queue",
-    },
+    .game = GAME.loot ++ GAME.run ++ GAME.resumed ++ GAME.turn ++ GAME.graphics ++ GAME.set ++ GAME.scratch,
+    .sim = SIM.derived ++ SIM.rebuilt ++ SIM.resumed ++ SIM.turn ++ SIM.marks ++ SIM.scratch ++ SIM.kept,
     .pic = PIC.turn ++ PIC.run ++ PIC.settled ++ PIC.scratch ++ PIC.kept,
 };
 
@@ -186,30 +134,7 @@ fn eachOnce(comptime T: type, comptime lists: anytype, comptime label: []const u
 }
 
 comptime {
-    @setEvalBranchQuota(100_000);
-    const F = game.simulation.Fields;
-    eachOnce(Of(.sim), .{ F.hero, F.start, F.derived, F.rebuilt, F.run, F.resumed, F.turn, F.marks, F.set, F.scratch, F.kept }, "sim.Fields");
-    const restored = F.derived ++ F.rebuilt ++ F.resumed ++ F.turn ++ F.marks ++ F.scratch ++ F.kept;
-    for (UNSAVED.sim) |name| {
-        if (!contains(&restored, name)) @compileError("save_data.UNSAVED: game.resumeRun does not rebuild " ++ name);
-    }
-    for (restored) |r| {
-        if (!contains(&UNSAVED.sim, r)) @compileError("save_data.UNSAVED: " ++ r ++ " is rebuilt on resume but saved");
-    }
-}
-
-comptime {
-    @setEvalBranchQuota(100_000);
-    const F = game.Fields;
-    const lists = .{ F.loot, F.run, F.resumed, F.turn, F.graphics, F.set, F.scratch };
-    for (UNSAVED.game) |name| {
-        var n: usize = 0;
-        for (lists) |list| n += count(&list, name);
-        if (n != 1) @compileError("game.Fields: say once when " ++ name ++ " is reset");
-    }
-    for (lists) |list| for (list) |l| {
-        if (!contains(&UNSAVED.game, l)) @compileError("game.Fields: " ++ l ++ " is not in save_data.UNSAVED.game");
-    };
+    eachOnce(Of(.sim), .{ SIM.hero, SIM.start, SIM.derived, SIM.rebuilt, SIM.run, SIM.resumed, SIM.turn, SIM.marks, SIM.set, SIM.scratch, SIM.kept }, "sim.Fields");
 }
 
 comptime {

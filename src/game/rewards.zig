@@ -115,7 +115,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     }
     sim.kills +|= 1;
     sim.plot.died(fallen.kind);
-    const spoils = !fallen.raider;
+    const spoils = fallen.spoils();
     const xp = progress.xpOf(fallen.kind);
     gainExperience(sim, if (spoils) xp else raid.xpOf(xp));
     const reward: loot.Loot = if (spoils) lootOf(sim, fallen) else .{};
@@ -269,12 +269,10 @@ fn gainExperience(sim: *Simulation, xp: u32) void {
 pub fn scare(sim: *Simulation, at: P) Frightened {
     var frightened = Frightened.initEmpty();
     for (sim.pool.slice(), 0..) |*foe, slot| {
-        const row = actor.row(foe.kind);
-        if (!foe.alive or !row.flees) continue;
+        if (!foe.alive or !actor.row(foe.kind).flees) continue;
         if (mathx.dist(foe.at, at) > actor.FRIGHT_REACH or !grid.clearLine(&sim.lv, foe.at, at)) continue;
         foe.awake = true;
-        if (!foe.frighten(actor.FLEE_TURNS)) continue;
-        sim.sayAt(foe.at, actor.FLEES, .{row.name});
+        if (!sim.frighten(foe, actor.FLEE_TURNS)) continue;
         frightened.set(slot);
     }
     return frightened;

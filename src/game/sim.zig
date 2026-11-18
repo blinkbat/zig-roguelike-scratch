@@ -14,6 +14,7 @@ const resilience = @import("../play/resilience.zig");
 const sunder = @import("../play/sunder.zig");
 const blind = @import("../play/blind.zig");
 const burning = @import("../play/burning.zig");
+const bleeding = @import("../play/bleeding.zig");
 const damage = @import("../play/damage.zig");
 const flask = @import("../play/flask.zig");
 const heroes = @import("../play/hero.zig");
@@ -298,7 +299,7 @@ pub const Simulation = struct {
     }
 
     pub fn cleanseWound(self: *Simulation) bool {
-        if (self.inventory.gear.sum(.cleansing) <= 0) return false;
+        if (!self.inventory.gear.cleanses()) return false;
         const h = self.heroActor() orelse return false;
         inline for (comptime std.enums.values(resilience.Kind)) |k| {
             if (comptime resilience.tags(k).contains(.wounds)) {
@@ -318,10 +319,20 @@ pub const Simulation = struct {
         return damage.procs(&self.rng, effective) and self.takeStatus(a, kind);
     }
 
+    pub fn procResisted(self: *Simulation, a: *actor.Actor, kind: resilience.Kind, chance: u32, element: damage.Element) bool {
+        return self.procStatus(a, kind, damage.resistedChance(chance, self.combatStats(a).elements.get(element)));
+    }
+
     /// `a` held `turns` longer unless its pin resistance holds; true when it is.
     pub fn pinFor(self: *Simulation, a: *actor.Actor, turns: u8) bool {
         if (turns == 0 or !self.takeStatus(a, .pin)) return false;
         a.pin.extend(turns);
+        return true;
+    }
+
+    pub fn frighten(self: *Simulation, a: *actor.Actor, turns: u8) bool {
+        if (!a.frighten(turns)) return false;
+        self.sayAt(a.at, actor.FLEES, .{actor.row(a.kind).name});
         return true;
     }
 
@@ -331,8 +342,7 @@ pub const Simulation = struct {
 
     /// Fire that takes hold of `a` only `of` percent of the time, past its fire and burn resistance.
     fn igniteBy(self: *Simulation, a: *actor.Actor, of: u32) bool {
-        const chance = damage.resistedChance(of, self.combatStats(a).elements.get(.fire));
-        if (!self.procStatus(a, .burn, chance)) return false;
+        if (!self.procResisted(a, .burn, of, .fire)) return false;
         a.burn.start();
         return true;
     }
@@ -420,9 +430,9 @@ pub const Simulation = struct {
         return mathx.percentCeil(v, mathx.PERCENT + self.inventory.gear.commander());
     }
 
-    /// Extra damage a bleed the hero opens deals each turn its body moves.
-    pub fn grievous(self: *const Simulation) i32 {
-        return @max(0, self.inventory.gear.sum(.grievous));
+    /// A bleed the hero just opened takes Grievous's extra damage each turn its body moves.
+    pub fn grieve(self: *const Simulation, b: *bleeding.Bleed) void {
+        b.move_bonus = @max(b.move_bonus, self.inventory.gear.grievous());
     }
 
     fn climateNow(self: *const Simulation) climate.Climate {

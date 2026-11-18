@@ -87,7 +87,7 @@ const BY_INITIAL = blk: {
     break :blk result;
 };
 
-pub const Match = struct { end: usize, tone: Tone };
+const Match = struct { end: usize, tone: Tone };
 
 pub fn wordByte(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_' or c >= 128;
@@ -109,7 +109,7 @@ fn phrase(body: []const u8, from: usize, word: []const u8) ?usize {
     return at;
 }
 
-pub fn match(body: []const u8, from: usize) ?Match {
+fn match(body: []const u8, from: usize) ?Match {
     if (from >= body.len or (from > 0 and wordByte(body[from - 1]))) return null;
     const initial = std.ascii.toLower(body[from]);
     if (initial < 'a' or initial > 'z') return null;

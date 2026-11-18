@@ -99,9 +99,13 @@ pub fn floorRect(ox: i32, oy: i32, cell: i32) rl.Rectangle {
     return rect(ox, oy, grid.W * cell, grid.H * cell);
 }
 
-/// Borrows `px`, packed `w` to a row: nothing to unload.
 pub fn rgba(px: *anyopaque, w: i32, h: i32) rl.Image {
-    return .{ .data = px, .width = w, .height = h, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    return image(px, w, h, .uncompressed_r8g8b8a8);
+}
+
+/// Borrows `px`, packed `w` to a row: nothing to unload.
+pub fn image(px: *anyopaque, w: i32, h: i32, format: rl.PixelFormat) rl.Image {
+    return .{ .data = px, .width = w, .height = h, .mipmaps = 1, .format = format };
 }
 
 /// Needs a live GL context.

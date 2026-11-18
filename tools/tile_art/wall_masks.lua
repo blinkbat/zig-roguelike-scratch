@@ -5,7 +5,11 @@ masks.bit={n=N,e=E,s=S,w=W,ne=NE,se=SE,sw=SW,nw=NW}
 masks.CELL,masks.COLS=64,8
 masks.HEAD=64
 masks.W,masks.H=masks.COLS*masks.CELL,math.ceil(#masks/masks.COLS)*masks.CELL
+masks.SHEET_H=masks.HEAD+masks.H
 function masks.at(i) return ((i-1)%masks.COLS)*masks.CELL,(i-1)//masks.COLS*masks.CELL end
+function masks.sides(mask)
+  return (mask&N)~=0,(mask&E)~=0,(mask&S)~=0,(mask&W)~=0,(mask&NE)~=0,(mask&SE)~=0,(mask&SW)~=0,(mask&NW)~=0
+end
 function masks.of(filled,x,y)
   local n,e,s,w=filled(x,y-1),filled(x+1,y),filled(x,y+1),filled(x-1,y)
   local m=(n and N or 0)|(e and E or 0)|(s and S or 0)|(w and W or 0)

@@ -1045,7 +1045,8 @@ fn missileOf(act: skillbar.Act) Missile {
     return switch (act) {
         .fireball => FIREBALL,
         .spark => SPARK,
-        else => .{},
+        .chain_lightning, .frost_vial => .{},
+        inline else => |a| if (comptime a.bolt() != null) @compileError("no missile look for bolt " ++ @tagName(a)) else .{},
     };
 }
 

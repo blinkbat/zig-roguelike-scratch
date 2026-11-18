@@ -85,6 +85,9 @@ for _,slice in ipairs(s.slices) do
  end
 end
 assert(columns>0)
+local old=Image{fromFile=work..'dirt-shallows-edges.png'}
+local bands=#dofile(root..'tools/tile_art/water_cliff_materials.lua').bands
+assert(faces.width==layout.block and faces.height==layout.block and old.width==bands*layout.block)
 s.layers[8].isVisible=false
 local l=s:newLayer(); l.name='Shallow cliff - half height'
 s:newCel(l,1,compressed,Point(0,0))
@@ -97,15 +100,13 @@ assert(saved.width==width and saved.height==height,'Saved sheet dimensions chang
 sourceFiles.checkLayer(saved,'Shallow cliff - half height',compressed,Point(0,0))
 assert(not saved.layers[8].isVisible,'Original layer was not hidden')
 saved:close()
-local old=Image{fromFile=work..'dirt-shallows-edges.png'}
 local edges=Image(old)
-assert(faces.width==256 and faces.height==256 and old.width==1280)
-for row=0,3 do for x=0,255 do
- local top,foot=span(faces,x,row*64,64)
+for row=0,layout.block//layout.cell-1 do for x=0,layout.block-1 do
+ local top,foot=span(faces,x,row*layout.cell,layout.cell)
  if top then
-  for band=0,4 do for y=top,foot do
+  for band=0,bands-1 do for y=top,foot do
    local sy=sample(top,foot,y)
-   edges:putPixel(band*256+x,y,sy and old:getPixel(band*256+x,sy) or 0)
+   edges:putPixel(band*layout.block+x,y,sy and old:getPixel(band*layout.block+x,sy) or 0)
   end end
  end
 end end

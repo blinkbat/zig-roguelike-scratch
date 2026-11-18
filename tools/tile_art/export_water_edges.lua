@@ -1,7 +1,9 @@
 local source=assert(app.params.source,'source=<edited template PNG>')
 local original=assert(app.params.original,'original=<canonical Aseprite>')
 local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
+local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
+local CELL=layout.cell
 local BANK_LIFT=8
 local report=assert(app.params.report,'report=<validation text>')
 local s=assert(app.open(original))
@@ -10,15 +12,15 @@ local baseline=Image(s.width,s.height,ColorMode.RGB)
 local pc=app.pixelColor
 local mask=Image{fromFile=root..'assets/water/water-cliff-cap.png'}
 local water=Image{fromFile=root..'assets/ground/shallows-ground.png'}
-assert(mask.width==192 and mask.height==64 and water.width==layout.block and water.height==layout.block,'Unexpected cap or water atlas dimensions')
+assert(mask.width==3*CELL and mask.height==CELL and water.width==layout.block and water.height==layout.block,'Unexpected cap or water atlas dimensions')
 local cap=Image(mask.width,mask.height,ColorMode.RGB)
-for y=0,63 do
- for x=0,191 do
-  if pc.rgbaA(mask:getPixel(x,y))>0 then cap:putPixel(x,y,water:getPixel(64+x%64,64+(y+32-BANK_LIFT)%64)) end
+for y=0,mask.height-1 do
+ for x=0,mask.width-1 do
+  if pc.rgbaA(mask:getPixel(x,y))>0 then cap:putPixel(x,y,water:getPixel(CELL+x%CELL,CELL+(y+CELL//2-BANK_LIFT)%CELL)) end
  end
 end
 for _,l in ipairs(s.layers) do
- if l.isVisible and l.name~='Owner flat border edits' and l.name~='Deep border extensions from shallow edits' then
+ if l.isVisible and l.name~='Owner flat border edits' and l.name~='Deep border extensions from shallow edits' and not l.name:find(' %- Authored border edits$') then
   local c=l:cel(1)
   if c then baseline:drawImage(c.image,c.position,l.opacity) end
  end
@@ -56,10 +58,5 @@ for n,name in ipairs(names) do
  counts[#counts+1]=name..': '..count..' changed pixels'
 end
 s:close()
-for _,out in ipairs(outputs) do
- out.image:saveAs(out.path)
- assert(Image{fromFile=out.path}:isEqual(out.image),'Export altered pixels')
-end
-local f=assert(io.open(report,'w'))
-f:write(table.concat(counts,'\n')..'\nNative 64px masks; five material bands: dry, shallow surface, deep surface, shallow face, deep face. Original runtime terrain remains beneath unchanged pixels.\n')
-f:close()
+for _,out in ipairs(outputs) do sourceFiles.savePng(out.image,out.path,'Export altered pixels') end
+sourceFiles.write(report,table.concat(counts,'\n')..'\nNative '..CELL..'px masks; five material bands: dry, shallow surface, deep surface, shallow face, deep face. Original runtime terrain remains beneath unchanged pixels.\n')

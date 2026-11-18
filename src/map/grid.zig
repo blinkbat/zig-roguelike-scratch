@@ -513,6 +513,10 @@ pub const Torches = struct {
         return self.takes(p) and mathx.push(P, &self.at, &self.n, p);
     }
 
+    pub fn spare(self: *Torches, k: usize) void {
+        self.n = @min(self.n, MAX_TORCHES - k);
+    }
+
     pub fn remove(self: *Torches, p: P) bool {
         _ = mathx.swapRemove(P, &self.at, &self.n, self.find(p) orelse return false);
         return true;
@@ -639,15 +643,15 @@ pub const Level = struct {
     }
 
     pub fn clamp(p: P) P {
-        return Box.inMap(0).clamp(p);
+        return MAP.clamp(p);
     }
 
     pub fn inset(p: P) P {
-        return Box.inMap(1).clamp(p);
+        return INNER.clamp(p);
     }
 
     pub fn edgeDist(p: P) i32 {
-        return Box.inMap(0).edgeDist(p);
+        return MAP.edgeDist(p);
     }
 
     pub fn firstOpen(self: *const Level) ?P {
@@ -972,6 +976,9 @@ pub fn Bounded(comptime T: type, comptime N: usize) type {
     };
 }
 
+pub const MAP = Box.inMap(0);
+pub const INNER = Box.inMap(1);
+
 pub const Box = struct {
     lo: P,
     hi: P,
@@ -998,7 +1005,7 @@ pub const Box = struct {
     }
 
     pub fn centred(w: i32, h: i32) Box {
-        return inMap(0).centredIn(w, h);
+        return MAP.centredIn(w, h);
     }
 
     fn centredIn(outer: Box, w: i32, h: i32) Box {
@@ -1227,6 +1234,20 @@ pub const STEPS = blk: {
     for (mathx.ALL_DIRS, &out) |d, *s| s.* = d.delta();
     break :blk out;
 };
+
+pub fn anyNeighbour(p: P, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) bool {
+    for (STEPS) |d| {
+        if (ok(ctx, p.add(d))) return true;
+    }
+    return false;
+}
+
+pub fn allNeighbours(p: P, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) bool {
+    for (STEPS) |d| {
+        if (!ok(ctx, p.add(d))) return false;
+    }
+    return true;
+}
 
 /// A cell's neighbours are looked at only once `next` has given it.
 pub fn Spread(comptime Ctx: type, comptime ok: fn (Ctx, P) bool) type {

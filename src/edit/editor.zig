@@ -278,10 +278,8 @@ pub const Editor = struct {
         ed.dropHeld();
         ed.modal = .none;
         ed.view = .map;
-        ed.recentre = true;
-        ed.pane.getPtr(.inspector).top = 0;
         ed.scene.reset();
-        ed.fitTool();
+        ed.enterNode();
         ed.restamp();
     }
 
@@ -375,8 +373,10 @@ pub const Editor = struct {
     }
 
     pub fn redo(ed: *Editor) void {
-        if (ed.history.at < ed.history.len) ed.drop() else ed.keepDrag();
-        if (ed.history.at == ed.history.len) return ed.say("Nothing to redo", .{});
+        if (ed.history.at == ed.history.len) {
+            ed.keepDrag();
+            return ed.say("Nothing to redo", .{});
+        }
         ed.dropHeld();
         _ = ed.history.redo(ed.map) catch return;
         ed.changedHistory();
@@ -515,6 +515,10 @@ pub const Editor = struct {
         ed.drop();
         ed.node = n;
         ed.scene.invalidate();
+        ed.enterNode();
+    }
+
+    fn enterNode(ed: *Editor) void {
         ed.recentre = true;
         ed.pane.getPtr(.inspector).top = 0;
         ed.forgetNode();
@@ -529,7 +533,6 @@ pub const Editor = struct {
     pub fn preview(ed: *Editor) void {
         ed.scene.ensure(ed.map, ed.node);
     }
-
 
     pub fn standable(ed: *Editor, from: atlas.Start) bool {
         return ed.thumbnails.standable(ed.map, from);
@@ -598,6 +601,10 @@ pub const Editor = struct {
         ed.pending = p;
         if (!ed.history.dirty) return ed.commit();
         ed.ask(.{ .prompt = .confirm });
+    }
+
+    pub fn saveAndCommit(ed: *Editor) void {
+        if (ed.save()) ed.commit();
     }
 
     pub fn commit(ed: *Editor) void {

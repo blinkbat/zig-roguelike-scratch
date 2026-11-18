@@ -9,7 +9,7 @@ local backups=root..'assets/backup/'
 app.fs.makeAllDirectories(backups)
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bit=masks.bit
-local W,H,CELL,HEAD=masks.W,masks.HEAD+masks.H,masks.CELL,masks.HEAD
+local W,H,CELL,HEAD=masks.W,masks.SHEET_H,masks.CELL,masks.HEAD
 local pc=app.pixelColor
 local sprite=assert(app.open(path))
 assert(sprite.width==W and sprite.height==H and #sprite.frames==1 and #sprite.slices==#masks)
@@ -103,9 +103,9 @@ local map={
 local function wall(x,y)
   return y>=1 and y<=#map and x>=1 and x<=#map[y] and map[y]:sub(x,x)=='#'
 end
-local preview=Image(19*64,#map*64,ColorMode.RGB)
+local preview=Image(#map[1]*64,#map*64,ColorMode.RGB)
 preview:clear(pc.rgba(104,112,77,255))
-for y=1,#map do for x=1,19 do
+for y=1,#map do for x=1,#map[1] do
   if wall(x,y) then
     preview:drawImage(assert(cells[masks.of(wall,x,y)]),Point((x-1)*64,(y-1)*64))
   end

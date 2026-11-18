@@ -18,6 +18,12 @@ end
 
 function files.rgb(r,g,b) return app.pixelColor.rgba(r,g,b,255) end
 
+function files.scaleRgb(p,scale,divisor)
+  local pc=app.pixelColor
+  local function channel(v) return math.floor(v*scale/(divisor or 1)+0.5) end
+  return pc.rgba(channel(pc.rgbaR(p)),channel(pc.rgbaG(p)),channel(pc.rgbaB(p)),pc.rgbaA(p))
+end
+
 function files.preserve(source,canonical,install)
   if install and app.fs.isFile(canonical) then
     assert(bytesOf(canonical)==bytesOf(source),'Preserving divergent canonical source; inspect owner edits before installing')

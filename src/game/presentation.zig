@@ -471,7 +471,7 @@ pub const Presentation = struct {
         for (self.turning, &self.facing) |t, *f| {
             if (t) |u| f.* = u.to;
         }
-        self.turning = @splat(null);
+        mathx.toDefaults(self, &.{"turning"});
     }
 
     fn stepTurning(self: *Presentation, dt: f32) void {
@@ -508,10 +508,7 @@ pub const Presentation = struct {
     }
 
     pub fn snapGlide(self: *Presentation, pool: *const actor.Pool) void {
-        self.occlusion = @splat(0);
-        self.sighted = @splat(1);
-        self.seen_bodies = @splat(null);
-        self.seen_cells = @splat(.{});
+        mathx.toDefaults(self, &.{ "occlusion", "sighted", "seen_bodies", "seen_cells" });
         for (pool.constSlice(), 0..) |*a, i| self.glide[i] = glide.Glide.rest(a);
     }
 
@@ -575,6 +572,28 @@ pub const Presentation = struct {
         if (self.visibleBody(sim, i) == null) if (self.seen_bodies[i]) |b| return b;
         const dying = self.fx.impacts.dyingOf(.fromIndex(i));
         return .{ .at = self.glide[i].now(), .pic = self.pictured[i], .lift = self.glide[i].lift(), .facing = self.facing[i], .opacity = dying.alpha, .dark = dying.dark, .flash = if (self.fx.impacts.isDying(.fromIndex(i))) 0 else self.fx.impacts.flashOf(.fromIndex(i)) };
+    }
+
+    pub const ShownBody = struct { slot: usize, at: rl.Vector2, body: SeenBody };
+
+    pub const ShownBodies = struct {
+        pic: *const Presentation,
+        sim: *const Simulation,
+        i: usize = 0,
+
+        pub fn next(self: *ShownBodies) ?ShownBody {
+            while (self.i < self.sim.pool.n) {
+                const i = self.i;
+                self.i += 1;
+                const at = self.pic.bodyAt(self.sim, i) orelse continue;
+                return .{ .slot = i, .at = at, .body = self.pic.bodyShown(self.sim, i) };
+            }
+            return null;
+        }
+    };
+
+    pub fn shownBodies(self: *const Presentation, sim: *const Simulation) ShownBodies {
+        return .{ .pic = self, .sim = sim };
     }
 
     fn fading(self: *const Presentation, sim: *const Simulation, i: usize) bool {
@@ -812,6 +831,12 @@ pub const Presentation = struct {
     pub fn settleResources(self: *Presentation, sim: *const Simulation) void {
         self.life_fill = self.lifeFill(sim);
         self.mana_fill = self.manaFill(sim);
+    }
+
+    pub fn settleSky(self: *Presentation, sim: *const Simulation) void {
+        self.hour_shown = sim.clock.hour();
+        self.weather_shown = sim.weatherHere();
+        self.local_weather_shown = sim.localWeather();
     }
 
     pub fn showProgress(self: *Presentation, sim: *const Simulation) void {

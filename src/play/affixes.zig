@@ -188,6 +188,8 @@ pub const Mod = enum {
 
 pub const IMBUES = [_]damage.Element{ .fire, .cold, .lightning };
 
+pub const HEFT_KNOCK: usize = 1;
+
 pub fn imbued(e: damage.Element) resilience.Kind {
     return switch (e) {
         .fire => .burn,
@@ -350,7 +352,7 @@ pub const Affix = struct {
             .pierce => w.print("Projectiles pass through {d} more foe{s}", .{ n, mathx.plural(n) }) catch {},
             .haste => w.print("{d}% chance an action takes no turn", .{n}) catch {},
             .kindling => w.print("+{d}% damage against burning foes", .{n}) catch {},
-            .heft => w.print("Knockbacks push 1 more tile, and slam a foe stopped short for {d} damage", .{n}) catch {},
+            .heft => w.print("Knockbacks push {d} more tile, and slam a foe stopped short for {d} damage", .{ HEFT_KNOCK, n }) catch {},
             .commander => w.print("+{d}% life and damage for your allies", .{n}) catch {},
             .nightstalker => w.print("+{d}% damage against foes in darkness", .{n}) catch {},
         }

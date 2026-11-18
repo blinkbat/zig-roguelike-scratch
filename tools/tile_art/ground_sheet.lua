@@ -13,7 +13,7 @@ local order=dofile(root..'tools/tile_art/ground_corners.lua')
 local COLS=groundPort.COLS
 assert(#order==COLS*COLS)
 local W,H,HEAD,CELL,HALF,LINE=groundPort.W,groundPort.H,groundPort.HEAD,groundPort.CELL,groundPort.CELL//2,2
-local NW,NE,SW,SE=1,2,4,8
+local NW,NE,SW,SE=groundPort.NW,groundPort.NE,groundPort.SW,groundPort.SE
 
 for i,m in ipairs(order) do
   local col,row=(i-1)%COLS,(i-1)//COLS
@@ -91,8 +91,7 @@ if app.fs.isFile(path) then
     slices[#slices+1]={name='Corners '..m,bounds=Rectangle(x,y,CELL,CELL)}
   end
   sourceFiles.checkBlankTemplate(old,{width=W,height=H,colorMode=ColorMode.RGB,guides=guides,slices=slices},path)
-  local base=path:match('([^/\\]+)%.aseprite$')
-  sourceFiles.copy(path,work..base..'-before-ground-'..os.date(sourceFiles.STAMP)..'.aseprite')
+  sourceFiles.keep(path,work,'ground',os.date(sourceFiles.STAMP))
   old:close()
 end
 
@@ -137,9 +136,7 @@ for _,s in ipairs(reopened.slices) do
     assert(shaded==((m&q[3])~=0),'quarter '..q[3]..' of '..m)
   end
 end
-local base=path:match('([^/\\]+)%.aseprite$')
+local base=app.fs.fileTitle(path)
 reopened:saveCopyAs(work..base..'-ground-template.png')
 reopened:close()
-local report=io.open(work..base..'-ground-template.txt','w')
-report:write(path..': 16 cells, masks distinct, quarters match, shared corners agree, Draw here empty\n')
-report:close()
+sourceFiles.write(work..base..'-ground-template.txt',path..': 16 cells, masks distinct, quarters match, shared corners agree, Draw here empty\n')

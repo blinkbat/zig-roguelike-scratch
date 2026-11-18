@@ -51,10 +51,10 @@ end
 local shallow=canvas('Land to shallows - Cliff faces')
 local deep=canvas('Land to deep water - Cliff faces')
 local surface=materials.surface
-for band=0,3 do
+for band=0,layout.block//layout.cell-1 do
  for x=left,right do
   local foot=nil
-  for y=top+band*64,top+63+band*64 do
+  for y=top+band*layout.cell,top+band*layout.cell+layout.cell-1 do
    if pc.rgbaA(shallow:getPixel(x,y))>0 then foot=y end
   end
   if foot and owner:getPixel(x,foot)==surface and before:getPixel(x,foot)~=surface then
@@ -92,7 +92,7 @@ local slices={}
 for _,slice in ipairs(s.slices) do
  slices[slice.name]={x=slice.bounds.x,y=slice.bounds.y,width=slice.bounds.width,height=slice.bounds.height}
 end
-sourceFiles.keep(output,app.fs.filePath(report),'edits',os.date(sourceFiles.STAMP))
+sourceFiles.keep(output,sourceFiles.work(),'edits',os.date(sourceFiles.STAMP))
 s:saveAs(output)
 s:close()
 local saved=assert(app.open(output))

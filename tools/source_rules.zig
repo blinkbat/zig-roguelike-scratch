@@ -51,7 +51,12 @@ const INDEPENDENT = [_][]const u8{
     break :blk owners[0..owners.len].*;
 };
 
+fn governed(owner: []const u8) bool {
+    return domain(owner) or listed(&INDEPENDENT, owner) or listed(&.{ INTERACTION, TURN_SCHEDULE, COMBAT_IMPACTS }, owner);
+}
+
 fn allowed(owner: []const u8, target: []const u8) bool {
+    if (!governed(owner)) return true;
     if (std.mem.eql(u8, owner, TURN_SCHEDULE)) {
         return std.mem.eql(u8, target, "std") or std.mem.startsWith(u8, target, "core/") or std.mem.startsWith(u8, target, "play/");
     }
@@ -80,8 +85,7 @@ pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) 
     defer tree.deinit(alloc);
     if (tree.errors.len != 0) return error.InvalidSyntax;
     if (tree.rootDecls().len == 0) return error.EmptyModule;
-    if (!domain(owner) and !listed(&INDEPENDENT, owner) and !std.mem.eql(u8, owner, INTERACTION) and
-        !std.mem.eql(u8, owner, TURN_SCHEDULE) and !std.mem.eql(u8, owner, COMBAT_IMPACTS)) return null;
+    if (!governed(owner)) return null;
     const tags = tree.tokens.items(.tag);
     tokens: for (tags, 0..) |tag, i| {
         const token: u32 = @intCast(i);

@@ -295,8 +295,9 @@ pub fn drawHud(g: *game.Game) void {
 }
 
 pub const Part = struct { spot: game.Spot, box: rl.Rectangle, source_box: ?rl.Rectangle = null };
-const ORBS = 2;
-pub const SPOTS_MAX = ORBS + skillbar.SLOTS.len + @typeInfo(hud.Shown).array.len + 1 + actor.MAX;
+const FIXED_SPOTS = [_]std.meta.Tag(game.Spot){ .life, .mana, .log };
+const HUD_SPOTS = FIXED_SPOTS.len + skillbar.SLOTS.len + @typeInfo(hud.Shown).array.len;
+pub const SPOTS_MAX = HUD_SPOTS + actor.MAX;
 
 pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     const layout = hudLayout(g);
@@ -309,7 +310,6 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     }
     out[n] = .{ .spot = .mana, .box = hud.orbBox(layout.mana) };
     n += 1;
-    std.debug.assert(n == ORBS + skillbar.SLOTS.len);
     if (g.pic.heroShown(&g.sim)) |h| {
         var buf: hud.Shown = undefined;
         const shown = hud.shownStatuses(h.status, &buf);
@@ -320,6 +320,7 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     }
     out[n] = .{ .spot = .log, .box = journal.box(g.screen) };
     n += 1;
+    std.debug.assert(n <= HUD_SPOTS);
     const cam = game.scene.Cam.of(g);
     for (0..g.sim.pool.n) |i| {
         const at = g.pic.drawnAt(&g.sim, i) orelse continue;

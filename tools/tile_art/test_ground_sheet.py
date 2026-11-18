@@ -1,7 +1,7 @@
 import hashlib
 import unittest
 
-from art_support import ROOT, SCRIPTS, WorkTest, arguments, aseprite, main
+from art_support import WorkTest, arguments, aseprite, main, run_lua
 
 
 args, remaining = arguments()
@@ -28,24 +28,25 @@ labels:saveAs(app.params.labels)
 ''')
         self.generate()
 
-    def command(self, script, **parameters):
-        return aseprite(args.aseprite, script, {
-            'root': ROOT.as_posix() + '/',
+    def params(self, **parameters):
+        return {
+            'root': args.root.as_posix() + '/',
             'out': self.sheet,
             'style': self.work / 'style.aseprite',
             'labels': self.work / 'labels.png',
             'tint': '100,120,140',
             **parameters,
-        }, timeout=None, temp=self.work)
+        }
+
+    def command(self, script, **parameters):
+        return aseprite(args.aseprite, script, self.params(**parameters), timeout=None, temp=self.work)
 
     def run_lua(self, source):
-        script = self.work / 'fixture.lua'
-        script.write_text(source, encoding='utf-8')
-        result = self.command(script)
+        result = run_lua(args.aseprite, self.work / 'fixture.lua', source, self.params(), timeout=None, temp=self.work)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def generate(self, replace=False):
-        result = self.command(SCRIPTS / 'ground_sheet.lua', **({'replace': 'yes'} if replace else {}))
+        result = self.command(args.scripts_dir / 'ground_sheet.lua', **({'replace': 'yes'} if replace else {}))
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_unchanged_blank_template_can_be_replaced(self):
@@ -73,7 +74,7 @@ local paint=Image(1,1,ColorMode.RGB)
 paint:clear(app.pixelColor.rgba(255,0,0,255))
 ''' + change + '\ns:saveAs(app.params.out); s:close()\n')
                 before = hashlib.sha256(self.sheet.read_bytes()).digest()
-                result = self.command(SCRIPTS / 'ground_sheet.lua', replace='yes')
+                result = self.command(args.scripts_dir / 'ground_sheet.lua', replace='yes')
                 self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertIn('Preserving', result.stdout + result.stderr)
                 self.assertEqual(before, hashlib.sha256(self.sheet.read_bytes()).digest())

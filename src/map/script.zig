@@ -61,8 +61,7 @@ fn Text(comptime N: usize, comptime multiline: bool) type {
         }
 
         pub fn set(self: *Self, s: []const u8) bool {
-            const t = std.mem.trim(u8, s, " ");
-            if (t.len > N or !allowed(t)) return false;
+            const t = fitted(s, N, multiline) orelse return false;
             self.buf = @splat(0);
             @memcpy(self.buf[0..t.len], t);
             self.n = @intCast(t.len);
@@ -92,6 +91,11 @@ pub const Title = Words(TITLE_MAX);
 
 pub fn plain(s: []const u8) bool {
     return printable(s, false);
+}
+
+pub fn fitted(s: []const u8, max: usize, comptime lines: bool) ?[]const u8 {
+    const t = std.mem.trim(u8, s, " ");
+    return if (t.len <= max and printable(t, lines)) t else null;
 }
 
 fn printable(s: []const u8, comptime lines: bool) bool {

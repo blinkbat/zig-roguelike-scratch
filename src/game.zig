@@ -244,8 +244,9 @@ pub fn boot(alloc: std.mem.Allocator) !*Game {
     return g;
 }
 
-fn visitOf(g: *const Game) simulation.Visit {
-    return .{ .lv = g.sim.lv, .pool = g.sim.pool, .facing = g.pic.facing, .ground = g.sim.ground };
+pub fn keepVisit(g: *Game, node: usize) void {
+    g.sim.visits[node] = .{ .lv = g.sim.lv, .pool = g.sim.pool, .facing = g.pic.facing, .ground = g.sim.ground };
+    g.sim.visited.set(node);
 }
 
 fn revisit(g: *Game, v: *const simulation.Visit) void {
@@ -427,8 +428,7 @@ fn goThrough(g: *Game, l: atlas.Link) void {
     g.pic.turnNow();
     const followers = gatherFollowers(g);
     const from = g.sim.node;
-    g.sim.visits[from] = visitOf(g);
-    g.sim.visited.set(from);
+    keepVisit(g, from);
     const carried = TravelCarry.of(g);
     var title: [atlas.TITLE_MAX]u8 = undefined;
     g.sim.log.say("Entered {s}.", .{g.sim.map.?.node[l.node].title(l.node, &title)});
@@ -529,9 +529,7 @@ fn settleKept(g: *Game) void {
     g.pic.snapSight(&g.sim);
     g.pic.settleResources(&g.sim);
     g.cam = camWant(g);
-    g.pic.hour_shown = g.sim.clock.hour();
-    g.pic.weather_shown = g.sim.weatherHere();
-    g.pic.local_weather_shown = g.sim.localWeather();
+    g.pic.settleSky(&g.sim);
     g.light.sky = skyNow(g);
     g.light.settle(&g.sim.lv);
     carryLight(g);
@@ -873,10 +871,7 @@ pub fn update(g: *Game, dt: f32) void {
     }
     if (g.sim.clock.minute == turn_at) character.settleLoot(g);
     if (!keyword_input and (characterShown(g) or g.mode == .inspect)) if (g.sim.travel) |l| if (g.pic.quiet()) goThrough(g, l);
-    if (!std.meta.eql(was, screenOf(g))) {
-        holdWalk(g);
-        g.keywords = .{};
-    }
+    if (!std.meta.eql(was, screenOf(g))) leftScreen(g);
     g.pic.stepGlide(&g.sim, g.cloud, late);
     g.pic.catchUp(&g.sim);
     g.pic.footfalls(&g.sim);
@@ -936,6 +931,11 @@ pub fn holdWalk(g: *Game) void {
     g.st.holdWalk();
     g.pending = null;
     g.mouse.stop();
+}
+
+pub fn leftScreen(g: *Game) void {
+    holdWalk(g);
+    g.keywords = .{};
 }
 
 pub fn toPlay(g: *Game) void {

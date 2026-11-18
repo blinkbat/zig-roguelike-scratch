@@ -4,8 +4,8 @@ local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local work=sourceFiles.work()
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local sprite=assert(app.open(path))
-assert(sprite.width==masks.W and sprite.height==masks.HEAD+masks.H and #sprite.frames==1 and #sprite.slices==#masks)
-local combined=Image(masks.W,masks.HEAD+masks.H,ColorMode.RGB)
+assert(sprite.width==masks.W and sprite.height==masks.SHEET_H and #sprite.frames==1 and #sprite.slices==#masks)
+local combined=Image(masks.W,masks.SHEET_H,ColorMode.RGB)
 local layers=0
 for _,layer in ipairs(sprite.layers) do
   if layer.name=='Draw here' or layer.name=='Forest extensions' then
@@ -31,11 +31,9 @@ for i,mask in ipairs(masks) do
 end
 local unusedX,unusedY=masks.at(#masks+1)
 for y=unusedY,unusedY+masks.CELL-1 do for x=unusedX,unusedX+masks.CELL-1 do assert(app.pixelColor.rgbaA(atlas:getPixel(x,y))==0,'Unused cell painted') end end
-atlas:saveAs(root..'assets/walls/forest-tree-walls.png')
+sourceFiles.savePng(atlas,root..'assets/walls/forest-tree-walls.png','Export changed the visible artwork')
 sprite:close()
-local check=Image{fromFile=root..'assets/walls/forest-tree-walls.png'}
-assert(check:isEqual(atlas),'Export changed the visible artwork')
-local report=assert(io.open(work..'forest-tree-walls-export.txt','w'))
+local report=sourceFiles.report(work..'forest-tree-walls-export.txt')
 report:write(('47 cells exported, 64x64 each, %d opaque pixels; unused cell clear.\n'):format(pixels))
 report:write('Only Draw here and Forest extensions; PNG pixels verified after reopening.\nSource: '..path..'\n')
 report:close()

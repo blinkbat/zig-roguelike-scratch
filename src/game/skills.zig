@@ -16,6 +16,7 @@ const look = @import("../gfx/look.zig");
 const fx = @import("../gfx/fx.zig");
 const combat = @import("combat.zig");
 const glide = @import("glide.zig");
+const rewards = @import("rewards.zig");
 const tactics_exec = @import("tactics_exec.zig");
 const tactics = @import("../play/tactics.zig");
 const game = @import("../game.zig");
@@ -128,7 +129,9 @@ pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.sim
 
 pub fn endingStance(sim: *const game.simulation.Simulation, act: skillbar.Act) bool {
     const h = sim.heroBody() orelse return false;
-    return act == .unyielding and h.tactics.unyielding;
+    return switch (act) {
+        inline else => |a| if (comptime a.toggles()) @field(h.tactics, @tagName(a)) else false,
+    };
 }
 
 pub fn blockedNow(run: *const game.Game, act: skillbar.Act) ?Blocked {
@@ -137,8 +140,7 @@ pub fn blockedNow(run: *const game.Game, act: skillbar.Act) ?Blocked {
 
 fn needs(run: *const game.Game, act: skillbar.Act) i32 {
     if (run.sim.playground) return 0;
-    const upkeep: i32 = if (act == .unyielding) tactics.Unyielding.DRAIN else 0;
-    return run.sim.growth.cost(act) + upkeep;
+    return run.sim.growth.cost(act) + act.drain();
 }
 
 fn ready(run: *game.Game, act: skillbar.Act) bool {
@@ -354,9 +356,8 @@ const Struck = grid.Bounded(u16, actor.MAX);
 /// Snapshot targets before damage so newborn slime halves are not hit twice.
 pub fn foesIn(run: *game.Game, area: areas.Burst) Struck {
     var out = Struck{};
-    for (run.sim.pool.slice(), 0..) |a, i| {
-        if (a.livingFoe() and area.has(a.at)) out.push(actor.Pool.idOf(i));
-    }
+    var each = rewards.livingIn(&run.sim, area).iterator(.{});
+    while (each.next()) |i| if (run.sim.pool.items[i].foe()) out.push(actor.Pool.idOf(i));
     return out;
 }
 
@@ -516,11 +517,7 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
 fn comeDown(run: *game.Game, act: skillbar.Act, flight: bow.Flight, stroke: game.presentation.Stroke) void {
     const at = flight.grounded(&run.sim.lv) orelse return;
     switch (act) {
-        inline else => |action| {
-            combat.boilUnder(run, action, at, stroke.wait);
-            if (comptime action.element() == .cold and action.bursts()) combat.coldLands(run, &skillbar.Act.elemental(action).burst(&run.sim.lv, stroke.from, at, run.sim.wider()), stroke.wait);
-            if (comptime action.element() == .lightning) combat.conduct(run, at, stroke);
-        },
+        inline else => |action| combat.elementLands(run, action, at, stroke, null, true),
     }
 }
 
@@ -547,11 +544,8 @@ fn skewerHits(run: *game.Game, comptime action: skillbar.Act, pierced: bow.Pierc
 }
 
 fn projectileImpact(run: *game.Game, comptime action: skillbar.Act, flight: bow.Flight, stroke: game.presentation.Stroke) void {
-    const at = flight.impact().?;
-    combat.boilUnder(run, action, at, stroke.wait);
-    if (comptime action.element() == .lightning) {
-        if (flight.struck.? != .body) combat.conduct(run, at, stroke);
-    }
+    const conducts = if (flight.struck) |hit| hit != .body else false;
+    combat.elementLands(run, action, flight.impact().?, stroke, null, conducts);
 }
 
 fn hitProjectileActor(run: *game.Game, comptime action: skillbar.Act, id: u16, stroke: game.presentation.Stroke) void {

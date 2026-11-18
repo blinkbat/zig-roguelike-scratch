@@ -138,7 +138,10 @@ test "history allocation failures preserve open gestures redo and saved position
 }
 
 comptime {
-    if (std.meta.fields(atlas.Atlas).len != 4) @compileError("History snapshots must capture every Atlas field");
+    const captured = [_][]const u8{ "node", "node_n", "start", "script" };
+    const names = std.meta.fieldNames(atlas.Atlas);
+    if (names.len != captured.len) @compileError("History snapshots must capture every Atlas field");
+    for (names, captured) |name, want| if (!std.mem.eql(u8, name, want)) @compileError("History snapshots must capture every Atlas field");
 }
 
 const Transaction = struct {

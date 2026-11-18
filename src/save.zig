@@ -748,8 +748,7 @@ test "legacy zoo key tiles migrate to chests and interchangeable Small Keys once
         if (phase == 2) g.sim.lv.set(z.door(), .open_gate);
         if (phase == 3 or phase == 5) while (g.sim.inventory.add(.{ .kind = .cap })) {};
         if (phase >= 4) _ = game.harness.spawnAt(g, .rat, z.key.?, false);
-        g.sim.visited.set(1);
-        g.sim.visits[1] = .{ .lv = g.sim.lv, .pool = g.sim.pool, .ground = g.sim.ground, .facing = g.pic.facing };
+        game.keepVisit(g, 1);
         try sealed(g, &buf);
         try read(buf.items, back, into);
         const want: grid.Tile = if (phase == 0 or phase == 3) .chest else .chest_open;
@@ -1245,7 +1244,7 @@ test "a generated run reloads every class without retaining the previous run's t
         try std.testing.expectEqual(@as(i32, 31), back.sim.gold);
         try std.testing.expectEqual(@as(i32, 2), back.sim.mana);
         try std.testing.expectEqual(g.sim.heroActor().?.hp, back.sim.heroActor().?.hp);
-        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(back.mode));
+        try game.harness.expectMode(back, .play);
         try std.testing.expect(back.exit == null and back.target == null and back.pending == null and back.sim.travel == null);
         try std.testing.expect(back.pic.quiet());
         try std.testing.expectEqual(back.sim.heroActor().?.hp, back.pic.heroShown(&back.sim).?.hp);

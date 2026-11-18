@@ -8,6 +8,7 @@ const ice = @import("../map/ice.zig");
 const atlas = @import("../map/atlas.zig");
 const day = @import("../map/day.zig");
 const actor = @import("../play/actor.zig");
+const affixes = @import("../play/affixes.zig");
 const bow = @import("../play/bow.zig");
 const firebolt = @import("../play/firebolt.zig");
 const windup = @import("../play/windup.zig");
@@ -131,7 +132,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
     const pinned = a.pin.holding();
     var at = a.at;
     var pushed: usize = 0;
-    const most: usize = if (heft > 0) 2 else 1;
+    const most: usize = if (heft > 0) 1 + affixes.HEFT_KNOCK else 1;
     if (!pinned) {
         while (pushed < most) : (pushed += 1) {
             const b = M.knocked(&g.sim.lv, at, d, id) orelse break;
@@ -145,7 +146,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
         g.sim.sayAt(at, "The {s} is knocked back.", .{name});
     }
     if (comptime act.afflicts()) if (hit.takes) g.sim.sayFoeTakes(a, M.TAKES);
-    if (heft > 0 and !pinned and pushed < most) wound(g, id, .{ .dmg = heft, .physical = heft, .hit_checked = true, .opportunity = 0 }, HEFT_VERB, s);
+    if (heft > 0 and !pinned and pushed < most) wound(g, id, .fixed(heft, 0), HEFT_VERB, s);
 }
 
 const HEFT_VERB = "slams";
@@ -171,13 +172,14 @@ pub fn skillHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     const blow = attacks.chosenBlow(&g.sim, a, hit.against(resists), act, reaches, if (el) |e| resists.get(e) else 0);
     if (blow.roll.dmg > 0) wound(g, id, blow.roll, M.VERB, s);
     if (blow.takes) if (g.sim.pool.get(id)) |b| g.sim.sayFoeTakes(b, M.TAKES);
+    if (wet) |*w| w.shocked = blow.roll.applied == .shock;
 }
 
 pub fn conduct(g: *game.Game, at: P, s: Stroke) void {
     conductTo(g, at, if (wading(&g.sim, at)) |bodies| .{ .bodies = bodies } else null, s);
 }
 
-const Wet = struct { bodies: rewards.Caught, struck: ?usize = null, born: usize = 0 };
+const Wet = struct { bodies: rewards.Caught, struck: ?usize = null, born: usize = 0, shocked: bool = false };
 
 /// The grounded bodies in the water joined to `at`, taken before a blow so a half it splits off is not shocked apart from its parent.
 fn wading(sim: *const game.simulation.Simulation, at: P) ?rewards.Caught {
@@ -196,7 +198,7 @@ fn conductTo(g: *game.Game, at: P, wet: ?Wet, s: Stroke) void {
     var each = w.bodies.iterator(.{});
     while (each.next()) |slot| {
         const a = &g.sim.pool.items[slot];
-        if (!a.alive) continue;
+        if (!a.alive or (w.shocked and w.struck == slot)) continue;
         if (!a.at.eq(at) and g.sim.lv.isLit(at) and a.seenIn(&g.sim.lv)) g.pic.fx.zap(s.wait, .{ .from = mathx.centre(at), .to = mathx.centre(a.at) });
         if (!g.sim.takeStatus(a, .shock)) continue;
         a.shock.start();
@@ -241,13 +243,18 @@ pub fn burstHit(g: *game.Game, comptime act: skillbar.Act, hit: bow.Hit, impact:
         .barrel, .plant => null,
     };
     areaHit(g, act, impact, M.burst(&g.sim.lv, s.from, impact, g.sim.wider()), s, direct, hit != .body);
-    boilUnder(g, act, impact, s.wait);
 }
 
-pub fn boilUnder(g: *game.Game, comptime act: skillbar.Act, at: P, wait: f32) void {
-    if (comptime act.element() != .fire) return;
-    const M = skillbar.Act.elemental(act);
-    fireLands(g, at, if (comptime act.bursts()) M.BLAST + g.sim.wider() else 0, M.KINDLE, wait);
+/// `area` is the ground cold lands on, a burst's own when null.
+pub fn elementLands(g: *game.Game, comptime act: skillbar.Act, at: P, s: Stroke, area: ?*const areas.Burst, conducts: bool) void {
+    if (comptime act.element() == null) return;
+    const M = skillbar.Act.skill(act);
+    switch (comptime act.element().?) {
+        .fire => fireLands(g, at, if (comptime @hasDecl(M, "REACH")) M.REACH + g.sim.wider() else if (comptime act.bursts()) M.BLAST + g.sim.wider() else 0, M.KINDLE, s.wait),
+        .cold => if (area) |a| coldLands(g, a, s.wait) else if (comptime act.bursts()) coldLands(g, &M.burst(&g.sim.lv, s.from, at, g.sim.wider()), s.wait),
+        .lightning => if (conducts) conduct(g, at, s),
+        .chaos => {},
+    }
 }
 
 pub fn fireLands(g: *game.Game, at: P, range: i32, kindle: fire.Kindle, wait: f32) void {
@@ -268,7 +275,7 @@ pub fn areaHit(g: *game.Game, comptime act: skillbar.Act, at: P, area: areas.Bur
         if (direct != id) hit.physical = 0;
         skillHit(g, id, attacks.heroScaled(&g.sim, act, hit), act, s);
     }
-    if (comptime act.element() == .cold) coldLands(g, &area, s.wait);
+    elementLands(g, act, at, s, &area, false);
 }
 
 pub fn coldLands(g: *game.Game, area: *const areas.Burst, wait: f32) void {
@@ -551,7 +558,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
     const sight = blind.sight(afflictions.contains(.blind), row.sight);
     if (row.allied) return allyTurn(g, id, held, afflictions, sight);
     if (!foe.awake) {
-        if (!fov.sees(&g.sim.lv, foe.at, hero.at, @max(1, sight - g.sim.inventory.gear.sum(.stillness)))) return;
+        if (!fov.sees(&g.sim.lv, foe.at, hero.at, @max(1, sight - g.sim.inventory.gear.stillness()))) return;
         foe.awake = true;
         g.pic.turnLater(.fromInt(id), hero.at.x - foe.at.x);
         if (!foe.submerged) g.sim.sayAt(foe.at, "A {s} notices {s}.", .{ row.name, g.sim.name.text() });
@@ -639,9 +646,7 @@ fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, a
     if (cells < c.rush and g.sim.lv.passOk(at, d)) {
         const w = g.sim.lv.who(next);
         if (w != grid.NO_ONE and w == g.sim.hero) {
-            var rammed = row;
-            rammed.blow = .{ .strike = c.blow };
-            _ = reach(g, id, rammed, d.delta().x, null, af);
+            _ = reachWith(g, id, row, .{ .strike = c.blow }, row.ranged == null, d.delta().x, null, af);
             return;
         }
         if (g.sim.pool.get(w) != null) {
@@ -693,10 +698,7 @@ fn fling(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, d: mathx.Dir, a
     };
     switch (caught) {
         .body => |w| if (w == g.sim.hero) {
-            var hooked = row;
-            hooked.blow = .{ .strike = hk.blow };
-            hooked.ranged = .{ .range = hk.range, .retreat = 0 };
-            if (reach(g, id, hooked, d.delta().x, flight, af) and g.mode != .dead) shove(g, id, d.opposite(), "{s} is dragged closer.");
+            if (reachWith(g, id, row, .{ .strike = hk.blow }, false, d.delta().x, flight, af) and g.mode != .dead) shove(g, id, d.opposite(), "{s} is dragged closer.");
             return;
         } else {
             const a = g.sim.pool.get(w).?;
@@ -909,16 +911,20 @@ fn fleeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
 
 /// Whether a strike landed on the hero; afflictions are those worn under this action.
 fn reach(g: *game.Game, attacker_id: u16, row: actor.Row, facing_delta: i32, flight: ?bow.Flight, afflictions: actor.Afflicted) bool {
+    return reachWith(g, attacker_id, row, row.blow, row.ranged == null, facing_delta, flight, afflictions);
+}
+
+fn reachWith(g: *game.Game, attacker_id: u16, row: actor.Row, with: actor.Blow, melee: bool, facing_delta: i32, flight: ?bow.Flight, afflictions: actor.Afflicted) bool {
     const attacker = actor.ActorId.fromInt(attacker_id);
     g.pic.turnLater(attacker, facing_delta);
     const kind = g.sim.pool.items[attacker.slot().index].kind;
-    switch (row.blow) {
+    switch (with) {
         .strike => |blow| {
             const sweeps = sweepReady(g, attacker_id, row);
             const weak = afflictions.contains(.enfeeble);
             if (sweeps) sweepRound(g, attacker_id, row, blow, weak);
             const verb = if (sweeps) actor.SWEEP_VERB else blow.verb;
-            const outcome = impacts.incomingStrike(g, attacker, kind, row, blow, verb, flight, weak);
+            const outcome = impacts.incomingStrike(g, attacker, kind, row.name, blow, verb, flight, weak, melee);
             if (outcome == .hurt and blow.knocks) knockHero(g, attacker_id);
             return outcome != .missed;
         },
@@ -938,7 +944,7 @@ fn knockHero(g: *game.Game, by: u16) void {
 /// The hero a cell `d`, unless held or the cell is taken or a door.
 fn shove(g: *game.Game, by: u16, d: mathx.Dir, comptime said: []const u8) void {
     const h = g.sim.heroActor() orelse return;
-    if (g.sim.inventory.gear.sum(.anchorage) >= 1) return;
+    if (g.sim.inventory.gear.anchored()) return;
     if (h.pin.holding()) return;
     const from = h.at;
     const to = from.add(d.delta());

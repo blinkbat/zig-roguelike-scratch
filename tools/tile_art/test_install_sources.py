@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import SCRIPTS, arguments, aseprite, main
+from art_support import arguments, aseprite, main
 
 
 args, remaining = arguments()
@@ -20,7 +20,7 @@ class InstallSourceTests(unittest.TestCase):
 
     def port(self, filename, blocked):
         name, start, height = PORTS[filename]
-        source = (SCRIPTS / filename).read_text(encoding='utf-8')
+        source = (args.scripts_dir / filename).read_text(encoding='utf-8')
         publication = source[source.index(start):source.index('atlas:saveAs(')]
         with tempfile.TemporaryDirectory(prefix='cistern-install-port-test-') as temporary:
             work = Path(temporary)
@@ -38,7 +38,7 @@ local canonical=app.params.canonical
 local install=app.params.install=='yes'
 local sourceFiles=dofile(app.params.helper)
 local name=app.params.name
-local title=name:gsub('^%l',string.upper)
+local layer_name=name:gsub('^%l',string.upper)..' extensions'
 local height=tonumber(app.params.height)
 local original=Image(2,2,ColorMode.RGB)
 original:clear(app.pixelColor.rgba(91,122,153,255))
@@ -55,7 +55,7 @@ s:newCel(drawing,1,original,position)
 s:saveAs(path)
 ''' + publication + '\nprint("PUBLICATION_COMPLETE")\n', encoding='utf-8')
             result = self.run_lua(script, work=work, source=working, canonical=canonical,
-                                  helper=SCRIPTS / 'source_files.lua',
+                                  helper=args.scripts_dir / 'source_files.lua',
                                   name=name, height=height, install='yes')
             output = result.stdout + result.stderr
             self.assertTrue(working.is_file(), output)
@@ -125,8 +125,8 @@ assert(loadfile(realapp.params.script,'t',env))()
             result = self.run_lua(script, root=work.as_posix() + '/', work=work,
                                   desktop=desktop, desktop_dir=desktop.parent.as_posix() + '/',
                                   fail='yes' if fail else 'no',
-                                  helper=SCRIPTS / 'source_files.lua',
-                                  script=SCRIPTS / 'tone_forest.lua')
+                                  helper=args.scripts_dir / 'source_files.lua',
+                                  script=args.scripts_dir / 'tone_forest.lua')
             output = result.stdout + result.stderr
             report = work / 'wall-mocks/forest-tone.txt'
             if fail:
@@ -180,7 +180,7 @@ title:saveAs(app.params.title)
             before = template.read_bytes()
             if blocked:
                 destination.mkdir()
-            result = self.run_lua(SCRIPTS / 'new_sheet.lua',
+            result = self.run_lua(args.scripts_dir / 'new_sheet.lua',
                                   template=template, title=title, out=destination)
             self.assertEqual(before, template.read_bytes())
             if blocked:

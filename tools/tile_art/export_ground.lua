@@ -4,7 +4,7 @@ local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local groundPort=dofile(root..'tools/tile_art/ground_port.lua')
 local name=assert(app.params.name,'name=grass|cobble|dirt|water|shallows|bridge')
-local source_name=({water='deep-water',shallows='water'})[name] or name
+local source_name=groundPort.source(name)
 local source=app.params.source or (sourceFiles.DESKTOP..source_name..'.aseprite')
 local stand_in=app.params.from=='underdrawing'
 assert(app.params.from==nil or stand_in,'from=underdrawing or nothing')
@@ -35,13 +35,9 @@ assert(#order==COLS*COLS)
 local sprite=assert(app.open(source))
 assert(sprite.width==groundPort.W and sprite.height==groundPort.H,'not a ground template: '..source)
 assert(#sprite.slices==COLS*COLS,'not a ground template: '..source)
-for i,m in ipairs(order) do
-  local s=assert(groundPort.corner(sprite,m),'no slice for mask '..m)
-  local x,y=groundPort.at(i)
-  assert(s.bounds.x==x and s.bounds.y==y,'slice '..m..' moved')
-end
+for i,m in ipairs(order) do groundPort.checkSlice(sprite,i,m) end
 local want=stand_in and 'Underdrawing (25%)' or 'Draw here'
-local extension=(name=='water' or name=='shallows') and 'Water extensions' or name:gsub('^%l',string.upper)..' extensions'
+local extension=groundPort.extension(source_name)
 local found=false
 local sheet=Image(SIZE,SIZE,ColorMode.RGB)
 for _,l in ipairs(sprite.layers) do
@@ -63,13 +59,11 @@ if name=='bridge' and not stand_in then
   for it in sheet:pixels() do
     local v=it()
     if pc.rgbaA(v)>0 then
-      local r,g,b=math.floor(pc.rgbaR(v)*0.70+0.5),math.floor(pc.rgbaG(v)*0.70+0.5),math.floor(pc.rgbaB(v)*0.70+0.5)
-      if r==0 and g==0 and b==0 then r,g,b=42,33,25 end
-      it(pc.rgba(r,g,b,pc.rgbaA(v)))
+      v=sourceFiles.scaleRgb(v,0.70)
+      if pc.rgbaR(v)==0 and pc.rgbaG(v)==0 and pc.rgbaB(v)==0 then v=pc.rgba(42,33,25,pc.rgbaA(v)) end
+      it(v)
     end
   end
 end
 sprite:close()
-sheet:saveAs(out)
-local back=Image{fromFile=out}
-assert(back.width==SIZE and back.height==SIZE and back:isEqual(sheet),'reread '..out)
+sourceFiles.savePng(sheet,out,'reread '..out)

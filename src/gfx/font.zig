@@ -212,6 +212,18 @@ pub const Face = struct {
         self.text(s, self.leftFor(s, cx, size), y, size, col);
     }
 
+    pub fn alignRight(self: *const Face, s: [:0]const u8, right: i32, size: i32) i32 {
+        return right - self.width(s, size);
+    }
+
+    pub fn drawRight(self: *const Face, s: [:0]const u8, right: i32, y: i32, size: i32, col: rl.Color) void {
+        self.draw(s, self.alignRight(s, right, size), y, size, col);
+    }
+
+    pub fn textRight(self: *const Face, s: [:0]const u8, right: i32, y: i32, size: i32, col: rl.Color) void {
+        self.text(s, self.alignRight(s, right, size), y, size, col);
+    }
+
     pub fn glyph(self: *const Face, ch: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         const s = [_:0]u8{ch};
         self.centred(&s, cx, cy, size, col);
@@ -542,6 +554,24 @@ pub fn wrapAppend(face: anytype, row: []const u8, size: i32, w: i32, buf: [][WRA
         at += 1;
     }
     return at;
+}
+
+pub const TABLE_SEP = '|';
+
+pub fn wrapRows(face: anytype, body: []const u8, size: i32, w: i32, buf: [][WRAP_COLS_MAX + 1]u8, lines: [][:0]const u8) usize {
+    var n: usize = 0;
+    var rows = std.mem.splitScalar(u8, body, '\n');
+    while (rows.next()) |r| {
+        if (n == lines.len) break;
+        if (std.mem.indexOfScalar(u8, r, TABLE_SEP) != null or r.len == 0) {
+            const len = @min(r.len, WRAP_COLS_MAX);
+            @memcpy(buf[n][0..len], r[0..len]);
+            buf[n][len] = 0;
+            lines[n] = buf[n][0..len :0];
+            n += 1;
+        } else n = wrapAppend(face, r, size, w, buf, lines, n);
+    }
+    return n;
 }
 
 pub fn lineCount(face: anytype, body: []const u8, size: i32, w: i32) usize {

@@ -3,7 +3,7 @@ const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
 const actor = @import("actor.zig");
 const spark = @import("spark.zig");
-const clock = @import("clock.zig");
+const shock = @import("shock.zig");
 
 pub const COST: i32 = 4;
 /// Foes it leaps on to after the first, each the nearest unstruck foe to the last within `JUMP_RANGE`.
@@ -12,17 +12,17 @@ pub const JUMP_RANGE: i32 = 3;
 pub const VERB = "shocks";
 pub const BOLT = "chain lightning";
 pub const BOLT_RANGE: i32 = 6;
-pub const TAKES = spark.TAKES;
+pub const TAKES = shock.TAKES;
 pub const ELEMENT = spark.ELEMENT;
-pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {s} each.", .{ JUMPS, JUMP_RANGE, clock.stunNote(spark.CHANCE) });
+pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {d}% chance to shock each.", .{ JUMPS, JUMP_RANGE, CHANCE });
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 5 };
 
 pub const CHANCE = spark.CHANCE;
 pub const procs = spark.procs;
 pub const chance = spark.chance;
-pub const afflict = spark.afflict;
-pub const AILMENT = spark.AILMENT;
+pub const afflict = shock.afflict;
+pub const AILMENT = shock.AILMENT;
 
 pub const Chain = grid.Bounded(u16, JUMPS + 1);
 

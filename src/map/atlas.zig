@@ -138,7 +138,7 @@ pub const Bespoke = struct {
     }
 
     pub fn barrelAt(self: *const Bespoke, p: P) bool {
-        return grid.cellOr(bool, &self.barrel, p, false);
+        return section.barrelOf(self, p);
     }
 
     pub fn fill(self: *Bespoke, box: grid.Box, t: grid.Tile) void {
@@ -151,7 +151,7 @@ pub const Bespoke = struct {
     }
 
     pub fn foes(self: *const Bespoke) []const Foe {
-        return self.foe[0..self.foe_n];
+        return section.foesOf(self);
     }
 
     pub fn foeAt(self: *const Bespoke, p: P) ?usize {
@@ -168,12 +168,11 @@ pub const Bespoke = struct {
     }
 
     pub fn addFoe(self: *Bespoke, f: Foe) bool {
-        if (self.foeAt(f.at) != null or !self.roomAt(f.at, f.kind)) return false;
-        return mathx.push(Foe, &self.foe, &self.foe_n, f);
+        return section.addFoeTo(self, f, self.roomAt(f.at, f.kind));
     }
 
     pub fn dropFoe(self: *Bespoke, i: usize) void {
-        mathx.removeAt(Foe, &self.foe, &self.foe_n, i, section.NO_FOE);
+        section.dropFoeOf(self, i);
     }
 };
 
@@ -208,7 +207,7 @@ pub const Label = struct {
 
     /// Trimmed. Whether it changed; null when refused.
     pub fn set(self: *Label, s: []const u8) ?bool {
-        const t = fitText(s, NAME_MAX) orelse return null;
+        const t = script.fitted(s, NAME_MAX, false) orelse return null;
         if (std.mem.eql(u8, t, self.text())) return false;
         @memcpy(self.buf[0..t.len], t);
         self.n = t.len;
@@ -219,11 +218,6 @@ pub const Label = struct {
         return self.n <= NAME_MAX and plain(self.text());
     }
 };
-
-fn fitText(s: []const u8, max: usize) ?[]const u8 {
-    const t = std.mem.trim(u8, s, " ");
-    return if (t.len <= max and plain(t)) t else null;
-}
 
 pub const Node = struct {
     pub const COUNTED = .{.{ "door", "door_n" }};
@@ -393,9 +387,26 @@ pub const Node = struct {
         return !b.tileAt(p).pieced();
     }
 
-    fn doorCells(self: *const Node, out: *[grid.MAX_DOORS]P) []const P {
-        for (self.doors(), 0..) |d, i| out[i] = d.at;
-        return out[0..self.door_n];
+    fn doorCells(self: *const Node) grid.Bounded(P, grid.MAX_DOORS) {
+        var out = grid.Bounded(P, grid.MAX_DOORS){};
+        for (self.doors()) |d| out.push(d.at);
+        return out;
+    }
+
+    pub fn bespokeValid(self: *const Node, b: *const Bespoke) bool {
+        for (self.doors()) |d| {
+            if (!self.doorFits(b, d.at)) return false;
+        }
+        for (b.foes()) |f| {
+            if (!self.foeFits(b, f.at, f.kind)) return false;
+        }
+        for (b.torches()) |t| {
+            if (!self.torchFits(b, t)) return false;
+        }
+        for (b.barrel, 0..) |on, i| {
+            if (on and !self.barrelFits(b, grid.Level.of(i))) return false;
+        }
+        return true;
     }
 
     /// The foes of the section `roll` laid, each on its cell while the pool has room, then the zoo's, then the packs, none on a painted cell.
@@ -411,16 +422,16 @@ pub const Node = struct {
     /// A procgen node's guards by its carts, then its packs round the hero arriving at `at`, exit packs by its doors, none on `off`.
     fn packsOff(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, off: *const grid.CellSet) void {
         post.place(lv, pool, self.plan.procgen.post);
-        var buf: [grid.MAX_DOORS]P = undefined;
+        const cells = self.doorCells();
         var kept = off.*;
         if (self.zoo) |z| kept = kept.unionWith(z.cells());
-        pack.placeOff(lv, pool, rng, at, self.doorCells(&buf), &self.plan.procgen.foes, &kept);
+        pack.placeOff(lv, pool, rng, at, cells.slice(), &self.plan.procgen.foes, &kept);
     }
 
     fn sectionOn(self: *const Node, roll: u64) ?section.Placed {
-        var buf: [grid.MAX_DOORS]P = undefined;
+        const cells = self.doorCells();
         return switch (self.plan) {
-            .procgen => |*pg| pg.section.lands(roll, self.doorCells(&buf)),
+            .procgen => |*pg| pg.section.lands(roll, cells.slice()),
             .bespoke => null,
         };
     }
@@ -442,11 +453,10 @@ pub const Node = struct {
     }
 
     pub fn stampAt(self: *const Node, lv: *grid.Level, roll: u64, entrance: ?P) void {
-        var buf: [grid.MAX_DOORS]P = undefined;
-        const cells = self.doorCells(&buf);
+        const cells = self.doorCells();
         const laid = self.sectionOn(roll);
         switch (self.plan) {
-            .procgen => |*pg| procgen.rollWith(lv, roll, cells, pg.floor, pg.features(), laid),
+            .procgen => |*pg| procgen.rollWith(lv, roll, cells.slice(), pg.floor, pg.features(), laid),
             .bespoke => |*b| {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;
@@ -1198,8 +1208,8 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
     defer std.testing.allocator.destroy(a);
     const nd = &a.node[a.start.node];
     const settings = nd.plan.procgen.floor.wilds;
-    var buf: [grid.MAX_DOORS]P = undefined;
-    const doors = nd.doorCells(&buf);
+    const cells = nd.doorCells();
+    const doors = cells.slice();
     var lv: grid.Level = undefined;
     var expected: grid.Level = undefined;
     var dist: [grid.CELLS]i32 = undefined;

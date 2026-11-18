@@ -12,7 +12,7 @@ const skillbar = @import("../play/skillbar.zig");
 const look = @import("look.zig");
 const light = @import("light.zig");
 const lume = @import("../map/lume.zig");
-const menu = @import("../ui/menu.zig");
+const wording = @import("../core/wording.zig");
 
 pub const Matter = enum { blood, ooze, wood, ichor };
 
@@ -138,7 +138,7 @@ pub const Status = enum {
         return switch (s) {
             .warded => skillbar.Act.mana_shield.name(),
             .resistant => "Status resistance",
-            inline else => |t| if (comptime t.stance()) |a| a.name() else comptime menu.capital(@tagName(t)),
+            inline else => |t| if (comptime t.stance()) |a| a.name() else comptime wording.spoken(@tagName(t)),
         };
     }
 

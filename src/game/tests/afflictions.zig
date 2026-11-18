@@ -1,6 +1,5 @@
 const std = @import("std");
 const mathx = @import("../../core/mathx.zig");
-const store = @import("../../core/store.zig");
 const actor = @import("../../play/actor.zig");
 const blind = @import("../../play/blind.zig");
 const confusion = @import("../../play/confusion.zig");
@@ -8,6 +7,7 @@ const shock = @import("../../play/shock.zig");
 const sunder = @import("../../play/sunder.zig");
 const enfeeble = @import("../../play/enfeeble.zig");
 const maim = @import("../../play/maim.zig");
+const resilience = @import("../../play/resilience.zig");
 const fx = @import("../../gfx/fx.zig");
 const hud = @import("../../ui/hud.zig");
 const format = @import("../../save_format.zig");
@@ -380,7 +380,26 @@ test "a slime half split off by a conducting blow carries the shock its parent t
     try std.testing.expectEqual(parent.shock, half.shock);
 }
 
-fn sealed(g: *game.Game, out: *std.ArrayList(u8)) !void {
-    try format.write(g, out);
-    try store.seal(out.writer(), out.items[store.head(format.MAGIC)..]);
+test "a wading foe a lightning skill shocks is not shocked again by the water it conducts" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.heroArena(g, .wizard, FROM, &.{});
+    const struck = P{ .x = 24, .y = 20 };
+    carve.box(&g.sim.lv, grid.Box.around(struck, 1), .shallows);
+    const id = harness.spawnAt(g, .rat, struck, false);
+    const a = g.sim.pool.get(id).?;
+    var shocked: usize = 0;
+    for (0..TRIES / 10) |_| {
+        harness.toughen(a);
+        a.resilience = .{};
+        a.shock = .{};
+        var blow = attacks.Rolled{ .blow = .{} };
+        blow.blow.elements.set(.lightning, 2);
+        combat.skillHit(g, id, blow, .chain_lightning, .{ .from = FROM, .wait = 0.2 });
+        try std.testing.expect(a.resilience.meters.get(.shock).percent <= resilience.GAIN);
+        if (a.shock.turns > 0) shocked += 1;
+    }
+    try std.testing.expect(shocked > 0);
 }
+
+const sealed = format.sealed;

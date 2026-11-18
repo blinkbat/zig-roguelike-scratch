@@ -1,5 +1,6 @@
 local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
+local CELL=dofile(root..'tools/tile_art/water_cliff_layout.lua').cell
 local source=app.params.source or sourceFiles.DESKTOP..'water-cliff-edge.aseprite'
 local depth=app.params.depth or 'shallow'
 assert(depth=='shallow' or depth=='deep','depth=shallow|deep')
@@ -13,21 +14,21 @@ local cel=assert(layer:cel(1),'painted cel missing')
 assert(layer.opacity==255 and cel.opacity==255,'paint must be full opacity')
 local paint=Image(s.width,s.height,ColorMode.RGB)
 paint:drawImage(cel.image,cel.position)
-local atlas=Image(192,64,ColorMode.RGB)
 local names={'left','repeat','right'}
+local atlas=Image(#names*CELL,CELL,ColorMode.RGB)
 local pieces={}
 for i,name in ipairs(names) do
  local bounds
  for _,slice in ipairs(s.slices) do
   if slice.name=='water_cliff_'..depth..'_'..name then bounds=slice.bounds end
  end
- assert(bounds and bounds.width==64 and bounds.height==64,'64px '..depth..' slice missing: '..name)
+ assert(bounds and bounds.width==CELL and bounds.height==CELL,CELL..'px '..depth..' slice missing: '..name)
  local tile=Image(paint,bounds)
  assert(not tile:isEmpty(),'unpainted '..depth..' tile: '..name)
- atlas:drawImage(tile,Point((i-1)*64,0))
+ atlas:drawImage(tile,Point((i-1)*CELL,0))
  pieces[i]=tile
 end
-local cap=Image(192,64,ColorMode.RGB)
+local cap=Image(atlas.width,atlas.height,ColorMode.RGB)
 local pc=app.pixelColor
 for x=0,191 do
  for y=0,63 do
@@ -86,14 +87,10 @@ for x=0,191 do
 end
 sourceFiles.write(stem..'-foot.txt',table.concat(feet,',')..'\n')
 sourceFiles.write(stem..'-lip.txt',table.concat(lips,',')..'\n')
-local cap_out=stem..'-cap.png'
-cap:saveAs(cap_out)
-assert(Image{fromFile=cap_out}:isEqual(cap),'cap mask changed')
-atlas:saveAs(out)
-local back=Image{fromFile=out}
-assert(back:isEqual(atlas),'export changed pixels')
+sourceFiles.savePng(cap,stem..'-cap.png','cap mask changed')
+local back=sourceFiles.savePng(atlas,out,'export changed pixels')
 for i,tile in ipairs(pieces) do
- assert(Image(back,Rectangle((i-1)*64,0,64,64)):isEqual(tile),'source tile changed')
+ assert(Image(back,Rectangle((i-1)*CELL,0,CELL,CELL)):isEqual(tile),'source tile changed')
 end
 s:close()
 print('Verified '..depth..' cliff: three original 64px crops, unchanged RGBA, no guides or reference tiles')

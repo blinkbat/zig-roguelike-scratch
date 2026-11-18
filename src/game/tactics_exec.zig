@@ -21,10 +21,12 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
     const h = g.sim.heroActor() orelse return;
     const rank = g.sim.growth.ranks.get(act);
     const ending = skills.endingStance(&g.sim, act);
-    switch (act) {
+    if (comptime act.toggles()) {
+        const on = &@field(h.tactics, @tagName(act));
+        on.* = !on.*;
+    } else switch (act) {
         .steady_aim => h.tactics.steady = rank,
         .guard => h.tactics.guard = rank,
-        .unyielding => h.tactics.unyielding = !h.tactics.unyielding,
         .whirlwind => {
             const area = tactics.Whirlwind.area(&g.sim.lv, h.at);
             const ids = skills.foesIn(g, area);
@@ -50,12 +52,12 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
 }
 
 fn warCry(g: *game.Game, from: P, rank: u8) void {
-    const reach = @min(tactics.WarCry.RADIUS + g.sim.wider(), areas.BURST_MAX);
+    const reach = areas.capped(tactics.WarCry.RADIUS + g.sim.wider());
     for (g.sim.pool.slice(), 0..) |*a, slot| {
         if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, from) > reach) continue;
         a.awake = true;
         if (!g.sim.procStatus(a, .fright, tactics.WarCry.chance(rank))) continue;
-        if (a.frighten(tactics.WarCry.turns(rank))) g.sim.sayAt(a.at, actor.FLEES, .{actor.row(a.kind).name});
+        _ = g.sim.frighten(a, tactics.WarCry.turns(rank));
         g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(slot));
     }
 }
@@ -257,8 +259,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
         if (id == struck) roll.opportunity = opportunity;
         combat.wound(g, id, roll, Skill.VERB, s);
     }
-    if (comptime Skill.ELEMENT == .fire) combat.fireLands(g, at, Skill.REACH + g.sim.wider(), Skill.KINDLE, s.wait);
-    if (comptime Skill.ELEMENT == .cold) combat.coldLands(g, &area, s.wait);
+    combat.elementLands(g, act, at, s, &area, false);
 }
 
 pub fn beforeAction(sim: *Simulation) void {
@@ -269,14 +270,17 @@ pub fn beforeAction(sim: *Simulation) void {
 
 pub fn startTurn(sim: *Simulation) void {
     const h = sim.heroActor() orelse return;
-    if (h.tactics.unyielding) {
-        if (sim.mana >= tactics.Unyielding.DRAIN) {
-            sim.mana -= tactics.Unyielding.DRAIN;
-        } else {
-            h.tactics.unyielding = false;
-            sim.log.say("{s}'s Unyielding ends: not enough mana.", .{sim.name.text()});
+    inline for (comptime std.enums.values(skillbar.Act)) |act| if (comptime act.toggles()) {
+        const on = &@field(h.tactics, @tagName(act));
+        if (on.*) {
+            if (sim.mana >= act.drain()) {
+                sim.mana -= act.drain();
+            } else {
+                on.* = false;
+                sim.log.say("{s}'s {s} ends: not enough mana.", .{ sim.name.text(), act.name() });
+            }
         }
-    }
+    };
     h.tactics.imbue -|= 1;
     for (&sim.lv.barrier) |*t| t.* -|= 1;
     for (&sim.lv.caltrops) |*c| {
@@ -300,7 +304,7 @@ pub fn bideTurn(g: *game.Game) void {
     g.pic.fx.sweep(s.wait, mathx.centre(h.at));
     const area = tactics.Bide.area(&g.sim.lv, h.at);
     const ids = skills.foesIn(g, area);
-    for (ids.slice()) |id| combat.wound(g, id, .{ .dmg = dmg, .physical = dmg, .hit_checked = true }, tactics.Bide.VERB, s);
+    for (ids.slice()) |id| combat.wound(g, id, .fixed(dmg, null), tactics.Bide.VERB, s);
 }
 
 pub fn displace(g: *game.Game, id: u16, to: P) void {
@@ -336,7 +340,10 @@ pub fn landed(g: *game.Game, id: u16) void {
     const trap = g.sim.lv.caltrops[cell];
     if (trap.turns > 0 and a.foe() and actor.row(a.kind).movement.grounded()) {
         _ = g.sim.pinFor(a, tactics.Caltrops.pins(trap.rank));
-        if (tactics.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) a.bleed.startWound(tactics.Caltrops.bleed(trap.rank), g.sim.grievous());
+        if (tactics.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) {
+            a.bleed.startWith(tactics.Caltrops.bleed(trap.rank));
+            g.sim.grieve(&a.bleed);
+        }
         g.pic.recordWear(&g.sim, .fromInt(id));
         g.sim.sayOf(a, "The {s} steps into caltrops.", .{actor.row(a.kind).name});
     }
@@ -459,7 +466,7 @@ test "tactical gravity ranks pull and unlock pin while combustion consumes burn 
     const mana = g.sim.mana;
     h.aimAt(g, .combustion, .{ .x = 23, .y = 20 });
     try std.testing.expectEqual(mana, g.sim.mana);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .play);
     g.sim.pool.get(id).?.burn.start();
     h.aimAt(g, .combustion, .{ .x = 23, .y = 20 });
     try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(id).?.burn.turns);
@@ -737,7 +744,7 @@ test "detonations target visible afflicted swimmers and damage the direct body o
         const hp = target.hp;
         const mana = g.sim.mana;
         h.useAct(g, act);
-        try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+        try game.harness.expectMode(g, .aim);
         try std.testing.expectEqual(at, g.mode.aim.mark);
         skills.confirmAim(g);
         try std.testing.expectEqual(@as(u8, 0), fuelOf(act, target));
@@ -762,7 +769,7 @@ test "shatter consumes chill for cold damage over its neighbours and refuses an 
     const mana = g.sim.mana;
     h.aimAt(g, .shatter, at);
     try std.testing.expectEqual(mana, g.sim.mana);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .play);
     g.sim.pool.get(id).?.chill.apply();
     game.settle(g);
     try std.testing.expectEqual(glacial.TURNS, g.pic.pictured[actor.Pool.slot(id)].status.get(.chilled));
@@ -1099,7 +1106,7 @@ test "a charge strikes the foe a tile past its longest rush" {
     h.toughen(g.sim.pool.get(id).?);
     game.settle(g);
     h.aimAt(g, .charge, at);
-    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try game.harness.expectMode(g, .play);
     try std.testing.expectEqual(at.sub(.{ .x = 1, .y = 0 }), g.sim.heroActor().?.at);
     try std.testing.expect(g.sim.cooldown.get(.charge) > 0);
 }

@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import arguments, aseprite, main
+from art_support import arguments, main, run_lua
 
 
 args, remaining = arguments()
@@ -11,10 +11,8 @@ args, remaining = arguments()
 class SourceFileTests(unittest.TestCase):
     def run_lua(self, code, **params):
         with tempfile.TemporaryDirectory(prefix='cistern-source-files-test-') as temporary:
-            script = Path(temporary) / 'probe.lua'
-            script.write_text(code, encoding='utf-8')
             params['module'] = args.scripts_dir / 'source_files.lua'
-            result = aseprite(args.aseprite, script, params)
+            result = run_lua(args.aseprite, Path(temporary) / 'probe.lua', code, params)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def check_failure(self, failure):

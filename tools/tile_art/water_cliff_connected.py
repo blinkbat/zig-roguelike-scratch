@@ -1,9 +1,11 @@
 import argparse
 from pathlib import Path
+import sys
 import tempfile
 
 from PIL import Image, ImageDraw
-from art_support import ROOT, SCRIPTS, arial, corner_order, quote as q, water_cliff_layout
+sys.dont_write_bytecode = True
+from art_support import ROOT, SCRIPTS, arial, corner_order, ground_layout, quote as q, water_cliff_layout
 
 
 parser = argparse.ArgumentParser()
@@ -16,12 +18,14 @@ if not args.replace and (args.output.exists() or args.output.with_suffix('.png')
 work =Path(tempfile.mkdtemp(prefix='cistern-connected-cliffs-'))
 layout = water_cliff_layout()
 size = (layout['width'], layout['height'])
-block_x, block_y, stride, block = (layout[key] for key in ('x', 'y', 'stride', 'block'))
+block_x, block_y, stride, block, cell = (layout[key] for key in ('x', 'y', 'stride', 'block', 'cell'))
+cols = block // cell
+corners = ground_layout()
 labels = Image.new('RGBA', size)
 guides = Image.new('RGBA', size)
 ld, gd = ImageDraw.Draw(labels), ImageDraw.Draw(guides)
 order = corner_order()
-assert block == 4 * 64
+assert len(order) == cols * cols and block == cols * cell
 
 
 def text(x, y, value, px=14, bold=False):
@@ -34,14 +38,14 @@ names = ['Land to shallows', 'Land to deep water', 'Shallows to deep water']
 for n, name in enumerate(names):
     x = block_x + n * stride
     text(x, block_y - 27, name, 17, True)
-    for i in range(5):
-        gd.line((x + i * 64, block_y, x + i * 64, block_y + block - 1), fill=(255, 90, 120, 155))
-        gd.line((x, block_y + i * 64, x + block - 1, block_y + i * 64), fill=(255, 90, 120, 155))
+    for i in range(cols + 1):
+        gd.line((x + i * cell, block_y, x + i * cell, block_y + block - 1), fill=(255, 90, 120, 155))
+        gd.line((x, block_y + i * cell, x + block - 1, block_y + i * cell), fill=(255, 90, 120, 155))
     text(x, block_y + block + 13, 'HIGH-GROUND MASKS / same tile order', 11, True)
     for i, mask in enumerate(order):
-        cx, cy = x + (i % 4) * 64, block_y + block + 36 + (i // 4) * 12
+        cx, cy = x + (i % cols) * cell, block_y + block + 36 + (i // cols) * 12
         text(cx, cy, f'{mask:02d}', 10)
-        for bit, dx, dy in ((1, 0, 0), (2, 1, 0), (4, 0, 1), (8, 1, 1)):
+        for bit, dx, dy in ((corners['NW'], 0, 0), (corners['NE'], 1, 0), (corners['SW'], 0, 1), (corners['SE'], 1, 1)):
             ld.rectangle((cx + 20 + dx * 5, cy + dy * 5, cx + 23 + dx * 5, cy + 3 + dy * 5),
                          fill=(92, 83, 63, 255) if mask & bit else (96, 151, 175, 255))
 text(block_x, 466, 'SHALLOW FACE / left - repeat - right', 13, True)
@@ -52,7 +56,7 @@ text(32, 576, 'Ground, cliff faces, and lip/cap fill are separate editable layer
 text(32, 600, 'Original face pieces below are unchanged RGBA. Lip shadows fall on the cliff AND water at runtime.', 14)
 labels.save(work / 'labels.png')
 guides.save(work / 'grid.png')
-lua = [f'local sourceFiles=dofile({q(SCRIPTS / "source_files.lua")})'] if args.replace else []
+lua = [f'local sourceFiles=dofile({q(SCRIPTS / "source_files.lua")})']
 lua.append(f'for _,path in ipairs({{{q(args.output)},{q(args.output.with_suffix(".png"))}}}) do')
 if args.replace:
     lua.extend([
@@ -94,33 +98,32 @@ for n, name in enumerate(names):
         assert combined.tobytes() == im.convert('RGBA').tobytes(), 'Layers differ from runtime assembly'
     for i, mask in enumerate(order):
         lua.extend([
-            f'local slice=s:newSlice(Rectangle({block_x+n*stride+(i%4)*64},{block_y+(i//4)*64},64,64))',
+            f'local slice=s:newSlice(Rectangle({block_x+n*stride+(i%cols)*cell},{block_y+(i//cols)*cell},{cell},{cell}))',
             f'slice.name={q(f"transition_{n}_mask_{mask:02d}")}',
         ])
 for n, asset in enumerate(('shallows-cliff.png', 'water-cliff.png')):
     layer(('Shallow' if n == 0 else 'Deep') + ' - original faces', ROOT / 'assets/water' / asset, block_x + n * stride, 496)
     for i, name in enumerate(('left', 'repeat', 'right')):
         lua.extend([
-            f'local slice=s:newSlice(Rectangle({block_x+n*stride+i*64},496,64,64))',
+            f'local slice=s:newSlice(Rectangle({block_x+n*stride+i*cell},496,{cell},{cell}))',
             f'slice.name={q(f"water_cliff_{'shallow' if n==0 else 'deep'}_{name}")}',
         ])
 layer('64px grid - toggle while painting', work / 'grid.png', editable=False, visible=False)
 lua.extend([
     's:deleteLayer(first)', 'local paint=s:newLayer()', 'paint.name="Touch-ups"', 'app.layer=paint',
-    f's.gridBounds=Rectangle({block_x},{block_y},64,64)',
+    f's.gridBounds=Rectangle({block_x},{block_y},{cell},{cell})',
     's.data="Native game renders, no lighting baked. Three connected 16-mask sets, NW1 NE2 SW4 SE8. Original face strips unchanged. Rendered tiles are a new painting template, not automatically imported runtime atlases."',
     'local preview=Image(s.spec)', 'preview:drawSprite(s,1)',
     f's:saveAs({q(args.output)})', f's:saveCopyAs({q(args.output.with_suffix(".png"))})', 's:close()',
     f'local savedPreview=Image{{fromFile={q(args.output.with_suffix(".png"))}}}',
     'assert(savedPreview:isEqual(preview),"Saved preview differs from the assembled template")',
-    f'local saved=assert(app.open({q(args.output)}))', f'assert(#saved.slices=={layout["slices"]} and #saved.layers==18)',
+    f'local saved=assert(app.open({q(args.output)}))', f'assert(#saved.slices=={layout["slices"]} and #saved.layers==#expected+1)',
     'for i,want in ipairs(expected) do', 'local l=saved.layers[i]', 'assert(l.name==want.name)',
     'local actual=Image(want.image.width,want.image.height,ColorMode.RGB)',
     'local c=assert(l:cel(1))', 'actual:drawImage(c.image,Point(c.position.x-want.x,c.position.y-want.y))',
     'assert(actual:isEqual(want.image),"Layer pixels changed: "..want.name)', 'end',
-    'saved:close()', f'local report=assert(io.open({q(work / "validation.txt")},"w"))',
-    f'report:write("Verified {size[0]}x{size[1]} Aseprite, {layout["slices"]} named slices, 18 layers; art layers preserved pixel-for-pixel and recombine exactly to runtime assembly. Grid hidden, Touch-ups editable.\\n")',
-    'report:close()',
+    'saved:close()',
+    f'sourceFiles.write({q(work / "validation.txt")},"Verified {size[0]}x{size[1]} Aseprite, {layout["slices"]} named slices, "..(#expected+1).." layers; art layers preserved pixel-for-pixel and recombine exactly to runtime assembly. Grid hidden, Touch-ups editable.\\n")',
 ])
 (work / 'assemble.lua').write_text('\n'.join(lua), encoding='utf-8')
 print(work)
