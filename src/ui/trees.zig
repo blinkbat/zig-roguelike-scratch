@@ -22,7 +22,7 @@ const AREA = @import("character_layout.zig").AREA;
 
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
-pub const View = struct { cursor: usize = 0, zoom: f32 = ZOOM_MIN, pan: rl.Vector2 = .{ .x = 0, .y = 0 }, focused: bool = true };
+pub const View = struct { cursor: usize = 0, zoom: f32 = ZOOM_MIN, pan: rl.Vector2 = .{ .x = 0, .y = 0 } };
 const Loadout = struct { stats: attrs.Attrs, gear: Gear, readied: progress.Readied = .{} };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
@@ -261,7 +261,7 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         const ink = skillInk(class, growth, s);
         rl.drawRectangleRec(box, TILE);
         menu.border(box, ink);
-        if (i == cursor and view.focused) hud.focusGrown(box, FOCUS_GROW);
+        if (i == cursor) hud.focusGrown(box, FOCUS_GROW);
         line_icons.drawSkill(sprites, s.act, mid.x - line_icons.SKILL_PX / 2, mid.y - line_icons.SKILL_PX / 2, skillAlpha(class, growth, s));
         const plaque = raster.rect(mid.x + PLAQUE_AT.x, mid.y + PLAQUE_AT.y, PLAQUE_W, PLAQUE_H);
         menu.boxedSmall(plaque, BACK, ink);
@@ -569,7 +569,7 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
             for ([_]f32{ -SEAM_MARK.y, SEAM_MARK.y }) |dy| rl.drawLineEx(.{ .x = p.x - SEAM_MARK.x, .y = p.y + dy }, .{ .x = p.x + SEAM_MARK.x, .y = p.y + dy }, 1, if (state == .allocated) BACK else armInk(s.to()));
         }
     }
-    if (view.focused) ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + FOCUS_GROW, FOCUS);
+    ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + FOCUS_GROW, FOCUS);
     rl.endScissorMode();
     for ([_]bool{ false, true }) |increase| {
         const enabled = if (increase) view.zoom < ZOOM_MAX else view.zoom > ZOOM_MIN;

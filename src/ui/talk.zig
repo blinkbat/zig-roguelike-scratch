@@ -76,6 +76,8 @@ pub const Layout = struct {
     starts: [script.MAX_CHOICES]usize = undefined,
     ends: [script.MAX_CHOICES]usize = undefined,
     line_n: usize = 0,
+    /// The spoken lines shown: whatever room the replies leave.
+    said: usize = 0,
     last: usize = 0,
     who_y: i32 = 0,
     who_rule_y: i32 = 0,
@@ -93,11 +95,18 @@ pub const Layout = struct {
         const capacity: usize = @intCast(@max(1, @divTrunc(cap_h - 2 * PAD - header - footer, LEADING)));
         const counted = capacity + 1;
         self.line_n = countLines(face, v.say, self.text_w, counted);
-        var total = self.line_n;
-        if (self.row_n > 0) total += 1;
-        for (v.choices[0..self.row_n], 0..) |label, i| {
+        const gap: usize = @intFromBool(self.row_n > 0);
+        var reply_lines: [script.MAX_CHOICES]usize = undefined;
+        var replies: usize = 0;
+        for (v.choices[0..self.row_n], reply_lines[0..self.row_n]) |label, *n| {
+            n.* = countLines(face, label, self.replyW(), counted);
+            replies += @max(1, n.*);
+        }
+        self.said = @min(self.line_n, @max(1, capacity -| (replies + gap)));
+        var total = self.said + gap;
+        for (reply_lines[0..self.row_n], 0..) |n, i| {
             self.starts[i] = total;
-            total += @max(1, countLines(face, label, self.text_w - NUMBER_W, counted -| total));
+            total += @max(1, @min(n, counted -| total));
             self.ends[i] = total;
         }
         self.last = @min(total, capacity);
@@ -123,6 +132,10 @@ pub const Layout = struct {
         self.action = raster.rect(x + w - PAD - menu.ACTION_BOX.x, y + h - PAD - menu.ACTION_BOX.y, menu.ACTION_BOX.x, menu.ACTION_BOX.y);
     }
 
+    fn replyW(self: *const Layout) i32 {
+        return self.text_w - NUMBER_W;
+    }
+
     pub fn rowAt(self: *const Layout, p: P) ?usize {
         for (self.rows[0..self.row_n], 0..) |r, i| {
             if (r.height > 0 and raster.holds(r, p)) return i;
@@ -140,24 +153,24 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
     const who = if (v.who.len > 0) v.who else "Conversation";
     face.engraved(face.fit(&buf, who, font.HEAD, l.text_w - WHO_RESERVE, false), l.text_x, l.who_y, font.HEAD, look.UI_GOLD);
     rl.drawRectangle(l.text_x, l.who_rule_y, l.text_w, 1, look.fade(look.UI_GOLD, look.FADED_A));
-    drawPassage(face, v.say, l.text_x, l.text_w, 0, l, look.TEXT);
+    drawPassage(face, v.say, l.text_x, l.text_w, 0, l.said, l, look.TEXT);
     for (l.rows[0..l.row_n], v.choices[0..l.row_n], 0..) |r, label, i| {
         if (r.height == 0) continue;
         const on = i == v.cursor;
         menu.boxedSmall(r, look.fade(if (on) look.UI_GOLD else look.BG, if (on) ROW_ON_A else ROW_OFF_A), look.fade(if (on) look.UI_GOLD else look.EDGE, ROW_EDGE_A));
         if (on) rl.drawRectangle(raster.left(r), raster.top(r), ROW_BAR_W, raster.height(r), look.UI_GOLD);
         face.text(std.fmt.bufPrintZ(&buf, "{d}.", .{i + 1}) catch "", l.text_x, raster.top(r) + ROW_RISE, BODY, look.UI_GOLD);
-        drawPassage(face, label, l.text_x + NUMBER_W, l.text_w - NUMBER_W, l.starts[i], l, if (on) look.UI_FOCUS else look.TEXT);
+        drawPassage(face, label, l.text_x + NUMBER_W, l.replyW(), l.starts[i], l.last, l, if (on) look.UI_FOCUS else look.TEXT);
     }
     menu.action(face, l.action, v.prompt, if (l.row_n > 0) "Reply" else if (v.ending) "Leave" else "Continue");
 }
 
-fn drawPassage(face: *const font.Face, body: []const u8, x: i32, w: i32, start: usize, l: *const Layout, ink: rl.Color) void {
+fn drawPassage(face: *const font.Face, body: []const u8, x: i32, w: i32, start: usize, end: usize, l: *const Layout, ink: rl.Color) void {
     var offset: usize = 0;
     var line = start;
     var buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
     while (nextLine(face, body, &offset, w, &buf)) |text| : (line += 1) {
-        if (line >= l.last) break;
+        if (line >= end) break;
         face.text(text, x, l.text_y + @as(i32, @intCast(line)) * LEADING, BODY, ink);
     }
 }
@@ -238,6 +251,15 @@ test "an oversized line clips inside the raised panel rather than splitting into
             if (l.figure) |r| try std.testing.expect(r.y + r.height <= l.panel.y + l.panel.height and r.x + r.width < @as(f32, @floatFromInt(l.text_x)));
         }
     }
+}
+
+test "an oversized line gives up its last lines so every reply that fits stays shown" {
+    const face = menu.TestFace{};
+    var l: Layout = .{};
+    const asks = [_][]const u8{ "Yes", "No" };
+    l.of(&face, @import("../core/window.zig").SCREEN_720, .{ .who = "w", .say = "a word " ** (script.SAY_MAX / 7), .choices = &asks, .cursor = 0, .prompt = .{ .key = "Enter" }, .figure = null });
+    for (l.rows[0..l.row_n]) |r| try std.testing.expect(r.height > 0);
+    try std.testing.expect(l.said < l.line_n);
 }
 
 test "a narrow face fills the panel's width before it wraps" {

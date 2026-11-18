@@ -44,7 +44,6 @@ const ICON_AT = mathx.P{ .x = 14, .y = 15 };
 const COUNT_INSET = mathx.P{ .x = 7, .y = 6 };
 
 comptime {
-    std.debug.assert(STATUS_Y + STATUS_PX < PLATE_Y);
     std.debug.assert(ORB_Y - ORB_R <= PLATE_Y and PLATE_Y + PLATE_H < ORB_Y + ORB_R);
     std.debug.assert(ORB_Y + ORB_R + ORB_SHADOW_DY + ORB_SHADOW_GROW <= HEIGHT);
 }
@@ -105,14 +104,14 @@ fn shadow(x: i32, y: i32, width: i32, height: i32) void {
 pub const LIFE = "Life";
 pub const MANA = "Mana";
 
-pub const Frame = struct { tex: ?rl.Texture2D, middle: mathx.P };
+const Frame = struct { tex: ?rl.Texture2D, middle: mathx.P };
 
-pub const LIFE_FRAME_MIDDLE = mathx.P{ .x = 55, .y = 65 };
-pub const MANA_FRAME_MIDDLE = mathx.P{ .x = 52, .y = 64 };
+const LIFE_FRAME_MIDDLE = mathx.P{ .x = 55, .y = 65 };
+const MANA_FRAME_MIDDLE = mathx.P{ .x = 52, .y = 64 };
 
-pub fn resources(layout: Layout, face: *const font.Face, life_frame: Frame, mana_frame: Frame, hp: i32, hp_max: i32, mana: i32, mana_max: i32, life_fill: f32, mana_fill: f32) void {
-    orb(face, layout.life, LIFE, life_frame, hp, hp_max, life_fill, LIFE_CORE, LIFE_EDGE);
-    orb(face, layout.mana, MANA, mana_frame, mana, mana_max, mana_fill, MANA_CORE, MANA_EDGE);
+pub fn resources(layout: Layout, face: *const font.Face, life_tex: ?rl.Texture2D, mana_tex: ?rl.Texture2D, hp: i32, hp_max: i32, mana: i32, mana_max: i32, life_fill: f32, mana_fill: f32) void {
+    orb(face, layout.life, LIFE, .{ .tex = life_tex, .middle = LIFE_FRAME_MIDDLE }, hp, hp_max, life_fill, LIFE_CORE, LIFE_EDGE);
+    orb(face, layout.mana, MANA, .{ .tex = mana_tex, .middle = MANA_FRAME_MIDDLE }, mana, mana_max, mana_fill, MANA_CORE, MANA_EDGE);
 }
 
 fn fillHeight(fill: f32) i32 {

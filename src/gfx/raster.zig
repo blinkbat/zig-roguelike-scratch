@@ -91,6 +91,34 @@ pub fn blit(t: rl.Texture2D, src: rl.Rectangle, dest: rl.Rectangle, tint: rl.Col
     rl.drawTexturePro(t, src, dest, .{ .x = 0, .y = 0 }, 0, tint);
 }
 
+/// The edges of nine-slice `t`, tiled at native texel size between `x0..x1`/`y0..y1` drawn at `scale` screen pixels per unit. False, drawing nothing, when the box cannot hold the corners.
+pub fn frame(t: rl.Texture2D, cut: f32, x0: f32, y0: f32, x1: f32, y1: f32, scale: f32, tint: rl.Color) bool {
+    const tex_w, const tex_h = sizeOf(t);
+    const c = cut / scale;
+    if (x1 - x0 < 2 * c or y1 - y0 < 2 * c) return false;
+    const src_x = [_]f32{ 0, cut, tex_w - cut };
+    const src_y = [_]f32{ 0, cut, tex_h - cut };
+    const src_w = [_]f32{ cut, tex_w - 2 * cut, cut };
+    const src_h = [_]f32{ cut, tex_h - 2 * cut, cut };
+    const at_x = [_]f32{ x0, x0 + c, x1 - c };
+    const at_y = [_]f32{ y0, y0 + c, y1 - c };
+    const span_x = [_]f32{ c, x1 - x0 - 2 * c, c };
+    const span_y = [_]f32{ c, y1 - y0 - 2 * c, c };
+    for (0..3) |row| for (0..3) |col| {
+        if (row == 1 and col == 1) continue;
+        var yy: f32 = 0;
+        while (yy < span_y[row] - 1e-3) : (yy += src_h[row] / scale) {
+            const h = @min(src_h[row], (span_y[row] - yy) * scale);
+            var xx: f32 = 0;
+            while (xx < span_x[col] - 1e-3) : (xx += src_w[col] / scale) {
+                const w = @min(src_w[col], (span_x[col] - xx) * scale);
+                blit(t, .{ .x = src_x[col], .y = src_y[row], .width = w, .height = h }, .{ .x = at_x[col] + xx, .y = at_y[row] + yy, .width = w / scale, .height = h / scale }, tint);
+            }
+        }
+    };
+    return true;
+}
+
 pub fn overFloor(t: rl.Texture2D, ox: i32, oy: i32, cell: i32) void {
     stretch(t, floorRect(ox, oy, cell), look.LIT);
 }

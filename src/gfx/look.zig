@@ -597,17 +597,18 @@ const BOX_SHINE_SEED: u64 = 0xB0C5;
 
 /// How far through its wipe a box's shine is; each `key` keeps its own phase.
 pub fn boxShine(seconds: f32, key: usize) ?f32 {
-    const phase = mathx.cellRoll(BOX_SHINE_SEED, SHINE_PHASES, .{ .x = @intCast(key), .y = 0 });
-    const t = @mod(seconds + @as(f32, @floatFromInt(phase)) / SHINE_PHASES * SHINE_PERIOD_S, SHINE_PERIOD_S);
-    if (t >= SHINE_WIPE_S) return null;
-    return t / SHINE_WIPE_S;
+    return shineWipe(seconds, BOX_SHINE_SEED, .{ .x = @intCast(key), .y = 0 });
 }
 
 pub fn shineSweep(seconds: f32, p: mathx.P) ?f32 {
-    const phase = mathx.cellRoll(SHINE_SEED, SHINE_PHASES, p);
+    return mathx.lerpF(-SHINE_WIDTH, 1 + SHINE_WIDTH, shineWipe(seconds, SHINE_SEED, p) orelse return null);
+}
+
+fn shineWipe(seconds: f32, seed: u64, p: mathx.P) ?f32 {
+    const phase = mathx.cellRoll(seed, SHINE_PHASES, p);
     const t = @mod(seconds + @as(f32, @floatFromInt(phase)) / SHINE_PHASES * SHINE_PERIOD_S, SHINE_PERIOD_S);
     if (t >= SHINE_WIPE_S) return null;
-    return mathx.lerpF(-SHINE_WIDTH, 1 + SHINE_WIDTH, t / SHINE_WIPE_S);
+    return t / SHINE_WIPE_S;
 }
 
 /// Of the shallows' colours, what deep water's art keeps: `tools/tile_art/deepen_water.lua`.

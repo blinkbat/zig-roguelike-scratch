@@ -22,6 +22,7 @@ const raster = @import("../gfx/raster.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
 const line_icons = @import("../gfx/line_icons.zig");
 const font = @import("../gfx/font.zig");
+const fx = @import("../gfx/fx.zig");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
 const binds = @import("binds.zig");
@@ -34,7 +35,7 @@ const plural = mathx.plural;
 
 const SLOT_MID: i32 = @divTrunc(game.SLOT_PX, 2);
 const CLEAR_GLYPH: i32 = @divTrunc(game.SLOT_PX, 2);
-const SLOT_EDGE_INSET: i32 = sprite.HUD_BORDER_CUT - 3;
+const SLOT_EDGE_INSET: i32 = sprite.HUD_BORDER_CUT - sprite.HUD_BORDER_RAIL;
 const BIND_TOP: i32 = menu.PANEL_PAD;
 const BIND_X0: i32 = @divTrunc(BIND_W - game.SKILLS_W, 2);
 const BIND_TITLE: i32 = 32;
@@ -286,7 +287,7 @@ pub fn drawHud(g: *game.Game) void {
     const layout = hudLayout(g);
     hud.frame(layout, &g.sprites);
     const life = g.pic.lifeShown(&g.sim);
-    hud.resources(layout, &g.face, .{ .tex = g.sprites.hud_life_frame, .middle = hud.LIFE_FRAME_MIDDLE }, .{ .tex = g.sprites.hud_mana_frame, .middle = hud.MANA_FRAME_MIDDLE }, life.hp, life.max, g.pic.manaShown(&g.sim), g.sim.manaMax(), g.pic.life_fill, g.pic.mana_fill);
+    hud.resources(layout, &g.face, g.sprites.hud_life_frame, g.sprites.hud_mana_frame, life.hp, life.max, g.pic.manaShown(&g.sim), g.sim.manaMax(), g.pic.life_fill, g.pic.mana_fill);
     drawSkills(g, layout);
     hud.experience(layout, g.pic.xp_shown - @floor(g.pic.xp_shown));
     if (g.pic.heroShown(&g.sim)) |h| hud.statuses(layout, &g.face, h.status, @intCast(h.resilience.peak().percent));
@@ -309,13 +310,11 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     }
     out[n] = .{ .spot = .mana, .box = hud.orbBox(layout.mana) };
     n += 1;
-    if (g.pic.heroShown(&g.sim)) |h| {
-        var buf: hud.Shown = undefined;
-        const shown = hud.shownStatuses(h.status, &buf);
-        for (shown, 0..) |s, k| {
-            out[n] = .{ .spot = .{ .status = s }, .box = hud.statusBox(layout, shown.len, k) };
-            n += 1;
-        }
+    var buf: hud.Shown = undefined;
+    const shown = heroStatuses(g, &buf);
+    for (shown, 0..) |s, k| {
+        out[n] = .{ .spot = .{ .status = s }, .box = hud.statusBox(layout, shown.len, k) };
+        n += 1;
     }
     out[n] = .{ .spot = .log, .box = journal.box(g.screen) };
     n += 1;
@@ -332,6 +331,11 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
         n += 1;
     }
     return out[0..n];
+}
+
+pub fn heroStatuses(g: *const game.Game, buf: *hud.Shown) []const fx.Status {
+    const h = g.pic.heroShown(&g.sim) orelse return buf[0..0];
+    return hud.shownStatuses(h.status, buf);
 }
 
 pub fn spotAt(spots: []const Part, s: game.Spot) ?Part {

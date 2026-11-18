@@ -363,7 +363,8 @@ fn drawnFor(g: *game.Game) bool {
 
 fn turnFree(g: *game.Game) bool {
     if (!drawnFor(g)) return false;
-    if (g.sim.travel == null) return true;
+    const owes = if (g.sim.heroActor()) |h| h.clock.owes() else false;
+    if (g.sim.travel == null and !owes) return true;
     notYet(g);
     return false;
 }

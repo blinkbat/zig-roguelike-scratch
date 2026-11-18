@@ -68,7 +68,14 @@ fn overUi(g: *const game.Game, p: P) bool {
     const layout = game.overlay.hudLayout(g);
     return raster.holds(raster.rect(layout.left, layout.top, hud.WIDTH, hud.COVER), p) or
         raster.holds(journal.box(g.screen), p) or raster.holds(game.scene.miniFrame(g.screen.x), p) or
-        buttonAt(g.screen, p) != null;
+        buttonAt(g.screen, p) != null or overStatus(g, layout, p);
+}
+
+fn overStatus(g: *const game.Game, layout: hud.Layout, p: P) bool {
+    var buf: hud.Shown = undefined;
+    const shown = game.overlay.heroStatuses(g, &buf);
+    for (0..shown.len) |k| if (raster.holds(hud.statusBox(layout, shown.len, k), p)) return true;
+    return false;
 }
 
 pub fn cell(g: *game.Game) ?P {

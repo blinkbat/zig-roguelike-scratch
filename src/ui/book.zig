@@ -154,7 +154,7 @@ pub const Book = struct {
         };
     }
     fn treeView(self: *const Book) trees.View {
-        return .{ .cursor = self.cursor, .zoom = self.zoom, .pan = self.pan, .focused = true };
+        return .{ .cursor = self.cursor, .zoom = self.zoom, .pan = self.pan };
     }
     fn zoomBy(self: *Book, amount: f32) void {
         self.zoom = std.math.clamp(self.zoom + amount, trees.ZOOM_MIN, trees.ZOOM_MAX);
@@ -564,7 +564,7 @@ pub const Book = struct {
             defer if (chosen) menu.shimmer(sprites, r, view.seconds, CELL_SHINE_KEY + i);
             rl.drawRectangleRec(r, look.BG);
             if (self.page == .equipment) {
-                if (chosen) rl.drawRectangleRec(r, look.fade(look.UI_GOLD, TAB_ON_FILL_A));
+                if (chosen) chosenFill(r);
                 slotBorder(sprites, r, item_bases.SLOTS[i]);
             } else menu.outline(r, chosen);
             switch (self.page) {
@@ -790,8 +790,8 @@ fn slotGlyph(s: item_bases.Slot) item_bases.Kind {
 }
 fn tab(face: *const font.Face, sprites: *const sprite.Sprites, r: rl.Rectangle, page: Page, on: bool, view: View) void {
     if (on) {
-        rl.drawRectangleRec(r, look.fade(look.UI_GOLD, TAB_ON_FILL_A));
-        menu.border(r, look.UI_FOCUS);
+        chosenFill(r);
+        menu.border(r, look.BORDER);
     } else menu.outline(r, false);
     const m = raster.middleAt(r);
     const text = menu.named(page);
@@ -806,8 +806,12 @@ fn tab(face: *const font.Face, sprites: *const sprite.Sprites, r: rl.Rectangle, 
     if (on) menu.shimmer(sprites, r, view.seconds, @intFromEnum(page));
 }
 
-const TAB_ON_FILL_A: f32 = 0.16;
+const CHOSEN_FILL_A: f32 = 0.16;
 const NAME_SIZE: i32 = 32;
+
+fn chosenFill(r: rl.Rectangle) void {
+    rl.drawRectangleRec(r, look.fade(look.UI_GOLD, CHOSEN_FILL_A));
+}
 
 fn grandSlot(slot: item_bases.Slot) bool {
     return switch (slot) {

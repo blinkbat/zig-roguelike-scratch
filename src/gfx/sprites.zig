@@ -87,7 +87,7 @@ pub const Sprites = struct {
     }
 
     pub fn loadBorder(self: *Sprites) void {
-        if (self.hud_border == null) self.hud_border = texture(HUD_BORDER_PNG);
+        if (self.hud_border == null) self.hud_border = texture(sprite_assets.HUD_BORDER_PNG);
         if (small_border == null) small_border = texture(sprite_assets.HUD_BORDER_SMALL_PNG);
     }
 
@@ -537,12 +537,11 @@ comptime {
     }
 }
 
-const HUD_BORDER_PNG = sprite_assets.HUD_BORDER_PNG;
 pub const HUD_BORDER_CUT: i32 = 9;
+pub const HUD_BORDER_RAIL: i32 = 3;
 /// Loaded with the hud border: `menu.border` draws boxes that hold no `Sprites`.
 pub var small_border: ?rl.Texture2D = null;
 pub const SMALL_BORDER_CUT: f32 = 4;
-pub const SMALL_BORDER_SIZE = sprite_assets.pngSize(sprite_assets.HUD_BORDER_SMALL_PNG);
 
 fn hudPanel(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, fill: rl.Color, tint: rl.Color) void {
     rl.drawRectangle(x, y, width, height, fill);
@@ -578,31 +577,8 @@ fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, t
         rl.drawRectangleLines(x, y, width, height, tint);
         return;
     };
-    const cut = HUD_BORDER_CUT;
-    if (width < cut * 2 or height < cut * 2) return;
-    const size = comptime sprite_assets.pngSize(HUD_BORDER_PNG);
-    const sx = [_]i32{ 0, cut, size.x - cut };
-    const sy = [_]i32{ 0, cut, size.y - cut };
-    const sw = [_]i32{ cut, size.x - cut * 2, cut };
-    const sh = [_]i32{ cut, size.y - cut * 2, cut };
-    const dx = [_]i32{ x, x + cut, x + width - cut };
-    const dy = [_]i32{ y, y + cut, y + height - cut };
-    const dw = [_]i32{ cut, width - cut * 2, cut };
-    const dh = [_]i32{ cut, height - cut * 2, cut };
-    for (0..sy.len) |row| {
-        for (0..sx.len) |col| {
-            if (row == 1 and col == 1) continue;
-            var yy: i32 = 0;
-            while (yy < dh[row]) : (yy += sh[row]) {
-                var xx: i32 = 0;
-                while (xx < dw[col]) : (xx += sw[col]) {
-                    const w = @min(sw[col], dw[col] - xx);
-                    const h = @min(sh[row], dh[row] - yy);
-                    rl.drawTextureRec(tex, raster.rect(sx[col], sy[row], w, h), raster.vec(.{ .x = dx[col] + xx, .y = dy[row] + yy }), tint);
-                }
-            }
-        }
-    }
+    const r = raster.rect(x, y, width, height);
+    _ = raster.frame(tex, @floatFromInt(HUD_BORDER_CUT), r.x, r.y, r.x + r.width, r.y + r.height, 1, tint);
 }
 
 pub fn glyphGround(t: grid.Tile, sprites: *const Sprites) bool {
@@ -646,10 +622,11 @@ comptime {
 }
 test "the hud border's size and corner cut are the ones its export script checks" {
     const path = "tools/hud_art/export_border.lua";
-    const size = comptime sprite_assets.pngSize(HUD_BORDER_PNG);
+    const size = comptime sprite_assets.pngSize(sprite_assets.HUD_BORDER_PNG);
     try ground.expectLuaList(i32, &.{size.x}, path, "local W=");
     try ground.expectLuaList(i32, &.{size.y}, path, "local H=");
     try ground.expectLuaList(i32, &.{HUD_BORDER_CUT}, path, "local CUT=");
+    try ground.expectLuaList(i32, &.{HUD_BORDER_RAIL}, path, "local RAIL=");
 }
 
 test "water material bands and cap sampling match the tile-art exporter" {

@@ -1067,7 +1067,7 @@ pub const Presentation = struct {
     /// `late` is seconds since the glides started.
     pub fn stepGlide(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, late: f32) void {
         var turn = schedule.Turn.begin(late, self.lead, self.heroCell(sim).?, PACE);
-        turn.quiet = !self.foeInSight(sim);
+        turn.quiet = self.lead == null and !self.foeInSight(sim);
         const hero = sim.heroSlot().?;
         const warded = self.owed[hero].worn;
         self.owed[hero].worn = null;
@@ -1091,9 +1091,10 @@ pub const Presentation = struct {
         }
     }
 
+    /// As pictured before this turn's glides: a foe killed or gone out of sight this turn still counts.
     fn foeInSight(self: *const Presentation, sim: *const Simulation) bool {
         for (sim.pool.constSlice(), 0..) |*a, i| {
-            if (a.livingFoe() and !self.veiledShown(a, i, false) and self.litShown(sim, a.at)) return true;
+            if (a.foe() and !self.pictured[i].down() and !self.veiledShown(a, i, false) and self.litShown(sim, self.glide[i].to)) return true;
         }
         return false;
     }

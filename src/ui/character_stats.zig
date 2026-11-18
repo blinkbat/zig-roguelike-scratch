@@ -219,9 +219,9 @@ const Column = struct {
         var physical: menu.Note(24) = .{};
         var element: menu.Note(40) = .{};
         if (hit.physical.hi > 0) physical.say(damage.RANGE_FMT, .{ hit.physical.lo, hit.physical.hi });
-        if (hit.element) |e| element.say(TYPED_RANGE_FMT, .{ e.lo, e.hi, menu.word(act.element().?) });
+        if (hit.element) |e| element.say(damage.TYPED_RANGE_FMT, .{ e.lo, e.hi, menu.word(act.element().?) });
         var imbued: menu.Note(24) = .{};
-        if (hit.imbued) |f| imbued.say(TYPED_RANGE_FMT, .{ f.lo, f.hi, menu.word(tactics.Imbue.IMBUES) });
+        if (hit.imbued) |f| imbued.say(damage.TYPED_RANGE_FMT, .{ f.lo, f.hi, menu.word(tactics.Imbue.IMBUES) });
         const join: [:0]const u8 = if (physical.n > 0 and element.n > 0) " + " else "";
         const fire_join: [:0]const u8 = if (imbued.n > 0) " + " else "";
         column.line(act.name(), &.{
@@ -284,7 +284,6 @@ fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: item_bases.WeaponEffe
 
 const DEFENCES = [_]Measure{ .reduction, .dodge, .block };
 const PER_TURNS_FMT = "{d} / {d} turns";
-const TYPED_RANGE_FMT = damage.RANGE_FMT ++ " {s}";
 const CRITS = [_]Measure{ .weapon_crit, .spell_crit };
 
 fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {

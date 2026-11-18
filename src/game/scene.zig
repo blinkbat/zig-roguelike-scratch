@@ -685,7 +685,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     drawTacticalGround(g, c, ground, lo, hi);
     drawBraced(g, c, ground);
     drawOrbLanes(g, c, ground);
-    const level_up_at: ?[2]f32 = if (g.sim.heroSlot()) |i| (if (g.pic.drawnAt(&g.sim, i)) |v| game.middle(v) else null) else null;
+    const level_up_at = game.heroDrawnMiddle(g);
     if (level_up_at) |at| g.pic.fx.level_up.drawBeam(at, o[0], o[1], game.CELL_F);
 
     if (aim_from) |from| {

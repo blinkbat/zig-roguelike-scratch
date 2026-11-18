@@ -51,7 +51,7 @@ PS button do nothing; GLFW reads no touchpad.
 | Character | Start / Menu / Options | Tab |
 | Game menu (from play) | Select / View / Share / Create | Esc |
 | Character tabs | LB / RB | Q / E |
-| Character page back to its tabs, then closed | B | Esc |
+| Close Character | B | Esc |
 | Equipment / Inventory / Stats / Passives / Skills / Quests directly | Character tabs | F1 / F2 / F3 / F4 / F5 / F7 |
 | Skills: bind selected skill | X | C |
 | Stats: advanced / main sheet | X | C |

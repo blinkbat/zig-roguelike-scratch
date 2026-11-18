@@ -607,7 +607,7 @@ fn spendsMove(g: *Game, d: mathx.Dir) bool {
 
 fn astray(g: *Game, chosen: mathx.Dir) mathx.Dir {
     const h = g.sim.heroActor() orelse return chosen;
-    if (!spends(heroMove(g, chosen)) or !confusion.strays(h.afflictions().contains(.confusion), &g.sim.rng)) return chosen;
+    if (!spendsMove(g, chosen) or !confusion.strays(h.afflictions().contains(.confusion), &g.sim.rng)) return chosen;
     const d = g.sim.rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, g, spendsMove) orelse return chosen;
     if (d != chosen) g.sim.log.say("{s} " ++ confusion.STUMBLES ++ ".", .{g.sim.name.text()});
     return d;
@@ -910,9 +910,12 @@ pub fn weatherNow(g: *const Game) ?climate.Now {
 }
 
 fn weatherByHero(g: *const Game) climate.Now {
-    const hero = g.sim.heroSlot() orelse return g.pic.weather_shown;
-    const at = g.pic.drawnAt(&g.sim, hero) orelse return g.pic.weather_shown;
-    return g.weather_blend.at(g.pic.local_weather_shown, middle(at));
+    return g.weather_blend.at(g.pic.local_weather_shown, heroDrawnMiddle(g) orelse return g.pic.weather_shown);
+}
+
+pub fn heroDrawnMiddle(g: *const Game) ?[2]f32 {
+    const hero = g.sim.heroSlot() orelse return null;
+    return middle(g.pic.drawnAt(&g.sim, hero) orelse return null);
 }
 
 fn drawnTurn(g: *Game) void {

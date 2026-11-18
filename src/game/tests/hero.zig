@@ -9,6 +9,7 @@ const juke = @import("../../play/juke.zig");
 const pinning = @import("../../play/pinning.zig");
 const charge = @import("../../play/charge.zig");
 const flask = @import("../../play/flask.zig");
+const turn_clock = @import("../../play/clock.zig");
 const skillbar = @import("../../play/skillbar.zig");
 const fx = @import("../../gfx/fx.zig");
 const scene = @import("../scene.zig");
@@ -1057,7 +1058,7 @@ test "unfocused recovery turns wait for focus while the current picture finishes
         for ([_]bool{ false, true }) |stunned| {
             harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
             const h = g.sim.heroActor().?;
-            if (stunned) h.clock.stun() else h.clock.delay(@import("../../play/clock.zig").TURN);
+            if (stunned) h.clock.stun() else h.clock.delay(turn_clock.TURN);
             if (character_open) character.openCharacter(g);
             const clock = h.clock;
             const world_clock = g.sim.clock;
@@ -1075,6 +1076,20 @@ test "unfocused recovery turns wait for focus while the current picture finishes
             try std.testing.expect(!h.clock.owes());
         }
     }
+}
+
+test "the Character book takes no turn-spending action while the hero still owes turns" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    try std.testing.expect(g.sim.inventory.add(.{ .kind = .cap }));
+    character.openCharacter(g);
+    g.character.choose(.inventory);
+    const h = g.sim.heroActor().?;
+    h.clock.delay(turn_clock.TURN * 2);
+    harness.press(g, menu.CONFIRM);
+    try std.testing.expect(h.clock.owes());
+    try std.testing.expectEqual(@as(usize, 1), g.sim.inventory.n);
 }
 
 test "a stunned hero shows stunned through the turn it loses and not once it can act" {

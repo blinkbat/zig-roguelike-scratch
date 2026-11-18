@@ -175,6 +175,13 @@ pub const Over = struct {
     };
 };
 
+comptime {
+    var ranges = 0;
+    for (std.meta.fields(Over)) |f| ranges += @intFromBool(f.type == u8);
+    std.debug.assert(ranges == Over.RANGES.len);
+    for (Over.RANGES) |name| std.debug.assert(@FieldType(Over, name) == u8);
+}
+
 pub fn nearWater(lv: *const grid.Level, p: P, range: u8) bool {
     return near(lv, p, range, Is(grid.Tile.wet){});
 }

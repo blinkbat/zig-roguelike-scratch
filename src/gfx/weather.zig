@@ -27,6 +27,7 @@ const FALL_MOST: f32 = 0.6;
 const INK = look.RAIN;
 const DIM_FLOOR: f32 = 0.25;
 const SPLASH_DROPS = 4;
+const SPLASH_SQUASH: f32 = 0.5;
 const SEED: u64 = 0x5A1_2A17;
 const STROKE_GAP_S: f32 = 7;
 const STROKE_LEAST: f32 = 0.5;
@@ -140,12 +141,11 @@ pub const Weather = struct {
                 const r = mathx.lerpF(1, fall.ring, k) * scale;
                 for (0..SPLASH_DROPS) |i| {
                     const angle = mathx.spoke(@floatFromInt(i), SPLASH_DROPS);
-                    quads.rect(.{ .x = x + @cos(angle) * r, .y = y + @sin(angle) * r * 0.5 }, 1, 1, scale, look.fade(INK, a * (1 - k)));
+                    quads.rect(.{ .x = x + @cos(angle) * r, .y = y + @sin(angle) * r * SPLASH_SQUASH }, 1, 1, scale, look.fade(INK, a * (1 - k)));
                 }
             }
         }
     }
-
 };
 
 fn raining(rain: f32) climate.Now {

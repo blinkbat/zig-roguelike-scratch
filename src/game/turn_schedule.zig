@@ -51,7 +51,7 @@ pub const Turn = struct {
     next_at: f32,
     hero_cell: P,
     pace: Pace,
-    /// No foe in sight: allies that only walk keep step with the hero instead of following in turn.
+    /// The hero only walked and no foe is in sight: allies that only walk keep step with it instead of following in turn.
     quiet: bool = false,
 
     pub fn begin(late: f32, lead_in: ?f32, hero_cell: P, pace: Pace) Turn {
@@ -68,12 +68,13 @@ pub const Turn = struct {
     }
 
     pub fn motion(self: *Turn, facts: Motion) Body {
-        const in_step = self.quiet and facts.ally and facts.moved and !facts.lunges;
-        const staggered = staggers(facts) and !in_step;
-        var starts_at = if (staggered) self.next_at else 0;
+        const staggered = staggers(facts);
+        const in_step = staggered and self.quiet and facts.ally and facts.moved and !facts.lunges;
+        const queued = staggered and !in_step;
+        var starts_at = if (queued) self.next_at else 0;
         if (staggered and !facts.hero and (facts.moved or facts.lunges)) starts_at = @max(starts_at, self.late + facts.motion_left);
-        if (staggered and facts.moved and !facts.hero) starts_at = @max(starts_at, self.late + facts.clear_in);
-        if (staggered) self.next_at = starts_at + self.pace.stagger;
+        if (queued and facts.moved and !facts.hero) starts_at = @max(starts_at, self.late + facts.clear_in);
+        if (queued) self.next_at = starts_at + self.pace.stagger;
         const begins_in = if (staggered) starts_at - self.late else facts.start_in;
         return .{
             .moved = facts.moved,

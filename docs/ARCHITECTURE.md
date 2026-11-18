@@ -54,7 +54,9 @@ inherit the node's weather. The climate module derives coast from edge-connected
 sand and water (including bridges and temporarily frozen water), then forest from
 cells within two tiles of trees; coast takes priority.
 The unsaved location field rebuilds on settling a level. Rain resistance, fire
-dampening, inspection and rendering use the same field. Beam weather adds warm
+dampening and inspection read a cell's own location; rendering reads `climate.Blend`,
+the same field blurred so weather fades over a few cells where locations meet, sampled at
+the hero's drawn position for the sky. Beam weather adds warm
 Screen-blended pixel shafts and rising motes near trees. Shafts have crisp pixel sides,
 independent lengths and landing heights, upward and bottom fades, softly moving light,
 ground pools and rippled water reflections. Atmosphere composites over world objects,

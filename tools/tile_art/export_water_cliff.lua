@@ -12,8 +12,7 @@ local s=assert(app.open(source))
 local layer=assert(s.layers[tonumber(layer_name) or 0] or sourceFiles.layer(s,layer_name),'painted layer missing')
 local cel=assert(layer:cel(1),'painted cel missing')
 assert(layer.opacity==255 and cel.opacity==255,'paint must be full opacity')
-local paint=Image(s.width,s.height,ColorMode.RGB)
-paint:drawImage(cel.image,cel.position)
+local paint=sourceFiles.canvas(s,cel)
 local names={'left','repeat','right'}
 local atlas=Image(#names*CELL,CELL,ColorMode.RGB)
 local pieces={}
@@ -30,12 +29,13 @@ for i,name in ipairs(names) do
 end
 local cap=Image(atlas.width,atlas.height,ColorMode.RGB)
 local pc=app.pixelColor
+local COVER=pc.rgba(255,255,255,255)
 local LAST=CELL-1
 local HALF=CELL//2
 for x=0,atlas.width-1 do
  for y=0,LAST do
   if pc.rgbaA(atlas:getPixel(x,y))>0 then
-   for above=0,y-1 do cap:putPixel(x,above,pc.rgba(255,255,255,255)) end
+   for above=0,y-1 do cap:putPixel(x,above,COVER) end
    break
   end
  end
@@ -55,13 +55,13 @@ for _,piece in ipairs({{x=0,left=true},{x=(#names-1)*CELL,left=false}}) do
    foot,tip=y,edge
    local first=piece.left and 0 or edge+1
    local last=piece.left and edge-1 or LAST
-   for x=first,last do cap:putPixel(piece.x+x,y,pc.rgba(255,255,255,255)) end
+   for x=first,last do cap:putPixel(piece.x+x,y,COVER) end
   end
  end
  for y=0,head-1 do
   local first=piece.left and 0 or start+1
   local last=piece.left and start-1 or LAST
-  for x=first,last do cap:putPixel(piece.x+x,y,pc.rgba(255,255,255,255)) end
+  for x=first,last do cap:putPixel(piece.x+x,y,COVER) end
  end
  for step=1,taper do
   local y=foot+step
@@ -69,7 +69,7 @@ for _,piece in ipairs({{x=0,left=true},{x=(#names-1)*CELL,left=false}}) do
    local edge=piece.left and tip-step or tip+step
    local first=piece.left and 0 or edge+1
    local last=piece.left and edge-1 or LAST
-   for x=math.max(0,first),math.min(LAST,last) do cap:putPixel(piece.x+x,y,pc.rgba(255,255,255,255)) end
+   for x=math.max(0,first),math.min(LAST,last) do cap:putPixel(piece.x+x,y,COVER) end
   end
  end
 end
