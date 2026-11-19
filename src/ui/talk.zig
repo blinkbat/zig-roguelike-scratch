@@ -136,6 +136,12 @@ pub const Layout = struct {
         return self.text_w - NUMBER_W;
     }
 
+    pub fn shownRows(self: *const Layout) usize {
+        var n: usize = 0;
+        while (n < self.row_n and self.rows[n].height > 0) n += 1;
+        return n;
+    }
+
     pub fn rowAt(self: *const Layout, p: P) ?usize {
         for (self.rows[0..self.row_n], 0..) |r, i| {
             if (r.height > 0 and raster.holds(r, p)) return i;

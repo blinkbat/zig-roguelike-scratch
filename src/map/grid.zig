@@ -23,6 +23,10 @@ pub const MAX_DOORS: usize = 16;
 pub const NO_DOOR: u8 = 0;
 pub const NO_NPC: u8 = 0;
 
+pub fn npcOf(code: u8) ?usize {
+    return if (code == NO_NPC) null else code - 1;
+}
+
 pub const Tile = enum(u8) {
     wall,
     floor,
@@ -792,8 +796,7 @@ pub const Level = struct {
     }
 
     pub fn npcAt(self: *const Level, p: P) ?usize {
-        const f = cellOr(u8, &self.npc, p, NO_NPC);
-        return if (f == NO_NPC) null else f - 1;
+        return npcOf(cellOr(u8, &self.npc, p, NO_NPC));
     }
 
     pub fn putNpc(self: *Level, p: P, i: usize) void {

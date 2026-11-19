@@ -214,9 +214,9 @@ pub const Gear = struct {
     }
 
     fn handsFit(self: Gear) bool {
-        const off = self.slots.get(.left_hand) orelse return true;
+        if (self.slots.get(.left_hand) == null) return true;
         const main = self.mainSpec() orelse return true;
-        if (item_bases.spec(off.kind).quiver) return main.attack == .ranged;
+        if (self.quiver() != null) return main.attack == .ranged;
         return !main.two_handed;
     }
 

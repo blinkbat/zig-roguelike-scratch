@@ -22,8 +22,7 @@ pub const chance = damage.flat(CHANCE);
 pub const afflict = clock.stuns;
 
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
-    _ = mathx.dirTo(from, to) orelse return false;
-    return lv.strikeable(to) and lv.taken(to);
+    return mathx.adjacent(from, to) and lv.strikeable(to) and lv.taken(to);
 }
 
 /// The free landing behind a blow; the caller checks whether the body's feet or fins can stand there.

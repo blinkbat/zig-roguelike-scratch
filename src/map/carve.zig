@@ -12,7 +12,7 @@ const NO_CELL = std.math.maxInt(u32);
 const MEANDER: f32 = 0.55;
 /// Radians, at full wander.
 const BEND_MAX: f32 = 1.1;
-const MEANDER_STEPS: usize = 4 * (grid.W + grid.H);
+const MEANDER_STEPS: usize = 4 * (grid.COLS + grid.ROWS);
 
 /// Each noise field's and RNG stream's own, so no two of one seed move together.
 pub const Salt = enum(u64) {
@@ -126,12 +126,11 @@ pub fn smooth(lv: *grid.Level, passes: u32, solid: grid.Tile, open: grid.Tile) v
     }
 }
 
-const PADDED_W: usize = @as(usize, @intCast(grid.W)) + 2;
-const Walled = [PADDED_W * (@as(usize, @intCast(grid.H)) + 2)]u8;
+const PADDED_W: usize = grid.COLS + 2;
+const Walled = [PADDED_W * (grid.ROWS + 2)]u8;
 
 fn padded(i: usize) usize {
-    const w: usize = @intCast(grid.W);
-    return (i / w + 1) * PADDED_W + i % w + 1;
+    return (i / grid.COLS + 1) * PADDED_W + i % grid.COLS + 1;
 }
 
 fn crowded(walled: *const Walled, c: usize) bool {
@@ -709,7 +708,7 @@ const Trail = struct {
     detours: u8 = 0,
 
     /// Cells a trail lays: one per step across and down the map, and two per detour.
-    const MOST: usize = @as(usize, @intCast(grid.W + grid.H)) + 2 * DETOURS_MAX;
+    const MOST: usize = grid.COLS + grid.ROWS + 2 * DETOURS_MAX;
 
     fn next(t: *Trail, rng: *mathx.Rng, lv: *const grid.Level) ?P {
         if (!t.begun) {

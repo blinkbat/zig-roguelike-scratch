@@ -10,6 +10,7 @@ app.fs.makeAllDirectories(backups)
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bit=masks.bit
 local W,H,CELL,HEAD=masks.W,masks.SHEET_H,masks.CELL,masks.HEAD
+local LAST=CELL-1
 local pc=app.pixelColor
 local sprite=assert(app.open(path))
 assert(sprite.width==W and sprite.height==H and #sprite.frames==1 and #sprite.slices==#masks)
@@ -18,8 +19,7 @@ local drawing=assert(sourceFiles.layer(sprite,'Draw here'))
 local original=assert(drawing:cel(1))
 local saved=Image(original.image)
 local position=Point(original.position.x,original.position.y)
-local painted=Image(W,H,ColorMode.RGB)
-painted:drawImage(saved,position)
+local painted=sourceFiles.canvas(sprite,original)
 local source=Image(painted,Rectangle(0,HEAD,CELL,CELL))
 local palette={}
 local count=0
@@ -44,20 +44,20 @@ for i,mask in ipairs(masks) do
     {-32,0,w}, {0,0,true}, {32,0,e},
     {-32,32,s and w and has(mask,bit.sw)}, {0,32,s}, {32,32,s and e and has(mask,bit.se)},
   }
-  local tile=Image(64,64,ColorMode.RGB)
+  local tile=Image(CELL,CELL,ColorMode.RGB)
   for _,piece in ipairs(pieces) do
     if piece[3] then
       tile:drawImage(piece[2]==0 and not s and source or canopy,Point(piece[1],piece[2]))
     end
   end
   if mask==0 then assert(tile:isEqual(source),'Original cell changed') end
-  for y=0,63 do for x=0,63 do
+  for y=0,LAST do for x=0,LAST do
     local p=tile:getPixel(x,y)
     assert(pc.rgbaA(p)==0 or palette[p],'Colour outside source palette')
-    if e and x==63 and y>=8 and y<=40 then assert(pc.rgbaA(p)==255,'East gap '..mask) end
+    if e and x==LAST and y>=8 and y<=40 then assert(pc.rgbaA(p)==255,'East gap '..mask) end
     if w and x==0 and y>=8 and y<=40 then assert(pc.rgbaA(p)==255,'West gap '..mask) end
     if n and y==0 and x>=8 and x<=55 then assert(pc.rgbaA(p)==255,'North gap '..mask) end
-    if s and y==63 and x>=8 and x<=55 then assert(pc.rgbaA(p)==255,'South gap '..mask) end
+    if s and y==LAST and x>=8 and x<=55 then assert(pc.rgbaA(p)==255,'South gap '..mask) end
   end end
   for other,cell in pairs(cells) do assert(not tile:isEqual(cell),'Duplicate masks '..mask..' and '..other) end
   cells[mask]=tile
@@ -103,11 +103,11 @@ local map={
 local function wall(x,y)
   return y>=1 and y<=#map and x>=1 and x<=#map[y] and map[y]:sub(x,x)=='#'
 end
-local preview=Image(#map[1]*64,#map*64,ColorMode.RGB)
+local preview=Image(#map[1]*CELL,#map*CELL,ColorMode.RGB)
 preview:clear(pc.rgba(104,112,77,255))
 for y=1,#map do for x=1,#map[1] do
   if wall(x,y) then
-    preview:drawImage(assert(cells[masks.of(wall,x,y)]),Point((x-1)*64,(y-1)*64))
+    preview:drawImage(assert(cells[masks.of(wall,x,y)]),Point((x-1)*CELL,(y-1)*CELL))
   end
 end end
 preview:saveAs(work..'forest-tree-walls-connected.png')

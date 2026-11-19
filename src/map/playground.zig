@@ -122,7 +122,7 @@ test "the playground lays every placeable terrain, barrels and a bank, all reach
         barrels += 1;
     };
     try std.testing.expect(barrels > 0);
-    const pond = boxOf(PATCHES.len - 1);
+    const pond = boxOf(indexOf(.pond));
     try std.testing.expectEqual(Tile.water, room.tileAt(pond.centre()));
     try std.testing.expectEqual(Tile.shallows, room.tileAt(pond.centre().add(.{ .x = 0, .y = 1 })));
     for (room.torches()) |torch| try std.testing.expect(map.node[0].torchFits(room, torch));

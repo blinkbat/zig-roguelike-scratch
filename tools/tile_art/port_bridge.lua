@@ -268,7 +268,7 @@ end
 
 groundPort.checkCells(s,order,cells)
 local edges={{x=63,bits=NE|SE},{x=0,bits=NW|SW},{y=63,bits=SW|SE},{y=0,bits=NW|NE}}
-for a=0,15 do for b=0,15 do
+for a=0,groundPort.FULL do for b=0,groundPort.FULL do
   for _,e in ipairs(edges) do
     if (a&e.bits)==(b&e.bits) then
       for i=0,63 do

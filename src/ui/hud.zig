@@ -200,6 +200,11 @@ pub fn statusBox(layout: Layout, count: usize, k: usize) rl.Rectangle {
     return raster.rect(x, layout.top + STATUS_Y - @as(i32, @intCast(row)) * step, STATUS_PX, STATUS_PX);
 }
 
+fn statusTop(layout: Layout, count: usize) i32 {
+    if (count == 0) return layout.top + STATUS_Y;
+    return raster.top(statusBox(layout, count, count - 1));
+}
+
 pub fn orbBox(centre: mathx.P) rl.Rectangle {
     return raster.rect(centre.x - ORB_R, centre.y - ORB_R, 2 * ORB_R, 2 * ORB_R);
 }
@@ -263,7 +268,7 @@ const TIP_VALUE_DX = 24;
 const TIP_VALUE_X = @divTrunc(TIP_W, 2) + TIP_VALUE_DX;
 
 /// Returns the first line shown.
-pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize, words: ?*keywords.State) usize {
+pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, layout: Layout, status_n: usize, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize, words: ?*keywords.State) usize {
     var buf: [TIP_LINES_MAX][font.WRAP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
     const n = font.wrapRows(face, body, font.SMALL, TIP_W - 2 * TIP_PAD, &buf, &lines);
@@ -272,7 +277,7 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
     const first = @min(scroll, n - shown);
     const h = TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(shown)) * TIP_LINE;
     var x = centredOver(over, TIP_W, screen);
-    var y = above(@min(raster.top(over), layout.top + STATUS_Y), h);
+    var y = above(@min(raster.top(over), statusTop(layout, status_n)), h);
     if (raster.top(over) < layout.top and raster.top(over) < h + TIP_GAP + TIP_MARGIN) {
         if (menu.besideX(over, TIP_W, screen.x, TIP_GAP, TIP_MARGIN)) |side| {
             x = side;

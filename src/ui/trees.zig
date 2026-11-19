@@ -178,9 +178,8 @@ fn backdrop(box: rl.Rectangle) void {
 }
 
 fn button(face: *const font.Face, box: rl.Rectangle, label: [:0]const u8, enabled: bool, on_ink: rl.Color, small: bool) void {
-    rl.drawRectangleRec(box, TILE);
     const ink = if (enabled) on_ink else BORDER;
-    if (small) menu.hairline(box, ink) else menu.border(box, ink);
+    if (small) menu.boxedSmall(box, TILE, ink) else menu.boxed(box, TILE, ink);
     const mid = raster.middleAt(box);
     face.centred(label, mid.x, mid.y, font.BODY, if (enabled) look.TEXT else LOCKED);
 }
@@ -259,8 +258,7 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         const box = skillBox(class, i);
         const mid = raster.middleAt(box);
         const ink = skillInk(class, growth, s);
-        rl.drawRectangleRec(box, TILE);
-        menu.border(box, ink);
+        menu.boxed(box, TILE, ink);
         if (i == cursor) hud.focusGrown(box, FOCUS_GROW);
         line_icons.drawSkill(sprites, s.act, mid.x - line_icons.SKILL_PX / 2, mid.y - line_icons.SKILL_PX / 2, skillAlpha(class, growth, s));
         const plaque = raster.rect(mid.x + PLAQUE_AT.x, mid.y + PLAQUE_AT.y, PLAQUE_W, PLAQUE_H);

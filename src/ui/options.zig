@@ -242,7 +242,7 @@ pub fn draw(face: font.Face, art: *const sprites.Sprites, screen: mathx.P, c: *c
     if (page != .visuals) return;
     const bottom = menu.noteY(first, win.len);
     var count: [24]u8 = undefined;
-    face.centred(std.fmt.bufPrintZ(&count, menu.POSITION_FMT, .{ selected + 1, entries.len }) catch "", raster.right(first) - VALUE_INSET, bottom, font.SMALL, look.DIM);
+    face.centred(std.fmt.bufPrintZ(&count, menu.FRACTION_FMT, .{ selected + 1, entries.len }) catch "", raster.right(first) - VALUE_INSET, bottom, font.SMALL, look.DIM);
 }
 
 test "a diagonal press moves the visuals cursor without nudging the slider it lands on" {

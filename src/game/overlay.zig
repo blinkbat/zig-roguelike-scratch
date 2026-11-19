@@ -39,7 +39,8 @@ const SLOT_EDGE_INSET: i32 = sprite.HUD_BORDER_CUT - sprite.HUD_BORDER_RAIL;
 const BIND_TOP: i32 = menu.PANEL_PAD;
 const BIND_X0: i32 = @divTrunc(BIND_W - game.SKILLS_W, 2);
 const BIND_TITLE: i32 = 32;
-const BIND_ROWS_DY: i32 = BIND_TITLE + font.LABEL + 3 * BIND_POP_DY + game.SLOT_PX;
+const BIND_POP_Y: i32 = BIND_TOP + BIND_TITLE + font.LABEL + 2 * BIND_POP_DY;
+const BIND_ROWS_DY: i32 = BIND_POP_Y - BIND_TOP + game.SLOT_PX + BIND_POP_DY;
 const BIND_LABEL_GAP: i32 = 6;
 const BIND_ROW_GAP: i32 = 24;
 const BIND_ROW_H: i32 = font.BODY + BIND_LABEL_GAP + game.SLOT_COLUMN_H + BIND_ROW_GAP;
@@ -200,10 +201,9 @@ const BindPicker = struct {
 };
 
 pub fn bindPicker(b: binds.Binds, picks: usize) BindPicker {
-    const pop_y = BIND_TOP + BIND_TITLE + font.LABEL + 2 * BIND_POP_DY;
     const win = menu.Window.of(binds.pickRows(picks), b.menu.pick / binds.PICK_COLS, 1);
     const w = @as(i32, @intCast(@min(picks, binds.PICK_COLS))) * game.SLOT_STEP - game.SLOT_GAP;
-    return .{ .win = win, .picks = picks, .x = BIND_X0, .y = pop_y, .w = w, .h = game.SLOT_PX };
+    return .{ .win = win, .picks = picks, .x = BIND_X0, .y = BIND_POP_Y, .w = w, .h = game.SLOT_PX };
 }
 
 pub fn drawBinds(g: *game.Game) void {
@@ -433,8 +433,10 @@ fn drawTip(g: *game.Game, here: Part) void {
     var body_buf: [TIP_BODY_MAX]u8 = undefined;
     const tip = tipOf(g, here.spot, &title_buf, &body_buf) orelse return;
     const words = if (here.spot == .status and here.spot.status.ailment() != null) &g.keywords else null;
-    const scroll = hud.tooltipScrolled(&g.face, &g.sprites, hudLayout(g), g.screen, here.box, tip.title, tip.body, if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll else 0, words);
-    if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll = scroll;
+    var statuses: hud.Shown = undefined;
+    const scrolls = g.mode == .inspect and here.spot == .actor;
+    const scroll = hud.tooltipScrolled(&g.face, &g.sprites, hudLayout(g), heroStatuses(g, &statuses).len, g.screen, here.box, tip.title, tip.body, if (scrolls) g.inspect_scroll else 0, words);
+    if (scrolls) g.inspect_scroll = scroll;
 }
 
 const Tip = struct { title: [:0]const u8, body: []const u8 };
@@ -486,7 +488,7 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             if (st == .resistant) {
                 if (g.pic.heroShown(&g.sim)) |h| for (std.enums.values(resilience.Kind)) |kind| {
                     const m = h.resilience.meters.get(kind);
-                    if (m.turns > 0) w.print("\n{s}: {d}% resistance, {d} turns", .{ menu.named(kind), m.percent, m.turns }) catch {};
+                    if (m.turns > 0) w.print("\n{s}: {d}% resistance, {d} turn{s}", .{ menu.named(kind), m.percent, m.turns, plural(m.turns) }) catch {};
                 };
                 break :blk .{ .title = st.title(), .body = body.getWritten() };
             }

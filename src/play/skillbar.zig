@@ -178,7 +178,7 @@ pub const Act = enum {
     }
 
     pub fn carried(a: Act) bool {
-        return a.flaskOf() != null or a.supplyOf() != null;
+        return a.contract().carried();
     }
 
     pub fn ofSupply(k: consumable.Kind) Act {

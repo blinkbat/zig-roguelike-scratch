@@ -180,10 +180,13 @@ pub const Spec = struct {
         grid.mendProps(&lv.tile);
         gen.reshape(lv);
         var x = inner.lo.x;
-        while (x < inner.hi.x and !gen.bearsTorch(lv, lume.torchOver(inner, x))) x += 1;
-        if (x == inner.hi.x) return;
-        lv.torch.spare(1);
-        lv.addTorch(lume.torchOver(inner, x));
+        while (x < inner.hi.x) : (x += 1) {
+            const torch = lume.torchOver(inner, x);
+            if (!gen.bearsTorch(lv, torch)) continue;
+            lv.torch.spare(1);
+            lv.addTorch(torch);
+            return;
+        }
     }
 
     fn relate(lv: *const grid.Level, stretches: *const carve.Stretches, related: *carve.Regions, near: anytype) void {

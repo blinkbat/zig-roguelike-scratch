@@ -95,7 +95,7 @@ pub fn blit(t: rl.Texture2D, src: rl.Rectangle, dest: rl.Rectangle, tint: rl.Col
 pub fn frame(t: rl.Texture2D, cut: f32, x0: f32, y0: f32, x1: f32, y1: f32, scale: f32, tint: rl.Color) bool {
     const tex_w, const tex_h = sizeOf(t);
     const c = cut / scale;
-    if (x1 - x0 < 2 * c or y1 - y0 < 2 * c) return false;
+    if (x1 - x0 < 2 * c or y1 - y0 < 2 * c or tex_w <= 2 * cut or tex_h <= 2 * cut) return false;
     const src_x = [_]f32{ 0, cut, tex_w - cut };
     const src_y = [_]f32{ 0, cut, tex_h - cut };
     const src_w = [_]f32{ cut, tex_w - 2 * cut, cut };

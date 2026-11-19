@@ -1074,7 +1074,7 @@ fn drawSpark(at: [2]f32, dir: [2]f32, t: f32, ox: f32, oy: f32, cell: f32, alpha
     const facing = std.math.atan2(dir[1], dir[0]);
     for (0..SPARK_TENDRILS) |n| {
         const a = facing + mathx.spoke(@floatFromInt(n), SPARK_TENDRILS) + rng.spread(SPARK_TWIST);
-        const out = [2]f32{ @cos(a), @sin(a) };
+        const out = heading(a);
         const across = [2]f32{ -out[1], out[0] };
         const step = SPARK_STEP * rng.between(SPARK_SHORTEST, 1);
         var prev = head;

@@ -275,10 +275,12 @@ comptime {
 
 const WALLS_PNG = @embedFile("walls.png");
 const FOREST_PNG = @embedFile("forest-tree-walls.png");
-pub const HUD_BORDER_PNG = @embedFile("hud-border.png");
-pub const HUD_BORDER_SMALL_PNG = @embedFile("hud-border-small.png");
-pub const HUD_LIFE_FRAME_PNG = @embedFile("hud-life-frame.png");
-pub const HUD_MANA_FRAME_PNG = @embedFile("hud-mana-frame.png");
+pub const HUD_PNGS = .{
+    .hud_border = embedPng("hud-border.png"),
+    .hud_life_frame = embedPng("hud-life-frame.png"),
+    .hud_mana_frame = embedPng("hud-mana-frame.png"),
+};
+pub const HUD_BORDER_SMALL_PNG = embedPng("hud-border-small.png");
 
 pub const SOURCES = .{
     .bodies = BODY_PNGS,

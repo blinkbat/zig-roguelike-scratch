@@ -531,6 +531,7 @@ fn settleKept(g: *Game) void {
     g.pic.settleResources(&g.sim);
     g.cam = camWant(g);
     g.pic.settleSky(&g.sim);
+    g.weather_blend.follow(&g.sim.locations);
     g.light.sky = skyNow(g);
     g.light.settle(&g.sim.lv);
     carryLight(g);

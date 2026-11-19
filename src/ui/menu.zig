@@ -40,7 +40,7 @@ const CHROME_H: i32 = 2 * @as(i32, @max(ABOVE, BELOW));
 pub const NOTE_MAX: usize = 160;
 pub const SEP = "   ";
 pub const CARET = "_";
-pub const POSITION_FMT = "{d} / {d}";
+pub const FRACTION_FMT = "{d} / {d}";
 
 const SURFACE_MARGIN: i32 = 16;
 const GROWTH: f32 = 0.5;
@@ -107,7 +107,7 @@ test "panel surfaces stay invertible when the window shrinks below its margins" 
     const size = mathx.P{ .x = 640, .y = 480 };
     const edges = [_]i32{ 0, 1, 2 * SURFACE_MARGIN - 1, 2 * SURFACE_MARGIN, 2 * SURFACE_MARGIN + 1 };
     for (edges) |edge| {
-        for ([_]mathx.P{ .{ .x = edge, .y = 720 }, .{ .x = 1280, .y = edge } }) |screen| {
+        for ([_]mathx.P{ .{ .x = edge, .y = display.SCREEN_720.y }, .{ .x = display.SCREEN_720.x, .y = edge } }) |screen| {
             const surface = Surface.of(screen, size);
             try std.testing.expect(std.math.isFinite(surface.scale) and surface.scale > 0);
             _ = surface.point(.{ .x = 0, .y = 0 });

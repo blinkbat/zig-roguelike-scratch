@@ -317,10 +317,12 @@ fn promptBody(ed: *const editor.Editor, prompt: editor.Prompt) i32 {
     };
 }
 
+const SELECTED_EDGE: f32 = 2;
+
 pub fn fieldRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) void {
     var buf: [widgets.LINE]u8 = undefined;
     rl.drawRectangleRec(r, ROW_ON);
-    if (ed.field.selected) rl.drawRectangleLinesEx(r, 2, look.UI_FOCUS);
+    if (ed.field.selected) rl.drawRectangleLinesEx(r, SELECTED_EDGE, look.UI_FOCUS);
     const typed = std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "";
     widgets.drawFit(&g.face, typed, widgets.TEXT, widgets.insetW(r), true, widgets.textX(r), widgets.midY(r, widgets.TEXT), look.UI_FOCUS);
 }

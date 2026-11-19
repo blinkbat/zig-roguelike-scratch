@@ -633,12 +633,13 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
         const at = b.at;
         const body = b.body;
         const mid = game.middle(at);
+        const s = c.px(at);
         shown[n] = .{
             .pic = body.pic,
             .slot = b.slot,
             .sighted = g.pic.sighted[b.slot],
-            .s = c.px(at),
-            .lifted = c.px(at).sub(.{ .x = 0, .y = body.lift }),
+            .s = s,
+            .lifted = s.sub(.{ .x = 0, .y = body.lift }),
             .mid = mid,
             .left = body.facing == .left,
             .shine = g.light.onBody(mid, g.sim.isHero(b.slot)),
@@ -1210,7 +1211,7 @@ pub fn drawMinimap(g: *game.Game, ground: *const grid.Level) void {
     }
     if (g.pic.heroNow(&g.sim)) |at| miniDot(o, game.cellUnder(at), MINI_HERO_GROW, look.MINI_HERO);
     const v = miniView(Cam.of(g), g.screen);
-    rl.drawRectangleLines(o.x + v.lo.x, o.y + v.lo.y, v.hi.x - v.lo.x, v.hi.y - v.lo.y, look.MINI_VIEW);
+    rl.drawRectangleLines(o.x + v.lo.x, o.y + v.lo.y, v.width(), v.height(), look.MINI_VIEW);
 }
 
 fn miniBox(screen_w: i32) rl.Rectangle {

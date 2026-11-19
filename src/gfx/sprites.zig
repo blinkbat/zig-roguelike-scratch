@@ -75,8 +75,7 @@ pub const Sprites = struct {
         self.skills = line_icons.skillIcons();
         self.item_icons = line_icons.itemIcons();
         self.loadBorder();
-        if (self.hud_life_frame == null) self.hud_life_frame = texture(sprite_assets.HUD_LIFE_FRAME_PNG);
-        if (self.hud_mana_frame == null) self.hud_mana_frame = texture(sprite_assets.HUD_MANA_FRAME_PNG);
+        inline for (comptime std.meta.fieldNames(@TypeOf(sprite_assets.HUD_PNGS))) |name| loadOnce(&@field(self, name), @field(sprite_assets.HUD_PNGS, name));
         self.log_fade = shaders.program(sprite_materials.FadeShader, sprite_materials.FADE_FS);
         self.water = shaders.program(sprite_materials.WaterShader, sprite_materials.WATER_FS);
         self.bank_cap = shaders.program(sprite_materials.BankCapShader, sprite_materials.BANK_CAP_FS);
@@ -87,8 +86,8 @@ pub const Sprites = struct {
     }
 
     pub fn loadBorder(self: *Sprites) void {
-        if (self.hud_border == null) self.hud_border = texture(sprite_assets.HUD_BORDER_PNG);
-        if (small_border == null) small_border = texture(sprite_assets.HUD_BORDER_SMALL_PNG);
+        loadOnce(&self.hud_border, sprite_assets.HUD_PNGS.hud_border);
+        loadOnce(&small_border, sprite_assets.HUD_BORDER_SMALL_PNG);
     }
 
     pub fn drawScenery(self: *const Sprites, tex: rl.Texture2D, dest: rl.Rectangle, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: look.Occlusion, focus: look.Focused) bool {
@@ -449,8 +448,7 @@ pub const Sprites = struct {
 
     pub fn unload(self: *Sprites) void {
         raster.unloadAll(self);
-        if (small_border) |t| rl.unloadTexture(t);
-        small_border = null;
+        raster.release(&small_border);
     }
 
     pub fn body(self: *const Sprites, k: actor.Kind) ?rl.Texture2D {
@@ -526,12 +524,16 @@ pub const Sprites = struct {
     fn texture(png: []const u8) ?rl.Texture2D {
         return raster.adopt(rl.loadImageFromMemory(".png", png) catch return null);
     }
+
+    fn loadOnce(held: *?rl.Texture2D, png: []const u8) void {
+        if (held.* == null) held.* = texture(png);
+    }
 };
 
 comptime {
     for (std.meta.fields(Sprites)) |f| {
-        if (f.type != ?rl.Texture2D or @hasField(sprite_assets.Assets, f.name)) continue;
-        for ([_][]const u8{ "skills", "item_icons", "hud_border", "hud_life_frame", "hud_mana_frame" }) |baked| {
+        if (f.type != ?rl.Texture2D or @hasField(sprite_assets.Assets, f.name) or @hasField(@TypeOf(sprite_assets.HUD_PNGS), f.name)) continue;
+        for ([_][]const u8{ "skills", "item_icons" }) |baked| {
             if (std.mem.eql(u8, baked, f.name)) break;
         } else @compileError("Sprites." ++ f.name ++ " has no Assets field, so sync never loads it");
     }
@@ -620,18 +622,23 @@ comptime {
     for (sprite_assets.WATER_EDGES) |e| std.debug.assert(std.meta.eql(sprite_assets.pngSize(@field(sprite_assets.SOURCES, e.name)), size));
     std.debug.assert(std.meta.eql(sprite_assets.pngSize(sprite_assets.SOURCES.shallows_water_cap), sprite_assets.sheetSize(ground.BankPiece.COUNT, 1)));
 }
-test "the hud border's size and corner cut are the ones its export script checks" {
+test "the hud border's size and cuts are the ones its export script checks, and its rail is look.BORDER" {
     const path = "tools/hud_art/export_border.lua";
-    const size = comptime sprite_assets.pngSize(sprite_assets.HUD_BORDER_PNG);
+    const png = sprite_assets.HUD_PNGS.hud_border;
+    const size = comptime sprite_assets.pngSize(png);
     try ground.expectLuaList(i32, &.{size.x}, path, "local W=");
     try ground.expectLuaList(i32, &.{size.y}, path, "local H=");
     try ground.expectLuaList(i32, &.{HUD_BORDER_CUT}, path, "local CUT=");
     try ground.expectLuaList(i32, &.{HUD_BORDER_RAIL}, path, "local RAIL=");
+    const art = try rl.loadImageFromMemory(".png", png);
+    defer rl.unloadImage(art);
+    try std.testing.expectEqual(look.BORDER, rl.getImageColor(art, HUD_BORDER_CUT, HUD_BORDER_RAIL));
 }
 
 test "water material bands and cap sampling match the tile-art exporter" {
     try ground.expectLuaList(WaterBand, std.enums.values(WaterBand), "tools/tile_art/water_cliff_materials.lua", "local bands={");
     try ground.expectLuaList(i32, &.{@intFromFloat(ground.BANK_LIFT_PX)}, "tools/tile_art/export_water_edges.lua", "local BANK_LIFT=");
+    try ground.expectLuaList(i32, &.{look.SPRITE_PX}, "tools/tile_art/water_cliff_layout.lua", "cell=");
     const cap = try rl.loadImageFromMemory(".png", sprite_assets.SOURCES.shallows_water_cap);
     defer rl.unloadImage(cap);
     const mask = try rl.loadImageFromMemory(".png", sprite_assets.SOURCES.water_cliff_cap);

@@ -402,17 +402,18 @@ pub const Presentation = struct {
         const old = self.bolts[by.index];
         const from = if (old) |b| b.to() else was.point();
         const span = @as(f32, @floatFromInt(flew.cells)) * BOLT_CELL_S;
+        const lands = wait + span;
         self.bolts[by.index] = .{ .element = element, .line = now, .view = if (old) |b| b.view else .{}, .from = from, .t = -wait, .span = span, .after = flew.stop == null };
         const seen = for (was.flown..@as(usize, now.flown) + 1) |k| {
             if (self.litShown(sim, now.cell(k))) break true;
         } else false;
-        if (!seen) return wait + span;
-        self.holdUntil(wait + span);
+        if (!seen) return lands;
+        self.holdUntil(lands);
         if (flew.stop) |stop| switch (stop) {
-            .body, .barrel => self.bolt_lands = @max(self.bolt_lands, wait + span),
+            .body, .barrel => self.bolt_lands = @max(self.bolt_lands, lands),
             .wall, .spent => {},
         };
-        return wait + span;
+        return lands;
     }
 
     fn catchUpBolts(self: *Presentation, sim: *const Simulation) void {
@@ -855,8 +856,7 @@ pub const Presentation = struct {
     }
 
     pub fn npcShown(self: *const Presentation, p: P) ?usize {
-        const f = grid.cellOr(u8, &self.npc_shown, p, grid.NO_NPC);
-        return if (f == grid.NO_NPC) null else f - 1;
+        return grid.npcOf(grid.cellOr(u8, &self.npc_shown, p, grid.NO_NPC));
     }
 
     pub fn settleXp(self: *Presentation, sim: *const Simulation) void {
@@ -920,7 +920,7 @@ pub const Presentation = struct {
             if (!visible) continue;
             v.bag = false;
             v.coins = 0;
-            v.npc = if (npc == grid.NO_NPC) null else npc - 1;
+            v.npc = grid.npcOf(npc);
             v.flame = if (self.flamesShown(i)) 1 else self.ember(i);
             v.barrier = self.barrier_shown[i] > 0;
             v.caltrops = self.caltrops_shown[i].turns > 0;

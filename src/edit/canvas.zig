@@ -132,7 +132,7 @@ fn drawDoors(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         const r = ed.cellRect(c, d.at);
         rl.drawRectangleRec(r, DOOR_BACK);
         widgets.glyph(&g.face, look.DOOR.ch, r, if (d.to == null) UNLINKED else look.DOOR.fg);
-        rl.drawRectangleLinesEx(r, 1, if (d.to == null) WARN else look.DOOR.fg);
+        rl.drawRectangleLinesEx(r, look.HAIRLINE_W, if (d.to == null) WARN else look.DOOR.fg);
         if (ed.px() >= LABEL_PX) {
             const label = std.fmt.bufPrintZ(&buf, "{d}", .{k}) catch "";
             widgets.drawTag(&g.face, label, .{ .x = raster.left(r), .y = raster.top(r) }, LABEL_PAD, PANEL_BG, null);
@@ -255,7 +255,7 @@ fn plaque(g: *game.Game, c: rl.Rectangle, s: [:0]const u8) void {
 }
 
 fn outlineCells(ed: *const editor.Editor, c: rl.Rectangle, b: grid.Box, col: rl.Color) void {
-    rl.drawRectangleLinesEx(boxRect(ed, c, b), 1, col);
+    rl.drawRectangleLinesEx(boxRect(ed, c, b), look.HAIRLINE_W, col);
 }
 
 pub fn drawGraph(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
@@ -267,7 +267,7 @@ pub fn drawGraph(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         const picture = thumbRect(b);
         if (thumb(ed, n, picture, c)) |t| widgets.sprite(t, picture);
         panel.drawNodeTitle(ed, g, n, b, raster.top(b) + editor.TITLE_DY);
-        rl.drawRectangleLinesEx(b, 1, if (n == ed.node) ON else look.EDGE);
+        rl.drawRectangleLinesEx(b, look.HAIRLINE_W, if (n == ed.node) ON else look.EDGE);
     }
     for (ed.map.nodes(), 0..) |*nd, n| {
         for (nd.doors(), 0..) |d, k| {

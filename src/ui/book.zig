@@ -439,17 +439,17 @@ pub const Book = struct {
         if (self.direct()) {
             self.drawDirect(face, sprites, view);
         } else {
-            var who: menu.Note(100) = .{};
-            who.say("{s}", .{view.name});
-            face.engraved(who.text(), layout.LIST_X, font.Face.topFor(layout.HEADER_MID, NAME_SIZE), NAME_SIZE, look.TEXT);
             var rank: menu.Note(60) = .{};
             rank.say("Level {d} {s}", .{ view.growth.level, view.class.title() });
             var xp: menu.Note(60) = .{};
             xp.say("{d} / {d} Experience", .{ view.growth.xp, view.growth.needed() });
-            const line_w = face.width(rank.text(), font.SMALL) + menu.MIDDOT_W + face.width(xp.text(), font.SMALL);
+            const rank_w = face.width(rank.text(), font.SMALL);
+            const line_w = rank_w + menu.MIDDOT_W + face.width(xp.text(), font.SMALL);
             const line_x = @divTrunc(layout.SIZE.x - line_w, 2);
+            var name_buf: [menu.NOTE_MAX + 1]u8 = undefined;
+            header(face, face.fit(&name_buf, view.name, NAME_SIZE, line_x - layout.LIST_X - layout.COLUMN_GAP, false), NAME_SIZE);
             face.drawMiddle(rank.text(), line_x, layout.HEADER_MID, font.SMALL, look.DIM);
-            const after = menu.middot(line_x + face.width(rank.text(), font.SMALL), layout.HEADER_MID, look.DIM);
+            const after = menu.middot(line_x + rank_w, layout.HEADER_MID, look.DIM);
             face.drawMiddle(xp.text(), after, layout.HEADER_MID, font.SMALL, look.DIM);
             for (PAGES, 0..) |page, i| tab(face, sprites, layout.tabBox(i), page, self.page == page, view);
             if (self.treePanel() == null and self.page != .quests) divider(layout.CONTENT_TOP, layout.DIVIDER_FOOT);
@@ -484,7 +484,7 @@ pub const Book = struct {
 
     fn drawDirect(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
         if (self.page == .trade) return self.drawTrade(face, sprites, view);
-        header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else comptime menu.caps(character_view.ITEM_BAG));
+        header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else comptime menu.caps(character_view.ITEM_BAG), font.HEAD);
         if (self.page == .loot) drawHolding(face, view, null);
         self.drawCells(face, sprites, view);
         if (self.count(view) == 0) return self.drawEmpty(face, EMPTY);
@@ -503,7 +503,7 @@ pub const Book = struct {
         const d = view.dealer orelse return;
         const s = self.dealing(view).?;
         var title: [TRADE_TITLE_MAX + 1]u8 = undefined;
-        header(face, menu.shout(&title, "{s}", .{d.who[0..@min(d.who.len, TRADE_TITLE_MAX)]}));
+        header(face, menu.shout(&title, "{s}", .{d.who[0..@min(d.who.len, TRADE_TITLE_MAX)]}), font.HEAD);
         drawHolding(face, view, if (self.selling) YOUR_GOODS else THEIR_WARES);
         self.drawCells(face, sprites, view);
         const note_y = self.noteY(view);
@@ -535,7 +535,7 @@ pub const Book = struct {
 
     fn positionOf(self: *const Book, view: View) menu.Note(50) {
         var out: menu.Note(50) = .{};
-        out.say(menu.POSITION_FMT, .{ if (self.count(view) > 0) self.cursor + 1 else 0, self.count(view) });
+        out.say(menu.FRACTION_FMT, .{ if (self.count(view) > 0) self.cursor + 1 else 0, self.count(view) });
         return out;
     }
 
@@ -575,7 +575,7 @@ pub const Book = struct {
                     var fitted: [items.NAME_MAX]u8 = undefined;
                     face.draw(face.fit(&fitted, slotLabel(slot), layout.SLOT_LABEL, inner, false), x + inset, y + inset, layout.SLOT_LABEL, look.DIM);
                     const it = view.inventory.gear.slots.get(slot);
-                    const named = r.height >= layout.NAMED_CELL_H;
+                    const named = grandSlot(slot);
                     const foot = y + raster.height(r) - (if (named) inset + font.SMALL else 0);
                     const glyph = P{ .x = raster.middleAt(r).x, .y = @divTrunc(y + inset + layout.SLOT_LABEL + foot, 2) };
                     const side: line_icons.ItemSize = if (named) .cell else .row;
@@ -692,8 +692,8 @@ fn pageStep(st: *const input.State) ?i32 {
 fn divider(top: i32, foot: i32) void {
     menu.edgeColumn(layout.DIVIDER_X, top, foot);
 }
-fn header(face: *const font.Face, text: [:0]const u8) void {
-    face.engraved(text, layout.LIST_X, font.Face.topFor(layout.HEADER_MID, font.HEAD), font.HEAD, look.TEXT);
+fn header(face: *const font.Face, text: [:0]const u8, size: i32) void {
+    face.engraved(text, layout.LIST_X, font.Face.topFor(layout.HEADER_MID, size), size, look.TEXT);
 }
 fn rowGlyph(sprites: *const sprite.Sprites, x: i32, mid: i32, it: ?items.Item, supply: ?consumable.Kind) void {
     if (it) |held| {
@@ -814,10 +814,7 @@ fn chosenFill(r: rl.Rectangle) void {
 }
 
 fn grandSlot(slot: item_bases.Slot) bool {
-    return switch (slot) {
-        .helm, .chest, .left_hand, .right_hand, .gloves, .boots => true,
-        .belt, .left_ring, .right_ring, .amulet, .life_flask, .mana_flask => false,
-    };
+    return layout.SLOT_BOX.get(slot).h >= layout.NAMED_CELL_H;
 }
 
 fn slotBorder(sprites: *const sprite.Sprites, r: rl.Rectangle, slot: item_bases.Slot) void {
@@ -828,6 +825,9 @@ fn slotInset(slot: item_bases.Slot) i32 {
     return if (grandSlot(slot)) layout.SLOT_INSET else layout.SMALL_SLOT_INSET;
 }
 const CELL_SHINE_KEY: usize = PAGES.len;
+comptime {
+    for (PAGES) |page| std.debug.assert(@intFromEnum(page) < CELL_SHINE_KEY);
+}
 fn tabWidth(face: *const font.Face, page: Page) i32 {
     return tabPrompt(page).width(face, layout.TAB_TEXT) + menu.PROMPT_GAP + face.width(menu.named(page), layout.TAB_TEXT);
 }
@@ -1048,7 +1048,7 @@ test "the inventory list scrolls back when the bag shrinks" {
     var drawn = book;
     drawn.top = drawn.settledTop(view);
     const box = drawn.cellBox(0, view);
-    const surface = menu.Surface.of(screen, layout.SIZE);
+    const surface = tabbedSurface(screen);
     const p = surface.screenOf(.{ .x = box.x + 20, .y = box.y + 10 });
     _ = book.step(&.{ .click = true, .pointer = p }, screen, view);
     try std.testing.expectEqual(@as(usize, 0), book.cursor);
@@ -1121,7 +1121,7 @@ test "tree browsing is free and point actions issue one command" {
     book.choose(.passives);
     try std.testing.expectEqual(trees.ZOOM_START, book.zoom);
     const canvas = trees.zoomBox(true);
-    const surface = menu.Surface.of(screen, layout.SIZE);
+    const surface = tabbedSurface(screen);
     _ = book.step(&.{ .pointer = surface.screenOf(.{ .x = canvas.x, .y = canvas.y }), .scroll = -1 }, screen, view);
     try std.testing.expect(book.treeActive() and book.zoom < trees.ZOOM_START);
 }

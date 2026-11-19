@@ -6,14 +6,14 @@ import tempfile
 from PIL import Image, ImageDraw
 
 sys.dont_write_bytecode = True
-from art_support import ROOT, SCRIPTS, arial, quote
+from art_support import ROOT, SCRIPTS, arial, quote, water_cliff_layout
 
 
 DESKTOP = Path.home() / 'Desktop'
 OUTPUT = DESKTOP / 'water-cliff-edge.aseprite'
 WORK = Path(tempfile.mkdtemp(prefix='cistern-water-cliff-'))
 SIZE = (512, 512)
-CELL = 64
+CELL = water_cliff_layout()['cell']
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=OUTPUT)
 parser.add_argument('--replace-blank', action='store_true')

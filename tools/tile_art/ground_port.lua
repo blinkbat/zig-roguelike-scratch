@@ -74,12 +74,13 @@ end
 
 function port.checkJoins(cells)
   local bit=port.bit
+  local last=port.CELL-1
   local joins=0
-  for a=0,15 do for b=0,15 do
+  for a=0,port.FULL do for b=0,port.FULL do
     if bit(a,NE)==bit(b,NW) and bit(a,SE)==bit(b,SW) then
       for _,span in ipairs({{8,23,NE},{40,55,SE}}) do
         for y=span[1],span[2] do
-          assert(opaque(cells[a]:getPixel(63,y))==bit(a,span[3]),'East gap')
+          assert(opaque(cells[a]:getPixel(last,y))==bit(a,span[3]),'East gap')
           assert(opaque(cells[b]:getPixel(0,y))==bit(a,span[3]),'West gap')
         end
       end
@@ -88,7 +89,7 @@ function port.checkJoins(cells)
     if bit(a,SW)==bit(b,NW) and bit(a,SE)==bit(b,NE) then
       for _,span in ipairs({{8,23,SW},{40,55,SE}}) do
         for x=span[1],span[2] do
-          assert(opaque(cells[a]:getPixel(x,63))==bit(a,span[3]),'South gap')
+          assert(opaque(cells[a]:getPixel(x,last))==bit(a,span[3]),'South gap')
           assert(opaque(cells[b]:getPixel(x,0))==bit(a,span[3]),'North gap in '..b..' at '..x)
         end
       end
@@ -117,11 +118,12 @@ function port.preview(cells,background,path)
   local function filled(x,y)
     return y>=1 and y<=#MAP and x>=1 and x<=#MAP[y] and MAP[y]:sub(x,x)=='#'
   end
-  local preview=Image(#MAP[1]*64,#MAP*64,ColorMode.RGB)
+  local cell,half=port.CELL,port.CELL//2
+  local preview=Image(#MAP[1]*cell,#MAP*cell,ColorMode.RGB)
   preview:clear(background)
   for y=1,#MAP+1 do for x=1,#MAP[1]+1 do
     local m=(filled(x-1,y-1) and NW or 0)|(filled(x,y-1) and NE or 0)|(filled(x-1,y) and SW or 0)|(filled(x,y) and SE or 0)
-    preview:drawImage(cells[m],Point((x-1)*64-32,(y-1)*64-32))
+    preview:drawImage(cells[m],Point((x-1)*cell-half,(y-1)*cell-half))
   end end
   preview:saveAs(path)
 end

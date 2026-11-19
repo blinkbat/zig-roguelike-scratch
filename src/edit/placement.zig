@@ -208,23 +208,11 @@ fn putBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) bool {
     return put != .refused;
 }
 
-fn takeBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) void {
-    if (barrelTaken(b, p)) ed.changed();
-}
-
 fn barrelTaken(b: *atlas.Bespoke, p: P) bool {
     const i = grid.Level.idx(p);
     if (!b.barrel[i]) return false;
     b.barrel[i] = false;
     return true;
-}
-
-fn takeTorch(ed: *Editor, b: *atlas.Bespoke, p: P) void {
-    if (b.torch.remove(p)) ed.changed();
-}
-
-fn takeFoe(ed: *Editor, b: *atlas.Bespoke, p: P) void {
-    if (foeTaken(b, p)) ed.changed();
 }
 
 fn foeTaken(b: *atlas.Bespoke, p: P) bool {
@@ -309,9 +297,9 @@ pub fn remove(ed: *Editor, p: P) void {
     if (!removable(ed, p)) return;
     switch (ed.tool) {
         .paint => paintTile(ed, p, ed.ink.get(.second)),
-        .barrel => takeBarrel(ed, &ed.plan().bespoke, p),
-        .torch => takeTorch(ed, &ed.plan().bespoke, p),
-        .foe => takeFoe(ed, &ed.plan().bespoke, p),
+        .barrel => if (barrelTaken(&ed.plan().bespoke, p)) ed.changed(),
+        .torch => if (ed.plan().bespoke.torch.remove(p)) ed.changed(),
+        .foe => if (foeTaken(&ed.plan().bespoke, p)) ed.changed(),
         .npc => takeNpc(ed, p),
         .door => {
             ed.map.removeDoor(.{ .node = ed.node, .door = ed.doorAt(p).? });

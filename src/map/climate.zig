@@ -66,8 +66,8 @@ pub fn placeAt(field: *const Field, p: mathx.P) Location {
 
 const BLEND_R: usize = 3;
 const BLEND_PASSES = 2;
-const COLS: usize = grid.W;
-const ROWS: usize = grid.H;
+const COLS = grid.COLS;
+const ROWS = grid.ROWS;
 
 pub const Blend = struct {
     of: Field = @splat(.inland),
@@ -106,7 +106,7 @@ pub const Blend = struct {
 
     pub fn cell(self: *const Blend, weather: Local, i: usize) Now {
         var result = Now.initFill(0);
-        for (std.enums.values(Location)) |place| addShare(&result, weather.get(place), self.weight.getPtrConst(place)[i]);
+        for (std.enums.values(Location)) |place| addShare(&result, weather.getPtrConst(place), self.weight.getPtrConst(place)[i]);
         return result;
     }
 
@@ -123,16 +123,14 @@ pub const Blend = struct {
         var result = Now.initFill(0);
         for (std.enums.values(Location)) |place| {
             const w = self.weight.getPtrConst(place);
-            const top = mathx.lerpF(w[y0 * COLS + x0], w[y0 * COLS + x1], tx);
-            const bottom = mathx.lerpF(w[y1 * COLS + x0], w[y1 * COLS + x1], tx);
-            addShare(&result, weather.get(place), mathx.lerpF(top, bottom, ty));
+            addShare(&result, weather.getPtrConst(place), mathx.bilerp(.{ w[y0 * COLS + x0], w[y0 * COLS + x1], w[y1 * COLS + x0], w[y1 * COLS + x1] }, tx, ty));
         }
         return result;
     }
 
-    fn addShare(into: *Now, n: Now, share: f32) void {
+    fn addShare(into: *Now, n: *const Now, share: f32) void {
         if (share <= 0) return;
-        for (std.enums.values(Layer)) |l| into.set(l, into.get(l) + n.get(l) * share);
+        for (&into.values, n.values) |*r, v| r.* += v * share;
     }
 };
 
@@ -167,7 +165,7 @@ pub fn local(c: Climate, overrides: Locations, seed: u64, minutes: u64) Local {
 pub fn strongest(values: Local) Now {
     var result = Now.initFill(0);
     for (values.values) |n| {
-        for (std.enums.values(Layer)) |l| result.set(l, @max(result.get(l), n.get(l)));
+        for (&result.values, n.values) |*r, v| r.* = @max(r.*, v);
     }
     return result;
 }
@@ -302,7 +300,7 @@ fn roll(seed: u64, k: Drive, c: Cycle, n: u64) f32 {
 
 pub fn eased(from: Now, to: Now, k: f32) Now {
     var n = from;
-    for (std.enums.values(Layer)) |l| n.set(l, mathx.lerpF(from.get(l), to.get(l), k));
+    for (&n.values, to.values) |*v, t| v.* = mathx.lerpF(v.*, t, k);
     return n;
 }
 

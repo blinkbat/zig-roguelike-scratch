@@ -2,18 +2,17 @@ import sys
 from PIL import Image, ImageDraw
 
 sys.dont_write_bytecode = True
-from art_support import arial, corner_order, ground_layout
+from art_support import SHEET_INK as INK, arial, corner_order, ground_layout, sheet_title
 
 out, title = sys.argv[1], sys.argv[2]
 order = corner_order()
 layout = ground_layout()
 
-INK = (50, 50, 50, 255)
 W, HEAD, CELL, COLS = layout['W'], layout['HEAD'], layout['CELL'], layout['COLS']
 H = HEAD + COLS * CELL
 image = Image.new('RGBA', (W, H))
 draw = ImageDraw.Draw(image)
-draw.text((12, 8), title, font=arial(23, True), fill=INK)
+sheet_title(draw, title)
 small = arial(11)
 for i, mask in enumerate(order):
     x, y = (i % COLS) * CELL, HEAD + (i // COLS) * CELL

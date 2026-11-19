@@ -143,6 +143,8 @@ pub fn step(g: *game.Game) void {
     const w = g.sim.world();
     const rt = &g.sim.plot;
     if (g.st.walk) |d| if (d.delta().y != 0 and shown.layout.row_n > 0) rt.moveCursor(s, w, d.delta().y);
+    const last_shown = shown.layout.shownRows() -| 1;
+    if (rt.talk.?.cursor > last_shown) rt.talk.?.cursor = @intCast(last_shown);
     var picked = false;
     if (g.st.pointing()) if (shown.layout.rowAt(g.st.pointer.?)) |row| {
         rt.talk.?.cursor = @intCast(row);

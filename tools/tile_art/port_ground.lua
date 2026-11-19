@@ -103,7 +103,7 @@ local atlas=Image(groundPort.SIZE,groundPort.SIZE,ColorMode.RGB)
 for i,m in ipairs(order) do
   local tile=Image(64,64,ColorMode.RGB)
   local ox,oy=groundPort.at(i)
-  if m==15 then
+  if m==groundPort.FULL then
     tile=Image(fill)
   elseif m==9 or m==12 or (material.complete and material.complete[m]) then
     tile=Image(painted,Rectangle(ox,oy,64,64))

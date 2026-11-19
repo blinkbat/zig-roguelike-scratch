@@ -65,6 +65,10 @@ pub const Contract = struct {
     pub fn has(self: Contract, comptime name: []const u8) bool {
         return self.declarations.contains(@field(Declaration, name));
     }
+
+    pub fn carried(self: Contract) bool {
+        return self.flask_kind != null or self.supply != null;
+    }
 };
 
 fn has(comptime d: Definition, comptime name: []const u8) bool {
@@ -161,8 +165,7 @@ pub fn interpret(comptime name: []const u8, comptime d: Definition) Contract {
     };
     const arrow = d.reticle == .bow and !has(d, "BOLT");
     const elemental = has(d, "ELEMENT");
-    const carried = has(d, "KIND") or has(d, "SUPPLY");
-    return .{
+    var out: Contract = .{
         .reticle = d.reticle,
         .delivery = d.delivery,
         .declarations = declarations,
@@ -173,7 +176,7 @@ pub fn interpret(comptime name: []const u8, comptime d: Definition) Contract {
         .bolt = value(d, "BOLT", @as(?[]const u8, null)),
         .flask_kind = value(d, "KIND", @as(?flask.Kind, null)),
         .supply = value(d, "SUPPLY", @as(?consumable.Kind, null)),
-        .arms = if (carried) null else value(d, "ARMS", if (d.delivery) |at| @as(?Arms, Arms.of(at)) else null),
+        .arms = null,
         .free = value(d, "FREE", false),
         .cost = value(d, "COST", @as(i32, 0)),
         .cooldown = value(d, "COOLDOWN", @as(u8, 0)),
@@ -186,6 +189,8 @@ pub fn interpret(comptime name: []const u8, comptime d: Definition) Contract {
         .nearest = value(d, "MIN_RANGE", MELEE_REACH),
         .done = value(d, "DONE", @as(?[]const u8, null)),
     };
+    if (!out.carried()) out.arms = value(d, "ARMS", if (d.delivery) |at| @as(?Arms, Arms.of(at)) else null);
+    return out;
 }
 
 test "skill contract diagnostics reject missing delivery status requirements and wrong geometry signatures" {

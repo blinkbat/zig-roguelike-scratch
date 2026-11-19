@@ -448,8 +448,7 @@ test "every effect sample plays for two showings without leaving the stage's lev
     var groups: usize = 0;
     var last: ?Group = null;
     for (SAMPLES) |s| {
-        if (last != s.group()) groups += 1;
-        last = s.group();
+        if (opens(&last, s)) groups += 1;
     }
     try std.testing.expectEqual(std.enums.values(Group).len, groups);
 }

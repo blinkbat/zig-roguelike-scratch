@@ -42,6 +42,7 @@ const PAGE_LINE: usize = 1024;
 const NAV_INDENT: i32 = 14;
 const NAV_LEAD: usize = 3;
 const SCROLL_ROOM: i32 = 8;
+const CARET_W: i32 = 2;
 const DISCARD_FIRST = "Save or discard this passage before ";
 const KEEP_GROUP = DISCARD_FIRST ++ "changing its group.";
 const REBUILD = "Saved wording takes effect after rebuilding.";
@@ -758,7 +759,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
         displayBytes(buf[0 .. end - start]);
         g.face.draw(buf[0 .. end - start :0], x, yy, TEXT, if (editable) look.TEXT else look.DIM);
         if (focused and caret_line == line) {
-            rl.drawRectangle(x + widthTo(&g.face, &buf, @min(f.cursor, end) - start), yy, 2, TEXT, look.UI_FOCUS);
+            rl.drawRectangle(x + widthTo(&g.face, &buf, @min(f.cursor, end) - start), yy, CARET_W, TEXT, look.UI_FOCUS);
         }
         if (hit and ed.desk.mouse.y >= yy and ed.desk.mouse.y < yy + LINE_H) {
             var at = start;

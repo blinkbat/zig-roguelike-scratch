@@ -91,6 +91,14 @@ def arial(size, bold=False):
     return ImageFont.truetype('C:/Windows/Fonts/arial' + ('bd' if bold else '') + '.ttf', size)
 
 
+SHEET_INK = (50, 50, 50, 255)
+
+
+# Arial Bold 23 at (12, 8), matched pixel for pixel against cave-walls.aseprite's header.
+def sheet_title(draw, title):
+    draw.text((12, 8), title, font=arial(23, True), fill=SHEET_INK)
+
+
 def corner_order(scripts=SCRIPTS):
     text = (scripts / 'ground_corners.lua').read_text(encoding='utf-8')
     order = [int(value) for value in re.search(r'return\s*\{([^}]+)\}', text).group(1).split(',') if value.strip()]
