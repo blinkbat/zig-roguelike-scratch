@@ -962,7 +962,7 @@ test "a flit goes every open way about evenly, onto its prey too, and never into
     try std.testing.expectEqual(@as(usize, 0), counts.get(.w));
     try std.testing.expectEqual(@as(usize, 0), counts.get(.n));
     for ([_]mathx.Dir{ .ne, .e, .se, .s, .sw, .nw }) |d| {
-        try std.testing.expect(counts.get(d) * 6 > TRIES * 85 / 100 and counts.get(d) * 6 < TRIES * 115 / 100);
+        try std.testing.expect(counts.get(d) * 6 > TRIES * 85 / mathx.PERCENT and counts.get(d) * 6 < TRIES * 115 / mathx.PERCENT);
     }
 }
 

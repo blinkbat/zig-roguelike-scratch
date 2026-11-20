@@ -252,7 +252,14 @@ pub const Settle = struct { slot: actor.ActorSlot, after: After, puff: ?Puff = n
 
 pub const Burst = struct { at: mathx.P, area: areas.Burst, element: damage.Element, density_cells: ?usize = null };
 
-pub const Zap = struct { from: [2]f32, to: [2]f32 };
+pub const Zap = struct {
+    from: [2]f32,
+    to: [2]f32,
+
+    pub fn between(a: mathx.P, b: mathx.P) Zap {
+        return .{ .from = mathx.centre(a), .to = mathx.centre(b) };
+    }
+};
 
 pub const Shimmer = struct { at: [2]f32, col: rl.Color };
 

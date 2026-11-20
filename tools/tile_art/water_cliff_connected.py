@@ -5,7 +5,7 @@ import tempfile
 
 from PIL import Image, ImageDraw
 sys.dont_write_bytecode = True
-from art_support import ROOT, SCRIPTS, arial, corner_order, ground_layout, quote as q, water_cliff_layout
+from art_support import ROOT, SCRIPTS, arial, corner_order, ground_layout, quote as q, water_cliff_layout, water_cliff_names
 
 
 parser = argparse.ArgumentParser()
@@ -34,7 +34,8 @@ def text(x, y, value, px=14, bold=False):
 
 text(32, 18, 'WATER CLIFF CONNECTIONS', 26, True)
 text(32, 52, 'Native 64px tiles. Each 4 x 4 block connects in place. Rendered directly by the game; lighting is not baked.')
-names = ['Land to shallows', 'Land to deep water', 'Shallows to deep water']
+cliff_names = water_cliff_names()
+names = cliff_names['blocks']
 for n, name in enumerate(names):
     x = block_x + n * stride
     text(x, block_y - 27, name, 17, True)
@@ -87,8 +88,8 @@ for n, name in enumerate(names):
     with Image.open(source) as im:
         assert im.size == (block, block)
     combined = None
-    for part, label in ((1, 'Ground'), (2, 'Cliff faces'), (3, 'Lip and cap fill'), (4, 'Authored border edits')):
-        part_source = args.shots / f'template-{n}-layer-{part}.png'
+    for part, label in cliff_names['parts']:
+        part_source = args.shots / f'template-{n}-{part}.png'
         with Image.open(part_source) as im:
             pixels = im.convert('RGBA')
             assert pixels.getbbox(), f'Missing {label}'

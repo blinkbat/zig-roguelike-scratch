@@ -57,13 +57,20 @@ pub fn neutralLens(g: *game.Game) lens.Options {
 pub fn differentPixels(a: rl.Image, b: rl.Image) usize {
     var changed: usize = 0;
     var px = pixels(a.width, a.height);
-    while (px.next()) |p| changed += @intFromBool(!sameRgb(rl.getImageColor(a, p.x, p.y), rl.getImageColor(b, p.x, p.y)));
+    while (px.next()) |p| changed += @intFromBool(!samePixel(a, b, p));
     return changed;
 }
 
+pub fn samePixel(a: rl.Image, b: rl.Image, p: mathx.P) bool {
+    return sameRgb(rl.getImageColor(a, p.x, p.y), rl.getImageColor(b, p.x, p.y));
+}
+
 pub fn redrawnDiff(g: *game.Game, target: rl.RenderTexture2D, base: rl.Image) !usize {
-    drawInto(g, target);
-    const now = try readTarget(target);
+    return drawnDiff(g, target, base, null);
+}
+
+fn drawnDiff(g: *game.Game, target: rl.RenderTexture2D, base: rl.Image, path: ?[:0]const u8) !usize {
+    const now = if (path) |p| try captured(g, target, p) else try drawnImage(g, target);
     defer rl.unloadImage(now);
     return differentPixels(base, now);
 }
@@ -75,11 +82,7 @@ pub fn toggled(g: *game.Game, target: rl.RenderTexture2D, base: rl.Image, value:
     value.* = off;
     const changed = changed: {
         defer value.* = on;
-        drawInto(g, target);
-        if (path) |p| try exportTarget(target, p);
-        const now = try readTarget(target);
-        defer rl.unloadImage(now);
-        break :changed differentPixels(base, now);
+        break :changed try drawnDiff(g, target, base, path);
     };
     return .{ .changed = changed, .restored = try redrawnDiff(g, target, base) == 0 };
 }
@@ -146,6 +149,16 @@ pub fn capture(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !v
     try exportTarget(target, path);
 }
 
+pub fn captured(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !rl.Image {
+    try capture(g, target, path);
+    return readTarget(target);
+}
+
+pub fn drawnImage(g: *game.Game, target: rl.RenderTexture2D) !rl.Image {
+    drawInto(g, target);
+    return readTarget(target);
+}
+
 pub fn capturef(g: *game.Game, target: rl.RenderTexture2D, comptime fmt: []const u8, args: anytype) !void {
     var path: [PATH_MAX]u8 = undefined;
     try capture(g, target, try std.fmt.bufPrintZ(&path, fmt, args));
@@ -175,6 +188,11 @@ pub fn drawOver(target: rl.RenderTexture2D, clear: rl.Color) void {
 pub fn exportDrawn(target: rl.RenderTexture2D, path: [:0]const u8) !void {
     rl.endTextureMode();
     try exportTarget(target, path);
+}
+
+pub fn readDrawn(target: rl.RenderTexture2D) !rl.Image {
+    rl.endTextureMode();
+    return readTarget(target);
 }
 
 pub fn exportTarget(target: rl.RenderTexture2D, path: [:0]const u8) !void {

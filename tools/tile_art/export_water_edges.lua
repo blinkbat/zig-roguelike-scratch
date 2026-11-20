@@ -3,6 +3,7 @@ local original=assert(app.params.original,'original=<canonical Aseprite>')
 local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
+local names=dofile(root..'tools/tile_art/water_cliff_names.lua')
 local CELL=layout.cell
 local BANK_LIFT=8
 local report=assert(app.params.report,'report=<validation text>')
@@ -19,8 +20,9 @@ for y=0,mask.height-1 do
   if pc.rgbaA(mask:getPixel(x,y))>0 then cap:putPixel(x,y,water:getPixel(CELL+x%CELL,CELL+(y+CELL//2-BANK_LIFT)%CELL)) end
  end
 end
+local edges=' - '..names.label('edges')
 for _,l in ipairs(s.layers) do
- if l.isVisible and l.name~='Owner flat border edits' and l.name~='Deep border extensions from shallow edits' and not l.name:find(' %- Authored border edits$') then
+ if l.isVisible and l.name~=names.owner and l.name~=names.extended and l.name:sub(-#edges)~=edges then
   local c=l:cel(1)
   if c then baseline:drawImage(c.image,c.position,l.opacity) end
  end

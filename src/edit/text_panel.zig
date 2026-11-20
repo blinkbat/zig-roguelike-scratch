@@ -150,9 +150,13 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
             return .{ .buf = f.buf, .n = f.n, .cursor = f.cursor, .anchor = f.anchor };
         }
 
+        fn revisionAt(f: *Self, i: usize) *Revision {
+            return &f.history[(f.history_base + i) % HISTORY];
+        }
+
         fn remember(f: *Self) void {
             if (f.history_n > 0) {
-                const previous = &f.history[(f.history_base + f.history_at) % HISTORY];
+                const previous = f.revisionAt(f.history_at);
                 if (std.mem.eql(u8, previous.buf[0..previous.n], f.text())) return;
                 f.history_n = f.history_at + 1;
             }
@@ -160,7 +164,7 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
                 f.history_base = (f.history_base + 1) % HISTORY;
                 f.history_n -= 1;
             }
-            f.history[(f.history_base + f.history_n) % HISTORY] = f.revision();
+            f.revisionAt(f.history_n).* = f.revision();
             f.history_at = f.history_n;
             f.history_n += 1;
         }
@@ -168,7 +172,7 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
         fn restoreRevision(f: *Self, by: i32) void {
             if (f.history_n == 0) return;
             f.history_at = mathx.nudge(f.history_at, by, f.history_n);
-            const r = &f.history[(f.history_base + f.history_at) % HISTORY];
+            const r = f.revisionAt(f.history_at);
             f.buf = r.buf;
             f.n = r.n;
             f.cursor = r.cursor;

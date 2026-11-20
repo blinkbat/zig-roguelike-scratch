@@ -175,6 +175,7 @@ pub const Game = struct {
     /// Too big for the stack each frame.
     nearby: NearbyBuf = undefined,
     journal: [atlas.script.MAX_QUESTS]quest_log.Entry = undefined,
+    drawn: scene.Scratch = undefined,
     back: Back = .title,
     exit: ?Exit = null,
     /// Saved runs return to their caller on death instead of restarting.
@@ -248,6 +249,7 @@ pub fn boot(alloc: std.mem.Allocator) !*Game {
 pub fn keepVisit(g: *Game, node: usize) void {
     g.sim.visits[node] = .{ .lv = g.sim.lv, .pool = g.sim.pool, .facing = g.pic.facing, .ground = g.sim.ground };
     g.sim.visited.set(node);
+    g.sim.visits_changed.set(node);
 }
 
 fn revisit(g: *Game, v: *const simulation.Visit) void {
@@ -273,7 +275,7 @@ pub const Fields = struct {
     pub const graphics = [_][]const u8{ "light", "cloud", "vignette", "mini", "cinema" };
     /// Given their values by hand.
     pub const set = [_][]const u8{ "died_in", "pause_menu", "pause_page", "display", "debug", "back", "permadeath", "hall", "perf", "st", "mouse", "binds", "cam", "screen", "framebuffer", "rain", "sprites", "graphics_ready", "art", "face" };
-    pub const scratch = [_][]const u8{ "nearby", "journal", "weather_blend" };
+    pub const scratch = [_][]const u8{ "nearby", "journal", "drawn", "weather_blend" };
 };
 const SimFields = simulation.Fields;
 
@@ -435,7 +437,10 @@ fn goThrough(g: *Game, l: atlas.Link) void {
     g.sim.log.say("Entered {s}.", .{g.sim.map.?.node[l.node].title(l.node, &title)});
     const same = l.node == from;
     const placed = enter(g, l.node, g.sim.map.?.door(l).at, followers.slice());
-    if (!same) followersLeft(&g.sim.visits[from], placed);
+    if (!same) {
+        followersLeft(&g.sim.visits[from], placed);
+        g.sim.visits_changed.set(from);
+    }
     carried.restore(g);
 }
 
@@ -580,19 +585,19 @@ pub fn foesNear(g: *const Game) bool {
 
 pub fn heroMove(g: *Game, d: mathx.Dir) Move {
     const h = g.sim.heroActor() orelse return .blocked;
-    return moveOf(g, &g.sim.lv, h.at, d, g.sim.lv.taken(h.at.add(d.delta())));
+    return moveOf(g, &g.sim.lv, h.at, d, g.sim.lv.taken(h.at.add(d.delta())), foesNear(g));
 }
 
-pub fn moveOf(g: *const Game, lv: *const grid.Level, from: P, d: mathx.Dir, occupied: bool) Move {
+pub fn moveOf(g: *const Game, lv: *const grid.Level, from: P, d: mathx.Dir, occupied: bool, foes_near: bool) Move {
     const to = from.add(d.delta());
     const there = lv.at(to);
     if (there.closedGate()) return .gate;
-    if (there.opened() != null) return if (foesNear(g)) .blocked else .open;
+    if (there.opened() != null) return if (foes_near) .blocked else .open;
     if (there.bursts()) return .burst;
     if (!lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
     if (lv.npcAt(to) != null) return .talk;
     if (occupied) return if (g.sim.allyAt(to)) .swap else .kick;
-    return if (!foesNear(g) and character.lootReached(g, from, to)) .loot else .step;
+    return if (!foes_near and character.lootReached(g, from, to)) .loot else .step;
 }
 
 fn spends(m: Move) bool {

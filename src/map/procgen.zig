@@ -186,18 +186,20 @@ pub const LOTS_MAX: usize = blk: {
         const m = @field(FEATURES, name);
         if (takesLots(m)) most = @max(most, m.COUNT_MAX);
     }
-    break :blk MAX_FEATURES * most + SECTION_LOTS;
+    break :blk MAX_FEATURES * most + KEPT_MAX + SECTION_LOTS;
 };
 
+pub const KEPT_MAX: usize = 2;
 const SECTION_LOTS: usize = 1;
 
 /// Reproducible from the seed, the doors and the plan; the edge sealed, then every open cell joined, each door too.
 pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features: []const Feature) void {
-    rollWith(lv, seed, doors, floor, features, null);
+    rollWith(lv, seed, doors, floor, features, null, &.{});
 }
 
-/// `roll`, the section's box kept from every feature's lots and its cells painted over theirs; doors win its cells.
-pub fn rollWith(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features: []const Feature, authored: ?section.Placed) void {
+/// `roll`, the section's box and `kept` held from every feature's lots, the section's cells painted over theirs; doors win its cells.
+pub fn rollWith(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features: []const Feature, authored: ?section.Placed, kept: []const grid.Box) void {
+    std.debug.assert(kept.len <= KEPT_MAX);
     std.debug.assert(doors.len <= grid.MAX_DOORS);
     const fitted = floor.fit();
     const pal = fitted.palette();
@@ -215,20 +217,22 @@ pub fn rollWith(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, feat
     var rng = carve.Salt.features.rng(seed);
     const base = lv.tile;
     var lots: buildings.Lots = .{};
-    var painted = grid.CellSet.initEmpty();
-    if (authored) |s| {
-        lots.reserve(s.area);
-        painted = s.cells();
-    }
+    for (kept) |b| lots.reserve(b);
+    const joined_from = lots.n;
+    if (authored) |s| lots.reserve(s.area);
+    const painted = if (authored) |s| s.cells() else grid.CellSet.initEmpty();
     for (features, 0..) |f, i| {
         gen.keepTorches(lv);
         f.fit().apply(lv, &rng, seed +% i *% FEATURE_STRIDE, pal, &lots);
     }
-    if (authored) |s| s.stamp(lv);
+    if (authored) |s| {
+        gen.keepTorches(lv);
+        s.stamp(lv);
+    }
     carve.seal(lv, pal.solid);
     carve.openDoors(lv, doors, pal.open);
     if (lv.firstOpen() == null) carve.disc(lv, grid.MIDDLE, CLEARING_R, pal.open, null);
-    carve.connect(lv, &rng, pal, .{ .lots = lots.slice(), .before = &base, .authored = if (authored != null) &painted else null });
+    carve.connect(lv, &rng, pal, .{ .lots = lots.slice()[joined_from..], .before = &base, .authored = if (authored != null) &painted else null });
     settle(lv);
     if (fitted == .wilds and branches.improves(fitted.wilds)) {
         _ = branches.improveRound(lv, seed, doors, fitted.wilds, &painted);
@@ -350,7 +354,7 @@ test "every base under every feature mix keeps a section's painted cells and tor
             const seed = 0x5EC7 +% i *% grid.TEST_SEED_STRIDE;
             const s = testSection(anchors[i % anchors.len], false);
             const laid = s.lands(seed, &doors).?;
-            rollWith(&lv, seed, &doors, Floor.of(a), features, laid);
+            rollWith(&lv, seed, &doors, Floor.of(a), features, laid, &.{});
             try grid.expectAllReached(&lv, doors[0], &dist, &queue);
             try std.testing.expectEqual(@as(usize, 0), carve.leaks(&lv));
             for (s.tile, 0..) |t, k| {
@@ -379,7 +383,7 @@ test "a section painted shut is opened through one wall cell and the rest of its
             const seed = 0x5407 +% i *% grid.TEST_SEED_STRIDE;
             const s = testSection(.roams, true);
             const laid = s.lands(seed, &doors).?;
-            rollWith(&lv, seed, &doors, Floor.of(a), &.{}, laid);
+            rollWith(&lv, seed, &doors, Floor.of(a), &.{}, laid, &.{});
             try grid.expectAllReached(&lv, doors[0], &dist, &queue);
             if (!nearDoor(laid.at(SECTION_TORCH), &doors) and !lv.torch.has(laid.at(SECTION_TORCH))) dark += 1;
             var breached: usize = 0;
@@ -394,13 +398,24 @@ test "a section painted shut is opened through one wall cell and the rest of its
     }
 }
 
+const RAISERS = [_]Feature{
+    .{ .farms = (farms.Params{ .count = farms.COUNT_MAX }).fit() },
+    .{ .buildings = SMALL_HOUSES },
+    .{ .setpiece = PACKED_SHRINES },
+};
+
+fn raisedIn(lv: *const grid.Level, b: grid.Box) usize {
+    var n: usize = 0;
+    var it = b.cells();
+    while (it.next()) |q| {
+        const t = lv.at(q);
+        n += @intFromBool(t == .wall or t == .fence or t == .crop);
+    }
+    return n;
+}
+
 test "no house, farm or set piece is raised in a section's box" {
     var lv: grid.Level = undefined;
-    const features = [_]Feature{
-        .{ .farms = (farms.Params{ .count = farms.COUNT_MAX }).fit() },
-        .{ .buildings = SMALL_HOUSES },
-        .{ .setpiece = PACKED_SHRINES },
-    };
     var s = section.Section{ .anchor = .roams };
     const b = grid.Box.sized(.{ .x = 40, .y = 25 }, 16, 12);
     for (carve.corners(b)) |p| _ = s.paint(p, .dirt);
@@ -409,12 +424,27 @@ test "no house, farm or set piece is raised in a section's box" {
     for (0..COUNT_RUNS) |i| {
         const seed = 0xB0C5 +% i *% grid.TEST_SEED_STRIDE;
         const laid = s.lands(seed, &.{}).?;
-        rollWith(&lv, seed, &.{}, Floor.of(.open), &features, laid);
+        rollWith(&lv, seed, &.{}, Floor.of(.open), &RAISERS, laid, &.{});
         built += carve.count(&lv, .wall);
-        var it = laid.area.cells();
-        while (it.next()) |q| {
-            const t = lv.at(q);
-            if (t == .wall or t == .fence or t == .crop) over += 1;
+        over += raisedIn(&lv, laid.area);
+    }
+    try std.testing.expect(built > COUNT_RUNS);
+    try std.testing.expectEqual(@as(usize, 0), over);
+}
+
+test "no house, farm or set piece is raised in a kept box beside a section's" {
+    var lv: grid.Level = undefined;
+    var s = section.Section{ .anchor = .roams };
+    for (carve.corners(grid.Box.sized(.{ .x = 4, .y = 4 }, 8, 6))) |p| _ = s.paint(p, .dirt);
+    const kept = grid.Box.sized(.{ .x = 40, .y = 20 }, 14, 12);
+    var built: usize = 0;
+    var over: usize = 0;
+    for (0..COUNT_RUNS) |i| {
+        const seed = 0x2005 +% i *% grid.TEST_SEED_STRIDE;
+        for ([_]?section.Placed{ null, s.lands(seed, &.{}) }) |laid| {
+            rollWith(&lv, seed, &.{}, Floor.of(.open), &RAISERS, laid, &.{kept});
+            built += carve.count(&lv, .wall);
+            over += raisedIn(&lv, kept);
         }
     }
     try std.testing.expect(built > COUNT_RUNS);
@@ -430,9 +460,25 @@ test "a node with no section, roaming or not, rolls exactly the plain roll" {
         for (std.enums.values(section.Anchor)) |anchor| {
             const s = section.Section{ .anchor = anchor };
             roll(&plain, 0xE3, &doors, Floor.of(a), &features);
-            rollWith(&with, 0xE3, &doors, Floor.of(a), &features, s.lands(0xE3, &doors));
+            rollWith(&with, 0xE3, &doors, Floor.of(a), &features, s.lands(0xE3, &doors), &.{});
             try std.testing.expectEqualSlices(grid.Tile, &plain.tile, &with.tile);
             try std.testing.expectEqualSlices(bool, &plain.barrel, &with.barrel);
+        }
+    }
+}
+
+test "a kept box with no lot-taking feature rolls exactly the plain roll" {
+    var plain: grid.Level = undefined;
+    var with: grid.Level = undefined;
+    const doors = [_]P{ .{ .x = 0, .y = 30 }, .{ .x = 50, .y = grid.H - 1 } };
+    const features = [_]Feature{Feature.of(.river)};
+    const kept = [_]grid.Box{ grid.Box.sized(.{ .x = 30, .y = 15 }, 30, 24), grid.Box.sized(.{ .x = 10, .y = 10 }, 1, 1) };
+    for ([_]Algo{ .caves, .wilds }) |a| {
+        for (0..COUNT_RUNS) |i| {
+            const seed = 0x4E7 +% i *% grid.TEST_SEED_STRIDE;
+            roll(&plain, seed, &doors, Floor.of(a), &features);
+            rollWith(&with, seed, &doors, Floor.of(a), &features, null, &kept);
+            try std.testing.expectEqualSlices(grid.Tile, &plain.tile, &with.tile);
         }
     }
 }

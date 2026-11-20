@@ -120,3 +120,10 @@ def ground_layout(scripts=SCRIPTS):
 def water_cliff_layout(scripts=SCRIPTS):
     text = (scripts / 'water_cliff_layout.lua').read_text(encoding='utf-8')
     return {key: int(value) for key, value in re.findall(r'(\w+)=(\d+)', re.search(r'return\s*\{([^}]+)\}', text).group(1))}
+
+
+def water_cliff_names(scripts=SCRIPTS):
+    text = (scripts / 'water_cliff_names.lua').read_text(encoding='utf-8')
+    blocks = re.findall(r"'([^']*)'", re.search(r'^blocks=\{(.*)\},$', text, re.M).group(1))
+    parts = re.findall(r"\{'(\w+)','([^']*)'\}", re.search(r'^parts=\{(.*)\},$', text, re.M).group(1))
+    return {'blocks': blocks, 'parts': parts, **dict(re.findall(r"^(\w+)='([^']*)',$", text, re.M))}

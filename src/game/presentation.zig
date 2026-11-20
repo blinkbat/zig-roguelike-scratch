@@ -32,6 +32,7 @@ const BoltShown = projectiles.BoltShown;
 const MotionView = projectiles.MotionView;
 pub const flown = projectiles.flown;
 const BOLT_CELL_S = projectiles.BOLT_CELL_S;
+const TAKEN_MAX = 4;
 
 /// `snare`: a net, holding the hero as it lands, or dodged (null).
 pub const FoeHit = union(enum) { hurt: fx.After, kill: fx.After, burst: fx.After, snare: ?fx.After, miss };
@@ -226,7 +227,7 @@ pub const Presentation = struct {
     /// Seconds until the turn's last hurl strikes; the foes act after it.
     bolt_lands: f32 = 0,
     fx: fx.Fx = .{},
-    gold_taken: ?ground_items.Coins = null,
+    gold_taken: grid.Bounded(ground_items.Coins, TAKEN_MAX) = .{},
     mana_held: i32 = 0,
     flasks_shown: simulation.Flasks = .initFill(.{}),
     mana_killed: [actor.MAX]i32 = @splat(0),
@@ -269,7 +270,7 @@ pub const Presentation = struct {
 
     pub fn recordAttack(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, origin: chronicle.AttackOrigin, stroke: Stroke, flight: ?bow.Flight, outcome: ReactionOutcome, recovery: ?fx.After) void {
         switch (origin) {
-            .reaction => |by| self.owed[by.slot().index].reaction = .{ .from = stroke.from, .flight = flight, .outcome = outcome, .recovery = recovery },
+            .reaction => |by| self.owe(by, .reaction, .{ .from = stroke.from, .flight = flight, .outcome = outcome, .recovery = recovery }),
             .chosen => {
                 switch (outcome) {
                     .hit => |hit| self.strike(sim, gas, .{ .actor = hit }, stroke),
@@ -375,9 +376,8 @@ pub const Presentation = struct {
     }
 
     pub fn recordFoeAttack(self: *Presentation, by: actor.ActorId, outcome: FoeHit, flight: ?bow.Flight) void {
-        const owed = &self.owed[by.slot().index];
-        owed.foe_hit = outcome;
-        owed.arrow = flight;
+        self.owe(by, .foe_hit, outcome);
+        self.owe(by, .arrow, flight);
     }
 
     pub fn owe(self: *Presentation, target: actor.ActorId, comptime field: anytype, value: @FieldType(Owed, @tagName(field))) void {
@@ -385,7 +385,7 @@ pub const Presentation = struct {
     }
 
     pub fn recordWear(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
-        self.owed[target.slot().index].worn = self.afterOf(sim, target.slot());
+        self.owe(target, .worn, self.afterOf(sim, target.slot()));
     }
 
     /// Drawn in the thrower's hand from `wait` seconds on, until its throw is staggered.
@@ -394,7 +394,7 @@ pub const Presentation = struct {
         shown.t = -wait;
         shown.before = false;
         self.bolts[by.slot().index] = shown;
-        self.owed[by.slot().index].hurled = at;
+        self.owe(by, .hurled, at);
     }
 
     /// `was` flown on to `now` from `wait` seconds on, gone once there if it stopped; when it gets there.
@@ -424,9 +424,27 @@ pub const Presentation = struct {
         }
     }
 
+    pub fn takeGold(self: *Presentation, coins: ground_items.Coins) void {
+        if (self.gold_taken.n < TAKEN_MAX) self.gold_taken.push(coins);
+    }
+
+    fn dropReachedGold(self: *Presentation, hero: glide.Glide) void {
+        if (hero.left() <= PACE_SLACK) {
+            self.gold_taken = .{};
+            return;
+        }
+        var kept: usize = 0;
+        for (self.gold_taken.slice()) |pile| {
+            if (!hero.reaching(pile.at)) continue;
+            self.gold_taken.items[kept] = pile;
+            kept += 1;
+        }
+        self.gold_taken.n = kept;
+    }
+
     pub fn recordKnock(self: *Presentation, by: actor.ActorId, from: P, to: P) void {
         if (self.knocked_from == null) self.knocked_from = from;
-        self.owed[by.slot().index].knock = .{ .from = from, .to = to };
+        self.owe(by, .knock, .{ .from = from, .to = to });
     }
 
     pub fn freshTurn(self: *Presentation) void {
@@ -916,8 +934,11 @@ pub const Presentation = struct {
 
     fn stepSeenCells(self: *Presentation, sim: *const Simulation, lit: *const [grid.CELLS]bool, k: f32) void {
         for (&self.seen_cells, lit, &self.npc_shown, 0..) |*v, visible, npc, i| {
-            v.alpha = mathx.easeTo(v.alpha, visible, k);
-            if (!visible) continue;
+            if (!visible) {
+                if (v.alpha > 0) v.alpha = mathx.easeTo(v.alpha, false, k);
+                continue;
+            }
+            v.alpha = mathx.easeTo(v.alpha, true, k);
             v.bag = false;
             v.coins = 0;
             v.npc = grid.npcOf(npc);
@@ -996,9 +1017,7 @@ pub const Presentation = struct {
             left.* -= dt;
             if (left.* <= 0) d.* = null;
         };
-        if (sim.heroSlot()) |h| {
-            if (self.glide[h].left() <= PACE_SLACK) self.gold_taken = null;
-        }
+        if (sim.heroSlot()) |h| self.dropReachedGold(self.glide[h]);
         self.fx.step(&sim.lv, dt);
         self.catchUp(sim);
     }

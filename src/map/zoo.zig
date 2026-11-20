@@ -9,6 +9,7 @@ const Inventory = @import("../play/inventory.zig").Inventory;
 const P = mathx.P;
 
 pub const MAX_KINDS = 16;
+pub const RESERVED_BOXES = 2;
 const SIZE_MIN: u8 = 5;
 const SIZE_MAX: u8 = 10;
 const MARGIN: i32 = 2;
@@ -34,6 +35,14 @@ pub const Spec = struct {
 
     pub fn reserved(s: *const Spec) grid.Box {
         return s.room().grown(1);
+    }
+
+    /// What `reserves` holds, as boxes: the ring, and the key's cell.
+    pub fn reservedBoxes(s: *const Spec, buf: *[RESERVED_BOXES]grid.Box) []const grid.Box {
+        buf[0] = s.reserved();
+        const k = s.key orelse return buf[0..1];
+        buf[1] = grid.Box.sized(k, 1, 1);
+        return buf[0..2];
     }
 
     pub fn reserves(s: *const Spec, p: P) bool {
@@ -217,53 +226,37 @@ pub const Spec = struct {
                 if (!grid.Level.onRim(q)) destinations.set(grid.Level.idx(q));
             }
         }
-        var seen = grid.CellSet.initEmpty();
-        var back: [grid.CELLS]usize = undefined;
-        var queue: [grid.CELLS]P = undefined;
-        var walls: [grid.CELLS]struct { at: P, parent: usize } = undefined;
-        var head: usize = 0;
-        var tail: usize = 1;
-        queue[0] = from;
-        seen.set(grid.Level.idx(from));
-        while (head < tail) {
-            var walled: usize = 0;
-            while (head < tail) : (head += 1) {
-                const p = queue[head];
-                if (destinations.isSet(grid.Level.idx(p))) {
-                    var at = head;
-                    while (true) {
-                        const q = queue[at];
-                        carve.layWith(lv, q, .floor, grid.STONE_SPAN);
-                        _ = lv.breakBarrel(q);
-                        if (at == 0) return true;
-                        at = back[at];
-                    }
-                }
-                for (mathx.CARDINALS) |d| {
-                    const q = p.add(d);
-                    if (grid.Level.onRim(q) or s.occupies(q)) continue;
-                    const i = grid.Level.idx(q);
-                    if (seen.isSet(i) or protected.isSet(i)) continue;
-                    seen.set(i);
-                    if (authored) |painted| {
-                        if (painted.isSet(i) and lv.tile[i].solid()) {
-                            walls[walled] = .{ .at = q, .parent = head };
-                            walled += 1;
-                            continue;
-                        }
-                    }
-                    back[tail] = head;
-                    queue[tail] = q;
-                    tail += 1;
-                }
+        const Way = struct {
+            s: *const Spec,
+            lv: *const grid.Level,
+            to: *const grid.CellSet,
+            protected: *const grid.CellSet,
+            authored: ?*const grid.CellSet,
+
+            pub const ON_TAKE = true;
+            pub const LIT_LAST = false;
+
+            pub fn opens(w: @This(), q: P) bool {
+                return !grid.Level.onRim(q) and !w.s.occupies(q) and !w.protected.isSet(grid.Level.idx(q));
             }
-            for (walls[0..walled]) |wall| {
-                back[tail] = wall.parent;
-                queue[tail] = wall.at;
-                tail += 1;
+
+            pub fn last(w: @This(), k: usize) bool {
+                return carve.breaksLast(w.lv, w.authored, k);
             }
+
+            pub fn done(w: @This(), k: usize) bool {
+                return w.to.isSet(k);
+            }
+        };
+        var search: carve.Fewest = .{};
+        search.seed(grid.Level.idx(from));
+        const found = search.run(lv, Way{ .s = s, .lv = lv, .to = &destinations, .protected = protected, .authored = authored }) orelse return false;
+        var way = search.trace(found.end);
+        while (way.next()) |q| {
+            carve.layWith(lv, q, .floor, grid.STONE_SPAN);
+            _ = lv.breakBarrel(q);
         }
-        return false;
+        return true;
     }
 
     pub fn populate(s: *const Spec, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng) void {
@@ -304,6 +297,30 @@ pub const Spec = struct {
     }
 };
 
+const VAULT = grid.Box.sized(.{ .x = 31, .y = 18 }, 5, 7);
+
+fn rockFrom(lv: *grid.Level, x: i32) void {
+    carve.box(lv, .{ .lo = .{ .x = x, .y = 0 }, .hi = grid.SIZE }, .rock);
+}
+
+fn walledRoom(lv: *grid.Level, b: grid.Box) void {
+    carve.box(lv, b, .floor);
+    carve.outline(lv, b, .wall);
+}
+
+fn expectWalledRoom(lv: *const grid.Level, b: grid.Box) !void {
+    var it = b.cells();
+    while (it.next()) |p| try std.testing.expectEqual(if (b.onEdge(p)) grid.Tile.wall else grid.Tile.floor, lv.at(p));
+}
+
+fn expectJoined(lv: *const grid.Level, s: *const Spec, from: P) !void {
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    _ = grid.distances(lv, from, &dist, &queue);
+    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
+    try std.testing.expect(s.keyReachable(&dist));
+}
+
 test "a zoo connects an isolated map edge entrance without opening other rim cells" {
     const s = Spec{};
     const entrances = [_]P{
@@ -338,6 +355,20 @@ test "a zoo behind a sealed strip spanning the map still connects its gate" {
     for (2..grid.H - 2) |y| lv.set(.{ .x = 22, .y = @intCast(y) }, .floor);
     s.stampToward(&lv, null, entrance);
     try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(s.approach())));
+}
+
+test "a zoo's reserved boxes hold exactly the cells it reserves, its key's among them" {
+    for ([_]Spec{ .{}, .{ .key = .{ .x = 30, .y = 21 } } }) |s| {
+        var buf: [RESERVED_BOXES]grid.Box = undefined;
+        const boxes = s.reservedBoxes(&buf);
+        for (0..grid.CELLS) |i| {
+            const p = grid.Level.of(i);
+            const boxed = for (boxes) |b| {
+                if (b.holds(p)) break true;
+            } else false;
+            try std.testing.expectEqual(s.reserves(p), boxed);
+        }
+    }
 }
 
 test "zoo validation rejects extreme coordinates before computing room bounds" {
@@ -380,15 +411,9 @@ test "the key chest never stands in the only way to the gate" {
     const s = Spec{ .key = .{ .x = 38, .y = 21 } };
     try std.testing.expect(s.valid());
     var lv = grid.openFloor();
-    for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 20) {
-        lv.tile[i] = .rock;
-    };
+    rockFrom(&lv, 20);
     s.stamp(&lv);
-    var dist: [grid.CELLS]i32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
-    _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
-    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
-    try std.testing.expect(s.keyReachable(&dist));
+    try expectJoined(&lv, &s, .{ .x = 5, .y = 5 });
 }
 
 test "a key chest on the only corridor to the gate leaves the gate reachable" {
@@ -401,11 +426,7 @@ test "a key chest on the only corridor to the gate leaves the gate reachable" {
     }
     s.stamp(&lv);
     try std.testing.expectEqual(grid.Tile.chest, lv.at(s.key.?));
-    var dist: [grid.CELLS]i32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
-    _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
-    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
-    try std.testing.expect(s.keyReachable(&dist));
+    try expectJoined(&lv, &s, .{ .x = 5, .y = 5 });
 }
 
 test "zoo populations support every stocked enemy without exceeding split capacity" {
@@ -453,7 +474,7 @@ test "every zoo entrance keeps its walls and room hidden before opening" {
 }
 
 test "a zoo torch never hangs over one of its chests" {
-    for (std.enums.values(Side)) |side| for (5..11) |w| for (5..11) |h| {
+    for (std.enums.values(Side)) |side| for (SIZE_MIN..SIZE_MAX + 1) |w| for (SIZE_MIN..SIZE_MAX + 1) |h| {
         const s = Spec{ .side = side, .width = @intCast(w), .height = @intCast(h) };
         var lv = grid.openFloor();
         s.stamp(&lv);
@@ -466,94 +487,69 @@ test "placing a zoo leaves an unrelated sealed room sealed" {
     const s = Spec{};
     var lv = grid.openFloor();
     const sealed = grid.Box.sized(.{ .x = 10, .y = 10 }, 7, 7);
-    var it = sealed.cells();
-    while (it.next()) |p| if (sealed.onEdge(p)) {
-        lv.set(p, .wall);
-    };
+    walledRoom(&lv, sealed);
     s.stamp(&lv);
-    it = sealed.cells();
-    while (it.next()) |p| if (sealed.onEdge(p)) {
-        try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
-    };
+    try expectWalledRoom(&lv, sealed);
 }
 
 test "a zoo whose ring already meets open ground carves nothing into a nearer sealed room" {
     const s = Spec{ .side = .e };
     var lv = grid.openFloor();
-    for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= s.reserved().lo.x) {
-        lv.tile[i] = .rock;
-    };
+    rockFrom(&lv, s.reserved().lo.x);
     const vault = grid.Box.sized(s.approach().add(.{ .x = 2, .y = -3 }), 5, 7);
-    var it = vault.cells();
-    while (it.next()) |p| lv.set(p, if (vault.onEdge(p)) .wall else .floor);
+    walledRoom(&lv, vault);
     s.stamp(&lv);
-    it = vault.cells();
+    var it = vault.cells();
     while (it.next()) |p| if (vault.onEdge(p)) {
         try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
     };
-    var dist: [grid.CELLS]i32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
-    _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
-    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
+    try expectJoined(&lv, &s, .{ .x = 5, .y = 5 });
 }
 
 test "a zoo in rock connects to the main floor around a nearer sealed room" {
     const s = Spec{ .key = .{ .x = 38, .y = 26 } };
     var lv = grid.openFloor();
-    for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 20) {
-        lv.tile[i] = .rock;
-    };
-    const vault = grid.Box.sized(.{ .x = 31, .y = 18 }, 5, 7);
-    var it = vault.cells();
-    while (it.next()) |p| lv.set(p, if (vault.onEdge(p)) .wall else .floor);
+    rockFrom(&lv, 20);
+    walledRoom(&lv, VAULT);
     s.stamp(&lv);
-    it = vault.cells();
-    while (it.next()) |p| {
-        try std.testing.expectEqual(if (vault.onEdge(p)) grid.Tile.wall else grid.Tile.floor, lv.at(p));
-    }
-    var dist: [grid.CELLS]i32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
-    _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
-    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
-    try std.testing.expect(s.keyReachable(&dist));
-    try std.testing.expect(dist[grid.Level.idx(vault.inner().lo)] < 0);
+    try expectWalledRoom(&lv, VAULT);
+    try expectJoined(&lv, &s, .{ .x = 5, .y = 5 });
+    try std.testing.expect(!grid.reached(&lv, .{ .x = 5, .y = 5 }).isSet(grid.Level.idx(VAULT.inner().lo)));
 }
 
 test "a zoo connects a key deliberately placed inside a separate room" {
     const s = Spec{ .key = .{ .x = 33, .y = 21 } };
     for ([_]grid.Tile{ .floor, .chest, .rock, .wall }) |key_ground| {
         var lv = grid.openFloor();
-        for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 20) {
-            lv.tile[i] = .rock;
-        };
-        const vault = grid.Box.sized(.{ .x = 31, .y = 18 }, 5, 7);
-        var it = vault.cells();
-        while (it.next()) |p| lv.set(p, if (vault.onEdge(p)) .wall else .floor);
+        rockFrom(&lv, 20);
+        walledRoom(&lv, VAULT);
         lv.set(s.key.?, key_ground);
         s.stamp(&lv);
-        var dist: [grid.CELLS]i32 = undefined;
-        var queue: [grid.CELLS]u32 = undefined;
-        _ = grid.distances(&lv, .{ .x = 5, .y = 5 }, &dist, &queue);
-        try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
-        try std.testing.expect(s.keyReachable(&dist));
+        try expectJoined(&lv, &s, .{ .x = 5, .y = 5 });
     }
 }
 
 test "a zoo on an isolated floor pocket still connects to the main floor" {
     const s = Spec{};
     var lv = grid.openFloor();
-    for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 20) {
-        lv.tile[i] = .rock;
-    };
+    rockFrom(&lv, 20);
     lv.set(s.approach().add(s.outward()), .floor);
-    const vault = grid.Box.sized(.{ .x = 31, .y = 18 }, 5, 7);
-    var it = vault.cells();
-    while (it.next()) |p| lv.set(p, if (vault.onEdge(p)) .wall else .floor);
+    walledRoom(&lv, VAULT);
     s.stamp(&lv);
     const reached = grid.reached(&lv, .{ .x = 5, .y = 5 });
     try std.testing.expect(reached.isSet(grid.Level.idx(s.approach())));
-    it = vault.cells();
-    while (it.next()) |p| try std.testing.expectEqual(if (vault.onEdge(p)) grid.Tile.wall else grid.Tile.floor, lv.at(p));
+    try expectWalledRoom(&lv, VAULT);
+}
+
+test "a zoo in rock reaches the main floor round a row of chests through its gap" {
+    const s = Spec{};
+    var lv = grid.openFloor();
+    rockFrom(&lv, 20);
+    const gap: i32 = 2;
+    for (1..grid.H - 1) |y| if (y != gap) lv.set(.{ .x = 19, .y = @intCast(y) }, .chest);
+    s.stamp(&lv);
+    for (1..grid.H - 1) |y| if (y != gap) try std.testing.expectEqual(grid.Tile.chest, lv.at(.{ .x = 19, .y = @intCast(y) }));
+    try std.testing.expect(grid.reached(&lv, .{ .x = 5, .y = 5 }).isSet(grid.Level.idx(s.approach())));
 }
 
 test "a zoo key chest bypass goes around painted walls" {
@@ -569,11 +565,7 @@ test "a zoo key chest bypass goes around painted walls" {
     }
     s.stampAround(&lv, &painted);
     for (walls) |p| try std.testing.expectEqual(grid.Tile.wall, lv.at(p));
-    var dist: [grid.CELLS]i32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
-    _ = grid.distances(&lv, .{ .x = 5, .y = 21 }, &dist, &queue);
-    try std.testing.expect(dist[grid.Level.idx(s.approach())] >= 0);
-    try std.testing.expect(s.keyReachable(&dist));
+    try expectJoined(&lv, &s, .{ .x = 5, .y = 21 });
 }
 
 test "a zoo enclosed by painted walls opens only one painted cell" {
@@ -603,12 +595,8 @@ test "a key chest touching the zoo's ring only at a corner is reachable" {
     s.key = .{ .x = ring.hi.x, .y = ring.lo.y - 1 };
     try std.testing.expect(s.valid());
     var lv = grid.openFloor();
-    for (&lv.tile) |*t| t.* = .rock;
-    var it = grid.Box.sized(.{ .x = 2, .y = grid.H - 8 }, 4, 4).cells();
-    while (it.next()) |p| lv.set(p, .floor);
+    carve.fill(&lv, .rock);
+    carve.box(&lv, grid.Box.sized(.{ .x = 2, .y = grid.H - 8 }, 4, 4), .floor);
     s.stamp(&lv);
-    var dist: [grid.CELLS]i32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
-    _ = grid.distances(&lv, s.approach(), &dist, &queue);
-    try std.testing.expect(s.keyReachable(&dist));
+    try expectJoined(&lv, &s, s.approach());
 }

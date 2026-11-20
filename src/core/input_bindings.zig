@@ -31,10 +31,7 @@ pub const RUB_CAPTION = keyGlyph(RUB_KEY);
 fn letters(comptime walks: []const Walk) [:0]const u8 {
     var out: []const u8 = "";
     for ([_]mathx.Dir{ .n, .w, .s, .e }) |dir| {
-        const w = for (walks) |x| {
-            if (x.d == dir) break x;
-        } else unreachable;
-        for (w.keys) |k| {
+        for (walkOf(walks, dir).keys) |k| {
             if (@tagName(k).len == 1) out = out ++ keyName(k);
         }
     }
@@ -58,10 +55,14 @@ pub const WALKS = [_]Walk{
     .{ .d = .nw, .keys = &.{.kp_7} },
 };
 
-fn walkPad(comptime d: mathx.Dir) rl.GamepadButton {
-    return for (WALKS) |w| {
-        if (w.d == d) break w.pad.?;
+fn walkOf(walks: []const Walk, d: mathx.Dir) Walk {
+    return for (walks) |w| {
+        if (w.d == d) break w;
     } else unreachable;
+}
+
+fn walkPad(comptime d: mathx.Dir) rl.GamepadButton {
+    return walkOf(&WALKS, d).pad.?;
 }
 
 pub const DPAD = blk: {

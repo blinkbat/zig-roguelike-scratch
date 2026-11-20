@@ -74,6 +74,8 @@ pub const Queue = struct {
     due_n: usize = 0,
     barrels_due: usize = 0,
     reveals_due: usize = 0,
+    /// Indexed by pool slot: queued events bound to it.
+    due_on: [actor.MAX]u32 = @splat(0),
     /// Indexed by pool slot: the body as the latest-dealt of the blows landed on it left it.
     landed: [actor.MAX]?state.Body = @splat(null),
     mana_landed: i32 = 0,
@@ -84,7 +86,7 @@ pub const Queue = struct {
     }
 
     pub fn pending(self: *const Queue, slot: actor.ActorSlot) bool {
-        return self.landsIn(slot) > 0;
+        return self.due_on[slot.index] > 0;
     }
 
     pub fn landedOn(self: *const Queue, slot: actor.ActorSlot) ?state.Body {
@@ -108,9 +110,10 @@ pub const Queue = struct {
     fn tally(self: *Queue, what: *const Event, comptime up: bool) void {
         stepCount(&self.barrels_due, what.onBarrel(), up);
         stepCount(&self.reveals_due, revealed(what) != null, up);
+        if (what.on()) |s| stepCount(&self.due_on[s.index], true, up);
     }
 
-    fn stepCount(n: *usize, on: bool, comptime up: bool) void {
+    fn stepCount(n: anytype, on: bool, comptime up: bool) void {
         if (!on) return;
         if (up) n.* += 1 else n.* -= 1;
     }

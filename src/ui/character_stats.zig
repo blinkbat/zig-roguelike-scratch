@@ -211,7 +211,7 @@ const Column = struct {
 
     fn vital(column: *Column, label: [:0]const u8, view: Vital, col: rl.Color) void {
         var text: menu.Note(32) = .{};
-        text.say("{d} / {d}", .{ view.now, view.max });
+        text.say(menu.FRACTION_FMT, .{ view.now, view.max });
         column.entry(label, text.text(), .headline, col);
     }
 

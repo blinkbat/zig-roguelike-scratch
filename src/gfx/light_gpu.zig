@@ -173,6 +173,14 @@ const Art = struct {
     fn bare(t: rl.Texture2D) Art {
         return .{ .id = t.id, .top = 0, .foot = @floatFromInt(t.height), .normals = null };
     }
+
+    fn lessId(_: void, a: Art, b: Art) bool {
+        return a.id < b.id;
+    }
+
+    fn idOrder(id: u32, a: Art) std.math.Order {
+        return std.math.order(id, a.id);
+    }
 };
 
 /// Texels in from the silhouette over which a body's edge rounds off, and how steeply.
@@ -235,13 +243,7 @@ pub const Gpu = struct {
         const b = sh.?;
         rl.beginShaderMode(b.shader);
         defer rl.endShaderMode();
-        shaders.setUniform(b.shader, b.size, size);
-        shaders.setUniform(b.shader, b.flip, flip);
-        shaders.setUniform(b.shader, b.ambient, ambient);
-        shaders.setUniform(b.shader, b.emission, emission);
-        shaders.setUniform(b.shader, b.count, n);
-        shaders.setUniform(b.shader, b.flash, flash);
-        shaders.setUniform(b.shader, b.fade_bounds, fade_bounds);
+        shaders.setFields(b, .{ .size = size, .flip = flip, .ambient = ambient, .emission = emission, .count = n, .flash = flash, .fade_bounds = fade_bounds });
         rl.setShaderValueTexture(b.shader, b.normals, normals.?);
         if (s.n > 0) {
             shaders.setUniforms(b.shader, b.lpos, &pos, n);
@@ -296,6 +298,8 @@ pub const Gpu = struct {
     /// The framebuffer the mask was drawn from, to go back to.
     outer: u32 = 0,
     arts: [sprite_assets.FIGURES]?Art = @splat(null),
+    by_id: [sprite_assets.FIGURES]Art = undefined,
+    by_id_n: usize = 0,
 
     pub fn load() Gpu {
         var g = Gpu{};
@@ -321,6 +325,16 @@ pub const Gpu = struct {
             }
             held.* = if (tex) |t| artOf(t, i < sprite_assets.LIT_FIGURES) else null;
         }
+        g.by_id_n = 0;
+        for (g.arts) |held| if (held) |a| {
+            const taken = for (g.by_id[0..g.by_id_n]) |b| {
+                if (b.id == a.id) break true;
+            } else false;
+            if (taken) continue;
+            g.by_id[g.by_id_n] = a;
+            g.by_id_n += 1;
+        };
+        std.mem.sort(Art, g.by_id[0..g.by_id_n], {}, Art.lessId);
     }
 
     pub fn unload(g: *Gpu) void {
@@ -329,10 +343,8 @@ pub const Gpu = struct {
     }
 
     pub fn art(g: *const Gpu, t: rl.Texture2D) Art {
-        for (&g.arts) |*held| {
-            if (held.*) |*a| if (a.id == t.id) return a.*;
-        }
-        return Art.bare(t);
+        const found = std.sort.binarySearch(Art, g.by_id[0..g.by_id_n], t.id, Art.idOrder) orelse return Art.bare(t);
+        return g.by_id[found];
     }
 };
 

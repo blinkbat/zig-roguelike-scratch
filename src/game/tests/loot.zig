@@ -112,7 +112,7 @@ test "spoils applies to chest and foe quality and every gold pickup route" {
         try std.testing.expect(g.sim.ground.gold(at, 20));
         if (route == 0) {
             harness.nudge(g, .e);
-            try std.testing.expectEqual(@as(i32, 20), g.pic.gold_taken.?.amount);
+            try std.testing.expectEqual(@as(i32, 20), g.pic.gold_taken.slice()[0].amount);
         } else {
             try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = at }));
             harness.pressInteract(g);

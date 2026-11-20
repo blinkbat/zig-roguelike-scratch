@@ -8,8 +8,9 @@ local work=sourceFiles.work()
 local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bit=masks.bit
+local CELL,LAST,HALF=masks.CELL,masks.CELL-1,masks.CELL//2
 local FACE=23
-local TOP=64-FACE
+local TOP=CELL-FACE
 local rgb=sourceFiles.rgb
 local P=kind=='water' and {
   foam=rgb(226,238,234),shallow=rgb(92,164,196),m=rgb(52,118,176),d=rgb(38,92,150),hi=rgb(150,206,226),
@@ -31,14 +32,14 @@ local function hash(i,j,s)
   return (h&0xffff)/65536
 end
 local function noise(x,step,seed)
-  local n=64//step
+  local n=CELL//step
   local k=x//step
   local t=(x%step)/step
   t=t*t*(3-2*t)
   local a,b=hash(k%n,0,seed),hash((k+1)%n,0,seed)
   return a+(b-a)*t
 end
-local function wrap(d) return (d+32)%64-32 end
+local function wrap(d) return (d+HALF)%CELL-HALF end
 local blobs={}
 do
   local step=16
@@ -84,20 +85,20 @@ local function cell(mask)
   local R=kind=='cave' and 6 or 10
   local B=kind=='cave' and 4 or 6
   local function within(x,y)
-    if x<0 or x>63 or y<0 or y>63 then
-      local wx,wy=x<0 and w or x>63 and e or true,y<0 and n or y>63 and s or true
+    if x<0 or x>LAST or y<0 or y>LAST then
+      local wx,wy=x<0 and w or x>LAST and e or true,y<0 and n or y>LAST and s or true
       if x<0 and y<0 then return n and w and nw end
-      if x>63 and y<0 then return n and e and ne end
-      if x<0 and y>63 then return s and w and sw end
-      if x>63 and y>63 then return s and e and se end
+      if x>LAST and y<0 then return n and e and ne end
+      if x<0 and y>LAST then return s and w and sw end
+      if x>LAST and y>LAST then return s and e and se end
       return wx and wy
     end
     if not n and y<edge(x,1) then return false end
     if not w and x<edge(y,2) then return false end
-    if not e and x>63-edge(y,3) then return false end
+    if not e and x>LAST-edge(y,3) then return false end
     if not s then
       if kind=='cave' then
-        if y>63-edge(x,4) then return false end
+        if y>LAST-edge(x,4) then return false end
       elseif y>=canopyFoot(x) then
         local t=trunk(x)
         local flare=y>=60 and 1 or 0
@@ -106,18 +107,18 @@ local function cell(mask)
     end
     local function round(cx,cy,r) local dx,dy=x-cx,y-cy; return dx*dx+dy*dy>r*r end
     if not n and not w and x<R and y<R and round(R,R,R) then return false end
-    if not n and not e and x>63-R and y<R and round(63-R,R,R) then return false end
-    if kind=='cave' and not s and not w and x<R and y>63-R and round(R,63-R,R) then return false end
-    if kind=='cave' and not s and not e and x>63-R and y>63-R and round(63-R,63-R,R) then return false end
+    if not n and not e and x>LAST-R and y<R and round(LAST-R,R,R) then return false end
+    if kind=='cave' and not s and not w and x<R and y>LAST-R and round(R,LAST-R,R) then return false end
+    if kind=='cave' and not s and not e and x>LAST-R and y>LAST-R and round(LAST-R,LAST-R,R) then return false end
     local function bite(cx,cy) local dx,dy=x-cx,y-cy; return dx*dx+dy*dy<B*B end
     if n and w and not nw and bite(-0.5,-0.5) then return false end
-    if n and e and not ne and bite(63.5,-0.5) then return false end
-    if s and w and not sw and bite(-0.5,63.5) then return false end
-    if s and e and not se and bite(63.5,63.5) then return false end
+    if n and e and not ne and bite(LAST+0.5,-0.5) then return false end
+    if s and w and not sw and bite(-0.5,LAST+0.5) then return false end
+    if s and e and not se and bite(LAST+0.5,LAST+0.5) then return false end
     return true
   end
-  local image=Image(64,64,ColorMode.RGB)
-  for y=0,63 do for x=0,63 do
+  local image=Image(CELL,CELL,ColorMode.RGB)
+  for y=0,LAST do for x=0,LAST do
     if within(x,y) then
       local pixel
       if not (within(x-1,y) and within(x+1,y) and within(x,y-1) and within(x,y+1)) then
@@ -129,7 +130,7 @@ local function cell(mask)
         else
           local band=math.min(2,(r-1)//7)
           local by=r-1-band*7
-          local xx=(x+({0,9,4})[band+1])%64
+          local xx=(x+({0,9,4})[band+1])%CELL
           local lx=xx%16
           local last=band==2 and y>=62-edge(x,4)
           if lx==0 or (by==0 and band>0) then pixel=P.out
@@ -159,7 +160,7 @@ local function cell(mask)
 end
 local BANK=tonumber(app.params.rows) or 10
 local function noise2(x,y,step,seed)
-  local n=64//step
+  local n=CELL//step
   local i,j=x//step,y//step
   local tx,ty=(x%step)/step,(y%step)/step
   tx,ty=tx*tx*(3-2*tx),ty*ty*(3-2*ty)
@@ -174,41 +175,41 @@ local function liquidCell(mask)
   local R,B=8,5
   local function bankFoot(x) return shore(x,1)+BANK+math.floor(noise(x,8,21)*1.99) end
   local function within(x,y)
-    if x<0 or x>63 or y<0 or y>63 then
+    if x<0 or x>LAST or y<0 or y>LAST then
       if x<0 and y<0 then return n and w and nw end
-      if x>63 and y<0 then return n and e and ne end
-      if x<0 and y>63 then return s and w and sw end
-      if x>63 and y>63 then return s and e and se end
-      if x<0 then return w elseif x>63 then return e elseif y<0 then return n end
+      if x>LAST and y<0 then return n and e and ne end
+      if x<0 and y>LAST then return s and w and sw end
+      if x>LAST and y>LAST then return s and e and se end
+      if x<0 then return w elseif x>LAST then return e elseif y<0 then return n end
       return s
     end
     if not n and y<shore(x,1) then return false end
     if not w and x<shore(y,2) then return false end
-    if not e and x>63-shore(y,3) then return false end
-    if not s and y>63-shore(x,4) then return false end
+    if not e and x>LAST-shore(y,3) then return false end
+    if not s and y>LAST-shore(x,4) then return false end
     local function round(cx,cy) local dx,dy=x-cx,y-cy; return dx*dx+dy*dy>R*R end
     if not n and not w and x<R and y<R and round(R,R) then return false end
-    if not n and not e and x>63-R and y<R and round(63-R,R) then return false end
-    if not s and not w and x<R and y>63-R and round(R,63-R) then return false end
-    if not s and not e and x>63-R and y>63-R and round(63-R,63-R) then return false end
+    if not n and not e and x>LAST-R and y<R and round(LAST-R,R) then return false end
+    if not s and not w and x<R and y>LAST-R and round(R,LAST-R) then return false end
+    if not s and not e and x>LAST-R and y>LAST-R and round(LAST-R,LAST-R) then return false end
     local function bite(cx,cy) local dx,dy=x-cx,y-cy; return dx*dx+dy*dy<B*B end
     if n and w and not nw and bite(-0.5,-0.5) then return false end
-    if n and e and not ne and bite(63.5,-0.5) then return false end
-    if s and w and not sw and bite(-0.5,63.5) then return false end
-    if s and e and not se and bite(63.5,63.5) then return false end
+    if n and e and not ne and bite(LAST+0.5,-0.5) then return false end
+    if s and w and not sw and bite(-0.5,LAST+0.5) then return false end
+    if s and e and not se and bite(LAST+0.5,LAST+0.5) then return false end
     return true
   end
   local function depth(x,y)
     local d=99
     if not n then d=math.min(d,y-bankFoot(x)) end
     if not w then d=math.min(d,x-shore(y,2)) end
-    if not e then d=math.min(d,63-shore(y,3)-x) end
-    if not s then d=math.min(d,63-shore(x,4)-y) end
+    if not e then d=math.min(d,LAST-shore(y,3)-x) end
+    if not s then d=math.min(d,LAST-shore(x,4)-y) end
     local function from(cx,cy) return math.sqrt((x-cx)^2+(y-cy)^2)-B end
     if n and w and not nw then d=math.min(d,from(-0.5,-0.5)) end
-    if n and e and not ne then d=math.min(d,from(63.5,-0.5)) end
-    if s and w and not sw then d=math.min(d,from(-0.5,63.5)) end
-    if s and e and not se then d=math.min(d,from(63.5,63.5)) end
+    if n and e and not ne then d=math.min(d,from(LAST+0.5,-0.5)) end
+    if s and w and not sw then d=math.min(d,from(-0.5,LAST+0.5)) end
+    if s and e and not se then d=math.min(d,from(LAST+0.5,LAST+0.5)) end
     return d
   end
   local function bankAt(x,y)
@@ -231,8 +232,8 @@ local function liquidCell(mask)
     if y%12==5 and wave<4 then return P.hi end
     return noise2(x,y,16,29)>0.6 and P.dd or P.d
   end
-  local image=Image(64,64,ColorMode.RGB)
-  for y=0,63 do for x=0,63 do
+  local image=Image(CELL,CELL,ColorMode.RGB)
+  for y=0,LAST do for x=0,LAST do
     if within(x,y) then
       local pixel
       if not n and y<bankFoot(x) then
@@ -262,7 +263,7 @@ local function liquidCell(mask)
   for _,corner in ipairs({{n and w and not nw,0},{n and e and not ne,1}}) do
     if corner[1] then
       for y=0,BANK+1 do for x=0,3 do
-        local cx=corner[2]==0 and x or 63-x
+        local cx=corner[2]==0 and x or LAST-x
         local dx=x+0.5
         if dx*dx+(y+0.5)^2>=B*B and pc.rgbaA(image:getPixel(cx,y))>0 then
           image:putPixel(cx,y,(x==3 or y==BANK+1) and P.foam or (x==0 and P.lip or P.bankd))
@@ -292,7 +293,7 @@ end
 for _,a in ipairs(masks) do for _,b in ipairs(masks) do
   if (a&bit.e)~=0 and (b&bit.w)~=0 then
     for y=8,TOP-8 do
-      assert(pc.rgbaA(byMask[a]:getPixel(63,y))==255 and pc.rgbaA(byMask[b]:getPixel(0,y))==255,'east-west seam '..a..' '..b)
+      assert(pc.rgbaA(byMask[a]:getPixel(LAST,y))==255 and pc.rgbaA(byMask[b]:getPixel(0,y))==255,'east-west seam '..a..' '..b)
     end
   end
 end end
@@ -332,18 +333,18 @@ local function wall(x,y)
   if y<1 or y>#map or x<1 or x>#map[1] then return true end
   return map[y]:sub(x,x)=='#'
 end
-local preview=Image(#map[1]*64,#map*64,ColorMode.RGB)
+local preview=Image(#map[1]*CELL,#map*CELL,ColorMode.RGB)
 for y=1,#map do for x=1,#map[1] do
-  local px,py=(x-1)*64,(y-1)*64
-  for yy=0,63 do for xx=0,63 do preview:putPixel(px+xx,py+yy,P.ground) end end
+  local px,py=(x-1)*CELL,(y-1)*CELL
+  for yy=0,LAST do for xx=0,LAST do preview:putPixel(px+xx,py+yy,P.ground) end end
 end end
 for y=1,#map do for x=1,#map[1] do
   if wall(x,y) then
     local m=masks.of(wall,x,y)
     local image=assert(byMask[m],'mask '..m)
-    for yy=0,63 do for xx=0,63 do
+    for yy=0,LAST do for xx=0,LAST do
       local p=image:getPixel(xx,yy)
-      if pc.rgbaA(p)>0 then preview:putPixel((x-1)*64+xx,(y-1)*64+yy,p) end
+      if pc.rgbaA(p)>0 then preview:putPixel((x-1)*CELL+xx,(y-1)*CELL+yy,p) end
     end end
   end
 end end

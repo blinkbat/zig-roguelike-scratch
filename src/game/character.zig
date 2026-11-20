@@ -483,8 +483,7 @@ pub fn pauseStep(g: *game.Game) void {
         .options, .visuals, .display => {
             const page = options.pageOf(g.pause_page);
             const back = menu.backedAt(&g.st, g.screen);
-            const pick = if (back) null else options.step(&g.cinema, &g.pause_menu, &g.st, g.screen, page, &g.display);
-            switch (options.go(page, back, pick) orelse return) {
+            switch (options.hostStep(&g.cinema, &g.pause_menu, &g.st, g.screen, page, &g.display, back) orelse return) {
                 .page => |p| {
                     g.pause_page = options.hostPage(@TypeOf(g.pause_page), p.to);
                     g.pause_menu = .{ .at = p.at };
@@ -575,9 +574,10 @@ test "the Quests tab scrolls to its last screenful without a turn and reopens at
     defer alloc.destroy(w);
     game.harness.arena(g, grid.MIDDLE, &.{});
     g.sim.map = w;
+    const word = "a word ";
     for (0..script.MAX_QUESTS) |_| {
         const q = w.script.addQuest().?;
-        _ = w.script.quest[q].stage[0].set("a word " ** (script.NOTE_MAX / 7));
+        _ = w.script.quest[q].stage[0].set(word ** (script.NOTE_MAX / word.len));
         g.sim.plot.quests[q] = .{ .state = .active, .stage = 1 };
     }
     game.settle(g);

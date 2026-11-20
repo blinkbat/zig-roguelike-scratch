@@ -234,7 +234,7 @@ pub const Viewer = struct {
             .drip => e.sting(0, .{ .slot = SLOT, .drip = .{ .at = mid, .matter = .blood } }),
             .shimmer => e.shimmerIn(0, .{ .at = mid, .col = look.LIFE }),
             .whirl => e.sweep(0, mid),
-            .arc => e.zap(0, .{ .from = mathx.centre(MIDDLE.add(.{ .x = -ARC_SPAN, .y = 0 })), .to = mathx.centre(MIDDLE.add(.{ .x = ARC_SPAN, .y = 0 })) }),
+            .arc => e.zap(0, .between(MIDDLE.add(.{ .x = -ARC_SPAN, .y = 0 }), MIDDLE.add(.{ .x = ARC_SPAN, .y = 0 }))),
             .missile => |a| v.loose(a, false),
             .net => v.loose(.shoot, true),
             .wisps => |gs| e.puff(0, .{ .at = mid, .ink = look.gasInk(gs) }),

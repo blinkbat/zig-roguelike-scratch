@@ -288,7 +288,7 @@ local l=s:newLayer()
 l.name='Bridge extensions'
 s:newCel(l,1,extension,Point(0,0))
 drawing.isVisible=false
-for _,layer in ipairs(s.layers) do if layer.name=='Underdrawing (25%)' then layer.isVisible=false end end
+sourceFiles.hide(s,'Underdrawing (25%)')
 app.layer=l
 local dest=install and path or work..'bridge-draft.aseprite'
 s:saveAs(dest)

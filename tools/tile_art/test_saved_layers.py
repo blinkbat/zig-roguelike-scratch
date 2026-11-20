@@ -107,10 +107,10 @@ if app.params.shots then
  s:saveCopyAs(root..'assets/source/water-cliff-connections.aseprite')
  s:saveCopyAs(work..'desktop-before.png'); s:close()
  local full=Image(256,256,ColorMode.RGB)
- for i=1,4 do
+ for i,tag in ipairs({'bare','faces','caps','edges'}) do
   local part=Image(256,256,ColorMode.RGB)
   part:putPixel(i*10,i*12,pc.rgba(10*i,20*i,30*i,255))
-  part:saveAs(app.params.shots..'template-0-layer-'..i..'.png')
+  part:saveAs(app.params.shots..'template-0-'..tag..'.png')
   full:drawImage(part,Point(0,0))
  end
  full:saveAs(app.params.shots..'template-0.png')
@@ -202,7 +202,7 @@ class SavedLayerTests(unittest.TestCase):
             work = Path(temporary)
             for folder in ('assets/source', 'assets/water', 'shots', 'tools/tile_art'):
                 (work / folder).mkdir(parents=True)
-            for helper in ('source_files.lua', 'water_cliff_layout.lua', 'water_cliff_materials.lua'):
+            for helper in ('source_files.lua', 'water_cliff_layout.lua', 'water_cliff_materials.lua', 'water_cliff_names.lua'):
                 (work / 'tools/tile_art' / helper).write_bytes((args.scripts_dir / helper).read_bytes())
             params = dict(work=work.as_posix() + '/', root=work.as_posix() + '/',
                           faces=work / 'faces.png')

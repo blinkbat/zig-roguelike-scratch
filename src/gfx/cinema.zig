@@ -137,6 +137,9 @@ pub const Cinema = struct {
     sight_field: ?rl.Texture2D = null,
     /// The visibility fields `sight_field` holds.
     sight_of: ?struct { from: *const light_visibility.Visibility, revision: u32 } = null,
+    field_pixels: [grid.CELLS]rl.Color = undefined,
+    weather_pixels: [grid.CELLS]rl.Color = undefined,
+    sight_pixels: light_visibility.SightPixels = undefined,
     scene: ?rl.RenderTexture2D = null,
     spread: ?rl.RenderTexture2D = null,
     active_bloom: bool = false,
@@ -163,12 +166,13 @@ pub const Cinema = struct {
     pub fn prepare(self: *Cinema, lv: *const grid.Level, l: *const light.Light, view: grid.Box, flames: []const light.Flame, blend: *const climate.Blend, weather: climate.Local) void {
         self.active_bloom = false;
         self.active_beams = false;
-        const air_on = self.airs();
+        const air_on = self.airs(l);
         if (!self.options.bloom and !air_on) return;
         const tex = self.field orelse return;
-        var pixels: [grid.CELLS]rl.Color = @splat(rl.Color.blank);
-        var weather_pixels: [grid.CELLS]rl.Color = undefined;
-        if (air_on) @memset(&weather_pixels, rl.Color.blank);
+        const pixels = &self.field_pixels;
+        @memset(pixels, rl.Color.blank);
+        const weather_pixels = &self.weather_pixels;
+        if (air_on) @memset(weather_pixels, rl.Color.blank);
         var cells = view.grown(FIELD_MARGIN).cells();
         while (cells.next()) |p| {
             if (!lv.isSeen(p)) continue;
@@ -192,20 +196,19 @@ pub const Cinema = struct {
             }
         }
         for (flames) |f| {
-            if (f.live() and markEmissive(&pixels, f.at)) self.active_bloom = true;
+            if (f.live() and markEmissive(pixels, f.at)) self.active_bloom = true;
         }
         for (l.effects[0..l.effect_n]) |*e| {
-            if (markEmissive(&pixels, e.source.drawn())) self.active_bloom = true;
+            if (markEmissive(pixels, e.source.drawn())) self.active_bloom = true;
         }
-        rl.updateTexture(tex, &pixels);
+        rl.updateTexture(tex, pixels);
         if (!air_on) return;
-        if (self.weather_field) |w| rl.updateTexture(w, &weather_pixels);
+        if (self.weather_field) |w| rl.updateTexture(w, weather_pixels);
         const s = self.sight_field orelse return;
         const v = &l.visibility;
         if (self.sight_of) |was| if (was.from == v and was.revision == v.revision) return;
-        var sight_pixels: light_visibility.SightPixels = undefined;
-        v.sightPixels(&sight_pixels);
-        rl.updateTexture(s, &sight_pixels);
+        v.sightPixels(&self.sight_pixels);
+        rl.updateTexture(s, &self.sight_pixels);
         self.sight_of = .{ .from = v, .revision = v.revision };
     }
 
@@ -213,8 +216,8 @@ pub const Cinema = struct {
         return self.options.bloom and self.active_bloom and self.bloom != null and self.field != null;
     }
 
-    fn airs(self: *const Cinema) bool {
-        return self.options.atmosphere and self.strengths.atmosphere > 0;
+    fn airs(self: *const Cinema, l: *const light.Light) bool {
+        return self.options.atmosphere and self.strengths.atmosphere > 0 and l.sky != null;
     }
 
     pub fn beginScene(self: *Cinema, screen: mathx.P, outer: u32) bool {
@@ -261,9 +264,7 @@ pub const Cinema = struct {
     fn bindBloom(self: *Cinema, b: Bloom, view: shaders.MapView, visibility: rl.Texture2D, glints: rl.Texture2D, direction: [2]f32, extract: bool) void {
         setField(b, self.field.?, visibility, view);
         rl.setShaderValueTexture(b.shader, b.glints, glints);
-        shaders.setUniform(b.shader, b.direction, direction);
-        shaders.setUniform(b.shader, b.extract, extract);
-        shaders.setUniform(b.shader, b.amount, self.strengths.bloom);
+        shaders.setFields(b, .{ .direction = direction, .extract = extract, .amount = self.strengths.bloom });
     }
 
     pub fn beginFocus(self: *Cinema, t: grid.Tile, tex: rl.Texture2D, at: [2]f32, hero: ?[2]f32) ?Focused {
@@ -284,8 +285,8 @@ pub const Cinema = struct {
     }
 
     pub fn drawAir(self: *Cinema, l: *light.Light, origin: [2]f32, cell: f32, screen: mathx.P, hour: f32, reflections: bool) void {
-        if (!self.airs()) return;
-        const k = l.sky orelse return;
+        if (!self.airs(l)) return;
+        const k = l.sky.?;
         const a = self.air orelse return;
         const field = self.field orelse return;
         const visibility = l.mapTexture() orelse return;
@@ -296,16 +297,18 @@ pub const Cinema = struct {
         setField(a, field, visibility, .at(origin, cell, screen));
         rl.setShaderValueTexture(a.shader, a.weather, weather);
         rl.setShaderValueTexture(a.shader, a.sight, sight);
-        shaders.setUniform(a.shader, a.time, l.t.at());
         const sunlight = k.sun() * std.math.clamp(sky.luma(k.key), 0, 1);
         const h = day.wrapHour(hour);
         const beam_day = mathx.smoothstep(SHAFT_MORNING[0], SHAFT_MORNING[1], h) * (1 - mathx.smoothstep(SHAFT_EVENING[0], SHAFT_EVENING[1], h));
-        shaders.setUniform(a.shader, a.sunlight, sunlight);
-        shaders.setUniform(a.shader, a.shaftlight, sunlight * beam_day);
-        shaders.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));
-        shaders.setUniform(a.shader, a.amount, self.strengths.atmosphere);
-        shaders.setUniform(a.shader, a.reflections, reflections);
-        shaders.setUniform(a.shader, a.beams, self.active_beams);
+        shaders.setFields(a, .{
+            .time = l.t.at(),
+            .sunlight = sunlight,
+            .shaftlight = sunlight * beam_day,
+            .brightness = std.math.clamp(sky.brightness(k), AIR_DARKEST, 1),
+            .amount = self.strengths.atmosphere,
+            .reflections = reflections,
+            .beams = self.active_beams,
+        });
         rl.drawRectangle(0, 0, screen.x, screen.y, rl.Color.white);
         rl.endShaderMode();
         rl.endBlendMode();

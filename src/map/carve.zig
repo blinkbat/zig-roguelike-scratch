@@ -163,6 +163,23 @@ pub const Over = struct {
         return o.land_range == 0 or near(lv, p, o.land_range, Land{ .tile = o.tile });
     }
 
+    fn mask(o: Over, lv: *const grid.Level, within: grid.Box) grid.CellSet {
+        var wet: Summed = undefined;
+        var land: Summed = undefined;
+        if (o.water_range != 0 or o.water_clear != 0) wet.fill(lv, Is(grid.Tile.wet){});
+        if (o.land_range != 0) land.fill(lv, Land{ .tile = o.tile });
+        var out = grid.CellSet.initEmpty();
+        var cells = within.cells();
+        while (cells.next()) |p| {
+            if (!o.has(lv.at(p))) continue;
+            if (o.water_range != 0 and !wet.any(p, o.water_range)) continue;
+            if (o.water_clear != 0 and wet.any(p, o.water_clear)) continue;
+            if (o.land_range != 0 and !land.any(p, o.land_range)) continue;
+            out.set(grid.Level.idx(p));
+        }
+        return out;
+    }
+
     const Land = struct {
         tile: grid.Tile,
 
@@ -201,15 +218,53 @@ fn near(lv: *const grid.Level, p: P, r: i32, which: anytype) bool {
     return false;
 }
 
+const Summed = struct {
+    const W = grid.COLS + 1;
+    sum: [W * (grid.ROWS + 1)]u16,
+
+    fn fill(self: *Summed, lv: *const grid.Level, which: anytype) void {
+        @memset(self.sum[0..W], 0);
+        for (0..grid.ROWS) |y| {
+            self.sum[(y + 1) * W] = 0;
+            var row: u16 = 0;
+            for (0..grid.COLS) |x| {
+                const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(y) });
+                row += @intFromBool(which.holds(lv.tile[i]));
+                self.sum[(y + 1) * W + x + 1] = self.sum[y * W + x + 1] + row;
+            }
+        }
+    }
+
+    fn any(self: *const Summed, p: P, r: i32) bool {
+        const b = grid.Box.around(p, r);
+        const x0: usize = @intCast(std.math.clamp(b.lo.x, 0, grid.W));
+        const y0: usize = @intCast(std.math.clamp(b.lo.y, 0, grid.H));
+        const x1: usize = @intCast(std.math.clamp(b.hi.x, 0, grid.W));
+        const y1: usize = @intCast(std.math.clamp(b.hi.y, 0, grid.H));
+        const s = &self.sum;
+        return @as(i32, s[y1 * W + x1]) - s[y0 * W + x1] - s[y1 * W + x0] + s[y0 * W + x0] > 0;
+    }
+};
+
+test "a summed range answers as the square scan does" {
+    var lv = grid.Level.blank();
+    var rng = mathx.Rng.init(11);
+    for (&lv.tile) |*t| t.* = if (rng.perMille(15)) .water else if (rng.perMille(40)) .wall else .grass;
+    const on = Over{ .tile = .grass, .water_range = 6, .land_range = 3 };
+    const clear = Over{ .tile = .grass, .water_clear = 2 };
+    for ([_]Over{ on, clear }) |o| {
+        const mask = o.mask(&lv, grid.MAP);
+        for (0..grid.CELLS) |i| try std.testing.expectEqual(o.at(&lv, grid.Level.of(i)), mask.isSet(i));
+    }
+}
+
 pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool) void {
     scatterIn(lv, rng, per_mille, on, put, lone, grid.MAP);
 }
 
 pub fn scatterIn(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool, within: grid.Box) void {
-    var over = grid.CellSet.initEmpty();
+    const over = on.mask(lv, within);
     var cells = within.cells();
-    while (cells.next()) |p| over.setValue(grid.Level.idx(p), on.at(lv, p));
-    cells = within.cells();
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
         if (!over.isSet(i)) continue;
@@ -419,6 +474,8 @@ pub const Laid = struct {
     authored: ?*const grid.CellSet = null,
 };
 
+const UNPAINTED = grid.CellSet.initEmpty();
+
 pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void {
     var st: Stretches = .{};
     const region = &st.region;
@@ -445,14 +502,12 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void 
             if (orphan == NO_CELL) continue;
             const from = grid.Level.inset(grid.Level.of(orphan));
             const to = grid.nearest(from, InStretch{ .st = &st, .r = main }) orelse return;
-            if (laid.authored) |painted| {
-                if (!joinRound(lv, rng, &st, region[orphan], main, from, to, pal.path, painted)) break;
-            } else trail(lv, rng, from, to, pal.path);
+            if (!joinRound(lv, rng, &st, region[orphan], main, from, to, pal.path, laid.authored orelse &UNPAINTED)) break;
         }
     }
 }
 
-/// The trail if it crosses no painted solid, else the way through fewest: false when that breaks one, so the pass relabels first.
+/// The trail if it crosses no painted solid or prize, else the way through fewest: false when that breaks one, so the pass relabels first.
 fn joinRound(lv: *grid.Level, rng: *mathx.Rng, st: *Stretches, from_r: u16, main: u16, a: P, b: P, path: grid.Tile, painted: *const grid.CellSet) bool {
     var way: [Trail.MOST]P = undefined;
     var n: usize = 0;
@@ -461,8 +516,7 @@ fn joinRound(lv: *grid.Level, rng: *mathx.Rng, st: *Stretches, from_r: u16, main
     while (t.next(rng, lv)) |p| {
         way[n] = p;
         n += 1;
-        const i = grid.Level.idx(p);
-        crosses = crosses or (painted.isSet(i) and lv.tile[i].solid());
+        crosses = crosses or breaksLast(lv, painted, grid.Level.idx(p));
     }
     if (!crosses) {
         for (way[0..n]) |p| lay(lv, p, path);
@@ -472,57 +526,117 @@ fn joinRound(lv: *grid.Level, rng: *mathx.Rng, st: *Stretches, from_r: u16, main
     return broke == 0;
 }
 
-/// Square steps from every cell of `from_r` to the nearest of `main` off the rim, through the fewest painted solid cells; how many.
-fn route(lv: *grid.Level, st: *Stretches, from_r: u16, main: u16, path: grid.Tile, painted: *const grid.CellSet) ?usize {
-    var back: [grid.CELLS]u32 = @splat(NO_CELL);
-    var walls: [grid.CELLS]u32 = undefined;
-    var seen = grid.CellSet.initEmpty();
-    const queue = &st.queue;
-    var tail: usize = 0;
-    for (st.region, 0..) |r, i| {
-        if (r != from_r) continue;
-        seen.set(i);
-        queue[tail] = @intCast(i);
-        tail += 1;
-    }
-    var head: usize = 0;
-    var breaks: usize = 0;
-    while (head < tail) : (breaks += 1) {
-        var walled: usize = 0;
-        while (head < tail) : (head += 1) {
-            const i = queue[head];
-            const p = grid.Level.of(i);
-            for (mathx.CARDINALS) |d| {
-                const q = p.add(d);
-                if (!grid.Level.inside(q) or grid.Level.onRim(q)) continue;
-                const k = grid.Level.idx(q);
-                if (seen.isSet(k)) continue;
-                seen.set(k);
-                if (st.region[k] == main) {
-                    var at = i;
-                    while (at != NO_CELL) : (at = back[at]) lay(lv, grid.Level.of(at), path);
-                    return breaks;
-                }
-                back[k] = i;
-                if (painted.isSet(k) and lv.tile[k].solid()) {
-                    walls[walled] = @intCast(k);
-                    walled += 1;
-                    continue;
-                }
-                queue[tail] = @intCast(k);
-                tail += 1;
-            }
-        }
-        for ([_]bool{ false, true }) |lit| {
-            for (walls[0..walled]) |k| {
-                if (lv.torch.has(grid.Level.of(k)) != lit) continue;
-                queue[tail] = k;
-                tail += 1;
-            }
-        }
-    }
-    return null;
+fn walledBy(lv: *const grid.Level, painted: ?*const grid.CellSet, i: usize) bool {
+    const p = painted orelse return false;
+    return p.isSet(i) and lv.tile[i].solid();
 }
+
+pub fn breaksLast(lv: *const grid.Level, painted: ?*const grid.CellSet, i: usize) bool {
+    return walledBy(lv, painted, i) or lv.tile[i].prized();
+}
+
+/// Square steps from every cell of `from_r` to the nearest of `main` off the rim, through the fewest cells it `breaksLast`; how many.
+fn route(lv: *grid.Level, st: *Stretches, from_r: u16, main: u16, path: grid.Tile, painted: *const grid.CellSet) ?usize {
+    const Way = struct {
+        lv: *const grid.Level,
+        st: *const Stretches,
+        main: u16,
+        painted: *const grid.CellSet,
+
+        pub const ON_TAKE = false;
+        pub const LIT_LAST = true;
+
+        pub fn opens(_: @This(), q: P) bool {
+            return !grid.Level.onRim(q);
+        }
+
+        pub fn last(w: @This(), k: usize) bool {
+            return breaksLast(w.lv, w.painted, k);
+        }
+
+        pub fn done(w: @This(), k: usize) bool {
+            return w.st.region[k] == w.main;
+        }
+    };
+    var search: Fewest = .{};
+    for (st.region, 0..) |r, i| if (r == from_r) search.seed(i);
+    const found = search.run(lv, Way{ .lv = lv, .st = st, .main = main, .painted = painted }) orelse return null;
+    var way = search.trace(found.end);
+    while (way.next()) |p| lay(lv, p, path);
+    return found.breaks;
+}
+
+pub const Fewest = struct {
+    back: [grid.CELLS]u32 = @splat(NO_CELL),
+    seen: grid.CellSet = .initEmpty(),
+    queue: [grid.CELLS]u32 = undefined,
+    walls: [grid.CELLS]u32 = undefined,
+    tail: usize = 0,
+
+    pub const Found = struct { end: u32, breaks: usize };
+
+    pub fn seed(self: *Fewest, i: usize) void {
+        self.seen.set(i);
+        self.queue[self.tail] = @intCast(i);
+        self.tail += 1;
+    }
+
+    pub fn trace(self: *const Fewest, end: u32) Trace {
+        return .{ .back = &self.back, .at = end };
+    }
+
+    pub const Trace = struct {
+        back: *const [grid.CELLS]u32,
+        at: u32,
+
+        pub fn next(t: *Trace) ?P {
+            if (t.at == NO_CELL) return null;
+            const p = grid.Level.of(t.at);
+            t.at = t.back[t.at];
+            return p;
+        }
+    };
+
+    /// `ON_TAKE` tests `done` on a cell as it is taken, else on a step's first reach, ending at the cell it stepped from; `LIT_LAST` holds lit cells behind unlit.
+    pub fn run(self: *Fewest, lv: *const grid.Level, way: anytype) ?Found {
+        const Way = @TypeOf(way);
+        var head: usize = 0;
+        var breaks: usize = 0;
+        while (head < self.tail) : (breaks += 1) {
+            var walled: usize = 0;
+            while (head < self.tail) : (head += 1) {
+                const i = self.queue[head];
+                if (Way.ON_TAKE and way.done(i)) return .{ .end = i, .breaks = breaks };
+                const p = grid.Level.of(i);
+                for (mathx.CARDINALS) |d| {
+                    const q = p.add(d);
+                    if (!grid.Level.inside(q) or !way.opens(q)) continue;
+                    const k = grid.Level.idx(q);
+                    if (self.seen.isSet(k)) continue;
+                    self.seen.set(k);
+                    if (!Way.ON_TAKE and way.done(k)) return .{ .end = i, .breaks = breaks };
+                    self.back[k] = i;
+                    if (way.last(k)) {
+                        self.walls[walled] = @intCast(k);
+                        walled += 1;
+                        continue;
+                    }
+                    self.queue[self.tail] = @intCast(k);
+                    self.tail += 1;
+                }
+            }
+            for ([_]bool{ false, true }) |lit| {
+                for (self.walls[0..walled]) |k| {
+                    if (Way.LIT_LAST and lv.torch.has(grid.Level.of(k)) != lit) continue;
+                    if (!Way.LIT_LAST and lit) continue;
+                    self.queue[self.tail] = k;
+                    self.tail += 1;
+                }
+            }
+        }
+        return null;
+    }
+};
 
 pub const Stretches = struct {
     region: [grid.CELLS]u16 = undefined,
@@ -759,6 +873,24 @@ test "a trail steps round a chest or glow plant in its way and still joins its e
         var st: Stretches = .{};
         _ = st.label(&lv);
         try std.testing.expectEqual(st.of(a), st.of(b));
+    }
+}
+
+test "a join with nothing painted goes round prizes its trail would pave" {
+    const orphan = P{ .x = 20, .y = 10 };
+    const prizes = [_]P{ .{ .x = 29, .y = 10 }, .{ .x = 28, .y = 9 }, .{ .x = 28, .y = 11 } };
+    for (0..10) |seed| {
+        var lv = grid.Level.blank();
+        var cells = (grid.Box{ .lo = .{ .x = 30, .y = 10 }, .hi = .{ .x = 50, .y = 11 } }).cells();
+        while (cells.next()) |q| lv.set(q, .floor);
+        lv.set(orphan, .floor);
+        for (prizes) |q| lv.set(q, .chest);
+        var rng = mathx.Rng.init(seed + 1);
+        connect(&lv, &rng, Palette.BUILT, .{});
+        for (prizes) |q| try std.testing.expectEqual(grid.Tile.chest, lv.at(q));
+        var st: Stretches = .{};
+        _ = st.label(&lv);
+        try std.testing.expectEqual(st.of(orphan), st.of(.{ .x = 40, .y = 10 }));
     }
 }
 
@@ -1074,8 +1206,9 @@ pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: Ove
     var hist = [_]u32{0} ** BUCKETS;
     var of: [grid.CELLS]u16 = @splat(BUCKETS);
     var n: u32 = 0;
+    const over = on.mask(lv, grid.MAP);
     for (0..grid.CELLS) |i| {
-        if (!on.at(lv, grid.Level.of(i)) or rimAt(i)) continue;
+        if (!over.isSet(i) or rimAt(i)) continue;
         const b = bucket(noise.at(grid.Level.of(i), scale, 3), BUCKETS);
         of[i] = @intCast(b);
         hist[b] += 1;
@@ -1166,6 +1299,20 @@ test "connecting hundreds of painted pockets reaches every preserved floor" {
     for (0..17) |y| for (0..17) |x| {
         try std.testing.expectEqual(grid.Tile.floor, lv.at(.{ .x = @intCast(2 + x * 2), .y = @intCast(2 + y * 2) }));
     };
+}
+
+test "a join beside painted ground goes round a row of chests too long to step past" {
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .wall);
+    for (2..10) |x| for (2..grid.ROWS - 2) |y| lv.set(.{ .x = @intCast(x), .y = @intCast(y) }, .floor);
+    for (30..34) |x| for (18..22) |y| lv.set(.{ .x = @intCast(x), .y = @intCast(y) }, .floor);
+    for (4..grid.ROWS - 1) |y| lv.set(.{ .x = 20, .y = @intCast(y) }, .chest);
+    const painted = grid.CellSet.initEmpty();
+    var rng = mathx.Rng.init(7);
+    connect(&lv, &rng, Palette.BUILT, .{ .authored = &painted });
+    for (4..grid.ROWS - 1) |y| try std.testing.expectEqual(grid.Tile.chest, lv.at(.{ .x = 20, .y = @intCast(y) }));
+    var st = Stretches{};
+    try std.testing.expectEqual(@as(usize, 1), st.label(&lv));
 }
 
 test "a small island is bridged, not filled as a pocket" {

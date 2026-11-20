@@ -268,12 +268,12 @@ test "collected coins stay drawn only until the collection step finishes" {
     try std.testing.expect(g.sim.ground.gold(at, 37));
     harness.nudge(g, .e);
     try std.testing.expectEqual(@as(i32, 37), g.sim.gold);
-    try std.testing.expect(g.pic.gold_taken.?.at.eq(at));
+    try std.testing.expect(g.pic.gold_taken.slice()[0].at.eq(at));
     harness.drawnOut(g);
-    try std.testing.expect(g.pic.gold_taken == null);
+    try std.testing.expectEqual(@as(usize, 0), g.pic.gold_taken.n);
     harness.nudge(g, .e);
     try std.testing.expect(g.pic.glide[g.sim.heroSlot().?].left() > 0);
-    try std.testing.expect(g.pic.gold_taken == null);
+    try std.testing.expectEqual(@as(usize, 0), g.pic.gold_taken.n);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     try std.testing.expect(g.sim.ground.gold(at, 37));
     harness.nudge(g, .e);
@@ -281,7 +281,38 @@ test "collected coins stay drawn only until the collection step finishes" {
     game.update(g, game.GLIDE_S - 0.00005);
     try std.testing.expectEqual(@as(i32, 22), g.sim.heroActor().?.at.x);
     try std.testing.expect(g.pic.glide[g.sim.heroSlot().?].left() > 0);
-    try std.testing.expect(g.pic.gold_taken == null);
+    try std.testing.expectEqual(@as(usize, 0), g.pic.gold_taken.n);
+}
+
+test "coins taken by a step and then a knock that turn each stay drawn until the hero reaches them" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const step = P{ .x = 21, .y = 20 };
+    const knocked = P{ .x = 20, .y = 19 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    harness.toughen(g.sim.heroActor().?);
+    const id = harness.spawnAt(g, .bandit_shieldbearer, .{ .x = 22, .y = 21 }, true);
+    game.settle(g);
+    try std.testing.expect(g.sim.ground.gold(step, 5));
+    try std.testing.expect(g.sim.ground.gold(knocked, 7));
+    g.sim.rng = harness.foeAttacksRngAt(g, step, &.{.{ .id = id, .lands = true }});
+    harness.nudge(g, .e);
+    try std.testing.expectEqual(knocked, g.sim.heroAt().?);
+    try std.testing.expectEqual(@as(usize, 2), g.pic.gold_taken.n);
+    const hero = g.sim.heroSlot().?;
+    var saw_one = false;
+    var t: f32 = 0;
+    while (t < 2 and g.pic.gold_taken.n > 0) : (t += harness.TEST_DT) {
+        harness.walkFrame(g, harness.TEST_DT, null);
+        if (g.pic.gold_taken.n == 1) {
+            saw_one = true;
+            try std.testing.expect(!harness.samePx(g.pic.glide[hero].ground(), glide.cellPx(knocked)));
+            try std.testing.expect(!harness.samePx(g.pic.glide[hero].ground(), glide.cellPx(.{ .x = 20, .y = 20 })));
+            try std.testing.expect(g.pic.gold_taken.slice()[0].at.eq(knocked));
+        }
+    }
+    try std.testing.expect(saw_one);
+    try std.testing.expectEqual(@as(usize, 0), g.pic.gold_taken.n);
 }
 
 fn showsAndLands(g: *game.Game, slot: usize) struct { shows: f32, lands: f32 } {
@@ -820,6 +851,22 @@ test "the lean shows a glowbulb a kick burst until the burst lands" {
     try std.testing.expectEqual(game.Move.burst, scene.leanShown(g, g.pic.groundShown(&g.sim), &scene.stoodNow(g), at, .e));
     harness.drawnOut(g);
     try std.testing.expectEqual(game.Move.step, scene.leanShown(g, g.pic.groundShown(&g.sim), &scene.stoodNow(g), at, .e));
+}
+
+test "the lean shows a chest blocked by the last foe until its killing blow lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    harness.arena(g, at, &.{.{ .x = 20, .y = 23 }});
+    g.sim.lv.set(.{ .x = 21, .y = 20 }, .chest);
+    game.settle(g);
+    try std.testing.expect(game.foesNear(g));
+    try std.testing.expectEqual(game.Move.blocked, scene.leanShown(g, g.pic.groundShown(&g.sim), &scene.stoodNow(g), at, .e));
+    harness.kill(g, harness.foeId(0), at, 0.3);
+    try std.testing.expect(!game.foesNear(g));
+    try std.testing.expectEqual(game.Move.blocked, scene.leanShown(g, g.pic.groundShown(&g.sim), &scene.stoodNow(g), at, .e));
+    harness.drawnOut(g);
+    try std.testing.expectEqual(game.Move.open, scene.leanShown(g, g.pic.groundShown(&g.sim), &scene.stoodNow(g), at, .e));
 }
 
 test "a kick dealt in a frame of play is no further into its bump than its blow is to landing" {

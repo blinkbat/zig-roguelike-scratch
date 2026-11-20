@@ -10,7 +10,7 @@ const glide = @import("../glide.zig");
 const P = mathx.P;
 const SHOTS_DIR = @import("capture.zig").SHOTS_DIR;
 const capture = @import("capture.zig").capture;
-const readTarget = @import("capture.zig").readTarget;
+const captured = @import("capture.zig").captured;
 const renderTarget = @import("capture.zig").renderTarget;
 const toggled = @import("capture.zig").toggled;
 const NIGHT = @import("poses.zig").NIGHT;
@@ -47,8 +47,7 @@ pub fn captureTrees(g: *game.Game) !void {
     try capture(g, target, TREES_DIR ++ "/behind-gas.png");
     @memset(&g.sim.lv.gas, 0);
     g.cloud.settle(&g.sim.lv);
-    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
-    g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
+    standInFront(g);
     game.update(g, FADING_S);
     const restoring = g.pic.occlusion[grid.Level.idx(tree)];
     if (restoring <= 0 or restoring >= FADED) return error.TreeRestoreNotSmooth;
@@ -86,8 +85,7 @@ pub fn captureTrees(g: *game.Game) !void {
     try capture(g, target, TREES_DIR ++ "/grass-fading.png");
     fadeOut(g);
     if (g.pic.occlusion[grid.Level.idx(grass)] < FADED) return error.GrassDidNotFade;
-    try capture(g, target, TREES_DIR ++ "/grass-clear.png");
-    const faded_grass = try readTarget(target);
+    const faded_grass = try captured(g, target, TREES_DIR ++ "/grass-clear.png");
     defer rl.unloadImage(faded_grass);
     const shown = try toggled(g, target, faded_grass, &g.pic.occlusion[grid.Level.idx(grass)], 0, null);
     if (shown.changed == 0) return error.GrassOcclusionDidNotChangeFrame;
@@ -96,8 +94,7 @@ pub fn captureTrees(g: *game.Game) !void {
     g.sim.lv.gas[grid.Level.idx(grass)] = VEIL_GAS;
     g.cloud.settle(&g.sim.lv);
     try capture(g, target, TREES_DIR ++ "/grass-gas.png");
-    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
-    g.pic.glide[g.sim.heroSlot().?] = glide.Glide.rest(g.sim.heroActor().?);
+    standInFront(g);
     fadeOut(g);
     if (g.pic.occlusion[grid.Level.idx(grass)] > UNFADED) return error.GrassDidNotRestore;
     try capture(g, target, TREES_DIR ++ "/grass-front.png");
@@ -114,4 +111,11 @@ const veil = @import("capture.zig").veil;
 
 fn fadeOut(g: *game.Game) void {
     game.harness.fadeFrames(g, game.update);
+}
+
+const FRONT = P{ .x = 24, .y = 20 };
+
+fn standInFront(g: *game.Game) void {
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, FRONT);
+    g.pic.glide[g.sim.heroSlot().?] = glide.Glide.rest(g.sim.heroActor().?);
 }

@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const look = @import("look.zig");
+const raster = @import("raster.zig");
 
 const Box = struct { x: i32, y: i32, w: i32, h: i32 };
 
@@ -202,8 +203,7 @@ pub const Quads = struct {
     pub fn begin() Quads {
         const tex = rl.getShapesTexture();
         const r = rl.getShapesTextureRectangle();
-        const w: f32 = @floatFromInt(tex.width);
-        const h: f32 = @floatFromInt(tex.height);
+        const w, const h = raster.sizeOf(tex);
         rl.gl.rlSetTexture(tex.id);
         rl.gl.rlBegin(rl.gl.rl_quads);
         rl.gl.rlNormal3f(0, 0, 1);

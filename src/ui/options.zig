@@ -56,6 +56,10 @@ pub fn go(page: Page, back: bool, picked: ?Pick) ?Go {
     };
 }
 
+pub fn hostStep(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, screen: mathx.P, page: Page, display: *window.Display, back: bool) ?Go {
+    return go(page, back, if (back) null else step(c, selection, st, screen, page, display));
+}
+
 const Range = struct { min: f32 = 0, max: f32 = 2, default: f32 = 0, alt: ?f32 = null };
 const TRACK_AT: f32 = 0.52;
 const TRACK_W: f32 = 0.32;

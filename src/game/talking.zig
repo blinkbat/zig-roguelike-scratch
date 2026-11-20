@@ -20,10 +20,10 @@ pub fn afterTurn(g: *game.Game) void {
 
 /// On arriving at a node, no time passing.
 pub fn arrived(g: *game.Game) void {
+    defer g.pic.showPlot(&g.sim);
     const s = g.sim.script() orelse return;
     g.sim.plot.evaluate(s, g.sim.world(), &g.sim.log);
     restand(g);
-    g.pic.showPlot(&g.sim);
 }
 
 const Standing = struct {

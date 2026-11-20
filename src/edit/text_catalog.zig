@@ -399,7 +399,8 @@ const FX_SOURCE = "gfx/fx.zig";
 const EFFECT_SOURCES = [_][]const u8{ FX_SOURCE, "gfx/effect_state.zig", "gfx/impact_queue.zig" };
 const LOOK_SOURCES = [_][]const u8{ "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig" };
 const APP_SOURCE = "app.zig";
-const LONE_SOURCES = [_][]const u8{ APP_SOURCE, "game.zig", "save.zig", SAVE_SOURCE, "gfx/look.zig" } ++ EFFECT_SOURCES ++ LOOK_SOURCES;
+const GAME_SOURCE = "game.zig";
+const LONE_SOURCES = [_][]const u8{ APP_SOURCE, GAME_SOURCE, "save.zig", SAVE_SOURCE, "gfx/look.zig" } ++ EFFECT_SOURCES ++ LOOK_SOURCES;
 const EXCLUDED_DIRS = [_][]const u8{ "tests/", "game/shots/" };
 const EXCLUDED_SOURCES = [_][]const u8{ "game/harness.zig", "map/atlas_text.zig", "map/script_text.zig", "edit/text_catalog.zig", "edit/text_panel.zig" };
 const SKILLBAR_SOURCE = "play/skillbar.zig";
@@ -623,7 +624,7 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (std.mem.startsWith(u8, rel, "play/")) return COMBAT_CATEGORY;
         if (std.mem.startsWith(u8, rel, "game/")) return GAMEPLAY_CATEGORY;
         if (std.mem.eql(u8, rel, APP_SOURCE)) return INTERFACE_CATEGORY;
-        if (std.mem.eql(u8, rel, "game.zig")) return GAMEPLAY_CATEGORY;
+        if (std.mem.eql(u8, rel, GAME_SOURCE)) return GAMEPLAY_CATEGORY;
         if (std.mem.startsWith(u8, rel, "save")) return SAVE_CATEGORY;
     }
     return humanize(a, stem(std.fs.path.basename(path)));

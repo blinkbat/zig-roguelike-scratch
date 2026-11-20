@@ -2,6 +2,7 @@ local root=assert(app.params.root,'root=<repo with trailing slash>')
 local work=assert(app.params.work,'work=<backup folder with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
+local names=dofile(root..'tools/tile_art/water_cliff_names.lua')
 local stamp=os.date(sourceFiles.STAMP)
 if app.params.shots then
  local shots=app.params.shots
@@ -16,14 +17,14 @@ if app.params.shots then
   s:newCel(l,1,im,at)
   replacements[name]={image=im,position=at}
  end
- for i,name in ipairs({'Ground','Cliff faces','Lip and cap fill'}) do
-  replace('Land to shallows - '..name,Image{fromFile=shots..'template-0-layer-'..i..'.png'},block)
+ for _,tag in ipairs({'bare','faces','caps'}) do
+  replace(names.layer(1,tag),Image{fromFile=shots..'template-0-'..tag..'.png'},block)
  end
- local edits=sourceFiles.layer(s,'Owner flat border edits')
+ local edits=sourceFiles.layer(s,names.owner)
  local owner=edits and sourceFiles.canvas(s,assert(edits:cel(1))) or Image(s.width,s.height,ColorMode.RGB)
  for y=block.y,block.y+layout.block-1 do for x=block.x,block.x+layout.block-1 do owner:putPixel(x,y,0) end end
- owner:drawImage(Image{fromFile=shots..'template-0-layer-4.png'},block)
- replace('Owner flat border edits',owner,Point(0,0))
+ owner:drawImage(Image{fromFile=shots..'template-0-edges.png'},block)
+ replace(names.owner,owner,Point(0,0))
  local preview=work..'updated-template.png'
  local width,height=s.width,s.height
  sourceFiles.keep(root..'assets/source/water-cliff-connections.aseprite',work,'pinch',stamp)
@@ -49,7 +50,7 @@ if app.params.shots then
  end end
  return
 end
-local faces=Image{fromFile=assert(app.params.faces,'faces=<previous template-0-layer-2.png>')}
+local faces=Image{fromFile=assert(app.params.faces,'faces=<previous template-0-faces.png>')}
 local pc=app.pixelColor
 local function span(im,x,y0,height)
  local first,last

@@ -455,8 +455,10 @@ pub const Node = struct {
     pub fn stampAt(self: *const Node, lv: *grid.Level, roll: u64, entrance: ?P) void {
         const cells = self.doorCells();
         const laid = self.sectionOn(roll);
+        comptime std.debug.assert(zoo.RESERVED_BOXES <= procgen.KEPT_MAX);
+        var kept: [zoo.RESERVED_BOXES]grid.Box = undefined;
         switch (self.plan) {
-            .procgen => |*pg| procgen.rollWith(lv, roll, cells.slice(), pg.floor, pg.features(), laid),
+            .procgen => |*pg| procgen.rollWith(lv, roll, cells.slice(), pg.floor, pg.features(), laid, if (self.zoo) |*z| z.reservedBoxes(&kept) else &.{}),
             .bespoke => |*b| {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;

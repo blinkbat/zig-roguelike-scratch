@@ -31,10 +31,10 @@ class ConnectedTemplateTests(WorkTest):
         block = (LAYOUT['block'], LAYOUT['block'])
         for n in range(3):
             combined = Image.new('RGBA', block)
-            for part in range(1, 5):
+            for part, tag in enumerate(('bare', 'faces', 'caps', 'edges'), 1):
                 pixels = Image.new('RGBA', block,(40 + n * 20, 50, 60, 255) if part == 1 else (0, 0, 0, 0))
                 pixels.putpixel((part * 7, part * 11), SURFACE if part == 4 else (60 + part * 20, 100 + n * 20, 120, 255))
-                pixels.save(self.shots / f'template-{n}-layer-{part}.png')
+                pixels.save(self.shots / f'template-{n}-{tag}.png')
                 combined = Image.alpha_composite(combined, pixels)
             combined.save(self.shots / f'template-{n}.png')
         self.inputs = {path: path.read_bytes() for path in self.shots.iterdir()}
@@ -100,7 +100,7 @@ assert(loadfile(app.params.assembly,'t',env))()
         scripts = root / 'tools/tile_art'
         scripts.mkdir(parents=True)
         for name in ('water_cliff_connected.py', 'art_support.py', 'source_files.lua', 'ground_corners.lua',
-                     'ground_layout.lua', 'water_cliff_materials.lua', 'export_water_edges.lua'):
+                     'ground_layout.lua', 'water_cliff_materials.lua', 'water_cliff_names.lua', 'export_water_edges.lua'):
             shutil.copyfile(args.scripts_dir / name, scripts / name)
         shifted = dict(LAYOUT, x=LAYOUT['x'] + 8, y=LAYOUT['y'] + 8, stride=LAYOUT['stride'] - 8)
         (scripts / 'water_cliff_layout.lua').write_text(

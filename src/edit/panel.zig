@@ -176,10 +176,7 @@ fn isPopup(ed: *const editor.Editor, w: std.meta.Tag(editor.Which)) bool {
 }
 
 fn isPlot(ed: *const editor.Editor, page: editor.plot.Page) bool {
-    return switch (ed.modal) {
-        .plot => |p| p == page,
-        else => false,
-    };
+    return ed.modal == .plot and ed.modal.plot == page;
 }
 
 fn toolIcon(ed: *editor.Editor, g: *game.Game, t: editor.Tool, r: rl.Rectangle) void {
@@ -348,7 +345,7 @@ fn drawTerrain(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
     const swatches = Tiles{ .x = col.left(), .y = y, .cols = paletteCols(col), .pitch = SWATCH + SWATCH_GAP, .size = SWATCH };
     for (PALETTE, 0..) |t, i| {
         const r = swatches.at(i);
-        const h = widgets.hot(ed.controls(), r, true, false, PALETTE_TIPS.get(t));
+        const h = widgets.hot(ed.controls(), r, true, false, PALETTE_TIPS.getPtrConst(t).*);
         swatch(g, t, r);
         if (inkOf(ed, t)) |k| inkEdge(r, k) else widgets.hoverEdge(r, h.hot);
         const second = h.hot and ed.desk.erase_hit;

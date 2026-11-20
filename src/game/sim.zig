@@ -88,7 +88,7 @@ pub const Fields = struct {
     pub const run = [_][]const u8{ "kills", "gold", "mana_recovery", "life_recovery", "flasks", "cooldown", "stepped", "log", "inventory", "ground", "plot" };
     pub const resumed = [_][]const u8{"unsaved"};
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
-    pub const turn = [_][]const u8{ "travel", "order_n", "flowed" };
+    pub const turn = [_][]const u8{ "travel", "order_n", "flowed", "visits_changed" };
     /// Defaulted as each turn ends, and as a turn starts afresh.
     pub const marks = [_][]const u8{ "ran", "displaced" };
     /// Given their values by hand: by the app, as a run begins, or as a node is entered or left.
@@ -117,6 +117,8 @@ pub const Simulation = struct {
     node: usize = 0,
     visits: *[atlas.MAX_NODES]Visit,
     visited: std.StaticBitSet(atlas.MAX_NODES) = .initEmpty(),
+    /// Visits written since the autosave last copied them.
+    visits_changed: std.StaticBitSet(atlas.MAX_NODES) = .initFull(),
     /// The door the hero stepped onto this turn, gone through once the turn is drawn.
     travel: ?atlas.Link = null,
     rng: mathx.Rng,
@@ -462,14 +464,18 @@ pub const Simulation = struct {
         var carried: [actor.MAX]lume.Source = undefined;
         const n = self.lights(from, true, &carried);
         const reach = self.sightRange();
-        lume.see(&self.lv, from, reach, lume.skyReach(self.outdoors, self.clock.hour(), reach), carried[0..n]);
+        lume.see(&self.lv, from, reach, self.skyReach(reach), carried[0..n]);
+    }
+
+    fn skyReach(self: *const Simulation, reach: i32) f32 {
+        return lume.skyReach(self.outdoors, self.clock.hour(), reach);
     }
 
     /// Lit by no light but the hero's own.
     pub fn inDark(self: *const Simulation, p: P) bool {
         const h = self.heroBody() orelse return false;
         const reach = self.heroRow().sight;
-        if (mathx.reaches(h.at, p, lume.skyReach(self.outdoors, self.clock.hour(), reach))) return false;
+        if (mathx.reaches(h.at, p, self.skyReach(reach))) return false;
         var carried: [actor.MAX]lume.Source = undefined;
         const n = self.lights(h.at, false, &carried);
         return !lume.pooled(&self.lv, p, 0, carried[0..n], p);

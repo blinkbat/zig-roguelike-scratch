@@ -29,6 +29,8 @@ const drawInto = shots.drawInto;
 const dropAtlas = shots.dropAtlas;
 const heapAtlas = shots.heapAtlas;
 const readTarget = shots.readTarget;
+const captured = shots.captured;
+const drawnImage = shots.drawnImage;
 const redrawnDiff = shots.redrawnDiff;
 const renderTarget = shots.renderTarget;
 const sameRgb = shots.sameRgb;
@@ -186,8 +188,7 @@ fn captureGasBagFade(g: *game.Game, target: rl.RenderTexture2D) !void {
     cell.alpha = 0.5;
     try capture(g, target, CINEMA_DIR ++ "/visibility-gas-bag-half.png");
     cell.alpha = 0;
-    try capture(g, target, CINEMA_DIR ++ "/visibility-gas-bag-hidden.png");
-    const hidden = try readTarget(target);
+    const hidden = try captured(g, target, CINEMA_DIR ++ "/visibility-gas-bag-hidden.png");
     defer rl.unloadImage(hidden);
     cell.alpha = 1.0 / 4096.0;
     if (try redrawnDiff(g, target, hidden) != 0) return error.GasVeilOutlivedBag;
@@ -236,8 +237,7 @@ fn captureLens(g: *game.Game) !void {
         defer shot.close(g);
         poseWaterMirrors(g, day.NOON, true);
         lens.options = .neutral;
-        drawInto(g, shot.target);
-        const base = try readTarget(shot.target);
+        const base = try drawnImage(g, shot.target);
         defer rl.unloadImage(base);
         try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-off.png", .{size.y});
         inline for (std.meta.fields(@TypeOf(lens.options))) |field| {
@@ -250,7 +250,7 @@ fn captureLens(g: *game.Game) !void {
             if (comptime std.mem.eql(u8, field.name, "lens_blur")) {
                 var points = grid.Cells.of(.{ .x = 0, .y = @intFromFloat(@ceil(SHARP_BAND[0] * @as(f32, @floatFromInt(size.y)))) }, .{ .x = size.x, .y = @intFromFloat(@floor(SHARP_BAND[1] * @as(f32, @floatFromInt(size.y)))) });
                 while (points.next()) |p| {
-                    if (!sameRgb(rl.getImageColor(base, p.x, p.y), rl.getImageColor(image, p.x, p.y))) return error.LensBlurChangedSharpBand;
+                    if (!shots.samePixel(base, image, p)) return error.LensBlurChangedSharpBand;
                 }
             }
         }
@@ -294,15 +294,13 @@ pub fn captureCinemaScene(g: *game.Game, target: rl.RenderTexture2D, comptime na
     defer g.cinema.options = options;
     try std.fs.cwd().makePath(CINEMA_DIR);
     g.cinema.options = cinema.Options.off;
-    try capture(g, target, CINEMA_DIR ++ "/" ++ name ++ "-off.png");
-    const base = try readTarget(target);
+    const base = try captured(g, target, CINEMA_DIR ++ "/" ++ name ++ "-off.png");
     defer rl.unloadImage(base);
     if (g.cinema.bloom == null or g.cinema.air == null or g.cinema.focus == null) return error.CinemaShaderMissing;
     inline for (std.meta.fields(cinema.Options)) |f| {
         g.cinema.options = cinema.Options.off;
         @field(g.cinema.options, f.name) = true;
-        try capture(g, target, CINEMA_DIR ++ "/" ++ name ++ "-" ++ f.name ++ ".png");
-        const img = try readTarget(target);
+        const img = try captured(g, target, CINEMA_DIR ++ "/" ++ name ++ "-" ++ f.name ++ ".png");
         defer rl.unloadImage(img);
         const c = game.scene.Cam.of(g);
         var changed: usize = 0;

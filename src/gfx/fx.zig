@@ -1303,9 +1303,7 @@ pub fn drawArrow(p: rl.Vector2, dir: [2]f32, col: rl.Color, origin: [2]f32, k: f
     }
 }
 
-fn heading(a: f32) [2]f32 {
-    return .{ @cos(a), @sin(a) };
-}
+const heading = mathx.polar;
 
 const screen = look.screenOf;
 

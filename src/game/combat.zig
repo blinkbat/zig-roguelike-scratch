@@ -54,7 +54,7 @@ pub fn chainHit(g: *game.Game, comptime act: skillbar.Act, first: u16, s: Stroke
         const slot = actor.Pool.slot(id);
         const at = g.sim.pool.items[slot].at;
         if (k > 0) {
-            g.pic.fx.zap(wait, .{ .from = mathx.centre(from), .to = mathx.centre(at) });
+            g.pic.fx.zap(wait, .between(from, at));
             wait += game.ZAP_S;
         }
         skillHit(g, id, attacks.heroBlow(&g.sim, act), act, .{ .from = from, .wait = wait, .element = s.element });
@@ -199,7 +199,7 @@ fn conductTo(g: *game.Game, at: P, wet: ?Wet, s: Stroke) void {
     while (each.next()) |slot| {
         const a = &g.sim.pool.items[slot];
         if (!a.alive or (w.shocked and w.struck == slot)) continue;
-        if (!a.at.eq(at) and g.sim.lv.isLit(at) and a.seenIn(&g.sim.lv)) g.pic.fx.zap(s.wait, .{ .from = mathx.centre(at), .to = mathx.centre(a.at) });
+        if (!a.at.eq(at) and g.sim.lv.isLit(at) and a.seenIn(&g.sim.lv)) g.pic.fx.zap(s.wait, .between(at, a.at));
         if (!g.sim.takeStatus(a, .shock)) continue;
         a.shock.start();
         g.sim.sayTakes(slot, a, shock.TAKES);
@@ -323,7 +323,7 @@ fn groundFull(g: *game.Game) bool {
 
 pub fn collectGold(g: *game.Game, at: P) void {
     const coins = rewards.collectGold(&g.sim, at) orelse return;
-    g.pic.gold_taken = coins;
+    g.pic.takeGold(coins);
 }
 
 pub fn arrive(g: *game.Game, at: P) void {
@@ -650,8 +650,7 @@ fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, a
             return;
         }
         if (g.sim.pool.get(w) != null) {
-            const hit = impacts.bodyBlow(g, id, w, c.blow, c.blow.verb, af.contains(.enfeeble), false);
-            g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = if (hit) |a| .{ .actor = a } else null });
+            struckBody(g, id, w, c.blow, af.contains(.enfeeble), next);
         } else if (smashedBy(g, next, row.name, null)) |hit| g.pic.owe(.fromInt(id), .struck, .{ .at = next, .impact = hit });
     }
     crab.stuck = true;
@@ -809,9 +808,13 @@ fn bodyStrike(g: *game.Game, id: u16, target: u16, af: actor.Afflicted, flight: 
     if (row.allied and !row.posted) s.hit = .{ .lo = g.sim.commanded(s.hit.lo), .hi = g.sim.commanded(s.hit.hi) };
     const at = g.sim.pool.get(target).?.at;
     g.pic.turnLater(.fromInt(id), at.x - r.at.x);
-    const impact: ?fx.Impact = if (impacts.bodyBlow(g, id, target, s, s.verb, af.contains(.enfeeble), false)) |hit| .{ .actor = hit } else null;
-    g.pic.owe(.fromInt(id), .struck, .{ .at = at, .impact = impact });
+    struckBody(g, id, target, s, af.contains(.enfeeble), at);
     g.pic.owe(.fromInt(id), .arrow, flight);
+}
+
+fn struckBody(g: *game.Game, id: u16, target: u16, s: actor.Strike, weak: bool, at: P) void {
+    const hit = impacts.bodyBlow(g, id, target, s, s.verb, weak, false);
+    g.pic.owe(.fromInt(id), .struck, .{ .at = at, .impact = if (hit) |a| .{ .actor = a } else null });
 }
 
 fn swimTurn(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflicted) void {
@@ -955,6 +958,7 @@ fn shove(g: *game.Game, by: u16, d: mathx.Dir, comptime said: []const u8) void {
     g.sim.heroMoved();
     game.castSight(g, to);
     g.sim.log.say(said, .{g.sim.name.text()});
+    arrive(g, to);
     g.pic.recordKnock(.fromInt(by), from, to);
 }
 

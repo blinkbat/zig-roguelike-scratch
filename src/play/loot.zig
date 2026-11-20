@@ -134,9 +134,9 @@ test "foe loot is mostly gold then plain items with magic and rare affixes" {
         }
     }
     try expectShare(gold, rolls, FOE_GOLD_PERCENT, 5);
-    try expectShare(plain, rolls, @as(f64, DROP_PERCENT) * (100 - MAGIC_PERCENT - RARE_PERCENT) / 100, 1.5);
-    try expectShare(magic, rolls, @as(f64, DROP_PERCENT) * MAGIC_PERCENT / 100, 0.75);
-    try expectShare(rare, rolls, @as(f64, DROP_PERCENT) * RARE_PERCENT / 100, 0.3);
+    try expectShare(plain, rolls, @as(f64, DROP_PERCENT) * (mathx.PERCENT - MAGIC_PERCENT - RARE_PERCENT) / mathx.PERCENT, 1.5);
+    try expectShare(magic, rolls, @as(f64, DROP_PERCENT) * MAGIC_PERCENT / mathx.PERCENT, 0.75);
+    try expectShare(rare, rolls, @as(f64, DROP_PERCENT) * RARE_PERCENT / mathx.PERCENT, 0.3);
 }
 
 test "a drop's tier follows its foe or its area, whichever is higher" {
@@ -149,7 +149,7 @@ test "a drop's tier follows its foe or its area, whichever is higher" {
 }
 
 pub fn expectShare(count: usize, total: usize, percent: f64, tolerance: f64) !void {
-    try std.testing.expect(@abs(@as(f64, @floatFromInt(count)) * 100 / @as(f64, @floatFromInt(total)) - percent) <= tolerance);
+    try std.testing.expect(@abs(@as(f64, @floatFromInt(count)) * mathx.PERCENT / @as(f64, @floatFromInt(total)) - percent) <= tolerance);
 }
 
 test "spoils rarity improves magic and rare quality without increasing item quantity" {
@@ -168,8 +168,8 @@ test "spoils rarity improves magic and rare quality without increasing item quan
             }
         }
         try expectShare(drops, samples, DROP_PERCENT, 1);
-        const expected = @as(f64, @floatFromInt(qualityChance(MAGIC_PERCENT + RARE_PERCENT, rarity))) / 100;
-        const expected_rare = @as(f64, @floatFromInt(qualityChance(RARE_PERCENT, rarity))) / 100;
+        const expected = @as(f64, @floatFromInt(qualityChance(MAGIC_PERCENT + RARE_PERCENT, rarity))) / mathx.PERCENT;
+        const expected_rare = @as(f64, @floatFromInt(qualityChance(RARE_PERCENT, rarity))) / mathx.PERCENT;
         try std.testing.expect(@abs(@as(f64, @floatFromInt(magic)) / @as(f64, @floatFromInt(drops)) - expected) < 0.035);
         try std.testing.expect(@abs(@as(f64, @floatFromInt(rare)) / @as(f64, @floatFromInt(drops)) - expected_rare) < 0.035);
         if (expected == 0) try std.testing.expectEqual(@as(usize, 0), magic);

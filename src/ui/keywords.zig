@@ -204,13 +204,14 @@ pub const State = struct {
         var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
         const width = @min(WIDTH, screen.x - 2 * MARGIN);
         const n = font.wrapRows(face, link.term.body, font.SMALL, width - 2 * PAD, &wrapped, &lines);
-        const height = 2 * PAD + font.BODY + GAP + @as(i32, @intCast(n)) * LINE;
+        const body_y = menu.cardBodyY(PAD, GAP);
+        const height = body_y + PAD + @as(i32, @intCast(n)) * LINE;
         const box = popupBox(screen, link.box, width, height);
         self.popup = box;
         const x = raster.left(box);
         const y = raster.top(box);
         menu.titledCard(face, sprites, x, y, width, height, .definition, PAD, link.term.title);
-        var top = y + PAD + font.BODY + GAP;
+        var top = y + body_y;
         var rich = font.Rich.init(link.term.body);
         for (lines[0..n]) |line| {
             rich.draw(face, line, x + PAD, top, font.SMALL, look.TEXT, .shadow);

@@ -70,9 +70,7 @@ sourceFiles.copy(path,backup)
 local extension=sprite:newLayer()
 extension.name='Forest extensions'
 sprite:newCel(extension,1,sheet,Point(0,0))
-for _,layer in ipairs(sprite.layers) do
-  if layer.name=='Underdrawing (25%)' or layer.name=='Ideas - hide before export' then layer.isVisible=false end
-end
+sourceFiles.hide(sprite,'Underdrawing (25%)','Ideas - hide before export')
 drawing.stackIndex=#sprite.layers
 app.layer=extension
 local destination=install and path or work..'forest-tree-walls-draft.aseprite'

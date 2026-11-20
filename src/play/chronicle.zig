@@ -1,4 +1,5 @@
 const std = @import("std");
+const mathx = @import("../core/mathx.zig");
 const actor = @import("actor.zig");
 const skillbar = @import("skillbar.zig");
 
@@ -100,12 +101,7 @@ pub const Chronicle = struct {
     /// Past `EVENTS` in one turn the rest go unrecorded, but harm takes the last place so the killing blow is kept.
     pub fn note(self: *Chronicle, e: Event) void {
         const t = self.current() orelse return;
-        if (t.n == EVENTS) {
-            if (e == .hurt) t.events[EVENTS - 1] = e;
-            return;
-        }
-        t.events[t.n] = e;
-        t.n += 1;
+        if (!mathx.push(Event, &t.events, &t.n, e) and e == .hurt) t.events[EVENTS - 1] = e;
     }
 
     /// A level gained outranks anything else that turn.

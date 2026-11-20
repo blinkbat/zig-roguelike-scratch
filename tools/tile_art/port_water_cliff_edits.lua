@@ -7,6 +7,7 @@ local report=assert(app.params.report,'report=<validation text>')
 local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local layout=dofile(root..'tools/tile_art/water_cliff_layout.lua')
+local names=dofile(root..'tools/tile_art/water_cliff_names.lua')
 local owner=Image{fromFile=source}
 local before=Image{fromFile=baseline}
 assert(owner.width==layout.width and owner.height==layout.height)
@@ -48,8 +49,8 @@ local function canvas(name)
  local layer=sourceFiles.layer(s,name) or error('Missing source layer '..name)
  return sourceFiles.canvas(s,assert(layer:cel(1)))
 end
-local shallow=canvas('Land to shallows - Cliff faces')
-local deep=canvas('Land to deep water - Cliff faces')
+local shallow=canvas(names.layer(1,'faces'))
+local deep=canvas(names.layer(2,'faces'))
 local surface=materials.surface
 for band=0,layout.block//layout.cell-1 do
  for x=left,right do
@@ -69,7 +70,7 @@ for band=0,layout.block//layout.cell-1 do
   end
  end
 end
-for _,part in ipairs({{name='Owner flat border edits',image=edits},{name='Deep border extensions from shallow edits',image=extrapolated}}) do
+for _,part in ipairs({{name=names.owner,image=edits},{name=names.extended,image=extrapolated}}) do
  local l=s:newLayer(); l.name=part.name
  s:newCel(l,1,part.image,Point(0,0))
 end

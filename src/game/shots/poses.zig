@@ -44,8 +44,9 @@ const pixels = @import("capture.zig").pixels;
 const readTarget = @import("capture.zig").readTarget;
 const renderTarget = @import("capture.zig").renderTarget;
 const neutralLens = @import("capture.zig").neutralLens;
-const drawInto = @import("capture.zig").drawInto;
-const sameRgb = @import("capture.zig").sameRgb;
+const captured = @import("capture.zig").captured;
+const drawnImage = @import("capture.zig").drawnImage;
+const samePixel = @import("capture.zig").samePixel;
 const differentPixels = @import("capture.zig").differentPixels;
 const seekHalfway = @import("capture.zig").seekHalfway;
 const captureWater = @import("water_cliffs.zig").captureWater;
@@ -106,14 +107,12 @@ fn drawnWithout(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8, h
     g.cinema.options.bloom = false;
     const lens = neutralLens(g);
     defer g.cinema.lens.options = lens;
-    try capture(g, target, path);
-    const with = try readTarget(target);
+    const with = try captured(g, target, path);
     errdefer rl.unloadImage(with);
     const kept = hidden.*;
     hidden.* = null;
     defer hidden.* = kept;
-    drawInto(g, target);
-    return .{ .with = with, .without = try readTarget(target) };
+    return .{ .with = with, .without = try drawnImage(g, target) };
 }
 
 fn captureCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -182,7 +181,7 @@ fn captureHiddenHook(g: *game.Game, target: rl.RenderTexture2D) !void {
     const clip = fx.hookCellClip(origin, game.scene.Cam.of(g).origin(), game.CELL_F);
     var cells = clip.cells();
     while (cells.next()) |p| {
-        if (!sameRgb(rl.getImageColor(drawn.with, p.x, p.y), rl.getImageColor(drawn.without, p.x, p.y))) return error.HookRevealsHiddenOrigin;
+        if (!samePixel(drawn.with, drawn.without, p)) return error.HookRevealsHiddenOrigin;
     }
     if (differentPixels(drawn.with, drawn.without) == 0) return error.HookNotDrawn;
 }
@@ -210,7 +209,7 @@ fn captureVerticalHook(g: *game.Game, target: rl.RenderTexture2D) !void {
     var changed: usize = 0;
     var points = pixels(drawn.with.width, drawn.with.height);
     while (points.next()) |p| {
-        if (sameRgb(rl.getImageColor(drawn.with, p.x, p.y), rl.getImageColor(drawn.without, p.x, p.y))) continue;
+        if (samePixel(drawn.with, drawn.without, p)) continue;
         if (!clip.holds(p)) return error.HookRevealsHiddenRow;
         changed += 1;
     }
@@ -558,7 +557,7 @@ fn captureArrows() !void {
     for ([_]f32{ 1, 2 }, 0..) |scale, row| {
         for (0..16) |i| {
             const angle = @as(f32, @floatFromInt(i)) * std.math.tau / 16;
-            const dir = [2]f32{ @cos(angle), @sin(angle) };
+            const dir = mathx.polar(angle);
             const x = 40 + @as(f32, @floatFromInt(i % 8)) * 80;
             const y = 40 + @as(f32, @floatFromInt(row * 2 + i / 8)) * 80;
             fx.drawArrow(.{ .x = x + dir[0] * 8 * scale, .y = y + dir[1] * 8 * scale }, dir, look.arrowInk(.shoot), .{ 0, 0 }, scale);

@@ -1,12 +1,12 @@
 local pc=app.pixelColor
-return function(image,position)
-  local source=Image(512,448,ColorMode.RGB)
+return function(image,position,masks)
+  local source=Image(masks.W,masks.SHEET_H,ColorMode.RGB)
   source:drawImage(image,position)
   local wall={source=source,tan=source:getPixel(30,87)}
   assert(wall.tan==pc.rgba(202,158,106,255))
   function wall.sample(x,y) return source:getPixel(x,y) end
   function wall.sideRow(y)
-    if y==0 or y==63 then return 80 end
+    if y==0 or y==masks.CELL-1 then return 80 end
     return 67+(y+13)%30
   end
   function wall.decorate(target,inside,offsets)

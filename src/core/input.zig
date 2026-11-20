@@ -183,9 +183,8 @@ const Typed = struct {
         while (true) {
             const c = rl.getCharPressed();
             if (c == 0) break;
-            if (c < ' ' or c > '~' or self.n == MAX) continue;
-            self.buf[self.n] = @intCast(c);
-            self.n += 1;
+            if (c < ' ' or c > '~') continue;
+            _ = mathx.push(u8, &self.buf, &self.n, @intCast(c));
         }
     }
 

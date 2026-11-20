@@ -205,6 +205,10 @@ pub fn titledCard(face: *const font.Face, sprites: *const sprite.Sprites, x: i32
     face.richText(title, x + pad, y + pad, font.BODY, look.UI_FOCUS);
 }
 
+pub fn cardBodyY(pad: i32, gap: i32) i32 {
+    return pad + font.BODY + gap;
+}
+
 const ACTION_PAD: i32 = 10;
 pub const PROMPT_GAP: i32 = 8;
 pub const ACTION_BOX = mathx.P{ .x = 164, .y = 36 };

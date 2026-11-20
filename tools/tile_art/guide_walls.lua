@@ -11,6 +11,7 @@ local FACE=tonumber(app.params.rows) or 23
 local NORTH=app.params.face=='north'
 assert(NORTH or (app.params.face or 'south')=='south')
 local LINE=2
+local CELL,LAST,NOTCH=masks.CELL,masks.CELL-1,4
 local outline=pc.rgba(34,34,34,255)
 local cap=pc.rgba(152,152,152,255)
 local face=pc.rgba(96,96,96,255)
@@ -24,21 +25,21 @@ local drawn=Image(drawing:cel(1).image)
 local drawnAt=Point(drawing:cel(1).position)
 local function tile(mask,faced)
   local n,e,s,w,ne,se,sw,nw=masks.sides(mask)
-  local image=Image(64,64,ColorMode.RGB)
-  local foot=(s or not faced) and 64 or 64-FACE
-  for y=0,63 do for x=0,63 do
+  local image=Image(CELL,CELL,ColorMode.RGB)
+  local foot=(s or not faced) and CELL or CELL-FACE
+  for y=0,LAST do for x=0,LAST do
     local pixel=y>=foot and face or cap
     if not n and y<LINE then pixel=outline end
-    if not s and y>=64-LINE then pixel=outline end
+    if not s and y>=CELL-LINE then pixel=outline end
     if not w and x<LINE then pixel=outline end
-    if not e and x>=64-LINE then pixel=outline end
+    if not e and x>=CELL-LINE then pixel=outline end
     if y>=foot and y<foot+LINE then pixel=outline end
-    if n and w and not nw and x<4 and y<4 and (x<LINE or y<LINE) then pixel=outline end
-    if n and e and not ne and x>=60 and y<4 and (x>=64-LINE or y<LINE) then pixel=outline end
-    if s and w and not sw and x<LINE and y>=(faced and 64-FACE or 60) then pixel=outline end
-    if s and e and not se and x>=64-LINE and y>=(faced and 64-FACE or 60) then pixel=outline end
-    if not faced and s and w and not sw and x<4 and y>=64-LINE then pixel=outline end
-    if not faced and s and e and not se and x>=60 and y>=64-LINE then pixel=outline end
+    if n and w and not nw and x<NOTCH and y<NOTCH and (x<LINE or y<LINE) then pixel=outline end
+    if n and e and not ne and x>=CELL-NOTCH and y<NOTCH and (x>=CELL-LINE or y<LINE) then pixel=outline end
+    if s and w and not sw and x<LINE and y>=(faced and CELL-FACE or CELL-NOTCH) then pixel=outline end
+    if s and e and not se and x>=CELL-LINE and y>=(faced and CELL-FACE or CELL-NOTCH) then pixel=outline end
+    if not faced and s and w and not sw and x<NOTCH and y>=CELL-LINE then pixel=outline end
+    if not faced and s and e and not se and x>=CELL-NOTCH and y>=CELL-LINE then pixel=outline end
     image:putPixel(x,y,pixel)
   end end
   return image
@@ -55,9 +56,9 @@ local function sheet(faced)
       end
     end
     local cell=tile(m,faced)
-    for a=0,63 do
-      if (m&bit.n)~=0 then assert(cell:getPixel(a,0)~=outline or a<4 or a>=60,'north seam '..mask) end
-      if (m&bit.w)~=0 then assert(cell:getPixel(0,a)~=outline or a<4 or a>=64-FACE,'west seam '..mask) end
+    for a=0,LAST do
+      if (m&bit.n)~=0 then assert(cell:getPixel(a,0)~=outline or a<NOTCH or a>=CELL-NOTCH,'north seam '..mask) end
+      if (m&bit.w)~=0 then assert(cell:getPixel(0,a)~=outline or a<NOTCH or a>=CELL-FACE,'west seam '..mask) end
     end
     if NORTH then cell:flip(FlipType.VERTICAL) end
     for _,other in ipairs(cells) do assert(not cell:isEqual(other),'duplicate cell '..mask) end

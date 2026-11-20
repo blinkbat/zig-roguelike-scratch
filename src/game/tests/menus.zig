@@ -618,6 +618,19 @@ test "a keyword clicked over the map neither walks the hero nor spends a turn" {
     try std.testing.expectEqualDeep(clock, g.sim.clock);
 }
 
+test "a click on a foe still dying walks to its cell instead of chasing the body" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const foe = P{ .x = 24, .y = 20 };
+    harness.arena(g, from, &.{foe});
+    harness.kill(g, g.sim.lv.who(foe), from, 1);
+    try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(harness.foeId(0))) != null);
+    harness.clickCell(g, foe);
+    try std.testing.expectEqual(@as(?u16, null), g.mouse.foe);
+    try std.testing.expectEqual(@as(?P, foe), g.mouse.target);
+}
+
 test "inspect forgets the body it was on once the hero enters a node" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

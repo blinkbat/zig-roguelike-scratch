@@ -31,7 +31,7 @@ conversion live in `save_format.zig` and `save_values.zig`. See [save compatibil
 | Graph textures have one owner and explicit invalidation | `edit/thumbnails.zig` | [thumbnails](../src/edit/thumbnails.zig), [canvas](../src/edit/canvas.zig) |
 | A map's script never names past its own tables | `map/script.zig`, `play/trigger.zig`, `game/talking.zig` | [script](../src/map/script.zig), [script_text](../src/map/script_text.zig), [trigger](../src/play/trigger.zig), [talking](../src/game/talking.zig), [edit](../src/edit/tests.zig) |
 | Plot field lookup and name validation depend only on script data | `edit/plot_fields.zig` | [plot_fields](../src/edit/plot_fields.zig), [plot](../src/edit/plot.zig) |
-| A procgen node's painted section keeps its cells through the roll, is joined round its walls, and its box takes no feature's lot | `map/section.zig`, `map/procgen.zig`, `carve.connect` | [procgen](../src/map/procgen.zig), [section](../src/map/section.zig), [atlas](../src/map/atlas.zig), [atlas_text](../src/map/atlas_text.zig), [save](../src/save.zig) |
+| A procgen node's painted section keeps its cells through the roll, is joined round its walls, and neither its box nor the node's zoo ring takes a feature's lot | `map/section.zig`, `map/procgen.zig`, `carve.connect` | [procgen](../src/map/procgen.zig), [section](../src/map/section.zig), [atlas](../src/map/atlas.zig), [atlas_text](../src/map/atlas_text.zig), [save](../src/save.zig) |
 | Gameplay does not depend on UI or rendering modules | `tools/source_rules.zig` | [source_rules](../tools/source_rules.zig), [save](../src/save.zig) |
 
 ## Dependency boundaries
@@ -344,7 +344,7 @@ water under their cells; mimics reveal and restore their ground when released.
 The room is stamped after terrain generation, with a walkable perimeter and
 short connections for its approach and key chest that stay outside its walls. These
 connections and the key chest's bypass preserve painted section walls wherever a
-route around them exists, breaking the fewest painted solid cells when enclosed.
+route around them exists, breaking the fewest painted solid cells, chests and glow plants when enclosed.
 Connections target the arriving hero's floor component (in standalone node previews the
 start cell on the start node, else the first travel door; the largest component if no
 entrance is known).

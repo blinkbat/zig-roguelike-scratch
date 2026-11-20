@@ -8,6 +8,7 @@ const game = @import("../../game.zig");
 const capture = @import("capture.zig");
 const studyLit = @import("poses.zig").studyLit;
 
+const LANDSCAPES_DIR = capture.SHOTS_DIR ++ "/landscapes";
 const TILE = mathx.P{ .x = 1536, .y = 1024 };
 const ACROSS: usize = @intCast(@divExact(game.MAP_PX.x, TILE.x));
 const DOWN: usize = @intCast(@divExact(game.MAP_PX.y, TILE.y));
@@ -17,7 +18,7 @@ const PLACES = [_]struct { node: usize, name: []const u8 }{
 };
 
 pub fn captureLandscapes(g: *game.Game) !void {
-    try std.fs.cwd().makePath(capture.SHOTS_DIR ++ "/landscapes");
+    try std.fs.cwd().makePath(LANDSCAPES_DIR);
     const w = try capture.heapAtlas();
     defer capture.dropAtlas(g, w);
     try w.load(std.heap.c_allocator, atlas.START);
@@ -34,7 +35,7 @@ pub fn captureLandscapes(g: *game.Game) !void {
                 g.cam = .{ .x = @floatFromInt(x * TILE.x), .y = @floatFromInt(y * TILE.y) };
                 capture.drawMapInto(g, shot.target, rl.Color.black);
                 var path: [capture.PATH_MAX]u8 = undefined;
-                try capture.exportTarget(shot.target, try std.fmt.bufPrintZ(&path, capture.SHOTS_DIR ++ "/landscapes/{s}-{d}-{d}.png", .{ name, x, y }));
+                try capture.exportTarget(shot.target, try std.fmt.bufPrintZ(&path, LANDSCAPES_DIR ++ "/{s}-{d}-{d}.png", .{ name, x, y }));
             }
         }
         for ([_]grid.Tile{ .caravan, .chest, .glow_plant }) |tile| {
@@ -44,7 +45,7 @@ pub fn captureLandscapes(g: *game.Game) !void {
                 .x = @floatFromInt(std.math.clamp(at.x * game.CELL - @divTrunc(TILE.x, 2), 0, game.MAP_PX.x - TILE.x)),
                 .y = @floatFromInt(std.math.clamp(at.y * game.CELL - @divTrunc(TILE.y, 2), 0, game.MAP_PX.y - TILE.y)),
             };
-            try capture.capturef(g, shot.target, capture.SHOTS_DIR ++ "/landscapes/{s}-{s}.png", .{ name, @tagName(tile) });
+            try capture.capturef(g, shot.target, LANDSCAPES_DIR ++ "/{s}-{s}.png", .{ name, @tagName(tile) });
         }
     }
 }

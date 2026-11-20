@@ -640,6 +640,23 @@ pub const Script = struct {
         return self.refUsers(.{ .table = t }, i);
     }
 
+    pub const Used = std.StaticBitSet(std.math.maxInt(u8) + 1);
+
+    /// Which of a table's slots any condition or action names.
+    pub fn tableUsed(self: *const Script, t: Table) Used {
+        const r: Ref = .{ .table = t };
+        var used = Used.initEmpty();
+        var conds = self.condIter();
+        while (conds.next()) |c| {
+            if (refersTo(condRef(c.kind), r)) used.set(c.slot);
+        }
+        var acts = self.actIter();
+        while (acts.next()) |a| {
+            if (refersTo(actRef(a.kind), r)) used.set(a.slot);
+        }
+        return used;
+    }
+
     fn refUsers(self: *const Script, r: Ref, i: u8) usize {
         var n: usize = 0;
         var conds = self.condIter();
@@ -1198,6 +1215,8 @@ test "a named table entry or dialog cannot be dropped while anything names it" {
     s.dialog[d].line[0].choice[0] = .{ .gate = .{ .kind = .flag, .slot = g } };
     s.dialog[d].line[0].choice_n = 1;
     try std.testing.expectEqual(@as(usize, 2), s.tableUsers(.flag, g));
+    const used = s.tableUsed(.flag);
+    try std.testing.expect(used.isSet(g) and !used.isSet(f));
     try std.testing.expect(!s.undeclare(.flag, g));
     try std.testing.expect(!s.dropDialog(d));
     try std.testing.expect(s.undeclare(.flag, f));

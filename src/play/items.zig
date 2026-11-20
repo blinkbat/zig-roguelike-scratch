@@ -218,7 +218,7 @@ test "rare items roll distinct legal affixes and persistent combinatorial names"
         try std.testing.expect(sides[0] <= affixes.RARE_SIDE and sides[1] <= affixes.RARE_SIDE);
         sizes[seen.count() - affixes.RARE_LEAST] += 1;
     }
-    try loot.expectShare(counts.get(.normal), rolls, 100 - loot.MAGIC_PERCENT - loot.RARE_PERCENT, 1);
+    try loot.expectShare(counts.get(.normal), rolls, mathx.PERCENT - loot.MAGIC_PERCENT - loot.RARE_PERCENT, 1);
     try loot.expectShare(counts.get(.magic), rolls, loot.MAGIC_PERCENT, 1);
     try loot.expectShare(counts.get(.rare), rolls, loot.RARE_PERCENT, 0.5);
     try std.testing.expectEqual(loot.BASES.len, bases.count());

@@ -13,7 +13,7 @@ local FACE=23
 local sprite=assert(app.open(path))
 assert(sprite.width==W and sprite.height==masks.SHEET_H)
 local painted=sourceFiles.layer(sprite,'Layer 1')
-local wall=dofile(root..'tools/tile_art/wall_strips.lua')(assert(painted,'no Layer 1'):cel(1).image,painted:cel(1).position)
+local wall=dofile(root..'tools/tile_art/wall_strips.lua')(assert(painted,'no Layer 1'):cel(1).image,painted:cel(1).position,masks)
 sprite:close()
 local source,tan,sample,sideRow,decorate=wall.source,wall.tan,wall.sample,wall.sideRow,wall.decorate
 local palette={}

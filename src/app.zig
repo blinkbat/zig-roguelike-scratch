@@ -553,9 +553,9 @@ const App = struct {
             },
             .options, .visuals, .display => {
                 const page = options_menu.pageOf(app.page);
-                const picked = options_menu.step(&g.cinema, &app.options, &g.st, g.screen, page, &g.display);
+                const went = options_menu.hostStep(&g.cinema, &app.options, &g.st, g.screen, page, &g.display, back);
                 options_menu.draw(g.face, &g.sprites, g.screen, &g.cinema, app.options.at, page, g.display);
-                if (options_menu.go(page, back, picked)) |to| switch (to) {
+                if (went) |to| switch (to) {
                     .page => |p| {
                         app.goPage(options_menu.hostPage(Page, p.to));
                         app.options = .{ .at = p.at };

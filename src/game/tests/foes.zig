@@ -1863,6 +1863,20 @@ test "a chain gaoler's hook drags a hero who stays on its line one cell closer a
     try std.testing.expect(harness.samePx(g.pic.glide[g.sim.heroSlot().?].ground(), glide.cellPx(pulled)));
 }
 
+test "a hook that drags the hero onto coins picks them up" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const id = try braced(g, .chain_gaoler);
+    const pulled = LANE_HERO.add(mathx.Dir.e.delta());
+    try std.testing.expect(g.sim.ground.gold(pulled, 20));
+    const gold = g.sim.gold;
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
+    combat.endTurn(g);
+    try std.testing.expectEqual(pulled, g.sim.heroAt().?);
+    try std.testing.expectEqual(gold + 20, g.sim.gold);
+    try std.testing.expectEqual(@as(?usize, null), g.sim.ground.pileAt(pulled));
+}
+
 test "anchorage prevents a landed bash or hook displacement without preventing damage" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

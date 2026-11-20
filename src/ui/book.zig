@@ -574,7 +574,7 @@ pub const Book = struct {
                     const inner = raster.width(r) - 2 * inset;
                     var fitted: [items.NAME_MAX]u8 = undefined;
                     face.draw(face.fit(&fitted, slotLabel(slot), layout.SLOT_LABEL, inner, false), x + inset, y + inset, layout.SLOT_LABEL, look.DIM);
-                    const it = view.inventory.gear.slots.get(slot);
+                    const it = view.inventory.gear.slots.getPtrConst(slot).*;
                     const named = grandSlot(slot);
                     const foot = y + raster.height(r) - (if (named) inset + font.SMALL else 0);
                     const glyph = P{ .x = raster.middleAt(r).x, .y = @divTrunc(y + inset + layout.SLOT_LABEL + foot, 2) };

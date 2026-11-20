@@ -264,7 +264,7 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
         const plaque = raster.rect(mid.x + PLAQUE_AT.x, mid.y + PLAQUE_AT.y, PLAQUE_W, PLAQUE_H);
         menu.boxedSmall(plaque, BACK, ink);
         var rank: menu.Note(16) = .{};
-        if (progress.basic(s.act)) rank.say("Basic", .{}) else rank.say("{d} / {d}", .{ growth.ranks.get(s.act), progress.rankLimit(s.act) });
+        if (progress.basic(s.act)) rank.say("Basic", .{}) else rank.say(menu.FRACTION_FMT, .{ growth.ranks.get(s.act), progress.rankLimit(s.act) });
         const pm = raster.middleAt(plaque);
         face.centred(rank.text(), pm.x, pm.y, font.SMALL, ink);
         face.drawMid(s.act.name(), mid.x, mid.y + SKILL_NAME_DY, font.SMALL, if (growth.unlocked(s.act) or i == cursor) look.TEXT else LOCKED);

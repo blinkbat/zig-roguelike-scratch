@@ -273,8 +273,8 @@ comptime {
     }
 }
 
-const WALLS_PNG = @embedFile("walls.png");
-const FOREST_PNG = @embedFile("forest-tree-walls.png");
+const WALLS_PNG = embedPng("walls.png");
+const FOREST_PNG = embedPng("forest-tree-walls.png");
 pub const HUD_PNGS = .{
     .hud_border = embedPng("hud-border.png"),
     .hud_life_frame = embedPng("hud-life-frame.png"),
@@ -307,8 +307,8 @@ pub const SOURCES = .{
     .mimic_closed = embedPng("mimic-closed.png"),
     .small_coins = embedPng("small-coins.png"),
     .large_coins = embedPng("large-coins.png"),
-    .wall = @as([]const u8, WALLS_PNG),
-    .forest = @as([]const u8, FOREST_PNG),
+    .wall = WALLS_PNG,
+    .forest = FOREST_PNG,
 };
 
 comptime {

@@ -121,6 +121,11 @@ pub const Weather = struct {
         const scale = look.pxScale(cell);
         const lean = fall.drift / fall.speed;
         const len = fall.len * scale;
+        var spokes: [SPLASH_DROPS][2]f32 = undefined;
+        for (&spokes, 0..) |*s, i| {
+            const angle = mathx.spoke(@floatFromInt(i), SPLASH_DROPS);
+            s.* = mathx.polar(angle);
+        }
         const quads = pixel.Quads.begin();
         defer quads.end();
         for (self.drop[0..self.n]) |d| {
@@ -139,9 +144,8 @@ pub const Weather = struct {
             } else {
                 const k = d.since / fall.splash_s;
                 const r = mathx.lerpF(1, fall.ring, k) * scale;
-                for (0..SPLASH_DROPS) |i| {
-                    const angle = mathx.spoke(@floatFromInt(i), SPLASH_DROPS);
-                    quads.rect(.{ .x = x + @cos(angle) * r, .y = y + @sin(angle) * r * SPLASH_SQUASH }, 1, 1, scale, look.fade(INK, a * (1 - k)));
+                for (spokes) |s| {
+                    quads.rect(.{ .x = x + s[0] * r, .y = y + s[1] * r * SPLASH_SQUASH }, 1, 1, scale, look.fade(INK, a * (1 - k)));
                 }
             }
         }

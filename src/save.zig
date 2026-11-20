@@ -316,6 +316,7 @@ pub const Autosave = struct {
     snapshot: ?*format.Snapshot = null,
     /// The run's map, fixed for an autosave's life, that `snapshot.map` already copies.
     mapped: ?*const atlas.Atlas = null,
+    visits_held: bool = false,
     since: f32 = GAP_S,
     /// Copy the run on the frame, then write the snapshot off-thread.
     writer: ?std.Thread = null,
@@ -367,11 +368,13 @@ pub const Autosave = struct {
                 return;
             };
         }
-        format.captureOver(g, self.snapshot.?, g.sim.map != null and self.mapped == g.sim.map) catch |e| {
+        format.captureOver(g, self.snapshot.?, g.sim.map != null and self.mapped == g.sim.map, self.visits_held) catch |e| {
             self.failed = e;
             return;
         };
         self.mapped = g.sim.map;
+        self.visits_held = true;
+        g.sim.visits_changed = .initEmpty();
         self.finished.store(false, .release);
         self.writer = std.Thread.spawn(.{}, writeOff, .{self}) catch blk: {
             writeOff(self);

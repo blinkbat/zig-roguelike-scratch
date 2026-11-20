@@ -387,7 +387,7 @@ pub const Dir = enum(u3) {
     }
 
     pub fn opposite(d: Dir) Dir {
-        return d.turned(4);
+        return d.turned(ALL_DIRS.len / 2);
     }
 
     pub fn turned(d: Dir, eighths: u3) Dir {
@@ -443,6 +443,10 @@ pub fn lineDir(a: P, b: P) ?Dir {
 
 pub fn easeTo(v: f32, on: bool, k: f32) f32 {
     return ease(v, if (on) 1 else 0, k, k);
+}
+
+pub fn polar(a: f32) [2]f32 {
+    return .{ @cos(a), @sin(a) };
 }
 
 /// 0 is north, growing clockwise.

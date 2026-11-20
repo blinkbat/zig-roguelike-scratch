@@ -604,7 +604,7 @@ test "arrows reach the bow's five tiles; each bolt reaches its own, and aims no 
 
 test "each afflicting skill's stated chance is what its roll lands" {
     const TRIES = 4000;
-    inline for (comptime std.enums.values(Act)) |a| if (comptime a.ailment()) |ail| {
+    inline for (ACTS) |a| if (comptime a.ailment()) |ail| {
         var rng = mathx.Rng.init(0xA11);
         var landed: u32 = 0;
         for (0..TRIES) |_| landed += @intFromBool(Act.skill(a).procs(&rng, 0));

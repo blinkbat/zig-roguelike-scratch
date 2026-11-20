@@ -146,7 +146,7 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, art: Frame, va
     }
     rl.drawEllipse(x + GLINT_AT.x, y + GLINT_AT.y, GLINT_R[0], GLINT_R[1], look.fade(look.TEXT, GLINT_A));
     var buf: [48]u8 = undefined;
-    const label = std.fmt.bufPrintZ(&buf, "{s} {d} / {d}", .{ name, @max(0, value), @max(0, max) }) catch "";
+    const label = std.fmt.bufPrintZ(&buf, "{s} " ++ menu.FRACTION_FMT, .{ name, @max(0, value), @max(0, max) }) catch "";
     face.textMid(label, x, y - ORB_R - LABEL_RISE, font.SMALL, look.TEXT);
 }
 
@@ -239,7 +239,7 @@ const TIP_W: i32 = 380;
 const TIP_PAD: i32 = 12;
 const TIP_GAP: i32 = 8;
 const TIP_LINE = font.SMALL_LINE;
-const TIP_BODY_Y = TIP_PAD + font.BODY + TIP_GAP;
+const TIP_BODY_Y = menu.cardBodyY(TIP_PAD, TIP_GAP);
 const TIP_MARGIN: i32 = 8;
 pub const TIP_LINES_MAX: usize = 96;
 
@@ -272,18 +272,12 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
     var buf: [TIP_LINES_MAX][font.WRAP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
     const n = font.wrapRows(face, body, font.SMALL, TIP_W - 2 * TIP_PAD, &buf, &lines);
-    const limit: usize = @intCast(@max(1, @divTrunc(screen.y - 2 * TIP_MARGIN - TIP_BODY_Y - TIP_PAD, TIP_LINE)));
-    const shown = @min(n, limit);
+    const at = tipPlace(layout, status_n, screen, over, n);
+    const x = at.x;
+    const y = at.y;
+    const h = at.h;
+    const shown = at.shown;
     const first = @min(scroll, n - shown);
-    const h = TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(shown)) * TIP_LINE;
-    var x = centredOver(over, TIP_W, screen);
-    var y = above(@min(raster.top(over), statusTop(layout, status_n)), h);
-    if (raster.top(over) < layout.top and raster.top(over) < h + TIP_GAP + TIP_MARGIN) {
-        if (menu.besideX(over, TIP_W, screen.x, TIP_GAP, TIP_MARGIN)) |side| {
-            x = side;
-            y = onScreen(raster.top(over) - @divTrunc(h, 2), h, screen.y);
-        }
-    }
     menu.titledCard(face, sprites, x, y, TIP_W, h, .menu, TIP_PAD, title);
     var rich = font.Rich.init(body);
     for (lines[0..first]) |line| rich.skip(line);
@@ -326,12 +320,52 @@ fn centredOver(over: rl.Rectangle, w: i32, screen: mathx.P) i32 {
     return onScreen(raster.middleAt(over).x - @divTrunc(w, 2), w, screen.x);
 }
 
+const TipPlace = struct { x: i32, y: i32, h: i32, shown: usize };
+
+fn tipPlace(layout: Layout, status_n: usize, screen: mathx.P, over: rl.Rectangle, n: usize) TipPlace {
+    const shown = @min(n, tipLines(screen.y - 2 * TIP_MARGIN));
+    const h = tipHeight(shown);
+    if (raster.top(over) < layout.top and raster.top(over) < h + TIP_GAP + TIP_MARGIN) {
+        if (menu.besideX(over, TIP_W, screen.x, TIP_GAP, TIP_MARGIN)) |side| {
+            return .{ .x = side, .y = onScreen(raster.top(over) - @divTrunc(h, 2), h, screen.y), .h = h, .shown = shown };
+        }
+    }
+    const anchor = @min(raster.top(over), statusTop(layout, status_n));
+    const fits = if (raster.top(over) < layout.top) shown else @min(shown, tipLines(anchor - TIP_GAP - TIP_MARGIN));
+    const fit_h = tipHeight(fits);
+    return .{ .x = centredOver(over, TIP_W, screen), .y = above(anchor, fit_h), .h = fit_h, .shown = fits };
+}
+
+test "a long tooltip over a skill slot ends above the status row, and one over a body near the top keeps its height" {
+    const screen = mathx.P{ .x = 1280, .y = 720 };
+    const layout = Layout.of(screen, 400);
+    const slot = raster.rect(layout.skills.x, layout.skills.y, 48, 48);
+    for ([_]usize{ 0, 3 }) |status_n| {
+        const at = tipPlace(layout, status_n, screen, slot, TIP_LINES_MAX);
+        try std.testing.expect(at.y >= TIP_MARGIN);
+        try std.testing.expect(at.y + at.h + TIP_GAP <= statusTop(layout, status_n));
+        try std.testing.expect(at.shown < TIP_LINES_MAX);
+    }
+    const narrow = mathx.P{ .x = 640, .y = 720 };
+    const body = raster.rect(@divTrunc(narrow.x, 2) - 24, 40, 48, 48);
+    const world = tipPlace(Layout.of(narrow, 400), 0, narrow, body, TIP_LINES_MAX);
+    try std.testing.expectEqual(tipLines(narrow.y - 2 * TIP_MARGIN), world.shown);
+}
+
+fn tipLines(room: i32) usize {
+    return @intCast(@max(1, @divTrunc(room - TIP_BODY_Y - TIP_PAD, TIP_LINE)));
+}
+
+fn tipHeight(shown: usize) i32 {
+    return TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(shown)) * TIP_LINE;
+}
+
 fn above(top: i32, h: i32) i32 {
     return @max(TIP_MARGIN, top - TIP_GAP - h);
 }
 
 test "a tooltip's body breaks at spaces into lines that each fit" {
-    const face = @import("menu.zig").TestFace{};
+    const face = menu.TestFace{};
     var buf: font.Wrapped = undefined;
     var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
     const body = "Recover 50% of life over 3 turns. Uses 20 of 60 charges; kills refill 5. Takes a turn.";

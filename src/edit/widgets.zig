@@ -328,6 +328,10 @@ pub const Scroll = struct {
         if (below > 0) s.top.* += below;
     }
 
+    pub fn revealDrawn(s: Scroll, y: i32, h: i32) void {
+        s.reveal(y - (raster.top(s.box) - s.drawn.*), h);
+    }
+
     fn bar(s: Scroll) void {
         if (s.most.* > 0) scrollbarIn(s.box, @intCast(s.top.*), @intCast(s.shown()), @intCast(s.shown() + s.most.*));
     }

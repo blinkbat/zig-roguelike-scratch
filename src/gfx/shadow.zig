@@ -185,10 +185,7 @@ fn beginSilhouettes(self: *const light.Light, tex: rl.Texture2D, foot: f32, join
     const sh = self.gpu.shadow orelse return false;
     const size = raster.sizeOf(tex);
     rl.beginShaderMode(sh.shader);
-    shaders.setUniform(sh.shader, sh.size, size);
-    shaders.setUniform(sh.shader, sh.foot, foot);
-    shaders.setUniform(sh.shader, sh.joined, joined);
-    shaders.setUniform(sh.shader, sh.softness, softness);
+    shaders.setFields(sh, .{ .size = size, .foot = foot, .joined = joined, .softness = softness });
     return true;
 }
 

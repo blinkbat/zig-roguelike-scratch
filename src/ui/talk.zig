@@ -13,8 +13,8 @@ const P = mathx.P;
 const WIDTH: i32 = 1040;
 const MARGIN: i32 = 24;
 const PAD: i32 = 28;
-const BODY: i32 = 24;
-const LEADING: i32 = 36;
+const SAY_SIZE: i32 = 24;
+const SAY_PITCH: i32 = 36;
 const NUMBER_W: i32 = 32;
 const TALK_VEIL = look.fade(look.BG, 0.45);
 const FIGURE_BOX: i32 = 140;
@@ -92,7 +92,7 @@ pub const Layout = struct {
         const header: i32 = font.HEAD_LINE + HEADER_GAP;
         const footer: i32 = FOOTER_GAP + menu.ACTION_BOX.y;
         const cap_h = @min(@divTrunc(screen.y * 2, 3), screen.y - 2 * MARGIN);
-        const capacity: usize = @intCast(@max(1, @divTrunc(cap_h - 2 * PAD - header - footer, LEADING)));
+        const capacity: usize = @intCast(@max(1, @divTrunc(cap_h - 2 * PAD - header - footer, SAY_PITCH)));
         const counted = capacity + 1;
         self.line_n = countLines(face, v.say, self.text_w, counted);
         const gap: usize = @intFromBool(self.row_n > 0);
@@ -102,8 +102,9 @@ pub const Layout = struct {
             n.* = countLines(face, label, self.replyW(), counted);
             replies += @max(1, n.*);
         }
-        self.said = @min(self.line_n, @max(1, capacity -| (replies + gap)));
-        var total = self.said + gap;
+        const said_min: usize = @intFromBool(capacity > 2 * gap);
+        self.said = @min(self.line_n, @max(said_min, capacity -| (replies + gap)));
+        var total = if (self.said > 0) self.said + gap else 0;
         for (reply_lines[0..self.row_n], 0..) |n, i| {
             self.starts[i] = total;
             total += @max(1, @min(n, counted -| total));
@@ -111,7 +112,7 @@ pub const Layout = struct {
         }
         self.last = @min(total, capacity);
         const visible: i32 = @intCast(@min(@max(total, 3), capacity));
-        const h = 2 * PAD + header + visible * LEADING + footer;
+        const h = 2 * PAD + header + visible * SAY_PITCH + footer;
         const x = @divTrunc(screen.x - w, 2);
         const y = @max(MARGIN, screen.y - @max(RAISE_MIN, @divTrunc(screen.y, RAISE_DIV)) - h);
         self.panel = raster.rect(x, y, w, h);
@@ -120,12 +121,12 @@ pub const Layout = struct {
         self.who_y = y + PAD;
         self.who_rule_y = self.who_y + font.HEAD_LINE + WHO_RULE_GAP;
         self.text_y = y + PAD + header;
-        self.content = raster.rect(self.text_x - ROW_INSET, self.text_y - ROW_RISE, self.text_w + 2 * ROW_INSET, visible * LEADING + 2 * ROW_RISE);
+        self.content = raster.rect(self.text_x - ROW_INSET, self.text_y - ROW_RISE, self.text_w + 2 * ROW_INSET, visible * SAY_PITCH + 2 * ROW_RISE);
         for (0..self.row_n) |i| {
             const start = self.starts[i];
             const end = @min(self.last, self.ends[i]);
             self.rows[i] = if (end > start)
-                raster.rect(self.text_x - ROW_INSET, self.text_y + @as(i32, @intCast(start)) * LEADING - ROW_RISE, self.text_w + 2 * ROW_INSET, @as(i32, @intCast(end - start)) * LEADING - ROW_FOOT)
+                raster.rect(self.text_x - ROW_INSET, self.text_y + @as(i32, @intCast(start)) * SAY_PITCH - ROW_RISE, self.text_w + 2 * ROW_INSET, @as(i32, @intCast(end - start)) * SAY_PITCH - ROW_FOOT)
             else
                 raster.rect(0, 0, 0, 0);
         }
@@ -165,7 +166,7 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
         const on = i == v.cursor;
         menu.boxedSmall(r, look.fade(if (on) look.UI_GOLD else look.BG, if (on) ROW_ON_A else ROW_OFF_A), look.fade(if (on) look.UI_GOLD else look.EDGE, ROW_EDGE_A));
         if (on) rl.drawRectangle(raster.left(r), raster.top(r), ROW_BAR_W, raster.height(r), look.UI_GOLD);
-        face.text(std.fmt.bufPrintZ(&buf, "{d}.", .{i + 1}) catch "", l.text_x, raster.top(r) + ROW_RISE, BODY, look.UI_GOLD);
+        face.text(std.fmt.bufPrintZ(&buf, "{d}.", .{i + 1}) catch "", l.text_x, raster.top(r) + ROW_RISE, SAY_SIZE, look.UI_GOLD);
         drawPassage(face, label, l.text_x + NUMBER_W, l.replyW(), l.starts[i], l.last, l, if (on) look.UI_FOCUS else look.TEXT);
     }
     menu.action(face, l.action, v.prompt, if (l.row_n > 0) "Reply" else if (v.ending) "Leave" else "Continue");
@@ -177,7 +178,7 @@ fn drawPassage(face: *const font.Face, body: []const u8, x: i32, w: i32, start: 
     var buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
     while (nextLine(face, body, &offset, w, &buf)) |text| : (line += 1) {
         if (line >= end) break;
-        face.text(text, x, l.text_y + @as(i32, @intCast(line)) * LEADING, BODY, ink);
+        face.text(text, x, l.text_y + @as(i32, @intCast(line)) * SAY_PITCH, SAY_SIZE, ink);
     }
 }
 
@@ -202,7 +203,7 @@ fn nextLine(face: anytype, body: []const u8, offset: *usize, w: i32, buf: *[font
         const mid = lo + (hi - lo + 1) / 2;
         const held = buf[mid];
         buf[mid] = 0;
-        const fits = face.width(buf[0..mid :0], BODY) <= w;
+        const fits = face.width(buf[0..mid :0], SAY_SIZE) <= w;
         buf[mid] = held;
         if (fits) lo = mid else hi = mid - 1;
     }
@@ -235,7 +236,7 @@ fn drawFigure(face: *const font.Face, r: rl.Rectangle, f: Figure) void {
     const h = t.height * scale;
     const x = raster.left(r) + @divTrunc(FIGURE_BOX - w, 2);
     const y = raster.top(r) + FIGURE_BOX - FIGURE_INSET - h;
-    raster.blit(t, raster.facing(t, false), raster.rect(x, y, w, h), look.LIT);
+    raster.stretch(t, raster.rect(x, y, w, h), look.LIT);
 }
 
 test "an oversized line clips inside the raised panel rather than splitting into pages" {
@@ -268,6 +269,17 @@ test "an oversized line gives up its last lines so every reply that fits stays s
     try std.testing.expect(l.said < l.line_n);
 }
 
+test "a window too short for the line still shows the reply the cursor confirms" {
+    const face = menu.TestFace{};
+    var l: Layout = .{};
+    const asks = [_][]const u8{ "Yes", "No" };
+    var h: i32 = 100;
+    while (h <= 600) : (h += 10) {
+        l.of(&face, .{ .x = 1280, .y = h }, .{ .who = "w", .say = "a word " ** 40, .choices = &asks, .cursor = 0, .prompt = .{ .key = "Enter" }, .figure = null });
+        try std.testing.expect(l.shownRows() >= 1);
+    }
+}
+
 test "a narrow face fills the panel's width before it wraps" {
     const w: i32 = 700;
     const body = "ab " ** 200;
@@ -275,5 +287,5 @@ test "a narrow face fills the panel's width before it wraps" {
     var buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
     const first = nextLine(menu.TestFace{}, body, &offset, w, &buf).?;
     try std.testing.expect(countLines(menu.TestFace{}, body, w, std.math.maxInt(usize)) > 1);
-    try std.testing.expect(menu.TestFace.width(.{}, first, BODY) > w - 3 * @divTrunc(BODY, 2));
+    try std.testing.expect(menu.TestFace.width(.{}, first, SAY_SIZE) > w - 3 * @divTrunc(SAY_SIZE, 2));
 }

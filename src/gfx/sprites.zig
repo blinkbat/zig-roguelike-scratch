@@ -109,8 +109,7 @@ pub const Sprites = struct {
         const s = self.shine orelse return;
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
-        shaders.setUniform(s.shader, s.sweep, sweep);
-        shaders.setUniform(s.shader, s.glow, glow);
+        shaders.setFields(s, .{ .sweep = sweep, .glow = glow });
         raster.stretch(t, dest, col);
     }
 
@@ -119,8 +118,7 @@ pub const Sprites = struct {
         const s = self.box_shine orelse return;
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
-        shaders.setUniform(s.shader, s.sweep, sweep);
-        shaders.setUniform(s.shader, s.size, size);
+        shaders.setFields(s, .{ .sweep = sweep, .size = size });
         const white = rl.Texture2D{ .id = rl.gl.rlGetTextureIdDefault(), .width = 1, .height = 1, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
         raster.stretch(white, dest, look.UI_GOLD);
     }
@@ -143,8 +141,12 @@ pub const Sprites = struct {
             if (self.alternateAt(g, p)) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
         }
         const tex = self.grounds.getPtrConst(g).* orelse return null;
+        return .{ .tex = tex, .src = maskCell(mask, 0) };
+    }
+
+    fn maskCell(mask: u4, band: usize) rl.Rectangle {
         const at = ground.CELL_OF[mask];
-        return .{ .tex = tex, .src = sprite_assets.sheetCell(at.x, at.y) };
+        return sprite_assets.sheetCell(at.x + @as(i32, @intCast(band * ground.COLS)), at.y);
     }
 
     fn alternateAt(self: *const Sprites, g: ground.Ground, p: mathx.P) ?rl.Texture2D {
@@ -226,8 +228,7 @@ pub const Sprites = struct {
                 while (points.next()) |p| {
                     const corners = beds.pointAt(p).corners;
                     const mask = corners.edgeMask(pair.upper, pair.lower) orelse continue;
-                    const cell = ground.CELL_OF[mask];
-                    const src = sprite_assets.sheetCell(cell.x + @as(i32, @intCast(@intFromEnum(band) * ground.COLS)), cell.y);
+                    const src = maskCell(mask, @intFromEnum(band));
                     const at = cellAt(origin, p, px);
                     if (corners.pairMask(pair.upper, pair.lower) != null) {
                         raster.blit(tex, src, pointRect(at, px), look.LIT);
@@ -253,7 +254,12 @@ pub const Sprites = struct {
         for (std.enums.values(ground.Bank)) |bank| self.drawWaterBankFaces(beds, origin, px, water, bank);
     }
 
+    fn banked(beds: *const ground.Beds) bool {
+        return beds.shown.contains(.water) or beds.shown.contains(.shallows);
+    }
+
     fn drawWaterBankFaces(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView, bank: ground.Bank) void {
+        if (!banked(beds)) return;
         const face = self.waterFace(water);
         var bound: ?f32 = null;
         var points = beds.points();
@@ -313,6 +319,7 @@ pub const Sprites = struct {
     }
 
     fn drawWaterBankCaps(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView, bank: ground.Bank) void {
+        if (!banked(beds)) return;
         var points = beds.points();
         while (points.next()) |p| {
             const piece = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
@@ -359,10 +366,7 @@ pub const Sprites = struct {
     };
 
     fn bankFill(self: *const Sprites, gr: ground.Ground) ?BankFill {
-        if (self.grounds.getPtrConst(gr).*) |tex| {
-            const cell = ground.CELL_OF[ground.FULL];
-            return .{ .piece = .{ .tex = tex, .src = sprite_assets.sheetCell(cell.x, cell.y) }, .sheet = true };
-        }
+        if (self.grounds.getPtrConst(gr).*) |tex| return .{ .piece = .{ .tex = tex, .src = maskCell(ground.FULL, 0) }, .sheet = true };
         const tex = self.tiles.getPtrConst(gr.tile()).* orelse return null;
         return .{ .piece = .{ .tex = tex, .src = raster.whole(tex) }, .sheet = false };
     }
@@ -388,8 +392,7 @@ pub const Sprites = struct {
 
         fn begin(f: WaterFace, depth: f32) void {
             rl.beginShaderMode(f.s.shader);
-            shaders.setUniform(f.s.shader, f.s.screen, f.screen);
-            shaders.setUniform(f.s.shader, f.s.depth, depth);
+            shaders.setFields(f.s, .{ .screen = f.screen, .depth = depth });
         }
     };
 
@@ -403,10 +406,7 @@ pub const Sprites = struct {
         const s = self.water orelse return false;
         rl.beginShaderMode(s.shader);
         shaders.setMapView(s, .{ .origin = origin, .cell = px, .screen = v.screen });
-        shaders.setUniform(s.shader, s.depth, depth);
-        shaders.setUniform(s.shader, s.mirrored, v.mirror != null);
-        shaders.setUniform(s.shader, s.shimmer, v.shimmer);
-        shaders.setUniform(s.shader, s.seconds, v.seconds);
+        shaders.setFields(s, .{ .depth = depth, .mirrored = v.mirror != null, .shimmer = v.shimmer, .seconds = v.seconds });
         rl.setShaderValueTexture(s.shader, s.visibility, v.visibility);
         rl.setShaderValueTexture(s.shader, s.glints, v.glints);
         if (v.mirror) |m| {

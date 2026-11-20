@@ -48,10 +48,10 @@ const dropAtlas = @import("capture.zig").dropAtlas;
 const heapAtlas = @import("capture.zig").heapAtlas;
 const drawOver = @import("capture.zig").drawOver;
 const exportDrawn = @import("capture.zig").exportDrawn;
-const exportTarget = @import("capture.zig").exportTarget;
-const readTarget = @import("capture.zig").readTarget;
+const captured = @import("capture.zig").captured;
+const drawnImage = @import("capture.zig").drawnImage;
 const renderTarget = @import("capture.zig").renderTarget;
-const sameRgb = @import("capture.zig").sameRgb;
+const samePixel = @import("capture.zig").samePixel;
 const target720 = @import("capture.zig").target720;
 const targetAt = @import("capture.zig").targetAt;
 const SIZES = game.SIZES;
@@ -386,9 +386,7 @@ fn captureTactics(g: *game.Game) !void {
     }
     game.harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
     skills.useSkill(g, .{ .act = .arcane_barrier, .by = .x });
-    g.mode.aim.mark = .{ .x = 23, .y = 19 };
-    skills.confirmAim(g);
-    g.mode.aim.mark = .{ .x = 23, .y = 21 };
+    markSpan(g);
     try capture(g, target, TACTICS_DIR ++ "/barrier-preview.png");
     skills.confirmAim(g);
     game.harness.drawnOut(g);
@@ -408,9 +406,7 @@ fn captureTactics(g: *game.Game) !void {
     g.sim.pool.get(chilled).?.chill.apply();
     g.sim.pool.get(frightened).?.fright = actor.FLEE_TURNS;
     skills.useSkill(g, .{ .act = .fire_wall, .by = .x });
-    g.mode.aim.mark = .{ .x = 23, .y = 19 };
-    skills.confirmAim(g);
-    g.mode.aim.mark = .{ .x = 23, .y = 21 };
+    markSpan(g);
     try capture(g, target, TACTICS_DIR ++ "/fire-wall-preview.png");
     skills.confirmAim(g);
     game.harness.drawnOut(g);
@@ -432,6 +428,12 @@ fn captureTactics(g: *game.Game) !void {
         g.sim.inventory.bag[0] = items.affixed(sample[0], &.{.{ .kind = sample[1], .value = sample[2] }});
         try capture(g, target, TACTICS_DIR ++ "/item-" ++ @tagName(sample[1]) ++ ".png");
     }
+}
+
+fn markSpan(g: *game.Game) void {
+    g.mode.aim.mark = .{ .x = 23, .y = 19 };
+    skills.confirmAim(g);
+    g.mode.aim.mark = .{ .x = 23, .y = 21 };
 }
 
 fn captureMouse(g: *game.Game) !void {
@@ -479,19 +481,16 @@ fn checkHiddenAim(g: *game.Game, target: rl.RenderTexture2D, comptime act: skill
     g.st = .{ .device = .keys, .modifier = g.bar.modifier, .mouse_moved = true, .pointer = game.scene.Cam.of(g).mid(.{ .x = if (act == .overwatch) 21 else 24, .y = 20 }) };
     _ = game.mouseControls.aim(g);
     if (g.mode != .aim or !skills.aimable(g, g.sim.heroActor().?.at, g.mode.aim.mark)) return error.MouseHiddenAimSetup;
-    try capture(g, target, MOUSE_DIR ++ "/aim-hidden-" ++ @tagName(act) ++ ".png");
-    const aimed = try readTarget(target);
+    const aimed = try captured(g, target, MOUSE_DIR ++ "/aim-hidden-" ++ @tagName(act) ++ ".png");
     defer rl.unloadImage(aimed);
     g.mode = .play;
-    drawInto(g, target);
-    const plain = try readTarget(target);
+    const plain = try drawnImage(g, target);
     defer rl.unloadImage(plain);
     const corner = game.scene.Cam.of(g).corner(.{ .x = 23, .y = 20 });
     var checked: usize = 0;
     for (0..game.CELL) |dy| for (0..game.CELL) |dx| {
-        const x = corner.x + @as(i32, @intCast(dx));
-        const y = corner.y + @as(i32, @intCast(dy));
-        if (!sameRgb(rl.getImageColor(aimed, x, y), rl.getImageColor(plain, x, y))) return error.MouseAimRevealedHiddenPath;
+        const p = corner.add(.{ .x = @intCast(dx), .y = @intCast(dy) });
+        if (!samePixel(aimed, plain, p)) return error.MouseAimRevealedHiddenPath;
         checked += 1;
     };
     std.debug.print("{s} targeting GPU: {d} hidden path pixels unchanged\n", .{ @tagName(act), checked });
@@ -727,7 +726,7 @@ pub fn captureCharacter(g: *game.Game) !void {
             const described: skillbar.Act = switch (class) {
                 .wizard => .frost_nova,
                 .archer => .burning_arrow,
-                else => progress.skills(class)[0].act,
+                .knight => progress.skills(class)[0].act,
             };
             g.character.cursor = skillCursor(class, described);
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-description.png");

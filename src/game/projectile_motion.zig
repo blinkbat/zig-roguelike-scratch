@@ -118,7 +118,7 @@ pub const Shot = struct {
     pub fn zapInto(self: *const Shot, effects: *fx.Fx) void {
         if (self.act.element() != .lightning or fx.sparkFlies(self.act)) return;
         const to = self.flight.end() orelse return;
-        effects.zap(@max(0, self.lands() - ZAP_S), .{ .from = mathx.centre(self.from), .to = mathx.centre(to) });
+        effects.zap(@max(0, self.lands() - ZAP_S), .between(self.from, to));
     }
 };
 

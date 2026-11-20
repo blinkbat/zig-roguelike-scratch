@@ -101,11 +101,11 @@ fn refer(into: anytype, from: anytype) void {
 }
 
 pub fn capture(g: *game.Game, snapshot: *Snapshot) !void {
-    return captureOver(g, snapshot, false);
+    return captureOver(g, snapshot, false, false);
 }
 
-/// `map_held` when `snapshot.map` already holds this run's map.
-pub fn captureOver(g: *game.Game, snapshot: *Snapshot, map_held: bool) !void {
+/// `map_held` when `snapshot.map` already holds this run's map; `visits_held` when its visits are this run's as last captured.
+pub fn captureOver(g: *game.Game, snapshot: *Snapshot, map_held: bool, visits_held: bool) !void {
     snapshot.summary = data.Summary.of(g) orelse return error.Damaged;
     snapshot.seed = g.sim.seed;
     snapshot.node = g.sim.node;
@@ -114,8 +114,9 @@ pub fn captureOver(g: *game.Game, snapshot: *Snapshot, map_held: bool) !void {
         if (g.sim.map) |map| snapshot.map = map.*;
     }
     for (&snapshot.visits, 0..) |*visit, node| {
-        visit.* = null;
-        if (g.sim.visited.isSet(node)) visit.* = g.sim.visits[node];
+        if (!g.sim.visited.isSet(node)) {
+            visit.* = null;
+        } else if (!visits_held or visit.* == null or g.sim.visits_changed.isSet(node)) visit.* = g.sim.visits[node];
     }
     inline for (PARTS) |p| inline for (p[1]) |field| {
         @field(@field(snapshot, p[0]), field[1]) = @field(data.part(g, field[0]), field[1]);
@@ -237,6 +238,35 @@ test "portable autosave snapshots own every byte while the live run changes" {
     defer frozen.deinit();
     try writeSnapshot(snapshot, &frozen);
     try std.testing.expectEqualSlices(u8, before.items, frozen.items);
+}
+
+test "a held autosave snapshot recopies only the visits written since it was taken, and every one after a fresh turn" {
+    const alloc = std.testing.allocator;
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    const world = try alloc.create(data.Map);
+    defer alloc.destroy(world);
+    world.* = .{};
+    _ = world.add(.{ .procgen = .{} });
+    _ = world.add(.{ .procgen = .{} });
+    world.start = .{ .node = 0, .at = .{ .x = 10, .y = 10 } };
+    game.beginMapAt(g, world, world.start, 73);
+    game.keepVisit(g, 0);
+    game.keepVisit(g, 1);
+    const snapshot = try alloc.create(Snapshot);
+    defer alloc.destroy(snapshot);
+    try captureOver(g, snapshot, false, false);
+    g.sim.visits_changed = .initEmpty();
+    const kept = snapshot.visits[0].?.lv.tile[0];
+    g.sim.visits[0].lv.tile[0] = .lava;
+    g.sim.lv.tile[0] = .water;
+    game.keepVisit(g, 1);
+    try captureOver(g, snapshot, true, true);
+    try std.testing.expectEqual(kept, snapshot.visits[0].?.lv.tile[0]);
+    try std.testing.expectEqual(grid.Tile.water, snapshot.visits[1].?.lv.tile[0]);
+    g.sim.resetTransientTurn();
+    try captureOver(g, snapshot, true, true);
+    try std.testing.expectEqual(grid.Tile.lava, snapshot.visits[0].?.lv.tile[0]);
 }
 
 test "legacy key migration failure leaves the live run and map unchanged" {

@@ -406,7 +406,8 @@ pub fn pressWalking(g: *game.Game, b: input.Button, d: ?mathx.Dir) void {
 pub const TEST_DT = mathx.TEST_DT;
 pub const TEST_TOL: f32 = TEST_DT * 1.5;
 pub const FADING_S: f32 = 0.04;
-const FADE_FRAMES = 120;
+pub const FADED_S: f32 = 0.6;
+const FADE_FRAMES: usize = @intFromFloat(@ceil(FADED_S / TEST_DT));
 pub const FADED: f32 = 0.99;
 pub const UNFADED: f32 = 0.01;
 
@@ -509,8 +510,6 @@ pub fn drawnOut(g: *game.Game) void {
     _ = framesWhile(g, DRAWN_OUT_CAP_S, Settled{});
 }
 
-pub const FADED_S: f32 = 0.6;
-
 pub fn ease(g: *game.Game, dt: f32) void {
     g.pic.easeOver(&g.sim, g.pic.groundShown(&g.sim), dt);
 }
@@ -568,7 +567,7 @@ pub fn setLife(a: *actor.Actor, hp: i32, max: i32) void {
 }
 
 pub fn corridor(b: *atlas.Bespoke) void {
-    b.fill(grid.Box.between(.{ .x = 2, .y = 5 }, .{ .x = 12, .y = 5 }), .floor);
+    b.fill(grid.Box.between(WEST_DOOR, .{ .x = 12, .y = WEST_DOOR.y }), .floor);
 }
 
 pub const WEST_DOOR = P{ .x = 2, .y = 5 };
@@ -582,7 +581,7 @@ pub fn twoRooms(w: *atlas.Atlas) usize {
     const da = w.addDoor(a, WEST_DOOR).?;
     const db = w.addDoor(b, EAST_DOOR).?;
     w.link(.{ .node = a, .door = da }, .{ .node = b, .door = db });
-    w.start = .{ .node = a, .at = .{ .x = 3, .y = 5 } };
+    w.start = .{ .node = a, .at = WEST_DOOR.add(mathx.Dir.e.delta()) };
     return b;
 }
 

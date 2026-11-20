@@ -302,22 +302,13 @@ pub const SPOTS_MAX = HUD_SPOTS + actor.MAX;
 pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     const layout = hudLayout(g);
     var n: usize = 0;
-    out[n] = .{ .spot = .life, .box = hud.orbBox(layout.life) };
-    n += 1;
-    for (0..skillbar.SLOTS.len) |i| {
-        out[n] = .{ .spot = .{ .slot = i }, .box = slotBox(layout, i) };
-        n += 1;
-    }
-    out[n] = .{ .spot = .mana, .box = hud.orbBox(layout.mana) };
-    n += 1;
+    _ = mathx.push(Part, out, &n, .{ .spot = .life, .box = hud.orbBox(layout.life) });
+    for (0..skillbar.SLOTS.len) |i| _ = mathx.push(Part, out, &n, .{ .spot = .{ .slot = i }, .box = slotBox(layout, i) });
+    _ = mathx.push(Part, out, &n, .{ .spot = .mana, .box = hud.orbBox(layout.mana) });
     var buf: hud.Shown = undefined;
     const shown = heroStatuses(g, &buf);
-    for (shown, 0..) |s, k| {
-        out[n] = .{ .spot = .{ .status = s }, .box = hud.statusBox(layout, shown.len, k) };
-        n += 1;
-    }
-    out[n] = .{ .spot = .log, .box = journal.box(g.screen) };
-    n += 1;
+    for (shown, 0..) |s, k| _ = mathx.push(Part, out, &n, .{ .spot = .{ .status = s }, .box = hud.statusBox(layout, shown.len, k) });
+    _ = mathx.push(Part, out, &n, .{ .spot = .log, .box = journal.box(g.screen) });
     std.debug.assert(n <= HUD_SPOTS);
     const cam = game.scene.Cam.of(g);
     for (0..g.sim.pool.n) |i| {
@@ -327,8 +318,7 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
         const source = raster.rect(p.x, p.y, game.CELL, game.CELL);
         const box = g.cinema.lens.screenBox(source, g.screen);
         if (!rl.checkCollisionRecs(box, raster.rect(0, 0, g.screen.x, g.screen.y))) continue;
-        out[n] = .{ .spot = .{ .actor = actor.Pool.idOf(i) }, .box = box, .source_box = source };
-        n += 1;
+        _ = mathx.push(Part, out, &n, .{ .spot = .{ .actor = actor.Pool.idOf(i) }, .box = box, .source_box = source });
     }
     return out[0..n];
 }

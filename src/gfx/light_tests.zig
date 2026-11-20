@@ -760,7 +760,8 @@ test "remembered ground is black on every line where a seen cell meets an unseen
                         .n => .{ ax + t, ay },
                         .s => .{ ax + t, ay + 1 - EDGE_EPS },
                         .w => .{ ax, ay + t },
-                        else => .{ ax + 1 - EDGE_EPS, ay + t },
+                        .e => .{ ax + 1 - EDGE_EPS, ay + t },
+                        .ne, .se, .sw, .nw => unreachable,
                     };
                     most = @max(most, lum(l.at(&lv, &.{}, q)) / full);
                 }

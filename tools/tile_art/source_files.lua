@@ -69,6 +69,14 @@ function files.layer(sprite,name)
   end
 end
 
+function files.hide(sprite,...)
+  local names={}
+  for _,name in ipairs({...}) do names[name]=true end
+  for _,layer in ipairs(sprite.layers) do
+    if names[layer.name] then layer.isVisible=false end
+  end
+end
+
 function files.canvas(sprite,cel)
   local image=Image(sprite.width,sprite.height,ColorMode.RGB)
   image:drawImage(cel.image,cel.position)

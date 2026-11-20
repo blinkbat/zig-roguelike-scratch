@@ -126,7 +126,7 @@ pub fn prepare(g: *game.Game) void {
     g.mouse.target = at;
     g.mouse.fresh = true;
     for (g.sim.pool.slice(), 0..) |a, i| {
-        if (!a.foe()) continue;
+        if (!a.livingFoe()) continue;
         const drawn = g.pic.drawnCell(&g.sim, i) orelse continue;
         if (drawn.eq(at)) {
             g.mouse.foe = actor.Pool.idOf(i);

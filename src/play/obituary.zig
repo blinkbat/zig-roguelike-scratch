@@ -293,24 +293,19 @@ pub fn write(ctx: *const Context) Report {
     const tagged = tags(ctx, &top);
     const deed = lastDeed(ctx, tagged);
     var said = Tags.initEmpty();
-    const a = stream.pos;
-    cause(ctx, tagged, w) catch {
-        stream.pos = a;
-    };
-    const b = stream.pos;
-    if (deed) |d| lastGasp(ctx, d, w) catch {
-        stream.pos = b;
-    };
-    const c = stream.pos;
-    how(ctx, &top, tagged, deed, &said, w) catch {
-        stream.pos = c;
-    };
-    const d = stream.pos;
-    aftertaste(ctx, tagged, said, w) catch {
-        stream.pos = d;
-    };
+    whole(&stream, cause, .{ ctx, tagged, w });
+    if (deed) |d| whole(&stream, lastGasp, .{ ctx, d, w });
+    whole(&stream, how, .{ ctx, &top, tagged, deed, &said, w });
+    whole(&stream, aftertaste, .{ ctx, tagged, said, w });
     r.n = stream.pos;
     return r;
+}
+
+fn whole(stream: *std.io.FixedBufferStream([]u8), comptime sentence: anytype, args: anytype) void {
+    const at = stream.pos;
+    @call(.auto, sentence, args) catch {
+        stream.pos = at;
+    };
 }
 
 fn article(word: []const u8, capital: bool) []const u8 {

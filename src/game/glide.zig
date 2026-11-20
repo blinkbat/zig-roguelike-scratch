@@ -95,6 +95,13 @@ pub const Glide = struct {
         return gl;
     }
 
+    /// Whether a part of the motion not yet finished ends on `p`.
+    pub fn reaching(self: Glide, p: P) bool {
+        if (self.to.eq(p) and self.left() > 0) return true;
+        const w = self.waiting() orelse return false;
+        return w.reaching(p);
+    }
+
     pub fn bumping(self: Glide, at: P, t: f32) Glide {
         var gl = self.toward(self.to, t);
         gl.bump = raster.vec(at.sub(self.to)).scale(game.BUMP_PX);

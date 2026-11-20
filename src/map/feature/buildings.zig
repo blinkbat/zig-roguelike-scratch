@@ -63,7 +63,7 @@ pub const Lots = struct {
 
     /// Before any feature begins.
     pub fn reserve(self: *Lots, b: Box) void {
-        std.debug.assert(self.n == 0);
+        std.debug.assert(self.mine == 0);
         _ = mathx.push(Box, &self.box, &self.n, b);
     }
 

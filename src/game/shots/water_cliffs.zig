@@ -16,6 +16,7 @@ const MIN_PIXELS = @import("capture.zig").MIN_PIXELS;
 const SHOTS_DIR = @import("capture.zig").SHOTS_DIR;
 const PATH_MAX = @import("capture.zig").PATH_MAX;
 const WATER_CLIFFS_DIR = SHOTS_DIR ++ "/water-cliffs";
+const REFLECTIONS_DIR = SHOTS_DIR ++ "/water-reflections";
 const capture = @import("capture.zig").capture;
 const capturef = @import("capture.zig").capturef;
 const drawInto = @import("capture.zig").drawInto;
@@ -28,6 +29,7 @@ const intoTarget = @import("capture.zig").intoTarget;
 const neutralLens = @import("capture.zig").neutralLens;
 const outOfTarget = @import("capture.zig").outOfTarget;
 const pixels = @import("capture.zig").pixels;
+const readDrawn = @import("capture.zig").readDrawn;
 const readTarget = @import("capture.zig").readTarget;
 const renderTarget = @import("capture.zig").renderTarget;
 const sameRgb = @import("capture.zig").sameRgb;
@@ -274,8 +276,7 @@ fn checkWaterCapTint(g: *game.Game) !void {
             beds.fill(&lv, beds.lo, beds.hi, false);
             drawOver(target, rl.Color.blank);
             g.sprites.drawWaterCliffCaps(&beds, origin, game.CELL_F, view);
-            rl.endTextureMode();
-            const cap = try readTarget(target);
+            const cap = try readDrawn(target);
             defer rl.unloadImage(cap);
             var px = pixels(SWATCH_PX, SWATCH_PX);
             while (px.next()) |p| {
@@ -326,14 +327,13 @@ fn waterCliffTemplates(g: *game.Game) !void {
                 .caps => g.sprites.drawWaterCliffCaps(&beds, origin, game.CELL_F, null),
                 .edges => g.sprites.drawWaterEdges(&beds, origin, game.CELL_F, null),
             }
-            rl.endTextureMode();
+            const img = try readDrawn(target);
+            defer rl.unloadImage(img);
             var path: [PATH_MAX]u8 = undefined;
             const name = if (pass == .ground)
                 try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/template-{d}.png", .{n})
             else
-                try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/template-{d}-layer-{d}.png", .{ n, @intFromEnum(pass) });
-            const img = try readTarget(target);
-            defer rl.unloadImage(img);
+                try std.fmt.bufPrintZ(&path, WATER_CLIFFS_DIR ++ "/template-{d}-{s}.png", .{ n, @tagName(pass) });
             try exportImage(img, name);
         }
     }
@@ -342,12 +342,11 @@ fn waterCliffTemplates(g: *game.Game) !void {
 fn waterSample(g: *game.Game, target: rl.RenderTexture2D, lv: *const grid.Level, beds: *const ground.Beds, view: ?sprite.WaterView, origin: [2]f32) !rl.Image {
     drawOver(target, rl.Color.blank);
     g.sprites.drawGround(lv, beds, origin, game.CELL_F, view);
-    rl.endTextureMode();
-    return readTarget(target);
+    return readDrawn(target);
 }
 
 pub fn captureWater(g: *game.Game, target: rl.RenderTexture2D) !void {
-    try std.fs.cwd().makePath(SHOTS_DIR ++ "/water-reflections");
+    try std.fs.cwd().makePath(REFLECTIONS_DIR);
     g.st = .{};
     const FRAMES = 40;
     const EVERY = 6;
@@ -355,7 +354,7 @@ pub fn captureWater(g: *game.Game, target: rl.RenderTexture2D) !void {
     const minute = g.sim.clock;
     for (0..FRAMES) |i| {
         for (0..EVERY) |_| game.update(g, mathx.FRAME_DT);
-        try capturef(g, target, SHOTS_DIR ++ "/water-reflections/{d:0>2}.png", .{i});
+        try capturef(g, target, REFLECTIONS_DIR ++ "/{d:0>2}.png", .{i});
     }
     const elapsed = g.light.t.at() - before;
     if (elapsed < FRAMES * EVERY * mathx.FRAME_DT - 0.01 or !std.meta.eql(minute, g.sim.clock)) return error.WaterIdleClock;
