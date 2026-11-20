@@ -277,6 +277,7 @@ pub const Editor = struct {
         ed.node = 0;
         ed.dropHeld();
         ed.modal = .none;
+        ed.plot = .{};
         ed.view = .map;
         ed.scene.reset();
         ed.enterNode();

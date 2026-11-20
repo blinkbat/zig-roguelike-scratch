@@ -344,10 +344,14 @@ pub const State = struct {
 
     /// Takes the triggers and stick as they lie now, for a screen entered from one that did not poll.
     pub fn resync(self: *State) void {
-        for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
+        self.pullTriggers();
         self.stick = false;
         const at = self.pad_at orelse return;
         self.stick = stickWalks(mathx.deflection(rl.getGamepadAxisMovement(at, .left_x), rl.getGamepadAxisMovement(at, .left_y)), false);
+    }
+
+    fn pullTriggers(self: *State) void {
+        for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
     }
 
     pub fn holdWalk(self: *State) void {
@@ -394,7 +398,7 @@ pub const State = struct {
 
     pub fn update(self: *State, dt: f32) void {
         const before = self.triggers;
-        for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
+        self.pullTriggers();
         const focused = rl.isWindowFocused();
         const was_focused = self.focused;
         self.pad_at = choosePad(self.pad_at, focused, &before, &self.triggers);

@@ -348,7 +348,7 @@ test "scenery shadow margins include the drawn height and width of loaded terrai
     try std.testing.expectEqual(doubled, sceneryMargin(&sprites));
     sprites.tiles.set(.large_tree, null);
     var cart = tree;
-    cart.width = 128;
+    cart.width = 2 * look.SPRITE_PX;
     sprites.tiles.set(.caravan, cart);
     try std.testing.expectEqual(doubled, sceneryMargin(&sprites));
     sprites.tiles.set(.caravan, null);

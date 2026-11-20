@@ -800,7 +800,8 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     }
     if (button(ed, g, tools.next(), "Delete", false, d.line_n > 1, "Delete this line; every way into it ends the dialog instead")) {
         d.dropLine(s.line);
-        s.line = @min(s.line, d.line_n - 1);
+        s.detail.top = 0;
+        s.pickLine(@min(s.line, d.line_n - 1));
         ed.bank();
     }
     tools.done();

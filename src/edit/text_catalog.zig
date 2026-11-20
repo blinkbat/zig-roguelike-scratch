@@ -157,7 +157,7 @@ pub const Catalog = struct {
         const a = self.arena.allocator();
         var names = atlas_text.NodeNames.of(bytes);
         while (names.next()) |n| {
-            try self.list.append(a, .{ .path = path, .line = n.line, .text = try a.dupe(u8, n.name), .category = MAPS_CATEGORY, .owner = try std.fmt.allocPrint(a, "{s} (node {d})", .{ n.name, n.node }), .role = "Name", .context = try std.fmt.allocPrint(a, "{s}.node[{d}].name", .{ path, n.node }), .editable = false, .reason = "Rename this node in the map editor", .file = 0, .start = 0, .end = 0, .ordinal = 0 });
+            try self.list.append(a, .{ .path = path, .line = n.line, .text = try a.dupe(u8, n.name), .category = MAPS_CATEGORY, .owner = try std.fmt.allocPrint(a, "{s} (node {d})", .{ n.name, n.node }), .role = NAME_ROLE, .context = try std.fmt.allocPrint(a, "{s}.node[{d}].name", .{ path, n.node }), .editable = false, .reason = "Rename this node in the map editor", .file = 0, .start = 0, .end = 0, .ordinal = 0 });
         }
     }
 
@@ -348,10 +348,10 @@ pub const Catalog = struct {
                 .reason = if (is_input or is_keyboard) "Input glyph identifiers are tied to controls" else if (decoded.len > MAX_TEXT) "Text exceeds the editor limit" else "",
             });
         }
-        try self.enumLabels(path, bytes, ts, pairs, excluded, file);
+        try self.enumLabels(path, contexts.category, bytes, ts, pairs, excluded, file);
     }
 
-    fn enumLabels(self: *Catalog, path: []const u8, bytes: []const u8, ts: []const Token, pairs: []const usize, excluded: []const bool, file: usize) !void {
+    fn enumLabels(self: *Catalog, path: []const u8, category: []const u8, bytes: []const u8, ts: []const Token, pairs: []const usize, excluded: []const bool, file: usize) !void {
         const a = self.arena.allocator();
         for (ts, 0..) |token, i| {
             if (token.tag != .keyword_enum or excluded[i]) continue;
@@ -372,7 +372,7 @@ pub const Catalog = struct {
                         const key = if (type_name) |tn| try wording.keyAlloc(a, tn, name) else null;
                         const allowed = if (type_name) |tn| wording.allowed(tn, name) else false;
                         const identity = key orelse try std.fmt.allocPrint(a, "{s}.{s}", .{ path, name });
-                        try self.list.append(a, .{ .path = path, .line = lineOf(bytes, ts[at].loc.start), .text = if (key) |k| try a.dupe(u8, wording.lookup(self.labels, k) orelse label) else label, .category = try categoryOf(a, path), .owner = try humanize(a, name), .role = "Display name", .context = identity, .editable = allowed, .reason = if (allowed) "Display alias; saves to " ++ LABEL_FILE ++ " without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
+                        try self.list.append(a, .{ .path = path, .line = lineOf(bytes, ts[at].loc.start), .text = if (key) |k| try a.dupe(u8, wording.lookup(self.labels, k) orelse label) else label, .category = category, .owner = try humanize(a, name), .role = "Display name", .context = identity, .editable = allowed, .reason = if (allowed) "Display alias; saves to " ++ LABEL_FILE ++ " without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
                     }
                     field = false;
                 }
@@ -390,9 +390,15 @@ fn included(path: []const u8) bool {
         if (std.mem.indexOf(u8, path, part) != null) return false;
     }
     if (std.mem.endsWith(u8, path, "tests.zig")) return false;
-    for ([_][]const u8{ "game/", "play/", "ui/", "edit/", "map/" }) |prefix| if (std.mem.startsWith(u8, path, prefix)) return true;
+    for ([_][]const u8{ GAME_DIR, PLAY_DIR, UI_DIR, EDIT_DIR, MAP_DIR }) |prefix| if (std.mem.startsWith(u8, path, prefix)) return true;
     return contains(&INPUT_SOURCES, path) or contains(&LONE_SOURCES, path);
 }
+
+const GAME_DIR = "game/";
+const PLAY_DIR = "play/";
+const UI_DIR = "ui/";
+const EDIT_DIR = "edit/";
+const MAP_DIR = "map/";
 
 const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
 const FX_SOURCE = "gfx/fx.zig";
@@ -607,22 +613,22 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (contains(&LOG_SOURCES, rel)) return LOG_LINES;
         if (contains(&DIALOGUE_SOURCES, rel)) return DIALOGUE_CATEGORY;
         if (std.mem.eql(u8, rel, QUESTS_SOURCE)) return QUESTS_CATEGORY;
-        if (std.mem.startsWith(u8, rel, "edit/")) return EDITOR_CATEGORY;
-        if (std.mem.startsWith(u8, rel, "map/")) return MAPS_CATEGORY;
+        if (std.mem.startsWith(u8, rel, EDIT_DIR)) return EDITOR_CATEGORY;
+        if (std.mem.startsWith(u8, rel, MAP_DIR)) return MAPS_CATEGORY;
         if (contains(&ITEM_TEXT_SOURCES, rel)) return ITEMS_CATEGORY;
-        if (std.mem.startsWith(u8, rel, "ui/character") or contains(&CHARACTER_SOURCES, rel)) return SHEET_CATEGORY;
+        if (std.mem.startsWith(u8, rel, UI_DIR ++ "character") or contains(&CHARACTER_SOURCES, rel)) return SHEET_CATEGORY;
         if (contains(&SKILL_TEXT_SOURCES, rel)) return SKILLS_CATEGORY;
         if (contains(&BINDING_SOURCES, rel)) return INPUT_CATEGORY;
         if (contains(&HUD_SOURCES, rel)) return HUD_CATEGORY;
-        if (std.mem.startsWith(u8, rel, "ui/")) return INTERFACE_CATEGORY;
+        if (std.mem.startsWith(u8, rel, UI_DIR)) return INTERFACE_CATEGORY;
         if (contains(&ITEMS_SOURCES, rel)) return ITEMS_CATEGORY;
         if (std.mem.eql(u8, rel, SKILLBAR_SOURCE)) return SKILLS_CATEGORY;
         if (contains(&EFFECT_SOURCES, rel)) return EFFECTS_CATEGORY;
         if (contains(&LOOK_SOURCES, rel)) return LOOK_CATEGORY;
         if (std.mem.eql(u8, rel, ACTOR_SOURCE)) return ACTORS_CATEGORY;
         if (contains(&STATUS_SOURCES, rel)) return STATUS_CATEGORY;
-        if (std.mem.startsWith(u8, rel, "play/")) return COMBAT_CATEGORY;
-        if (std.mem.startsWith(u8, rel, "game/")) return GAMEPLAY_CATEGORY;
+        if (std.mem.startsWith(u8, rel, PLAY_DIR)) return COMBAT_CATEGORY;
+        if (std.mem.startsWith(u8, rel, GAME_DIR)) return GAMEPLAY_CATEGORY;
         if (std.mem.eql(u8, rel, APP_SOURCE)) return INTERFACE_CATEGORY;
         if (std.mem.eql(u8, rel, GAME_SOURCE)) return GAMEPLAY_CATEGORY;
         if (std.mem.startsWith(u8, rel, "save")) return SAVE_CATEGORY;
@@ -641,7 +647,7 @@ fn stem(path: []const u8) []const u8 {
 
 fn textRole(name: []const u8) ?[]const u8 {
     if (std.ascii.eqlIgnoreCase(name, "description") or std.ascii.eqlIgnoreCase(name, "desc")) return "Description";
-    if (std.ascii.eqlIgnoreCase(name, "name")) return "Name";
+    if (std.ascii.eqlIgnoreCase(name, "name")) return NAME_ROLE;
     if (std.ascii.eqlIgnoreCase(name, "title")) return "Title";
     if (std.ascii.eqlIgnoreCase(name, "label") or std.ascii.eqlIgnoreCase(name, "caption")) return "Label";
     if (std.ascii.eqlIgnoreCase(name, "tip")) return "Tooltip";
@@ -651,6 +657,7 @@ fn textRole(name: []const u8) ?[]const u8 {
     return null;
 }
 
+const NAME_ROLE = "Name";
 const ACTION_WORDS = [_][]const u8{ "VERB", "DONE", "TAKES", "RETAKES", "SWEEP_VERB" };
 const FRIGHT_WORDS = "FRIGHT_WORDS";
 

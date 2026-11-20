@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../../core/mathx.zig");
 const grid = @import("../../map/grid.zig");
 const carve = @import("../../map/carve.zig");
+const fov = @import("../../map/fov.zig");
 const gen = @import("../../map/gen.zig");
 const gas = @import("../../map/gas.zig");
 const fire = @import("../../map/fire.zig");
@@ -20,6 +21,8 @@ const look = @import("../../gfx/look.zig");
 const combat = @import("../combat.zig");
 const foe_rules = @import("../foe_rules.zig");
 const attacks = @import("../attacks.zig");
+const glide = @import("../glide.zig");
+const skills = @import("../skills.zig");
 const harness = @import("../harness.zig");
 const game = @import("../../game.zig");
 const P = mathx.P;
@@ -138,7 +141,6 @@ test "retaliation kills do not replace the last arrow in the death report" {
         g.sim.heroActor().?.hp = 1;
         game.settle(g);
         g.sim.rng = mathx.Rng.init(seed);
-        const skills = @import("../skills.zig");
         harness.useAct(g, .shoot);
         g.mode.aim.mark = g.sim.pool.get(target).?.at;
         skills.confirmAim(g);
@@ -660,7 +662,7 @@ test "slimes split in fights on real floors, and every body keeps a cell of its 
             if (g.mode == .aim) harness.press(g, CONFIRM) else harness.nudge(g, rng.pick(mathx.Dir, mathx.ALL_DIRS));
             game.update(g, SOAK_DT);
             for (0..g.sim.pool.n) |i| {
-                if (g.pic.drawnAt(&g.sim, i) == null) continue;
+                if (harness.undrawn(g, i)) continue;
                 const pic = g.pic.pictured[i];
                 try std.testing.expect(pic.max > 0 and pic.hp <= pic.max and pic.kind.family() == g.sim.pool.items[i].kind.family());
             }
@@ -1178,7 +1180,6 @@ test "a disguised mimic's afflictions wear off on its turns" {
 test "a bandit trapper's net pins the hero, who struggles in place and cannot leap until it wears off" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const skills = @import("../skills.zig");
     const from = P{ .x = 20, .y = 20 };
     const net = actor.row(.bandit_netter).net.?;
     var struggles: usize = 0;
@@ -1213,7 +1214,6 @@ test "a bandit trapper's net pins the hero, who struggles in place and cannot le
 test "a bandit shieldbearer's landed bash knocks the hero a cell back as the blow lands, unless walled" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const glide = @import("../glide.zig");
     const from = P{ .x = 20, .y = 20 };
     const back = from.add(mathx.Dir.w.delta());
     for ([_]bool{ false, true }) |walled| {
@@ -1301,7 +1301,7 @@ test "a pyre bloat bursts into flame, setting the bodies beside it burning and n
     const near = harness.spawnAt(g, .rat, .{ .x = 22, .y = 21 }, false);
     const far = harness.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
     game.settle(g);
-    combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    harness.kill(g, bloat, from, 0);
     try std.testing.expect(g.sim.pool.get(bloat) == null);
     try std.testing.expect(g.sim.heroActor().?.burn.turns > 0);
     try std.testing.expect(g.sim.pool.get(near).?.burn.turns > 0);
@@ -1319,7 +1319,7 @@ test "a pyre bloat bursting over a lake boils the water beside it into steam and
     carve.box(&g.sim.lv, grid.Box.around(at, 2), .water);
     const bloat = harness.spawnAt(g, .pyre_bloat, at, false);
     game.settle(g);
-    combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    harness.kill(g, bloat, from, 0);
     try std.testing.expect(g.sim.pool.get(bloat) == null);
     var cells = grid.Cells.around(at, 2);
     while (cells.next()) |p| {
@@ -1381,7 +1381,7 @@ test "a pib shaman heals first and throws chaos orbs during its healing cooldown
     try std.testing.expect(caster.bolt != null);
     try std.testing.expectEqual(@as(u8, 2), caster.ready_in);
     try std.testing.expectEqual(actor.row(.pib_shaman).hurls.?.every, caster.projectile_in);
-    try std.testing.expectEqual(@import("../../play/damage.zig").Element.chaos, g.pic.bolts[actor.Pool.slot(shaman)].?.element);
+    try std.testing.expectEqual(damage.Element.chaos, g.pic.bolts[actor.Pool.slot(shaman)].?.element);
     harness.drawnOut(g);
     caster.ready_in = 0;
     g.sim.pool.get(kin).?.hp = 1;
@@ -1535,7 +1535,7 @@ test "a pyre bloat sets its neighbours alight as its death lands, not before" {
     const near = harness.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
     game.settle(g);
     const slot = actor.Pool.slot(near);
-    combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0.3 });
+    harness.kill(g, bloat, from, 0.3);
     try std.testing.expect(g.sim.pool.get(near).?.burn.turns > 0);
     var frames: usize = 0;
     while (!g.pic.pictured[actor.Pool.slot(bloat)].down()) : (frames += 1) {
@@ -1626,15 +1626,15 @@ test "a pyre bloat's fire leaves a body past it visible through its burst" {
     const rat_at = P{ .x = 27, .y = 20 };
     const rat = harness.spawnAt(g, .rat, rat_at, false);
     game.settle(g);
-    try std.testing.expect(g.pic.drawnAt(&g.sim, actor.Pool.slot(rat)) != null);
-    combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0.3 });
+    try std.testing.expect(harness.drawn(g, actor.Pool.slot(rat)));
+    harness.kill(g, bloat, from, 0.3);
     combat.endTurn(g);
     game.update(g, 0);
     try std.testing.expect(g.sim.lv.isLit(rat_at));
     const frames = try litUntilDown(g, actor.Pool.slot(bloat), rat_at);
     try std.testing.expect(frames > 0 and g.pic.litShown(&g.sim, rat_at));
     harness.drawnOut(g);
-    try std.testing.expect(g.pic.drawnAt(&g.sim, actor.Pool.slot(rat)) != null);
+    try std.testing.expect(harness.drawn(g, actor.Pool.slot(rat)));
     try std.testing.expect(grid.clearLine(&g.sim.lv, from, rat_at));
 }
 
@@ -1687,6 +1687,26 @@ test "a sleeping leech the hero steps beside surfaces as the step lands, and div
         t.* = harness.framesUntil(g, slot, if (under) harness.undrawn else harness.drawn);
         try std.testing.expect(t.* + harness.TEST_DT >= step and t.* < 1);
         harness.drawnOut(g);
+    }
+}
+
+test "a sleeping leech wakes to a hero wading in water joined to its own, and never to sight of the hero" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const ford = P{ .x = 21, .y = 20 };
+    for ([_]?grid.Tile{ null, .shallows, .floor }, [_]bool{ false, true, false }) |wading, wakes| {
+        harness.arena(g, from, &.{});
+        carve.box(&g.sim.lv, .{ .lo = .{ .x = 22, .y = 18 }, .hi = .{ .x = 26, .y = 22 } }, .water);
+        if (wading) |t| {
+            g.sim.lv.set(from, .shallows);
+            g.sim.lv.set(ford, t);
+        }
+        const id = harness.spawnAt(g, .bog_leech, .{ .x = 24, .y = 20 }, false);
+        game.settle(g);
+        try std.testing.expect(fov.sees(&g.sim.lv, g.sim.pool.get(id).?.at, from, actor.row(.bog_leech).sight));
+        harness.use(g, .wait);
+        try std.testing.expectEqual(wakes, g.sim.pool.get(id).?.awake);
     }
 }
 
@@ -1844,7 +1864,6 @@ test "a sluice crab's charge smashes a barrel or rams a foe stepped into its lan
 test "a chain gaoler's hook drags a hero who stays on its line one cell closer as it lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const glide = @import("../glide.zig");
     const id = try braced(g, .chain_gaoler);
     const hp = g.sim.heroActor().?.hp;
     g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
@@ -1942,7 +1961,7 @@ fn thrown(g: *game.Game) !usize {
     return actor.Pool.slot(id);
 }
 
-fn boltOf(g: *game.Game, slot: usize) ?@import("../../play/firebolt.zig").Bolt {
+fn boltOf(g: *game.Game, slot: usize) ?firebolt.Bolt {
     return g.sim.pool.items[slot].bolt;
 }
 

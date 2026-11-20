@@ -573,7 +573,5 @@ test "the wall sheet's masks, shape bits and face height are the ones its script
     }
     try ground.expectLuaList(u8, &bits, "tools/tile_art/wall_masks.lua", "local N,E,S,W,NE,SE,SW,NW=");
     try ground.expectLuaList(i32, &.{ look.SPRITE_PX, WALL_COLS }, "tools/tile_art/wall_masks.lua", "masks.CELL,masks.COLS=");
-    try ground.expectLuaList(i32, &.{look.WALL_FACE_PX}, "tools/tile_art/export_walls.lua", "local FACE=");
-    try ground.expectLuaList(i32, &.{look.WALL_FACE_PX}, "tools/tile_art/guide_walls.lua", "local FACE=tonumber(app.params.rows) or ");
-    try ground.expectLuaList(i32, &.{look.WALL_FACE_PX}, "tools/tile_art/idea_walls.lua", "local FACE=");
+    try ground.expectLuaList(i32, &.{look.WALL_FACE_PX}, "tools/tile_art/wall_masks.lua", "masks.FACE=");
 }

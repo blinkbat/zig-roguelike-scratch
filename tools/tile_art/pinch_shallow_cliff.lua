@@ -86,7 +86,8 @@ for _,slice in ipairs(s.slices) do
  end
 end
 assert(columns>0)
-local old=Image{fromFile=work..'dirt-shallows-edges.png'}
+local edges_png=names.edge_files[1]..'.png'
+local old=Image{fromFile=work..edges_png}
 local bands=#dofile(root..'tools/tile_art/water_cliff_materials.lua').bands
 assert(faces.width==layout.block and faces.height==layout.block and old.width==bands*layout.block)
 s.layers[8].isVisible=false
@@ -111,8 +112,8 @@ for row=0,layout.block//layout.cell-1 do for x=0,layout.block-1 do
   end end
  end
 end end
-sourceFiles.keep(root..'assets/water/dirt-shallows-edges.png',work,'pinch',stamp)
-sourceFiles.savePng(edges,root..'assets/water/dirt-shallows-edges.png')
+sourceFiles.keep(root..'assets/water/'..edges_png,work,'pinch',stamp)
+sourceFiles.savePng(edges,root..'assets/water/'..edges_png)
 local report=sourceFiles.report(work..'pinch.txt')
 report:write(string.format('%d painted columns compressed to ceil(height/2), lip row and width preserved; endpoints sampled without smoothing. Original layer retained hidden. Matching face-span border edits compressed identically.\n',columns))
 report:close()

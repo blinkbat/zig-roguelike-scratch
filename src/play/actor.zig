@@ -263,6 +263,8 @@ pub const Row = struct {
     sweep_every: u8 = 0,
     /// Unseen, even where lit, until the hero is beside it.
     lurks: bool = false,
+    /// Wakes to a hero wading in water joined to it within this many cells, never by sight; 0, it wakes by sight.
+    waves: i32 = 0,
     /// Spawns as a closed chest, inert until opened.
     disguised: bool = false,
     /// Backs off from a hero this close, and comes no closer.
@@ -340,7 +342,7 @@ pub fn row(k: Kind) Row {
         .frost_wisp => .{ .name = "frost wisp", .movement = .flying, .foe_type = .aberration, .hp = 8, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "touches", .slain = "frozen solid", .element = .cold, .chills = mathx.PERCENT } }, .flits = true, .resists = ICY, .fright_resist = mathx.PERCENT },
         .pyre_bloat => .{ .name = "pyre bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .blow = .{ .burst = .fire }, .flits = true, .resists = FIERY, .fright_resist = mathx.PERCENT },
         .pib_shaman => .{ .name = "pib shaman", .foe_type = .beast, .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "pokes", .slain = "poked to death" } }, .keeps = 3, .mends = MEND, .hurls = CHAOS_ORB },
-        .bog_leech => .{ .name = "bog leech", .movement = .swimming, .foe_type = .beast, .hp = 12, .sight = 5, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bites", .slain = "drained dry", .bleeds = 50 } }, .lurks = true, .fright_resist = mathx.PERCENT },
+        .bog_leech => .{ .name = "bog leech", .movement = .swimming, .foe_type = .beast, .hp = 12, .sight = 5, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bites", .slain = "drained dry", .bleeds = 50 } }, .lurks = true, .waves = 5, .fright_resist = mathx.PERCENT },
         .mimic => .{ .name = "mimic", .foe_type = .aberration, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 4, .hi = 8 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 20, .fright_resist = mathx.PERCENT },
         .goblin => .{ .name = "goblin", .foe_type = .humanoid, .hp = 14, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "hacks", .slain = "hacked down" } }, .armour = 10, .fright_resist = 25 },
         .sluice_crab => .{ .name = "sluice crab", .foe_type = .beast, .hp = 22, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "pinches", .slain = "crushed in a claw" } }, .charges = CHARGE, .armour = 50, .stun_resist = 50, .fright_resist = mathx.PERCENT },
@@ -760,6 +762,41 @@ pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
         }
     };
     return closest(lv, from, toward, Fins{ .lv = lv, .from = from, .k = k }, Fins.wet);
+}
+
+pub const WAVES_MOST: i32 = 8;
+const WAVE_SIDE: usize = 2 * WAVES_MOST + 1;
+
+pub fn ripples(lv: *const grid.Level, from: P, to: P, reach: i32) bool {
+    std.debug.assert(reach <= WAVES_MOST);
+    if (mathx.dist(from, to) > reach or !lv.at(to).wet()) return false;
+    const Box = struct {
+        fn idx(o: P, p: P) usize {
+            return @intCast((p.x - o.x + WAVES_MOST) + (p.y - o.y + WAVES_MOST) * @as(i32, WAVE_SIDE));
+        }
+    };
+    var steps: [WAVE_SIDE * WAVE_SIDE]i32 = @splat(-1);
+    var queue: [WAVE_SIDE * WAVE_SIDE]P = undefined;
+    var head: usize = 0;
+    var tail: usize = 1;
+    queue[0] = from;
+    steps[Box.idx(from, from)] = 0;
+    while (head < tail) : (head += 1) {
+        const p = queue[head];
+        if (p.eq(to)) return true;
+        const n = steps[Box.idx(from, p)];
+        if (n == reach) continue;
+        for (mathx.ALL_DIRS) |d| {
+            const q = p.add(d.delta());
+            if (mathx.dist(from, q) > reach or !grid.Level.inside(q) or !lv.at(q).wet()) continue;
+            const i = Box.idx(from, q);
+            if (steps[i] >= 0) continue;
+            steps[i] = n + 1;
+            queue[tail] = q;
+            tail += 1;
+        }
+    }
+    return false;
 }
 
 pub fn approach(lv: *const grid.Level, from: P, id: u16, toward: P) ?mathx.Dir {

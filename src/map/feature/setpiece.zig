@@ -205,7 +205,7 @@ fn niche(lv: *grid.Level, rng: *mathx.Rng, pal: carve.Palette, lots: *buildings.
     var score: usize = 0;
     const gap = @max(buildings.Lots.GAP, @as(i32, apart));
     for (0..SITE_TRIES) |_| {
-        const rotation: u2 = @intCast(rng.range(0, 3));
+        const rotation: u2 = @intCast(rng.range(0, std.math.maxInt(u2)));
         const extent = if (rotation % 2 == 0) size_ else P{ .x = size_.y, .y = size_.x };
         const at = SITE_BOX.rollFor(rng, extent.x, extent.y);
         const b = grid.Box.sizedP(at, extent);

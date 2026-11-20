@@ -729,7 +729,7 @@ test "a body the arrow kills stands until the arrow reaches it and its flash is 
     harness.confirmUse(g, .shoot);
     const rat = harness.foeSlot(0);
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(harness.foeId(0)));
-    try std.testing.expect(g.pic.drawnAt(&g.sim, rat) != null);
+    try std.testing.expect(harness.drawn(g, rat));
     const t = harness.framesUntil(g, rat, harness.undrawn);
     const lands = harness.SHOT_LANDS;
     try std.testing.expectApproxEqAbs(lands + fx.FLASH_S, t, harness.TEST_TOL);
@@ -744,7 +744,7 @@ test "a long frame finishes a killing flash before the next turn is ready" {
     g.st = .{};
     game.update(g, g.pic.busy + 0.01);
     try std.testing.expect(g.pic.quiet());
-    try std.testing.expect(g.pic.drawnAt(&g.sim, harness.foeSlot(0)) == null);
+    try std.testing.expect(harness.undrawn(g, harness.foeSlot(0)));
 }
 
 test "the bite that kills the archer leaves it standing and followed until it lands, and the veil waits for the turn" {
@@ -753,7 +753,7 @@ test "the bite that kills the archer leaves it standing and followed until it la
     harness.bittenToDeath(g);
     try harness.expectMode(g, .dead);
     const hero = g.sim.heroSlot().?;
-    try std.testing.expect(g.pic.drawnAt(&g.sim, hero) != null and g.pic.carrierAt(&g.sim) != null);
+    try std.testing.expect(harness.drawn(g, hero) and g.pic.carrierAt(&g.sim) != null);
     const t = harness.framesUntil(g, hero, harness.undrawn);
     try std.testing.expectApproxEqAbs(game.STAGGER_S + game.BUMP_LANDS + fx.FLASH_S, t, harness.TEST_TOL);
     try std.testing.expect(g.pic.carrierAt(&g.sim) == null and g.pic.busy <= 0);
@@ -927,7 +927,7 @@ test "offscreen shadows retain the last visible body then fade with it" {
     const cast = view.grown(game.CAST_MARGIN);
     g.sim.lv.lit[grid.Level.idx(p)] = false;
     g.sim.lv.seen[grid.Level.idx(p)] = false;
-    try std.testing.expect(g.pic.drawnAt(&g.sim, i) == null);
+    try std.testing.expect(harness.undrawn(g, i));
     try std.testing.expect(g.pic.casterAt(&g.sim, i, view) == null);
     try std.testing.expectEqual(g.pic.glide[i].now(), g.pic.casterAt(&g.sim, i, cast).?);
     g.pic.split_from[i] = g.sim.heroSlot().?;
@@ -957,7 +957,7 @@ test "bodies fade both ways and hidden motion never moves the fading picture" {
     harness.ease(g, dt);
     try std.testing.expect(g.pic.sighted[i] > 0 and g.pic.sighted[i] < 1);
     const last = g.pic.bodyShown(&g.sim, i);
-    try std.testing.expect(g.pic.drawnAt(&g.sim, i) == null);
+    try std.testing.expect(harness.undrawn(g, i));
     g.pic.glide[i] = .rest(&actor.Actor.of(.rat, .{ .x = 40, .y = 40 }));
     g.pic.pictured[i].hp = 1;
     harness.ease(g, dt);
@@ -1167,7 +1167,7 @@ test "an arrow that splits a slime shows it as the arrow lands, the new half sli
     try std.testing.expectEqual(actor.Kind.slime_half, g.sim.pool.get(id).?.kind);
     try std.testing.expectEqual(actor.Kind.slime_half, g.sim.pool.items[other].kind);
     try std.testing.expectEqual(actor.Kind.slime, g.pic.pictured[slime].kind);
-    try std.testing.expect(g.pic.drawnAt(&g.sim, other) == null);
+    try std.testing.expect(harness.undrawn(g, other));
     try std.testing.expectEqual(fx.Body.of(g.sim.pool.items[other], g.pic.pictured[other].seq), g.pic.pictured[other]);
     try std.testing.expectEqualStrings("The slime splits in two!", g.sim.log.line(0).?);
     const t = harness.framesUntil(g, other, harness.drawn);
@@ -1412,7 +1412,7 @@ test "a foe the gas kills as it steps out of sight is drawn stepping out, not go
     g.pic.owed[rat].gassed = .{ .kill = true, .after = .{ .body = fx.Body.of(g.sim.pool.items[rat], 0) } };
     harness.staggerOnly(g, harness.foeId(0));
     g.pic.catchUp(&g.sim);
-    try std.testing.expect(g.pic.drawnAt(&g.sim, rat) != null);
+    try std.testing.expect(harness.drawn(g, rat));
     const alive_shown = g.pic.pictured[rat].hp;
     const t = harness.framesUntil(g, rat, harness.undrawn);
     try std.testing.expect(alive_shown > 0);
@@ -1653,7 +1653,7 @@ test "a slime split off one not yet drawn waits for it" {
     try std.testing.expect(g.pic.split_from[c] != null and g.pic.split_from[d] != null);
     const t = harness.framesUntil(g, d, harness.drawn);
     try std.testing.expectApproxEqAbs(wait, t, harness.TEST_TOL);
-    try std.testing.expect(g.pic.drawnAt(&g.sim, c) != null);
+    try std.testing.expect(harness.drawn(g, c));
 }
 
 test "the view's edge reddens as a bite lands on the archer, not before, and as the gas eats at it" {

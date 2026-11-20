@@ -1,5 +1,6 @@
 local names={
 blocks={'Land to shallows','Land to deep water','Shallows to deep water'},
+edge_files={'dirt-shallows-edges','dirt-water-edges','shallows-water-edges'},
 parts={{'bare','Ground'},{'faces','Cliff faces'},{'caps','Lip and cap fill'},{'edges','Authored border edits'}},
 owner='Owner flat border edits',
 extended='Deep border extensions from shallow edits',

@@ -31,14 +31,11 @@ const SightTexel = extern struct { r: f32 = 0, g: f32 = 0, b: f32 = 0, a: f32 = 
 pub const SightPixels = [grid.CELLS]SightTexel;
 const SIGHT = .{ .soft = "r", .open = "g", .weight = "b", .ground = "a" };
 pub const SIGHT_FS = shaders.channelDefines(SIGHT) ++ shaders.glslConsts(.{ .OPEN_WHOLE = OPEN_WHOLE }) ++
-    \\vec4 sightCell(sampler2D sight, vec2 p) {
-    \\    return insideMap(p) ? cellTexel(sight, p) : vec4(0.0);
-    \\}
     \\float exactSight(sampler2D sight, vec2 p) {
     \\    vec2 i = floor(p - 0.5), f = fract(p - 0.5);
-    \\    vec4 s = mix(mix(sightCell(sight, i), sightCell(sight, i + vec2(1.0, 0.0)), f.x),
-    \\                 mix(sightCell(sight, i + vec2(0.0, 1.0)), sightCell(sight, i + vec2(1.0)), f.x), f.y);
-    \\    if (sightCell(sight, p).GROUND < 0.5 || s.WEIGHT <= 0.0) return s.SOFT;
+    \\    vec4 s = mix(mix(mapTexel(sight, i), mapTexel(sight, i + vec2(1.0, 0.0)), f.x),
+    \\                 mix(mapTexel(sight, i + vec2(0.0, 1.0)), mapTexel(sight, i + vec2(1.0)), f.x), f.y);
+    \\    if (mapTexel(sight, p).GROUND < 0.5 || s.WEIGHT <= 0.0) return s.SOFT;
     \\    return mix(s.SOFT, s.OPEN / s.WEIGHT, min(1.0, s.WEIGHT * OPEN_WHOLE));
     \\}
 ;

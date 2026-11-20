@@ -9,7 +9,7 @@ local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bit=masks.bit
 local CELL,LAST,HALF=masks.CELL,masks.CELL-1,masks.CELL//2
-local FACE=23
+local FACE=masks.FACE
 local TOP=CELL-FACE
 local rgb=sourceFiles.rgb
 local P=kind=='water' and {

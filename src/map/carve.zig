@@ -1288,15 +1288,16 @@ test "connecting hundreds of painted pockets reaches every preserved floor" {
     var lv = grid.Level.blank();
     @memset(&lv.tile, .wall);
     const painted = grid.CellSet.initFull();
-    for (0..17) |y| for (0..17) |x| {
+    const SIDE = 17;
+    for (0..SIDE) |y| for (0..SIDE) |x| {
         lv.set(.{ .x = @intCast(2 + x * 2), .y = @intCast(2 + y * 2) }, .floor);
     };
     var st = Stretches{};
-    try std.testing.expectEqual(@as(usize, 289), st.label(&lv));
+    try std.testing.expectEqual(@as(usize, SIDE * SIDE), st.label(&lv));
     var rng = mathx.Rng.init(0xC011EC7);
     connect(&lv, &rng, Palette.BUILT, .{ .authored = &painted });
     try std.testing.expectEqual(@as(usize, 1), st.label(&lv));
-    for (0..17) |y| for (0..17) |x| {
+    for (0..SIDE) |y| for (0..SIDE) |x| {
         try std.testing.expectEqual(grid.Tile.floor, lv.at(.{ .x = @intCast(2 + x * 2), .y = @intCast(2 + y * 2) }));
     };
 }

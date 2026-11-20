@@ -282,14 +282,10 @@ test "legacy key migration failure leaves the live run and map unchanged" {
     try capture(current, snapshot);
     while (snapshot.run.ground.room(deathsToCome(&snapshot.run.pool))) _ = snapshot.run.ground.add(.{ .item = .{ .kind = .ring }, .at = s.approach() });
     while (snapshot.run.inventory.add(.{ .kind = .ring })) {}
-    var before = std.ArrayList(u8).init(alloc);
-    defer before.deinit();
-    try sealed(current, &before);
-    const map_hash = store.sum(std.mem.asBytes(map));
+    var kept = try Untouched.init(alloc, current, map);
+    defer kept.deinit();
     var bytes = std.ArrayList(u8).init(alloc);
     defer bytes.deinit();
-    var after = std.ArrayList(u8).init(alloc);
-    defer after.deinit();
     for ([_]grid.Tile{ .zoo_key, .key_taken }) |tile| {
         snapshot.run.lv.set(s.key.?, tile);
         snapshot.run.lv.set(s.door(), .locked_gate);
@@ -297,9 +293,7 @@ test "legacy key migration failure leaves the live run and map unchanged" {
         try writeSnapshot(snapshot, &bytes);
         seal(&bytes);
         try std.testing.expectError(error.Damaged, read(bytes.items, current, map));
-        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
-        try sealed(current, &after);
-        try std.testing.expectEqualSlices(u8, before.items, after.items);
+        try kept.expectKept();
     }
 }
 
@@ -645,6 +639,33 @@ pub fn sealed(g: *game.Game, out: *std.ArrayList(u8)) !void {
     seal(out);
 }
 
+/// The live run and the map a refused read would have loaded into, as they stood before it.
+pub const Untouched = struct {
+    g: *game.Game,
+    map: *const data.Map,
+    map_hash: u64,
+    before: std.ArrayList(u8),
+    after: std.ArrayList(u8),
+
+    pub fn init(alloc: std.mem.Allocator, g: *game.Game, map: *const data.Map) !Untouched {
+        var self = Untouched{ .g = g, .map = map, .map_hash = store.sum(std.mem.asBytes(map)), .before = .init(alloc), .after = .init(alloc) };
+        errdefer self.deinit();
+        try sealed(g, &self.before);
+        return self;
+    }
+
+    pub fn deinit(self: *Untouched) void {
+        self.before.deinit();
+        self.after.deinit();
+    }
+
+    pub fn expectKept(self: *Untouched) !void {
+        try std.testing.expectEqual(self.map_hash, store.sum(std.mem.asBytes(self.map)));
+        try sealed(self.g, &self.after);
+        try std.testing.expectEqualSlices(u8, self.before.items, self.after.items);
+    }
+};
+
 test "portable save parsing defaults optional fields for every class and retains essential state" {
     const alloc = std.testing.allocator;
     const source = try game.boot(alloc);
@@ -867,14 +888,11 @@ test "portable save corruption and missing required state leave the live game an
     const map = try alloc.create(data.Map);
     defer alloc.destroy(map);
     map.* = .{};
-    const map_hash = store.sum(std.mem.asBytes(map));
-    var original = std.ArrayList(u8).init(alloc);
-    defer original.deinit();
-    try sealed(current, &original);
+    var kept = try Untouched.init(alloc, current, map);
+    defer kept.deinit();
+    const original = &kept.before;
     var changed = std.ArrayList(u8).init(alloc);
     defer changed.deinit();
-    var after = std.ArrayList(u8).init(alloc);
-    defer after.deinit();
     var replacement = std.ArrayList(u8).init(alloc);
     defer replacement.deinit();
     const Case = enum { missing_hero, missing_rng, bad_hero, bad_count, bad_name, bad_log, overflow, bad_occupant };
@@ -906,8 +924,6 @@ test "portable save corruption and missing required state leave the live game an
         const expected = if (missing) error.Short else error.Damaged;
         try std.testing.expectError(expected, peek(changed.items));
         try std.testing.expectError(expected, read(changed.items, current, map));
-        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
-        try sealed(current, &after);
-        try std.testing.expectEqualSlices(u8, original.items, after.items);
+        try kept.expectKept();
     }
 }

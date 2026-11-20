@@ -235,7 +235,9 @@ pub fn rollWith(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, feat
     carve.connect(lv, &rng, pal, .{ .lots = lots.slice()[joined_from..], .before = &base, .authored = if (authored != null) &painted else null });
     settle(lv);
     if (fitted == .wilds and branches.improves(fitted.wilds)) {
-        _ = branches.improveRound(lv, seed, doors, fitted.wilds, &painted);
+        var held = painted;
+        for (kept) |b| grid.markBox(&held, b);
+        _ = branches.improveRound(lv, seed, doors, fitted.wilds, &held);
         settle(lv);
     }
 }
@@ -321,14 +323,14 @@ test "every base, bare and under every feature, joins its ground, reaches its do
 }
 
 const SECTION_ROOM = grid.Box.sized(.{ .x = 30, .y = 20 }, 9, 7);
-const SECTION_TORCH = P{ .x = 34, .y = 20 };
+const SECTION_TORCH = P{ .x = SECTION_ROOM.centre().x, .y = SECTION_ROOM.lo.y };
 
 /// A walled room, its way in on the south side unless `shut`, a barrel and a torch inside.
 fn testSection(anchor: section.Anchor, shut: bool) section.Section {
     var s = section.Section{ .anchor = anchor };
     var it = SECTION_ROOM.cells();
     while (it.next()) |p| _ = s.paint(p, if (SECTION_ROOM.onEdge(p)) .wall else .floor);
-    if (!shut) _ = s.paint(.{ .x = 34, .y = SECTION_ROOM.hi.y - 1 }, .floor);
+    if (!shut) _ = s.paint(.{ .x = SECTION_TORCH.x, .y = SECTION_ROOM.hi.y - 1 }, .floor);
     _ = s.addTorch(SECTION_TORCH);
     _ = s.putBarrel(SECTION_ROOM.lo.add(.{ .x = 1, .y = 1 }));
     return s;
@@ -449,6 +451,25 @@ test "no house, farm or set piece is raised in a kept box beside a section's" {
     }
     try std.testing.expect(built > COUNT_RUNS);
     try std.testing.expectEqual(@as(usize, 0), over);
+}
+
+test "wilds rewards are never stocked in a kept box" {
+    var lv: grid.Level = undefined;
+    const kept = grid.Box.sized(.{ .x = 40, .y = 20 }, 14, 12);
+    var stocked: usize = 0;
+    var inside: usize = 0;
+    for (0..COUNT_RUNS) |i| {
+        const seed = 0x57C0 +% i *% grid.TEST_SEED_STRIDE;
+        rollWith(&lv, seed, &.{}, .{ .wilds = .{ .rewards = .chests } }, &.{}, null, &.{kept});
+        var cells = grid.MAP.cells();
+        while (cells.next()) |p| {
+            const reward = lv.at(p) == .chest or lv.hasBarrel(p);
+            if (reward) stocked += 1;
+            if (reward and kept.holds(p)) inside += 1;
+        }
+    }
+    try std.testing.expect(stocked > COUNT_RUNS);
+    try std.testing.expectEqual(@as(usize, 0), inside);
 }
 
 test "a node with no section, roaming or not, rolls exactly the plain roll" {

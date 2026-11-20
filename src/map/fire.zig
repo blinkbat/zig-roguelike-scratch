@@ -188,7 +188,7 @@ test "a fire in a field of grass leaps only as far as its heat, goes out in a fe
 
 test "rain damps every chance to catch, a downpour most" {
     try std.testing.expectEqual(SPREAD, damped(SPREAD, 0));
-    const DRIZZLE = @import("climate.zig").DRIZZLE;
+    const DRIZZLE = climate.DRIZZLE;
     try std.testing.expect(damped(SPREAD, DRIZZLE) < SPREAD and damped(SPREAD, 1) < damped(SPREAD, DRIZZLE));
     var rng = mathx.Rng.init(0x2A1);
     const dry = try average(3, 0, &rng);

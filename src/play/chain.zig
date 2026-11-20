@@ -18,9 +18,9 @@ pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes,
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 5 };
 
-pub const CHANCE = spark.CHANCE;
-pub const procs = spark.procs;
-pub const chance = spark.chance;
+pub const CHANCE: u32 = 50;
+pub const procs = damage.chance(CHANCE);
+pub const chance = damage.flat(CHANCE);
 pub const afflict = shock.afflict;
 pub const AILMENT = shock.AILMENT;
 

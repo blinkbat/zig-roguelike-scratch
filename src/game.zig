@@ -156,7 +156,7 @@ pub fn rowAt(row: anytype) usize {
     return std.mem.indexOfScalar(Row, std.enums.values(Row), row).?;
 }
 
-pub const Log = journal.Log;
+const Log = journal.Log;
 
 pub const Game = struct {
     sim: simulation.Simulation,
@@ -555,7 +555,7 @@ pub fn resumeRun(g: *Game) void {
     toDefaults(&g.sim, &(SimFields.resumed ++ SimFields.rebuilt));
     g.sim.unsaved = g.sim.growth.refundExcessRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
-    g.sim.clampMana();
+    _ = fitLife(g);
     talking.restand(g);
     var left = g.sim.visited.iterator(.{});
     while (left.next()) |n| if (n != g.sim.node) talking.stampNpcs(g, n, &g.sim.visits[n].lv);
@@ -698,12 +698,17 @@ pub fn heroTo(g: *Game, to: P) void {
 }
 
 pub fn syncStats(g: *Game) void {
-    const h = g.sim.heroActor() orelse return;
+    const h = fitLife(g) orelse return;
+    h.resists = g.sim.heroAttrs().resists;
+    g.pic.settleHero(&g.sim, 0);
+}
+
+fn fitLife(g: *Game) ?*actor.Actor {
+    g.sim.clampMana();
+    const h = g.sim.heroActor() orelse return null;
     h.max = g.sim.lifeMax();
     h.hp = @min(h.hp, h.max);
-    h.resists = g.sim.heroAttrs().resists;
-    g.sim.clampMana();
-    g.pic.settleHero(&g.sim, 0);
+    return h;
 }
 
 pub fn characterShown(g: *const Game) bool {

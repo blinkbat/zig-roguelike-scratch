@@ -247,7 +247,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
         .body => |k| {
             const r = actor.row(k);
             if (r.foe_type) |kind| f.put("{s}  /  {s}", .{ menu.named(kind), menu.named(r.movement) }) else f.put("{s}", .{menu.named(r.movement)});
-            f.put("Life {d}  /  Sight {d} cells", .{ r.hp, r.sight });
+            if (r.waves > 0) f.put("Life {d}  /  Feels waves {d} cells", .{ r.hp, r.waves }) else f.put("Life {d}  /  Sight {d} cells", .{ r.hp, r.sight });
             if (r.armour > 0 or r.stun_resist > 0) f.put("Physical reduction {d}%  /  Stun resist {d}%", .{ r.armour, r.stun_resist });
             switch (r.blow) {
                 .strike => |st| {

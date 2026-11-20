@@ -8,7 +8,7 @@ const raster = @import("../gfx/raster.zig");
 const shaders = @import("../gfx/shaders.zig");
 const hud = @import("hud.zig");
 
-pub const Kind = @import("../play/log.zig").Kind;
+const Kind = @import("../play/log.zig").Kind;
 pub const Log = @import("../play/log.zig").Log;
 
 fn ink(k: Kind) rl.Color {

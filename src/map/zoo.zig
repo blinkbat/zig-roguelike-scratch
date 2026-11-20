@@ -192,10 +192,19 @@ pub const Spec = struct {
         while (x < inner.hi.x) : (x += 1) {
             const torch = lume.torchOver(inner, x);
             if (!gen.bearsTorch(lv, torch)) continue;
-            lv.torch.spare(1);
+            if (lv.torch.has(torch)) return;
+            if (!lv.torch.takes(torch)) evictTorch(lv, authored);
             lv.addTorch(torch);
             return;
         }
+    }
+
+    fn evictTorch(lv: *grid.Level, authored: ?*const grid.CellSet) void {
+        const t = &lv.torch;
+        const i = for (t.slice(), 0..) |p, i| {
+            if (authored == null or !inSet(authored.?, p)) break i;
+        } else 0;
+        mathx.removeAt(P, &t.at, &t.n, i, null);
     }
 
     fn relate(lv: *const grid.Level, stretches: *const carve.Stretches, related: *carve.Regions, near: anytype) void {
@@ -355,6 +364,27 @@ test "a zoo behind a sealed strip spanning the map still connects its gate" {
     for (2..grid.H - 2) |y| lv.set(.{ .x = 22, .y = @intCast(y) }, .floor);
     s.stampToward(&lv, null, entrance);
     try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(s.approach())));
+}
+
+test "a zoo's torch in a full pool evicts a generated torch, never an authored one, and none when its wall already bears one" {
+    const s = Spec{};
+    var lv = grid.openFloor();
+    var authored = grid.CellSet.initEmpty();
+    for (0..grid.MAX_TORCHES) |k| {
+        const w = P{ .x = 2 + 2 * @as(i32, @intCast(k)), .y = 2 };
+        lv.set(w, .wall);
+        lv.addTorch(w);
+        if (k + 1 == grid.MAX_TORCHES) authored.set(grid.Level.idx(w));
+    }
+    const last = lv.torch.at[grid.MAX_TORCHES - 1];
+    const first = lv.torch.at[0];
+    s.stampAround(&lv, &authored);
+    try std.testing.expectEqual(grid.MAX_TORCHES, lv.torch.n);
+    try std.testing.expect(lv.torch.has(last));
+    try std.testing.expect(!lv.torch.has(first));
+    const before = lv.torch;
+    s.stampAround(&lv, &authored);
+    try std.testing.expectEqualSlices(P, before.slice(), lv.torch.slice());
 }
 
 test "a zoo's reserved boxes hold exactly the cells it reserves, its key's among them" {

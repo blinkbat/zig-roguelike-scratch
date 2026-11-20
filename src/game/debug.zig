@@ -258,7 +258,7 @@ const TOGGLE_H: i32 = menu.ACTION_BOX.y;
 const GL_Y: i32 = 126;
 const STATS_Y: i32 = 222;
 const LINE_STEP: i32 = 26;
-const BACK_Y: i32 = 352;
+const BACK_Y: i32 = PANEL.y - PAD - menu.ACTION_WIDE.y;
 
 fn toggleBox() rl.Rectangle {
     return raster.rect(PAD, TOGGLE_Y, INNER_W, TOGGLE_H);

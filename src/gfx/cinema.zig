@@ -350,8 +350,7 @@ const FIELD_FS = shaders.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\uniform sampler2D field;
     \\uniform sampler2D visibility;
     \\vec4 fieldAt(vec2 p) {
-    \\    if (!insideMap(p)) return vec4(0.0);
-    \\    return cellTexel(field, p);
+    \\    return mapTexel(field, p);
     \\}
     \\float liveAt(vec2 p) {
     \\    return mapAlpha(visibility, p, 0.0);

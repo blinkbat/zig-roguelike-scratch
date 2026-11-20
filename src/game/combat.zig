@@ -558,7 +558,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
     const sight = blind.sight(afflictions.contains(.blind), row.sight);
     if (row.allied) return allyTurn(g, id, held, afflictions, sight);
     if (!foe.awake) {
-        if (!fov.sees(&g.sim.lv, foe.at, hero.at, @max(1, sight - g.sim.inventory.gear.stillness()))) return;
+        if (!notices(g, foe.at, hero.at, row, sight)) return;
         foe.awake = true;
         g.pic.turnLater(.fromInt(id), hero.at.x - foe.at.x);
         if (!foe.submerged) g.sim.sayAt(foe.at, "A {s} notices {s}.", .{ row.name, g.sim.name.text() });
@@ -606,6 +606,12 @@ fn foeTurn(g: *game.Game, id: u16) void {
     if (held and !to.eq(hero.at)) return;
     if (!to.eq(hero.at)) return foeStep(g, id, foe.at, direction, afflictions);
     _ = reach(g, id, row, direction.delta().x, null, afflictions);
+}
+
+fn notices(g: *const game.Game, at: P, hero: P, row: actor.Row, sight: i32) bool {
+    const nearer = g.sim.inventory.gear.stillness();
+    if (row.waves > 0) return actor.ripples(&g.sim.lv, at, hero, @max(1, row.waves - nearer));
+    return fov.sees(&g.sim.lv, at, hero, @max(1, sight - nearer));
 }
 
 fn brace(g: *game.Game, id: u16, d: mathx.Dir, comptime said: []const u8) void {

@@ -284,7 +284,8 @@ fn drawLit(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mi
 
 fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, opacity: f32) void {
     drawLit(g, tex, l, s, left, mid, shine, flash, opacity, .{ 0, 0 });
-    if (!g.cloud.beginVeil(shine.tint(look.LIT), .sharp)) return;
+    const tall = if (tex) |t| spriteRect(t, s).height else game.CELL_F;
+    if (!g.cloud.veils(veilBox(mathx.cellOf(mid), tall)) or !g.cloud.beginVeil(shine.tint(look.LIT), .sharp)) return;
     defer cloud.Cloud.endVeil();
     const ink = look.fade(look.LIT, opacity);
     if (tex) |t| {
@@ -403,7 +404,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P,
         }
         if (look.tileBg(here)) |bg| fillCell(c, p, bg);
         inkCell(g, c, p, here, stood);
-        if (look.veiled(here) and g.cloud.beginVeil(look.LIT, .sharp)) {
+        if (look.veiled(here) and g.cloud.veils(veilBox(p, game.CELL_F)) and g.cloud.beginVeil(look.LIT, .sharp)) {
             inkCell(g, c, p, here, stood);
             cloud.Cloud.endVeil();
         }
@@ -411,9 +412,16 @@ fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P,
 }
 
 fn veilSprite(g: *game.Game, t: rl.Texture2D, c: Cam, p: P, focus: look.Focused, ink: rl.Color) void {
-    if (!g.cloud.beginVeil(ink, focus)) return;
-    raster.stretch(t, spriteRect(t, c.corner(p)), ink);
+    const rect = spriteRect(t, c.corner(p));
+    if (!g.cloud.veils(veilBox(p, rect.height)) or !g.cloud.beginVeil(ink, focus)) return;
+    raster.stretch(t, rect, ink);
     cloud.Cloud.endVeil();
+}
+
+/// Every cell a figure standing at `feet` and `tall` pixels high can cover, a cell spare each way for a glide.
+fn veilBox(feet: P, tall: f32) grid.Box {
+    const rows = @divTrunc(@as(i32, @intFromFloat(tall)) + game.CELL - 1, game.CELL);
+    return .{ .lo = .{ .x = feet.x - 1, .y = feet.y - rows }, .hi = .{ .x = feet.x + 2, .y = feet.y + 2 } };
 }
 
 fn inkCell(g: *game.Game, c: Cam, p: P, here: grid.Tile, stood: *const grid.CellSet) void {
@@ -730,7 +738,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
             },
             inline else => |a| if (comptime a.sweeps()) {
                 const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, g.mode.aim.mark);
-                for (arc.slice()) |p| fillCell(c, p, look.AIM_PATH);
+                for (arc.slice()) |p| if (!g.sim.lv.at(p).solid() or g.sim.lv.isLit(p) and !g.sim.untargetableAt(p)) fillCell(c, p, look.AIM_PATH);
             } else if (comptime a.reticle() == .ground and @hasDecl(skillbar.Act.skill(a), "area")) {
                 const area = skillbar.Act.skill(a).area(&g.sim.lv, g.mode.aim.mark, g.sim.wider());
                 if (aim_legal) fillLit(g, c, area.slice(), look.AIM_PATH);

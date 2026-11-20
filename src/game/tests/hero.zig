@@ -4,6 +4,7 @@ const progress = @import("../../play/progress.zig");
 const passives = @import("../../play/passives.zig");
 const mathx = @import("../../core/mathx.zig");
 const heroes = @import("../../play/hero.zig");
+const actor = @import("../../play/actor.zig");
 const bow = @import("../../play/bow.zig");
 const juke = @import("../../play/juke.zig");
 const pinning = @import("../../play/pinning.zig");
@@ -25,6 +26,19 @@ const menu = @import("../../ui/menu.zig");
 fn carry(g: *game.Game, act: skillbar.Act, n: u8) void {
     g.sim.inventory.stacks.set(act.supplyOf().?, n);
     if (g.bar.slotOf(act) == null) g.bar.bind(g.bar.firstEmpty().?, act);
+}
+
+test "a resumed run fits the hero's life to the loaded build" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const want = g.sim.lifeMax();
+    const h = g.sim.heroActor().?;
+    h.max = want + 9;
+    h.hp = want + 9;
+    game.resumeRun(g);
+    try std.testing.expectEqual(want, g.sim.heroActor().?.max);
+    try std.testing.expectEqual(want, g.sim.heroActor().?.hp);
 }
 
 test "cleansing removes one wound before life flask turn harm and leaves resistance intact" {
@@ -180,7 +194,6 @@ test "chosen attacks reactions and status ticks retain recorded seeded outcomes"
 }
 
 test "incoming strike rules apply statuses only after surviving health damage and leave the picture untouched" {
-    const actor = @import("../../play/actor.zig");
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     for ([_]struct { hp: i32, mana: i32 }{
@@ -224,7 +237,6 @@ test "incoming strike rules apply statuses only after surviving health damage an
 }
 
 test "incoming strikes retain recorded seeded outcomes through statuses reactions and death" {
-    const actor = @import("../../play/actor.zig");
     const cases = [_]struct {
         kind: actor.Kind,
         seed: u64,
@@ -320,7 +332,6 @@ test "frame partitioning settles incoming impacts and mana debt without changing
 }
 
 test "frame partitioning preserves thorn death knockback and bleeding without replaying rewards" {
-    const actor = @import("../../play/actor.zig");
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     for ([_]usize{ 1, 2, 120 }) |frames| {
@@ -338,7 +349,7 @@ test "frame partitioning preserves thorn death knockback and bleeding without re
         try std.testing.expect(!g.sim.pool.items[attacker_slot].alive);
         try std.testing.expectEqual(@as(i32, 19), hero.at.x);
         try std.testing.expect(hero.bleed.turns > 0);
-        try std.testing.expect(g.pic.drawnAt(&g.sim, attacker_slot) != null);
+        try std.testing.expect(harness.drawn(g, attacker_slot));
         const resolved_hero = hero.*;
         const resolved_attacker = g.sim.pool.items[attacker_slot];
         const rng = g.sim.rng;
@@ -359,7 +370,7 @@ test "frame partitioning preserves thorn death knockback and bleeding without re
         }
         try std.testing.expectEqual(fx.Body.of(resolved_hero, g.pic.seq), g.pic.heroShown(&g.sim).?);
         try std.testing.expectEqual(fx.Body.of(resolved_attacker, g.pic.seq), g.pic.pictured[attacker_slot]);
-        try std.testing.expect(g.pic.drawnAt(&g.sim, attacker_slot) == null);
+        try std.testing.expect(harness.undrawn(g, attacker_slot));
         try std.testing.expectEqual(kills, g.sim.kills);
         try std.testing.expectEqualDeep(growth, g.sim.growth);
         try std.testing.expectEqualDeep(ground, g.sim.ground);
@@ -978,7 +989,6 @@ test "waiting is never hastened" {
 }
 
 test "leech heals its share of each blow's damage, its fraction rounded fairly" {
-    const actor = @import("../../play/actor.zig");
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});

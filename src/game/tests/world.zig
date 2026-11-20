@@ -366,18 +366,24 @@ test "same-node travel keeps followers that cannot fit in the destination chambe
     }
 }
 
+const RAID_DOOR = P{ .x = 40, .y = 0 };
+
+fn raidNode(g: *game.Game, w: *atlas.Atlas, start: P) void {
+    const n = w.add(.{ .procgen = .{ .floor = .{ .open = .{} }, .foes = .{ .packs = 0 }, .raid = .{ .raiders = 3 } } }).?;
+    _ = w.addDoor(n, RAID_DOOR).?;
+    w.start = .{ .node = n, .at = start };
+    game.beginMapAt(g, w, w.start, 7);
+    g.sim.unkillable = true;
+    g.sim.clock = day.Clock.at(day.SUNSET - 1);
+}
+
 test "a night raider is drawn coming in only once the hero's action of that turn lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    const n = w.add(.{ .procgen = .{ .floor = .{ .open = .{} }, .foes = .{ .packs = 0 }, .raid = .{ .raiders = 3 } } }).?;
-    _ = w.addDoor(n, .{ .x = 40, .y = 0 }).?;
-    w.start = .{ .node = n, .at = .{ .x = 40, .y = 2 } };
-    game.beginMapAt(g, w, w.start, 7);
-    g.sim.unkillable = true;
+    raidNode(g, w, .{ .x = 40, .y = 2 });
     defer g.sim.unkillable = false;
-    g.sim.clock = day.Clock.at(day.SUNSET - 1);
     const lead: f32 = 0.2;
     for (0..400) |_| {
         const before = g.sim.pool.n;
@@ -408,14 +414,8 @@ test "a node's night raiders come in by its raid door, each at its own turn, fro
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    const n = w.add(.{ .procgen = .{ .floor = .{ .open = .{} }, .foes = .{ .packs = 0 }, .raid = .{ .raiders = 3 } } }).?;
-    const door = P{ .x = 40, .y = 0 };
-    _ = w.addDoor(n, door).?;
-    w.start = .{ .node = n, .at = .{ .x = 40, .y = 30 } };
-    game.beginMapAt(g, w, w.start, 7);
-    g.sim.unkillable = true;
+    raidNode(g, w, .{ .x = 40, .y = 30 });
     defer g.sim.unkillable = false;
-    g.sim.clock = day.Clock.at(day.SUNSET - 1);
     const first = g.sim.pool.n;
     var seen = first;
     var came: usize = 0;
@@ -430,7 +430,7 @@ test "a node's night raiders come in by its raid door, each at its own turn, fro
         for (g.sim.pool.constSlice()[seen..]) |a| {
             if (a.kind != atlas.raid.RAIDER) continue;
             came += 1;
-            farthest = @max(farthest, mathx.dist(a.at, door));
+            farthest = @max(farthest, mathx.dist(a.at, RAID_DOOR));
             if (!night) by_day += 1;
         }
         turns_with += @intFromBool(came > before);

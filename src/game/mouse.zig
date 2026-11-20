@@ -122,7 +122,7 @@ pub fn prepare(g: *game.Game) void {
     }
     if (!g.st.click or !game.acceptsAction(g)) return;
     const at = cell(g) orelse return;
-    if (!g.sim.lv.isSeen(at)) return;
+    if (!g.pic.seenShown(&g.sim, at)) return;
     g.mouse.target = at;
     g.mouse.fresh = true;
     for (g.sim.pool.slice(), 0..) |a, i| {

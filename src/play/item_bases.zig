@@ -211,16 +211,20 @@ pub const Innate = union(enum) {
 
     pub fn write(self: Innate, w: anytype) void {
         switch (self) {
-            .grant => |g| g.write(w),
+            .grant => |g| if (g.kind == .life_on_kill) affixed(.life_on_kill, g.amount, w) else g.write(w),
             .weapon_crit => |n| w.print("+{d}% " ++ attrs.WEAPON_CRIT_LABEL, .{n}) catch {},
             .spell_crit => |n| w.print("+{d}% " ++ attrs.SPELL_CRIT_LABEL, .{n}) catch {},
             .physical_damage => |n| w.print("+{d}% " ++ attrs.PHYSICAL_LABEL, .{n}) catch {},
             .element => |e| w.print("+{d}% {s} damage", .{ e.percent, wording.word(e.kind) }) catch {},
-            .bleed => |b| w.print(ON_HIT_FMT, .{ b.chance, wording.word(resilience.Kind.bleed) }) catch {},
+            .bleed => |b| affixed(.serrated, @intCast(b.chance), w),
             .stun => |n| w.print(ON_HIT_FMT, .{ n, wording.word(resilience.Kind.stun) }) catch {},
-            .penetration => |n| w.print("Ignore {d}% physical reduction", .{n}) catch {},
+            .penetration => |n| affixed(.penetration, n, w),
             .flask => |k| w.writeAll(flask.effect(k)) catch {},
         }
+    }
+
+    fn affixed(kind: affixes.Mod, n: i32, w: anytype) void {
+        (affixes.Affix{ .kind = kind, .value = @intCast(n) }).write(w);
     }
 };
 

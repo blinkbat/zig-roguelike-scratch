@@ -388,7 +388,6 @@ test "Debug graphics toggles are independent and spend no simulation" {
     const rng = g.sim.rng;
     const hp = g.sim.heroActor().?.hp;
     harness.openDebug(g);
-    var toggles: usize = 0;
     inline for (game.debugging.SWITCHES) |T| {
         const group = game.debugging.switches(g, T);
         inline for (std.meta.fields(T)) |f| {
@@ -406,7 +405,6 @@ test "Debug graphics toggles are independent and spend no simulation" {
                 try std.testing.expectEqual(rng, g.sim.rng);
                 try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
                 try harness.expectMode(g, .pause);
-                toggles += 1;
             }
         }
     }
@@ -482,7 +480,7 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
         try std.testing.expectEqualSlices(bool, &lit, &g.sim.lv.lit);
         try std.testing.expectEqual(clock, g.sim.clock);
         try std.testing.expectEqual(rng, g.sim.rng);
-        try std.testing.expect(g.pic.drawnAt(&g.sim, harness.foeSlot(0)) == null);
+        try std.testing.expect(harness.undrawn(g, harness.foeSlot(0)));
     }
     harness.press(g, BACK);
     try std.testing.expectEqual(game.PausePage.debug, g.pause_page);

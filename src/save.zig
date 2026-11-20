@@ -500,14 +500,10 @@ test "save terrain refuses unvisited bespoke torches outside the map before muta
     const into = try alloc.create(Map);
     defer alloc.destroy(into);
     into.* = .{};
-    const map_hash = store.sum(std.mem.asBytes(into));
-    var before = std.ArrayList(u8).init(alloc);
-    defer before.deinit();
-    try sealed(target, &before);
+    var kept = try format.Untouched.init(alloc, target, into);
+    defer kept.deinit();
     var corrupt = std.ArrayList(u8).init(alloc);
     defer corrupt.deinit();
-    var after = std.ArrayList(u8).init(alloc);
-    defer after.deinit();
     const invalid = [_]mathx.P{
         .{ .x = -1, .y = 10 },
         .{ .x = grid.W, .y = 10 },
@@ -524,9 +520,7 @@ test "save terrain refuses unvisited bespoke torches outside the map before muta
             seal(&corrupt);
             try std.testing.expectError(error.Damaged, peek(corrupt.items));
             try std.testing.expectError(error.Damaged, read(corrupt.items, target, into));
-            try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
-            try sealed(target, &after);
-            try std.testing.expectEqualSlices(u8, before.items, after.items);
+            try kept.expectKept();
         }
     }
 }
@@ -801,6 +795,7 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     try fixture(g, w);
     g.sim.inventory.gear.slots.set(.chest, items.affixed(.leather, &.{.{ .kind = .thorns, .value = 2 }}));
     g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .rare_name = .{ .first = .Void, .last = .Maw }, .mods = .{ .{ .kind = .spoils, .value = 25 }, .{ .kind = .strength, .value = 1 }, .{ .kind = .resistance, .value = 10, .element = .cold }, .{ .kind = .life, .value = 2 } } });
+    game.syncStats(g);
     const rare = items.Item{ .kind = .robes, .rare_name = .{ .first = .Magus, .last = .Fold }, .mods = .{ .{ .kind = .intelligence, .value = 3 }, .{ .kind = .armour, .value = 4 }, .{ .kind = .mana, .value = 3 }, .{ .kind = .life, .value = 6 } } };
     try std.testing.expect(g.sim.inventory.add(rare));
     try std.testing.expect(g.sim.ground.add(.{ .item = rare, .at = g.sim.heroActor().?.at }));
@@ -907,15 +902,11 @@ test "portable saves reject expired and off-map bolts in active and visited leve
     const into = try alloc.create(Map);
     defer alloc.destroy(into);
     into.* = .{};
-    const map_hash = store.sum(std.mem.asBytes(into));
-    var before = std.ArrayList(u8).init(alloc);
-    defer before.deinit();
-    try sealed(target, &before);
+    var kept = try format.Untouched.init(alloc, target, into);
+    defer kept.deinit();
     var corrupt = std.ArrayList(u8).init(alloc);
     defer corrupt.deinit();
-    var after = std.ArrayList(u8).init(alloc);
-    defer after.deinit();
-    const range = actor.row(.cinder_imp).hurls.?.range;
+    const range =actor.row(.cinder_imp).hurls.?.range;
     for ([_]bool{ false, true }) |visited| {
         for ([_]@import("play/firebolt.zig").Bolt{
             .{ .from = .{ .x = 10, .y = 10 }, .toward = .{ .x = 30, .y = 10 }, .flown = @intCast(range) },
@@ -938,9 +929,7 @@ test "portable saves reject expired and off-map bolts in active and visited leve
             try format.writeSnapshot(snapshot, &corrupt);
             format.seal(&corrupt);
             try std.testing.expectError(error.Damaged, read(corrupt.items, target, into));
-            try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
-            try sealed(target, &after);
-            try std.testing.expectEqualSlices(u8, before.items, after.items);
+            try kept.expectKept();
         }
     }
 }
@@ -998,14 +987,10 @@ test "save readers reject an all-zero combat or loot random stream before applyi
     const map = try alloc.create(Map);
     defer alloc.destroy(map);
     map.* = .{};
-    const map_hash = store.sum(std.mem.asBytes(map));
-    var before = std.ArrayList(u8).init(alloc);
-    defer before.deinit();
-    try write(target, &before);
+    var kept = try format.Untouched.init(alloc, target, map);
+    defer kept.deinit();
     var changed = std.ArrayList(u8).init(alloc);
     defer changed.deinit();
-    var after = std.ArrayList(u8).init(alloc);
-    defer after.deinit();
     inline for (.{ "rng", "loot_rng" }) |field| {
         const saved = @field(source.sim, field);
         @field(source.sim, field).impl.s = @splat(0);
@@ -1015,10 +1000,7 @@ test "save readers reject an all-zero combat or loot random stream before applyi
             seal(&changed);
             try std.testing.expectError(error.Damaged, peek(changed.items));
             try std.testing.expectError(error.Damaged, read(changed.items, target, map));
-            after.clearRetainingCapacity();
-            try write(target, &after);
-            try std.testing.expectEqualSlices(u8, before.items, after.items);
-            try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
+            try kept.expectKept();
         }
         @field(source.sim, field) = saved;
     }
@@ -1038,24 +1020,17 @@ test "save readers reject a hero outside the first pool slot before changing the
     const map = try alloc.create(Map);
     defer alloc.destroy(map);
     map.* = .{};
-    const map_hash = store.sum(std.mem.asBytes(map));
-    var before = std.ArrayList(u8).init(alloc);
-    defer before.deinit();
-    try write(target, &before);
+    var kept = try format.Untouched.init(alloc, target, map);
+    defer kept.deinit();
     var bytes = std.ArrayList(u8).init(alloc);
     defer bytes.deinit();
-    var after = std.ArrayList(u8).init(alloc);
-    defer after.deinit();
     for ([_]bool{ false, true }) |legacy| {
         bytes.clearRetainingCapacity();
         if (legacy) try writeLegacy(source, &bytes) else try write(source, &bytes);
         seal(&bytes);
         try std.testing.expectError(error.Damaged, peek(bytes.items));
         try std.testing.expectError(error.Damaged, read(bytes.items, target, map));
-        after.clearRetainingCapacity();
-        try write(target, &after);
-        try std.testing.expectEqualSlices(u8, before.items, after.items);
-        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
+        try kept.expectKept();
     }
 }
 
@@ -1138,28 +1113,22 @@ test "checksummed save structure failures preserve both the live run and destina
     back.sim.gold = 41;
     const into = try testMap();
     defer alloc.destroy(into);
-    const map_hash = store.sum(std.mem.asBytes(into));
-    var before = std.ArrayList(u8).init(alloc);
-    defer before.deinit();
-    try writeLegacy(back, &before);
-    const map_at = MAP_AT;
-    const visits_at = VISITS_AT;
+    var kept = try format.Untouched.init(alloc, back, into);
+    defer kept.deinit();
     const cuts = [_]usize{
         HEAD,
         HEAD + @sizeOf(Summary) - 1,
-        map_at - 1,
-        map_at,
-        map_at + @sizeOf(RawMap) - 1,
-        visits_at - 1,
-        visits_at,
-        visits_at + @sizeOf(RawVisit) - 1,
+        MAP_AT - 1,
+        MAP_AT,
+        MAP_AT + @sizeOf(RawMap) - 1,
+        VISITS_AT - 1,
+        VISITS_AT,
+        VISITS_AT + @sizeOf(RawVisit) - 1,
         full.items.len - store.SUM - 1,
         full.items.len - store.SUM,
     };
     var damaged = std.ArrayList(u8).init(alloc);
     defer damaged.deinit();
-    var after = std.ArrayList(u8).init(alloc);
-    defer after.deinit();
     for (cuts, 0..) |cut, i| {
         damaged.clearRetainingCapacity();
         try damaged.appendSlice(full.items[0..cut]);
@@ -1167,10 +1136,7 @@ test "checksummed save structure failures preserve both the live run and destina
         seal(&damaged);
         try std.testing.expectError(error.Short, peek(damaged.items));
         try std.testing.expectError(error.Short, read(damaged.items, back, into));
-        after.clearRetainingCapacity();
-        try writeLegacy(back, &after);
-        try std.testing.expectEqualSlices(u8, before.items, after.items);
-        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
+        try kept.expectKept();
     }
     const Navigation = enum { node_capacity, node_count, empty_map, oversized_map, visited_node, summary_node };
     const Patch = struct {
@@ -1181,15 +1147,15 @@ test "checksummed save structure failures preserve both the live run and destina
     for (std.enums.values(Navigation)) |case| {
         damaged.clearRetainingCapacity();
         try damaged.appendSlice(full.items[0 .. full.items.len - store.SUM]);
-        const node_at = map_at + @sizeOf(RawMap);
+        const node_at = MAP_AT + @sizeOf(RawMap);
         switch (case) {
             .node_capacity => Patch.value(damaged.items, node_at, @as(Node, atlas.MAX_NODES)),
             .node_count => {
                 Patch.value(damaged.items, node_at, @as(Node, w.node_n));
                 Patch.value(damaged.items, HEAD + @offsetOf(Summary, "node"), @as(?usize, w.node_n));
             },
-            .empty_map => Patch.value(damaged.items, map_at + @offsetOf(RawMap, "node_n"), @as(usize, 0)),
-            .oversized_map => Patch.value(damaged.items, map_at + @offsetOf(RawMap, "node_n"), @as(usize, atlas.MAX_NODES + 1)),
+            .empty_map => Patch.value(damaged.items, MAP_AT + @offsetOf(RawMap, "node_n"), @as(usize, 0)),
+            .oversized_map => Patch.value(damaged.items, MAP_AT + @offsetOf(RawMap, "node_n"), @as(usize, atlas.MAX_NODES + 1)),
             .visited_node => {
                 var visited = Visited.initEmpty();
                 visited.set(w.node_n);
@@ -1201,10 +1167,7 @@ test "checksummed save structure failures preserve both the live run and destina
         seal(&damaged);
         try std.testing.expectError(error.Damaged, peek(damaged.items));
         try std.testing.expectError(error.Damaged, read(damaged.items, back, into));
-        after.clearRetainingCapacity();
-        try writeLegacy(back, &after);
-        try std.testing.expectEqualSlices(u8, before.items, after.items);
-        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
+        try kept.expectKept();
     }
 }
 

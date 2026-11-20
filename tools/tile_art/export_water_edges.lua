@@ -31,10 +31,9 @@ local edited=Image{fromFile=source}
 assert(edited.width==layout.width and edited.height==layout.height)
 local materials=dofile(root..'tools/tile_art/water_cliff_materials.lua')
 local bands=materials.band
-local names={'dirt-shallows-edges','dirt-water-edges','shallows-water-edges'}
 local counts={}
 local outputs={{image=cap,path=root..'assets/water/shallows-water-cap.png'}}
-for n,name in ipairs(names) do
+for n,name in ipairs(names.edge_files) do
  local atlas=Image(#materials.bands*water.width,water.height,ColorMode.RGB)
  local x0=layout.x+(n-1)*layout.stride
  local count=0

@@ -6,8 +6,8 @@ local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 assert(#masks==47)
 local bit=masks.bit
--- Walls: export_walls.lua's FACE and src/gfx/look.zig's WALL_FACE_PX, facing south. A liquid's bank faces north.
-local FACE=tonumber(app.params.rows) or 23
+-- Walls face south, a liquid's bank north.
+local FACE=tonumber(app.params.rows) or masks.FACE
 local NORTH=app.params.face=='north'
 assert(NORTH or (app.params.face or 'south')=='south')
 local LINE=2

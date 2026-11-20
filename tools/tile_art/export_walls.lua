@@ -8,8 +8,8 @@ local bit=masks.bit
 local W,H=masks.W,masks.H
 local CELL=masks.CELL
 local LAST=CELL-1
--- Brick courses under the cap's lower edge: 7 courses, 23 rows; src/gfx/look.zig's WALL_FACE_PX.
-local FACE=23
+-- Brick courses under the cap's lower edge: 7 courses over the face's rows.
+local FACE=masks.FACE
 local sprite=assert(app.open(path))
 assert(sprite.width==W and sprite.height==masks.SHEET_H)
 local painted=sourceFiles.layer(sprite,'Layer 1')

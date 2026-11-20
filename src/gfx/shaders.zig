@@ -162,6 +162,9 @@ pub const MAP_VIEW_FS =
     \\vec4 cellTexel(sampler2D m, vec2 p) {
     \\    return texture(m, (floor(p) + 0.5) / CELLS);
     \\}
+    \\vec4 mapTexel(sampler2D m, vec2 p) {
+    \\    return insideMap(p) ? cellTexel(m, p) : vec4(0.0);
+    \\}
     \\
 ;
 

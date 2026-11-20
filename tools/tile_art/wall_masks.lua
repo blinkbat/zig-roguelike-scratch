@@ -4,6 +4,8 @@ local masks={0,1,2,4,8,3,19,5,6,38,9,137,10,12,76,7,23,39,55,11,27,139,155,13,77
 masks.bit={n=N,e=E,s=S,w=W,ne=NE,se=SE,sw=SW,nw=NW}
 masks.CELL,masks.COLS=64,8
 masks.HEAD=64
+-- Wall face rows below the cap: src/gfx/look.zig's WALL_FACE_PX.
+masks.FACE=23
 masks.W,masks.H=masks.COLS*masks.CELL,math.ceil(#masks/masks.COLS)*masks.CELL
 masks.SHEET_H=masks.HEAD+masks.H
 function masks.at(i) return ((i-1)%masks.COLS)*masks.CELL,(i-1)//masks.COLS*masks.CELL end
