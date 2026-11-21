@@ -14,6 +14,7 @@ local COLS=groundPort.COLS
 assert(#order==COLS*COLS)
 local W,H,HEAD,CELL,HALF,LINE=groundPort.W,groundPort.H,groundPort.HEAD,groundPort.CELL,groundPort.CELL//2,2
 local NW,NE,SW,SE=groundPort.NW,groundPort.NE,groundPort.SW,groundPort.SE
+local LAYER=sourceFiles.LAYER
 
 for i,m in ipairs(order) do
   local col,row=(i-1)%COLS,(i-1)//COLS
@@ -30,7 +31,7 @@ end
 local ref=assert(app.open(style))
 local paper,ink
 for _,layer in ipairs(ref.layers) do
-  if layer.name=='Paper - hide for transparent export' then paper=layer:cel(1).image:getPixel(W-8,H-8) end
+  if layer.name==LAYER.paper then paper=layer:cel(1).image:getPixel(W-8,H-8) end
   if layer.name:match('^64x64 grid') then
     for it in layer:cel(1).image:pixels() do
       if pc.rgbaA(it())>0 then ink=it() break end
@@ -76,9 +77,9 @@ local paper_image=Image(W,H,ColorMode.RGB)
 paper_image:clear(paper)
 local labels_image=Image{fromFile=labels_png}
 local guides={
-  {name='Paper - hide for transparent export',image=paper_image,opacity=255},
-  {name='Underdrawing (25%)',image=under,opacity=64},
-  {name='Labels - hide before export',image=labels_image,opacity=255},
+  {name=LAYER.paper,image=paper_image,opacity=255},
+  {name=LAYER.under,image=under,opacity=64},
+  {name=LAYER.labels,image=labels_image,opacity=255},
   {name='64x64 grid + X unused - hide before export',image=grid,opacity=255},
 }
 
@@ -106,7 +107,7 @@ local function layer(name,image,opacity,visible)
 end
 local first=sprite.layers[1]
 for _,guide in ipairs(guides) do layer(guide.name,guide.image,guide.opacity) end
-local drawing=layer('Draw here',Image(W,H,ColorMode.RGB))
+local drawing=layer(LAYER.draw,Image(W,H,ColorMode.RGB))
 sprite:deleteLayer(first)
 for i,m in ipairs(order) do
   local x,y=groundPort.at(i)
@@ -121,10 +122,12 @@ sprite:saveAs(path)
 sprite:close()
 
 local reopened=assert(app.open(path))
-local names={}
+local names,expected={},{}
 for _,l in ipairs(reopened.layers) do names[#names+1]=l.name end
-assert(table.concat(names,'|')=='Paper - hide for transparent export|Underdrawing (25%)|Labels - hide before export|64x64 grid + X unused - hide before export|Draw here',table.concat(names,'|'))
-assert(blank(sourceFiles.layer(reopened,'Draw here'):cel(1).image))
+for _,guide in ipairs(guides) do expected[#expected+1]=guide.name end
+expected[#expected+1]=LAYER.draw
+assert(table.concat(names,'|')==table.concat(expected,'|'),table.concat(names,'|'))
+assert(blank(sourceFiles.layer(reopened,LAYER.draw):cel(1).image))
 assert(#reopened.slices==#order)
 local seen={}
 for _,s in ipairs(reopened.slices) do

@@ -20,14 +20,14 @@ local W,H=groundPort.W,groundPort.H
 local s=assert(app.open(path))
 assert(s.width==W and s.height==H and #s.frames==1 and #s.slices==#order)
 assert(not sourceFiles.layer(s,layer_name),'Inspect owner edits before regenerating '..layer_name)
-local drawing=sourceFiles.layer(s,'Draw here')
+local drawing=sourceFiles.layer(s,sourceFiles.LAYER.draw)
 local c=assert(drawing:cel(1))
 if art_path~=path then
   for it in c.image:pixels() do assert(pc.rgbaA(it())==0,'Destination already painted; inspect before importing') end
   local art=assert(app.open(art_path))
   assert(art.width==W and art.height==H and #art.frames==1)
-  local layer=sourceFiles.layer(art,'Draw here')
-  local source=assert(layer and layer:cel(1),'No Draw here on art source')
+  local layer=sourceFiles.layer(art,sourceFiles.LAYER.draw)
+  local source=assert(layer and layer:cel(1),'No '..sourceFiles.LAYER.draw..' on art source')
   c.image=Image(source.image)
   c.position=Point(source.position.x,source.position.y)
   art:close()
@@ -161,7 +161,7 @@ if art_path~=path then sourceFiles.copy(art_path,work..name..'-painting-before-'
 local l=s:newLayer()
 l.name=layer_name
 s:newCel(l,1,extension,Point(0,0))
-sourceFiles.hide(s,'Underdrawing (25%)')
+sourceFiles.hide(s,sourceFiles.LAYER.under)
 drawing.stackIndex=#s.layers
 app.layer=l
 local dest=install and path or work..name..'-draft.aseprite'
@@ -169,7 +169,7 @@ s:saveAs(dest)
 s:saveCopyAs(work..name..'-sheet.png')
 s:close()
 local back=assert(app.open(dest))
-sourceFiles.checkCel(back,'Draw here',original,position)
+sourceFiles.checkCel(back,sourceFiles.LAYER.draw,original,position)
 sourceFiles.checkLayer(back,layer_name,extension,Point(0,0))
 back:close()
 if install then sourceFiles.copy(dest,canonical) end

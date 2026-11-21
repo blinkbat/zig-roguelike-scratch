@@ -644,41 +644,30 @@ pub const Script = struct {
 
     /// Which of a table's slots any condition or action names.
     pub fn tableUsed(self: *const Script, t: Table) Used {
-        const r: Ref = .{ .table = t };
         var used = Used.initEmpty();
-        var conds = self.condIter();
-        while (conds.next()) |c| {
-            if (refersTo(condRef(c.kind), r)) used.set(c.slot);
-        }
-        var acts = self.actIter();
-        while (acts.next()) |a| {
-            if (refersTo(actRef(a.kind), r)) used.set(a.slot);
-        }
+        var slots = self.refSlots(.{ .table = t });
+        while (slots.next()) |s| used.set(s.*);
         return used;
     }
 
     fn refUsers(self: *const Script, r: Ref, i: u8) usize {
         var n: usize = 0;
-        var conds = self.condIter();
-        while (conds.next()) |c| {
-            if (refersTo(condRef(c.kind), r) and c.slot == i) n += 1;
-        }
-        var acts = self.actIter();
-        while (acts.next()) |a| {
-            if (refersTo(actRef(a.kind), r) and a.slot == i) n += 1;
-        }
+        var slots = self.refSlots(r);
+        while (slots.next()) |s| n += @intFromBool(s.* == i);
         return n;
     }
 
     fn lowerRefs(self: *Script, r: Ref, i: u8) void {
-        var conds = self.condIterMut();
-        while (conds.next()) |c| {
-            if (refersTo(condRef(c.kind), r)) c.slot = renumbered(c.slot, i) orelse c.slot;
-        }
-        var acts = self.actIterMut();
-        while (acts.next()) |a| {
-            if (refersTo(actRef(a.kind), r)) a.slot = renumbered(a.slot, i) orelse a.slot;
-        }
+        var slots = self.refSlotsMut(r);
+        while (slots.next()) |s| s.* = renumbered(s.*, i) orelse s.*;
+    }
+
+    fn refSlots(self: *const Script, r: Ref) RefSlots(*const Script) {
+        return .{ .r = r, .conds = self.condIter(), .acts = self.actIter() };
+    }
+
+    fn refSlotsMut(self: *Script, r: Ref) RefSlots(*Script) {
+        return .{ .r = r, .conds = self.condIterMut(), .acts = self.actIterMut() };
     }
 
     pub fn undeclare(self: *Script, t: Table, i: u8) bool {
@@ -1091,6 +1080,22 @@ pub fn ActIter(comptime S: type, comptime A: type) type {
                 self.dialog += 1;
                 self.line = 0;
             }
+            return null;
+        }
+    };
+}
+
+fn RefSlots(comptime S: type) type {
+    const fixed = S == *const Script;
+    const Slot = if (fixed) *const u8 else *u8;
+    return struct {
+        r: Ref,
+        conds: CondIter(S, if (fixed) *const Cond else *Cond),
+        acts: ActIter(S, if (fixed) *const Act else *Act),
+
+        fn next(self: *@This()) ?Slot {
+            while (self.conds.next()) |c| if (refersTo(condRef(c.kind), self.r)) return &c.slot;
+            while (self.acts.next()) |a| if (refersTo(actRef(a.kind), self.r)) return &a.slot;
             return null;
         }
     };

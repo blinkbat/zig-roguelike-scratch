@@ -472,7 +472,7 @@ pub const Node = struct {
         }
         if (self.zoo) |z| {
             const authored = if (laid) |s| s.cells() else grid.CellSet.initEmpty();
-            z.stampToward(lv, if (laid != null) &authored else null, entrance);
+            z.stampToward(lv, if (laid != null) &authored else null, entrance, if (self.plan == .bespoke) .authored else .rolled);
         }
     }
 

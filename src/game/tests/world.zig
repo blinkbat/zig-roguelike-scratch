@@ -547,8 +547,7 @@ test "a door keeps the low glow, a level-up, the archer's facing and a walk pres
     const low = g.vignette.low;
     _ = g.sim.growth.gain(@intCast(g.sim.growth.needed()));
     harness.nudge(g, .w);
-    g.st = .{ .walk = .w };
-    game.update(g, harness.TEST_DT);
+    harness.walkBusy(g, .w, harness.TEST_DT);
     g.st = .{};
     while (g.sim.node == a) game.update(g, harness.TEST_DT);
     try std.testing.expect(g.pic.fx.level_up.life > 0);

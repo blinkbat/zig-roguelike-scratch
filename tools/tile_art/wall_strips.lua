@@ -5,6 +5,12 @@ return function(image,position,masks)
   local wall={source=source,tan=source:getPixel(30,87)}
   assert(wall.tan==pc.rgba(202,158,106,255))
   function wall.sample(x,y) return source:getPixel(x,y) end
+  wall.EDGE,wall.CAP,wall.FACE_TOP=4,6,99
+  function wall.brick(x,row) return source:getPixel(154+x%32,row) end
+  function wall.faceEdge(east,d,row) return source:getPixel(east and 43-d or 18+d,row) end
+  function wall.side(east,d,row) return source:getPixel(east and 108-d or 83+d,row) end
+  function wall.capTop(x,dy) return source:getPixel(160+x%32,83+dy) end
+  function wall.capCorner(east,d,dy) return wall.faceEdge(east,d,83+dy) end
   function wall.sideRow(y)
     if y==0 or y==masks.CELL-1 then return 80 end
     return 67+(y+13)%30

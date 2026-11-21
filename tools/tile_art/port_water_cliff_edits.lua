@@ -49,8 +49,8 @@ local function canvas(name)
  local layer=sourceFiles.layer(s,name) or error('Missing source layer '..name)
  return sourceFiles.canvas(s,assert(layer:cel(1)))
 end
-local shallow=canvas(names.layer(1,'faces'))
-local deep=canvas(names.layer(2,'faces'))
+local shallow=canvas(names.layer(names.LAND_SHALLOWS,'faces'))
+local deep=canvas(names.layer(names.LAND_DEEP,'faces'))
 local surface=materials.surface
 for band=0,layout.block//layout.cell-1 do
  for x=left,right do

@@ -386,7 +386,7 @@ fn captureTactics(g: *game.Game) !void {
     }
     game.harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
     skills.useSkill(g, .{ .act = .arcane_barrier, .by = .x });
-    markSpan(g);
+    game.harness.markSpan(g);
     try capture(g, target, TACTICS_DIR ++ "/barrier-preview.png");
     skills.confirmAim(g);
     game.harness.drawnOut(g);
@@ -406,7 +406,7 @@ fn captureTactics(g: *game.Game) !void {
     g.sim.pool.get(chilled).?.chill.apply();
     g.sim.pool.get(frightened).?.fright = actor.FLEE_TURNS;
     skills.useSkill(g, .{ .act = .fire_wall, .by = .x });
-    markSpan(g);
+    game.harness.markSpan(g);
     try capture(g, target, TACTICS_DIR ++ "/fire-wall-preview.png");
     skills.confirmAim(g);
     game.harness.drawnOut(g);
@@ -428,12 +428,6 @@ fn captureTactics(g: *game.Game) !void {
         g.sim.inventory.bag[0] = items.affixed(sample[0], &.{.{ .kind = sample[1], .value = sample[2] }});
         try capture(g, target, TACTICS_DIR ++ "/item-" ++ @tagName(sample[1]) ++ ".png");
     }
-}
-
-fn markSpan(g: *game.Game) void {
-    g.mode.aim.mark = .{ .x = 23, .y = 19 };
-    skills.confirmAim(g);
-    g.mode.aim.mark = .{ .x = 23, .y = 21 };
 }
 
 fn captureMouse(g: *game.Game) !void {

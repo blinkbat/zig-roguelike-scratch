@@ -285,7 +285,7 @@ fn drawLit(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mi
 fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, opacity: f32) void {
     drawLit(g, tex, l, s, left, mid, shine, flash, opacity, .{ 0, 0 });
     const tall = if (tex) |t| spriteRect(t, s).height else game.CELL_F;
-    if (!g.cloud.veils(veilBox(mathx.cellOf(mid), tall)) or !g.cloud.beginVeil(shine.tint(look.LIT), .sharp)) return;
+    if (!beginFigureVeil(g, mathx.cellOf(mid), tall, shine.tint(look.LIT), .sharp)) return;
     defer cloud.Cloud.endVeil();
     const ink = look.fade(look.LIT, opacity);
     if (tex) |t| {
@@ -404,7 +404,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P,
         }
         if (look.tileBg(here)) |bg| fillCell(c, p, bg);
         inkCell(g, c, p, here, stood);
-        if (look.veiled(here) and g.cloud.veils(veilBox(p, game.CELL_F)) and g.cloud.beginVeil(look.LIT, .sharp)) {
+        if (look.veiled(here) and beginFigureVeil(g, p, game.CELL_F, look.LIT, .sharp)) {
             inkCell(g, c, p, here, stood);
             cloud.Cloud.endVeil();
         }
@@ -413,15 +413,23 @@ fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P,
 
 fn veilSprite(g: *game.Game, t: rl.Texture2D, c: Cam, p: P, focus: look.Focused, ink: rl.Color) void {
     const rect = spriteRect(t, c.corner(p));
-    if (!g.cloud.veils(veilBox(p, rect.height)) or !g.cloud.beginVeil(ink, focus)) return;
+    if (!beginFigureVeil(g, p, rect.height, ink, focus)) return;
     raster.stretch(t, rect, ink);
     cloud.Cloud.endVeil();
 }
 
+fn beginFigureVeil(g: *game.Game, feet: P, tall: f32, ink: rl.Color, focus: look.Focused) bool {
+    return g.cloud.veils(veilBox(feet, tall)) and g.cloud.beginVeil(ink, focus);
+}
+
 /// Every cell a figure standing at `feet` and `tall` pixels high can cover, a cell spare each way for a glide.
 fn veilBox(feet: P, tall: f32) grid.Box {
-    const rows = @divTrunc(@as(i32, @intFromFloat(tall)) + game.CELL - 1, game.CELL);
+    const rows = cellsTall(tall);
     return .{ .lo = .{ .x = feet.x - 1, .y = feet.y - rows }, .hi = .{ .x = feet.x + 2, .y = feet.y + 2 } };
+}
+
+fn cellsTall(px: f32) i32 {
+    return @divTrunc(@as(i32, @intFromFloat(px)) + game.CELL - 1, game.CELL);
 }
 
 fn inkCell(g: *game.Game, c: Cam, p: P, here: grid.Tile, stood: *const grid.CellSet) void {
@@ -870,7 +878,7 @@ fn drawOccluder(g: *game.Game, c: Cam, ground: *const grid.Level, p: P, kind: gr
     const view = shaders.MapView.of(-c.x, -c.y, game.CELL, g.screen.x, g.screen.y);
     const lightmap = g.light.mapTexture();
     const fogmap = g.light.gpu.layers.get(.fog);
-    const rows = @divTrunc(@as(i32, @intFromFloat(rect.height)) + game.CELL - 1, game.CELL);
+    const rows = cellsTall(rect.height);
     const under = grid.Box{ .lo = .{ .x = p.x, .y = p.y + 1 - rows }, .hi = kind.footprint(p).hi };
     if (hidden == 0 and lightmap != null and fogmap != null and !g.cloud.veils(under)) {
         if (run.focus == null or !std.meta.eql(run.focus.?, focus)) {
@@ -1082,12 +1090,10 @@ pub const EFFECT_SOURCES = fx.PULSES + 2;
 pub fn effectSources(effects: *const fx.Fx, carrier: ?[2]f32, shot: ?*const game.presentation.Shot, buf: *[EFFECT_SOURCES]light.Emission) []const light.Emission {
     var n = effects.pulseLights(buf[0..fx.PULSES]).len;
     if (carrier) |at| if (effects.level_up.emission(at)) |e| {
-        buf[n] = e;
-        n += 1;
+        _ = mathx.push(light.Emission, buf, &n, e);
     };
     if (shot) |s| if (fx.missileLight(s.position(s.t), s.act)) |e| {
-        buf[n] = e;
-        n += 1;
+        _ = mathx.push(light.Emission, buf, &n, e);
     };
     return buf[0..n];
 }

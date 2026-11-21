@@ -9,6 +9,8 @@ const bow = @import("../../play/bow.zig");
 const areas = @import("../../play/area.zig");
 const burning = @import("../../play/burning.zig");
 const flask = @import("../../play/flask.zig");
+const tactics = @import("../../play/tactics.zig");
+const light = @import("../../gfx/light.zig");
 const skillbar = @import("../../play/skillbar.zig");
 const look = @import("../../gfx/look.zig");
 const fx = @import("../../gfx/fx.zig");
@@ -156,7 +158,7 @@ test "cold bursts preserve a visible impact glow over water without ground parti
         g.pic.recordBurst(&g.sim, 0.2, .{ .at = at, .area = area, .element = .cold });
         g.pic.advance(&g.sim, 0.21);
         try std.testing.expectEqual(@as(usize, 0), harness.liveMotes(g, harness.AnyMote{}));
-        var lights: [fx.PULSES]@import("../../gfx/light.zig").Emission = undefined;
+        var lights: [fx.PULSES]light.Emission = undefined;
         try std.testing.expectEqual(@as(usize, @intFromBool(visible)), g.pic.fx.pulseLights(&lights).len);
     }
 }
@@ -277,8 +279,7 @@ test "collected coins stay drawn only until the collection step finishes" {
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     try std.testing.expect(g.sim.ground.gold(at, 37));
     harness.nudge(g, .e);
-    g.st = .{ .walk = .e };
-    game.update(g, game.GLIDE_S - 0.00005);
+    harness.walkBusy(g, .e, game.GLIDE_S - 0.00005);
     try std.testing.expectEqual(@as(i32, 22), g.sim.heroActor().?.at.x);
     try std.testing.expect(g.pic.glide[g.sim.heroSlot().?].left() > 0);
     try std.testing.expectEqual(@as(usize, 0), g.pic.gold_taken.n);
@@ -330,6 +331,15 @@ fn showsAndLands(g: *game.Game, slot: usize) struct { shows: f32, lands: f32 } {
 fn ledge(g: *game.Game) P {
     harness.wallRow(&g.sim.lv, 21, 18, 26);
     return .{ .x = 22, .y = 22 };
+}
+
+fn ratIntoDark(g: *game.Game) !usize {
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
+    const dark = ledge(g);
+    game.castSight(g, .{ .x = 20, .y = 20 });
+    try std.testing.expect(!g.sim.lv.isLit(dark));
+    g.sim.pool.move(&g.sim.lv, harness.foeId(0), dark);
+    return harness.foeSlot(0);
 }
 
 fn revealed(g: *game.Game, slot: usize) bool {
@@ -654,7 +664,7 @@ test "with no foe in sight a following ally steps with the hero, and with one in
         const g = try game.boot(std.testing.allocator);
         defer game.shut(std.testing.allocator, g);
         harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
-        const bones = harness.spawnAt(g, .skeleton, .{ .x = 20 - @import("../../play/tactics.zig").RaiseSkeleton.FOLLOW, .y = 20 }, true);
+        const bones = harness.spawnAt(g, .skeleton, .{ .x = 20 - tactics.RaiseSkeleton.FOLLOW, .y = 20 }, true);
         if (foe_seen) _ = harness.spawnAt(g, .rat, .{ .x = 25, .y = 23 }, false);
         game.settle(g);
         const was = g.sim.pool.get(bones).?.at;
@@ -680,15 +690,13 @@ test "a turn's glides start the archer first, then each foe in sight a stagger b
     const last = @max(game.STAGGER_S * 2 + game.SLIDE_S, game.STAGGER_S * 3 + game.GLIDE_S);
     try std.testing.expectApproxEqAbs(last, g.pic.busy, 1e-6);
     const at = g.sim.heroActor().?.at;
-    g.st = .{ .walk = .e };
-    game.update(g, 0);
+    harness.walkBusy(g, .e, 0);
     try std.testing.expectEqual(at, g.sim.heroActor().?.at);
     try std.testing.expect(g.pending == null);
     g.st = .{};
     var waited = last - game.COMBAT_QUEUE_S * 0.5;
     game.update(g, waited);
-    g.st = .{ .walk = .e };
-    game.update(g, 0);
+    harness.walkBusy(g, .e, 0);
     try std.testing.expectEqual(@as(?game.Queued, .{ .walk = .e }), g.pending);
     g.st = .{};
     while (g.sim.heroActor().?.at.eq(at) and waited < 1) : (waited += harness.TEST_DT) game.update(g, harness.TEST_DT);
@@ -874,8 +882,7 @@ test "a kick dealt in a frame of play is no further into its bump than its blow 
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
     harness.calm(g);
-    g.st = .{ .walk = .e };
-    game.update(g, mathx.FRAME_DT);
+    harness.walkBusy(g, .e, mathx.FRAME_DT);
     const t = g.pic.glide[g.sim.heroSlot().?].t;
     try std.testing.expectEqual(@as(f32, 0), t);
 }
@@ -1096,12 +1103,7 @@ test "a caustic bloat's cloud is drawn from when its burst lands" {
 test "a foe stepping out of sight takes its place in the turn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
-    const rat = harness.foeSlot(0);
-    const dark = ledge(g);
-    game.castSight(g, .{ .x = 20, .y = 20 });
-    try std.testing.expect(!g.sim.lv.isLit(dark));
-    g.sim.pool.move(&g.sim.lv, harness.foeId(0), dark);
+    const rat = try ratIntoDark(g);
     harness.staggerOnly(g, harness.foeId(0));
     try std.testing.expectApproxEqAbs(game.STAGGER_S, -g.pic.glide[rat].t, 1e-6);
 }
@@ -1340,8 +1342,7 @@ test "a half revealed as the turn's picture ends shows before a held walk starts
     var shown: ?usize = null;
     var n: usize = 0;
     while (n < 400) : (n += 1) {
-        g.st = .{ .walk = .w };
-        game.update(g, harness.TEST_DT);
+        harness.walkBusy(g, .w, harness.TEST_DT);
         if (shown == null and revealed(g, half)) shown = n;
         if (!g.sim.heroActor().?.at.eq(from)) break;
     }
@@ -1402,12 +1403,7 @@ test "a split nobody sees holds no one's walk" {
 test "a foe the gas kills as it steps out of sight is drawn stepping out, not gone from where it stood" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
-    const rat = harness.foeSlot(0);
-    const dark = ledge(g);
-    game.castSight(g, .{ .x = 20, .y = 20 });
-    try std.testing.expect(!g.sim.lv.isLit(dark));
-    g.sim.pool.move(&g.sim.lv, harness.foeId(0), dark);
+    const rat = try ratIntoDark(g);
     _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), actor.row(.rat).hp);
     g.pic.owed[rat].gassed = .{ .kill = true, .after = .{ .body = fx.Body.of(g.sim.pool.items[rat], 0) } };
     harness.staggerOnly(g, harness.foeId(0));
@@ -1522,8 +1518,7 @@ test "combat skills discard early presses and retain tail presses ahead of held 
         if (by.set == .secondary) g.st.down.insert(g.bar.modifier.?);
         game.update(g, 0);
         try std.testing.expectEqual(tail, g.pending != null);
-        g.st = .{ .walk = .w };
-        game.update(g, 0);
+        harness.walkBusy(g, .w, 0);
         if (tail) try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);
         g.st = .{};
         game.update(g, g.pic.busy + mathx.FRAME_DT);
@@ -1545,12 +1540,10 @@ test "a flask pressed mid-walk is drunk once the step is drawn, ahead of the hel
     if (by.set == .secondary) g.st.down.insert(g.bar.modifier.?);
     game.update(g, 0);
     try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);
-    g.st = .{ .walk = .e };
-    game.update(g, 0);
+    harness.walkBusy(g, .e, 0);
     try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);
     const next = harness.turned(g.sim.clock, 1);
-    g.st = .{ .walk = .e };
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    harness.walkBusy(g, .e, harness.GLIDED_S);
     try std.testing.expect(g.pending == null);
     try std.testing.expectEqual(flask.CHARGES / flask.USE - 1, g.sim.flasks.get(.life).uses());
     try std.testing.expectEqual(next, g.sim.clock);
@@ -1573,7 +1566,7 @@ test "a fresh walk tap pressed after a queued skill replaces it, the latest pres
     game.update(g, 0);
     try std.testing.expectEqual(@as(?game.Queued, .{ .walk = .e }), g.pending);
     g.st = .{};
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try std.testing.expect(g.pending == null);
     try std.testing.expectEqual(flask.CHARGES / flask.USE, g.sim.flasks.get(.life).uses());
     try std.testing.expect(g.sim.heroActor().?.at.eq(at.add(mathx.Dir.e.delta())));
@@ -1585,12 +1578,11 @@ test "losing focus discards a queued walk while the current turn finishes drawin
     const at = P{ .x = 20, .y = 20 };
     harness.arena(g, at, &.{});
     g.pic.busy = game.GLIDE_S;
-    g.st = .{ .walk = .e };
-    game.update(g, 0);
+    harness.walkBusy(g, .e, 0);
     try std.testing.expectEqual(@as(?game.Queued, .{ .walk = .e }), g.pending);
     const minute = g.sim.clock.minute;
     g.st = .{ .focused = false };
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try std.testing.expect(g.pic.quiet() and g.pending == null);
     try std.testing.expectEqual(at, g.sim.heroActor().?.at);
     try std.testing.expectEqual(minute, g.sim.clock.minute);

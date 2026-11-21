@@ -12,6 +12,7 @@ const bow = @import("../../play/bow.zig");
 const damage = @import("../../play/damage.zig");
 const firebolt = @import("../../play/firebolt.zig");
 const bleeding = @import("../../play/bleeding.zig");
+const burning = @import("../../play/burning.zig");
 const shock = @import("../../play/shock.zig");
 const glacial = @import("../../play/glacial.zig");
 const pack = @import("../../play/pack.zig");
@@ -1136,7 +1137,7 @@ test "a burning arrow flings a disguised mimic open, so what takes hold of it af
         g.sim.pool.get(id).?.burn = .{};
     }
     try std.testing.expect(burned > 0 and harness.logged(g, "The chest is a mimic!"));
-    try std.testing.expect(harness.logged(g, "The mimic " ++ @import("../../play/burning.zig").TAKES));
+    try std.testing.expect(harness.logged(g, "The mimic " ++ burning.TAKES));
 }
 
 test "a mimic stunned by the blow that flings it open loses its first turn out" {
@@ -1513,14 +1514,17 @@ test "a mimic killed in its chest stays the chest until the killing blow lands" 
     harness.kill(g, id, from, 0.3);
     try std.testing.expect(g.sim.pool.get(id) == null);
     try std.testing.expect(g.sim.lv.at(at) != .chest);
-    var frames: usize = 0;
-    while (!g.pic.pictured[slot].down()) : (frames += 1) {
-        try std.testing.expectEqual(grid.Tile.chest, g.pic.tileShown(&g.sim, at));
-        try std.testing.expect(g.pic.mimicAt(&g.sim, at));
-        try harness.expectGroundShown(g);
-        try std.testing.expect(harness.undrawn(g, slot));
-        game.update(g, harness.TEST_DT);
-    }
+    const StillChest = struct {
+        at: P,
+        slot: usize,
+        pub fn check(c: @This(), run: *game.Game) !void {
+            try std.testing.expectEqual(grid.Tile.chest, run.pic.tileShown(&run.sim, c.at));
+            try std.testing.expect(run.pic.mimicAt(&run.sim, c.at));
+            try harness.expectGroundShown(run);
+            try std.testing.expect(harness.undrawn(run, c.slot));
+        }
+    };
+    const frames = try harness.whileStanding(g, slot, StillChest{ .at = at, .slot = slot });
     try std.testing.expectEqual(g.sim.lv.at(at), g.pic.tileShown(&g.sim, at));
     try std.testing.expect(!g.pic.mimicAt(&g.sim, at));
     try std.testing.expect(frames > 0);
@@ -1537,11 +1541,13 @@ test "a pyre bloat sets its neighbours alight as its death lands, not before" {
     const slot = actor.Pool.slot(near);
     harness.kill(g, bloat, from, 0.3);
     try std.testing.expect(g.sim.pool.get(near).?.burn.turns > 0);
-    var frames: usize = 0;
-    while (!g.pic.pictured[actor.Pool.slot(bloat)].down()) : (frames += 1) {
-        try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[slot].status.get(.burning));
-        game.update(g, harness.TEST_DT);
-    }
+    const Unburnt = struct {
+        slot: usize,
+        pub fn check(c: @This(), run: *game.Game) !void {
+            try std.testing.expectEqual(@as(u8, 0), run.pic.pictured[c.slot].status.get(.burning));
+        }
+    };
+    const frames = try harness.whileStanding(g, actor.Pool.slot(bloat), Unburnt{ .slot = slot });
     try std.testing.expect(g.pic.pictured[slot].status.get(.burning) > 0);
     try std.testing.expect(frames > 0);
 }
@@ -1565,12 +1571,12 @@ test "successive pyre bursts retain each neighbour snapshot until its own impact
         g.pic.stepGlide(&g.sim, g.cloud, 0);
         const first_slot = actor.Pool.slot(g.sim.order[0]);
         const second_slot = actor.Pool.slot(g.sim.order[1]);
-        var frames: usize = 0;
-        while (!g.pic.pictured[first_slot].down()) : (frames += 1) {
-            try std.testing.expect(frames < 200);
-            try std.testing.expectEqual(@as(u8, 0), g.pic.heroShown(&g.sim).?.status.get(.burning));
-            game.update(g, harness.TEST_DT);
-        }
+        const HeroUnburnt = struct {
+            pub fn check(_: @This(), run: *game.Game) !void {
+                try std.testing.expectEqual(@as(u8, 0), run.pic.heroShown(&run.sim).?.status.get(.burning));
+            }
+        };
+        _ = try harness.whileStanding(g, first_slot, HeroUnburnt{});
         try std.testing.expect(!g.pic.pictured[second_slot].down());
         try std.testing.expect(g.pic.heroShown(&g.sim).?.status.get(.burning) > 0);
         try std.testing.expectEqual(@as(u8, 25), g.pic.heroShown(&g.sim).?.resilience.meters.get(.burn).percent);
@@ -1595,24 +1601,26 @@ test "a pyre bloat bursting on its own turn scalds a body on the water it boils 
     try std.testing.expect(g.sim.pool.get(bloat) == null and g.sim.pool.get(leech).?.hp < harness.TEST_HP);
     const slot = actor.Pool.slot(leech);
     g.st = .{};
-    var frames: usize = 0;
-    while (!g.pic.pictured[actor.Pool.slot(bloat)].down()) : (frames += 1) {
-        try std.testing.expect(frames < 200);
-        try std.testing.expectEqual(harness.TEST_HP, g.pic.pictured[slot].hp);
-        game.update(g, harness.TEST_DT);
-    }
+    const Unscalded = struct {
+        slot: usize,
+        pub fn check(c: @This(), run: *game.Game) !void {
+            try std.testing.expectEqual(harness.TEST_HP, run.pic.pictured[c.slot].hp);
+        }
+    };
+    const frames = try harness.whileStanding(g, actor.Pool.slot(bloat), Unscalded{ .slot = slot });
     const t = harness.framesUntil(g, slot, harness.caughtUp);
     try std.testing.expect(frames > 0 and t < 1);
 }
 
 fn litUntilDown(g: *game.Game, slot: usize, at: P) !usize {
-    var frames: usize = 0;
-    while (!g.pic.pictured[slot].down()) : (frames += 1) {
-        try std.testing.expect(frames < 200);
-        try std.testing.expect(g.pic.litShown(&g.sim, at));
-        try std.testing.expect(g.light.visibility.sight[grid.Level.idx(at)] > 0.99);
-        game.update(g, harness.TEST_DT);
-    }
+    const Lit = struct {
+        at: P,
+        pub fn check(c: @This(), run: *game.Game) !void {
+            try std.testing.expect(run.pic.litShown(&run.sim, c.at));
+            try std.testing.expect(run.light.visibility.sight[grid.Level.idx(c.at)] > 0.99);
+        }
+    };
+    const frames = try harness.whileStanding(g, slot, Lit{ .at = at });
     game.update(g, harness.TEST_DT);
     return frames;
 }

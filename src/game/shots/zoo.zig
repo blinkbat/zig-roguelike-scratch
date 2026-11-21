@@ -4,6 +4,8 @@ const atlas = @import("../../map/atlas.zig");
 const day = @import("../../map/day.zig");
 const game = @import("../../game.zig");
 const capture = @import("capture.zig");
+const bench = @import("bench.zig");
+const menu = @import("../../ui/menu.zig");
 
 pub fn captureZoo(g: *game.Game) !void {
     try std.fs.cwd().makePath(capture.SHOTS_DIR);
@@ -22,7 +24,7 @@ pub fn captureZoo(g: *game.Game) !void {
     game.harness.drawnOut(g);
     game.character.openLoot(g, z.key.?);
     try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-small-key-loot.png");
-    game.harness.press(g, @import("../../ui/menu.zig").CONFIRM);
+    game.harness.press(g, menu.CONFIRM);
     game.harness.drawnOut(g);
     if (g.sim.inventory.n != 1 or g.sim.inventory.bag[0].kind != .small_key) return error.KeyNotCollected;
     game.character.openCharacter(g);
@@ -43,6 +45,6 @@ pub fn captureZoo(g: *game.Game) !void {
     game.settle(g);
     try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-reveal.png");
     std.debug.print("Packed zoo: {d:.3} ms mean draw, {d} actors on map\n", .{
-        try @import("bench.zig").meanDraw(g, target, 3, 60), g.sim.pool.n,
+        try bench.meanDraw(g, target, 3, 60), g.sim.pool.n,
     });
 }

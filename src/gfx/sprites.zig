@@ -375,12 +375,10 @@ pub const Sprites = struct {
         const s = self.bank_cap orelse return false;
         rl.beginShaderMode(s.shader);
         rl.gl.rlDrawRenderBatchActive();
-        shaders.setUniform(s.shader, s.mask_region, raster.uvOf(mask.tex, mask.src));
-        shaders.setUniform(s.shader, s.textured, maybe != null);
+        shaders.setFields(s, .{ .mask_region = raster.uvOf(mask.tex, mask.src), .textured = maybe != null });
         if (maybe) |fill| {
             const piece = fill.piece;
-            shaders.setUniform(s.shader, s.offset, fill.offset());
-            shaders.setUniform(s.shader, s.region, raster.uvOf(piece.tex, piece.src));
+            shaders.setFields(s, .{ .offset = fill.offset(), .region = raster.uvOf(piece.tex, piece.src) });
             rl.setShaderValueTexture(s.shader, s.land, piece.tex);
         } else shaders.setUniform(s.shader, s.solid, look.rgbaOf(color));
         return true;

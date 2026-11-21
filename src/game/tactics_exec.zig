@@ -938,6 +938,16 @@ fn skeletonCount(g: *game.Game) usize {
     return skeletons(&g.sim).n;
 }
 
+fn recast(g: *game.Game, at: P) void {
+    g.sim.cooldown.set(.raise_skeleton, 0);
+    game.harness.aimAt(g, .raise_skeleton, at);
+}
+
+fn raiseAt(g: *game.Game, at: P) void {
+    recast(g, at);
+    game.harness.drawnOut(g);
+}
+
 test "a raised skeleton fights a foe beside it, takes foes' blows, is spared the hero's and crumbles past its rank's limit" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -956,14 +966,12 @@ test "a raised skeleton fights a foe beside it, takes foes' blows, is spared the
     combat.wound(g, id, .{ .dmg = 50, .physical = 50, .hit_checked = true }, "strikes", .{ .from = from, .wait = 0 });
     try std.testing.expectEqual(bones.max, bones.hp);
     h.drawnOut(g);
-    g.sim.cooldown.set(.raise_skeleton, 0);
-    h.aimAt(g, .raise_skeleton, .{ .x = 20, .y = 22 });
+    recast(g, .{ .x = 20, .y = 22 });
     try std.testing.expect(g.sim.pool.get(id) == null);
     try std.testing.expectEqual(@as(usize, 1), skeletonCount(g));
     h.drawnOut(g);
     g.sim.growth.ranks.set(.raise_skeleton, 2);
-    g.sim.cooldown.set(.raise_skeleton, 0);
-    h.aimAt(g, .raise_skeleton, .{ .x = 18, .y = 20 });
+    recast(g, .{ .x = 18, .y = 20 });
     try std.testing.expectEqual(@as(usize, 2), skeletonCount(g));
     const guard = g.sim.lv.who(.{ .x = 20, .y = 22 });
     const rat = h.spawnAt(g, .rat, .{ .x = 21, .y = 23 }, true);
@@ -986,11 +994,7 @@ test "raising skeletons past the limit never crumbles a caravan guard" {
     h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
     g.sim.mana = h.TEST_MANA;
     const guard = h.spawnAt(g, .caravan_guard, .{ .x = 24, .y = 20 }, true);
-    for ([_]P{ .{ .x = 22, .y = 20 }, .{ .x = 20, .y = 22 } }) |at| {
-        g.sim.cooldown.set(.raise_skeleton, 0);
-        h.aimAt(g, .raise_skeleton, at);
-        h.drawnOut(g);
-    }
+    for ([_]P{ .{ .x = 22, .y = 20 }, .{ .x = 20, .y = 22 } }) |at| raiseAt(g, at);
     try std.testing.expectEqual(@as(usize, 1), skeletonCount(g));
     try std.testing.expect(g.sim.pool.get(guard) != null);
 }
@@ -1004,8 +1008,7 @@ test "a raised skeleton stands once its cast lands, and a recast takes a crumble
     const cells = [_]P{ .{ .x = 22, .y = 20 }, .{ .x = 20, .y = 22 }, .{ .x = 18, .y = 20 } };
     var bodies: [cells.len]usize = undefined;
     for (cells, &bodies) |at, *n| {
-        g.sim.cooldown.set(.raise_skeleton, 0);
-        h.aimAt(g, .raise_skeleton, at);
+        recast(g, at);
         const slot = actor.Pool.slot(g.sim.lv.who(at));
         try std.testing.expect(!g.pic.standing(&g.sim, slot));
         h.drawnOut(g);
@@ -1029,21 +1032,13 @@ test "the oldest skeleton crumbles first though a younger rose in an older one's
     const b = P{ .x = 20, .y = 22 };
     const c = P{ .x = 18, .y = 20 };
     const d = P{ .x = 20, .y = 18 };
-    for ([_]P{ a, b }) |at| {
-        g.sim.cooldown.set(.raise_skeleton, 0);
-        h.aimAt(g, .raise_skeleton, at);
-        h.drawnOut(g);
-    }
+    for ([_]P{ a, b }) |at| raiseAt(g, at);
     const elder = g.sim.lv.who(a);
     const first = actor.Pool.slot(elder);
     combat.fellOutright(g, elder);
     g.pic.settleSlot(&g.sim, h.TEST_DT, .fromIndex(first));
     h.idleFor(g, 1);
-    for ([_]P{ c, d }) |at| {
-        g.sim.cooldown.set(.raise_skeleton, 0);
-        h.aimAt(g, .raise_skeleton, at);
-        h.drawnOut(g);
-    }
+    for ([_]P{ c, d }) |at| raiseAt(g, at);
     try std.testing.expectEqual(first, actor.Pool.slot(g.sim.lv.who(c)));
     try std.testing.expect(g.sim.lv.who(b) == grid.NO_ONE);
     try std.testing.expect(g.sim.lv.who(c) != grid.NO_ONE and g.sim.lv.who(d) != grid.NO_ONE);

@@ -432,7 +432,8 @@ const HUD_CATEGORY = "HUD";
 const LOOK_CATEGORY = "Look";
 const STATUS_CATEGORY = "Status effects";
 const COMBAT_CATEGORY = "Combat";
-const LOG_SOURCES = [_][]const u8{ "play/log.zig", "ui/journal.zig" };
+const LOG_SOURCE = "play/log.zig";
+const LOG_SOURCES = [_][]const u8{ LOG_SOURCE, "ui/journal.zig" };
 const DIALOGUE_SOURCES = [_][]const u8{ "ui/talk.zig", "game/talking.zig", "map/script.zig", "play/trigger.zig" };
 const QUESTS_SOURCE = "ui/quests.zig";
 const ITEM_TEXT_SOURCES = [_][]const u8{ "ui/item_card.zig", "play/trade.zig", "play/consumable.zig" };
@@ -597,6 +598,13 @@ fn humanize(a: std.mem.Allocator, value: []const u8) ![]const u8 {
         }
     }
     return out.toOwnedSlice();
+}
+
+fn dotted(comptime path: []const u8) []const u8 {
+    var module = path[0 .. path.len - ZIG.len].*;
+    std.mem.replaceScalar(u8, &module, '/', '.');
+    const out = module;
+    return &out;
 }
 
 fn moduleOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
@@ -786,7 +794,7 @@ const ContextScan = struct {
             try identity.appendSlice(" > ");
             try identity.appendSlice(name);
             if (std.mem.indexOf(u8, name, "log.") != null or
-                (std.mem.eql(u8, s.module, "play.log") and (std.mem.eql(u8, name, "say") or std.mem.eql(u8, name, "add"))))
+                (std.mem.eql(u8, s.module, comptime dotted(LOG_SOURCE)) and (std.mem.eql(u8, name, "say") or std.mem.eql(u8, name, "add"))))
             {
                 category = LOG_LINES;
                 role = try humanize(s.a, leafOf(s.module));

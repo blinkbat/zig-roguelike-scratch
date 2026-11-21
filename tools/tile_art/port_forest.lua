@@ -10,12 +10,11 @@ app.fs.makeAllDirectories(backups)
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bit=masks.bit
 local W,H,CELL,HEAD=masks.W,masks.SHEET_H,masks.CELL,masks.HEAD
-local LAST=CELL-1
 local pc=app.pixelColor
 local sprite=assert(app.open(path))
 assert(sprite.width==W and sprite.height==H and #sprite.frames==1 and #sprite.slices==#masks)
-assert(not sourceFiles.layer(sprite,'Forest extensions'),'Inspect existing extensions for owner edits before regenerating')
-local drawing=assert(sourceFiles.layer(sprite,'Draw here'))
+assert(not sourceFiles.layer(sprite,sourceFiles.LAYER.forest),'Inspect existing extensions for owner edits before regenerating')
+local drawing=assert(sourceFiles.layer(sprite,sourceFiles.LAYER.draw))
 local original=assert(drawing:cel(1))
 local saved=Image(original.image)
 local position=Point(original.position.x,original.position.y)
@@ -51,26 +50,20 @@ for i,mask in ipairs(masks) do
     end
   end
   if mask==0 then assert(tile:isEqual(source),'Original cell changed') end
-  for y=0,LAST do for x=0,LAST do
-    local p=tile:getPixel(x,y)
-    assert(pc.rgbaA(p)==0 or palette[p],'Colour outside source palette')
-    if e and x==LAST and y>=8 and y<=40 then assert(pc.rgbaA(p)==255,'East gap '..mask) end
-    if w and x==0 and y>=8 and y<=40 then assert(pc.rgbaA(p)==255,'West gap '..mask) end
-    if n and y==0 and x>=8 and x<=55 then assert(pc.rgbaA(p)==255,'North gap '..mask) end
-    if s and y==LAST and x>=8 and x<=55 then assert(pc.rgbaA(p)==255,'South gap '..mask) end
-  end end
+  for it in tile:pixels() do assert(pc.rgbaA(it())==0 or palette[it()],'Colour outside source palette') end
+  masks.checkJoined(tile,mask,8,40,bit.e|bit.w)
+  masks.checkJoined(tile,mask,8,55,bit.n|bit.s)
   for other,cell in pairs(cells) do assert(not tile:isEqual(cell),'Duplicate masks '..mask..' and '..other) end
   cells[mask]=tile
-  local x,y=masks.at(i)
-  atlas:drawImage(tile,Point(x,y))
-  if i>1 then sheet:drawImage(tile,Point(x,y+HEAD)) end
+  atlas:drawImage(tile,Point(masks.at(i)))
+  if i>1 then sheet:drawImage(tile,Point(masks.sheetAt(i))) end
 end
 local backup=(install and backups or work)..'forest-tree-walls.'..os.date(sourceFiles.STAMP)..'.aseprite'
 sourceFiles.copy(path,backup)
 local extension=sprite:newLayer()
-extension.name='Forest extensions'
+extension.name=sourceFiles.LAYER.forest
 sprite:newCel(extension,1,sheet,Point(0,0))
-sourceFiles.hide(sprite,'Underdrawing (25%)','Ideas - hide before export')
+sourceFiles.hide(sprite,sourceFiles.LAYER.under,sourceFiles.LAYER.ideas)
 drawing.stackIndex=#sprite.layers
 app.layer=extension
 local destination=install and path or work..'forest-tree-walls-draft.aseprite'
@@ -78,8 +71,8 @@ sprite:saveAs(destination)
 sprite:saveCopyAs(work..'forest-tree-walls-sheet.png')
 sprite:close()
 local reopened=assert(app.open(destination))
-sourceFiles.checkCel(reopened,'Draw here',saved,position)
-sourceFiles.checkLayer(reopened,'Forest extensions',sheet,Point(0,0))
+sourceFiles.checkCel(reopened,sourceFiles.LAYER.draw,saved,position)
+sourceFiles.checkLayer(reopened,sourceFiles.LAYER.forest,sheet,Point(0,0))
 reopened:close()
 if install then sourceFiles.copy(destination,canonical) end
 atlas:saveAs(work..'forest-tree-walls-art.png')
@@ -98,17 +91,7 @@ local map={
   '.#####............',
   '...................',
 }
-local function wall(x,y)
-  return y>=1 and y<=#map and x>=1 and x<=#map[y] and map[y]:sub(x,x)=='#'
-end
-local preview=Image(#map[1]*CELL,#map*CELL,ColorMode.RGB)
-preview:clear(pc.rgba(104,112,77,255))
-for y=1,#map do for x=1,#map[1] do
-  if wall(x,y) then
-    preview:drawImage(assert(cells[masks.of(wall,x,y)]),Point((x-1)*CELL,(y-1)*CELL))
-  end
-end end
-preview:saveAs(work..'forest-tree-walls-connected.png')
+masks.preview(cells,pc.rgba(104,112,77,255),work..'forest-tree-walls-connected.png',map)
 local report=sourceFiles.report(work..'forest-tree-walls-validation.txt')
 report:write('Source: '..path..'\nSaved: '..destination..'\nBackup: '..backup..'\n')
 report:write('47 distinct 64x64 cells. Original Draw here pixels and position verified after reopen.\n')

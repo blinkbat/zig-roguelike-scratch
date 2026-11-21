@@ -9,7 +9,7 @@ const shaders = @import("../gfx/shaders.zig");
 const hud = @import("hud.zig");
 
 const Kind = @import("../play/log.zig").Kind;
-pub const Log = @import("../play/log.zig").Log;
+const Log = @import("../play/log.zig").Log;
 
 fn ink(k: Kind) rl.Color {
     return switch (k) {
@@ -46,8 +46,7 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: math
     const w = raster.width(r);
     if (sprites.log_fade) |fade| {
         rl.beginShaderMode(fade.shader);
-        shaders.setUniform(fade.shader, fade.bounds, [2]f32{ @floatFromInt(screen.y - y - BOX_H), @floatFromInt(screen.y - y) });
-        shaders.setUniform(fade.shader, fade.minimum, TOP_OPACITY);
+        shaders.setFields(fade, .{ .bounds = [2]f32{ @floatFromInt(screen.y - y - BOX_H), @floatFromInt(screen.y - y) }, .minimum = TOP_OPACITY });
         sprite.backingIn(sprites, r);
     } else {
         rl.drawRectangleGradientV(x, y, w, BOX_H, look.fade(look.BACKING, TOP_OPACITY), look.BACKING);

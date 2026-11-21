@@ -28,6 +28,7 @@ const flask = @import("../../play/flask.zig");
 const light = @import("../../gfx/light.zig");
 const juke = @import("../../play/juke.zig");
 const blink = @import("../../play/blink.zig");
+const tactics = @import("../../play/tactics.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 const BACK = menu.BACK;
@@ -264,11 +265,11 @@ test "ground pressure preserves closed chest rewards and reserves every possible
     const rng = g.sim.loot_rng;
     g.sim.heroActor().?.tactics.guard = 1;
     g.sim.heroActor().?.tactics.overwatch = .e;
-    const tactics = g.sim.heroActor().?.tactics;
+    const stance = g.sim.heroActor().?.tactics;
     game.heroStep(g, .e, 0);
     try std.testing.expectEqualDeep(before, g.sim.clock);
     try std.testing.expectEqualDeep(rng, g.sim.loot_rng);
-    try std.testing.expectEqualDeep(tactics, g.sim.heroActor().?.tactics);
+    try std.testing.expectEqualDeep(stance, g.sim.heroActor().?.tactics);
     try std.testing.expect(g.sim.lv.at(chest).opened() != null);
     for (0..actor.MAX) |_| try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
     try std.testing.expectEqual(ground_items.GROUND_MAX, g.sim.ground.n);
@@ -422,11 +423,10 @@ test "interact pressed mid-turn waits for quiet instead of queuing its button's 
     try std.testing.expectEqual(@as(?game.Queued, .interact), g.pending);
     try harness.expectMode(g, .play);
     try std.testing.expectEqual(@as(usize, 1), g.sim.log.held);
-    g.st = .{ .walk = .e };
-    game.update(g, 0);
+    harness.walkBusy(g, .e, 0);
     try std.testing.expectEqual(@as(?game.Queued, .interact), g.pending);
     g.st = .{};
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try harness.expectMode(g, .pause);
     try std.testing.expectEqual(@as(usize, 0), g.sim.inventory.n);
     try std.testing.expectEqual(@as(usize, 1), g.sim.ground.n);
@@ -668,15 +668,13 @@ test "loot gold left while the step onto its bag is drawn is taken from the bag 
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
     try std.testing.expect(g.sim.ground.gold(at, 37));
-    g.st = .{ .walk = .e };
-    game.update(g, 0);
+    harness.walkBusy(g, .e, 0);
     try std.testing.expectEqual(book.Page.loot, g.character.page);
     g.st = .{ .pressed = .initOne(BACK) };
     game.update(g, mathx.TEST_DT);
     try harness.expectMode(g, .play);
     try std.testing.expect(!g.pic.quiet() and g.loot_gold != null);
-    g.st = .{ .walk = .e };
-    game.update(g, mathx.TEST_DT);
+    harness.walkBusy(g, .e, mathx.TEST_DT);
     g.st = .{};
     var t: f32 = 0;
     while (t < 2 and g.sim.heroActor().?.at.eq(at)) : (t += mathx.TEST_DT) game.update(g, mathx.TEST_DT);
@@ -692,15 +690,13 @@ test "loot gold left while the step onto its bag is drawn is taken there though 
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
     try std.testing.expect(g.sim.ground.gold(at, 37));
-    g.st = .{ .walk = .e };
-    game.update(g, 0);
+    harness.walkBusy(g, .e, 0);
     g.st = .{ .pressed = .initOne(BACK) };
     game.update(g, mathx.TEST_DT);
     const minute = g.sim.clock.minute;
     var t: f32 = 0;
     while (t < 3 and g.sim.clock.minute < minute + 2 * day.TURN_MINUTES) : (t += mathx.TEST_DT) {
-        g.st = .{ .walk = .e };
-        game.update(g, mathx.TEST_DT);
+        harness.walkBusy(g, .e, mathx.TEST_DT);
     }
     g.st = .{};
     try std.testing.expectEqual(@as(i32, 23), g.sim.heroActor().?.at.x);
@@ -895,11 +891,10 @@ test "interact during door travel stays an interaction on arrival" {
     try std.testing.expect(g.sim.travel != null);
     harness.pressInteract(g);
     try std.testing.expectEqual(@as(?game.Queued, .interact), g.pending);
-    g.st = .{ .walk = .w };
-    game.update(g, 0);
+    harness.walkBusy(g, .w, 0);
     try std.testing.expectEqual(@as(?game.Queued, .interact), g.pending);
     g.st = .{};
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try std.testing.expectEqual(b, g.sim.node);
     game.update(g, mathx.FRAME_DT);
     try harness.expectMode(g, .pause);
@@ -940,7 +935,7 @@ test "a door trip finishes behind Character opened during it, so item commands c
     game.update(g, 0);
     try harness.expectMode(g, .pause);
     g.st = .{};
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try std.testing.expectEqual(b, g.sim.node);
     try std.testing.expect(g.sim.travel == null);
     try harness.expectMode(g, .pause);
@@ -954,7 +949,7 @@ test "a pinned hero on the door it came through struggles there instead of going
     defer std.testing.allocator.destroy(w);
     const b = runTwoRooms(g, w);
     harness.nudge(g, .w);
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try std.testing.expectEqual(b, g.sim.node);
     const at = g.sim.heroAt().?;
     try std.testing.expect(character.doorReached(g, at, at) != null);
@@ -962,7 +957,7 @@ test "a pinned hero on the door it came through struggles there instead of going
     character.characterCommand(g, .{ .travel = at });
     try std.testing.expect(g.sim.travel == null);
     try std.testing.expect(std.mem.indexOf(u8, g.sim.log.line(0).?, "struggles") != null);
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try std.testing.expectEqual(b, g.sim.node);
 }
 
@@ -973,7 +968,7 @@ test "clicking the hero on the door it came through waits instead of going back"
     defer std.testing.allocator.destroy(w);
     const b = runTwoRooms(g, w);
     harness.nudge(g, .w);
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try std.testing.expectEqual(b, g.sim.node);
     const at = g.sim.heroAt().?;
     try std.testing.expect(character.doorReached(g, at, at) != null);
@@ -983,7 +978,7 @@ test "clicking the hero on the door it came through waits instead of going back"
     try std.testing.expect(game.mouseControls.step(g));
     try std.testing.expect(g.sim.travel == null);
     try std.testing.expectEqual(next, g.sim.clock);
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try std.testing.expectEqual(b, g.sim.node);
 }
 
@@ -998,7 +993,7 @@ test "inspect opened during a door trip opens, and the trip still finishes behin
     harness.press(g, skillbar.INSPECT);
     try harness.expectMode(g, .inspect);
     g.st = .{};
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     try std.testing.expectEqual(b, g.sim.node);
     try std.testing.expect(g.sim.travel == null);
     try harness.expectMode(g, .inspect);
@@ -1160,7 +1155,6 @@ test "blindness does not make daylight or distant torchlight count as darkness" 
 test "commander raises skeletons with more life" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const tactics = @import("../../play/tactics.zig");
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
     g.sim.mana = harness.TEST_MANA;
     g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .commander, .value = 25 }));
@@ -1294,5 +1288,20 @@ test "an open chest out of sight shows the contents last seen in it" {
     try std.testing.expect(scene.shownBags(g, &g.sim.lv).isSet(i));
     g.sim.lv.lit[i] = false;
     g.pic.snapSight(&g.sim);
+    try std.testing.expect(scene.shownBags(g, &g.sim.lv).isSet(i));
+}
+
+test "an open chest out of sight keeps its contents through a settle" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 30, .y = 20 };
+    const i = grid.Level.idx(at);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.lv.set(at, .chest_open);
+    harness.hemIn(&g.sim.lv, at, null);
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
+    g.sim.lv.seen[i] = true;
+    game.settle(g);
+    try std.testing.expect(!g.sim.lv.lit[i]);
     try std.testing.expect(scene.shownBags(g, &g.sim.lv).isSet(i));
 }

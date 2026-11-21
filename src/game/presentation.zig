@@ -794,8 +794,12 @@ pub const Presentation = struct {
         return sim.lv.hasBarrel(p) or self.fx.impacts.breaking(p);
     }
 
+    fn groundOpen(self: *const Presentation, sim: *const Simulation, at: P) bool {
+        return self.litShown(sim, at) and !self.barrelPresent(sim, at);
+    }
+
     pub fn pileShown(self: *const Presentation, sim: *const Simulation, pile: ground_items.Coins) ?ground_items.Coins {
-        if (!self.litShown(sim, pile.at) or self.barrelPresent(sim, pile.at)) return null;
+        if (!self.groundOpen(sim, pile.at)) return null;
         return self.pileLanded(sim, pile);
     }
 
@@ -809,7 +813,7 @@ pub const Presentation = struct {
 
     /// `laid` is an `ground_items.Drop` or `ground_items.Supply`.
     pub fn laidShown(self: *const Presentation, sim: *const Simulation, laid: anytype) bool {
-        return self.litShown(sim, laid.at) and self.laidDown(laid) and !self.barrelPresent(sim, laid.at);
+        return self.groundOpen(sim, laid.at) and self.laidDown(laid);
     }
 
     pub fn laidDown(self: *const Presentation, laid: anytype) bool {
@@ -932,6 +936,24 @@ pub const Presentation = struct {
         self.stepSeenCells(sim, &self.groundShown(sim).lit, 1);
     }
 
+    pub fn rememberChests(self: *Presentation, sim: *const Simulation) void {
+        self.markContents(sim, knownChest);
+    }
+
+    fn knownChest(_: *const Presentation, sim: *const Simulation, p: P) bool {
+        return sim.lv.at(p) == .chest_open and sim.lv.isSeen(p);
+    }
+
+    fn markContents(self: *Presentation, sim: *const Simulation, comptime keeps: fn (*const Presentation, *const Simulation, P) bool) void {
+        inline for (sim.ground.laid()) |laid| for (laid) |l| {
+            if (keeps(self, sim, l.at) and self.laidDown(l)) self.seen_cells[grid.Level.idx(l.at)].bag = true;
+        };
+        for (sim.ground.coins[0..sim.ground.coin_n]) |pile| {
+            if (!keeps(self, sim, pile.at)) continue;
+            if (self.pileLanded(sim, pile)) |p| self.seen_cells[grid.Level.idx(p.at)].coins = p.amount;
+        }
+    }
+
     fn stepSeenCells(self: *Presentation, sim: *const Simulation, lit: *const [grid.CELLS]bool, k: f32) void {
         for (&self.seen_cells, lit, &self.npc_shown, 0..) |*v, visible, npc, i| {
             if (!visible) {
@@ -946,12 +968,7 @@ pub const Presentation = struct {
             v.barrier = self.barrier_shown[i] > 0;
             v.caltrops = self.caltrops_shown[i].turns > 0;
         }
-        inline for (sim.ground.laid()) |laid| for (laid) |l| {
-            if (self.laidShown(sim, l)) self.seen_cells[grid.Level.idx(l.at)].bag = true;
-        };
-        for (sim.ground.coins[0..sim.ground.coin_n]) |pile| {
-            if (self.pileShown(sim, pile)) |p| self.seen_cells[grid.Level.idx(p.at)].coins = p.amount;
-        }
+        self.markContents(sim, groundOpen);
     }
 
     pub fn cellAlpha(self: *const Presentation, p: P) f32 {

@@ -167,6 +167,14 @@ pub const WeaponEffect = struct {
             inline else => |el| @field(self, @tagName(affixes.imbued(el))) += n,
         }
     }
+
+    pub fn add(self: *WeaponEffect, o: WeaponEffect) void {
+        inline for (std.meta.fields(WeaponEffect)) |f| {
+            if (comptime std.mem.eql(u8, f.name, "bleed_damage")) {
+                self.bleed_damage = @max(self.bleed_damage, o.bleed_damage);
+            } else @field(self, f.name) += @field(o, f.name);
+        }
+    }
 };
 comptime {
     for (std.meta.fieldNames(WeaponEffect)) |f| {
@@ -216,7 +224,10 @@ pub const Innate = union(enum) {
             .spell_crit => |n| w.print("+{d}% " ++ attrs.SPELL_CRIT_LABEL, .{n}) catch {},
             .physical_damage => |n| w.print("+{d}% " ++ attrs.PHYSICAL_LABEL, .{n}) catch {},
             .element => |e| w.print("+{d}% {s} damage", .{ e.percent, wording.word(e.kind) }) catch {},
-            .bleed => |b| affixed(.serrated, @intCast(b.chance), w),
+            .bleed => |b| {
+                affixed(.serrated, @intCast(b.chance), w);
+                if (b.damage != bleeding.STILL) w.print(", {d} life per turn", .{b.damage}) catch {};
+            },
             .stun => |n| w.print(ON_HIT_FMT, .{ n, wording.word(resilience.Kind.stun) }) catch {},
             .penetration => |n| affixed(.penetration, n, w),
             .flask => |k| w.writeAll(flask.effect(k)) catch {},

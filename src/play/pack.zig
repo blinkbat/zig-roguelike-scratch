@@ -417,14 +417,13 @@ fn fires(lv: *const grid.Level) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     for (0..grid.CELLS) |i| {
         if (lv.tile[i] != .lava) continue;
-        const p = grid.Level.of(i);
-        const lone = for (grid.STEPS) |d| {
-            const q = p.add(d);
-            if (grid.Level.inside(q) and lv.at(q) == .lava) break false;
-        } else true;
-        if (lone) out.set(i);
+        if (!grid.anyNeighbour(grid.Level.of(i), lv, lavaAt)) out.set(i);
     }
     return out;
+}
+
+fn lavaAt(lv: *const grid.Level, p: P) bool {
+    return grid.Level.inside(p) and lv.at(p) == .lava;
 }
 
 fn widened(cells: grid.CellSet, r: i32) grid.CellSet {

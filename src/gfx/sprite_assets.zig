@@ -508,7 +508,7 @@ test "every wall and forest cell lies inside its PNG, and one past its end is re
 
 test "a caravan's picture spans its two cells and rises a cell above them, at native scale" {
     const size = pngSize(TILE_PNGS.get(.caravan).?);
-    const tex = rl.Texture2D{ .id = 1, .width = size.x, .height = size.y, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    const tex = raster.textureOf(1, size.x, size.y);
     for ([_]f32{ look.SPRITE_PX, 2 * look.SPRITE_PX }) |cell| {
         const r = look.tileRect(.caravan, tex, .{ .x = 10 * cell, .y = 5 * cell, .width = cell, .height = cell });
         try std.testing.expectEqual(rl.Rectangle{ .x = 10 * cell, .y = 4 * cell, .width = 2 * cell, .height = 2 * cell }, r);
@@ -521,7 +521,7 @@ test "forest sprites follow connections and isolated trees mix with clumps witho
     var lv = grid.Level.blank();
     @memset(&lv.tile, .grass);
     var sprites = @import("sprites.zig").Sprites{};
-    const tree = rl.Texture2D{ .id = 1, .width = look.SPRITE_PX, .height = look.SPRITE_PX, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    const tree = raster.textureOf(1, look.SPRITE_PX, look.SPRITE_PX);
     sprites.tiles.set(.shrub, tree);
     var alt = tree;
     alt.id = 1000;

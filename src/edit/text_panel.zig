@@ -816,12 +816,18 @@ fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bot
         const expanded = if (row.depth == .category) group.category_open else group.role_open;
         var buf: [PAGE_LINE]u8 = undefined;
         const text = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ if (row.depth == .owner) "" else if (expanded) "- " else "+ ", label }) catch "";
-        const on = s.category != null and std.mem.eql(u8, s.category.?, group.category) and
-            (if (row.depth == .category) s.role == null and s.owner == null else s.role != null and std.mem.eql(u8, s.role.?, group.role) and
-                (if (row.depth == .role) s.owner == null else s.owner != null and std.mem.eql(u8, s.owner.?, group.owner)));
+        const on = picks(s.category, group.category) and switch (row.depth) {
+            .category => s.role == null and s.owner == null,
+            .role => picks(s.role, group.role) and s.owner == null,
+            .owner => picks(s.role, group.role) and picks(s.owner, group.owner),
+        };
         if (navItem(ed, g, ordinal, text, row.matches, on, row.depth)) s.selectTree(row);
     }
     widgets.scrollbarIn(s.nav_box, s.nav_top, s.nav_rows, s.nav_count);
+}
+
+fn picks(scope: ?[]const u8, v: []const u8) bool {
+    return if (scope) |at| std.mem.eql(u8, at, v) else false;
 }
 
 pub fn draw(ed: *editor.Editor, g: *game.Game) void {

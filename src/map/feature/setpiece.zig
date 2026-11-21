@@ -349,11 +349,7 @@ test "niches adapt to each biome palette, protect occupied lots and leave their 
         try grid.expectAllReached(&lv, door, &dist, &queue);
         for (lv.tile, 0..) |t, i| {
             if (!t.prized()) continue;
-            var around_ = grid.Cells.around(grid.Level.of(i), 1);
-            const reached = while (around_.next()) |q| {
-                if (grid.Level.inside(q) and dist[grid.Level.idx(q)] >= 0) break true;
-            } else false;
-            try std.testing.expect(reached);
+            try std.testing.expect(grid.reachedBeside(grid.Level.of(i), &dist));
             placed += 1;
         }
     }

@@ -682,11 +682,7 @@ test "a tee's crescent pond, its chests and its goblin camps' fires are all walk
             } else true;
             if (!wet) continue;
             which[0] += 1;
-            round = grid.Cells.around(q, 1);
-            while (round.next()) |n| if (grid.Level.inside(n) and dist[grid.Level.idx(n)] >= 0) {
-                which[1] += 1;
-                break;
-            };
+            which[1] += @intFromBool(grid.reachedBeside(q, &dist));
         }
     }
     try std.testing.expectEqual(RUNS, ponds);

@@ -36,7 +36,7 @@ local sprite=assert(app.open(source))
 assert(sprite.width==groundPort.W and sprite.height==groundPort.H,'not a ground template: '..source)
 assert(#sprite.slices==COLS*COLS,'not a ground template: '..source)
 for i,m in ipairs(order) do groundPort.checkSlice(sprite,i,m) end
-local want=stand_in and 'Underdrawing (25%)' or 'Draw here'
+local want=stand_in and sourceFiles.LAYER.under or sourceFiles.LAYER.draw
 local extension=groundPort.extension(source_name)
 local found=false
 local sheet=Image(SIZE,SIZE,ColorMode.RGB)

@@ -139,6 +139,7 @@ comptime {
         if (r.hooks) |h| std.debug.assert(h.range >= windup.NEAREST and h.range <= windup.LONGEST);
         if (r.hurls) |h| std.debug.assert(h.range <= bow.LONGEST and h.speed > 0 and h.every > 1 and r.keeps > 0);
         if (r.quickstep) |q| std.debug.assert(r.net != null and r.keeps > 0 and q.cells > 0 and q.every > 0);
+        std.debug.assert(r.waves >= 0 and r.waves <= WAVES_MOST);
     }
 }
 
@@ -150,8 +151,10 @@ pub const FOES = blk: {
     break :blk ks[0..ks.len].*;
 };
 
+const SPLIT_INTO = 2;
+
 pub fn most(k: Kind) usize {
-    return if (row(k).splits) |n| 2 * most(n) else 1;
+    return if (row(k).splits) |n| SPLIT_INTO * most(n) else 1;
 }
 
 pub fn roomFor(bodies: usize, k: Kind) bool {
@@ -381,7 +384,7 @@ fn heroRow(comptime c: heroes.Class) Row {
 fn smaller(of: Kind, name: [:0]const u8, splits: ?Kind) Row {
     var r = row(of);
     r.name = name;
-    r.hp = @divTrunc(r.hp, 2);
+    r.hp = @divTrunc(r.hp, SPLIT_INTO);
     r.splits = splits;
     return r;
 }
@@ -714,7 +717,7 @@ pub const Pool = struct {
         const next = row(a.kind).splits orelse return null;
         if (a.hp * 2 >= a.max or self.n == MAX) return null;
         const d = rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, Step{ .lv = lv, .from = a.at, .id = grid.NO_ONE }, Step.free) orelse return null;
-        const hp = @max(1, @divTrunc(a.hp, 2));
+        const hp = @max(1, @divTrunc(a.hp, SPLIT_INTO));
         a.kind = next;
         a.hp = hp;
         a.max = hp;
@@ -764,32 +767,28 @@ pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
     return closest(lv, from, toward, Fins{ .lv = lv, .from = from, .k = k }, Fins.wet);
 }
 
-pub const WAVES_MOST: i32 = 8;
-const WAVE_SIDE: usize = 2 * WAVES_MOST + 1;
+const WAVES_MOST: i32 = 8;
 
 pub fn ripples(lv: *const grid.Level, from: P, to: P, reach: i32) bool {
     std.debug.assert(reach <= WAVES_MOST);
     if (mathx.dist(from, to) > reach or !lv.at(to).wet()) return false;
-    const Box = struct {
-        fn idx(o: P, p: P) usize {
-            return @intCast((p.x - o.x + WAVES_MOST) + (p.y - o.y + WAVES_MOST) * @as(i32, WAVE_SIDE));
-        }
-    };
-    var steps: [WAVE_SIDE * WAVE_SIDE]i32 = @splat(-1);
-    var queue: [WAVE_SIDE * WAVE_SIDE]P = undefined;
+    const area: usize = @intCast(comptime grid.Cells.square(WAVES_MOST));
+    const window = grid.Box.around(from, reach);
+    var steps: [area]i32 = @splat(-1);
+    var queue: [area]P = undefined;
     var head: usize = 0;
     var tail: usize = 1;
     queue[0] = from;
-    steps[Box.idx(from, from)] = 0;
+    steps[window.slot(from).?] = 0;
     while (head < tail) : (head += 1) {
         const p = queue[head];
         if (p.eq(to)) return true;
-        const n = steps[Box.idx(from, p)];
+        const n = steps[window.slot(p).?];
         if (n == reach) continue;
         for (mathx.ALL_DIRS) |d| {
             const q = p.add(d.delta());
-            if (mathx.dist(from, q) > reach or !grid.Level.inside(q) or !lv.at(q).wet()) continue;
-            const i = Box.idx(from, q);
+            const i = window.slot(q) orelse continue;
+            if (!grid.Level.inside(q) or !lv.at(q).wet()) continue;
             if (steps[i] >= 0) continue;
             steps[i] = n + 1;
             queue[tail] = q;

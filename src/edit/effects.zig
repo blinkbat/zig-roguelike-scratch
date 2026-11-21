@@ -430,8 +430,9 @@ pub fn pose(ed: *editor.Editor, want: Sample, seconds: f32) !void {
 }
 
 const POSE_STEP = mathx.FRAME_DT;
-/// Ten seconds of frames: longer than any showing twice over.
-const POSE_MOST: usize = 600;
+/// Longer than any showing twice over.
+const POSE_SECONDS: f32 = 10;
+const POSE_MOST: usize = @intFromFloat(@round(POSE_SECONDS / POSE_STEP));
 
 test "every effect sample plays for two showings without leaving the stage's level changed" {
     const v = try create(std.testing.allocator);

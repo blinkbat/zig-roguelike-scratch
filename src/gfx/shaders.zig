@@ -165,6 +165,9 @@ pub const MAP_VIEW_FS =
     \\vec4 mapTexel(sampler2D m, vec2 p) {
     \\    return insideMap(p) ? cellTexel(m, p) : vec4(0.0);
     \\}
+    \\vec4 mapBilerp(sampler2D m, vec2 i, vec2 f) {
+    \\    return mix(mix(mapTexel(m, i), mapTexel(m, i + vec2(1.0, 0.0)), f.x), mix(mapTexel(m, i + vec2(0.0, 1.0)), mapTexel(m, i + vec2(1.0)), f.x), f.y);
+    \\}
     \\
 ;
 

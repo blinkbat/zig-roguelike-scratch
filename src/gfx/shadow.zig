@@ -68,7 +68,7 @@ fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *c
     const lit = s.reached();
     if (lit <= model.FAINT) return null;
     const foot = self.gpu.art(tex).foot;
-    const tall: f32 = @floatFromInt(tex.height);
+    const tall = raster.sizeOf(tex)[1];
     const share = foot / tall;
     const height = light.Light.artY(tex, dest, foot);
     const x = raster.middle(dest).x;
@@ -268,7 +268,7 @@ pub fn forestTip(c: Cast, centre: [2]f32, uv: [2]f32, height: f32) [2]f32 {
 }
 
 fn forestQuads(tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, c: Cast, ink: rl.Color) void {
-    const pad = FOREST_PAD / @as(f32, @floatFromInt(tex.width));
+    const pad = FOREST_PAD / raster.sizeOf(tex)[0];
     const uvs = [4][2]f32{ .{ -pad, -pad }, .{ -pad, 1 + pad }, .{ 1 + pad, 1 + pad }, .{ 1 + pad, -pad } };
     var leans: [4][2]f32 = undefined;
     for (uvs, &leans) |uv, *l| l.* = forestTip(c, centre, uv, dest.height);
@@ -322,7 +322,7 @@ pub fn streakAlpha(u: f32, v: f32) f32 {
 /// Downward lean reverses the quad's winding; reverse its corners to avoid back-face culling.
 fn silhouette(tex: rl.Texture2D, fx: f32, fy: f32, width: f32, foot: f32, left: bool, c: Cast) void {
     const lean = c.lean;
-    const pad = SHADOW_PAD / @as(f32, @floatFromInt(tex.width));
+    const pad = SHADOW_PAD / raster.sizeOf(tex)[0];
     const mirrored = lean[1] > 0;
     const half = width * 0.5 * (1 + pad * 2);
     const stretch = 1 + pad / foot;
@@ -343,7 +343,7 @@ test "scenery shadow margins include the drawn height and width of loaded terrai
     const ordinary: i32 = @intFromFloat(@ceil(CAST_REACH));
     const doubled: i32 = @intFromFloat(@ceil(CAST_REACH * 2));
     try std.testing.expectEqual(ordinary, sceneryMargin(&sprites));
-    const tree = rl.Texture2D{ .id = 1, .width = look.SPRITE_PX, .height = 2 * look.SPRITE_PX, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    const tree = raster.textureOf(1, look.SPRITE_PX, 2 * look.SPRITE_PX);
     sprites.tiles.set(.large_tree, tree);
     try std.testing.expectEqual(doubled, sceneryMargin(&sprites));
     sprites.tiles.set(.large_tree, null);

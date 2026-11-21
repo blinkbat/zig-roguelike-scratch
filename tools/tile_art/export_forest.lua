@@ -8,7 +8,7 @@ assert(sprite.width==masks.W and sprite.height==masks.SHEET_H and #sprite.frames
 local combined=Image(masks.W,masks.SHEET_H,ColorMode.RGB)
 local layers=0
 for _,layer in ipairs(sprite.layers) do
-  if layer.name=='Draw here' or layer.name=='Forest extensions' then
+  if layer.name==sourceFiles.LAYER.draw or layer.name==sourceFiles.LAYER.forest then
     local cel=assert(layer:cel(1))
     assert(layer.opacity==255 and cel.opacity==255)
     combined:drawImage(cel.image,cel.position)

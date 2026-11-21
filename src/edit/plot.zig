@@ -42,7 +42,7 @@ const NAME_BTN_GAP: i32 = 10;
 const TOGGLE_W: i32 = 160;
 const PRIORITY_LABEL_W: i32 = 90;
 const PRIORITY_W: i32 = 140;
-const CHOICE_ADD_W: i32 = 120;
+const ROW_ADD_W: i32 = 120;
 const COND_ADD_W: i32 = 160;
 const NAME_ADD_W: i32 = 50;
 const OP_W: i32 = 150;
@@ -411,6 +411,10 @@ fn pushed(ed: *editor.Editor, n: *const u8) void {
     ed.plot.reveal_added = n;
 }
 
+fn pushRow(ed: *editor.Editor, comptime T: type, items: []T, n: *u8, x: T) void {
+    if (mathx.push(T, items, n, x)) pushed(ed, n);
+}
+
 fn revealAdded(ed: *editor.Editor, n: *const u8, i: usize, y: i32, h: i32) void {
     const s = &ed.plot;
     if (dueLast(*const u8, &s.reveal_added, n, i + 1 == n.*)) s.detail.at(s.detail.box).revealDrawn(y, h);
@@ -539,6 +543,13 @@ fn indexStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: []const 
     ed.bank();
 }
 
+fn optIndexStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: []const u8, live: bool, slot: *?u8, n: usize, tip: [:0]const u8) void {
+    const by = stepper(ed, g, r, label, live, tip, false);
+    if (by == 0) return;
+    slot.* = mathx.wrapOptional(u8, slot.*, by, n);
+    ed.bank();
+}
+
 fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []const u8) void {
     const s = &ed.plot;
     const on = if (s.focus) |now| std.meta.eql(now, f) else false;
@@ -626,11 +637,7 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     y += STEP;
     caption(g, x, y, LABEL_W, "Talks with", look.TEXT);
     var talks = widgets.Lay{ .x = x + LABEL_W, .y = y };
-    const by = stepper(ed, g, talks.take(TALK_W), talksTo(m, npc), m.dialog_n > 0, "Which dialog speaking to it opens", false);
-    if (by != 0) {
-        npc.dialog = mathx.wrapOptional(u8, npc.dialog, by, m.dialog_n);
-        ed.bank();
-    }
+    optIndexStep(ed, g, talks.take(TALK_W), talksTo(m, npc), m.dialog_n > 0, &npc.dialog, m.dialog_n, "Which dialog speaking to it opens");
     if (button(ed, g, talks.take(BTN_W), "New dialog for it", false, m.dialog_n < script.MAX_DIALOGS, "A dialog of one line, named for it, that it opens")) {
         var nb: [script.NAME_MAX]u8 = undefined;
         if (m.addDialog(stemOf(&nb, npc.called()))) |d| {
@@ -779,8 +786,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
         const speech = ln.say.text();
         const head = speech[0..@min(speech.len, widgets.LINE)];
         const para = if (speech.len > 0) head[0 .. std.mem.indexOfScalar(u8, head, '\n') orelse head.len] else SILENT;
-        const first = para[0..@min(para.len, widgets.LINE)];
-        const label = std.fmt.bufPrintZ(&line_buf, "{s}{s}: {s}", .{ if (i == 0) "> " else "", ln.name.text(), first }) catch "";
+        const label = std.fmt.bufPrintZ(&line_buf, "{s}{s}: {s}", .{ if (i == 0) "> " else "", ln.name.text(), para }) catch "";
         if (listRow(ed, g, &s.reveal_line, line_area, lx, lines_w, y, label, s.line == i, if (i == 0) "Where it opens" else null)) s.line = @intCast(i);
         y += STEP;
     }
@@ -828,8 +834,8 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
     y += say_h + GAP;
     y = actRows(ed, g, x, x, y, w, "When shown", .{ .line = .{ .at = at, .a = 0 } });
     y += GAP;
-    if (countHead(ed, g, x, y, w, "Choices", ln.choice_n, script.MAX_CHOICES, CHOICE_ADD_W, "+ Choice", "Something the hero may answer")) {
-        if (mathx.push(script.Choice, &ln.choice, &ln.choice_n, .{})) pushed(ed, &ln.choice_n);
+    if (countHead(ed, g, x, y, w, "Choices", ln.choice_n, script.MAX_CHOICES, ROW_ADD_W, "+ Choice", "Something the hero may answer")) {
+        pushRow(ed, script.Choice, &ln.choice, &ln.choice_n, .{});
     }
     y += STEP;
     var c: u8 = 0;
@@ -863,10 +869,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
 
 fn targetStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, d: *const script.Dialog, next: *?u8) void {
     const label = if (next.*) |n| d.line[n].name.text() else "end";
-    const by = stepper(ed, g, r, label, true, "Another line of this dialog, or the end of it", false);
-    if (by == 0) return;
-    next.* = mathx.wrapOptional(u8, next.*, by, d.line_n);
-    ed.bank();
+    optIndexStep(ed, g, r, label, true, next, d.line_n, "Another line of this dialog, or the end of it");
 }
 
 fn actRows(ed: *editor.Editor, g: *game.Game, x: i32, title_x: i32, top: i32, w: i32, title: []const u8, first: ActAt) i32 {
@@ -881,7 +884,7 @@ fn actRows(ed: *editor.Editor, g: *game.Game, x: i32, title_x: i32, top: i32, w:
     if (count < most and button(ed, g, widgets.row(x + LABEL_W, y, BTN_W), "+ Action", false, true, if (spoken) "Done as the line shows or the choice is taken" else "Done in order once every condition holds")) {
         var a = script.Act{ .kind = if (spoken) .flag else .text };
         fitAct(m, &a, spoken);
-        if (mathx.push(script.Act, list.items, list.n, a)) pushed(ed, list.n);
+        pushRow(ed, script.Act, list.items, list.n, a);
     } else if (count == most) caption(g, x + LABEL_W, y, w - LABEL_W, std.fmt.bufPrint(&buf, "{d} is the most", .{most}) catch "", look.DIM);
     y += STEP;
     var i: u8 = 0;
@@ -1190,8 +1193,7 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     y += STEP;
     for (m.triggers(), 0..) |*t, i| {
         const label = std.fmt.bufPrint(&buf, "{s}{s}", .{ t.name.text(), if (t.parked) "  (parked)" else "" }) catch "";
-        const picked = if (s.trigger) |at| at == i else false;
-        if (listRow(ed, g, &s.reveal_pick, list, f.x, lw, y, label, picked, "When it fires and what it does")) s.trigger = @intCast(i);
+        if (listRow(ed, g, &s.reveal_pick, list, f.x, lw, y, label, if (s.trigger) |at| at == i else false, "When it fires and what it does")) s.trigger = @intCast(i);
         y += STEP;
     }
     inline for (comptime std.enums.values(script.Table)) |t| {
@@ -1241,7 +1243,7 @@ fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i
     t.priority = @intCast(pri);
     y += STEP + GAP;
     if (countHead(ed, g, x, y, w, "When every one holds", t.cond_n, script.MAX_CONDS, COND_ADD_W, "+ Condition", "Another that has to hold; with none it never fires")) {
-        if (mathx.push(script.Cond, &t.cond, &t.cond_n, .{ .kind = .always })) pushed(ed, &t.cond_n);
+        pushRow(ed, script.Cond, &t.cond, &t.cond_n, .{ .kind = .always });
     }
     y += STEP;
     if (t.cond_n == 0) {
@@ -1276,8 +1278,7 @@ fn drawQuests(ed: *editor.Editor, g: *game.Game) void {
     }
     y += STEP;
     for (m.quests(), 0..) |*q, i| {
-        const picked = if (s.quest) |at| at == i else false;
-        if (listRow(ed, g, &s.reveal_pick, list, f.x, f.listW(), y, q.titled(), picked, "Its title and what each stage asks")) s.quest = @intCast(i);
+        if (listRow(ed, g, &s.reveal_pick, list, f.x, f.listW(), y, q.titled(), if (s.quest) |at| at == i else false, "Its title and what each stage asks")) s.quest = @intCast(i);
         y += STEP;
     }
     pickedPane(ed, g, f, list, y, s.quest, drawQuest, "Pick a quest: the journal lists it once an action brings it to a stage");
@@ -1295,8 +1296,8 @@ fn drawQuest(ed: *editor.Editor, g: *game.Game, qi: u8, x: i32, top: i32, w: i32
     y += STEP;
     wordsRow(ed, g, x, y, w, "Title", .{ .title = qi }, "(blank: its name)");
     y += STEP + GAP;
-    if (countHead(ed, g, x, y, w, "Stages", q.stage_n, script.MAX_STAGES, CHOICE_ADD_W, "+ Stage", "What the journal asks next")) {
-        if (mathx.push(script.Note, &q.stage, &q.stage_n, .{})) pushed(ed, &q.stage_n);
+    if (countHead(ed, g, x, y, w, "Stages", q.stage_n, script.MAX_STAGES, ROW_ADD_W, "+ Stage", "What the journal asks next")) {
+        pushRow(ed, script.Note, &q.stage, &q.stage_n, .{});
     }
     y += STEP;
     var k: u8 = 0;

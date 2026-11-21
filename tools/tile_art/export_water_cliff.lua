@@ -1,10 +1,11 @@
 local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local CELL=dofile(root..'tools/tile_art/water_cliff_layout.lua').cell
+local cliff=dofile(root..'tools/tile_art/water_cliff_names.lua')
 local source=app.params.source or sourceFiles.DESKTOP..'water-cliff-edge.aseprite'
 local depth=app.params.depth or 'shallow'
 assert(depth=='shallow' or depth=='deep','depth=shallow|deep')
-local out=app.params.out or root..'assets/water/'..(depth=='shallow' and 'shallows' or 'water')..'-cliff.png'
+local out=app.params.out or root..'assets/water/'..cliff.faceFile(depth)..'.png'
 assert(out:lower():match('%.png$'),'out must name a PNG file')
 local stem=out:sub(1,-5)
 local layer_name=assert(app.params.layer,'layer=<painted layer index or name>')
@@ -13,13 +14,13 @@ local layer=assert(s.layers[tonumber(layer_name) or 0] or sourceFiles.layer(s,la
 local cel=assert(layer:cel(1),'painted cel missing')
 assert(layer.opacity==255 and cel.opacity==255,'paint must be full opacity')
 local paint=sourceFiles.canvas(s,cel)
-local names={'left','repeat','right'}
+local names=cliff.pieces
 local atlas=Image(#names*CELL,CELL,ColorMode.RGB)
 local pieces={}
 for i,name in ipairs(names) do
  local bounds
  for _,slice in ipairs(s.slices) do
-  if slice.name=='water_cliff_'..depth..'_'..name then bounds=slice.bounds end
+  if slice.name==cliff.slice(depth,name) then bounds=slice.bounds end
  end
  assert(bounds and bounds.width==CELL and bounds.height==CELL,CELL..'px '..depth..' slice missing: '..name)
  local tile=Image(paint,bounds)

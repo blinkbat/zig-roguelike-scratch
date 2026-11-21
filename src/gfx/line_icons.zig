@@ -278,7 +278,8 @@ fn polygon(comptime cx: f32, comptime cy: f32, comptime r: f32, comptime n: usiz
 
 fn corner(cx: f32, cy: f32, r: f32, n: usize, turn: f32, i: usize) [2]f32 {
     const a = mathx.spoke(@as(f32, @floatFromInt(i)) + turn, n) - std.math.pi / 2.0;
-    return .{ cx + r * @cos(a), cy + r * @sin(a) };
+    const u = mathx.polar(a);
+    return .{ cx + r * u[0], cy + r * u[1] };
 }
 
 const WAND = [_][4]f32{.{ 6, 26, 18, 14 }};

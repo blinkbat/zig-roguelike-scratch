@@ -5,7 +5,8 @@ import tempfile
 
 from PIL import Image, ImageDraw
 sys.dont_write_bytecode = True
-from art_support import ROOT, SCRIPTS, arial, corner_order, ground_layout, quote as q, water_cliff_layout, water_cliff_names
+from art_support import (ROOT, SCRIPTS, arial, corner_order, ground_layout, layer_names, quote as q, water_cliff_layer,
+                         water_cliff_layout, water_cliff_names, water_cliff_slice)
 
 
 parser = argparse.ArgumentParser()
@@ -15,7 +16,7 @@ parser.add_argument('--replace', action='store_true')
 args = parser.parse_args()
 if not args.replace and (args.output.exists() or args.output.with_suffix('.png').exists()):
     raise SystemExit('Preserving existing connected template; choose a new --output.')
-work =Path(tempfile.mkdtemp(prefix='cistern-connected-cliffs-'))
+work = Path(tempfile.mkdtemp(prefix='cistern-connected-cliffs-'))
 layout = water_cliff_layout()
 size = (layout['width'], layout['height'])
 block_x, block_y, stride, block, cell = (layout[key] for key in ('x', 'y', 'stride', 'block', 'cell'))
@@ -81,7 +82,7 @@ def layer(name, path, x=0, y=0, editable=True, visible=True):
 
 paper = Image.new('RGBA', size, (236, 234, 224, 255))
 paper.save(work / 'paper.png')
-layer('Paper - hide for transparent export', work / 'paper.png', editable=False)
+layer(layer_names()['paper'], work / 'paper.png', editable=False)
 layer('Labels and connection keys', work / 'labels.png', editable=False)
 for n, name in enumerate(names):
     source = args.shots / f'template-{n}.png'
@@ -94,7 +95,7 @@ for n, name in enumerate(names):
             pixels = im.convert('RGBA')
             assert pixels.getbbox(), f'Missing {label}'
             combined = pixels.copy() if combined is None else Image.alpha_composite(combined, pixels)
-        layer(name + ' - ' + label, part_source, block_x + n * stride, block_y)
+        layer(water_cliff_layer(cliff_names, name, label), part_source, block_x + n * stride, block_y)
     with Image.open(source) as im:
         assert combined.tobytes() == im.convert('RGBA').tobytes(), 'Layers differ from runtime assembly'
     for i, mask in enumerate(order):
@@ -102,12 +103,13 @@ for n, name in enumerate(names):
             f'local slice=s:newSlice(Rectangle({block_x+n*stride+(i%cols)*cell},{block_y+(i//cols)*cell},{cell},{cell}))',
             f'slice.name={q(f"transition_{n}_mask_{mask:02d}")}',
         ])
-for n, asset in enumerate(('shallows-cliff.png', 'water-cliff.png')):
-    layer(('Shallow' if n == 0 else 'Deep') + ' - original faces', ROOT / 'assets/water' / asset, block_x + n * stride, 496)
-    for i, name in enumerate(('left', 'repeat', 'right')):
+for n, (depth, asset) in enumerate(zip(cliff_names['depths'], cliff_names['face_files'])):
+    layer(water_cliff_layer(cliff_names, depth.capitalize(), 'original faces'), ROOT / 'assets/water' / f'{asset}.png',
+          block_x + n * stride, 496)
+    for i, piece in enumerate(cliff_names['pieces']):
         lua.extend([
             f'local slice=s:newSlice(Rectangle({block_x+n*stride+i*cell},496,{cell},{cell}))',
-            f'slice.name={q(f"water_cliff_{'shallow' if n==0 else 'deep'}_{name}")}',
+            f'slice.name={q(water_cliff_slice(cliff_names, depth, piece))}',
         ])
 layer('64px grid - toggle while painting', work / 'grid.png', editable=False, visible=False)
 lua.extend([

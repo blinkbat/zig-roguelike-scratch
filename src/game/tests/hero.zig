@@ -4,6 +4,7 @@ const progress = @import("../../play/progress.zig");
 const passives = @import("../../play/passives.zig");
 const mathx = @import("../../core/mathx.zig");
 const heroes = @import("../../play/hero.zig");
+const gas = @import("../../map/gas.zig");
 const actor = @import("../../play/actor.zig");
 const bow = @import("../../play/bow.zig");
 const juke = @import("../../play/juke.zig");
@@ -387,7 +388,7 @@ test "hero post-action death prevents gas spread and foe actions while clearing 
     harness.wakeFoes(g);
     const h = g.sim.heroActor().?;
     h.hp = 1;
-    g.sim.lv.addGas(from, @import("../../map/gas.zig").BURST);
+    g.sim.lv.addGas(from, gas.BURST);
     const lv = g.sim.lv;
     const rng = g.sim.rng;
     const foe = g.sim.pool.items[harness.foeSlot(0)];
@@ -577,7 +578,7 @@ test "the experience bar holds a turn's experience until the turn is drawn, then
     _ = g.sim.growth.gain(progress.xpOf(.rat) * 3);
     game.update(g, 0);
     try std.testing.expectEqual(@as(f32, 0), g.pic.xp_shown);
-    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    game.update(g, harness.GLIDED_S);
     const aim = g.sim.xpLevels();
     try std.testing.expect(g.pic.xp_shown > 0 and g.pic.xp_shown < aim);
     var t: f32 = 0;
@@ -1075,7 +1076,7 @@ test "unfocused recovery turns wait for focus while the current picture finishes
             const rng = g.sim.rng;
             g.pic.busy = game.GLIDE_S;
             g.st = .{ .focused = false };
-            for (0..3) |_| game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+            for (0..3) |_| game.update(g, harness.GLIDED_S);
             try std.testing.expect(g.pic.quiet());
             try std.testing.expectEqualDeep(clock, h.clock);
             try std.testing.expectEqualDeep(world_clock, g.sim.clock);

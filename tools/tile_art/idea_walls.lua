@@ -101,8 +101,8 @@ local function cell(mask)
         if y>LAST-edge(x,4) then return false end
       elseif y>=canopyFoot(x) then
         local t=trunk(x)
-        local flare=y>=60 and 1 or 0
-        if t<-flare or t>7+flare or y>62 then return false end
+        local flare=y>=LAST-3 and 1 or 0
+        if t<-flare or t>7+flare or y>LAST-1 then return false end
       end
     end
     local function round(cx,cy,r) local dx,dy=x-cx,y-cy; return dx*dx+dy*dy>r*r end
@@ -132,7 +132,7 @@ local function cell(mask)
           local by=r-1-band*7
           local xx=(x+({0,9,4})[band+1])%CELL
           local lx=xx%16
-          local last=band==2 and y>=62-edge(x,4)
+          local last=band==2 and y>=LAST-1-edge(x,4)
           if lx==0 or (by==0 and band>0) then pixel=P.out
           elseif lx==1 or by==1 then pixel=P.fl
           elseif lx==15 or by==6 or last then pixel=P.fd
@@ -276,9 +276,9 @@ end
 if LIQUID then cell=liquidCell end
 local sprite=assert(app.open(path))
 assert(sprite.width==masks.W and sprite.height==masks.SHEET_H)
-local under=sourceFiles.layer(sprite,'Underdrawing (25%)')
-local drawing=sourceFiles.layer(sprite,'Draw here')
-local ideas=sourceFiles.layer(sprite,'Ideas - hide before export')
+local under=sourceFiles.layer(sprite,sourceFiles.LAYER.under)
+local drawing=sourceFiles.layer(sprite,sourceFiles.LAYER.draw)
+local ideas=sourceFiles.layer(sprite,sourceFiles.LAYER.ideas)
 assert(under and drawing)
 local drawn=Image(drawing:cel(1).image)
 local drawnAt=Point(drawing:cel(1).position)
@@ -287,8 +287,7 @@ local byMask={}
 for i,mask in ipairs(masks) do
   local image=cell(mask)
   byMask[mask]=image
-  local x,y=masks.at(i)
-  sheet:drawImage(image,Point(x,masks.HEAD+y))
+  sheet:drawImage(image,Point(masks.sheetAt(i)))
 end
 for _,a in ipairs(masks) do for _,b in ipairs(masks) do
   if (a&bit.e)~=0 and (b&bit.w)~=0 then
@@ -301,7 +300,7 @@ local base=app.fs.fileTitle(path)
 sourceFiles.keep(path,work,'ideas',os.date(sourceFiles.STAMP))
 if not ideas then
   ideas=sprite:newLayer()
-  ideas.name='Ideas - hide before export'
+  ideas.name=sourceFiles.LAYER.ideas
   sprite:newCel(ideas,1,sheet,Point(0,0))
 else
   ideas:cel(1).image=sheet
@@ -314,8 +313,8 @@ sprite:saveAs(path)
 sprite:close()
 local reopened=assert(app.open(path))
 assert(reopened.width==masks.W and reopened.height==masks.SHEET_H,'Saved sheet dimensions changed')
-sourceFiles.checkLayer(reopened,'Ideas - hide before export',sheet,Point(0,0))
-sourceFiles.checkCel(reopened,'Draw here',drawn,drawnAt)
+sourceFiles.checkLayer(reopened,sourceFiles.LAYER.ideas,sheet,Point(0,0))
+sourceFiles.checkCel(reopened,sourceFiles.LAYER.draw,drawn,drawnAt)
 reopened:close()
 local map={
   '##############',
@@ -329,23 +328,4 @@ local map={
   '###..##......#',
   '##############',
 }
-local function wall(x,y)
-  if y<1 or y>#map or x<1 or x>#map[1] then return true end
-  return map[y]:sub(x,x)=='#'
-end
-local preview=Image(#map[1]*CELL,#map*CELL,ColorMode.RGB)
-for y=1,#map do for x=1,#map[1] do
-  local px,py=(x-1)*CELL,(y-1)*CELL
-  for yy=0,LAST do for xx=0,LAST do preview:putPixel(px+xx,py+yy,P.ground) end end
-end end
-for y=1,#map do for x=1,#map[1] do
-  if wall(x,y) then
-    local m=masks.of(wall,x,y)
-    local image=assert(byMask[m],'mask '..m)
-    for yy=0,LAST do for xx=0,LAST do
-      local p=image:getPixel(xx,yy)
-      if pc.rgbaA(p)>0 then preview:putPixel((x-1)*CELL+xx,(y-1)*CELL+yy,p) end
-    end end
-  end
-end end
-preview:saveAs(work..base..'-ideas-preview.png')
+masks.preview(byMask,P.ground,work..base..'-ideas-preview.png',map,true)

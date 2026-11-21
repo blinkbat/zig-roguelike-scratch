@@ -71,10 +71,8 @@ pub const Lens = struct {
         const p = self.program.?;
         raster.beginReplace();
         rl.beginShaderMode(p.shader);
-        shaders.setUniform(p.shader, p.screen, raster.sizeOf(source));
-        shaders.setUniform(p.shader, p.direction, direction);
+        shaders.setFields(p, .{ .screen = raster.sizeOf(source), .direction = direction, .finish = finish });
         shaders.setFields(p, self.options);
-        shaders.setUniform(p.shader, p.finish, finish);
         raster.drawTarget(source);
         rl.endShaderMode();
         rl.endBlendMode();

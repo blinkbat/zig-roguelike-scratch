@@ -171,7 +171,7 @@ const Art = struct {
     normals: ?rl.Texture2D,
 
     fn bare(t: rl.Texture2D) Art {
-        return .{ .id = t.id, .top = 0, .foot = @floatFromInt(t.height), .normals = null };
+        return .{ .id = t.id, .top = 0, .foot = raster.sizeOf(t)[1], .normals = null };
     }
 
     fn lessId(_: void, a: Art, b: Art) bool {

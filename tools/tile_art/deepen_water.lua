@@ -31,7 +31,7 @@ local function toned(p)
 end
 for _,l in ipairs(s.layers) do
   local cel=l:cel(1)
-  if l.name=='Draw here' or l.name==extension then
+  if l.name==sourceFiles.LAYER.draw or l.name==extension then
     assert(cel and l.opacity==255 and cel.opacity==255)
     local original=Image(cel.image)
     local image=Image(original)
@@ -45,13 +45,13 @@ for _,l in ipairs(s.layers) do
     shallow:drawImage(original,Point(position.x,position.y-groundPort.HEAD))
     deep:drawImage(image,Point(position.x,position.y-groundPort.HEAD))
     cel.image=image
-  elseif l.name=='Labels - hide before export' then
+  elseif l.name==sourceFiles.LAYER.labels then
     assert(cel)
     cel.image=Image(labels)
     cel.position=Point(0,0)
   end
 end
-assert(snapshots['Draw here'] and snapshots[extension] and changed>0)
+assert(snapshots[sourceFiles.LAYER.draw] and snapshots[extension] and changed>0)
 local path=install and desktop or work..'deep-water-draft.aseprite'
 s:saveAs(path)
 s:close()

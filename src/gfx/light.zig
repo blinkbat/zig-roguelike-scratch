@@ -4,6 +4,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
+const raster = @import("raster.zig");
 const sky = @import("sky.zig");
 const lume = @import("../map/lume.zig");
 const shadow = @import("shadow.zig");
@@ -723,7 +724,7 @@ pub const Light = struct {
 
     /// Screen pixels below `dest`'s top that texel row `row` of `tex` lands.
     pub fn artY(tex: rl.Texture2D, dest: rl.Rectangle, row: f32) f32 {
-        return row * dest.height / @as(f32, @floatFromInt(tex.height));
+        return row * dest.height / raster.sizeOf(tex)[1];
     }
 
     pub fn beginMirrorFade(self: *const Light, bounds: [2]f32) bool {

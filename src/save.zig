@@ -906,7 +906,7 @@ test "portable saves reject expired and off-map bolts in active and visited leve
     defer kept.deinit();
     var corrupt = std.ArrayList(u8).init(alloc);
     defer corrupt.deinit();
-    const range =actor.row(.cinder_imp).hurls.?.range;
+    const range = actor.row(.cinder_imp).hurls.?.range;
     for ([_]bool{ false, true }) |visited| {
         for ([_]@import("play/firebolt.zig").Bolt{
             .{ .from = .{ .x = 10, .y = 10 }, .toward = .{ .x = 30, .y = 10 }, .flown = @intCast(range) },
@@ -963,15 +963,15 @@ test "legacy saves convert on load and reject invalid native tags before changin
     const tail_at = VISITS_AT + source.sim.visited.count() * @sizeOf(RawVisit);
     const actor_at = tail_at + @sizeOf(RawLevel) + @offsetOf(actor.Pool, "items");
     const offsets = [_]usize{ actor_at + @offsetOf(actor.Actor, "kind"), actor_at + @offsetOf(actor.Actor, "alive") };
-    const map_hash = store.sum(std.mem.asBytes(into));
+    var kept = try format.Untouched.init(alloc, target, into);
+    defer kept.deinit();
     for (offsets) |offset| {
         const previous = old.items[offset];
         old.items[offset] = 255;
         old.shrinkRetainingCapacity(old.items.len - store.SUM);
         seal(&old);
         try std.testing.expectError(error.Damaged, read(old.items, target, into));
-        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
-        try std.testing.expectEqualStrings(source.sim.name.text(), target.sim.name.text());
+        try kept.expectKept();
         old.items[offset] = previous;
     }
 }

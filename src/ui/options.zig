@@ -25,7 +25,7 @@ pub fn index(page: Page, row: Row) usize {
     return std.mem.indexOfScalar(Row, rows(page), row).?;
 }
 
-pub const Pick = enum { visuals, display, fullscreen, debug };
+const Pick = enum { visuals, display, fullscreen, debug };
 
 pub fn pageOf(host: anytype) Page {
     return std.meta.stringToEnum(Page, @tagName(host)) orelse .main;
@@ -47,7 +47,7 @@ fn under(page: Page) ?usize {
 
 const Go = union(enum) { page: struct { to: Page, at: usize = 0 }, leave, fullscreen, debug };
 
-pub fn go(page: Page, back: bool, picked: ?Pick) ?Go {
+fn go(page: Page, back: bool, picked: ?Pick) ?Go {
     if (back) return if (under(page)) |at| .{ .page = .{ .to = .main, .at = at } } else .leave;
     return switch (picked orelse return null) {
         inline .visuals, .display => |p| .{ .page = .{ .to = @field(Page, @tagName(p)) } },
@@ -160,7 +160,7 @@ fn drag(c: *cinema.Cinema, row: Row, box: rl.Rectangle, x: i32) void {
     set(c, row, r.min + std.math.clamp((@as(f32, @floatFromInt(x)) - rail.x) / rail.width, 0, 1) * (r.max - r.min));
 }
 
-pub fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, screen: mathx.P, page: Page, display: *window.Display) ?Pick {
+fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, screen: mathx.P, page: Page, display: *window.Display) ?Pick {
     const entries = rows(page);
     if (!st.left_down or st.pointer == null or !st.focused or st.walk != null or st.scroll != 0) selection.dragging = null;
     const win = menu.window(screen.y, entries.len, @min(selection.at, entries.len - 1));

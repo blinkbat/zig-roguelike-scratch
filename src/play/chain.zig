@@ -2,7 +2,6 @@ const std = @import("std");
 const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
 const actor = @import("actor.zig");
-const spark = @import("spark.zig");
 const shock = @import("shock.zig");
 
 pub const COST: i32 = 4;
@@ -13,7 +12,7 @@ pub const VERB = "shocks";
 pub const BOLT = "chain lightning";
 pub const BOLT_RANGE: i32 = 6;
 pub const TAKES = shock.TAKES;
-pub const ELEMENT = spark.ELEMENT;
+pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {d}% chance to shock each.", .{ JUMPS, JUMP_RANGE, CHANCE });
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 5 };

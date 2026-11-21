@@ -15,6 +15,7 @@ const SIZE_MAX: u8 = 10;
 const MARGIN: i32 = 2;
 pub const Entry = struct { kind: actor.Kind = .rat, weight: u8 = 1 };
 pub const Side = enum { n, e, s, w };
+pub const TorchOrigin = enum { rolled, authored };
 pub const Spec = struct {
     pub const COUNTED = .{.{ "pool", "pool_n" }};
     at: P = .{ .x = 40, .y = 18 },
@@ -42,7 +43,7 @@ pub const Spec = struct {
         buf[0] = s.reserved();
         const k = s.key orelse return buf[0..1];
         buf[1] = grid.Box.sized(k, 1, 1);
-        return buf[0..2];
+        return buf;
     }
 
     pub fn reserves(s: *const Spec, p: P) bool {
@@ -116,22 +117,18 @@ pub const Spec = struct {
 
     pub fn keyReachable(s: *const Spec, distances: *const [grid.CELLS]i32) bool {
         const at = s.key orelse return true;
-        return grid.anyNeighbour(at, distances, reachedAt);
+        return grid.reachedBeside(at, distances);
     }
 
-    fn reachedAt(distances: *const [grid.CELLS]i32, p: P) bool {
-        return grid.cellOr(i32, distances, p, -1) >= 0;
-    }
-
-    pub fn stamp(s: *const Spec, lv: *grid.Level) void {
+    fn stamp(s: *const Spec, lv: *grid.Level) void {
         s.stampAround(lv, null);
     }
 
-    pub fn stampAround(s: *const Spec, lv: *grid.Level, authored: ?*const grid.CellSet) void {
-        s.stampToward(lv, authored, null);
+    fn stampAround(s: *const Spec, lv: *grid.Level, authored: ?*const grid.CellSet) void {
+        s.stampToward(lv, authored, null, .rolled);
     }
 
-    pub fn stampToward(s: *const Spec, lv: *grid.Level, authored: ?*const grid.CellSet, entrance: ?P) void {
+    pub fn stampToward(s: *const Spec, lv: *grid.Level, authored: ?*const grid.CellSet, entrance: ?P, torches: TorchOrigin) void {
         const r = s.room();
         var outside = grid.CellSet.initEmpty();
         var protected = grid.CellSet.initEmpty();
@@ -193,18 +190,18 @@ pub const Spec = struct {
             const torch = lume.torchOver(inner, x);
             if (!gen.bearsTorch(lv, torch)) continue;
             if (lv.torch.has(torch)) return;
-            if (!lv.torch.takes(torch)) evictTorch(lv, authored);
+            if (!lv.torch.takes(torch) and !evictTorch(lv, authored, torches)) return;
             lv.addTorch(torch);
             return;
         }
     }
 
-    fn evictTorch(lv: *grid.Level, authored: ?*const grid.CellSet) void {
-        const t = &lv.torch;
-        const i = for (t.slice(), 0..) |p, i| {
-            if (authored == null or !inSet(authored.?, p)) break i;
-        } else 0;
-        mathx.removeAt(P, &t.at, &t.n, i, null);
+    fn evictTorch(lv: *grid.Level, authored: ?*const grid.CellSet, torches: TorchOrigin) bool {
+        return torches == .rolled and lv.torch.evictFirst(authored, pinned);
+    }
+
+    fn pinned(authored: ?*const grid.CellSet, p: P) bool {
+        return if (authored) |set| grid.inSet(set, p) else false;
     }
 
     fn relate(lv: *const grid.Level, stretches: *const carve.Stretches, related: *carve.Regions, near: anytype) void {
@@ -212,16 +209,12 @@ pub const Spec = struct {
         while (it.next()) |p| if (lv.walkable(p)) related.set(stretches.of(p));
     }
 
-    fn inSet(set: *const grid.CellSet, p: P) bool {
-        return set.isSet(grid.Level.idx(p));
-    }
-
     fn connectTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet, protected: *const grid.CellSet, authored: ?*const grid.CellSet) void {
         if (targets.count() == 0) return;
         var dist: [grid.CELLS]i32 = undefined;
         var reach: [grid.CELLS]u32 = undefined;
         var flood = grid.Flood.init(lv, from, &dist, &reach);
-        if (flood.first(targets, inSet) != null) return;
+        if (flood.first(targets, grid.inSet) != null) return;
         if (!s.carveTo(lv, from, targets, protected, authored)) _ = s.carveTo(lv, from, targets, &grid.CellSet.initEmpty(), authored);
     }
 
@@ -317,6 +310,14 @@ fn walledRoom(lv: *grid.Level, b: grid.Box) void {
     carve.outline(lv, b, .wall);
 }
 
+fn fillTorches(lv: *grid.Level) void {
+    for (0..grid.MAX_TORCHES) |k| {
+        const w = P{ .x = 2 + 2 * @as(i32, @intCast(k)), .y = 2 };
+        lv.set(w, .wall);
+        lv.addTorch(w);
+    }
+}
+
 fn expectWalledRoom(lv: *const grid.Level, b: grid.Box) !void {
     var it = b.cells();
     while (it.next()) |p| try std.testing.expectEqual(if (b.onEdge(p)) grid.Tile.wall else grid.Tile.floor, lv.at(p));
@@ -346,7 +347,7 @@ test "a zoo connects an isolated map edge entrance without opening other rim cel
         var lv = grid.Level.blank();
         @memset(&lv.tile, .rock);
         lv.set(entrance, .floor);
-        s.stampToward(&lv, null, entrance);
+        s.stampToward(&lv, null, entrance, .rolled);
         try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(s.approach())));
         for (0..grid.CELLS) |i| {
             const p = grid.Level.of(i);
@@ -362,22 +363,18 @@ test "a zoo behind a sealed strip spanning the map still connects its gate" {
     const entrance = P{ .x = 1, .y = 21 };
     for (1..20) |x| lv.set(.{ .x = @intCast(x), .y = 21 }, .floor);
     for (2..grid.H - 2) |y| lv.set(.{ .x = 22, .y = @intCast(y) }, .floor);
-    s.stampToward(&lv, null, entrance);
+    s.stampToward(&lv, null, entrance, .rolled);
     try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(s.approach())));
 }
 
 test "a zoo's torch in a full pool evicts a generated torch, never an authored one, and none when its wall already bears one" {
     const s = Spec{};
     var lv = grid.openFloor();
-    var authored = grid.CellSet.initEmpty();
-    for (0..grid.MAX_TORCHES) |k| {
-        const w = P{ .x = 2 + 2 * @as(i32, @intCast(k)), .y = 2 };
-        lv.set(w, .wall);
-        lv.addTorch(w);
-        if (k + 1 == grid.MAX_TORCHES) authored.set(grid.Level.idx(w));
-    }
+    fillTorches(&lv);
     const last = lv.torch.at[grid.MAX_TORCHES - 1];
     const first = lv.torch.at[0];
+    var authored = grid.CellSet.initEmpty();
+    authored.set(grid.Level.idx(last));
     s.stampAround(&lv, &authored);
     try std.testing.expectEqual(grid.MAX_TORCHES, lv.torch.n);
     try std.testing.expect(lv.torch.has(last));
@@ -385,6 +382,20 @@ test "a zoo's torch in a full pool evicts a generated torch, never an authored o
     const before = lv.torch;
     s.stampAround(&lv, &authored);
     try std.testing.expectEqualSlices(P, before.slice(), lv.torch.slice());
+}
+
+test "a zoo's torch in a full pool of only authored torches is left out" {
+    const s = Spec{};
+    var lv = grid.openFloor();
+    fillTorches(&lv);
+    var all = grid.CellSet.initEmpty();
+    for (lv.torch.slice()) |w| all.set(grid.Level.idx(w));
+    const before = lv.torch;
+    var bespoke = lv;
+    s.stampAround(&lv, &all);
+    try std.testing.expectEqualSlices(P, before.slice(), lv.torch.slice());
+    s.stampToward(&bespoke, null, null, .authored);
+    try std.testing.expectEqualSlices(P, before.slice(), bespoke.torch.slice());
 }
 
 test "a zoo's reserved boxes hold exactly the cells it reserves, its key's among them" {

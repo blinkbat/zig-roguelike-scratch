@@ -33,8 +33,7 @@ const SIGHT = .{ .soft = "r", .open = "g", .weight = "b", .ground = "a" };
 pub const SIGHT_FS = shaders.channelDefines(SIGHT) ++ shaders.glslConsts(.{ .OPEN_WHOLE = OPEN_WHOLE }) ++
     \\float exactSight(sampler2D sight, vec2 p) {
     \\    vec2 i = floor(p - 0.5), f = fract(p - 0.5);
-    \\    vec4 s = mix(mix(mapTexel(sight, i), mapTexel(sight, i + vec2(1.0, 0.0)), f.x),
-    \\                 mix(mapTexel(sight, i + vec2(0.0, 1.0)), mapTexel(sight, i + vec2(1.0)), f.x), f.y);
+    \\    vec4 s = mapBilerp(sight, i, f);
     \\    if (mapTexel(sight, p).GROUND < 0.5 || s.WEIGHT <= 0.0) return s.SOFT;
     \\    return mix(s.SOFT, s.OPEN / s.WEIGHT, min(1.0, s.WEIGHT * OPEN_WHOLE));
     \\}

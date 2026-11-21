@@ -2,11 +2,12 @@ import hashlib
 import os
 import unittest
 
-from art_support import WorkTest, arguments, aseprite, main, read_locked, run_lua
+from art_support import WorkTest, arguments, aseprite, main, read_locked, run_lua, sheet_sizes_lua
 
 
 args, remaining = arguments()
 DEEPEN = args.scripts_dir / 'deepen_water.lua'
+SIZES = sheet_sizes_lua(args.scripts_dir)
 
 
 class DeepenWaterTests(WorkTest):
@@ -21,7 +22,7 @@ class DeepenWaterTests(WorkTest):
         for name in ('source_files.lua', 'ground_port.lua', 'ground_layout.lua'):
             (helpers / name).write_bytes((args.scripts_dir / name).read_bytes())
         self.run_lua('''
-local s=Sprite(512,320,ColorMode.RGB)
+local s=Sprite(GROUND_W,GROUND_H,ColorMode.RGB)
 s.layers[1].name='Draw here'
 local paint=Image(2,2,ColorMode.RGB)
 paint:putPixel(0,0,app.pixelColor.rgba(91,122,153,255))
@@ -36,7 +37,7 @@ for i=1,16 do
  slice.name='Corners '..(i-1)
 end
 s:saveAs(app.params.source); s:close()
-local labels=Image(512,320,ColorMode.RGB)
+local labels=Image(GROUND_W,GROUND_H,ColorMode.RGB)
 labels:putPixel(12,8,app.pixelColor.rgba(40,50,60,255))
 labels:saveAs(app.params.labels)
 ''')
@@ -55,12 +56,12 @@ labels:saveAs(app.params.labels)
         return aseprite(args.aseprite, script, self.params(install), timeout=None)
 
     def run_lua(self, source):
-        result = run_lua(args.aseprite, self.work / 'fixture.lua', source, self.params(), timeout=None)
+        result = run_lua(args.aseprite, self.work / 'fixture.lua', SIZES + source, self.params(), timeout=None)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_existing_reference_paint_is_preserved_without_installing(self):
         self.run_lua('''
-local s=Sprite(512,320,ColorMode.RGB)
+local s=Sprite(GROUND_W,GROUND_H,ColorMode.RGB)
 s.layers[1].name='Draw here'
 local reference=s:newLayer(); reference.name='Owner painted reference'
 local paint=Image(1,1,ColorMode.RGB)
@@ -136,7 +137,7 @@ source:close()
     @unittest.skipUnless(os.name == 'nt', 'Windows file sharing failure')
     def test_locked_stale_draft_with_missing_artwork_cannot_pass_validation(self):
         self.run_lua('''
-local s=Sprite(512,320,ColorMode.RGB)
+local s=Sprite(GROUND_W,GROUND_H,ColorMode.RGB)
 s.layers[1].name='Unrelated old draft'
 s:saveAs(app.params.work..'/deep-water-draft.aseprite'); s:close()
 ''')

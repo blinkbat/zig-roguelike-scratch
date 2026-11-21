@@ -156,7 +156,7 @@ pub fn rowAt(row: anytype) usize {
     return std.mem.indexOfScalar(Row, std.enums.values(Row), row).?;
 }
 
-const Log = journal.Log;
+const Log = @import("play/log.zig").Log;
 
 pub const Game = struct {
     sim: simulation.Simulation,
@@ -247,7 +247,10 @@ pub fn boot(alloc: std.mem.Allocator) !*Game {
 }
 
 pub fn keepVisit(g: *Game, node: usize) void {
-    g.sim.visits[node] = .{ .lv = g.sim.lv, .pool = g.sim.pool, .facing = g.pic.facing, .ground = g.sim.ground };
+    const v = &g.sim.visits[node];
+    inline for (std.meta.fields(simulation.Visit)) |f| {
+        if (comptime @hasField(simulation.Simulation, f.name)) @field(v, f.name) = @field(g.sim, f.name) else @field(v, f.name) = @field(g.pic, f.name);
+    }
     g.sim.visited.set(node);
     g.sim.visits_changed.set(node);
 }
@@ -533,6 +536,7 @@ fn settleKept(g: *Game) void {
     g.pic.snapGlide(&g.sim.pool);
     g.pic.catchUp(&g.sim);
     g.pic.snapSight(&g.sim);
+    g.pic.rememberChests(&g.sim);
     g.pic.settleResources(&g.sim);
     g.cam = camWant(g);
     g.pic.settleSky(&g.sim);

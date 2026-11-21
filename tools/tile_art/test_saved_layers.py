@@ -2,10 +2,11 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import arguments, aseprite, main, run_lua
+from art_support import arguments, aseprite, main, run_lua, sheet_sizes_lua
 
 
 args, remaining = arguments()
+SIZES = sheet_sizes_lua(args.scripts_dir)
 
 WRAPPER = r'''
 local nativeApp=app
@@ -35,7 +36,7 @@ print('PUBLICATION_COMPLETE')
 '''
 
 WALL_FIXTURE = r'''
-local s=Sprite(512,448,ColorMode.RGB)
+local s=Sprite(WALL_W,WALL_H,ColorMode.RGB)
 local function layer(name)
  local l=s:newLayer(); l.name=name
  local im=Image(2,2,ColorMode.RGB)
@@ -78,8 +79,8 @@ local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local original=Image(authored:cel(1).image)
 local position=Point(authored:cel(1).position)
 local function generated(color)
- local im=Image(512,448,ColorMode.RGB)
- im:putPixel(0,0,color); im:putPixel(511,447,color)
+ local im=Image(WALL_W,WALL_H,ColorMode.RGB)
+ im:putPixel(0,0,color); im:putPixel(WALL_W-1,WALL_H-1,color)
  im:putPixel(70,130,color)
  return im
 end
@@ -178,9 +179,9 @@ class SavedLayerTests(unittest.TestCase):
             destination = work / 'sheet.aseprite'
             params = dict(source=destination, work=work.as_posix() + '/',
                           root=args.root.as_posix() + '/')
-            self.fixture(work, WALL_FIXTURE, source=destination,
+            self.fixture(work, SIZES + WALL_FIXTURE, source=destination,
                          existing='yes' if existing else 'no')
-            self.publication(work, WALL_SETUP + generated + body, destination, blocked, **params)
+            self.publication(work, SIZES + WALL_SETUP + generated + body, destination, blocked, **params)
             self.assertTrue(list(work.glob('*before-*.aseprite')))
             if blocked:
                 self.assertFalse((work / 'ported-pixel-validation.txt').exists())

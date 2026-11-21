@@ -66,9 +66,9 @@ pub fn textFace(face: *const font.Face) prompt_text.Face {
     return .{ .face = face };
 }
 
-/// Modals disable underlying hits; opening one suppresses its own first-frame hits.
 const Hot = struct { hot: bool, hit: bool };
 
+/// Modals disable underlying hits.
 pub fn hot(controls: Controls, r: rl.Rectangle, live: bool, modal: bool, tip: ?[:0]const u8) Hot {
     const on_layer = controls.accepting and (modal or !controls.covered);
     const in_clip = if (controls.clip) |c| raster.holds(c, controls.pointer) else true;

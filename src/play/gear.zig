@@ -166,11 +166,7 @@ pub const Gear = struct {
         for (self.slots.values) |maybe| if (maybe) |it| {
             for (it.mods) |m| if (m) |a| if (a.kind == .imbue) out.imbue(a.element, @intCast(a.value));
         };
-        const fixed = (held.innate orelse return out).effect();
-        out.bleed += fixed.bleed;
-        out.bleed_damage = fixed.bleed_damage;
-        out.stun = fixed.stun;
-        out.penetration += fixed.penetration;
+        out.add((held.innate orelse return out).effect());
         return out;
     }
 

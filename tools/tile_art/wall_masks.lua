@@ -9,6 +9,10 @@ masks.FACE=23
 masks.W,masks.H=masks.COLS*masks.CELL,math.ceil(#masks/masks.COLS)*masks.CELL
 masks.SHEET_H=masks.HEAD+masks.H
 function masks.at(i) return ((i-1)%masks.COLS)*masks.CELL,(i-1)//masks.COLS*masks.CELL end
+function masks.sheetAt(i)
+  local x,y=masks.at(i)
+  return x,masks.HEAD+y
+end
 function masks.sides(mask)
   return (mask&N)~=0,(mask&E)~=0,(mask&S)~=0,(mask&W)~=0,(mask&NE)~=0,(mask&SE)~=0,(mask&SW)~=0,(mask&NW)~=0
 end
@@ -20,5 +24,29 @@ function masks.of(filled,x,y)
   if s and w and filled(x-1,y+1) then m=m|SW end
   if n and w and filled(x-1,y-1) then m=m|NW end
   return m
+end
+function masks.checkJoined(image,mask,lo,hi,sides)
+  local last=masks.CELL-1
+  local joined=mask&(sides or N|E|S|W)
+  for a=lo,hi do
+    for _,side in ipairs({{N,a,0,'north'},{E,last,a,'east'},{S,a,last,'south'},{W,0,a,'west'}}) do
+      if (joined&side[1])~=0 then assert(app.pixelColor.rgbaA(image:getPixel(side[2],side[3]))==255,side[4]..' gap '..mask) end
+    end
+  end
+end
+function masks.preview(cells,background,path,map,outside)
+  local function filled(x,y)
+    if y<1 or y>#map or x<1 or x>#map[y] then return outside or false end
+    return map[y]:sub(x,x)=='#'
+  end
+  local preview=Image(#map[1]*masks.CELL,#map*masks.CELL,ColorMode.RGB)
+  preview:clear(background)
+  for y=1,#map do for x=1,#map[1] do
+    if filled(x,y) then
+      local m=masks.of(filled,x,y)
+      preview:drawImage(assert(cells[m],'mask '..m),Point((x-1)*masks.CELL,(y-1)*masks.CELL))
+    end
+  end end
+  preview:saveAs(path)
 end
 return masks

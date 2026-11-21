@@ -335,9 +335,10 @@ const LevelUp = struct {
             const t = @max(0, self.age() - phase * GLINT_STAGGER_S);
             const theta = seed * GOLDEN_ANGLE + t * GLINT_SPIN;
             const radius = GLINT_R[0] + phase * GLINT_R[1] + t * GLINT_R[2];
+            const spin = heading(theta);
             const spark = screen(.{
-                at[0] + @cos(theta) * radius,
-                at[1] + @sin(theta) * radius * GLINT_FLAT,
+                at[0] + spin[0] * radius,
+                at[1] + spin[1] * radius * GLINT_FLAT,
                 GLINT_LIFT[0] + phase * GLINT_LIFT[1] + t * (GLINT_CLIMB[0] + phase * GLINT_CLIMB[1]),
             }, ox, oy, cell);
             const shine = @max(0, @sin(t * GLINT_TWINKLE_RAD_S + seed * GLINT_TWINKLE_PHASE));
@@ -873,8 +874,9 @@ pub const Fx = struct {
                 .vapor => pixel.haze(at, r, k, @as(f32, @floatFromInt(i)) * 1.7 + age * 1.2, ink),
                 .leaf => {
                     const turn = @as(f32, @floatFromInt(i)) * 2.4 + age * 4;
-                    const dx = @cos(turn) * r * k;
-                    const dy = @sin(turn) * r * k;
+                    const u = heading(turn);
+                    const dx = u[0] * r * k;
+                    const dy = u[1] * r * k;
                     pixel.line(.{ .x = at.x - dx, .y = at.y - dy }, .{ .x = at.x + dx, .y = at.y + dy }, 1, k, ink);
                 },
                 .droplet => pixel.oval(at, r * 2, r * 2, k, ink),
@@ -1217,7 +1219,7 @@ pub fn hookCellClip(p: mathx.P, origin: [2]f32, cell: f32) grid.Box {
 
 test "hook chain clips follow its height across visibility boundaries" {
     const p = mathx.P{ .x = 20, .y = 21 };
-    for ([_]f32{ 64, 128 }) |cell| {
+    for ([_]f32{ look.SPRITE_PX, 2 * look.SPRITE_PX }) |cell| {
         for ([_][2]f32{ .{ 0, 0 }, .{ -713, -850 }, .{ 15, 27 } }) |origin| {
             const clip = hookCellClip(p, origin, cell);
             const visible = projected(.{ 20.5, 21.1 }, origin[0], origin[1], cell);
@@ -1264,8 +1266,7 @@ const NET_R: f32 = 8;
 pub fn drawNetFaded(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     const p = projected(at, ox, oy, cell);
     const k = pxScale(cell);
-    const c = @cos(t * NET_SPIN);
-    const s = @sin(t * NET_SPIN);
+    const c, const s = heading(t * NET_SPIN);
     const Mesh = struct {
         p: rl.Vector2,
         c: f32,

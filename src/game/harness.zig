@@ -200,6 +200,12 @@ pub fn aimAt(g: *game.Game, act: skillbar.Act, at: P) void {
     if (g.mode == .aim and g.mode.aim.askedHere()) skills.confirmAim(g);
 }
 
+pub fn markSpan(g: *game.Game) void {
+    g.mode.aim.mark = .{ .x = 23, .y = 19 };
+    skills.confirmAim(g);
+    g.mode.aim.mark = .{ .x = 23, .y = 21 };
+}
+
 pub fn boundTo(g: *const game.Game, act: skillbar.Act) skills.Use {
     return skills.Use.bound(g.bar, act);
 }
@@ -230,6 +236,10 @@ pub fn retile(lv: *grid.Level, from: grid.Tile, to: grid.Tile) void {
     for (&lv.tile) |*t| {
         if (t.* == from) t.* = to;
     }
+}
+
+pub fn nonZero(comptime T: type, cells: []const T) usize {
+    return cells.len - std.mem.count(T, cells, &.{0});
 }
 
 pub fn expectWithin(v: anytype, lo: @TypeOf(v), hi: @TypeOf(v)) !void {
@@ -383,8 +393,12 @@ pub fn meleeThenFoeAttacks(g: *const game.Game, target: u16, attackers: []const 
 
 pub fn nudge(g: *game.Game, d: mathx.Dir) void {
     calm(g);
+    walkBusy(g, d, 0);
+}
+
+pub fn walkBusy(g: *game.Game, d: mathx.Dir, dt: f32) void {
     g.st = .{ .walk = d };
-    game.update(g, 0);
+    game.update(g, dt);
 }
 
 pub fn walkFrame(g: *game.Game, dt: f32, d: ?mathx.Dir) void {
@@ -407,6 +421,7 @@ pub const TEST_DT = mathx.TEST_DT;
 pub const TEST_TOL: f32 = TEST_DT * 1.5;
 pub const FADING_S: f32 = 0.04;
 pub const FADED_S: f32 = 0.6;
+pub const GLIDED_S: f32 = game.GLIDE_S + mathx.FRAME_DT;
 const FADE_FRAMES: usize = @intFromFloat(@ceil(FADED_S / TEST_DT));
 pub const FADED: f32 = 0.99;
 pub const UNFADED: f32 = 0.01;
@@ -440,6 +455,18 @@ pub fn untilCaughtUp(g: *game.Game, slots: []const usize) f32 {
         }
     };
     return framesWhile(g, UNTIL_CAP_S, AllCaughtUp{ .slots = slots });
+}
+
+pub const STANDING_CAP_FRAMES: usize = 200;
+
+pub fn whileStanding(g: *game.Game, slot: usize, ctx: anytype) !usize {
+    var frames: usize = 0;
+    while (!g.pic.pictured[slot].down()) : (frames += 1) {
+        try std.testing.expect(frames < STANDING_CAP_FRAMES);
+        try ctx.check(g);
+        game.update(g, TEST_DT);
+    }
+    return frames;
 }
 
 pub fn idleFor(g: *game.Game, secs: f32) void {

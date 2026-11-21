@@ -8,8 +8,7 @@ out, title = sys.argv[1], sys.argv[2]
 order = corner_order()
 layout = ground_layout()
 
-W, HEAD, CELL, COLS = layout['W'], layout['HEAD'], layout['CELL'], layout['COLS']
-H = HEAD + COLS * CELL
+W, H, HEAD, CELL, COLS = layout['W'], layout['H'], layout['HEAD'], layout['CELL'], layout['COLS']
 image = Image.new('RGBA', (W, H))
 draw = ImageDraw.Draw(image)
 sheet_title(draw, title)

@@ -15,7 +15,7 @@ local sprite=assert(app.open(source))
 local changed=0
 local tonedLayers={}
 for _,layer in ipairs(sprite.layers) do
-  if layer.name=='Draw here' or layer.name=='Forest extensions' then
+  if layer.name==sourceFiles.LAYER.draw or layer.name==sourceFiles.LAYER.forest then
     local cel=assert(layer:cel(1))
     local image=Image(cel.image)
     for pixel in image:pixels() do

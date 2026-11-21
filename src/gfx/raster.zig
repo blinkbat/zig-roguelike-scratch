@@ -20,6 +20,10 @@ pub fn extentOf(t: rl.Texture2D) mathx.P {
     return .{ .x = t.width, .y = t.height };
 }
 
+pub fn textureOf(id: c_uint, w: c_int, h: c_int) rl.Texture2D {
+    return .{ .id = id, .width = w, .height = h, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+}
+
 pub fn uvOf(t: rl.Texture2D, r: rl.Rectangle) [4]f32 {
     const w, const h = sizeOf(t);
     return .{ r.x / w, r.y / h, r.width / w, r.height / h };
@@ -188,7 +192,7 @@ pub fn drawTarget(t: rl.Texture2D) void {
 }
 
 pub fn drawTargetPart(t: rl.Texture2D, r: rl.Rectangle, tint: rl.Color) void {
-    const h: f32 = @floatFromInt(t.height);
+    const h = sizeOf(t)[1];
     rl.drawTextureRec(t, .{ .x = r.x, .y = h - r.y - r.height, .width = r.width, .height = -r.height }, .{ .x = r.x, .y = r.y }, tint);
 }
 

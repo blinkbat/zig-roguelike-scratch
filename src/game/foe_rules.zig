@@ -240,7 +240,7 @@ test "quickstep cannot cross blocked terrain or move a held netter" {
     body.quickstep_in = 1;
     try std.testing.expect(quickstep(&run.sim, id, none) == null);
     body.quickstep_in = 0;
-    for (mathx.ALL_DIRS) |d| run.sim.lv.set(from.add(d.delta()), .wall);
+    harness.hemIn(&run.sim.lv, from, null);
     const rng = run.sim.rng;
     try std.testing.expect(quickstep(&run.sim, id, none) == null);
     try std.testing.expectEqualDeep(rng, run.sim.rng);

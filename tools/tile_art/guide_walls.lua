@@ -17,9 +17,9 @@ local cap=pc.rgba(152,152,152,255)
 local face=pc.rgba(96,96,96,255)
 local sprite=assert(app.open(path))
 assert(sprite.width==masks.W and sprite.height==masks.SHEET_H and #sprite.slices==#masks)
-local under=sourceFiles.layer(sprite,'Underdrawing (25%)')
-local exact=sourceFiles.layer(sprite,'Exact connection guide (hidden)')
-local drawing=sourceFiles.layer(sprite,'Draw here')
+local under=sourceFiles.layer(sprite,sourceFiles.LAYER.under)
+local exact=sourceFiles.layer(sprite,sourceFiles.LAYER.exact)
+local drawing=sourceFiles.layer(sprite,sourceFiles.LAYER.draw)
 assert(under and exact and drawing)
 local drawn=Image(drawing:cel(1).image)
 local drawnAt=Point(drawing:cel(1).position)
@@ -63,16 +63,15 @@ local function sheet(faced)
     if NORTH then cell:flip(FlipType.VERTICAL) end
     for _,other in ipairs(cells) do assert(not cell:isEqual(other),'duplicate cell '..mask) end
     cells[#cells+1]=cell
-    local x,y=masks.at(i)
-    image:drawImage(cell,Point(x,masks.HEAD+y))
+    image:drawImage(cell,Point(masks.sheetAt(i)))
   end
   return image
 end
 for _,slice in ipairs(sprite.slices) do
   local i=assert(tonumber(slice.name:match('^Connection (%d+)$')),slice.name)
   local b=slice.bounds
-  local x,y=masks.at(i)
-  assert(b.x==x and b.y==masks.HEAD+y and b.width==masks.CELL and b.height==masks.CELL,slice.name)
+  local x,y=masks.sheetAt(i)
+  assert(b.x==x and b.y==y and b.width==masks.CELL and b.height==masks.CELL,slice.name)
 end
 local base=app.fs.fileTitle(path)
 sourceFiles.keep(path,work,'full-cell',os.date(sourceFiles.STAMP))
@@ -87,8 +86,8 @@ sprite:saveAs(path)
 sprite:close()
 local reopened=assert(app.open(path))
 assert(reopened.width==masks.W and reopened.height==masks.SHEET_H,'Saved sheet dimensions changed')
-sourceFiles.checkLayer(reopened,'Underdrawing (25%)',sheet(true),Point(0,0))
-sourceFiles.checkLayer(reopened,'Exact connection guide (hidden)',sheet(false),Point(0,0))
-sourceFiles.checkCel(reopened,'Draw here',drawn,drawnAt)
+sourceFiles.checkLayer(reopened,sourceFiles.LAYER.under,sheet(true),Point(0,0))
+sourceFiles.checkLayer(reopened,sourceFiles.LAYER.exact,sheet(false),Point(0,0))
+sourceFiles.checkCel(reopened,sourceFiles.LAYER.draw,drawn,drawnAt)
 reopened:saveCopyAs(work..base..'-full-cell.png')
 reopened:close()

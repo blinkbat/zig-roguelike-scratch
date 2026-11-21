@@ -2,21 +2,21 @@ local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local path=app.params.source or sourceFiles.DESKTOP..'regular-walls.aseprite'
 local work=sourceFiles.work()
-local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bit=masks.bit
 local CELL,LAST=masks.CELL,masks.CELL-1
 local sprite=assert(app.open(path))
 assert(sprite.width==masks.W and sprite.height==masks.SHEET_H)
 local authored=sourceFiles.layer(sprite,'Layer 1')
-local extension=sourceFiles.layer(sprite,'Pixel extension - copied colors, chips and bricks') or sourceFiles.layer(sprite,'Extension - ported painted edges')
-local drawing=sourceFiles.layer(sprite,'Draw here')
+local extension=sourceFiles.layer(sprite,'Pixel extension - copied colors, chips and bricks') or sourceFiles.layer(sprite,sourceFiles.LAYER.ported)
+local drawing=sourceFiles.layer(sprite,sourceFiles.LAYER.draw)
 assert(authored and extension and drawing)
 local original=Image(authored:cel(1).image)
 local position=Point(authored:cel(1).position)
 local wall=dofile(root..'tools/tile_art/wall_strips.lua')(original,position,masks)
 local source,tan,sample,sideRow,decorate=wall.source,wall.tan,wall.sample,wall.sideRow,wall.decorate
-local function brick(x,y) return sample(154+x%32,99+y) end
+local brick,faceEdge,side,capTop,capCorner=wall.brick,wall.faceEdge,wall.side,wall.capTop,wall.capCorner
+local EDGE,CAP=wall.EDGE,wall.CAP
 local bits={{bit.nw,bit.n,bit.ne},{bit.w,0,bit.e},{bit.sw,bit.s,bit.se}}
 local function blob(mask)
   local image=Image(CELL,CELL,ColorMode.RGB)
@@ -43,16 +43,16 @@ local function blob(mask)
       for a=y,0,-1 do if not inside(x,a) then top=a+1; break end end
       local dx,ex,dy=x-left,right-x,y-top
       if not cap(x,y) then
-        local by=y-low[x]+10
-        pixel=brick(x,by)
-        if left>0 and dx<4 then pixel=sample(18+dx,99+by) end
-        if right<LAST and ex<4 then pixel=sample(43-ex,99+by) end
+        local row=wall.FACE_TOP+y-low[x]+10
+        pixel=brick(x,row)
+        if left>0 and dx<EDGE then pixel=faceEdge(false,dx,row) end
+        if right<LAST and ex<EDGE then pixel=faceEdge(true,ex,row) end
       else
-        if top>0 and dy<6 then pixel=sample(160+x%32,83+dy) end
-        if left>0 and dx<4 then pixel=sample(83+dx,sideRow(y)) end
-        if right<LAST and ex<4 then pixel=sample(108-ex,sideRow(y)) end
-        if top>0 and dy<6 and left>0 and dx<6 then pixel=sample(18+dx,83+dy) end
-        if top>0 and dy<6 and right<LAST and ex<6 then pixel=sample(43-ex,83+dy) end
+        if top>0 and dy<CAP then pixel=capTop(x,dy) end
+        if left>0 and dx<EDGE then pixel=side(false,dx,sideRow(y)) end
+        if right<LAST and ex<EDGE then pixel=side(true,ex,sideRow(y)) end
+        if top>0 and dy<CAP and left>0 and dx<CAP then pixel=capCorner(false,dx,dy) end
+        if top>0 and dy<CAP and right<LAST and ex<CAP then pixel=capCorner(true,ex,dy) end
       end
       image:putPixel(x,y,pixel)
     end
@@ -64,30 +64,23 @@ local completed=Image(masks.W,masks.SHEET_H,ColorMode.RGB)
 local blobs={}
 for i,mask in ipairs(masks) do
   blobs[i]=blob(mask)
-  local x,y=masks.at(i)
-  if i>3 then completed:drawImage(blobs[i],Point(x,masks.HEAD+y)) end
+  if i>3 then completed:drawImage(blobs[i],Point(masks.sheetAt(i))) end
 end
-local repairX,repairY=masks.at(2)
-for x=0,LAST do completed:putPixel(repairX+x,masks.HEAD+repairY,sample(64+x,65)) end
+local repairX,repairY=masks.sheetAt(2)
+for x=0,LAST do completed:putPixel(repairX+x,repairY,sample(64+x,65)) end
 local authoredSheet=Image(completed)
 authoredSheet:drawImage(source,Point(0,0))
 local references={}
 for i,mask in ipairs(masks) do
   local tile=Image(CELL,CELL,ColorMode.RGB)
-  local ox,oy=masks.at(i)
-  oy=masks.HEAD+oy
+  local ox,oy=masks.sheetAt(i)
   for y=0,LAST do for x=0,LAST do tile:putPixel(x,y,authoredSheet:getPixel(ox+x,oy+y)) end end
   for _,other in ipairs(references) do assert(not tile:isEqual(other),'duplicate authoring cell '..i) end
-  for a=23,40 do
-    if (mask & bit.n)~=0 then assert(pc.rgbaA(tile:getPixel(a,0))==255,'north connection gap '..i) end
-    if (mask & bit.e)~=0 then assert(pc.rgbaA(tile:getPixel(LAST,a))==255,'east connection gap '..i) end
-    if (mask & bit.s)~=0 then assert(pc.rgbaA(tile:getPixel(a,LAST))==255,'south connection gap '..i) end
-    if (mask & bit.w)~=0 then assert(pc.rgbaA(tile:getPixel(0,a))==255,'west connection gap '..i) end
-  end
+  masks.checkJoined(tile,mask,23,40)
   references[#references+1]=tile
 end
 sourceFiles.copy(path,work..'regular-walls-before-ported-edges-'..os.date(sourceFiles.STAMP)..'.aseprite')
-extension.name='Extension - ported painted edges'
+extension.name=sourceFiles.LAYER.ported
 extension:cel(1).image=completed
 extension:cel(1).position=Point(0,0)
 drawing.stackIndex=#sprite.layers
@@ -97,7 +90,7 @@ sprite:saveCopyAs(work..'regular-walls-current.png')
 sprite:close()
 local reopened=assert(app.open(path))
 assert(reopened.width==masks.W and reopened.height==masks.SHEET_H,'Saved sheet dimensions changed')
-sourceFiles.checkLayer(reopened,'Extension - ported painted edges',completed,Point(0,0))
+sourceFiles.checkLayer(reopened,sourceFiles.LAYER.ported,completed,Point(0,0))
 sourceFiles.checkCel(reopened,'Layer 1',original,position)
 assert(#reopened.slices==#masks)
 reopened:close()

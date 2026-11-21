@@ -61,7 +61,8 @@ fn across(phase: f32) f32 {
 }
 
 fn orbit(m: Mark, a: f32, r: f32, y: f32) rl.Vector2 {
-    return .{ .x = m.x + m.cell * (0.5 + @cos(a) * r), .y = m.y + m.cell * (y + @sin(a) * r * ORBIT_FLAT) };
+    const u = mathx.polar(a);
+    return .{ .x = m.x + m.cell * (0.5 + u[0] * r), .y = m.y + m.cell * (y + u[1] * r * ORBIT_FLAT) };
 }
 
 pub const Renderer = struct {
@@ -137,7 +138,8 @@ pub const Renderer = struct {
         for (0..WARD_DOTS) |i| {
             const a = mathx.spoke(@floatFromInt(i), WARD_DOTS);
             const k = 0.35 + 0.25 * @sin(a * 3 + self.seconds * 2);
-            pixel.rect(.{ .x = m.x + m.cell * 0.5 + @cos(a) * r, .y = m.y + m.cell * 0.5 + @sin(a) * r }, 1, 2, pxScale(m.cell), look.fade(m.ink, k));
+            const u = mathx.polar(a);
+            pixel.rect(.{ .x = m.x + m.cell * 0.5 + u[0] * r, .y = m.y + m.cell * 0.5 + u[1] * r }, 1, 2, pxScale(m.cell), look.fade(m.ink, k));
         }
     }
 

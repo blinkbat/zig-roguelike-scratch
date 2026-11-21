@@ -106,15 +106,42 @@ def corner_order(scripts=SCRIPTS):
     return order
 
 
-def ground_layout(scripts=SCRIPTS):
-    text = (scripts / 'ground_layout.lua').read_text(encoding='utf-8')
-    layout = {}
-    for names, values in re.findall(r'^((?:layout\.\w+,?)+)=([\d,]+)\s*$', text, re.M):
-        keys = [name.removeprefix('layout.') for name in names.split(',')]
+def lua_fields(text, table):
+    fields = {}
+    for names, values in re.findall(rf'^((?:{table}\.\w+,?)+)=([\d,]+)\s*$', text, re.M):
+        keys = [name.removeprefix(table + '.') for name in names.split(',')]
         numbers = [int(value) for value in values.split(',')]
         assert len(keys) == len(numbers)
-        layout.update(zip(keys, numbers))
+        fields.update(zip(keys, numbers))
+    return fields
+
+
+def ground_layout(scripts=SCRIPTS):
+    layout = lua_fields((scripts / 'ground_layout.lua').read_text(encoding='utf-8'), 'layout')
+    layout['SIZE'] = layout['COLS'] * layout['CELL']
+    layout['H'] = layout['HEAD'] + layout['SIZE']
     return layout
+
+
+def wall_layout(scripts=SCRIPTS):
+    text = (scripts / 'wall_masks.lua').read_text(encoding='utf-8')
+    layout = lua_fields(text, 'masks')
+    count = len(re.search(r'^local masks=\{([^}]+)\}', text, re.M).group(1).split(','))
+    layout['W'] = layout['COLS'] * layout['CELL']
+    layout['H'] = -(-count // layout['COLS']) * layout['CELL']
+    layout['SHEET_H'] = layout['HEAD'] + layout['H']
+    return layout
+
+
+def sheet_sizes_lua(scripts=SCRIPTS):
+    ground, wall = ground_layout(scripts), wall_layout(scripts)
+    return (f'local GROUND_W,GROUND_H={ground["W"]},{ground["H"]}\n'
+            f'local WALL_W,WALL_H,HEAD_H={wall["W"]},{wall["SHEET_H"]},{wall["HEAD"]}\n')
+
+
+def layer_names(scripts=SCRIPTS):
+    text = (scripts / 'source_files.lua').read_text(encoding='utf-8')
+    return dict(re.findall(r"(\w+)='([^']*)'", re.search(r'^files\.LAYER=\{(.*?)^\}', text, re.M | re.S).group(1)))
 
 
 def water_cliff_layout(scripts=SCRIPTS):
@@ -124,6 +151,15 @@ def water_cliff_layout(scripts=SCRIPTS):
 
 def water_cliff_names(scripts=SCRIPTS):
     text = (scripts / 'water_cliff_names.lua').read_text(encoding='utf-8')
-    blocks = re.findall(r"'([^']*)'", re.search(r'^blocks=\{(.*)\},$', text, re.M).group(1))
-    parts = re.findall(r"\{'(\w+)','([^']*)'\}", re.search(r'^parts=\{(.*)\},$', text, re.M).group(1))
-    return {'blocks': blocks, 'parts': parts, **dict(re.findall(r"^(\w+)='([^']*)',$", text, re.M))}
+    names = dict(re.findall(r"^(\w+)='([^']*)',$", text, re.M))
+    for key, body in re.findall(r'^(\w+)=\{(.*)\},$', text, re.M):
+        names[key] = re.findall(r"\{'(\w+)','([^']*)'\}", body) or re.findall(r"'([^']*)'", body)
+    return names
+
+
+def water_cliff_layer(names, block, label):
+    return block + names['SEP'] + label
+
+
+def water_cliff_slice(names, depth, piece):
+    return names['slice_format'] % (depth, piece)

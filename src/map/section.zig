@@ -261,7 +261,7 @@ pub const Placed = struct {
 };
 
 fn unpainted(painted: *const grid.CellSet, w: P) bool {
-    return !painted.isSet(grid.Level.idx(w));
+    return !grid.inSet(painted, w);
 }
 
 test "a roaming section lands alike for a seed, elsewhere across seeds, never ringing a door, and stays put with no room" {

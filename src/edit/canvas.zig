@@ -310,7 +310,7 @@ test "offscreen graph thumbnails defer generation and uploads until their image 
     header.height = editor.BOX_TOP;
     try std.testing.expect(thumb(ed, 0, picture, header) == null);
     try std.testing.expect(ed.thumbnails.textures[0] == null and !ed.thumbnails.valid.isSet(0));
-    ed.thumbnails.textures[0] = .{ .id = 0, .width = grid.W, .height = grid.H, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    ed.thumbnails.textures[0] = raster.textureOf(0, grid.W, grid.H);
     defer ed.thumbnails.textures[0] = null;
     ed.thumbnails.valid.set(0);
     var edge = picture;

@@ -1,10 +1,11 @@
 import hashlib
 import unittest
 
-from art_support import WorkTest, arguments, aseprite, main, run_lua
+from art_support import WorkTest, arguments, aseprite, main, run_lua, sheet_sizes_lua
 
 
 args, remaining = arguments()
+SIZES = sheet_sizes_lua(args.scripts_dir)
 
 
 class GroundSheetTests(WorkTest):
@@ -12,9 +13,9 @@ class GroundSheetTests(WorkTest):
         super().setUp()
         self.sheet = self.work / 'ground.aseprite'
         self.run_lua('''
-local s=Sprite(512,448,ColorMode.RGB)
+local s=Sprite(WALL_W,WALL_H,ColorMode.RGB)
 s.layers[1].name='Paper - hide for transparent export'
-local paper=Image(512,448,ColorMode.RGB)
+local paper=Image(WALL_W,WALL_H,ColorMode.RGB)
 paper:clear(app.pixelColor.rgba(240,240,240,255))
 s:newCel(s.layers[1],1,paper,Point(0,0))
 local l=s:newLayer(); l.name='64x64 grid'
@@ -22,7 +23,7 @@ local grid=Image(1,1,ColorMode.RGB)
 grid:clear(app.pixelColor.rgba(40,40,40,255))
 s:newCel(l,1,grid,Point(0,0))
 s:saveAs(app.params.style); s:close()
-local labels=Image(512,320,ColorMode.RGB)
+local labels=Image(GROUND_W,GROUND_H,ColorMode.RGB)
 labels:putPixel(12,8,app.pixelColor.rgba(50,50,50,255))
 labels:saveAs(app.params.labels)
 ''')
@@ -42,7 +43,7 @@ labels:saveAs(app.params.labels)
         return aseprite(args.aseprite, script, self.params(**parameters), timeout=None, temp=self.work)
 
     def run_lua(self, source):
-        result = run_lua(args.aseprite, self.work / 'fixture.lua', source, self.params(), timeout=None, temp=self.work)
+        result = run_lua(args.aseprite, self.work / 'fixture.lua', SIZES + source, self.params(), timeout=None, temp=self.work)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def generate(self, replace=False):
@@ -61,7 +62,7 @@ labels:saveAs(app.params.labels)
             'missing paint layer': 's:deleteLayer(s.layers[5])',
             'painted drawing': 's:newCel(s.layers[5],1,paint,Point(0,0))',
             'painted guide': 's:newCel(s.layers[2],1,paint,Point(0,0))',
-            'off-canvas guide painting': 'local c=s.layers[2]:cel(1); local im=Image(513,320,ColorMode.RGB); im:drawImage(c.image,c.position); im:putPixel(512,0,app.pixelColor.rgba(255,0,0,255)); s:newCel(s.layers[2],1,im,Point(0,0))',
+            'off-canvas guide painting': 'local c=s.layers[2]:cel(1); local im=Image(GROUND_W+1,GROUND_H,ColorMode.RGB); im:drawImage(c.image,c.position); im:putPixel(GROUND_W,0,app.pixelColor.rgba(255,0,0,255)); s:newCel(s.layers[2],1,im,Point(0,0))',
             'changed guide opacity': 's.layers[2].opacity=128',
             'moved slice': 's.slices[1].bounds=Rectangle(1,64,64,64)',
         }

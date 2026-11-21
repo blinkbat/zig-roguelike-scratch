@@ -526,6 +526,14 @@ pub const Torches = struct {
         return true;
     }
 
+    pub fn evictFirst(self: *Torches, ctx: anytype, comptime pinned: fn (@TypeOf(ctx), P) bool) bool {
+        const i = for (self.slice(), 0..) |t, i| {
+            if (!pinned(ctx, t)) break i;
+        } else return false;
+        mathx.removeAt(P, &self.at, &self.n, i, null);
+        return true;
+    }
+
     pub fn keep(self: *Torches, ctx: anytype, comptime fits: fn (@TypeOf(ctx), P) bool) void {
         var kept: usize = 0;
         for (self.slice()) |t| {
@@ -1243,6 +1251,18 @@ pub fn anyNeighbour(p: P, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) 
         if (ok(ctx, p.add(d))) return true;
     }
     return false;
+}
+
+pub fn reachedBeside(p: P, dist: *const [CELLS]i32) bool {
+    return anyNeighbour(p, dist, reachedAt);
+}
+
+fn reachedAt(dist: *const [CELLS]i32, p: P) bool {
+    return cellOr(i32, dist, p, -1) >= 0;
+}
+
+pub fn inSet(set: *const CellSet, p: P) bool {
+    return set.isSet(Level.idx(p));
 }
 
 pub fn allNeighbours(p: P, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) bool {

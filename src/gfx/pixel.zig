@@ -1,5 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
+const mathx = @import("../core/mathx.zig");
 const look = @import("look.zig");
 const raster = @import("raster.zig");
 
@@ -111,7 +112,8 @@ fn hazeEach(at: rl.Vector2, r: f32, scale: f32, turn: f32, sink: anytype) void {
         const n: f32 = @floatFromInt(i);
         const a = turn + n * 2.4;
         const off = if (i == 0) 0 else r * 0.6 * scale;
-        const lump = rl.Vector2{ .x = at.x + @cos(a) * off, .y = at.y + @sin(a) * off * 0.7 };
+        const u = mathx.polar(a);
+        const lump = rl.Vector2{ .x = at.x + u[0] * off, .y = at.y + u[1] * off * 0.7 };
         const size = if (i == 0) r else r * (0.9 - 0.15 * n);
         for (0..HAZE_LAYERS) |k| {
             for (fleckBoxes(lump, size * (1 - @as(f32, @floatFromInt(k)) * 0.3), scale)) |b| sink.put(b);

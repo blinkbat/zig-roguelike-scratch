@@ -402,10 +402,6 @@ fn meadow(g: *game.Game, around: P, r: i32) void {
     game.settle(g);
 }
 
-fn alight(flames: []const u8) usize {
-    return flames.len - std.mem.count(u8, flames, &.{0});
-}
-
 test "a fireball on grass sets some alight as its blast lands, and the fire spreads, smokes and burns down to dirt within its heat" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -421,7 +417,7 @@ test "a fireball on grass sets some alight as its blast lands, and the fire spre
         meadow(g, at, 5);
         g.sim.rng = mathx.Rng.init(seed);
         harness.aimAt(g, .fireball, at);
-        const lit = alight(&g.sim.lv.flames);
+        const lit = harness.nonZero(u8, &g.sim.lv.flames);
         if (lit == 0) continue;
         caught += 1;
         try std.testing.expect(harness.logged(g, fire.CATCHES));
@@ -430,7 +426,7 @@ test "a fireball on grass sets some alight as its blast lands, and the fire spre
         harness.drawnOut(g);
         try std.testing.expectEqualSlices(u8, &g.sim.lv.flames, &g.pic.flames_shown);
         var turns: usize = 0;
-        while (alight(&g.sim.lv.flames) > 0) : (turns += 1) {
+        while (harness.nonZero(u8, &g.sim.lv.flames) > 0) : (turns += 1) {
             try std.testing.expect(turns < 30);
             smoked = smoked or !std.mem.allEqual(u16, &g.sim.lv.smoke, 0);
             harness.useAct(g, .wait);
@@ -461,7 +457,7 @@ test "grass burning out while a fireball flies stays drawn as grass under its he
         g.sim.rng = mathx.Rng.init(seed);
         harness.aimAt(g, .fireball, at);
         try std.testing.expectEqual(fire.ASH, g.sim.lv.at(old));
-        if (alight(&g.sim.lv.flames) == 0) continue;
+        if (harness.nonZero(u8, &g.sim.lv.flames) == 0) continue;
         held += 1;
         try std.testing.expectEqual(grid.Tile.grass, g.pic.tileShown(&g.sim, old));
         harness.drawnOut(g);
@@ -532,7 +528,7 @@ test "a burning arrow sets grass alight far less often than a fireball" {
             meadow(g, .{ .x = 25, .y = 20 }, 2);
             g.sim.rng = mathx.Rng.init(seed);
             harness.aimAt(g, act, .{ .x = 25, .y = 20 });
-            n.* += @intFromBool(alight(&g.sim.lv.flames) > 0);
+            n.* += @intFromBool(harness.nonZero(u8, &g.sim.lv.flames) > 0);
         }
     }
     try std.testing.expect(caught[1] > 0 and caught[1] * 3 < caught[0]);
@@ -583,12 +579,12 @@ test "a frost nova puts out most flames round it and some burning foes, the pict
         const rat = g.sim.pool.get(harness.foeId(0)).?;
         rat.burn.start();
         game.settle(g);
-        const before = alight(&g.sim.lv.flames);
+        const before = harness.nonZero(u8, &g.sim.lv.flames);
         g.sim.rng = mathx.Rng.init(seed);
         harness.use(g, .frost_nova);
         laid += before;
-        doused += before - alight(&g.sim.lv.flames);
-        try std.testing.expectEqual(before, alight(&g.pic.flames_shown));
+        doused += before - harness.nonZero(u8, &g.sim.lv.flames);
+        try std.testing.expectEqual(before, harness.nonZero(u8, &g.pic.flames_shown));
         const out = rat.burn.turns == 0;
         quenched += @intFromBool(out);
         if (out) try std.testing.expect(g.pic.pictured[harness.foeSlot(0)].status.get(.burning) > 0);
@@ -703,13 +699,14 @@ test "a pyre bloat's melted ice stays drawn until its death burst lands" {
         }
         try std.testing.expectEqual(grid.Tile.shallows, g.sim.lv.at(at));
         g.st = .{};
-        var frames: usize = 0;
-        while (!g.pic.pictured[actor.Pool.slot(bloat)].down()) : (frames += 1) {
-            try std.testing.expect(frames < 200);
-            try std.testing.expectEqual(grid.Tile.ice, g.pic.tileShown(&g.sim, at));
-            try harness.expectGroundShown(g);
-            game.update(g, harness.TEST_DT);
-        }
+        const StillIce = struct {
+            at: P,
+            pub fn check(c: @This(), run: *game.Game) !void {
+                try std.testing.expectEqual(grid.Tile.ice, run.pic.tileShown(&run.sim, c.at));
+                try harness.expectGroundShown(run);
+            }
+        };
+        const frames = try harness.whileStanding(g, actor.Pool.slot(bloat), StillIce{ .at = at });
         try std.testing.expect(frames > 0);
         harness.drawnOut(g);
         try std.testing.expectEqual(grid.Tile.shallows, g.pic.tileShown(&g.sim, at));
@@ -746,7 +743,7 @@ test "rain out of doors sets less grass alight" {
             g.sim.node = 0;
             g.sim.outdoors = wet;
             _ = rewards.kindleRound(&g.sim, at, fireball.BLAST, fireball.KINDLE);
-            n.* += alight(&g.sim.lv.flames);
+            n.* += harness.nonZero(u8, &g.sim.lv.flames);
         }
     }
     g.sim.map = null;

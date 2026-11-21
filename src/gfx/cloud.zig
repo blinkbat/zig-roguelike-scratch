@@ -137,9 +137,8 @@ pub const Cloud = struct {
         const tex = self.tex orelse return false;
         const s = self.veil orelse return false;
         shaders.beginOverMap(s, self.map_view, occlusion, focus);
-        shaders.setUniform(s.shader, s.time, self.t.at());
         const rgb: [3]f32 = look.rgbOf(lit);
-        shaders.setUniform(s.shader, s.lit, rgb);
+        shaders.setFields(s, .{ .time = self.t.at(), .lit = rgb });
         rl.setShaderValueTexture(s.shader, s.cloud, tex);
         return true;
     }

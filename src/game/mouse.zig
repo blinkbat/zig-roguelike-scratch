@@ -321,8 +321,7 @@ test "mouse walking follows explored routes once per turn and stops on arrival o
     clickCell(g, dest);
     try std.testing.expectEqual(clock, g.sim.clock);
     try std.testing.expectEqual(start, g.sim.heroActor().?.at);
-    g.st = .{ .walk = .s };
-    game.update(g, 0);
+    game.harness.walkBusy(g, .s, 0);
     try std.testing.expect(g.mouse.target == null and g.pending.? == .walk);
     game.harness.arena(g, start, &.{});
     clickCell(g, dest);

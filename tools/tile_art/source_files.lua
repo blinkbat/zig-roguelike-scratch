@@ -9,6 +9,16 @@ end
 
 local files={read=bytesOf,STAMP='%Y%m%d-%H%M%S'}
 files.DESKTOP=(os.getenv('USERPROFILE') or os.getenv('HOME') or ''):gsub('\\','/')..'/Desktop/'
+files.LAYER={
+  draw='Draw here',
+  under='Underdrawing (25%)',
+  ideas='Ideas - hide before export',
+  labels='Labels - hide before export',
+  paper='Paper - hide for transparent export',
+  exact='Exact connection guide (hidden)',
+  forest='Forest extensions',
+  ported='Extension - ported painted edges',
+}
 
 function files.work(folder)
   local work=(folder or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
@@ -121,7 +131,7 @@ function files.checkBlankTemplate(old,want,label)
       if pc.rgbaA(pixel())>0 then blank=false break end
     end
   end
-  assert(paint.isImage and paint.name=='Draw here' and blank,'Preserving owner painting: '..label)
+  assert(paint.isImage and paint.name==files.LAYER.draw and blank,'Preserving owner painting: '..label)
   local bounds={}
   for _,slice in ipairs(want.slices) do bounds[slice.name]=slice.bounds end
   for _,slice in ipairs(old.slices) do

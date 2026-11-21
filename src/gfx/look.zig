@@ -29,7 +29,7 @@ pub fn screenOf(p: [3]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {
 pub fn cellOfScreen(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
     return .{ (v.x - ox) / cell, (v.y - oy) / cell };
 }
-/// A faced wall's bottom rows of brick, as `tools/tile_art/export_walls.lua` paints them.
+/// A faced wall's bottom rows of brick: `tools/tile_art/wall_masks.lua` `masks.FACE`.
 pub const WALL_FACE_PX: i32 = 23;
 pub const GLYPH_PX: i32 = 60;
 

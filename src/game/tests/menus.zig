@@ -14,6 +14,8 @@ const keywords = @import("../../ui/keywords.zig");
 const resilience = @import("../../play/resilience.zig");
 const actor = @import("../../play/actor.zig");
 const bleeding = @import("../../play/bleeding.zig");
+const glacial = @import("../../play/glacial.zig");
+const options = @import("../../ui/options.zig");
 const skillbar = @import("../../play/skillbar.zig");
 const raster = @import("../../gfx/raster.zig");
 const overlay = @import("../overlay.zig");
@@ -411,7 +413,6 @@ test "Debug graphics toggles are independent and spend no simulation" {
 }
 
 test "Options sliders are independent and return through their parent without a turn" {
-    const options = @import("../../ui/options.zig");
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
@@ -558,7 +559,7 @@ test "status inspection explains overlapping tags without changing the simulatio
     var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
     const tip = overlay.tipOf(g, .{ .status = .chilled }, &title, &body).?;
-    try std.testing.expect(std.mem.startsWith(u8, tip.body, @import("../../play/glacial.zig").STATUS));
+    try std.testing.expect(std.mem.startsWith(u8, tip.body, glacial.STATUS));
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "\nSlows, Elemental") != null);
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "Tags:") == null);
     try std.testing.expect(std.mem.indexOf(u8, keywords.STATUS_TERMS.get(.slows).body, "\nStun, Chill, Pin, Maim.") != null);

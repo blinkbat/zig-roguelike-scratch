@@ -1,10 +1,11 @@
 from pathlib import Path
 import re
 
-from art_support import WorkTest, arguments, generate, main, quote, run_lua
+from art_support import WorkTest, arguments, generate, main, quote, run_lua, sheet_sizes_lua
 
 
 args, remaining = arguments()
+SIZES = sheet_sizes_lua(args.scripts_dir)
 
 BACKUPS = {
     'guide_walls.lua': "'full-cell'",
@@ -93,8 +94,8 @@ error('UNSAFE_SOURCE_WRITE')
 
     def test_real_guide_script_preserves_source_when_backup_destination_is_blocked(self):
         source = self.work / 'guide.aseprite'
-        fixture = '''
-local s=Sprite(512,448,ColorMode.RGB)
+        fixture = SIZES + '''
+local s=Sprite(WALL_W,WALL_H,ColorMode.RGB)
 s.layers[1].name='Underdrawing (25%)'
 local im=Image(1,1,ColorMode.RGB)
 im:clear(app.pixelColor.rgba(10,20,30,255))

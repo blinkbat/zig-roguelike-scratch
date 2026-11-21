@@ -2,15 +2,18 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import arguments, aseprite, main
+from art_support import arguments, aseprite, ground_layout, main, sheet_sizes_lua, wall_layout
 
 
 args, remaining = arguments()
+SIZES = sheet_sizes_lua(args.scripts_dir)
+GROUND = ground_layout(args.scripts_dir)
+WALL = wall_layout(args.scripts_dir)
 
 PORTS = {
-    'port_ground.lua': ('grass', 'local stamp=os.date', 320),
-    'port_bridge.lua': ('bridge', 'local stamp=os.date', 320),
-    'port_forest.lua': ('forest-tree-walls', 'local backup=', 448),
+    'port_ground.lua': ('grass', 'local stamp=os.date', GROUND['W'], GROUND['H']),
+    'port_bridge.lua': ('bridge', 'local stamp=os.date', GROUND['W'], GROUND['H']),
+    'port_forest.lua': ('forest-tree-walls', 'local backup=', WALL['W'], WALL['SHEET_H']),
 }
 
 
@@ -19,7 +22,7 @@ class InstallSourceTests(unittest.TestCase):
         return aseprite(args.aseprite, script_path, params)
 
     def port(self, filename, blocked):
-        name, start, height = PORTS[filename]
+        name, start, width, height = PORTS[filename]
         source = (args.scripts_dir / filename).read_text(encoding='utf-8')
         publication = source[source.index(start):source.index('atlas:saveAs(')]
         with tempfile.TemporaryDirectory(prefix='cistern-install-port-test-') as temporary:
@@ -39,15 +42,15 @@ local install=app.params.install=='yes'
 local sourceFiles=dofile(app.params.helper)
 local name=app.params.name
 local layer_name=name:gsub('^%l',string.upper)..' extensions'
-local height=tonumber(app.params.height)
+local width,height=tonumber(app.params.width),tonumber(app.params.height)
 local original=Image(2,2,ColorMode.RGB)
 original:clear(app.pixelColor.rgba(91,122,153,255))
 local saved=Image(original)
 local position=Point(3,67)
-local extension=Image(512,height,ColorMode.RGB)
+local extension=Image(width,height,ColorMode.RGB)
 extension:putPixel(70,130,app.pixelColor.rgba(17,43,81,255))
 local sheet=Image(extension)
-local s=Sprite(512,height,ColorMode.RGB)
+local s=Sprite(width,height,ColorMode.RGB)
 local sprite=s
 local drawing=s.layers[1]
 drawing.name='Draw here'
@@ -56,7 +59,7 @@ s:saveAs(path)
 ''' + publication + '\nprint("PUBLICATION_COMPLETE")\n', encoding='utf-8')
             result = self.run_lua(script, work=work, source=working, canonical=canonical,
                                   helper=args.scripts_dir / 'source_files.lua',
-                                  name=name, height=height, install='yes')
+                                  name=name, width=width, height=height, install='yes')
             output = result.stdout + result.stderr
             self.assertTrue(working.is_file(), output)
             self.assertTrue(any(work.glob('*before-*.aseprite')) or
@@ -155,10 +158,10 @@ assert(loadfile(realapp.params.script,'t',env))()
             title = work / 'title.png'
             destination = work / 'new.aseprite'
             fixture = work / 'fixture.lua'
-            fixture.write_text('''
-local s=Sprite(512,320,ColorMode.RGB)
+            fixture.write_text(SIZES + '''
+local s=Sprite(GROUND_W,GROUND_H,ColorMode.RGB)
 s.layers[1].name='Labels - hide before export'
-local labels=Image(512,320,ColorMode.RGB)
+local labels=Image(GROUND_W,GROUND_H,ColorMode.RGB)
 labels:clear(app.pixelColor.rgba(40,50,60,255))
 if app.params.trimmed=='yes' then
  labels=Image(12,80,ColorMode.RGB)
@@ -169,7 +172,7 @@ if app.params.trimmed=='yes' then s.layers[1]:cel(1).position=Point(12,8) end
 local paint=s:newLayer(); paint.name='Draw here'
 s:newCel(paint,1,labels,Point(0,0))
 s:saveAs(app.params.template); s:close()
-local title=Image(512,64,ColorMode.RGB)
+local title=Image(WALL_W,HEAD_H,ColorMode.RGB)
 title:putPixel(12,8,app.pixelColor.rgba(70,80,90,255))
 title:putPixel(40,8,app.pixelColor.rgba(70,80,90,255))
 title:saveAs(app.params.title)
@@ -189,11 +192,11 @@ title:saveAs(app.params.title)
             else:
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertTrue(destination.is_file())
-                fixture.write_text('''
+                fixture.write_text(SIZES + '''
 local s=assert(app.open(app.params.out))
-assert(s.width==512 and s.height==320 and #s.layers==2)
+assert(s.width==GROUND_W and s.height==GROUND_H and #s.layers==2)
 local cel=assert(s.layers[1]:cel(1))
-local labels=Image(512,320,ColorMode.RGB)
+local labels=Image(GROUND_W,GROUND_H,ColorMode.RGB)
 labels:drawImage(cel.image,cel.position)
 assert(labels:getPixel(12,8)==app.pixelColor.rgba(70,80,90,255))
 assert(labels:getPixel(40,8)==app.pixelColor.rgba(70,80,90,255))

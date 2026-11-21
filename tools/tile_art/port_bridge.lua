@@ -11,11 +11,12 @@ local pc=app.pixelColor
 local W,H=groundPort.W,groundPort.H
 local s=assert(app.open(path))
 assert(s.width==W and s.height==H and #s.frames==1 and #s.slices==#order)
-local previous=sourceFiles.layer(s,'Bridge extensions')
-local drawing=sourceFiles.layer(s,'Draw here')
+local layer_name=groundPort.extension('bridge')
+local previous=sourceFiles.layer(s,layer_name)
+local drawing=sourceFiles.layer(s,sourceFiles.LAYER.draw)
 if previous then
   local old=assert(app.open(assert(app.params.previous,'Inspect owner edits; previous=<validated source> required')))
-  local layer=sourceFiles.layer(old,'Bridge extensions')
+  local layer=sourceFiles.layer(old,layer_name)
   local expected=layer and layer:cel(1)
   local actual=previous:cel(1)
   assert(expected and actual.image:isEqual(expected.image) and actual.position==expected.position,'Extension has later edits')
@@ -267,11 +268,12 @@ for i,m in ipairs(order) do
 end
 
 groundPort.checkCells(s,order,cells)
-local edges={{x=63,bits=NE|SE},{x=0,bits=NW|SW},{y=63,bits=SW|SE},{y=0,bits=NW|NE}}
+local LAST=groundPort.CELL-1
+local edges={{x=LAST,bits=NE|SE},{x=0,bits=NW|SW},{y=LAST,bits=SW|SE},{y=0,bits=NW|NE}}
 for a=0,groundPort.FULL do for b=0,groundPort.FULL do
   for _,e in ipairs(edges) do
     if (a&e.bits)==(b&e.bits) then
-      for i=0,63 do
+      for i=0,LAST do
         local x,y=e.x or i,e.y or i
         assert(cells[a]:getPixel(x,y)==cells[b]:getPixel(x,y),'Edge '..(e.x and 'x' or 'y')..' of '..a..' differs from '..b)
       end
@@ -285,22 +287,22 @@ local backup=work..'bridge-before-'..stamp..'.aseprite'
 sourceFiles.copy(path,backup)
 if previous then s:deleteLayer(previous) end
 local l=s:newLayer()
-l.name='Bridge extensions'
+l.name=layer_name
 s:newCel(l,1,extension,Point(0,0))
 drawing.isVisible=false
-sourceFiles.hide(s,'Underdrawing (25%)')
+sourceFiles.hide(s,sourceFiles.LAYER.under)
 app.layer=l
 local dest=install and path or work..'bridge-draft.aseprite'
 s:saveAs(dest)
 s:close()
 local back=assert(app.open(dest))
-sourceFiles.checkCel(back,'Draw here',original,position)
-sourceFiles.checkLayer(back,'Bridge extensions',extension,Point(0,0))
+sourceFiles.checkCel(back,sourceFiles.LAYER.draw,original,position)
+sourceFiles.checkLayer(back,layer_name,extension,Point(0,0))
 back:close()
 if install then sourceFiles.copy(dest,canonical) end
 atlas:saveAs(work..'bridge-atlas.png')
 local zoom=Image(atlas)
-zoom:resize(1024,1024)
+zoom:resize(4*groundPort.SIZE,4*groundPort.SIZE)
 zoom:saveAs(work..'bridge-atlas-4x.png')
 groundPort.preview(cells,pc.rgba(54,75,106,255),work..'bridge-connected.png')
 local report=sourceFiles.report(work..'bridge-validation.txt')

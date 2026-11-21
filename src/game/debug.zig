@@ -86,8 +86,7 @@ const PAGE_ROWS = blk: {
     var out: [std.meta.fields(Page).len - 1]Row = undefined;
     var n: usize = 0;
     for (std.enums.values(Page)) |p| if (p != .main) {
-        out[n] = rowOf(p);
-        n += 1;
+        _ = mathx.push(Row, &out, &n, rowOf(p));
     };
     break :blk out;
 };

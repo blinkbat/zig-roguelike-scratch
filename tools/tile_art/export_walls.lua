@@ -4,7 +4,6 @@ local path=app.params.source or sourceFiles.DESKTOP..'regular-walls.aseprite'
 local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 assert(#masks==47)
-local bit=masks.bit
 local W,H=masks.W,masks.H
 local CELL=masks.CELL
 local LAST=CELL-1
@@ -15,7 +14,9 @@ assert(sprite.width==W and sprite.height==masks.SHEET_H)
 local painted=sourceFiles.layer(sprite,'Layer 1')
 local wall=dofile(root..'tools/tile_art/wall_strips.lua')(assert(painted,'no Layer 1'):cel(1).image,painted:cel(1).position,masks)
 sprite:close()
-local source,tan,sample,sideRow,decorate=wall.source,wall.tan,wall.sample,wall.sideRow,wall.decorate
+local source,tan,sideRow,decorate=wall.source,wall.tan,wall.sideRow,wall.decorate
+local brick,faceEdge,side,capTop,capCorner=wall.brick,wall.faceEdge,wall.side,wall.capTop,wall.capCorner
+local EDGE,CAP=wall.EDGE,wall.CAP
 local palette={}
 for it in source:pixels() do if pc.rgbaA(it())>0 then palette[it()]=true end end
 local dark=pc.rgba(84,15,0,255)
@@ -31,17 +32,18 @@ local function tile(mask)
   local foot=s and CELL or CELL-FACE
   for y=0,LAST do for x=0,LAST do
     local pixel=tan
+    local d=LAST-x
     if y>=foot then
       local row=faceRows[y-foot+1]
-      pixel=sample(154+x%32,row)
-      if not w and x<4 then pixel=sample(18+x,row) end
-      if not e and x>=60 then pixel=sample(40+x-60,row) end
+      pixel=brick(x,row)
+      if not w and x<EDGE then pixel=faceEdge(false,x,row) end
+      if not e and d<EDGE then pixel=faceEdge(true,d,row) end
     else
-      if not n and y<6 then pixel=sample(160+x%32,83+y) end
-      if not w and x<4 then pixel=sample(83+x,sideRow(y)) end
-      if not e and x>=60 then pixel=sample(105+x-60,sideRow(y)) end
-      if not n and y<6 and not w and x<6 then pixel=sample(18+x,83+y) end
-      if not n and y<6 and not e and x>=58 then pixel=sample(38+x-58,83+y) end
+      if not n and y<CAP then pixel=capTop(x,y) end
+      if not w and x<EDGE then pixel=side(false,x,sideRow(y)) end
+      if not e and d<EDGE then pixel=side(true,d,sideRow(y)) end
+      if not n and y<CAP and not w and x<CAP then pixel=capCorner(false,x,y) end
+      if not n and y<CAP and not e and d<CAP then pixel=capCorner(true,d,y) end
       -- Hand repair: the face beside a missing south corner meets this cap along an unbroken outline.
       if s and w and not sw and x==0 and y>=CELL-FACE-1 then pixel=dark end
       if s and e and not se and x==LAST and y>=CELL-FACE-1 then pixel=dark end
@@ -49,15 +51,14 @@ local function tile(mask)
     image:putPixel(x,y,pixel)
   end end
   decorate(image,function(x,y) return x>5 and x<58 and y>5 and y<foot-6 end,{{10,11},{40,13},{17,30},{44,36}})
-  local function notch(east,south)
-    local sx,dx,dy=east and 105 or 83,east and 60 or 0,south and 62 or 0
-    for y=0,1 do for x=0,3 do
-      local pixel=sample(sx+x,80+y)
-      if pc.rgbaA(pixel)>0 then image:putPixel(dx+x,dy+y,pixel) end
+  local function notch(east)
+    for y=0,1 do for d=0,EDGE-1 do
+      local pixel=side(east,d,80+y)
+      if pc.rgbaA(pixel)>0 then image:putPixel(east and LAST-d or d,y,pixel) end
     end end
   end
-  if n and w and not nw then notch(false,false) end
-  if n and e and not ne then notch(true,false) end
+  if n and w and not nw then notch(false) end
+  if n and e and not ne then notch(true) end
   for it in image:pixels() do
     assert(pc.rgbaA(it())==0 or (pc.rgbaA(it())==255 and palette[it()]),'palette or alpha changed '..mask)
   end
@@ -67,12 +68,7 @@ local atlas=Image(W,H,ColorMode.RGB)
 local cells={}
 for i,mask in ipairs(masks) do
   local image=tile(mask)
-  for a=8,55 do
-    if (mask&bit.n)~=0 then assert(pc.rgbaA(image:getPixel(a,0))==255,'north gap '..mask) end
-    if (mask&bit.e)~=0 then assert(pc.rgbaA(image:getPixel(LAST,a))==255,'east gap '..mask) end
-    if (mask&bit.s)~=0 then assert(pc.rgbaA(image:getPixel(a,LAST))==255,'south gap '..mask) end
-    if (mask&bit.w)~=0 then assert(pc.rgbaA(image:getPixel(0,a))==255,'west gap '..mask) end
-  end
+  masks.checkJoined(image,mask,8,55)
   for _,other in ipairs(cells) do assert(not image:isEqual(other),'duplicate cell '..mask) end
   cells[#cells+1]=image
   atlas:drawImage(image,Point(masks.at(i)))

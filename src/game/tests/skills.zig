@@ -26,6 +26,7 @@ const spark = @import("../../play/spark.zig");
 const bash = @import("../../play/bash.zig");
 const cleave = @import("../../play/cleave.zig");
 const pinning = @import("../../play/pinning.zig");
+const rend = @import("../../play/rend.zig");
 const nova = @import("../../play/nova.zig");
 const fireball = @import("../../play/fireball.zig");
 const chain = @import("../../play/chain.zig");
@@ -103,7 +104,7 @@ test "grievous applies to weapon and skill bleeds and survives gear removal and 
     a.bleed = .{};
     a.resilience = .{};
     g.sim.inventory.gear.slots.set(.gloves, harness.affixed(.gloves, .{ .kind = .grievous, .value = 1 }));
-    try std.testing.expect(attacks.afflicted(&g.sim, a, @import("../../play/rend.zig"), true, 0));
+    try std.testing.expect(attacks.afflicted(&g.sim, a, rend, true, 0));
     a.bleed.settle();
     try std.testing.expectEqual(@as(?i32, 5), a.bleed.tick(true));
 }
@@ -1211,7 +1212,7 @@ test "weapon weight controls live damage and its preview independently of attack
         const tip = overlay.tipOf(g, .{ .slot = 0 }, &title, &body).?;
         var label: [64]u8 = undefined;
         try std.testing.expect(std.mem.indexOf(u8, tip.body, try std.fmt.bufPrint(&label, attrs.SCALES_FMT, .{attrs.Named{ .scaling = scaling }})) != null);
-        const span = expected_attrs.span(scaling,attacks.basesFor(&g.sim, act).physical());
+        const span = expected_attrs.span(scaling, attacks.basesFor(&g.sim, act).physical());
         var wanted: [64]u8 = undefined;
         try std.testing.expect(std.mem.indexOf(u8, tip.body, try std.fmt.bufPrint(&wanted, damage.PHYSICAL_FMT, .{ span.lo, span.hi })) != null);
         if (act == .cleave) {
@@ -1686,7 +1687,7 @@ test "fire landing on open water with no foe in it still boils it: a fireball's 
         harness.aimAt(g, act, at);
         try std.testing.expect(g.mode != .aim);
         try std.testing.expect(harness.logged(g, gas.STEAM_NAME));
-        n.* = grid.CELLS - std.mem.count(u16, &g.sim.lv.steam, &.{0});
+        n.* = harness.nonZero(u16, &g.sim.lv.steam);
     }
     try std.testing.expect(boiled[0] > boiled[1] and boiled[1] > 0);
 }
@@ -1703,7 +1704,7 @@ test "a fireball aimed into a wall comes down short of it and boils no water beh
     game.castSight(g, from);
     harness.aimAt(g, .fireball, .{ .x = 23, .y = 20 });
     try std.testing.expect(g.mode != .aim and g.sim.mana < g.sim.manaMax());
-    const steam = grid.CELLS - std.mem.count(u16, &g.sim.lv.steam, &.{0});
+    const steam = harness.nonZero(u16, &g.sim.lv.steam);
     try std.testing.expectEqual(@as(usize, 0), steam);
 }
 
@@ -2078,7 +2079,6 @@ test "every targeted skill rechecks readiness and bounds at confirmation without
 }
 
 test "rend strikes the foe beside the knight and opens its stronger bleed" {
-    const rend = @import("../../play/rend.zig");
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
@@ -2137,11 +2137,9 @@ test "caltrops and an arcane barrier are drawn as their cast lands, not as it be
     for (g.sim.lv.caltrops, g.pic.caltrops_shown) |c, shown| try std.testing.expectEqual(c.turns, shown.turns);
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
     harness.useAct(g, .arcane_barrier);
-    g.mode.aim.mark = .{ .x = 23, .y = 19 };
+    harness.markSpan(g);
     skills.confirmAim(g);
-    g.mode.aim.mark = .{ .x = 23, .y = 21 };
-    skills.confirmAim(g);
-    const raised = grid.CELLS - std.mem.count(u8, &g.sim.lv.barrier, &.{0});
+    const raised = harness.nonZero(u8, &g.sim.lv.barrier);
     try std.testing.expect(raised > 0);
     try std.testing.expect(std.mem.allEqual(u8, &g.pic.barrier_shown, 0));
     harness.drawnOut(g);
