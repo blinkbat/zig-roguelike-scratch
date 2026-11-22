@@ -1166,9 +1166,8 @@ test "live skill tooltips include equipped damage, ranks and the actual targetin
     g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .bow });
     g.sim.growth.ranks.set(.shoot, 3);
     g.bar.bind(.{ .set = .primary, .button = skillbar.SLOTS[0] }, .shoot);
-    var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
-    var body: [overlay.TIP_BODY_MAX]u8 = undefined;
-    const tip = overlay.tipOf(g, .{ .slot = 0 }, &title, &body).?;
+    var tips: harness.Tips = .{};
+    const tip = tips.of(g, .{ .slot = 0 }).?;
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "Range: 5 cells") != null);
     const span = attacks.blowFor(&g.sim, .shoot).hit(.shoot).physical;
     var wanted: [64]u8 = undefined;
@@ -1177,7 +1176,7 @@ test "live skill tooltips include equipped damage, ranks and the actual targetin
     try std.testing.expect(std.mem.startsWith(u8, tip.body, skillbar.Act.shoot.desc()));
     try std.testing.expectEqual(@as(i32, 1), skillbar.Act.cleave.reach());
     g.bar.bind(.{ .set = .primary, .button = skillbar.SLOTS[0] }, .secondary);
-    try std.testing.expect(std.mem.indexOf(u8, overlay.tipOf(g, .{ .slot = 0 }, &title, &body).?.body, "no turn cost.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, tips.of(g, .{ .slot = 0 }).?.body, "no turn cost.") != null);
 }
 
 test "weapon weight controls live damage and its preview independently of attack range" {
@@ -1207,9 +1206,8 @@ test "weapon weight controls live damage and its preview independently of attack
         const expected = expected_attrs.blow(scaling, raw, critical, &expected_rng);
         try std.testing.expectEqualDeep(expected, attacks.heroScaled(&g.sim, act, raw).blow);
         g.bar.bind(.{ .set = .primary, .button = skillbar.SLOTS[0] }, act);
-        var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
-        var body: [overlay.TIP_BODY_MAX]u8 = undefined;
-        const tip = overlay.tipOf(g, .{ .slot = 0 }, &title, &body).?;
+        var tips: harness.Tips = .{};
+        const tip = tips.of(g, .{ .slot = 0 }).?;
         var label: [64]u8 = undefined;
         try std.testing.expect(std.mem.indexOf(u8, tip.body, try std.fmt.bufPrint(&label, attrs.SCALES_FMT, .{attrs.Named{ .scaling = scaling }})) != null);
         const span = expected_attrs.span(scaling, attacks.basesFor(&g.sim, act).physical());

@@ -270,9 +270,9 @@ fn returnThorns(g: *game.Game, id: u16, from: P) void {
     const at = a.at;
     const kind = a.kind;
     const h = game.hurt(g, .fromInt(id), dmg);
-    const after = afterBlow(g, id, h);
     g.sim.chronicle.note(.{ .dealt = .{ .to = kind, .killed = h.lethal, .origin = .{ .reaction = .fromInt(id) } } });
     g.sim.sayAs(.damage, at, "{s}'s thorns hurt the {s} for {d}.{s}", .{ g.sim.name.text(), actor.row(kind).name, h.dmg, deathNote(h) });
+    const after = afterBlow(g, id, h);
     const recovery = if (h.lethal) slain(g, id) else null;
     g.pic.owe(.fromInt(id), .thorns, .{ .kill = h.lethal, .after = after, .recovery = recovery });
 }

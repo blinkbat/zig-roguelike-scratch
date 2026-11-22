@@ -685,8 +685,7 @@ fn fling(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, d: mathx.Dir, a
     g.pic.turnLater(.fromInt(id), d.delta().x);
     var flight = bow.Flight{ .most = @intCast(hk.range) };
     for (windup.lane(&g.sim.lv, r.at, d, hk.range).slice()) |at| {
-        flight.path[flight.len] = at;
-        flight.len += 1;
+        flight.push(at);
         const w = g.sim.lv.who(at);
         if (w != grid.NO_ONE) {
             flight.struck = .{ .body = w };
@@ -958,6 +957,7 @@ fn shove(g: *game.Game, by: u16, d: mathx.Dir, comptime said: []const u8) void {
     const from = h.at;
     const to = from.add(d.delta());
     if (!g.sim.lv.vacant(to) or g.sim.lv.doorAt(to) != null) return;
+    g.pic.beforeKnock(&g.sim);
     g.sim.pool.move(&g.sim.lv, g.sim.hero, to);
     g.sim.travel = null;
     g.sim.flowed = false;

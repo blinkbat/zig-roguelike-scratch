@@ -381,7 +381,7 @@ fn listHead(ed: *editor.Editor, g: *game.Game, f: Frame, y: i32, comptime title:
 }
 
 fn listRow(ed: *editor.Editor, g: *game.Game, due: *bool, list: widgets.Scroll, x: i32, w: i32, y: i32, label: []const u8, on: bool, tip: ?[:0]const u8) bool {
-    revealPicked(due, list, y, on);
+    if (on) list.revealDrawnOnce(due, y, STEP);
     const hit = button(ed, g, widgets.row(x, y, w - GAP), label, on, true, tip);
     if (hit) ed.plot.detail.top = 0;
     return hit;
@@ -391,12 +391,6 @@ fn added(ed: *editor.Editor) void {
     ed.bank();
     ed.plot.detail.top = 0;
     ed.plot.reveal_pick = true;
-}
-
-fn revealPicked(due: *bool, list: widgets.Scroll, y: i32, picked: bool) void {
-    if (!picked or !due.*) return;
-    due.* = false;
-    list.revealDrawn(y, STEP);
 }
 
 fn detailPane(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32, bottom: i32, comptime body: fn (*editor.Editor, *game.Game, u8, i32, i32, i32) i32, i: u8) void {
@@ -417,7 +411,7 @@ fn pushRow(ed: *editor.Editor, comptime T: type, items: []T, n: *u8, x: T) void 
 
 fn revealAdded(ed: *editor.Editor, n: *const u8, i: usize, y: i32, h: i32) void {
     const s = &ed.plot;
-    if (dueLast(*const u8, &s.reveal_added, n, i + 1 == n.*)) s.detail.at(s.detail.box).revealDrawn(y, h);
+    if (dueLast(*const u8, &s.reveal_added, n, i + 1 == n.*)) s.detail.current().revealDrawn(y, h);
 }
 
 fn dueLast(comptime T: type, due: *?T, list: T, last: bool) bool {

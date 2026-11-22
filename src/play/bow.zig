@@ -61,10 +61,14 @@ pub const Flight = struct {
         return true;
     }
 
-    fn enter(f: *Flight, lv: *const grid.Level, c: P, to: P, comptime visible_only: bool) Cell {
-        if (!grid.Level.inside(c) or f.len == f.most or lv.hasBarrier(c) or (!c.eq(to) and lv.blocksSight(c))) return .stop;
+    pub fn push(f: *Flight, c: P) void {
         f.path[f.len] = c;
         f.len += 1;
+    }
+
+    fn enter(f: *Flight, lv: *const grid.Level, c: P, to: P, comptime visible_only: bool) Cell {
+        if (!grid.Level.inside(c) or f.len == f.most or lv.hasBarrier(c) or (!c.eq(to) and lv.blocksSight(c))) return .stop;
+        f.push(c);
         if (lv.at(c).halts() or lv.at(c).walled()) return .last;
         if (visible_only and !lv.isLit(c)) return .unseen;
         return .open;

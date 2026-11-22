@@ -82,10 +82,13 @@ for i,mask in ipairs(masks) do
   local slice=runtime:newSlice(Rectangle(x,y,CELL,CELL))
   slice.name='mask '..mask
 end
-sourceFiles.keep(root..'assets/source/walls.aseprite',sourceFiles.work(),'export',os.date(sourceFiles.STAMP))
-runtime:saveAs(root..'assets/source/walls.aseprite')
+local png=sourceFiles.stagePng(atlas,root..'assets/walls/walls.png','Wall PNG export changed pixels or did not save')
+local canonical=root..'assets/source/walls.aseprite'
+local staged=sourceFiles.stage(app.fs.fileName(canonical))
+runtime:saveAs(staged)
 runtime:close()
-local check=assert(app.open(root..'assets/source/walls.aseprite'))
+local check=assert(app.open(staged))
 sourceFiles.checkLayer(check,'Runtime walls',atlas,Point(0,0))
 check:close()
-sourceFiles.savePng(atlas,root..'assets/walls/walls.png','Wall PNG export changed pixels or did not save')
+sourceFiles.keep(canonical,sourceFiles.work(),'export',os.date(sourceFiles.STAMP))
+sourceFiles.publish({sourceFiles.staged(canonical,staged),png})

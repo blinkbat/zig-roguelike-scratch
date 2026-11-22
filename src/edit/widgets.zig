@@ -332,6 +332,12 @@ pub const Scroll = struct {
         s.reveal(y - (raster.top(s.box) - s.drawn.*), h);
     }
 
+    pub fn revealDrawnOnce(s: Scroll, due: *bool, y: i32, h: i32) void {
+        if (!due.*) return;
+        due.* = false;
+        s.revealDrawn(y, h);
+    }
+
     fn bar(s: Scroll) void {
         if (s.most.* > 0) scrollbarIn(s.box, @intCast(s.top.*), @intCast(s.shown()), @intCast(s.shown() + s.most.*));
     }
@@ -352,6 +358,10 @@ pub const Scrolled = struct {
     pub fn at(s: *Scrolled, box: rl.Rectangle) Scroll {
         s.box = box;
         return .{ .box = box, .top = &s.top, .most = &s.most, .drawn = &s.drawn };
+    }
+
+    pub fn current(s: *Scrolled) Scroll {
+        return s.at(s.box);
     }
 
     pub fn wheel(s: *Scrolled, mouse: P, notches: i32) void {

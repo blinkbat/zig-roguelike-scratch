@@ -741,6 +741,31 @@ test "a node added is named as it is added, one undo for both" {
     try std.testing.expectEqual(before, ed.map.node_n);
 }
 
+test "a node added in the graph view is scrolled into the canvas" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const c = rl.Rectangle{ .x = 300, .y = 80, .width = 500, .height = 400 };
+    ed.setView(.graph);
+    for (0..8) |_| {
+        try ed.gesture();
+        editor.addNode(ed, .{ .procgen = .{} });
+        ed.desk = .{};
+        interaction.step(ed, c, 720, 0);
+        const b = ed.boxAt(c, ed.node);
+        try std.testing.expect(b.x >= c.x and b.y >= c.y);
+        try std.testing.expect(b.x + b.width <= c.x + c.width and b.y + b.height <= c.y + c.height);
+        ed.commitRename();
+    }
+}
+
+test "a tool taken by its key is marked for revealing in the side pane" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    ed.reveal_tool = false;
+    ed.takeTool(editor.TOOLS[editor.TOOLS.len - 1]);
+    try std.testing.expect(ed.reveal_tool);
+}
+
 test "a right-click mid rename drops it like Esc" {
     const ed = try testBespoke();
     defer ed.destroy();

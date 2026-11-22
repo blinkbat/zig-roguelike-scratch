@@ -770,32 +770,14 @@ pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
 const WAVES_MOST: i32 = 8;
 
 pub fn ripples(lv: *const grid.Level, from: P, to: P, reach: i32) bool {
-    std.debug.assert(reach <= WAVES_MOST);
     if (mathx.dist(from, to) > reach or !lv.at(to).wet()) return false;
-    const area: usize = @intCast(comptime grid.Cells.square(WAVES_MOST));
-    const window = grid.Box.around(from, reach);
-    var steps: [area]i32 = @splat(-1);
-    var queue: [area]P = undefined;
-    var head: usize = 0;
-    var tail: usize = 1;
-    queue[0] = from;
-    steps[window.slot(from).?] = 0;
-    while (head < tail) : (head += 1) {
-        const p = queue[head];
-        if (p.eq(to)) return true;
-        const n = steps[window.slot(p).?];
-        if (n == reach) continue;
-        for (mathx.ALL_DIRS) |d| {
-            const q = p.add(d.delta());
-            const i = window.slot(q) orelse continue;
-            if (!grid.Level.inside(q) or !lv.at(q).wet()) continue;
-            if (steps[i] >= 0) continue;
-            steps[i] = n + 1;
-            queue[tail] = q;
-            tail += 1;
-        }
-    }
+    var waves = grid.Walk(WAVES_MOST, *const grid.Level, wetAt).init(lv, from, reach);
+    while (waves.next()) |p| if (p.eq(to)) return true;
     return false;
+}
+
+fn wetAt(lv: *const grid.Level, p: P) bool {
+    return lv.at(p).wet();
 }
 
 pub fn approach(lv: *const grid.Level, from: P, id: u16, toward: P) ?mathx.Dir {

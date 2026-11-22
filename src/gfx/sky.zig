@@ -318,7 +318,7 @@ test "one light always casts, its altitude floored, and it changes hands at the 
     var longest: f32 = 0;
     while (h < HOURS) : (h += 0.05) {
         const d = keyDir(h);
-        try std.testing.expectApproxEqAbs(@as(f32, 1), @sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]), 1e-4);
+        try std.testing.expectApproxEqAbs(@as(f32, 1), norm(d), 1e-4);
         try std.testing.expect(d[2] >= floor_z - 1e-4);
         longest = @max(longest, at(h).reach());
     }

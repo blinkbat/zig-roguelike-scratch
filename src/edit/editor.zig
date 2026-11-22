@@ -180,7 +180,9 @@ pub const Editor = struct {
     zoom: usize = ZOOM_AT,
     recentre: bool = true,
     /// The graph's top-left, in graph pixels.
-    gcam: [2]f32 = .{ -widgets.PAD, -widgets.PAD },
+    gcam: [2]f32 = GCAM_HOME,
+    reveal_box: bool = false,
+    reveal_tool: bool = false,
     scene: previews.Scene = .{},
     thumbnails: thumbnails.Thumbnails = .{},
     selection: ?grid.Box = null,
@@ -279,6 +281,7 @@ pub const Editor = struct {
         ed.modal = .none;
         ed.plot = .{};
         ed.view = .map;
+        ed.gcam = GCAM_HOME;
         ed.scene.reset();
         ed.enterNode();
         ed.restamp();
@@ -442,6 +445,7 @@ pub const Editor = struct {
 
     fn hold(ed: *Editor, t: Tool) void {
         ed.tool = t;
+        ed.reveal_tool = true;
         ed.showFamily(t.family());
         ed.family_tool.set(t.family(), t);
     }
@@ -813,6 +817,14 @@ pub const Editor = struct {
         return null;
     }
 
+    pub fn revealBox(ed: *Editor, c: rl.Rectangle) void {
+        if (!ed.reveal_box or ed.view != .graph) return;
+        ed.reveal_box = false;
+        const b = ed.boxAt(c, ed.node);
+        ed.gcam[0] += revealBy(b.x - c.x, b.width, c.width);
+        ed.gcam[1] += revealBy(b.y - c.y, b.height, c.height);
+    }
+
     pub fn dotAt(ed: *const Editor, c: rl.Rectangle, l: atlas.Link) rl.Vector2 {
         const b = ed.boxAt(c, l.node);
         const d = ed.map.door(l).at;
@@ -822,6 +834,14 @@ pub const Editor = struct {
         };
     }
 };
+
+const GCAM_HOME = [2]f32{ -widgets.PAD, -widgets.PAD };
+
+fn revealBy(at: f32, size: f32, room: f32) f32 {
+    if (at < 0) return at - widgets.PAD;
+    const over = at + size - room;
+    return if (over > 0) over + widgets.PAD else 0;
+}
 
 fn freshMap(w: *atlas.Atlas) void {
     const room = grid.Box.centred(FRESH_ROOM.x, FRESH_ROOM.y);
@@ -890,6 +910,7 @@ pub fn deleteNode(ed: *Editor) void {
 pub fn addNode(ed: *Editor, plan: atlas.Plan) void {
     const n = ed.map.add(plan) orelse return ed.say("The map holds {d} nodes", .{atlas.MAX_NODES});
     ed.select(n);
+    ed.reveal_box = true;
     ed.changed();
     ed.typeName();
 }

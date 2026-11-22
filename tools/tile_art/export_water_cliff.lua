@@ -88,12 +88,16 @@ for x=0,atlas.width-1 do
  feet[#feet+1]=tostring(foot)
  lips[#lips+1]=tostring(lip)
 end
-sourceFiles.write(stem..'-foot.txt',table.concat(feet,',')..'\n')
-sourceFiles.write(stem..'-lip.txt',table.concat(lips,',')..'\n')
-sourceFiles.savePng(cap,stem..'-cap.png','cap mask changed')
-local back=sourceFiles.savePng(atlas,out,'export changed pixels')
+local capped=sourceFiles.stagePng(cap,stem..'-cap.png','cap mask changed')
+local exported=sourceFiles.stagePng(atlas,out,'export changed pixels')
 for i,tile in ipairs(pieces) do
- assert(Image(back,Rectangle((i-1)*CELL,0,CELL,CELL)):isEqual(tile),'source tile changed')
+ assert(Image(atlas,Rectangle((i-1)*CELL,0,CELL,CELL)):isEqual(tile),'source tile changed')
 end
 s:close()
+sourceFiles.publish({
+ {path=stem..'-foot.txt',bytes=table.concat(feet,',')..'\n'},
+ {path=stem..'-lip.txt',bytes=table.concat(lips,',')..'\n'},
+ capped,
+ exported,
+})
 print('Verified '..depth..' cliff: three original '..CELL..'px crops, unchanged RGBA, no guides or reference tiles')

@@ -167,7 +167,6 @@ test "every corner tower opens onto the yard, however wide" {
     var lv = grid.Level.blank();
     var st: carve.Stretches = .{};
     var sealed: usize = 0;
-    var towers: usize = 0;
     for (1..TOWER_MAX + 1) |t| {
         const p = (Params{ .towers = @intCast(t) }).fit();
         var rng = mathx.Rng.init(t);
@@ -176,7 +175,6 @@ test "every corner tower opens onto the yard, however wide" {
         const curtain = curtainOf(p);
         const yard = st.of(.{ .x = grid.MIDDLE.x, .y = yardOf(p).lo.y });
         for (carve.corners(curtain)) |c| {
-            towers += 1;
             if (st.of(c) != yard) sealed += 1;
         }
     }
@@ -186,7 +184,6 @@ test "every corner tower opens onto the yard, however wide" {
 test "the well never stands in a corner tower" {
     const KEEPS = 1500;
     var lv = grid.Level.blank();
-    var keeps: usize = 0;
     var broken: usize = 0;
     for (TOWER_MAX - 1..TOWER_MAX + 1) |t| {
         const p = (Params{ .towers = @intCast(t) }).fit();
@@ -194,7 +191,6 @@ test "the well never stands in a corner tower" {
         for (0..KEEPS) |i| {
             var rng = mathx.Rng.init(i * 7 + t);
             shape(&lv, &rng, 0, p);
-            keeps += 1;
             const hit = towers: for (carve.corners(curtainOf(p))) |c| {
                 var cells = grid.Cells.around(c, reach);
                 while (cells.next()) |q| {
@@ -211,7 +207,6 @@ test "the well never stands in a corner tower" {
 test "a keep's ground is one stretch before joining, its berm running round the towers, at any towers and moat" {
     var lv = grid.Level.blank();
     var st: carve.Stretches = .{};
-    var keeps: usize = 0;
     var cut: usize = 0;
     for (0..TOWER_MAX + 1) |t| {
         for (0..MOAT_MAX + 1) |m| {
@@ -219,7 +214,6 @@ test "a keep's ground is one stretch before joining, its berm running round the 
                 const p = (Params{ .towers = @intCast(t), .moat = @intCast(m), .size = size }).fit();
                 var rng = mathx.Rng.init(t * 31 + m);
                 shape(&lv, &rng, 0, p);
-                keeps += 1;
                 if (st.label(&lv) != 1) cut += 1;
             }
         }

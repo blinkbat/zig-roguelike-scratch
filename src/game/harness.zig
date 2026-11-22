@@ -528,6 +528,15 @@ pub fn expectGroundShown(g: *game.Game) !void {
     for (ground.tile, 0..) |t, i| try std.testing.expectEqual(g.pic.tileShown(&g.sim, grid.Level.of(i)), t);
 }
 
+pub const Tips = struct {
+    title: [game.overlay.TIP_TITLE_MAX]u8 = undefined,
+    body: [game.overlay.TIP_BODY_MAX]u8 = undefined,
+
+    pub fn of(self: *Tips, g: *const game.Game, s: game.Spot) ?game.overlay.Tip {
+        return game.overlay.tipOf(g, s, &self.title, &self.body);
+    }
+};
+
 pub fn drawnOut(g: *game.Game) void {
     const Settled = struct {
         fn met(_: @This(), run: *game.Game) bool {

@@ -368,28 +368,11 @@ fn oneWay(cells: []const P) bool {
 }
 
 fn walkReaches(lv: *const grid.Level, from: P, comptime steps: i32, most: usize) bool {
-    const area: usize = @intCast(comptime grid.Cells.square(steps));
-    var seen = [_]bool{false} ** area;
-    var queue: [area]P = undefined;
-    var depth: [area]i32 = undefined;
-    const window = grid.Box.around(from, steps);
-    seen[window.slot(from).?] = true;
-    queue[0] = from;
-    depth[0] = 0;
-    var n: usize = 1;
-    var at: usize = 0;
-    while (at < n) : (at += 1) {
-        if (depth[at] == steps) continue;
-        var round = grid.Cells.around(queue[at], 1);
-        while (round.next()) |q| {
-            const k = window.slot(q) orelse continue;
-            if (seen[k] or !lv.walkable(q)) continue;
-            seen[k] = true;
-            if (n == most) return false;
-            queue[n] = q;
-            depth[n] = depth[at] + 1;
-            n += 1;
-        }
+    var walk = grid.Walk(steps, *const grid.Level, grid.Level.walkable).init(lv, from, steps);
+    var n: usize = 0;
+    while (walk.next()) |_| {
+        n += 1;
+        if (n > most) return false;
     }
     return true;
 }

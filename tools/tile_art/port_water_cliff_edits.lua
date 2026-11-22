@@ -93,10 +93,11 @@ local slices={}
 for _,slice in ipairs(s.slices) do
  slices[slice.name]={x=slice.bounds.x,y=slice.bounds.y,width=slice.bounds.width,height=slice.bounds.height}
 end
-sourceFiles.keep(output,sourceFiles.work(),'edits',os.date(sourceFiles.STAMP))
-s:saveAs(output)
+local stagedOutput=sourceFiles.stage(app.fs.fileName(output))
+local stagedPreview=sourceFiles.stage('preview-'..app.fs.fileName(preview))
+s:saveAs(stagedOutput)
 s:close()
-local saved=assert(app.open(output))
+local saved=assert(app.open(stagedOutput))
 assert(#saved.slices==layout.slices,'Slice layout changed')
 assert(#saved.layers==layerCount,'Saved artwork layers changed')
 for _,slice in ipairs(saved.slices) do
@@ -107,7 +108,9 @@ end
 local savedComposite=Image(saved.width,saved.height,ColorMode.RGB)
 savedComposite:drawSprite(saved,1)
 assert(savedComposite:isEqual(final),'Saved layered source differs from expected pixel edits')
-saved:saveCopyAs(preview)
-assert(Image{fromFile=preview}:isEqual(final),'Saved composite differs from expected pixel edits')
+saved:saveCopyAs(stagedPreview)
+assert(Image{fromFile=stagedPreview}:isEqual(final),'Saved composite differs from expected pixel edits')
 saved:close()
+sourceFiles.keep(output,sourceFiles.work(),'edits',os.date(sourceFiles.STAMP))
+sourceFiles.publish({sourceFiles.staged(output,stagedOutput),sourceFiles.staged(preview,stagedPreview)})
 sourceFiles.write(report,string.format('Owner edit pixels preserved: %d; shallow edits transferred: %d; deep end pixels extended: %d; outside-middle pixels unchanged: %d. %d slices retained.\n',changed,derived,extended,outside,layout.slices))

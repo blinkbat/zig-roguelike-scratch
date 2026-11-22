@@ -402,11 +402,11 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
         },
         .bleeding => {
             rl.drawCircle(x, y + 3, 5, colour);
-            rl.drawTriangle(.{ .x = @floatFromInt(x), .y = @floatFromInt(y - 7) }, .{ .x = @floatFromInt(x - 5), .y = @floatFromInt(y + 3) }, .{ .x = @floatFromInt(x + 5), .y = @floatFromInt(y + 3) }, colour);
+            rl.drawTriangle(raster.vec(.{ .x = x, .y = y - 7 }), raster.vec(.{ .x = x - 5, .y = y + 3 }), raster.vec(.{ .x = x + 5, .y = y + 3 }), colour);
         },
         .burning => {
             rl.drawCircle(x, y + 3, 6, colour);
-            rl.drawTriangle(.{ .x = @floatFromInt(x + 2), .y = @floatFromInt(y - 8) }, .{ .x = @floatFromInt(x - 6), .y = @floatFromInt(y + 3) }, .{ .x = @floatFromInt(x + 5), .y = @floatFromInt(y + 4) }, colour);
+            rl.drawTriangle(raster.vec(.{ .x = x + 2, .y = y - 8 }), raster.vec(.{ .x = x - 6, .y = y + 3 }), raster.vec(.{ .x = x + 5, .y = y + 4 }), colour);
             rl.drawCircle(x, y + 5, 3, look.FIRE_CORE);
         },
         .chilled => {

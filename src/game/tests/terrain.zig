@@ -133,9 +133,8 @@ test "rain out of doors dampens fire hits and ignition, and the card names it be
     try std.testing.expectEqual(damage.resisted(40, wet.elements.get(.fire)), before - a.hp);
     try std.testing.expect(before - a.hp < damage.resisted(40, dry.elements.get(.fire)));
     game.settle(g);
-    var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
-    var body: [overlay.TIP_BODY_MAX]u8 = undefined;
-    const tip = overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body).?;
+    var tips: harness.Tips = .{};
+    const tip = tips.of(g, .{ .actor = harness.foeId(0) }).?;
     var expected: [256]u8 = undefined;
     try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d} / {d} HP\n---\nFloor\nNo Effects\nDrizzle\n+5% Fire Resistance\n-10% Chance To Burn", .{ g.pic.pictured[harness.foeSlot(0)].hp, a.max }), tip.body);
 }
@@ -179,9 +178,8 @@ test "terrain inspection uses pictured characters and tiles while excluding hidd
     const shown = g.pic.pictured[harness.foeSlot(0)].hp;
     a.hp = 1;
     a.burn.start();
-    var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
-    var body: [overlay.TIP_BODY_MAX]u8 = undefined;
-    const tip = overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body).?;
+    var tips: harness.Tips = .{};
+    const tip = tips.of(g, .{ .actor = harness.foeId(0) }).?;
     var expected: [256]u8 = undefined;
     try std.testing.expectEqualStrings("Rat", tip.title);
     try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d} / {d} HP\n---\nShallows\n+25% Fire Resistance\n-25% Lightning Resistance\n-25% Chance To Burn", .{ shown, a.max }), tip.body);
@@ -193,10 +191,10 @@ test "terrain inspection uses pictured characters and tiles while excluding hidd
     };
     try std.testing.expectEqual(@as(usize, 2), found);
     g.sim.lv.lit[grid.Level.idx(at)] = false;
-    try std.testing.expect(overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body) == null);
+    try std.testing.expect(tips.of(g, .{ .actor = harness.foeId(0) }) == null);
     g.sim.lv.lit[grid.Level.idx(at)] = true;
     g.pic.split_from[harness.foeSlot(0)] = 0;
-    try std.testing.expect(overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body) == null);
+    try std.testing.expect(tips.of(g, .{ .actor = harness.foeId(0) }) == null);
 }
 
 test "terrain inspection retains the drawn tile and modifiers until freezing and melting land" {
@@ -207,18 +205,17 @@ test "terrain inspection retains the drawn tile and modifiers until freezing and
     g.sim.lv.set(at, .shallows);
     game.settle(g);
     const area = areas.patch(&g.sim.lv, at, 0);
-    var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
-    var body: [overlay.TIP_BODY_MAX]u8 = undefined;
+    var tips: harness.Tips = .{};
     var before: [overlay.TIP_BODY_MAX]u8 = undefined;
     for ([_]bool{ true, false }) |freezing| {
-        const tip = overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body).?;
+        const tip = tips.of(g, .{ .actor = harness.foeId(0) }).?;
         const n = tip.body.len;
         @memcpy(before[0..n], tip.body);
         if (freezing) combat.coldLands(g, &area, 0.3) else combat.fireLands(g, at, 0, .{ .chance = 0 }, 0.3);
-        const held = overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body).?;
+        const held = tips.of(g, .{ .actor = harness.foeId(0) }).?;
         try std.testing.expectEqualStrings(before[0..n], held.body);
         g.pic.advance(&g.sim, 0.4);
-        const landed = overlay.tipOf(g, .{ .actor = harness.foeId(0) }, &title, &body).?;
+        const landed = tips.of(g, .{ .actor = harness.foeId(0) }).?;
         try std.testing.expect(!std.mem.eql(u8, before[0..n], landed.body));
     }
 }
@@ -300,13 +297,12 @@ test "foe inspection keeps basic health separate from terrain effects" {
     g.sim.lv.set(at, .grass);
     game.settle(g);
     g.pic.pictured[actor.Pool.slot(id)].hp = 12;
-    var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
-    var body: [overlay.TIP_BODY_MAX]u8 = undefined;
-    const tip = overlay.tipOf(g, .{ .actor = id }, &title, &body).?;
+    var tips: harness.Tips = .{};
+    const tip = tips.of(g, .{ .actor = id }).?;
     try std.testing.expectEqualStrings("Beefy Pib", tip.title);
     try std.testing.expectEqualStrings("12 / 40 HP\n---\nGrass\n-15% Fire Resistance\n+15% Chance To Burn", tip.body);
     g.sim.lv.set(at, .floor);
-    const neutral = overlay.tipOf(g, .{ .actor = id }, &title, &body).?;
+    const neutral = tips.of(g, .{ .actor = id }).?;
     try std.testing.expectEqualStrings("12 / 40 HP\n---\nFloor\nNo Effects", neutral.body);
 }
 

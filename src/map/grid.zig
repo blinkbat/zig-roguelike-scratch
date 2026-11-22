@@ -499,10 +499,7 @@ pub const Torches = struct {
     }
 
     fn find(self: *const Torches, p: P) ?usize {
-        for (self.slice(), 0..) |t, i| {
-            if (t.eq(p)) return i;
-        }
-        return null;
+        return mathx.indexOfEql(P, self.slice(), p);
     }
 
     pub fn has(self: *const Torches, p: P) bool {
@@ -979,10 +976,7 @@ pub fn Bounded(comptime T: type, comptime N: usize) type {
         }
 
         pub fn has(self: *const @This(), x: T) bool {
-            for (self.slice()) |c| {
-                if (std.meta.eql(c, x)) return true;
-            }
-            return false;
+            return mathx.indexOfEql(T, self.slice(), x) != null;
         }
     };
 }
@@ -1305,6 +1299,52 @@ pub fn Spread(comptime Ctx: type, comptime ok: fn (Ctx, P) bool) type {
             self.head += 1;
             self.given = true;
             return Level.of(self.queue[self.head - 1]);
+        }
+    };
+}
+
+/// Cells `ok` accepts within `reach` king steps of `from` by way of accepted cells, `from` first, nearest first.
+pub fn Walk(comptime MOST: i32, comptime Ctx: type, comptime ok: fn (Ctx, P) bool) type {
+    const AREA: usize = @intCast(Cells.square(MOST));
+    return struct {
+        ctx: Ctx,
+        window: Box,
+        reach: i32,
+        seen: [AREA]bool = @splat(false),
+        queue: [AREA]P = undefined,
+        depth: [AREA]i32 = undefined,
+        head: usize = 0,
+        tail: usize = 1,
+
+        const Self = @This();
+
+        pub fn init(ctx: Ctx, from: P, reach: i32) Self {
+            std.debug.assert(reach <= MOST);
+            var w = Self{ .ctx = ctx, .window = Box.around(from, reach), .reach = reach };
+            w.seen[w.window.slot(from).?] = true;
+            w.queue[0] = from;
+            w.depth[0] = 0;
+            return w;
+        }
+
+        pub fn next(self: *Self) ?P {
+            if (self.head > 0) self.expand(self.head - 1);
+            if (self.head == self.tail) return null;
+            self.head += 1;
+            return self.queue[self.head - 1];
+        }
+
+        fn expand(self: *Self, at: usize) void {
+            if (self.depth[at] == self.reach) return;
+            var round = Cells.around(self.queue[at], 1);
+            while (round.next()) |q| {
+                const k = self.window.slot(q) orelse continue;
+                if (self.seen[k] or !Level.inside(q) or !ok(self.ctx, q)) continue;
+                self.seen[k] = true;
+                self.queue[self.tail] = q;
+                self.depth[self.tail] = self.depth[at] + 1;
+                self.tail += 1;
+            }
         }
     };
 }

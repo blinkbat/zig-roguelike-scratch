@@ -316,6 +316,33 @@ test "coins taken by a step and then a knock that turn each stay drawn until the
     try std.testing.expectEqual(@as(usize, 0), g.pic.gold_taken.n);
 }
 
+test "a knock into a doorway gap shows nothing new until the hero is drawn through it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    var y: i32 = 12;
+    while (y <= 28) : (y += 1) if (y != from.y) g.sim.lv.set(.{ .x = 19, .y = y }, .wall);
+    const id = harness.spawnAt(g, .bandit_shieldbearer, .{ .x = 21, .y = 20 }, true);
+    game.settle(g);
+    const lit_before = g.sim.lv.lit;
+    g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
+    combat.endTurn(g);
+    try std.testing.expectEqual(from.add(mathx.Dir.w.delta()), g.sim.heroAt().?);
+    harness.stagger(g);
+    var opened: usize = 0;
+    for (g.sim.lv.lit, lit_before, 0..) |now, was, i| {
+        if (!now or was) continue;
+        opened += 1;
+        try std.testing.expect(!g.pic.litShown(&g.sim, grid.Level.of(i)));
+    }
+    try std.testing.expect(opened > 0);
+    harness.drawnOut(g);
+    for (g.sim.lv.lit, 0..) |now, i| {
+        if (now) try std.testing.expect(g.pic.litShown(&g.sim, grid.Level.of(i)));
+    }
+}
+
 fn showsAndLands(g: *game.Game, slot: usize) struct { shows: f32, lands: f32 } {
     var shows: ?f32 = null;
     var lands: ?f32 = null;

@@ -429,7 +429,7 @@ fn drawTip(g: *game.Game, here: Part) void {
     if (scrolls) g.inspect_scroll = scroll;
 }
 
-const Tip = struct { title: [:0]const u8, body: []const u8 };
+pub const Tip = struct { title: [:0]const u8, body: []const u8 };
 pub const TIP_TITLE_MAX: usize = 64;
 pub const TIP_BODY_MAX: usize = 2048;
 const ORB_TIP = hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" } });

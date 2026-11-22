@@ -165,15 +165,12 @@ test "crossing cliffs with banks keep each other's rock" {
 
 test "a cliff with a bank keeps its rock" {
     var thin: usize = 0;
-    var least: usize = grid.CELLS;
     for (0..50) |s| {
         var lv = grid.Level.blank();
         var rng = mathx.Rng.init(0xBA4C + s);
         carve.field(&lv, carve.Palette.WILD);
         apply(&lv, &rng, 0, carve.Palette.WILD, .{ .fill = .rock, .bank = .shallows, .course = .across });
-        const rock = carve.count(&lv, .rock);
-        least = @min(least, rock);
-        if (rock <= grid.W) thin += 1;
+        if (carve.count(&lv, .rock) <= grid.W) thin += 1;
     }
     try std.testing.expectEqual(@as(usize, 0), thin);
 }

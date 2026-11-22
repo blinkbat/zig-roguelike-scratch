@@ -39,13 +39,15 @@ for _, path in ipairs({source, canonical, png}) do
     sourceFiles.copy(path, app.fs.joinPath(work, os.date(sourceFiles.STAMP) .. '-' .. app.fs.fileName(path)))
   end
 end
-sourceFiles.savePng(border, png, 'Export changed the painted pixels')
-sprite:saveCopyAs(canonical)
+local exported = sourceFiles.stagePng(border, png, 'Export changed the painted pixels')
+local staged = sourceFiles.stage(app.fs.fileName(canonical))
+sprite:saveCopyAs(staged)
 sprite:close()
-local saved = assert(app.open(canonical))
+local saved = assert(app.open(staged))
 local original = assert(saved.layers[1]:cel(1))
 assert(original.position.x == 1 and original.position.y == 1 and original.image:isEqual(painted))
 saved:close()
+sourceFiles.publish({exported, sourceFiles.staged(canonical, staged)})
 local report = sourceFiles.report(app.fs.joinPath(work, 'validation.txt'))
 report:write(string.format('%dx%d native border exported from Layer 1 at (1,1); %dpx corner cuts.\n', W, H, CUT))
 report:write('PNG pixels and canonical painted cel verified after reopening; center clear and repeated rails unbroken.\n')

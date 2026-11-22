@@ -447,10 +447,8 @@ test "a floor rolled in a small box keeps its rooms in it, to their count and si
     var queue: [grid.CELLS]u32 = undefined;
     const pm = Params{ .size = .{ .x = 40, .y = 30 }, .rooms = 6, .room_w = .{ 4, 8 }, .room_h = .{ 3, 6 }, .torches = 0, .barrels = 0 };
     const area = pm.area();
-    var rooms: usize = 0;
     for (0..50) |i| {
         const f = around(&lv, 0xB0C5 +% i *% grid.TEST_SEED_STRIDE, &.{.{ .x = 2, .y = 2 }}, pm);
-        rooms += f.room_n;
         try std.testing.expect(f.room_n >= 1 and f.room_n <= pm.rooms);
         try std.testing.expectEqual(@as(usize, 0), lv.torch.n);
         for (f.rooms[0..f.room_n]) |r| {

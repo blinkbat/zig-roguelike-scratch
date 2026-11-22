@@ -119,8 +119,7 @@ pub const Sprites = struct {
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
         shaders.setFields(s, .{ .sweep = sweep, .size = size });
-        const white = rl.Texture2D{ .id = rl.gl.rlGetTextureIdDefault(), .width = 1, .height = 1, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
-        raster.stretch(white, dest, look.UI_GOLD);
+        raster.stretch(raster.textureOf(rl.gl.rlGetTextureIdDefault(), 1, 1), dest, look.UI_GOLD);
     }
 
     pub fn sync(self: *Sprites, need: sprite_assets.Assets) void {

@@ -1218,9 +1218,6 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
     var queue: [grid.CELLS]u32 = undefined;
     var loops: usize = 0;
     var chests: usize = 0;
-    var barrels: usize = 0;
-    var least: usize = grid.CELLS;
-    var most: usize = 0;
     const RUNS = 128;
     for (0..RUNS) |i| {
         const seed = 0xC4E57 +% i *% grid.TEST_SEED_STRIDE;
@@ -1240,7 +1237,6 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
         try std.testing.expect(std.mem.indexOfScalar(grid.Tile, &lv.tile, .chest_open) == null);
         var counted_chests: usize = 0;
         var counted_barrels: usize = 0;
-        var first_barrel: i32 = grid.CELLS;
         for (lv.tile, 0..) |t, k| {
             if (t != .chest and !lv.barrel[k]) continue;
             counted_chests += @intFromBool(t == .chest);
@@ -1248,15 +1244,7 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
             const p = grid.Level.of(k);
             try std.testing.expect(lv.doorAt(p) == null and !grid.Level.onRim(p));
             try std.testing.expect(!lv.torch.has(lume.torchWall(p)));
-            var reachable = false;
-            for (mathx.ALL_DIRS) |d| {
-                const q = p.add(d.delta());
-                if (grid.Level.inside(q) and dist[grid.Level.idx(q)] >= 0) {
-                    reachable = true;
-                    if (lv.barrel[k]) first_barrel = @min(first_barrel, dist[grid.Level.idx(q)] + 1);
-                }
-            }
-            try std.testing.expect(reachable);
+            try std.testing.expect(grid.reachedBeside(p, &dist));
         }
         try std.testing.expectEqual(result.chests, counted_chests);
         try std.testing.expectEqual(result.barrels, counted_barrels);
@@ -1264,9 +1252,6 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
         try std.testing.expect(counted_barrels >= branches.Reward.barrel.rule().total / 2);
         loops += result.loops;
         chests += result.chests;
-        barrels += result.barrels;
-        least = @min(least, result.chests);
-        most = @max(most, result.chests);
     }
     try std.testing.expect(loops > RUNS);
     try std.testing.expect(chests > 0);
@@ -1280,7 +1265,6 @@ test "every map in the maps folder parses, and each procgen node rolls its groun
     var lv: grid.Level = undefined;
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
-    var rolled: usize = 0;
     for (0..list.n) |i| {
         a.load(std.testing.allocator, list.at(i)) catch |e| {
             return e;
@@ -1299,7 +1283,6 @@ test "every map in the maps folder parses, and each procgen node rolls its groun
             const reached = grid.distances(&lv, at, &dist, &queue);
             if (reached != open) std.debug.print("{s} node {d}: {d} open, {d} reached from {d},{d}\n", .{ list.at(i), n, open, reached, at.x, at.y });
             try std.testing.expectEqual(open, reached);
-            rolled += 1;
         }
     }
 }

@@ -73,6 +73,36 @@ function files.savePng(image,path,message)
   return saved
 end
 
+function files.stage(name)
+  local staged=app.fs.joinPath(files.work(app.fs.joinPath(app.fs.tempPath,'tile-art-stage')),name)
+  os.remove(staged)
+  return staged
+end
+
+function files.staged(path,staged)
+  return {path=path,bytes=bytesOf(staged)}
+end
+
+function files.stagePng(image,path,message)
+  local staged=files.stage(app.fs.fileName(path))
+  files.savePng(image,staged,message)
+  return files.staged(path,staged)
+end
+
+function files.publish(staged)
+  local before={}
+  for i,item in ipairs(staged) do before[i]=app.fs.isFile(item.path) and bytesOf(item.path) end
+  for i,item in ipairs(staged) do
+    local ok,err=pcall(files.write,item.path,item.bytes)
+    if not ok then
+      for j=i,1,-1 do
+        if before[j] then pcall(files.write,staged[j].path,before[j]) else os.remove(staged[j].path) end
+      end
+      error(err,0)
+    end
+  end
+end
+
 function files.layer(sprite,name)
   for _,layer in ipairs(sprite.layers) do
     if layer.name==name then return layer end

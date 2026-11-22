@@ -12,9 +12,11 @@ const stage = @import("stage.zig");
 const LETTERS = [_][]const u8{ "ABCDEFGHIJKLM", "NOPQRSTUVWXYZ", "abcdefghijklm", "nopqrstuvwxyz" };
 const Key = union(enum) { ch: u8, space, rub, done };
 const LAST = [_]Key{ .space, .rub, .done };
-const DONE_AT = for (LAST, 0..) |k, i| {
-    if (k == .done) break i;
-} else unreachable;
+fn lastAt(comptime want: std.meta.Tag(Key)) usize {
+    return for (LAST, 0..) |k, i| {
+        if (std.meta.activeTag(k) == want) break i;
+    } else unreachable;
+}
 const ROWS = LETTERS.len + 1;
 const COLS = LETTERS[0].len;
 
@@ -33,7 +35,7 @@ const GRID_W: i32 = @max(@as(i32, COLS) * KEY_W, @as(i32, LAST.len) * WIDE_W);
 const GRID_H: i32 = @as(i32, ROWS) * KEY_H;
 const CONTENT_H: i32 = GRID_Y + GRID_H;
 const CARET = menu.CARET;
-const AT_DONE = Entry{ .row = ROWS - 1, .col = DONE_AT };
+const AT_DONE = Entry{ .row = ROWS - 1, .col = lastAt(.done) };
 
 fn keyBox(screen: mathx.P, row: usize, col: usize) rl.Rectangle {
     const width: i32 = if (row < LETTERS.len) KEY_W else WIDE_W;
@@ -175,7 +177,7 @@ test "mouse naming types letters spaces deletes and finishes with keyboard hints
     const screens = @import("../core/window.zig").SCREENS;
     for (screens) |screen| {
         var e = Entry{};
-        const keys = [_][2]usize{ .{ 0, 0 }, .{ 2, 1 }, .{ 4, 0 }, .{ 0, 2 }, .{ 4, 1 } };
+        const keys = [_][2]usize{ .{ 0, 0 }, .{ 2, 1 }, .{ ROWS - 1, lastAt(.space) }, .{ 0, 2 }, .{ ROWS - 1, lastAt(.rub) } };
         for (keys) |k| {
             const st = input.State{ .device = .keys, .click = true, .pointer = raster.middleAt(keyBox(screen, k[0], k[1])) };
             try std.testing.expectEqual(@as(?Outcome, null), e.stepAt(&st, screen));

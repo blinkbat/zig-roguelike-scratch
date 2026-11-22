@@ -158,10 +158,7 @@ pub fn quickstep(sim: *Simulation, id: u16, af: actor.Afflicted) ?P {
             if (!sim.lv.stepOk(to, direction, id) or actor.shuns(&sim.lv, to, direction)) break;
             to = to.add(direction.delta());
         } else {
-            if (inBand(to, hero, row.keeps, row.net.?.range)) {
-                choices[count] = to;
-                count += 1;
-            }
+            if (inBand(to, hero, row.keeps, row.net.?.range)) _ = mathx.push(P, &choices, &count, to);
         }
     }
     if (count == 0) return null;

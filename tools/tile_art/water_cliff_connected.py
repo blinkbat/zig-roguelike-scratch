@@ -117,15 +117,17 @@ lua.extend([
     f's.gridBounds=Rectangle({block_x},{block_y},{cell},{cell})',
     's.data="Native game renders, no lighting baked. Three connected 16-mask sets, NW1 NE2 SW4 SE8. Original face strips unchanged. Rendered tiles are a new painting template, not automatically imported runtime atlases."',
     'local preview=Image(s.spec)', 'preview:drawSprite(s,1)',
-    f's:saveAs({q(args.output)})', f's:saveCopyAs({q(args.output.with_suffix(".png"))})', 's:close()',
-    f'local savedPreview=Image{{fromFile={q(args.output.with_suffix(".png"))}}}',
+    f's:saveAs({q(work / "staged.aseprite")})', f's:saveCopyAs({q(work / "staged.png")})', 's:close()',
+    f'local savedPreview=Image{{fromFile={q(work / "staged.png")}}}',
     'assert(savedPreview:isEqual(preview),"Saved preview differs from the assembled template")',
-    f'local saved=assert(app.open({q(args.output)}))', f'assert(#saved.slices=={layout["slices"]} and #saved.layers==#expected+1)',
+    f'local saved=assert(app.open({q(work / "staged.aseprite")}))', f'assert(#saved.slices=={layout["slices"]} and #saved.layers==#expected+1)',
     'for i,want in ipairs(expected) do', 'local l=saved.layers[i]', 'assert(l.name==want.name)',
     'local actual=Image(want.image.width,want.image.height,ColorMode.RGB)',
     'local c=assert(l:cel(1))', 'actual:drawImage(c.image,Point(c.position.x-want.x,c.position.y-want.y))',
     'assert(actual:isEqual(want.image),"Layer pixels changed: "..want.name)', 'end',
     'saved:close()',
+    f'sourceFiles.publish({{sourceFiles.staged({q(args.output)},{q(work / "staged.aseprite")}),'
+    f'sourceFiles.staged({q(args.output.with_suffix(".png"))},{q(work / "staged.png")})}})',
     f'sourceFiles.write({q(work / "validation.txt")},"Verified {size[0]}x{size[1]} Aseprite, {layout["slices"]} named slices, "..(#expected+1).." layers; art layers preserved pixel-for-pixel and recombine exactly to runtime assembly. Grid hidden, Touch-ups editable.\\n")',
 ])
 (work / 'assemble.lua').write_text('\n'.join(lua), encoding='utf-8')

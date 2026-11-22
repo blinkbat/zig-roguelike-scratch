@@ -133,12 +133,10 @@ test "no house's doorway opens on a canal" {
     var lv = grid.Level.blank();
     var st: carve.Stretches = .{};
     var sealed: usize = 0;
-    var towns: usize = 0;
     for ([_]u8{ BLOCK_MIN, BLOCK_MIN + 1, 2 * HOUSE_LEAST, (Params{}).block }) |blk| {
         for (0..TOWNS) |i| {
             var rng = mathx.Rng.init(i);
             shape(&lv, &rng, 0, (Params{ .canals = 100, .street = 3, .block = blk }).fit());
-            towns += 1;
             _ = st.label(&lv);
             const most = st.biggest();
             for (lv.tile, st.region) |t, r| {

@@ -101,7 +101,8 @@ class BackupFailureTests(unittest.TestCase):
             if failure in ('none', 'missing_border_destinations'):
                 self.assertIn('UNSAFE_DESTINATION_WRITE', output)
                 if kind == 'border':
-                    self.assertTrue(files['png'].read_bytes().startswith(b'\x89PNG\r\n\x1a\n'))
+                    self.assertEqual(before[files['png']], files['png'].read_bytes() if files['png'].exists() else None)
+                    self.assertTrue((work / 'scratch/tile-art-stage/hud-border.png').read_bytes().startswith(b'\x89PNG\r\n\x1a\n'))
                 backups = list((root / 'assets/backup' if kind == 'tone' else work / 'scratch/hud-border-export').iterdir())
                 self.assertEqual(1 if failure == 'missing_border_destinations' else 3, len(backups))
                 for backup in backups:

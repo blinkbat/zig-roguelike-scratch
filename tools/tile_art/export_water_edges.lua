@@ -59,5 +59,7 @@ for n,name in ipairs(names.edge_files) do
  counts[#counts+1]=name..': '..count..' changed pixels'
 end
 s:close()
-for _,out in ipairs(outputs) do sourceFiles.savePng(out.image,out.path,'Export altered pixels') end
-sourceFiles.write(report,table.concat(counts,'\n')..'\nNative '..CELL..'px masks; five material bands: dry, shallow surface, deep surface, shallow face, deep face. Original runtime terrain remains beneath unchanged pixels.\n')
+local staged={}
+for _,out in ipairs(outputs) do staged[#staged+1]=sourceFiles.stagePng(out.image,out.path,'Export altered pixels') end
+staged[#staged+1]={path=report,bytes=table.concat(counts,'\n')..'\nNative '..CELL..'px masks; five material bands: dry, shallow surface, deep surface, shallow face, deep face. Original runtime terrain remains beneath unchanged pixels.\n'}
+sourceFiles.publish(staged)

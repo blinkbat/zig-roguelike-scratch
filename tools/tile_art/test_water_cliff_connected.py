@@ -149,8 +149,9 @@ end
             result = self.assemble(assembly)
         output = result.stdout + result.stderr
         self.assertNotEqual(0, result.returncode, output)
-        self.assertIn('Saved preview differs from the assembled template', output)
+        self.assertIn('Permission denied', output)
         self.assertEqual(before, self.preview.read_bytes())
+        self.assertEqual(self.before[self.output], self.output.read_bytes())
         self.assertFalse((assembly.parent / 'validation.txt').exists())
         self.assertEqual(self.inputs, {p: p.read_bytes() for p in self.inputs})
 

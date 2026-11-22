@@ -202,6 +202,14 @@ test "thorns respects armour splits slimes and coexists with unyielding counters
     combat.endTurn(g);
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.tally(.slime).left);
     try std.testing.expect(g.pic.owed[actor.Pool.slot(slime)].thorns.?.after.reveals != null);
+    var split_line: ?usize = null;
+    var thorns_line: ?usize = null;
+    for (0..8) |i| {
+        const line = g.sim.log.line(i) orelse break;
+        if (std.mem.eql(u8, line, "The slime splits in two!")) split_line = i;
+        if (std.mem.indexOf(u8, line, "thorns hurt the slime") != null) thorns_line = i;
+    }
+    try std.testing.expect(split_line.? < thorns_line.?);
     harness.stagger(g);
     harness.drawnOut(g);
 }

@@ -297,7 +297,6 @@ test "every base, bare and under every feature, joins its ground, reaches its do
     const all = everyFeature();
     for (std.enums.values(Algo)) |a| {
         var least: usize = grid.CELLS;
-        var most: usize = 0;
         for (0..TEST_RUNS) |i| {
             const doors = testDoors(&rng);
             const features = testMix(&all, i);
@@ -316,7 +315,6 @@ test "every base, bare and under every feature, joins its ground, reaches its do
             carve.unbar(&again);
             try std.testing.expectEqualSlices(bool, &lv.barrel, &again.barrel);
             least = @min(least, open_n);
-            most = @max(most, open_n);
         }
         try std.testing.expect(least * 10 > grid.CELLS);
     }
@@ -511,11 +509,9 @@ test "a torch a border buries frees its slot for the houses raised after it" {
         .{ .border = .{ .width = border.WIDTH_MAX / 2 } },
         .{ .buildings = .{ .count = buildings.COUNT_MAX, .size = .{ 5, 6 }, .torches = mathx.PERCENT } },
     };
-    var least: usize = grid.MAX_TORCHES;
     var sum: usize = 0;
     for (0..COUNT_RUNS) |i| {
         roll(&lv, 0x70C +% i *% grid.TEST_SEED_STRIDE, &.{}, floor, &features);
-        least = @min(least, lv.torch.n);
         sum += lv.torch.n;
     }
     try std.testing.expect(sum / COUNT_RUNS * 2 > grid.MAX_TORCHES);

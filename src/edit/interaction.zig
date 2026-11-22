@@ -23,6 +23,7 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
     const desk = &ed.desk;
     ed.said_t -= dt;
     ed.flash_t -= dt;
+    ed.revealBox(bounds);
     if (ed.action != .none) return;
     if (ed.modal != .none) {
         modalKeys(ed);

@@ -284,11 +284,11 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .shrooms = .{ .sym = "•", .ch = ',', .fg = rgb(0xd8ccb4), .bg = null, .mini = rgb(0x3c4a30), .mini_dim = rgb(0x1e241a) },
     .chest = .{ .sym = "C", .ch = 'C', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = rgb(0x66502b) },
     .chest_open = .{ .sym = "O", .ch = 'O', .fg = OPEN_CHEST_INK, .bg = null, .mini = OPEN_CHEST_INK, .mini_dim = rgb(0x443422) },
-    .swamp_tree = .{ .sym = "S", .ch = 'S', .fg = TREE_INK.fg, .bg = null, .mini = TREE_INK.mini, .mini_dim = TREE_INK.mini_dim },
-    .large_tree = .{ .sym = "L", .ch = 'L', .fg = TREE_INK.fg, .bg = null, .mini = TREE_INK.mini, .mini_dim = TREE_INK.mini_dim },
+    .swamp_tree = inkRow("S", 'S', TREE_INK),
+    .large_tree = inkRow("L", 'L', TREE_INK),
     .glow_plant = .{ .sym = "&", .ch = '&', .fg = rgb(0x9fd2ff), .bg = null, .mini = rgb(0x7fb2e0), .mini_dim = rgb(0x2e4256) },
-    .caravan = .{ .sym = "H", .ch = 'H', .fg = CARAVAN_INK.fg, .bg = null, .mini = CARAVAN_INK.mini, .mini_dim = CARAVAN_INK.mini_dim },
-    .caravan_part = .{ .sym = "h", .ch = 'h', .fg = CARAVAN_INK.fg, .bg = null, .mini = CARAVAN_INK.mini, .mini_dim = CARAVAN_INK.mini_dim },
+    .caravan = inkRow("H", 'H', CARAVAN_INK),
+    .caravan_part = inkRow("h", 'h', CARAVAN_INK),
     .stone_bridge = .{ .sym = "=", .ch = '=', .fg = STONE_INK, .bg = rgb(0x1c1a18), .mini = rgb(0x6e665a), .mini_dim = rgb(0x34302a) },
     .gate = .{ .sym = "D", .ch = 'D', .fg = DIM, .bg = null, .mini = DIM, .mini_dim = SHADE },
     .locked_gate = .{ .sym = "J", .ch = 'J', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = SHADE },
@@ -298,6 +298,10 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
 });
 
 const CARAVAN_INK = .{ .fg = rgb(0xd8c8a4), .mini = rgb(0x9a7a52), .mini_dim = rgb(0x46382a) };
+
+fn inkRow(comptime sym: [:0]const u8, comptime ch: u8, comptime ink: anytype) TileLook {
+    return .{ .sym = sym, .ch = ch, .fg = ink.fg, .bg = null, .mini = ink.mini, .mini_dim = ink.mini_dim };
+}
 
 comptime {
     for (TILES.values) |l| std.debug.assert(l.sym.len != 1 or l.sym[0] == l.ch);

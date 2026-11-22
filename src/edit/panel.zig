@@ -269,6 +269,7 @@ const KEY_W: i32 = 30;
 
 fn toolRow(ed: *editor.Editor, g: *game.Game, col: Column, y: *i32, t: editor.Tool, key: [:0]const u8) void {
     defer y.* += TOOL_ROW_H;
+    if (t.eql(ed.tool)) ed.pane.getPtr(.side).current().revealDrawnOnce(&ed.reveal_tool, y.*, TOOL_ROW_H);
     if (clippedH(ed, y.*, TOOL_ROW_H)) return;
     const r = raster.rect(col.left(), y.*, col.inner(), TOOL_ROW_H - widgets.GAP / 2);
     const live = t.fits(ed.here());
@@ -631,7 +632,7 @@ pub fn beginPane(ed: *editor.Editor, p: editor.Pane, box: rl.Rectangle) i32 {
 }
 
 pub fn closePane(ed: *editor.Editor, p: editor.Pane, end: i32) void {
-    ed.paneScroll(p, ed.pane.get(p).box).close(&ed.clip, end, widgets.PAD);
+    ed.pane.getPtr(p).current().close(&ed.clip, end, widgets.PAD);
 }
 
 pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {

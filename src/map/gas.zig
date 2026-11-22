@@ -210,8 +210,7 @@ test "gas drifts over a river to the bank across it" {
     }
     lv.addGas(at, BURST);
     const across = P{ .x = 25, .y = 20 };
-    var turns: usize = 0;
-    while (!lv.gassy(across) and any(&lv.gas)) : (turns += 1) turn(&lv, &rng);
+    while (!lv.gassy(across) and any(&lv.gas)) turn(&lv, &rng);
     try std.testing.expect(lv.gassy(across));
 }
 

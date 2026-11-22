@@ -342,6 +342,10 @@ pub const Presentation = struct {
         self.sight_held.snap(&SightCells.of(&sim.lv));
     }
 
+    pub fn beforeKnock(self: *Presentation, sim: *const Simulation) void {
+        self.sight_held.snap(&SightCells.of(&sim.lv));
+    }
+
     pub fn recordDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId, death: rewards.Death) void {
         const i = target.slot().index;
         self.dropped_gold[i] = death.gold;
@@ -1280,6 +1284,7 @@ pub const Presentation = struct {
             const shoved = &self.glide[sim.heroSlot().?];
             shoved.* = shoved.toward(k.to, -countered);
             self.holdUntil(shoved.left());
+            self.holdLit(&sim.lv, shoved.left(), true);
             turn.knock(&timing.clock, k.to, shoved.left());
         }
     }

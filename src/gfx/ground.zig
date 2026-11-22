@@ -756,7 +756,8 @@ test "water cliff faces dry north banks with joined middles and separate ends" {
         }
     }.at;
     try std.testing.expectEqual(@as(?f32, 10 - BANK_LIFT), bankProfile(&lv, .{ 10.75, 10 }, top_lips));
-    for ([_]Ground{ .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .cobble }) |land| {
+    for (std.enums.values(Ground)) |land| {
+        if (!bankLand(land.tile())) continue;
         for ([_]Ground{ .shallows, .water }) |water| {
             lv.set(.{ .x = 10, .y = 9 }, land.tile());
             lv.set(.{ .x = 11, .y = 9 }, land.tile());
