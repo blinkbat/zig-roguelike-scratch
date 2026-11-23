@@ -161,6 +161,10 @@ pub const Pierced = struct {
     body: [LONGEST]u16 = undefined,
     step: [LONGEST]usize = undefined,
     n: usize = 0,
+
+    pub fn hits(self: *const Pierced, id: u16) bool {
+        return std.mem.indexOfScalar(u16, self.body[0..self.n], id) != null;
+    }
 };
 
 /// On through every body past `to`, out to full range; a barrel, wall or barrier still stops it.
@@ -168,8 +172,8 @@ pub fn pierce(lv: *const grid.Level, from: P, to: P) Pierced {
     return through(lv, null, from, to, RANGE, LONGEST, false);
 }
 
-pub fn piercePreviewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to: P) Flight {
-    return through(lv, pool, from, to, RANGE, LONGEST, true).flight;
+pub fn piercePreviewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to: P) Pierced {
+    return through(lv, pool, from, to, RANGE, LONGEST, true);
 }
 
 /// `fly`, but a body it strikes lets it on through, up to `extra` more, out to `reach`.
@@ -177,8 +181,8 @@ pub fn skewer(lv: *const grid.Level, from: P, to: P, reach: i32, extra: usize) P
     return skewered(lv, null, from, to, reach, extra, false);
 }
 
-pub fn skewerPreviewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to: P, reach: i32, extra: usize) Flight {
-    return skewered(lv, pool, from, to, reach, extra, true).flight;
+pub fn skewerPreviewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to: P, reach: i32, extra: usize) Pierced {
+    return skewered(lv, pool, from, to, reach, extra, true);
 }
 
 fn skewered(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, reach: i32, extra: usize, comptime visible_only: bool) Pierced {
@@ -216,7 +220,7 @@ test "a piercing preview passes over a submerged leech in lit water without stri
     const leech = pool.spawn(&lv, actor.Actor.of(.bog_leech, .{ .x = 14, .y = 10 }));
     try std.testing.expect(pool.get(leech).?.veiled());
     const shown = piercePreviewAmong(&lv, &pool, from, mark);
-    try std.testing.expectEqual(@as(?Hit, null), shown.struck);
+    try std.testing.expectEqual(@as(?Hit, null), shown.flight.struck);
     try std.testing.expect(pierce(&lv, from, mark).flight.hits(leech));
 }
 

@@ -42,10 +42,9 @@ pub const Thumbnails = struct {
     pub fn get(self: *Thumbnails, map: *const atlas.Atlas, scene: *const preview.Scene, n: usize, picture: rl.Rectangle, canvas: rl.Rectangle) ?rl.Texture2D {
         if (!rl.checkCollisionRecs(picture, canvas)) return null;
         if (!self.valid.isSet(n)) {
-            const lv = if (n == scene.node and !scene.stale) &scene.lv else blk: {
-                map.node[n].stampAt(&self.scratch, scene.roll, preview.arrival(map, n));
-                break :blk &self.scratch;
-            };
+            const texture = self.textures[n] orelse raster.canvas(grid.W, grid.H, look.BG, .point) orelse return null;
+            self.textures[n] = texture;
+            const lv = self.terrain(map, scene, n);
             var px: [grid.CELLS]rl.Color = undefined;
             for (&px, 0..) |*c, i| {
                 c.* = if (look.Mark.of(lv, i)) |m|
@@ -55,15 +54,37 @@ pub const Thumbnails = struct {
                 else
                     look.mini(lv.tile[i], true);
             }
-            if (self.textures[n] == null) {
-                self.textures[n] = raster.canvas(grid.W, grid.H, look.BG, .point);
-            }
-            if (self.textures[n]) |t| rl.updateTexture(t, &px);
+            rl.updateTexture(texture, &px);
             self.valid.set(n);
         }
         return self.textures[n];
     }
+
+    fn terrain(self: *Thumbnails, map: *const atlas.Atlas, scene: *const preview.Scene, n: usize) *const grid.Level {
+        const node = &map.node[n];
+        if (n == scene.node and !scene.stale and node.plan == .bespoke and node.zoo == null) return &scene.lv;
+        node.stampAt(&self.scratch, scene.roll, preview.arrival(map, n));
+        return &self.scratch;
+    }
 };
+
+test "thumbnail terrain does not depend on a selected preview's occupants" {
+    const alloc = std.testing.allocator;
+    const map = try atlas.testAtlas();
+    defer alloc.destroy(map);
+    const room = grid.Box.centred(35, 35);
+    _ = map.oneRoom(room, room.centre());
+    map.node[0].zoo = .{ .key = .{ .x = 32, .y = 28 } };
+    var scene: preview.Scene = .{};
+    var thumbnails: Thumbnails = .{};
+    const at = map.start.at;
+    const original = thumbnails.terrain(map, &scene, 0).at(at);
+    scene.node = 0;
+    scene.stale = false;
+    scene.lv = thumbnails.scratch;
+    scene.lv.set(at, if (original == .shallows) .floor else .shallows);
+    try std.testing.expectEqual(original, thumbnails.terrain(map, &scene, 0).at(at));
+}
 
 test "thumbnail invalidation follows changed nodes and discards identities after node removal" {
     const alloc = std.testing.allocator;

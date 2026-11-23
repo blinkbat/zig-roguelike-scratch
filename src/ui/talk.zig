@@ -71,6 +71,7 @@ pub const Layout = struct {
     figure: ?rl.Rectangle = null,
     rows: [script.MAX_CHOICES]rl.Rectangle = undefined,
     row_n: usize = 0,
+    shown_n: usize = 0,
     action: rl.Rectangle = undefined,
     content: rl.Rectangle = undefined,
     starts: [script.MAX_CHOICES]usize = undefined,
@@ -95,22 +96,25 @@ pub const Layout = struct {
         const capacity: usize = @intCast(@max(1, @divTrunc(cap_h - 2 * PAD - header - footer, SAY_PITCH)));
         const counted = capacity + 1;
         self.line_n = countLines(face, v.say, self.text_w, counted);
-        const gap: usize = @intFromBool(self.row_n > 0);
+        self.shown_n = @min(self.row_n, capacity);
+        const first = @min(self.row_n - self.shown_n, v.cursor -| (self.shown_n -| 1));
+        const end_row = first + self.shown_n;
+        const gap: usize = @intFromBool(self.shown_n > 0);
         var reply_lines: [script.MAX_CHOICES]usize = undefined;
         var replies: usize = 0;
-        for (v.choices[0..self.row_n], reply_lines[0..self.row_n]) |label, *n| {
-            n.* = countLines(face, label, self.replyW(), counted);
-            replies += @max(1, n.*);
+        for (v.choices[first..end_row], reply_lines[first..end_row]) |label, *n| {
+            n.* = @max(1, countLines(face, label, self.replyW(), counted));
+            replies += n.*;
         }
-        const said_min: usize = @intFromBool(capacity > 2 * gap);
+        const said_min: usize = @intFromBool(capacity > self.shown_n + gap);
         self.said = @min(self.line_n, @max(said_min, capacity -| (replies + gap)));
         var total = if (self.said > 0) self.said + gap else 0;
-        for (reply_lines[0..self.row_n], 0..) |n, i| {
+        for (reply_lines[first..end_row], first..) |n, i| {
             self.starts[i] = total;
-            total += @max(1, @min(n, counted -| total));
+            total += @min(n, capacity - total - (end_row - i - 1));
             self.ends[i] = total;
         }
-        self.last = @min(total, capacity);
+        self.last = total;
         const visible: i32 = @intCast(@min(@max(total, 3), capacity));
         const h = 2 * PAD + header + visible * SAY_PITCH + footer;
         const x = @divTrunc(screen.x - w, 2);
@@ -122,25 +126,17 @@ pub const Layout = struct {
         self.who_rule_y = self.who_y + font.HEAD_LINE + WHO_RULE_GAP;
         self.text_y = y + PAD + header;
         self.content = raster.rect(self.text_x - ROW_INSET, self.text_y - ROW_RISE, self.text_w + 2 * ROW_INSET, visible * SAY_PITCH + 2 * ROW_RISE);
-        for (0..self.row_n) |i| {
+        @memset(self.rows[0..self.row_n], raster.rect(0, 0, 0, 0));
+        for (first..end_row) |i| {
             const start = self.starts[i];
-            const end = @min(self.last, self.ends[i]);
-            self.rows[i] = if (end > start)
-                raster.rect(self.text_x - ROW_INSET, self.text_y + @as(i32, @intCast(start)) * SAY_PITCH - ROW_RISE, self.text_w + 2 * ROW_INSET, @as(i32, @intCast(end - start)) * SAY_PITCH - ROW_FOOT)
-            else
-                raster.rect(0, 0, 0, 0);
+            const end = self.ends[i];
+            self.rows[i] = raster.rect(self.text_x - ROW_INSET, self.text_y + @as(i32, @intCast(start)) * SAY_PITCH - ROW_RISE, self.text_w + 2 * ROW_INSET, @as(i32, @intCast(end - start)) * SAY_PITCH - ROW_FOOT);
         }
         self.action = raster.rect(x + w - PAD - menu.ACTION_BOX.x, y + h - PAD - menu.ACTION_BOX.y, menu.ACTION_BOX.x, menu.ACTION_BOX.y);
     }
 
     fn replyW(self: *const Layout) i32 {
         return self.text_w - NUMBER_W;
-    }
-
-    pub fn shownRows(self: *const Layout) usize {
-        var n: usize = 0;
-        while (n < self.row_n and self.rows[n].height > 0) n += 1;
-        return n;
     }
 
     pub fn rowAt(self: *const Layout, p: P) ?usize {
@@ -167,7 +163,7 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
         menu.boxedSmall(r, look.fade(if (on) look.UI_GOLD else look.BG, if (on) ROW_ON_A else ROW_OFF_A), look.fade(if (on) look.UI_GOLD else look.EDGE, ROW_EDGE_A));
         if (on) rl.drawRectangle(raster.left(r), raster.top(r), ROW_BAR_W, raster.height(r), look.UI_GOLD);
         face.text(std.fmt.bufPrintZ(&buf, "{d}.", .{i + 1}) catch "", l.text_x, raster.top(r) + ROW_RISE, SAY_SIZE, look.UI_GOLD);
-        drawPassage(face, label, l.text_x + NUMBER_W, l.replyW(), l.starts[i], l.last, l, if (on) look.UI_FOCUS else look.TEXT);
+        drawPassage(face, label, l.text_x + NUMBER_W, l.replyW(), l.starts[i], l.ends[i], l, if (on) look.UI_FOCUS else look.TEXT);
     }
     menu.action(face, l.action, v.prompt, if (l.row_n > 0) "Reply" else if (v.ending) "Leave" else "Continue");
 }
@@ -252,9 +248,11 @@ test "an oversized line clips inside the raised panel rather than splitting into
             try std.testing.expect(l.action.y + l.action.height <= l.panel.y + l.panel.height);
             try std.testing.expectEqual(l.last + 1, l.line_n);
             try std.testing.expect(l.panel.y + l.panel.height <= @as(f32, @floatFromInt(screen.y - 100)));
-            for (l.rows[0..l.row_n]) |r| if (r.height > 0) {
+            for (l.rows[0..l.row_n], 0..) |r, i| {
+                try std.testing.expect(r.height > 0);
                 try std.testing.expect(r.y >= l.content.y and r.y + r.height <= l.action.y);
-            };
+                try std.testing.expectEqual(@as(?usize, i), l.rowAt(raster.middleAt(r)));
+            }
             if (l.figure) |r| try std.testing.expect(r.y + r.height <= l.panel.y + l.panel.height and r.x + r.width < @as(f32, @floatFromInt(l.text_x)));
         }
     }
@@ -275,8 +273,12 @@ test "a window too short for the line still shows the reply the cursor confirms"
     const asks = [_][]const u8{ "Yes", "No" };
     var h: i32 = 100;
     while (h <= 600) : (h += 10) {
-        l.of(&face, .{ .x = 1280, .y = h }, .{ .who = "w", .say = "a word " ** 40, .choices = &asks, .cursor = 0, .prompt = .{ .key = "Enter" }, .figure = null });
-        try std.testing.expect(l.shownRows() >= 1);
+        for (0..asks.len) |cursor| {
+            l.of(&face, .{ .x = 1280, .y = h }, .{ .who = "w", .say = "a word " ** 40, .choices = &asks, .cursor = cursor, .prompt = .{ .key = "Enter" }, .figure = null });
+            const r = l.rows[cursor];
+            try std.testing.expect(r.height > 0);
+            try std.testing.expectEqual(@as(?usize, cursor), l.rowAt(raster.middleAt(r)));
+        }
     }
 }
 

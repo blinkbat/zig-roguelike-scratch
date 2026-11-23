@@ -1220,7 +1220,7 @@ test "undo mid graph drag takes the drag back as its own step, and the map after
     try std.testing.expect(ed.history.dirty);
 }
 
-test "a graph drag put back keeps what there was to redo" {
+test "losing focus puts back a graph drag and keeps what there was to redo" {
     const ed = try testBespoke();
     defer ed.destroy();
     _ = ed.map.add(.{ .bespoke = .{} });
@@ -1235,12 +1235,30 @@ test "a graph drag put back keeps what there was to redo" {
     const hist = .{ ed.history.base, ed.history.len, ed.history.at };
     const was = dragFirstBox(ed);
     try std.testing.expect(!ed.map.node[0].pos.eq(was));
-    ed.drop();
+    ed.desk = .{ .focused = false, .mouse = ed.desk.mouse };
+    interaction.step(ed, TEST_CANVAS, 720, 0);
     try std.testing.expect(ed.map.node[0].pos.eq(was));
     try std.testing.expectEqual(hist, .{ ed.history.base, ed.history.len, ed.history.at });
     ed.redo();
     ed.redo();
     try std.testing.expectEqual(ed.history.len, ed.history.at);
+}
+
+test "losing focus cancels a pending painted rectangle without spending undo history" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const c = TEST_CANVAS;
+    const start = P{ .x = 4, .y = 4 };
+    const end = mouseOn(ed, c, .{ .x = 8, .y = 8 });
+    ed.shape = .rect;
+    ed.desk = .{ .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, start) };
+    interaction.step(ed, c, 720, 0);
+    try std.testing.expect(ed.span != null);
+    ed.desk = .{ .focused = false, .mouse = end };
+    interaction.step(ed, c, 720, 0);
+    try std.testing.expect(ed.span == null and ed.stroke == .none);
+    try std.testing.expectEqual(@as(usize, 0), count(ed, .floor));
+    try std.testing.expectEqual(@as(usize, 0), ed.history.at);
 }
 
 test "redo mid graph drag puts the box back and redoes" {

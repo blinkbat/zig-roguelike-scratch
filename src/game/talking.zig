@@ -142,11 +142,16 @@ pub fn step(g: *game.Game) void {
     if (!shownOf(g, s, &shown)) return finished(g);
     const w = g.sim.world();
     const rt = &g.sim.plot;
+    rt.talk.?.cursor = @intCast(@min(rt.talk.?.cursor, shown.layout.row_n -| 1));
     if (g.st.walk) |d| if (d.delta().y != 0 and shown.layout.row_n > 0) rt.moveCursor(s, w, d.delta().y);
-    const last_shown = shown.layout.shownRows() -| 1;
-    if (rt.talk.?.cursor > last_shown) rt.talk.?.cursor = @intCast(last_shown);
+    if (shown.layout.shown_n < shown.layout.row_n) {
+        if (g.st.pointer) |at| if (raster.holds(shown.layout.panel, at)) {
+            rt.talk.?.cursor = @intCast(g.st.scrolled(rt.talk.?.cursor, shown.layout.row_n));
+        };
+    }
     var picked = false;
-    if (g.st.pointing()) if (shown.layout.rowAt(g.st.pointer.?)) |row| {
+    const pointer_selects = g.st.click or shown.layout.shown_n == shown.layout.row_n;
+    if (pointer_selects and g.st.pointing()) if (shown.layout.rowAt(g.st.pointer.?)) |row| {
         rt.talk.?.cursor = @intCast(row);
         if (g.st.click) {
             rt.pick(s, row, w, &g.sim.log);
@@ -288,6 +293,57 @@ test "a choice clicked while confirm is pressed is one pick" {
     g.st = .{ .device = .keys, .click = true, .pointer = raster.middleAt(shown.layout.rows[0]), .pressed = .initOne(menu.CONFIRM) };
     game.update(g, 0);
     try std.testing.expectEqual(@as(u8, 1), g.sim.plot.talk.?.line);
+}
+
+test "the last dialogue reply can be reached and selected in a short window" {
+    const f = try Fixture.init(WENNA);
+    defer f.deinit();
+    const g = f.g;
+    g.screen = .{ .x = 1280, .y = 300 };
+    game.heroStep(g, .e, 0);
+    try harness.expectMode(g, .talk);
+    var shown: Shown = .{ .view = undefined };
+    try std.testing.expect(shownOf(g, g.sim.script().?, &shown));
+    try std.testing.expectEqual(@as(usize, 1), shown.layout.shown_n);
+    g.st = .{ .device = .xbox, .walk = .s };
+    game.update(g, 0);
+    try std.testing.expectEqual(@as(u8, 1), g.sim.plot.talk.?.cursor);
+    try std.testing.expect(shownOf(g, g.sim.script().?, &shown));
+    try std.testing.expect(shown.layout.rows[1].height > 0);
+    g.st = .{ .device = .keys, .click = true, .pointer = raster.middleAt(shown.layout.rows[1]) };
+    game.update(g, 0);
+    try harness.expectMode(g, .play);
+}
+
+test "moving toward a scrolled dialogue reply keeps it under the pointer" {
+    const f = try Fixture.init(
+        \\dialog wenna
+        \\line root
+        \\say Well?
+        \\ask First. -> root
+        \\ask Second. -> end
+        \\ask Third. -> root
+        \\npc 0 6 5 wenna Old Wenna
+    );
+    defer f.deinit();
+    const g = f.g;
+    g.screen = .{ .x = 1280, .y = 390 };
+    game.heroStep(g, .e, 0);
+    try harness.expectMode(g, .talk);
+    var shown: Shown = .{ .view = undefined };
+    try std.testing.expect(shownOf(g, g.sim.script().?, &shown));
+    try std.testing.expectEqual(@as(usize, 2), shown.layout.shown_n);
+    g.st = .{ .device = .keys, .scroll = -2, .pointer = raster.middleAt(shown.layout.panel), .mouse_moved = true };
+    game.update(g, 0);
+    try std.testing.expectEqual(@as(u8, 2), g.sim.plot.talk.?.cursor);
+    try std.testing.expect(shownOf(g, g.sim.script().?, &shown));
+    const button = raster.middleAt(shown.layout.rows[1]);
+    g.st = .{ .device = .keys, .pointer = button, .mouse_moved = true };
+    game.update(g, 0);
+    try std.testing.expectEqual(@as(u8, 2), g.sim.plot.talk.?.cursor);
+    g.st = .{ .device = .keys, .pointer = button, .click = true };
+    game.update(g, 0);
+    try harness.expectMode(g, .play);
 }
 
 test "a direction held as the conversation moves to another line does not walk the new line's choices" {
@@ -522,6 +578,41 @@ test "an NPC's found spot keeps off a painted NPC listed after it" {
     try std.testing.expect(!hermit.eq(far));
     try std.testing.expectEqual(@as(?usize, 1), lv.npcAt(far));
     try std.testing.expectEqual(@as(?usize, 0), lv.npcAt(hermit));
+}
+
+test "a proximity condition can reference an automatic NPC before it appears" {
+    const f = try Fixture.init(
+        \\dialog hermit
+        \\line root
+        \\say You found me.
+        \\npc 0 far hermit Hermit
+        \\shows near 0 1
+    );
+    defer f.deinit();
+    const g = f.g;
+    const spot = g.sim.plot.spots[0] orelse return error.NoPlace;
+    try std.testing.expectEqual(@as(?usize, null), g.sim.lv.npcAt(spot));
+    const beside_spot = spot.add(.{ .x = -1, .y = 0 });
+    game.beginMapAt(g, f.w, .{ .node = 0, .at = beside_spot }, SEED);
+    try std.testing.expectEqual(@as(?P, spot), g.sim.plot.spots[0]);
+    try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(spot));
+    game.heroStep(g, .e, 0);
+    try harness.expectMode(g, .talk);
+}
+
+test "a proximity condition can reference a visible automatic NPC listed later" {
+    const f = try Fixture.init(
+        \\npc 0 3 3 - Lookout
+        \\shows near 1 1
+        \\npc 0 far - Hermit
+    );
+    defer f.deinit();
+    const g = f.g;
+    const spot = g.sim.plot.spots[1] orelse return error.NoPlace;
+    const lookout = P{ .x = 3, .y = 3 };
+    try std.testing.expectEqual(@as(?usize, null), g.sim.lv.npcAt(lookout));
+    game.beginMapAt(g, f.w, .{ .node = 0, .at = spot.add(.{ .x = -1, .y = 0 }) }, SEED);
+    try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(lookout));
 }
 
 const MERCHANT =

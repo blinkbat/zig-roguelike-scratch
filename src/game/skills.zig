@@ -36,12 +36,15 @@ pub fn openAim(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     aimAt(run, by, act, hero.at, null);
 }
 
-fn targetAt(run: *game.Game, act: skillbar.Act, from: P, id: u16) ?P {
-    const a = run.sim.pool.get(id) orelse return null;
+pub fn targetAt(run: *const game.Game, act: skillbar.Act, from: P, id: u16) ?P {
+    const a = run.sim.pool.getConst(id) orelse return null;
     if (!a.seenFoe(&run.sim.lv) or !tactics_exec.validAct(run, act, from, a.at)) return null;
     if (act.reticle() == .bow) {
-        const flight = bow.previewAmong(&run.sim.lv, &run.sim.pool, from, a.at);
-        if (!flight.hits(id)) return null;
+        const hit = if (shownPiercing(run, from, act, a.at)) |pierced|
+            pierced.hits(id)
+        else
+            bow.previewAmong(&run.sim.lv, &run.sim.pool, from, a.at).hits(id);
+        if (!hit) return null;
     }
     return a.at;
 }
@@ -474,10 +477,15 @@ pub fn confirmAim(run: *game.Game) void {
 
 /// The flight the reticle shows toward `mark`, passing over bodies the hero cannot see.
 pub fn shownFlight(run: *const game.Game, from: P, act: skillbar.Act, mark: P) bow.Flight {
+    if (shownPiercing(run, from, act, mark)) |pierced| return pierced.flight;
+    return bow.previewAmong(&run.sim.lv, &run.sim.pool, from, mark);
+}
+
+fn shownPiercing(run: *const game.Game, from: P, act: skillbar.Act, mark: P) ?bow.Pierced {
     if (act.pierces()) return bow.piercePreviewAmong(&run.sim.lv, &run.sim.pool, from, mark);
     const extra = skewers(&run.sim, act);
     if (extra > 0) return bow.skewerPreviewAmong(&run.sim.lv, &run.sim.pool, from, mark, act.reach(), extra);
-    return bow.previewAmong(&run.sim.lv, &run.sim.pool, from, mark);
+    return null;
 }
 
 /// The extra foes worn pierce lets a single-target projectile pass through.

@@ -2,7 +2,6 @@ const std = @import("std");
 const rl = @import("raylib");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
-const tactics_exec = @import("tactics_exec.zig");
 const binds = @import("binds.zig");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
@@ -145,13 +144,14 @@ pub fn aim(g: *game.Game) bool {
     return g.st.click or dropped;
 }
 
-fn attack(g: *game.Game, at: P) bool {
+fn attack(g: *game.Game, id: u16) bool {
     const h = g.sim.heroActor() orelse return false;
     const set = skills.activeSet(g);
     for (skillbar.SLOTS) |b| {
         const act = g.bar.at(.{ .set = set, .button = b }) orelse continue;
-        if (act.reticle() == null or act.attack() == null or act == .overwatch or act.supplyOf() != null or !tactics_exec.validAct(g, act, h.at, at)) continue;
+        if (act.reticle() == null or act.attack() == null or act == .overwatch or act.supplyOf() != null) continue;
         if (skills.blockedNow(g, act) != null) continue;
+        const at = skills.targetAt(g, act, h.at, id) orelse continue;
         skills.useSkill(g, .{ .act = act, .by = b, .set = set });
         if (g.mode == .aim) {
             g.mode.aim.mark = at;
@@ -178,7 +178,7 @@ pub fn step(g: *game.Game) bool {
         const foe = g.sim.pool.get(id) orelse return true;
         if (!foe.seenFoe(&g.sim.lv)) return true;
         at = foe.at;
-        if (attack(g, at)) return true;
+        if (attack(g, id)) return true;
         if (mathx.adjacent(h.at, at)) {
             game.heroStep(g, mathx.dirTo(h.at, at).?, 0);
             return true;
@@ -471,6 +471,21 @@ test "a clicked foe beside the hero is bumped when every aimed attack is cooling
     const clock = g.sim.clock;
     clickCell(g, .{ .x = 21, .y = 20 });
     try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
+}
+
+test "a click on a foe behind a visible interceptor uses a bound piercing shot" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const target = P{ .x = 24, .y = 20 };
+    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 22, .y = 20 }, target });
+    g.sim.growth.ranks.set(.piercing_shot, 1);
+    g.bar = .{};
+    g.bar.bind(.{ .set = .primary, .button = .a }, .shoot);
+    g.bar.bind(.{ .set = .primary, .button = .x }, .piercing_shot);
+    for (game.harness.foes(g)) |*foe| game.harness.toughen(foe);
+    clickCell(g, target);
+    try std.testing.expectEqual(skillbar.Act.piercing_shot, g.pic.shot.?.act);
+    try std.testing.expect(game.harness.foes(g)[1].hurt());
 }
 
 test "a clicked foe that dived out of sight before the walk resumed draws no reticle or shot" {

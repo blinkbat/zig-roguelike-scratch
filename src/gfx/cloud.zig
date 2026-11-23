@@ -34,6 +34,7 @@ pub const Cloud = struct {
     px: [TEXELS]rl.Color,
     stale: bool = true,
     baked: grid.Box = .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 0, .y = 0 } },
+    baked_tiles: [grid.CELLS]grid.Tile = undefined,
     t: mathx.Seconds = .{},
     /// Seconds until the burst the newest gas came from lands; till then the cloud stays as drawn.
     held: f32 = 0,
@@ -115,11 +116,7 @@ pub const Cloud = struct {
         if (!self.tinted(view.grown(1))) return;
         self.visible = true;
         self.map_view = .of(ox, oy, cell, screen.x, screen.y);
-        if (self.stale or !std.meta.eql(view, self.baked)) {
-            self.bake(lv, view);
-            rl.updateTexture(tex, &self.px);
-            self.stale = false;
-        }
+        if (self.refresh(lv, view)) rl.updateTexture(tex, &self.px);
         const s = self.shade orelse return raster.overFloor(tex, ox, oy, cell);
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
@@ -178,13 +175,28 @@ pub const Cloud = struct {
         return false;
     }
 
-    fn bake(self: *Cloud, lv: *const grid.Level, view: grid.Box) void {
+    fn refresh(self: *Cloud, lv: *const grid.Level, view: grid.Box) bool {
+        const reads = view.grown(1);
+        if (!self.stale and std.meta.eql(view, self.baked) and self.sameTiles(lv, reads)) return false;
         var ty = view.lo.y * SUB;
         while (ty < view.hi.y * SUB) : (ty += 1) {
             var tx = view.lo.x * SUB;
             while (tx < view.hi.x * SUB) : (tx += 1) self.px[@intCast(ty * TEX_W + tx)] = self.mixed(lv, tx, ty);
         }
+        self.baked_tiles = lv.tile;
         self.baked = view;
+        self.stale = false;
+        return true;
+    }
+
+    fn sameTiles(self: *const Cloud, lv: *const grid.Level, reads: grid.Box) bool {
+        var y = reads.lo.y;
+        while (y < reads.hi.y) : (y += 1) {
+            const lo = grid.Level.idx(.{ .x = reads.lo.x, .y = y });
+            const hi = lo + @as(usize, @intCast(reads.width()));
+            if (!std.mem.eql(grid.Tile, self.baked_tiles[lo..hi], lv.tile[lo..hi])) return false;
+        }
+        return true;
     }
 
     /// Premultiplied, so filtering mixes each gas's colour by its share, and none from where there is no gas.
@@ -387,4 +399,28 @@ test "a wall's texels carry the gas of the room they face up to it, and none sho
     try std.testing.expectEqual(@as(f32, 0), texel(c.tint.getPtrConst(.caustic), &lv, 11 * SUB, 7 * SUB));
     try std.testing.expectEqual(@as(f32, 0.8), texel(c.tint.getPtrConst(.caustic), &lv, 7 * SUB, 4 * SUB + SUB - 1));
     try std.testing.expectEqual(@as(f32, 0), texel(c.tint.getPtrConst(.caustic), &lv, 7 * SUB, 4 * SUB));
+}
+
+test "opening a chest refreshes its baked gas texels without a tint or camera change" {
+    const alloc = std.testing.allocator;
+    const c = try Cloud.create(alloc);
+    defer alloc.destroy(c);
+    var lv = grid.openFloor();
+    const chest = P{ .x = 10, .y = 10 };
+    const beside = P{ .x = 9, .y = 10 };
+    const view = grid.Box.sized(chest, 3, 3);
+    const facing = (chest.y * TEX_W + chest.x) * SUB;
+    lv.set(chest, .chest);
+    c.tint.getPtr(.caustic)[grid.Level.idx(beside)] = 0.8;
+    try std.testing.expect(c.refresh(&lv, view));
+    try std.testing.expect(c.px[facing].a > 0);
+    try std.testing.expect(!c.refresh(&lv, view));
+    lv.set(beside, .wall);
+    try std.testing.expect(c.refresh(&lv, view));
+    try std.testing.expectEqual(rl.Color.blank, c.px[facing]);
+    lv.set(beside, .floor);
+    try std.testing.expect(c.refresh(&lv, view));
+    lv.set(chest, .chest_open);
+    try std.testing.expect(c.refresh(&lv, view));
+    try std.testing.expectEqual(rl.Color.blank, c.px[facing]);
 }

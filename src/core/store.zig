@@ -3,17 +3,33 @@ pub const legacy = @import("store_legacy.zig");
 
 /// Written beside itself and renamed over it, so a write that fails part-way leaves the last one standing.
 pub fn replace(path: []const u8, bytes: []const u8) !void {
-    if (std.fs.path.dirname(path)) |d| try std.fs.cwd().makePath(d);
-    var tmp_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const tmp = try std.fmt.bufPrint(&tmp_buf, "{s}.tmp", .{path});
-    errdefer std.fs.cwd().deleteFile(tmp) catch {};
-    {
-        var f = try std.fs.cwd().createFile(tmp, .{});
-        defer f.close();
-        try f.writeAll(bytes);
-        try f.sync();
-    }
-    try std.fs.cwd().rename(tmp, path);
+    const parent = std.fs.path.dirname(path);
+    var dir = if (parent) |p| try std.fs.cwd().makeOpenPath(p, .{}) else std.fs.cwd();
+    defer if (parent != null) dir.close();
+    var pending = try dir.atomicFile(std.fs.path.basename(path), .{});
+    defer pending.deinit();
+    try pending.file.writeAll(bytes);
+    try pending.file.sync();
+    try pending.finish();
+}
+
+test "atomic replacement leaves a neighboring temporary file alone" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const alloc = std.testing.allocator;
+    const root = try tmp.dir.realpathAlloc(alloc, ".");
+    defer alloc.free(root);
+    const path = try std.fs.path.join(alloc, &.{ root, "nested", "record.dat" });
+    defer alloc.free(path);
+    try replace(path, "old record");
+    try tmp.dir.writeFile(.{ .sub_path = "nested/record.dat.tmp", .data = "another writer" });
+    try replace(path, "new record");
+    const stored = try tmp.dir.readFileAlloc(alloc, "nested/record.dat", 64);
+    defer alloc.free(stored);
+    const neighbor = try tmp.dir.readFileAlloc(alloc, "nested/record.dat.tmp", 64);
+    defer alloc.free(neighbor);
+    try std.testing.expectEqualStrings("new record", stored);
+    try std.testing.expectEqualStrings("another writer", neighbor);
 }
 
 pub const DIR = "saves";

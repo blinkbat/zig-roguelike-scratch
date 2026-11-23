@@ -275,8 +275,9 @@ view-change priority before a click can paint or begin a graph drag.
 `Editor.scene` owns the derived level, preview actors and issues. Call `preview`
 before reading it; selection, edits and rerolls invalidate it through its owner.
 Scene generation takes a const map and cannot modify history or navigation.
-`Editor.thumbnails` owns graph texture lifetime and selective invalidation. Canvas
-passes the map, derived scene and clipping rectangles without changing the map.
+`Editor.thumbnails` owns graph texture lifetime and selective invalidation. Graph
+textures show the node's stamped terrain before creature placement. Canvas passes
+the map, derived scene and clipping rectangles without changing the map.
 `Game.art` tracks stale, play and editor graphics as one state. Scene changes and
 title assets invalidate it; the matching renderer prepares its required textures
 once. Editor does not keep a second graphics-stale flag.
@@ -285,6 +286,8 @@ History records the starting map on the first actual change and keeps later chan
 in that same step. A no-op gesture does not truncate redo. Graph movement uses
 `Transaction.previewNode`, then `commitPreview` or `cancelPreview`: cancellation
 restores the starting map without modifying the history ring or saved position.
+Losing window focus cancels an unfinished shape, graph drag or door link and
+ends a freehand stroke at its last applied cell.
 Retained history copies active nodes and encodes only active script entries and text;
 it preserves unfinished authoring values without save validation. Gesture preparation
 and undo/redo allocate their snapshots before changing the map or history.

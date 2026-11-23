@@ -231,7 +231,7 @@ pub fn rollWith(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, feat
     }
     carve.seal(lv, pal.solid);
     carve.openDoors(lv, doors, pal.open);
-    if (lv.firstOpen() == null) carve.disc(lv, grid.MIDDLE, CLEARING_R, pal.open, null);
+    if (lv.firstOpen() == null) clearStart(lv, pal.open, &painted);
     carve.connect(lv, &rng, pal, .{ .lots = lots.slice()[joined_from..], .before = &base, .authored = if (authored != null) &painted else null });
     settle(lv);
     if (fitted == .wilds and branches.improves(fitted.wilds)) {
@@ -250,6 +250,24 @@ pub fn lay(comptime base: type, lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: 
 
 /// A floor rolled with no open ground and no door gets this clearing at its middle to start in.
 const CLEARING_R: f32 = 3;
+
+fn clearStart(lv: *grid.Level, ground: grid.Tile, painted: *const grid.CellSet) void {
+    var nearest: ?P = null;
+    for (0..@max(grid.W, grid.H) / 2 + 1) |r| {
+        var ring = mathx.Ring.init(grid.MIDDLE, @intCast(r));
+        centres: while (ring.next()) |centre| {
+            if (!grid.INNER.holds(centre) or painted.isSet(grid.Level.idx(centre))) continue;
+            if (nearest == null) nearest = centre;
+            var disc = grid.Cells.around(centre, carve.discReach(CLEARING_R));
+            while (disc.next()) |p| {
+                if (grid.INNER.holds(p) and carve.inDisc(centre, p, CLEARING_R) and painted.isSet(grid.Level.idx(p))) continue :centres;
+            }
+            carve.disc(lv, centre, CLEARING_R, ground, null);
+            return;
+        }
+    }
+    lv.set(nearest orelse grid.MIDDLE, ground);
+}
 
 fn settle(lv: *grid.Level) void {
     for (0..grid.CELLS) |i| {
@@ -520,9 +538,26 @@ test "a torch a border buries frees its slot for the houses raised after it" {
 test "a doorless floor rolled all solid still has ground to start on" {
     var lv: grid.Level = undefined;
     const thick = [_]Feature{.{ .scatter = .{ .tile = .shrub, .on = .grass, .amount = scatter.AMOUNT_MAX } }};
-    roll(&lv, 0xD0, &.{}, .{ .open = .{ .decor = .{ .tiny_shrubs = 0, .tall_grass = 0, .shrooms = 0 } } }, &thick);
+    const floor = Floor{ .open = .{ .decor = .{ .tiny_shrubs = 0, .tall_grass = 0, .shrooms = 0 } } };
+    const seed = 0xD0;
+    roll(&lv, seed, &.{}, floor, &thick);
     try std.testing.expect(lv.firstOpen() != null);
     try std.testing.expect(lv.walkable(grid.MIDDLE));
+
+    var s: section.Section = .{};
+    try std.testing.expect(s.paint(grid.MIDDLE, .wall));
+    rollWith(&lv, seed, &.{}, floor, &thick, s.lands(seed, &.{}), &.{});
+    try std.testing.expect(lv.firstOpen() != null);
+    try std.testing.expectEqual(grid.Tile.wall, lv.at(grid.MIDDLE));
+
+    const gap = grid.INNER.lo;
+    var cells = grid.INNER.cells();
+    while (cells.next()) |p| {
+        if (!p.eq(gap)) _ = s.paint(p, .wall);
+    }
+    rollWith(&lv, seed, &.{}, floor, &thick, s.lands(seed, &.{}), &.{});
+    try std.testing.expectEqual(@as(usize, 1), lv.openCount());
+    try std.testing.expect(lv.walkable(gap));
 }
 
 test "a set piece in a thicket opens onto the ground round it, so no join fills or breaks into it" {

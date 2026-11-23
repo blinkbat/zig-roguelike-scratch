@@ -544,13 +544,29 @@ pub const Atlas = struct {
         for (self.script.npcs(), 0..) |*npc, i| if (npc.node == n) if (self.script.standsAt(i, stood)) |c| avoid.set(grid.Level.idx(c));
         for (self.script.npcs(), 0..) |*npc, i| {
             if (npc.node != n or !shown.shows(i)) continue;
-            const at = self.script.standsAt(i, stood) orelse blk: {
-                const p = spotFor(lv, npc.spot, &avoid) orelse continue;
-                stood[i] = p;
-                break :blk p;
-            };
+            const at = self.reserveNpcSpot(i, lv, stood, &avoid) orelse continue;
             if (lv.vacant(at)) lv.putNpc(at, i);
         }
+        var conds = self.script.condIter();
+        while (conds.next()) |c| {
+            if (c.kind != .near or c.slot >= self.script.npc_n) continue;
+            const npc = &self.script.npc[c.slot];
+            if (npc.node != n or self.script.standsAt(c.slot, stood) != null) continue;
+            _ = self.reserveNpcSpot(c.slot, lv, stood, &avoid);
+        }
+        for (self.script.npcs(), 0..) |*npc, i| {
+            if (npc.node != n or npc.shows == null or npc.shows.?.kind != .near or !shown.shows(i)) continue;
+            const at = self.reserveNpcSpot(i, lv, stood, &avoid) orelse continue;
+            if (lv.vacant(at)) lv.putNpc(at, i);
+        }
+    }
+
+    fn reserveNpcSpot(self: *const Atlas, i: usize, lv: *const grid.Level, stood: *script.Stood, avoid: *grid.CellSet) ?P {
+        if (self.script.standsAt(i, stood)) |p| return p;
+        const p = spotFor(lv, self.script.npc[i].spot, avoid) orelse return null;
+        stood[i] = p;
+        avoid.set(grid.Level.idx(p));
+        return p;
     }
 
     pub fn add(self: *Atlas, plan: Plan) ?usize {

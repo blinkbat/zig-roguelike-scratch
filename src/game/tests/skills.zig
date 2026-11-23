@@ -851,6 +851,35 @@ test "smart aim ignores hidden interception until the shot is confirmed" {
     }
 }
 
+test "smart aim selects visible foes through the current shot's pierce limit" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const near = P{ .x = 21, .y = 20 };
+    const middle = P{ .x = 23, .y = 20 };
+    const far = P{ .x = 25, .y = 20 };
+    harness.arena(g, from, &.{ near, middle, far });
+
+    skills.openAim(g, .x, .piercing_shot);
+    try std.testing.expectEqual(near, g.mode.aim.mark);
+    skills.nudgeAim(g, .e);
+    try std.testing.expectEqual(middle, g.mode.aim.mark);
+    skills.nudgeAim(g, .e);
+    try std.testing.expectEqual(far, g.mode.aim.mark);
+    skills.closeAim(g);
+
+    g.sim.inventory.gear.slots.set(.left_hand, harness.affixed(.quiver, .{ .kind = .pierce, .value = 1 }));
+    skills.openAim(g, .x, .shoot);
+    try std.testing.expectEqual(near, g.mode.aim.mark);
+    skills.nudgeAim(g, .e);
+    try std.testing.expectEqual(middle, g.mode.aim.mark);
+    skills.closeAim(g);
+    skills.openAim(g, .x, .shoot);
+    try std.testing.expectEqual(middle, g.mode.aim.mark);
+    skills.nudgeAim(g, .e);
+    try std.testing.expectEqual(P{ .x = 24, .y = 20 }, g.mode.aim.mark);
+}
+
 test "smart aim replaces dead hidden blocked distant and invalid targets with a legal foe" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

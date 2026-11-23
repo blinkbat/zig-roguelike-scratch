@@ -145,7 +145,7 @@ pub const Editor = struct {
         return .{
             .pointer = ed.desk.mouse,
             .pressed = ed.desk.paint_hit,
-            .accepting = !ed.fresh and ed.action == .none,
+            .accepting = ed.desk.focused and !ed.fresh and ed.action == .none,
             .covered = ed.modal != .none or ed.popup != null,
             .clip = ed.clip,
             .tip = &ed.tip,
@@ -398,14 +398,18 @@ pub const Editor = struct {
     }
 
     pub fn drop(ed: *Editor) void {
-        ed.letGo();
+        ed.cancelGesture();
         ed.cell_action = null;
-        if (ed.drag != null) ed.history.cancelPreview(ed.map);
-        ed.drag = null;
-        ed.linking = null;
         if (ed.popup != null) ed.fresh = true;
         ed.popup = null;
         ed.delete_armed = null;
+    }
+
+    pub fn cancelGesture(ed: *Editor) void {
+        ed.letGo();
+        if (ed.drag != null) ed.history.cancelPreview(ed.map);
+        ed.drag = null;
+        ed.linking = null;
     }
 
     pub fn dismiss(ed: *Editor) void {
