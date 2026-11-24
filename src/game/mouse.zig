@@ -65,7 +65,7 @@ pub fn clickable(mode: game.Mode) bool {
     return mode == .play or mode == .aim or mode == .inspect;
 }
 
-fn overUi(g: *const game.Game, p: P) bool {
+pub fn overUi(g: *const game.Game, p: P) bool {
     const layout = game.overlay.hudLayout(g);
     return raster.holds(raster.rect(layout.left, layout.top, hud.WIDTH, hud.COVER), p) or
         raster.holds(journal.box(g.screen), p) or raster.holds(game.scene.miniFrame(g.screen.x), p) or

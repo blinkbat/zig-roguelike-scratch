@@ -354,9 +354,11 @@ Type-checked, compiled and statically inspected. This build command does not lau
                 if archive.extractfile(entry).read() != data or entry.mode != mode:
                     raise ValueError('Packaged content or mode mismatch: ' + entry.name)
 
+    sidecar = destination.with_suffix(destination.suffix + '.sha256')
+    sidecar.unlink(missing_ok=True)
     publish(destination, write, check)
     checksum = sha256(destination.read_bytes())
-    destination.with_suffix(destination.suffix + '.sha256').write_text(checksum + '  ' + destination.name + '\n', encoding='ascii')
+    publish(sidecar, lambda stream: stream.write((checksum + '  ' + destination.name + '\n').encode('ascii')))
     print('PACKAGED: ' + str(destination), flush=True)
     print('SHA256: ' + checksum, flush=True)
 

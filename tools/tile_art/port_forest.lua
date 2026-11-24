@@ -67,14 +67,15 @@ sourceFiles.hide(sprite,sourceFiles.LAYER.under,sourceFiles.LAYER.ideas)
 drawing.stackIndex=#sprite.layers
 app.layer=extension
 local destination=install and path or sourceFiles.draft(work..'forest-tree-walls-draft.aseprite',path)
-sprite:saveAs(destination)
+local staged=sourceFiles.stage(app.fs.fileName(destination))
+sprite:saveAs(staged)
 sprite:saveCopyAs(work..'forest-tree-walls-sheet.png')
 sprite:close()
-local reopened=assert(app.open(destination))
+local reopened=assert(app.open(staged))
 sourceFiles.checkCel(reopened,sourceFiles.LAYER.draw,saved,position)
 sourceFiles.checkLayer(reopened,sourceFiles.LAYER.forest,sheet,Point(0,0))
 reopened:close()
-if install then sourceFiles.copy(destination,canonical) end
+sourceFiles.publishTo(staged,destination,install and canonical or nil)
 atlas:saveAs(work..'forest-tree-walls-art.png')
 source:saveAs(work..'forest-tree-walls-original.png')
 local map={

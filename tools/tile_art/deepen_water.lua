@@ -53,9 +53,10 @@ for _,l in ipairs(s.layers) do
   end
 end
 assert(snapshots[sourceFiles.LAYER.draw] and snapshots[extension] and changed>0)
-s:saveAs(path)
+local staged=sourceFiles.stage(app.fs.fileName(path))
+s:saveAs(staged)
 s:close()
-local back=assert(app.open(path))
+local back=assert(app.open(staged))
 for name,expected in pairs(snapshots) do
   local cel=sourceFiles.checkCel(back,name,expected.toned,expected.position)
   for y=0,cel.image.height-1 do for x=0,cel.image.width-1 do
@@ -63,7 +64,7 @@ for name,expected in pairs(snapshots) do
   end end
 end
 back:close()
-if install then sourceFiles.copy(path,canonical) end
+sourceFiles.publishTo(staged,path,install and canonical or nil)
 shallow:saveAs(work..'shallows-atlas.png')
 deep:saveAs(work..'deep-water-atlas.png')
 local preview=Image(2*size,size,ColorMode.RGB)

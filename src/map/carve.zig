@@ -153,7 +153,7 @@ pub const Over = struct {
     pub const RANGES: []const []const u8 = &.{ "water_range", "water_clear", "land_range" };
 
     fn has(o: Over, t: grid.Tile) bool {
-        return t == o.tile or (o.decked and !t.solid() and t.ground() == o.tile);
+        return t == o.tile or (o.decked and !t.solid() and t.ground() == o.tile and (grid.LITTER_TILES.contains(t) or t.tinder()));
     }
 
     fn at(o: Over, lv: *const grid.Level, p: P) bool {

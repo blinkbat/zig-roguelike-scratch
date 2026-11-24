@@ -10,6 +10,7 @@ local stand_in=app.params.from=='underdrawing'
 assert(app.params.from==nil or stand_in,'from=underdrawing or nothing')
 assert(not stand_in or app.params.out,'a stand-in never goes into assets/: give out=')
 local out=app.params.out or (root..'assets/ground/'..name..'-ground.png')
+assert(out:lower():match('%.png$'),'out= must be a .png')
 if stand_in then
   sourceFiles.requireOutside(out,app.fs.joinPath(root,'assets'))
 end
@@ -51,4 +52,4 @@ if name=='bridge' and not stand_in then
   end
 end
 sprite:close()
-sourceFiles.savePng(sheet,out,'reread '..out)
+sourceFiles.publish({sourceFiles.stagePng(sheet,out,'reread '..out)})

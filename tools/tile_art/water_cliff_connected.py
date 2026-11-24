@@ -14,6 +14,9 @@ parser.add_argument('shots', type=Path)
 parser.add_argument('--output', type=Path, default=Path.home() / 'Desktop' / 'water-cliff-connections.aseprite')
 parser.add_argument('--replace', action='store_true')
 args = parser.parse_args()
+args.output, args.shots = args.output.resolve(), args.shots.resolve()
+if args.output.suffix.lower() != '.aseprite':
+    raise SystemExit('--output must be an .aseprite file; its .png preview is written beside it.')
 if not args.replace and (args.output.exists() or args.output.with_suffix('.png').exists()):
     raise SystemExit('Preserving existing connected template; choose a new --output.')
 work = Path(tempfile.mkdtemp(prefix='cistern-connected-cliffs-'))

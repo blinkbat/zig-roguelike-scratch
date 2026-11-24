@@ -372,7 +372,8 @@ pub fn inspectStep(g: *game.Game) void {
     if (g.st.pointing()) {
         const pointer = g.st.pointer.?;
         const source = g.cinema.lens.sourcePoint(pointer, g.screen);
-        for (spots) |part| if (if (part.source_box) |box| raster.holds(box, source) else underHud(part, pointer)) {
+        const over_ui = game.mouseControls.overUi(g, pointer);
+        for (spots) |part| if (if (part.source_box) |box| !over_ui and raster.holds(box, source) else underHud(part, pointer)) {
             inspect(g, part.spot);
             return;
         };
@@ -419,6 +420,7 @@ pub fn hovered(g: *const game.Game) ?Part {
     if (!game.playShown(g) and g.mode != .aim) return null;
     const p = g.st.pointer orelse return null;
     if (hoveredHud(g, p)) |part| return part;
+    if (game.mouseControls.overUi(g, p)) return null;
     const source_point = g.cinema.lens.sourcePoint(p, g.screen);
     const cam = game.scene.Cam.of(g);
     for (0..g.sim.pool.n) |i| {

@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
 const lume = @import("lume.zig");
+const gen = @import("gen.zig");
 const carve = @import("carve.zig");
 const actor = @import("../play/actor.zig");
 
@@ -255,6 +256,7 @@ pub const Placed = struct {
         }
         const painted = self.cells();
         lv.torch.keep(&painted, unpainted);
+        gen.keepTorches(lv);
         lv.torch.spare(s.torch.n);
         for (s.torch.slice()) |w| lv.addTorch(self.at(w));
     }

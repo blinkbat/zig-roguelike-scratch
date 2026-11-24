@@ -130,6 +130,7 @@ end
 function files.stage(name)
   local staged=app.fs.joinPath(files.work(app.fs.joinPath(app.fs.tempPath,'tile-art-stage')),name)
   os.remove(staged)
+  assert(not app.fs.isFile(staged) and not app.fs.isDirectory(staged),'Stale staged file: '..staged)
   return staged
 end
 
@@ -155,6 +156,12 @@ function files.publish(staged)
       error(err,0)
     end
   end
+end
+
+function files.publishTo(staged,...)
+  local items={}
+  for _,path in ipairs({...}) do items[#items+1]=files.staged(path,staged) end
+  files.publish(items)
 end
 
 function files.layer(sprite,name)

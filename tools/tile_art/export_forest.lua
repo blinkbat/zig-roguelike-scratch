@@ -31,7 +31,7 @@ for i,mask in ipairs(masks) do
 end
 local unusedX,unusedY=masks.at(#masks+1)
 for y=unusedY,unusedY+masks.CELL-1 do for x=unusedX,unusedX+masks.CELL-1 do assert(app.pixelColor.rgbaA(atlas:getPixel(x,y))==0,'Unused cell painted') end end
-sourceFiles.savePng(atlas,root..'assets/walls/forest-tree-walls.png','Export changed the visible artwork')
+sourceFiles.publish({sourceFiles.stagePng(atlas,root..'assets/walls/forest-tree-walls.png','Export changed the visible artwork')})
 sprite:close()
 local report=sourceFiles.report(work..'forest-tree-walls-export.txt')
 report:write(('%d cells exported, %dx%d each, %d opaque pixels; unused cell clear.\n'):format(#masks,masks.CELL,masks.CELL,pixels))
