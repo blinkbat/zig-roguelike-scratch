@@ -248,6 +248,17 @@ pub fn joined(comptime names: anytype, comptime last: text.Conjunction) [:0]cons
 
 pub const listSep = text.listSep;
 
+pub const Activation = union(enum) {
+    mouse: usize,
+    confirm: usize,
+
+    pub fn row(self: Activation) usize {
+        return switch (self) {
+            .mouse, .confirm => |i| i,
+        };
+    }
+};
+
 pub const Menu = struct {
     at: usize = 0,
     dragging: ?usize = null,
@@ -265,20 +276,30 @@ pub const Menu = struct {
     }
 
     pub fn stepAt(self: *Menu, st: *const input.State, n: usize, screen: mathx.P) ?usize {
+        const activation = self.activateAt(st, n, screen) orelse return null;
+        return activation.row();
+    }
+
+    pub fn activateAt(self: *Menu, st: *const input.State, n: usize, screen: mathx.P) ?Activation {
         if (!self.clampTo(n)) return null;
         const win = window(screen.y, n, self.at);
         self.at = st.scrolled(self.at, n);
         if (win.len == n or st.click) if (pointed(st, win.len, Rows{ .screen = screen, .win = win }, Rows.box)) |k| {
             self.at = win.from + k;
-            if (st.click) return self.at;
+            if (st.click) return .{ .mouse = self.at };
         };
-        return self.step(st, n);
+        return self.confirm(st, n);
     }
 
-    pub fn stepOver(self: *Menu, st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
+    pub fn activateOver(self: *Menu, st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?Activation {
         if (!self.clampTo(n)) return null;
-        if (pointAt(&self.at, st, n, ctx, boxOf)) |k| return k;
-        return self.step(st, n);
+        if (pointAt(&self.at, st, n, ctx, boxOf)) |k| return .{ .mouse = k };
+        return self.confirm(st, n);
+    }
+
+    fn confirm(self: *Menu, st: *const input.State, n: usize) ?Activation {
+        const i = self.step(st, n) orelse return null;
+        return .{ .confirm = i };
     }
 };
 

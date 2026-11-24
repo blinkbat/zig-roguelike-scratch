@@ -11,6 +11,7 @@ assert(app.params.percent==nil or tonumber(app.params.percent),'percent must be 
 local percent=tonumber(app.params.percent) or 60
 assert(percent>0 and percent<100,'percent must be between 0 and 100')
 local install=app.params.install=='yes'
+local path=install and desktop or sourceFiles.draft(work..'deep-water-draft.aseprite',source)
 local pc=app.pixelColor
 if install then
   assert(not app.fs.isFile(canonical),'Inspect the existing deep-water source before regenerating')
@@ -52,7 +53,6 @@ for _,l in ipairs(s.layers) do
   end
 end
 assert(snapshots[sourceFiles.LAYER.draw] and snapshots[extension] and changed>0)
-local path=install and desktop or work..'deep-water-draft.aseprite'
 s:saveAs(path)
 s:close()
 local back=assert(app.open(path))

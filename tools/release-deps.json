@@ -1,5 +1,6 @@
 {
   "zig_version": "0.14.1",
+  "zig_windows_x86_64_sha256": "554f5378228923ffd558eac35e21af020c73789d87afeabf4bfd16f2e6feed2c",
   "linux": [
     {
       "name": "libgl-dev",

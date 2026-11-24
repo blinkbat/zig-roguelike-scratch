@@ -207,11 +207,18 @@ pub const State = struct {
     }
 
     pub fn canLearn(self: *const State, c: hero.Class, act: skillbar.Act) bool {
-        if (self.active_points < POINT_COST or self.maxed(act)) return false;
+        return self.learnBlocked(c, act) == null;
+    }
+
+    pub const LearnBlocked = union(enum) { maxed, parent: skillbar.Act, points, other_class };
+
+    pub fn learnBlocked(self: *const State, c: hero.Class, act: skillbar.Act) ?LearnBlocked {
+        if (self.maxed(act)) return .maxed;
         for (skills(c)) |s| if (s.act == act) {
-            return if (s.parent) |p| self.unlocked(p) else true;
+            if (s.parent) |p| if (!self.unlocked(p)) return .{ .parent = p };
+            return if (self.active_points < POINT_COST) .points else null;
         };
-        return false;
+        return .other_class;
     }
 
     pub fn learn(self: *State, c: hero.Class, act: skillbar.Act) bool {

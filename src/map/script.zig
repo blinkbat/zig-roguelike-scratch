@@ -500,12 +500,18 @@ pub const Spot = union(enum) {
     at: P,
     /// Beside the first of these props with free ground round it.
     by: grid.Tile,
+    /// The free cell of this ground nearest the middle of all of it.
+    on: grid.Tile,
     /// The open ground the longest walk from the node's doors.
     far,
 };
 
 pub fn besideable(t: grid.Tile) bool {
     return t.upright() and !t.shaped() and !t.isPart() and !t.isOpened();
+}
+
+pub fn standable(t: grid.Tile) bool {
+    return !t.solid() and !t.wet() and !t.stamped();
 }
 
 pub fn besideOf(t: grid.Tile) ?grid.Tile {
@@ -532,7 +538,7 @@ pub const Npc = struct {
     pub fn cell(self: *const Npc) ?P {
         return switch (self.spot) {
             .at => |p| p,
-            .by, .far => null,
+            .by, .on, .far => null,
         };
     }
 };
@@ -873,6 +879,7 @@ pub const Script = struct {
             if (f.dialog) |d| if (d >= self.dialog_n) return false;
             if (f.shows) |*c| if (!self.condFits(c, node_n)) return false;
             if (f.spot == .by and !besideable(f.spot.by)) return false;
+            if (f.spot == .on and !standable(f.spot.on)) return false;
             const at = f.cell() orelse continue;
             if (!grid.Level.inside(at)) return false;
             if ((self.npcAt(f.node, at) orelse return false) != i) return false;

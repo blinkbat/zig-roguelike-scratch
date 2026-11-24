@@ -165,7 +165,7 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     const now = g.pic.quiet();
     const growth = if (now) &g.sim.growth else &g.pic.growth_shown;
     const life = g.pic.lifeShown(&g.sim);
-    var v = book.View{ .class = g.sim.class, .name = g.sim.name.text(), .inventory = &g.sim.inventory, .growth = growth, .base = growth.attributes(g.sim.class), .gold = if (now) g.sim.gold else g.pic.gold_shown, .nearby = shownNearby(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.sim.lv.at(g.character.loot_at) == .chest_open, .life = .{ .now = life.hp, .max = life.max }, .mana = .{ .now = g.pic.manaShown(&g.sim), .max = g.sim.manaMax() } };
+    var v = book.View{ .class = g.sim.class, .name = g.sim.name.text(), .inventory = &g.sim.inventory, .growth = growth, .base = growth.attributes(g.sim.class), .gold = if (now) g.sim.gold else g.pic.gold_shown, .nearby = if (g.character.page == .loot or g.character.page == .nearby) shownNearby(g, nearby) else &.{}, .device = g.st.device, .chest = g.character.page == .loot and g.sim.lv.at(g.character.loot_at) == .chest_open, .life = .{ .now = life.hp, .max = life.max }, .mana = .{ .now = g.pic.manaShown(&g.sim), .max = g.sim.manaMax() } };
     if (g.sim.heroBody()) |h| {
         v.keywords = &g.keywords;
         v.readied = g.sim.heroReadied();
@@ -181,7 +181,7 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     if (g.character.page == .loot) if (g.sim.heroAt()) |from| if (goldReached(g, from, g.character.loot_at)) |pile| {
         v.loot_gold = pile.amount;
     };
-    v.quests = book.journalOn(g.screen, g.face, questEntries(g, &g.journal));
+    if (g.character.page == .quests) v.quests = book.journalOn(g.screen, g.face, questEntries(g, &g.journal));
     if (g.character.page == .trade) v.dealer = dealerOf(g);
     v.seconds = g.pic.fx.seconds.at();
     return v;

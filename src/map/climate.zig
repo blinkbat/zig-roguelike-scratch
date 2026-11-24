@@ -195,8 +195,7 @@ pub const Span = struct {
     most: f32 = 0,
     from: f32 = 0,
 
-    fn at(s: Span, d: std.EnumArray(Drive, f32)) f32 {
-        const v = d.get(s.on);
+    fn at(s: Span, v: f32) f32 {
         const k = if (v <= s.from) 0 else (v - s.from) / (1 - s.from);
         return mathx.lerpF(s.least, s.most, k);
     }
@@ -275,9 +274,19 @@ pub const Climate = struct {
         var d = std.EnumArray(Drive, f32).initUndefined();
         for (std.enums.values(Drive)) |k| d.set(k, drive(seed, k, p.cycle.get(k), minutes));
         var n = Now.initUndefined();
-        for (std.enums.values(Layer)) |l| n.set(l, p.layer.get(l).at(d));
+        for (std.enums.values(Layer)) |l| {
+            const span = p.layer.get(l);
+            n.set(l, span.at(d.get(span.on)));
+        }
         n.set(.overcast, @max(n.get(.overcast), c.light.overcast()));
         return n;
+    }
+
+    pub fn rain(c: Climate, seed: u64, minutes: u64) f32 {
+        const profile = PROFILES.getPtrConst(c.weather);
+        const span = profile.layer.get(.rain);
+        if (span.least == span.most) return span.least;
+        return span.at(drive(seed, span.on, profile.cycle.get(span.on), minutes));
     }
 };
 
@@ -355,6 +364,7 @@ test "a profile's weather holds, changes by spells, keeps each layer in its span
         while (m < days * day.MINUTES) : (m += step) {
             const n = c.now(42, m);
             try std.testing.expectEqual(n, c.now(42, m));
+            try std.testing.expectEqual(n.get(.rain), c.rain(42, m));
             for (std.enums.values(Layer)) |l| {
                 const s = p.layer.get(l);
                 try std.testing.expect(n.get(l) >= s.least - 1e-5 and n.get(l) <= s.most + 1e-5);

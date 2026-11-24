@@ -248,7 +248,7 @@ pub const Simulation = struct {
     }
 
     pub fn reachOf(self: *const Simulation, act: skillbar.Act) i32 {
-        return act.reachWith(self.inventory.gear.bounding());
+        return act.reachWith(if (act.moves()) self.inventory.gear.bounding() else 0);
     }
 
     pub fn combatStats(self: *const Simulation, a: *const actor.Actor) terrain.Stats {
@@ -257,7 +257,9 @@ pub const Simulation = struct {
 
     pub fn combatStatsOn(self: *const Simulation, a: *const actor.Actor, at: P, tile: grid.Tile, buildup: resilience.State, sundered: sunder.Sunder) terrain.Stats {
         var base = terrain.Stats{ .hit = actor.row(a.kind).hit, .elements = a.resists, .armour = if (a.stuck) 0 else actor.row(a.kind).armour };
-        if (a.kind.hero()) {
+        const is_hero = a.kind.hero();
+        const composure: i16 = if (is_hero) std.math.lossyCast(i16, self.inventory.gear.sum(.composure)) else 0;
+        if (is_hero) {
             const by = self.heroAttrs();
             base.dodge = by.dodge();
             base.armour = by.armour;
@@ -265,9 +267,9 @@ pub const Simulation = struct {
         base.armour -= sundered.lost();
         for (std.enums.values(resilience.Kind)) |k| {
             base.statuses.set(k, @as(i16, actor.innateResist(a.kind, k)) + buildup.meters.get(k).percent);
-            if (a.kind.hero() and resilience.tags(k).contains(.mental)) base.statuses.getPtr(k).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.composure));
+            if (resilience.tags(k).contains(.mental)) base.statuses.getPtr(k).* +|= composure;
         }
-        if (a.kind.hero()) base.statuses.getPtr(.stun).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.resolve));
+        if (is_hero) base.statuses.getPtr(.stun).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.resolve));
         return base.onRained(tile, self.rainAt(at));
     }
 
@@ -276,7 +278,7 @@ pub const Simulation = struct {
         if (!self.outdoors) return 0;
         const place = climate.placeAt(&self.locations, p);
         const c = if (self.nodeHere()) |node| self.climateNow().in(node.locations, place) else self.climateNow();
-        return c.now(self.seed, self.clock.since(self.days)).get(.rain);
+        return c.rain(self.seed, self.clock.since(self.days));
     }
 
     pub fn localWeather(self: *const Simulation) climate.Local {
@@ -316,13 +318,20 @@ pub const Simulation = struct {
     }
 
     pub fn procStatus(self: *Simulation, a: *actor.Actor, kind: resilience.Kind, chance: u32) bool {
+        if (chance == 0) return false;
         const resistance = self.combatStats(a).statuses.get(kind);
-        const effective = damage.resistedChance(chance, @min(0, resistance));
-        return damage.procs(&self.rng, effective) and self.takeStatus(a, kind);
+        return self.rollStatus(a, kind, chance, resistance);
     }
 
     pub fn procResisted(self: *Simulation, a: *actor.Actor, kind: resilience.Kind, chance: u32, element: damage.Element) bool {
-        return self.procStatus(a, kind, damage.resistedChance(chance, self.combatStats(a).elements.get(element)));
+        if (chance == 0) return false;
+        const stats = self.combatStats(a);
+        return self.rollStatus(a, kind, damage.resistedChance(chance, stats.elements.get(element)), stats.statuses.get(kind));
+    }
+
+    fn rollStatus(self: *Simulation, a: *actor.Actor, kind: resilience.Kind, chance: u32, resistance: i16) bool {
+        const effective = damage.resistedChance(chance, @min(0, resistance));
+        return damage.procs(&self.rng, effective) and a.resilience.takeResisted(kind, resistance, &self.rng);
     }
 
     /// `a` held `turns` longer unless its pin resistance holds; true when it is.

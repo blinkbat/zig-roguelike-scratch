@@ -565,6 +565,7 @@ test "a set piece in a thicket opens onto the ground round it, so no join fills 
     var st: carve.Stretches = .{};
     const p = (wilds.Params{}).fit();
     for (std.enums.values(setpiece.Piece)) |pc| {
+        if (setpiece.moated(pc)) continue;
         var shut: usize = 0;
         for (0..COUNT_RUNS) |i| {
             const seed = 0x5E7 +% i *% grid.TEST_SEED_STRIDE;

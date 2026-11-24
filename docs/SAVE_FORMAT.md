@@ -76,6 +76,8 @@ saved with the run; version 3 and older runs derive them from their saved level.
 fingerprint; earlier portable saves remain compatible.
 The encampment layout and chest/light niche setpiece names also change the raw
 fingerprint; portable maps retain their existing named layouts and pieces.
+So do the crate, sacks, bedroll and tent tiles, the moat camp piece and the NPC
+`on` spot; portable saves name them.
 
 A raw file loads only when its ABI/type/tree fingerprint matches this exact build.
 The fingerprint names every enum member reachable from the raw layout, so adding a

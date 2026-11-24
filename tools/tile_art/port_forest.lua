@@ -66,7 +66,7 @@ sprite:newCel(extension,1,sheet,Point(0,0))
 sourceFiles.hide(sprite,sourceFiles.LAYER.under,sourceFiles.LAYER.ideas)
 drawing.stackIndex=#sprite.layers
 app.layer=extension
-local destination=install and path or work..'forest-tree-walls-draft.aseprite'
+local destination=install and path or sourceFiles.draft(work..'forest-tree-walls-draft.aseprite',path)
 sprite:saveAs(destination)
 sprite:saveCopyAs(work..'forest-tree-walls-sheet.png')
 sprite:close()

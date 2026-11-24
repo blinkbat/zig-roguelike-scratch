@@ -95,8 +95,10 @@ the system temporary directory, not in the repository.
 Every invocation type-checks the executable and tests, builds ReleaseFast with
 debug information stripped, inspects the executable format and dependencies,
 and reopens the completed archive to verify its contents and permissions.
-The helper rejects source changes during compilation. It records source,
-dependency and packaged-file hashes in `build-info.json`. Archive ordering,
+The helper rejects source changes during compilation. It verifies the source
+hash against the map bytes it archives and packages the exact executable bytes
+it inspects. It records source, dependency and packaged-file hashes in
+`build-info.json`. Archive ordering,
 ownership, timestamps and modes are fixed, so unchanged inputs produce the
 same archive. Asset names are sorted before embedding to avoid directory-order
 differences. This is a build and packaging check; it does not execute target

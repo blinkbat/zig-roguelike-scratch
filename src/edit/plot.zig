@@ -649,13 +649,20 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     }
     caption(g, x, y, LABEL_W, "Stands", look.TEXT);
     var stands = widgets.Lay{ .x = x + LABEL_W, .y = y };
-    const moved = stepper(ed, g, stands.take(TALK_W), spotWords(npc.spot, &buf), true, "On its painted cell, beside a prop, or far from the doors; the last two are found afresh on each roll of its node", false);
+    const moved = stepper(ed, g, stands.take(TALK_W), spotWords(npc.spot, &buf), true, "On its painted cell, beside a prop, on a ground, or far from the doors; the last three are found afresh on each roll of its node", false);
     if (moved != 0) stepSpot(ed, i, moved);
     switch (npc.spot) {
         .by => |*t| {
             const prop_by = stepper(ed, g, stands.take(WHICH_W), @tagName(t.*), PROPS.len > 1, "Which prop it stands beside: the first in reading order with room round it", false);
             if (prop_by != 0) {
                 t.* = mathx.stepIn(grid.Tile, &PROPS, t.*, prop_by, 0);
+                ed.changed();
+            }
+        },
+        .on => |*t| {
+            const ground_by = stepper(ed, g, stands.take(WHICH_W), @tagName(t.*), GROUNDS.len > 1, "Which ground it stands on: the free cell nearest the middle of all of it", false);
+            if (ground_by != 0) {
+                t.* = mathx.stepIn(grid.Tile, &GROUNDS, t.*, ground_by, 0);
                 ed.changed();
             }
         },
@@ -697,15 +704,25 @@ const PROPS = blk: {
     break :blk out[0..out.len].*;
 };
 const FIRST_PROP: grid.Tile = .caravan;
+const GROUNDS = blk: {
+    var out: []const grid.Tile = &.{};
+    for (std.enums.values(grid.Tile)) |t| {
+        if (script.standable(t)) out = out ++ &[_]grid.Tile{t};
+    }
+    break :blk out[0..out.len].*;
+};
+const FIRST_GROUND: grid.Tile = grid.STONE_SPAN;
 
 comptime {
     std.debug.assert(std.mem.indexOfScalar(grid.Tile, &PROPS, FIRST_PROP) != null);
+    std.debug.assert(std.mem.indexOfScalar(grid.Tile, &GROUNDS, FIRST_GROUND) != null);
 }
 
 fn spotWords(s: script.Spot, buf: []u8) []const u8 {
     return switch (s) {
         .at => |p| std.fmt.bufPrint(buf, "on its cell {d},{d}", .{ p.x, p.y }) catch "",
         .by => "beside a prop",
+        .on => "on a ground",
         .far => "far from the doors",
     };
 }
@@ -723,6 +740,7 @@ fn stepSpot(ed: *editor.Editor, i: u8, by: i32) void {
     npc.spot = switch (k) {
         .at => .{ .at = cell.? },
         .by => .{ .by = FIRST_PROP },
+        .on => .{ .on = FIRST_GROUND },
         .far => .far,
     };
     ed.changed();

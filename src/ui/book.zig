@@ -651,7 +651,6 @@ pub const Book = struct {
         item_card.draw(face, x, y, if (comparing) layout.CARD_W else layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), if (comparing) "SELECTED" else null);
         if (comparing) item_card.draw(face, x + layout.CARD_W + layout.CARD_GAP, y, layout.CARD_W, view.inventory.gear.slots.get(slot), slot, view.inventory.gear.statsWithout(slot, view.base), "EQUIPPED");
         if (comparing) {
-            const at = y + @max(item_card.height(face, layout.CARD_W, it, slot), item_card.height(face, layout.CARD_W, view.inventory.gear.slots.get(slot), slot)) + layout.REQUIREMENT_GAP;
             const bagged = self.bagIndex(view).?;
             _ = view.inventory.preview(bagged, slot, view.base) catch |err| {
                 var reason: menu.Note(140) = .{};
@@ -660,6 +659,7 @@ pub const Book = struct {
                 } else if (dependent(view, bagged, slot)) |other| {
                     reason.say("Would leave {s} without its required attributes.", .{other.name(&name_buf)});
                 } else return;
+                const at = y + @max(item_card.height(face, layout.CARD_W, it, slot), item_card.height(face, layout.CARD_W, view.inventory.gear.slots.get(slot), slot)) + layout.REQUIREMENT_GAP;
                 _ = face.paragraph(reason.text(), x, at, layout.DETAIL_W, font.SMALL, look.LOSS);
                 return;
             };

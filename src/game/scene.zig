@@ -716,7 +716,8 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     if (level_up_at) |at| g.pic.fx.level_up.drawBeam(at, o[0], o[1], game.CELL_F);
 
     if (aim_from) |from| {
-        var cells = grid.Cells.of(lo, hi);
+        const reach = grid.Box.around(from, g.sim.reachOf(g.mode.aim.act()));
+        var cells = grid.Cells.of(lo.max(reach.lo), hi.min(reach.hi));
         while (cells.next()) |p| {
             if (g.sim.lv.isLit(p) and skills.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
         }
@@ -734,9 +735,9 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
         }
         const act = g.mode.aim.act();
         if (act.spans()) {
-            if (tactics_exec.span(g, act, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark)) |area| {
+            if (aim_legal) if (tactics_exec.span(g, act, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark)) |area| {
                 for (area.slice()) |p| fillCell(c, p, if (act == .fire_wall) look.aimElement(.fire) else look.AIM_PATH);
-            }
+            };
         } else switch (act) {
             .overwatch => if (mathx.toward(from, g.mode.aim.mark)) |d| {
                 var covered = grid.Cells.around(from, tactics.Overwatch.RANGE);
@@ -782,10 +783,12 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     if (burnt) |old| drawBurntStanding(g, c, old, true);
     var next_body: usize = 0;
     var run: OccluderRun = .{};
+    const crossed = behindWalls(bodies);
     var occluders = view.grown(1).cells();
     while (occluders.next()) |p| {
         const kind = ground.at(p);
-        if (!look.occludes(kind) or !footprintSeen(g, p, kind)) continue;
+        const fronts = look.occludes(kind) or (grid.Level.inside(p) and crossed.isSet(grid.Level.idx(p)) and walled(ground, p));
+        if (!fronts or !footprintSeen(g, p, kind)) continue;
         const depth = mathx.centre(p)[1];
         while (next_body < order.len and bodies[order[next_body]].mid[1] <= depth) : (next_body += 1) {
             run.end();
@@ -843,6 +846,34 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
         g.pic.fx.drawSpeech(&g.face, b.slot, b.lifted.x, b.lifted.y, game.CELL_F, b.shine.sight * b.sighted);
     }
     if (level_up_at) |at| g.pic.fx.level_up.drawText(at, &g.face, o[0], o[1], game.CELL_F);
+}
+
+/// Cells a body overlaps from behind, its feet north of their middle: a gliding body is in front of none of them.
+fn behindWalls(bodies: []const Shown) grid.CellSet {
+    var out = grid.CellSet.initEmpty();
+    for (bodies) |*b| {
+        var near = grid.Cells.around(mathx.cellOf(b.mid), 1);
+        while (near.next()) |q| {
+            if (grid.Level.inside(q) and overlapsFromBehind(b.mid, q)) out.set(grid.Level.idx(q));
+        }
+    }
+    return out;
+}
+
+fn overlapsFromBehind(mid: [2]f32, q: P) bool {
+    const m = mathx.centre(q);
+    return @abs(m[0] - mid[0]) < 1 and m[1] > mid[1] and m[1] - mid[1] < 1;
+}
+
+test "a body crossing a wall's top corner is behind it; one beside, above or below it is not" {
+    const wall = P{ .x = 5, .y = 5 };
+    for ([_][2]f32{ .{ 5.0, 5.0 }, .{ 6.0, 5.0 }, .{ 4.8, 4.8 } }) |crossing| try std.testing.expect(overlapsFromBehind(crossing, wall));
+    for ([_][2]f32{ .{ 4.5, 5.5 }, .{ 6.5, 5.5 }, .{ 5.5, 4.5 }, .{ 5.5, 6.5 }, .{ 5.0, 6.0 } }) |clear| try std.testing.expect(!overlapsFromBehind(clear, wall));
+}
+
+fn walled(ground: *const grid.Level, p: P) bool {
+    const cut = sprite_assets.cutAt(ground, p) orelse return false;
+    return cut == .wall or cut == .forest;
 }
 
 fn footprintSeen(g: *const game.Game, p: P, kind: grid.Tile) bool {

@@ -6,6 +6,8 @@ const gen = @import("gen.zig");
 const procgen = @import("procgen.zig");
 const carve = @import("carve.zig");
 const actor = @import("../play/actor.zig");
+const Ground = @import("../play/ground_items.zig").Ground;
+const trigger = @import("../play/trigger.zig");
 const pack = @import("../play/pack.zig");
 pub const post = @import("../play/post.zig");
 pub const raid = @import("../play/raid.zig");
@@ -409,22 +411,24 @@ pub const Node = struct {
         return true;
     }
 
-    /// The foes of the section `roll` laid, each on its cell while the pool has room, then the zoo's, then the packs, none on a painted cell.
+    /// Authored foes, then zoo foes, then procedural guards and packs outside the painted section.
     pub fn populate(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, roll: u64) void {
         const laid = self.sectionOn(roll);
         var buf: [MAX_FOES]Foe = undefined;
         spawnFoes(lv, pool, self.laidFoes(laid, &buf));
         if (self.zoo) |z| z.populate(lv, pool, rng);
-        const painted = if (laid) |l| l.cells() else grid.CellSet.initEmpty();
-        self.packsOff(lv, pool, rng, at, &painted);
+        if (self.unrolled()) {
+            const painted = if (laid) |l| l.cells() else grid.CellSet.initEmpty();
+            self.packsOff(lv, pool, rng, at, &painted);
+        }
     }
 
     /// A procgen node's guards by its carts, then its packs round the hero arriving at `at`, exit packs by its doors, none on `off`.
     fn packsOff(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, off: *const grid.CellSet) void {
-        post.place(lv, pool, self.plan.procgen.post);
         const cells = self.doorCells();
         var kept = off.*;
         if (self.zoo) |z| kept = kept.unionWith(z.cells());
+        post.place(lv, pool, self.plan.procgen.post, &kept);
         pack.placeOff(lv, pool, rng, at, cells.slice(), &self.plan.procgen.foes, &kept);
     }
 
@@ -438,6 +442,10 @@ pub const Node = struct {
 
     /// Where the plan stands its foes on `roll`: a bespoke node's as painted, a procgen node's section's where it landed.
     pub fn placedOn(self: *const Node, roll: u64, buf: *[MAX_FOES]Foe) []const Foe {
+        switch (self.plan) {
+            .bespoke => |*plan| return plan.foes(),
+            .procgen => |*plan| if (plan.section.foe_n == 0) return &.{},
+        }
         return self.laidFoes(self.sectionOn(roll), buf);
     }
 
@@ -537,12 +545,22 @@ pub const Atlas = struct {
     /// Node `n`'s NPCs on its level as stamped by `roll`, off the cells its foes stand on.
     pub fn stampNpcs(self: *const Atlas, n: usize, lv: *grid.Level, roll: u64, stood: *script.Stood, shown: anytype) void {
         lv.clearNpcs();
-        var avoid = shown.lying();
-        if (self.node[n].zoo) |z| avoid = avoid.unionWith(z.reservedCells());
-        var foes: [MAX_FOES]Foe = undefined;
-        for (self.node[n].placedOn(roll, &foes)) |f| avoid.set(grid.Level.idx(f.at));
-        for (self.script.npcs(), 0..) |*npc, i| if (npc.node == n) if (self.script.standsAt(i, stood)) |c| avoid.set(grid.Level.idx(c));
-        for (self.script.npcs(), 0..) |*npc, i| {
+        const npcs = self.script.npcs();
+        for (npcs) |*npc| {
+            if (npc.node == n) break;
+        } else return;
+        var avoid = grid.CellSet.initEmpty();
+        const seeking = for (npcs, 0..) |*npc, i| {
+            if (npc.node == n and self.script.standsAt(i, stood) == null) break true;
+        } else false;
+        if (seeking) {
+            avoid = shown.lying();
+            if (self.node[n].zoo) |z| avoid.setUnion(z.reservedCells());
+            var foes: [MAX_FOES]Foe = undefined;
+            for (self.node[n].placedOn(roll, &foes)) |f| avoid.set(grid.Level.idx(f.at));
+            for (npcs, 0..) |*npc, i| if (npc.node == n) if (self.script.standsAt(i, stood)) |c| avoid.set(grid.Level.idx(c));
+        }
+        for (npcs, 0..) |*npc, i| {
             if (npc.node != n or !shown.shows(i)) continue;
             const at = self.reserveNpcSpot(i, lv, stood, &avoid) orelse continue;
             if (lv.vacant(at)) lv.putNpc(at, i);
@@ -554,7 +572,7 @@ pub const Atlas = struct {
             if (npc.node != n or self.script.standsAt(c.slot, stood) != null) continue;
             _ = self.reserveNpcSpot(c.slot, lv, stood, &avoid);
         }
-        for (self.script.npcs(), 0..) |*npc, i| {
+        for (npcs, 0..) |*npc, i| {
             if (npc.node != n or npc.shows == null or npc.shows.?.kind != .near or !shown.shows(i)) continue;
             const at = self.reserveNpcSpot(i, lv, stood, &avoid) orelse continue;
             if (lv.vacant(at)) lv.putNpc(at, i);
@@ -717,9 +735,28 @@ pub const Atlas = struct {
         const nd = &self.node[from.node];
         if (nd.unrolled()) return true;
         nd.stampAt(scratch, 0, from.at);
-        var stood: script.Stood = @splat(null);
-        self.stampNpcs(from.node, scratch, 0, &stood, EVERY_NPC);
+        var plot = trigger.Runtime{};
+        self.stampNpcs(from.node, scratch, 0, &plot.spots, Npcs{
+            .plot = &plot,
+            .script = &self.script,
+            .world = .{ .node = from.node, .hero = from.at },
+        });
         return landing(scratch, from.at, nd.placed()) != null;
+    }
+};
+
+pub const Npcs = struct {
+    plot: *const trigger.Runtime,
+    script: *const script.Script,
+    world: trigger.World,
+    ground: ?*const Ground = null,
+
+    pub fn shows(self: Npcs, i: usize) bool {
+        return self.plot.shows(self.script, i, self.world);
+    }
+
+    pub fn lying(self: Npcs) grid.CellSet {
+        return if (self.ground) |ground| ground.lying() else .initEmpty();
     }
 };
 
@@ -737,8 +774,32 @@ fn spotFor(lv: *const grid.Level, spot: script.Spot, avoid: *const grid.CellSet)
     return switch (spot) {
         .at => |p| p,
         .by => |t| beside(lv, t, avoid),
+        .on => |t| amid(lv, t, avoid),
         .far => farFromDoors(lv, avoid),
     };
+}
+
+fn amid(lv: *const grid.Level, t: grid.Tile, avoid: *const grid.CellSet) ?P {
+    var sum = P{ .x = 0, .y = 0 };
+    var n: i32 = 0;
+    for (lv.tile, 0..) |here, i| {
+        if (here != t) continue;
+        sum = sum.add(grid.Level.of(i));
+        n += 1;
+    }
+    if (n == 0) return null;
+    const mid = P{ .x = @divTrunc(sum.x, n), .y = @divTrunc(sum.y, n) };
+    var best: ?P = null;
+    var closest: f32 = std.math.inf(f32);
+    for (lv.tile, 0..) |here, i| {
+        const q = grid.Level.of(i);
+        if (here != t or !standsFree(lv, q, avoid)) continue;
+        const d = mathx.distEuclid(q, mid);
+        if (d >= closest) continue;
+        best = q;
+        closest = d;
+    }
+    return best;
 }
 
 fn standsFree(lv: *const grid.Level, p: P, avoid: *const grid.CellSet) bool {
@@ -798,7 +859,7 @@ pub fn landing(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
     return flood.first(Free{ .lv = lv, .foes = foes }, Free.at) orelse nearest(lv, p, foes);
 }
 
-pub fn spawnFoes(lv: *grid.Level, pool: *actor.Pool, foes: []const Foe) void {
+fn spawnFoes(lv: *grid.Level, pool: *actor.Pool, foes: []const Foe) void {
     for (foes) |f| {
         if (pool.hasRoomFor(f.kind) and actor.dwells(f.kind, lv, f.at)) _ = pool.spawn(lv, actor.Actor.of(f.kind, f.at));
     }
@@ -1083,6 +1144,48 @@ test "the strand's door leads to a tee: the whole caravan camp walks from where 
     try std.testing.expectEqual(@as(usize, RUNS), bridges);
 }
 
+test "the caravan's warden stands on the middle of its stone bridge, and its east door leads to a wood ringed with water, on every roll" {
+    const a = try testStart();
+    defer std.testing.allocator.destroy(a);
+    const link = a.node[a.start.node].doors()[0].to orelse return error.NoLink;
+    const nd = &a.node[link.node];
+    const warden = for (a.script.npcs(), 0..) |*f, i| {
+        if (f.spot == .on) break i;
+    } else return error.NoWarden;
+    try std.testing.expectEqual(grid.STONE_SPAN, a.script.npc[warden].spot.on);
+    const east = nd.doors()[2];
+    const wood = &a.node[(east.to orelse return error.NoLink).node];
+    var lv: grid.Level = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    const RUNS = 30;
+    for (0..RUNS) |i| {
+        const seed = 0x3A2D +% i *% grid.TEST_SEED_STRIDE;
+        var stood: script.Stood = @splat(null);
+        nd.stamp(&lv, seed);
+        a.stampNpcs(link.node, &lv, seed, &stood, EVERY_NPC);
+        const at = stood[warden] orelse return error.NoSpot;
+        try std.testing.expectEqual(grid.STONE_SPAN, lv.at(at));
+        var west = at.x;
+        while (lv.at(.{ .x = west - 1, .y = at.y }) == grid.STONE_SPAN) west -= 1;
+        var east_x = at.x;
+        while (lv.at(.{ .x = east_x + 1, .y = at.y }) == grid.STONE_SPAN) east_x += 1;
+        try std.testing.expect(@abs(at.x * 2 - west - east_x) <= 4);
+        _ = grid.distances(&lv, nd.doors()[link.door].at, &dist, &queue);
+        try std.testing.expect(dist[grid.Level.idx(east.at)] >= 0);
+        wood.stamp(&lv, seed);
+        try grid.expectAllReached(&lv, wood.doors()[0].at, &dist, &queue);
+        var rim_wet: usize = 0;
+        var rim: usize = 0;
+        for (lv.tile, 0..) |t, k| {
+            if (grid.Level.edgeDist(grid.Level.of(k)) != 1) continue;
+            rim += 1;
+            rim_wet += @intFromBool(t.wet() or t.spans());
+        }
+        try std.testing.expect(rim_wet * 10 >= rim * 9);
+    }
+}
+
 fn besideCart(lv: *const grid.Level, p: P) bool {
     var round = grid.Cells.around(p, 1);
     while (round.next()) |q| {
@@ -1301,6 +1404,18 @@ test "every map in the maps folder parses, and each procgen node rolls its groun
             try std.testing.expectEqual(open, reached);
         }
     }
+}
+
+test "start preflight uses the initial visibility of NPCs on the only floor cell" {
+    const map = try testAtlas();
+    defer std.testing.allocator.destroy(map);
+    const at = P{ .x = 10, .y = 10 };
+    _ = map.oneRoom(grid.Box.sized(at, 1, 1), at);
+    const npc = map.script.addNpc(.{ .spot = .{ .at = at }, .shows = .{ .kind = .never } }).?;
+    var lv: grid.Level = undefined;
+    try std.testing.expect(map.standable(map.start, &lv));
+    map.script.npc[npc].shows = null;
+    try std.testing.expect(!map.standable(map.start, &lv));
 }
 
 test "a zoo connects to the entrance even when a sealed room is larger" {

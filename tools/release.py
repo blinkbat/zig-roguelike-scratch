@@ -149,8 +149,7 @@ def prepare_linux(lock, cache):
     return prefix
 
 
-def inspect_linux(path):
-    data = path.read_bytes()
+def inspect_linux(data):
     if data[:7] != b'\x7fELF\x02\x01\x01':
         raise ValueError('Expected a little-endian ELF64 executable')
     header = struct.unpack_from('<16sHHIQQQIHHHHHH', data)
@@ -205,8 +204,7 @@ def run(args):
     subprocess.run(list(map(str, args)), cwd=ROOT, check=True)
 
 
-def inspect_macos(path, arch):
-    data = path.read_bytes()
+def inspect_macos(data, arch):
     header = struct.unpack_from('<8I', data)
     cpu = MACOS_ARCHES[arch][1]
     if header[0] != 0xfeedfacf or header[1] != cpu or header[3] != 2:
@@ -274,15 +272,23 @@ def map_paths():
     return sorted(MAPS.rglob('*.map'))
 
 
-def source_hash():
+def read_maps():
+    return {path: path.read_bytes() for path in map_paths()}
+
+
+def source_hash(maps=None, *, captured=None):
+    if maps is None:
+        maps = read_maps()
+    captured = {**maps, **(captured or {})}
     paths = [ROOT / 'build.zig', ROOT / 'build.zig.zon', ROOT / 'tools/source_rules.zig', LOCK_PATH, SELF]
     paths += list((ROOT / 'src').rglob('*.zig'))
     paths += [p for p in ASSETS.rglob('*') if p.is_file() and p.suffix in EMBEDDED and p.relative_to(ASSETS).parts[0] not in UNEMBEDDED]
-    paths += map_paths()
+    paths += list(maps)
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda p: p.relative_to(ROOT).as_posix()):
         digest.update(path.relative_to(ROOT).as_posix().encode() + b'\0')
-        digest.update(hashlib.sha256(path.read_bytes()).digest())
+        data = captured[path] if path in captured else path.read_bytes()
+        digest.update(hashlib.sha256(data).digest())
     return digest.hexdigest()
 
 
@@ -292,13 +298,18 @@ def archive_name(platform, arch):
 
 def package(binary, output, metadata, platform, arch):
     name = archive_name(platform, arch)
-    files = {EXE: (binary.read_bytes(), 0o755), 'run.sh': (LINUX_LAUNCHER if platform == 'linux' else LAUNCHER, 0o755)}
+    maps = read_maps()
+    license_paths = [ASSETS / name for name in ('fonts/Balthazar-OFL.txt', 'fonts/SourceSans3-OFL.txt', 'data/gamecontrollerdb-LICENSE')]
+    licenses = {path: path.read_bytes() for path in license_paths}
+    if source_hash(maps, captured=licenses) != metadata['source_sha256']:
+        raise RuntimeError('Sources changed during the build; rerun to package a consistent snapshot.')
+    files = {EXE: (binary, 0o755), 'run.sh': (LINUX_LAUNCHER if platform == 'linux' else LAUNCHER, 0o755)}
     if platform == 'macos':
         files['run.command'] = (LAUNCHER, 0o755)
-    for path in map_paths():
-        files[path.relative_to(ROOT).as_posix()] = (path.read_bytes(), 0o644)
-    for license in ('fonts/Balthazar-OFL.txt', 'fonts/SourceSans3-OFL.txt', 'data/gamecontrollerdb-LICENSE'):
-        files['licenses/' + posixpath.basename(license)] = ((ASSETS / license).read_bytes(), 0o644)
+    for path, data in maps.items():
+        files[path.relative_to(ROOT).as_posix()] = (data, 0o644)
+    for path, data in licenses.items():
+        files['licenses/' + path.name] = (data, 0o644)
     requirements = '''Requires glibc ''' + dotted(GLIBC) + ''' or newer, an X11 display (or XWayland), and OpenGL 3.3.
 On Debian/Ubuntu, runtime libraries can be installed with:
   sudo apt install libgl1 libglx0 libx11-6 libxcursor1 libxext6 libxfixes3 libxi6 libxinerama1 libxrandr2 libxrender1
@@ -360,7 +371,8 @@ def main():
     parser.add_argument('--build-cache', type=pathlib.Path)
     parser.add_argument('--global-cache', type=pathlib.Path)
     args = parser.parse_args()
-    lock = json.loads(LOCK_PATH.read_text(encoding='utf-8'))
+    lock_bytes = LOCK_PATH.read_bytes()
+    lock = json.loads(lock_bytes.decode('utf-8'))
     version = subprocess.check_output([args.zig, 'version'], text=True).strip()
     if version != lock['zig_version']:
         raise ValueError('Expected Zig ' + lock['zig_version'] + '; found ' + version)
@@ -371,7 +383,7 @@ def main():
     if args.arch != 'all':
         arches = [args.arch]
     prefix = prepare_linux(lock, args.cache_dir.resolve()) if args.platform == 'linux' else None
-    before = source_hash()
+    before = source_hash(captured={LOCK_PATH: lock_bytes})
     for arch in arches:
         target = LINUX_TRIPLE + '.' + dotted(GLIBC) if args.platform == 'linux' else MACOS_ARCHES[arch][0] + '-macos.' + dotted(MACOS)
         install = output / 'build' / (args.platform + '-' + arch)
@@ -384,13 +396,11 @@ def main():
             common += ['--global-cache-dir', args.global_cache.resolve()]
         run(common + ['check', '--summary', 'all'])
         run(common + ['-Doptimize=ReleaseFast', '-Dstrip=true', '--prefix', install, '--summary', 'all'])
-        if source_hash() != before:
-            raise RuntimeError('Sources changed during the build; rerun to package a consistent snapshot.')
-        binary = install / 'bin' / EXE
+        binary = (install / 'bin' / EXE).read_bytes()
         inspection = inspect_linux(binary) if args.platform == 'linux' else inspect_macos(binary, arch)
         metadata = {'zig_version': version, 'target': target, 'cpu': 'baseline',
                     'optimize': 'ReleaseFast', 'strip': True, 'source_sha256': before,
-                    'dependency_lock_sha256': sha256(LOCK_PATH.read_bytes()), 'binary': inspection}
+                    'dependency_lock_sha256': sha256(lock_bytes), 'binary': inspection}
         package(binary, output, metadata, args.platform, arch)
 
 

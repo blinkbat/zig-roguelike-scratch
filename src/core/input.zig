@@ -230,9 +230,9 @@ fn swallowed(typing: bool, k: rl.KeyboardKey) bool {
     return typing and c >= 0 and c < TYPING_SET.capacity() and TYPING_SET.isSet(@intCast(c));
 }
 
-fn typingHeld() bool {
+fn typingHeld(carried_only: bool) bool {
     for (TYPING_KEYS) |k| {
-        if (rl.isKeyDown(k)) return true;
+        if (rl.isKeyDown(k) and (!carried_only or !rl.isKeyPressed(k))) return true;
     }
     return false;
 }
@@ -481,7 +481,7 @@ pub const State = struct {
         self.typed.n = 0;
         self.rub = false;
         if (self.typing) {
-            if (!self.was_typing or self.held_into_typing) self.held_into_typing = typingHeld();
+            if (!self.was_typing or self.held_into_typing) self.held_into_typing = typingHeld(!self.was_typing);
             if (self.held_into_typing) self.typed.drop() else self.typed.read();
             self.rub = rubbed();
         }

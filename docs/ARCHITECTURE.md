@@ -53,7 +53,7 @@ Nodes may override weather by inland, coast and forest location using
 inherit the node's weather. The climate module derives coast from edge-connected
 sand and water (including bridges and temporarily frozen water), then forest from
 cells within two tiles of trees; coast takes priority.
-The unsaved location field rebuilds on settling a level. Rain resistance, fire
+The location field is derived on level entry and kept in the run save. Rain resistance, fire
 dampening and inspection read a cell's own location; rendering reads `climate.Blend`,
 the same field blurred so weather fades over a few cells where locations meet, sampled at
 the hero's drawn position for the sky. Beam weather adds warm
@@ -311,6 +311,10 @@ inherit the biome's ground/path/wall palette and open onto existing dry ground.
 Placement preserves props and reserved feature/painted lots. The normal procgen
 connectivity pass keeps their interiors and reward approaches reachable.
 They provide a chest or a glowing plant; they do not establish an enemy-free zone.
+`piece moat_camp` rings a small camp and its fire with water; the connectivity pass
+bridges it. Tee `goods`, `bedrolls` and `tents` dress the caravan camp with
+glyph-only props (crates and sacks by the carts, 3x2 tents at the camp's edge).
+An NPC spot `on <tile>` stands on the free cell of that ground nearest its middle.
 `--shot-landscapes` captures Caravan and Goblin Camp in native-scale tiles and
 detail views; run it from a temporary capture directory.
 

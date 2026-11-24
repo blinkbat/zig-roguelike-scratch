@@ -196,13 +196,11 @@ fn checkScriptsName(b: *std.Build) void {
 }
 
 fn checkTestRoster(b: *std.Build) void {
-    const file = b.build_root.handle.readFileAlloc(b.allocator, ROOT, READ_MAX) catch |e|
+    const file = b.build_root.handle.readFileAllocOptions(b.allocator, ROOT, READ_MAX, null, @alignOf(u8), 0) catch |e|
         std.debug.panic(ROOT ++ " could not be read ({s})", .{@errorName(e)});
-    const at = std.mem.indexOf(u8, file, "\ntest {") orelse
-        std.debug.panic(ROOT ++ " has no `test {{` block", .{});
-    const block = file[at + 1 ..];
-    const root = block[0 .. std.mem.indexOf(u8, block, "\n}") orelse
-        std.debug.panic(ROOT ++ "'s `test {{` block never closes", .{})];
+    var roster = source_rules.testRoster(b.allocator, file) catch |e|
+        std.debug.panic(ROOT ++ "'s `test {{` roster could not be read ({s})", .{@errorName(e)});
+    defer roster.deinit(b.allocator);
     var dir = b.build_root.handle.openDir(SRC, .{ .iterate = true }) catch |e|
         std.debug.panic(SRC ++ "/ could not be opened ({s})", .{@errorName(e)});
     defer dir.close();
@@ -219,18 +217,8 @@ fn checkTestRoster(b: *std.Build) void {
         if (source_rules.check(b.allocator, slashed, source) catch |e|
             std.debug.panic(SRC ++ "/{s}: source validation failed ({s})", .{ slashed, @errorName(e) })) |violation|
             std.debug.panic(SRC ++ "/{s}:{d}: {s} crosses this module's dependency boundary; see docs/ARCHITECTURE.md", .{ slashed, violation.line, violation.imported });
-        const want = b.fmt("@import(\"{s}\")", .{slashed});
-        if (!named(root, want)) {
-            std.debug.panic(ROOT ++ "'s test block does not name {s}. Add `_ = {s};`.", .{ slashed, want });
+        if (!roster.contains(slashed)) {
+            std.debug.panic(ROOT ++ "'s test block does not name {s}. Add `_ = @import(\"{s}\");`.", .{ slashed, slashed });
         }
     }
-}
-
-fn named(root: []const u8, want: []const u8) bool {
-    var lines = std.mem.splitScalar(u8, root, '\n');
-    while (lines.next()) |line| {
-        const code = line[0 .. std.mem.indexOf(u8, line, "//") orelse line.len];
-        if (std.mem.indexOf(u8, code, want) != null) return true;
-    }
-    return false;
 }

@@ -82,8 +82,9 @@ runtime exports crop that block to 256x256.
 `export_ground.lua name=<material> source=<canonical-file>` exports visible
 `Draw here` and the named extension layer in layer order, excluding guides.
 Use explicit canonical sources to avoid accidentally exporting an older Desktop
-copy. Optional `out=` selects output. `from=underdrawing` is a stand-in only and
-requires an explicit output outside assets.
+copy. Optional `out=` selects output. The `from=underdrawing` batch export
+requires an explicit output outside assets and uses Python 3.9 or newer to
+resolve filesystem aliases before writing.
 
 | Runtime material | Canonical source under `assets/source/` | Extension |
 | --- | --- | --- |
@@ -127,6 +128,9 @@ its preview or reporting that the edits were saved.
 Verify publication failures and exact copies with
 `python -B tools/tile_art/test_install_sources.py --aseprite <aseprite.exe>`;
 deep-water stale drafts are covered by `test_deepen_water.py` with the same argument.
+Draft generation preserves the input sheets even when a draft path resolves to an
+input. If the existing draft has the same bytes under another path, the tools
+write to the next available numbered draft path.
 Wall guides, ideas, wall extensions and both shallow-cliff updates also verify
 their generated layers after reopening; `test_saved_layers.py` exercises failed
 saves with the same argument.

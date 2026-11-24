@@ -499,6 +499,48 @@ pub const WRAP_LINES_MAX: usize = 18;
 pub const WRAP_COLS_MAX: usize = 160;
 pub const Wrapped = [WRAP_LINES_MAX][WRAP_COLS_MAX + 1]u8;
 
+fn wrapPrefix(face: anytype, size: i32, w: i32, buf: *[WRAP_COLS_MAX + 1]u8, len: usize) usize {
+    if (len <= 1 or face.width(buf[0..len :0], size) <= w) return len;
+    if (!printable(buf[0..len])) {
+        var fit = len - 1;
+        buf[fit] = 0;
+        while (fit > 1 and face.width(buf[0..fit :0], size) > w) {
+            fit -= 1;
+            buf[fit] = 0;
+        }
+        return fit;
+    }
+    var lo: usize = 1;
+    var hi = len - 1;
+    while (lo < hi) {
+        const mid = lo + (hi - lo + 1) / 2;
+        const held = buf[mid];
+        buf[mid] = 0;
+        const fits = face.width(buf[0..mid :0], size) <= w;
+        buf[mid] = held;
+        if (fits) lo = mid else hi = mid - 1;
+    }
+    return lo;
+}
+
+pub fn wrapNext(face: anytype, remaining: *[]const u8, size: i32, w: i32, buf: *[WRAP_COLS_MAX + 1]u8) ?[:0]const u8 {
+    const rest = remaining.*;
+    if (rest.len == 0) return null;
+    const newline = std.mem.indexOfScalar(u8, rest[0..@min(rest.len, WRAP_COLS_MAX + 1)], '\n') orelse rest.len;
+    const cap = @min(newline, WRAP_COLS_MAX);
+    @memcpy(buf[0..cap], rest[0..cap]);
+    buf[cap] = 0;
+    var n = wrapPrefix(face, size, w, buf, cap);
+    if (n < newline and rest[n] != ' ') {
+        if (std.mem.lastIndexOfScalar(u8, rest[0..n], ' ')) |space| if (space > 0) {
+            n = space;
+        };
+    }
+    remaining.* = if (n == newline and n < rest.len) rest[n + 1 ..] else std.mem.trimLeft(u8, rest[n..], " ");
+    buf[n] = 0;
+    return buf[0..n :0];
+}
+
 /// Words wider than a line split across it.
 pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, lines: *[WRAP_LINES_MAX][:0]const u8) usize {
     var n: usize = 0;
@@ -525,16 +567,13 @@ pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, l
         if (n == WRAP_LINES_MAX) break;
         var rest = word;
         while (rest.len > 0) {
-            var fit = @min(rest.len, WRAP_COLS_MAX);
-            @memcpy(buf[n][0..fit], rest[0..fit]);
-            buf[n][fit] = 0;
-            while (fit > 1 and face.width(buf[n][0..fit :0], size) > w) {
-                fit -= 1;
-                buf[n][fit] = 0;
-            }
-            len = fit;
+            const cap = @min(rest.len, WRAP_COLS_MAX);
+            @memcpy(buf[n][0..cap], rest[0..cap]);
+            buf[n][cap] = 0;
+            len = wrapPrefix(face, size, w, &buf[n], cap);
+            buf[n][len] = 0;
             lines[n] = buf[n][0..len :0];
-            rest = rest[fit..];
+            rest = rest[len..];
             if (rest.len == 0) break;
             n += 1;
             if (n == WRAP_LINES_MAX) return n;
@@ -603,6 +642,10 @@ test "wrapping retains long words and bounds their lines by pixels and storage" 
     const n = wrap(Fixed{}, "one abcdefghijk two", BODY, 70, &buf, &lines);
     try std.testing.expectEqual(@as(usize, 4), n);
     for ([_][]const u8{ "one", "abcdefg", "hijk", "two" }, lines[0..n]) |want, got| try std.testing.expectEqualStrings(want, got);
+    var rest: []const u8 = "one two three\n\nfour";
+    for ([_][]const u8{ "one two", "three", "", "four" }) |line| {
+        try std.testing.expectEqualStrings(line, wrapNext(Fixed{}, &rest, BODY, 70, &buf[0]).?);
+    }
     try std.testing.expectEqual(@as(usize, 0), wrap(Fixed{}, "   ", BODY, 70, &buf, &lines));
     try std.testing.expectEqual(WRAP_LINES_MAX, wrap(Fixed{}, word, BODY, 0, &buf, &lines));
     for (lines) |line| try std.testing.expectEqual(@as(usize, 1), line.len);

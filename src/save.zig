@@ -653,7 +653,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0xb7ebf9e2df710bb9;
+const RECORDED_FINGERPRINT: Print = 0x536d302d59db896b;
 
 test "zoo keys doors populations and visits survive portable saves" {
     const alloc = std.testing.allocator;

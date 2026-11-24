@@ -65,6 +65,10 @@ pub const Tile = enum(u8) {
     open_gate,
     zoo_key,
     key_taken,
+    crate,
+    sacks,
+    bedroll,
+    tent,
 
     pub fn solid(t: Tile) bool {
         return TERRAIN.getPtrConst(t).solid;
@@ -236,6 +240,10 @@ pub const Tile = enum(u8) {
             .open_gate => 'd',
             .zoo_key => 'k',
             .key_taken => 'K',
+            .crate => 'X',
+            .sacks => 'U',
+            .bedroll => 'b',
+            .tent => '^',
         };
     }
 
@@ -400,6 +408,10 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .open_gate = PEN_FLOOR,
     .zoo_key = PEN_FLOOR,
     .key_taken = PEN_FLOOR,
+    .crate = LOW_PROP,
+    .sacks = LOW_PROP,
+    .bedroll = DECOR,
+    .tent = .{ .solid = true, .blind = true, .ground = .dirt },
 });
 
 const WHOLES = blk: {

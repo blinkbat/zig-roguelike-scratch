@@ -353,13 +353,7 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
         g.sim.lv.stand(to, g.sim.hero);
     } else {
         spawnHero(g, to);
-        switch (w.node[n].plan) {
-            .procgen => w.node[n].populate(&g.sim.lv, &g.sim.pool, &g.sim.rng, to, roll),
-            .bespoke => {
-                atlas.spawnFoes(&g.sim.lv, &g.sim.pool, placing);
-                if (w.node[n].zoo) |z| z.populate(&g.sim.lv, &g.sim.pool, &g.sim.rng);
-            },
-        }
+        w.node[n].populate(&g.sim.lv, &g.sim.pool, &g.sim.rng, to, roll);
     }
     const h = g.sim.heroActor().?;
     carried.at = h.at;
@@ -819,6 +813,10 @@ fn stunnedTurn(g: *Game) bool {
 
 /// Advance presentation before new actions so their effects start at the correct delay.
 pub fn update(g: *Game, dt: f32) void {
+    _ = updateFrame(g, dt);
+}
+
+fn updateFrame(g: *Game, dt: f32) *const grid.Level {
     if (!g.st.focused) holdWalk(g);
     g.keywords.resized(g.screen);
     const keyword_input = g.keywords.step(&g.st);
@@ -871,7 +869,9 @@ pub fn update(g: *Game, dt: f32) void {
             const clicked = mouseControls.aim(g);
             if (menu.closed(&g.st)) {
                 skills.closeAim(g);
-            } else if (g.st.hit(CONFIRM) or clicked) {
+            } else if (clicked) {
+                mouseControls.confirmAim(g);
+            } else if (g.st.hit(CONFIRM)) {
                 skills.confirmAim(g);
             } else if (g.st.walk) |d| {
                 skills.nudgeAim(g, d);
@@ -903,6 +903,7 @@ pub fn update(g: *Game, dt: f32) void {
     g.light.step(ground, dt);
     carryLight(g);
     if (g.debug.visuals.weather) g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, CELL_F);
+    return ground;
 }
 
 pub fn overLog(g: *const Game) bool {
@@ -1029,15 +1030,21 @@ pub fn deadBox(screen: P) rl.Rectangle {
 }
 
 pub fn drawFrame(g: *Game) void {
+    drawGroundFrame(g, g.pic.groundShown(&g.sim));
+}
+
+fn drawGroundFrame(g: *Game, ground: *const grid.Level) void {
     g.keywords.beginFrame(&g.st, g.screen);
     defer g.keywords.draw(&g.face, &g.sprites, g.screen, &g.st);
     rl.clearBackground(look.FOG);
-    const ground = g.pic.groundShown(&g.sim);
     scene.drawMap(g, ground);
     g.vignette.draw(g.screen.x, g.screen.y);
     scene.drawMinimap(g, ground);
     scene.drawDayNight(g);
-    if (modeShown(g) == .talk) return talking.draw(g);
+    if (modeShown(g) == .talk) {
+        g.mouse.corners_shown = false;
+        return talking.draw(g);
+    }
     overlay.drawHud(g);
     journal.draw(&g.face, &g.sprites, g.screen, &g.sim.log);
     overlay.drawTips(g);
@@ -1090,11 +1097,11 @@ pub fn frame(g: *Game) void {
     g.st.update(dt);
     syncScreen(g, g.st.fullscreen);
     const began = std.time.Instant.now() catch null;
-    update(g, dt);
+    const ground = updateFrame(g, dt);
     prepare(g);
     g.st.modifier = g.bar.modifier;
     rl.beginDrawing();
-    drawFrame(g);
+    drawGroundFrame(g, ground);
     if (began) |b| if (std.time.Instant.now()) |now| g.perf.add(dt, now.since(b)) else |_| {};
     if (g.debug.performance_overlay) g.perf.draw(&g.face);
     rl.endDrawing();

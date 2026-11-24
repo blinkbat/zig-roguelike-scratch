@@ -181,10 +181,7 @@ fn spend(run: *game.Game, act: skillbar.Act) void {
 const plural = mathx.plural;
 
 pub fn aimable(run: *const game.Game, from: P, to: P) bool {
-    const act = run.mode.aim.act();
-    if (act.reticle() == .ground) return tactics_exec.valid(run, from, to);
-    if (act.reticle() == .bow and !run.sim.lv.inLos(to)) return false;
-    return act.aimableIn(&run.sim.lv, from, to, run.sim.reachOf(act)) and !tactics_exec.strikesHidden(run, act, from, to);
+    return tactics_exec.validAct(run, run.mode.aim.act(), from, to);
 }
 
 fn leap(run: *game.Game, from: P, act: skillbar.Act, to: P) void {

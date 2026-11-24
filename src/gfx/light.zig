@@ -127,6 +127,10 @@ pub const Light = struct {
         self.scratch.flames = lv.flames;
         self.countCasters(&self.scratch);
         if (crowns_changed) self.grounded() else self.visibility.terrain(&self.scratch);
+        self.relight(lv);
+    }
+
+    fn relight(self: *Light, lv: *const grid.Level) void {
         self.visibility.soften();
         for (self.torch[0..self.torch_n]) |*t| self.pour(lv, t);
     }
@@ -146,7 +150,18 @@ pub const Light = struct {
     }
 
     pub fn follow(self: *Light, lv: *const grid.Level) void {
-        if (!std.mem.eql(grid.Tile, &self.scratch.tile, &lv.tile) or !std.mem.eql(u8, &self.scratch.flames, &lv.flames)) self.retile(lv);
+        if (!std.mem.eql(grid.Tile, &self.scratch.tile, &lv.tile)) return self.retile(lv);
+        if (std.mem.eql(u8, &self.scratch.flames, &lv.flames)) return;
+        const changed = for (self.scratch.flames, lv.flames, 0..) |was, now, i| {
+            if ((was == 0) == (now == 0)) continue;
+            const cell = grid.Level.of(i);
+            if (self.scratch.blocksSight(cell) != lv.blocksSight(cell)) break true;
+        } else false;
+        self.scratch.flames = lv.flames;
+        if (changed) {
+            self.visibility.terrain(&self.scratch);
+            self.relight(lv);
+        }
     }
 
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {

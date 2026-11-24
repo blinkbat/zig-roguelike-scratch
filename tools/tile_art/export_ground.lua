@@ -11,22 +11,7 @@ assert(app.params.from==nil or stand_in,'from=underdrawing or nothing')
 assert(not stand_in or app.params.out,'a stand-in never goes into assets/: give out=')
 local out=app.params.out or (root..'assets/ground/'..name..'-ground.png')
 if stand_in then
-  local function normalized(path)
-    local windows=app.fs.pathSeparator=='\\'
-    local value=path:gsub('\\','/')
-    local cwd=app.fs.currentPath:gsub('\\','/')
-    if windows then
-      assert(not value:match('^%a:') or value:match('^%a:/'),'Use an absolute path instead of a drive-relative path')
-      if value:sub(1,1)=='/' and value:sub(1,2)~='//' then
-        value=assert(cwd:match('^%a:'),'Current directory has no drive')..value
-      elseif not value:match('^%a:/') and value:sub(1,2)~='//' then value=app.fs.joinPath(cwd,value) end
-    elseif value:sub(1,1)~='/' then value=app.fs.joinPath(cwd,value) end
-    value=app.fs.normalizePath(value):gsub('\\','/'):gsub('/+$','')
-    return windows and value:lower() or value
-  end
-  local destination=normalized(out)
-  local assets=normalized(app.fs.joinPath(root,'assets'))
-  assert(destination~=assets and destination:sub(1,#assets+1)~=assets..'/','a stand-in must be exported outside assets/')
+  sourceFiles.requireOutside(out,app.fs.joinPath(root,'assets'))
 end
 local HEAD,SIZE,COLS=groundPort.HEAD,groundPort.SIZE,groundPort.COLS
 local order=dofile(root..'tools/tile_art/ground_corners.lua')

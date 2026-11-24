@@ -108,6 +108,9 @@ spurs 6
 pond 7
 pond_chests 2
 camps 2
+goods 10
+bedrolls 5
+tents 2
 packs 11
 guards 3
 raiders 2
@@ -140,6 +143,7 @@ zoo_foe 1 bandit_netter
 at 240 0
 door 0 46 0 0
 door 33 0 2 0
+door 95 49 3 0
 node procgen topology
 layout encampment
 filler shrub
@@ -174,6 +178,65 @@ apart 6
 name Goblin Camp
 at 240 -200
 door 48 63 1 1
+node procgen wilds
+thicket 58
+smooth 4
+strays 30
+loops 30
+rewards chests
+litter 4
+decor 12 60 6
+packs 14
+few 2
+reach 2
+gap 14
+apart 4
+light clear
+weather misty
+location forest beams
+makeup 3 bandit_shieldbearer bandit_crossbowman bandit_netter
+makeup 3 bandit_crossbowman bandit_crossbowman goblin goblin
+makeup 2 goblin goblin goblin
+makeup 2 beefy_pib pib_shaman pib
+makeup count 3 hearth bandit_shieldbearer bandit_crossbowman bandit_crossbowman
+makeup count 2 pond bog_leech bog_leech
+makeup count 2 pyre_bloat
+makeup count 1 exit bandit_shieldbearer bandit_netter bandit_crossbowman
+feature border
+tile water
+width 3
+rough 4
+feature setpiece
+piece moat_camp
+count 5
+apart 3
+feature scatter
+tile large_tree
+on grass
+amount 40
+clump 0
+water_range 0
+water_clear 3
+land_range 0
+feature scatter
+tile swamp_tree
+on grass
+amount 220
+clump 0
+water_range 3
+water_clear 0
+land_range 0
+feature scatter
+tile reeds
+on grass
+amount 160
+clump 3
+water_range 2
+water_clear 0
+land_range 0
+name Fenwood
+at 480 0
+door 0 32 1 2
 flag carrying_pib
 flag pib_home
 quest stolen_pib The Stolen Pib
@@ -219,6 +282,65 @@ ask Leave it. -> end
 dialog home_pib
 line root
 say The baby pib nuzzles the merchant's boots.
+dialog cook
+line root
+say Mind the pot. If you're hungry you're too late, and if you're early you're in the way.
+ask What's cooking? -> pot
+ask How long has the caravan been on the road? -> road
+ask Farewell. -> end
+line pot
+say Whatever the guards shot yesterday, and turnips the merchant swears are worth their weight in silver. Don't repeat that.
+ask Farewell. -> end
+line road
+say Since the thaw. Down from the hill towns, along the Strand, and now camped at this bridge with goblins at our backs and the Fenwood in front. Nobody wants to cross that river.
+ask Why not? -> fen
+ask Farewell. -> end
+line fen
+say Ask the warden on the bridge. He's seen what comes out of those trees. I only cook for the ones who come back.
+dialog drover
+line root
+say Careful round the carts. The axles are older than I am and twice as cranky.
+ask What's in the crates? -> crates
+ask Seen anything strange? -> strange
+ask Farewell. -> end
+line crates
+say Salt, rope, lamp oil, nails. The sacks are grain, mostly. Nothing worth dying over, though the goblins don't seem to know that.
+ask Farewell. -> end
+line strange
+say Lights past the river after dark, low over the water. The warden says it's their cookfires. I've never seen a cookfire that moves.
+dialog captain
+line root
+say Keep your blade sheathed inside the camp. My guards have had a long week.
+ask The raids? -> raids
+ask Could you use another sword? -> help
+ask You heard about the baby pib? -> pib
+need quest stolen_pib done
+ask Farewell. -> end
+line raids
+say Every night, a few at a time, down the north road. We hold the carts; we can't hold the dark. If you're staying, stay near the carts.
+ask Farewell. -> end
+line help
+say Always. Clear that goblin camp up north and the raids stop. Until then I'll take any blade that points the right way.
+ask Farewell. -> end
+line pib
+say I heard. One of my guards let it past him, so I owe you twice. The merchant hasn't stopped smiling since.
+dialog warden
+line root
+say Hold there. Past this bridge the road runs into the Fenwood, and the Fenwood is no place for a lone traveller.
+ask What's in the Fenwood? -> fen
+ask Who holds it? -> camps
+ask I can handle myself. -> brave
+ask I'll turn back. -> end
+line fen
+say Trees grown so thick you lose the sky by noon, and water on every side. Leeches in the shallows. Worse than the goblins up north, and they're bad enough.
+ask Who holds it? -> camps
+ask Farewell. -> end
+line camps
+say Cutthroats. They've dug in behind rings of water with a plank across to each camp, and they shoot whatever comes over the plank. Shieldmen, crossbows, netters. Not the rabble that raids the carts.
+ask I can handle myself. -> brave
+ask Farewell. -> end
+line brave
+say Then I won't stop you. But if you come back over this bridge running, don't expect me to hold it for you.
 npc 1 by caravan merchant Merchant
 npc 2 far baby_pib Baby pib
 shows stage stolen_pib < 2
@@ -226,3 +348,12 @@ looks pib
 npc 1 by caravan home_pib Baby pib
 shows quest stolen_pib done
 looks pib
+npc 1 by sacks cook Tamsin
+npc 1 by crate drover Brann
+npc 1 by caravan captain Captain Ilse
+looks caravan_guard
+npc 1 on stone_bridge warden Warden Cobb
+looks caravan_guard
+trigger warden_warns 0 once live
+when near 6 3
+do dialog warden

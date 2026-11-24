@@ -169,54 +169,21 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
 }
 
 fn drawPassage(face: *const font.Face, body: []const u8, x: i32, w: i32, start: usize, end: usize, l: *const Layout, ink: rl.Color) void {
-    var offset: usize = 0;
+    var rest = body;
     var line = start;
     var buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
-    while (nextLine(face, body, &offset, w, &buf)) |text| : (line += 1) {
+    while (font.wrapNext(face, &rest, SAY_SIZE, w, &buf)) |text| : (line += 1) {
         if (line >= end) break;
         face.text(text, x, l.text_y + @as(i32, @intCast(line)) * SAY_PITCH, SAY_SIZE, ink);
     }
 }
 
 fn countLines(face: anytype, body: []const u8, w: i32, most: usize) usize {
-    var offset: usize = 0;
+    var rest = body;
     var n: usize = 0;
     var buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
-    while (n < most and nextLine(face, body, &offset, w, &buf) != null) n += 1;
+    while (n < most and font.wrapNext(face, &rest, SAY_SIZE, w, &buf) != null) n += 1;
     return n;
-}
-
-fn nextLine(face: anytype, body: []const u8, offset: *usize, w: i32, buf: *[font.WRAP_COLS_MAX + 1]u8) ?[:0]const u8 {
-    if (offset.* >= body.len) return null;
-    const rest = body[offset.*..];
-    const newline = std.mem.indexOfScalar(u8, rest[0..@min(rest.len, font.WRAP_COLS_MAX + 1)], '\n') orelse rest.len;
-    const cap = @min(newline, font.WRAP_COLS_MAX);
-    @memcpy(buf[0..cap], rest[0..cap]);
-    buf[cap] = 0;
-    var lo: usize = 0;
-    var hi: usize = cap;
-    while (lo < hi) {
-        const mid = lo + (hi - lo + 1) / 2;
-        const held = buf[mid];
-        buf[mid] = 0;
-        const fits = face.width(buf[0..mid :0], SAY_SIZE) <= w;
-        buf[mid] = held;
-        if (fits) lo = mid else hi = mid - 1;
-    }
-    var n = if (cap > 0) @max(1, lo) else 0;
-    if (n < newline) {
-        if (std.mem.lastIndexOfScalar(u8, rest[0..n], ' ')) |space| if (space > 0) {
-            n = space;
-        };
-    }
-    offset.* += n;
-    if (n == newline and offset.* < body.len) {
-        offset.* += 1;
-    } else {
-        while (offset.* < body.len and body[offset.*] == ' ') offset.* += 1;
-    }
-    buf[n] = 0;
-    return buf[0..n :0];
 }
 
 fn drawFigure(face: *const font.Face, r: rl.Rectangle, f: Figure) void {
@@ -285,9 +252,9 @@ test "a window too short for the line still shows the reply the cursor confirms"
 test "a narrow face fills the panel's width before it wraps" {
     const w: i32 = 700;
     const body = "ab " ** 200;
-    var offset: usize = 0;
+    var rest: []const u8 = body;
     var buf: [font.WRAP_COLS_MAX + 1]u8 = undefined;
-    const first = nextLine(menu.TestFace{}, body, &offset, w, &buf).?;
+    const first = font.wrapNext(menu.TestFace{}, &rest, SAY_SIZE, w, &buf).?;
     try std.testing.expect(countLines(menu.TestFace{}, body, w, std.math.maxInt(usize)) > 1);
     try std.testing.expect(menu.TestFace.width(.{}, first, SAY_SIZE) > w - 3 * @divTrunc(SAY_SIZE, 2));
 }

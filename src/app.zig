@@ -172,8 +172,9 @@ const App = struct {
     fn saveStep(app: *App, st: *const input.State, screen: mathx.P) ?SaveAction {
         const was = app.loads.at;
         var action: ?SaveAction = null;
-        if (app.loads.stepOver(st, save.SLOTS, screen, saveRowBox)) |i| {
-            if (!st.clicked(saveDeleteBox(screen, i))) {
+        if (app.loads.activateOver(st, save.SLOTS, screen, saveRowBox)) |picked| {
+            const i = picked.row();
+            if (picked != .mouse or !st.clicked(saveDeleteBox(screen, i))) {
                 action = .{ .load = i };
             } else if (app.list[i] != .empty) action = .{ .remove = i };
         }
@@ -722,6 +723,14 @@ test "mouse save deletion stays tied to its row through intermediate movement an
             try std.testing.expect(app.confirmDelete(second.remove));
             app.armed = null;
         }
+        app.loads.at = 0;
+        const mixed = input.State{
+            .walk = .s,
+            .pressed = .initOne(menu.CONFIRM),
+            .pointer = raster.middleAt(saveDeleteBox(screen, 1)),
+            .click = true,
+        };
+        try std.testing.expectEqual(@as(usize, 1), app.saveStep(&mixed, screen).?.load);
         app.loads.at = 0;
         const remove = app.saveStep(&.{ .pressed = .initOne(DELETE) }, screen).?;
         try std.testing.expectEqual(@as(usize, 0), remove.remove);

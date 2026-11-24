@@ -299,7 +299,7 @@ const FIXED_SPOTS = [_]std.meta.Tag(game.Spot){ .life, .mana, .log };
 const HUD_SPOTS = FIXED_SPOTS.len + skillbar.SLOTS.len + @typeInfo(hud.Shown).array.len;
 pub const SPOTS_MAX = HUD_SPOTS + actor.MAX;
 
-pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
+fn hudSpots(g: *const game.Game, out: *[HUD_SPOTS]Part) usize {
     const layout = hudLayout(g);
     var n: usize = 0;
     _ = mathx.push(Part, out, &n, .{ .spot = .life, .box = hud.orbBox(layout.life) });
@@ -309,18 +309,31 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     const shown = heroStatuses(g, &buf);
     for (shown, 0..) |s, k| _ = mathx.push(Part, out, &n, .{ .spot = .{ .status = s }, .box = hud.statusBox(layout, shown.len, k) });
     _ = mathx.push(Part, out, &n, .{ .spot = .log, .box = journal.box(g.screen) });
-    std.debug.assert(n <= HUD_SPOTS);
+    return n;
+}
+
+pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
+    var n = hudSpots(g, out[0..HUD_SPOTS]);
     const cam = game.scene.Cam.of(g);
     for (0..g.sim.pool.n) |i| {
-        const at = g.pic.drawnAt(&g.sim, i) orelse continue;
-        if (g.pic.pictured[i].down()) continue;
-        const p = cam.px(at);
-        const source = raster.rect(p.x, p.y, game.CELL, game.CELL);
-        const box = g.cinema.lens.screenBox(source, g.screen);
-        if (!rl.checkCollisionRecs(box, raster.rect(0, 0, g.screen.x, g.screen.y))) continue;
-        _ = mathx.push(Part, out, &n, .{ .spot = .{ .actor = actor.Pool.idOf(i) }, .box = box, .source_box = source });
+        const source = actorSource(g, cam, i) orelse continue;
+        const part = actorPart(g, source, i) orelse continue;
+        _ = mathx.push(Part, out, &n, part);
     }
     return out[0..n];
+}
+
+fn actorSource(g: *const game.Game, cam: game.scene.Cam, i: usize) ?rl.Rectangle {
+    const at = g.pic.drawnAt(&g.sim, i) orelse return null;
+    if (g.pic.pictured[i].down()) return null;
+    const p = cam.px(at);
+    return raster.rect(p.x, p.y, game.CELL, game.CELL);
+}
+
+fn actorPart(g: *const game.Game, source: rl.Rectangle, i: usize) ?Part {
+    const box = g.cinema.lens.screenBox(source, g.screen);
+    if (!rl.checkCollisionRecs(box, raster.rect(0, 0, g.screen.x, g.screen.y))) return null;
+    return .{ .spot = .{ .actor = actor.Pool.idOf(i) }, .box = box, .source_box = source };
 }
 
 pub fn heroStatuses(g: *const game.Game, buf: *hud.Shown) []const fx.Status {
@@ -357,7 +370,9 @@ pub fn inspectStep(g: *game.Game) void {
         g.inspect_scroll = mathx.nudge(g.inspect_scroll, scroll, hud.TIP_LINES_MAX);
     }
     if (g.st.pointing()) {
-        for (spots) |part| if (under(g, part, g.st.pointer.?)) {
+        const pointer = g.st.pointer.?;
+        const source = g.cinema.lens.sourcePoint(pointer, g.screen);
+        for (spots) |part| if (if (part.source_box) |box| raster.holds(box, source) else underHud(part, pointer)) {
             inspect(g, part.spot);
             return;
         };
@@ -384,17 +399,31 @@ fn round(s: game.Spot) bool {
     return s == .life or s == .mana;
 }
 
-fn under(g: *const game.Game, s: Part, p: mathx.P) bool {
-    if (s.source_box) |box| return raster.holds(box, g.cinema.lens.sourcePoint(p, g.screen));
+fn underHud(s: Part, p: mathx.P) bool {
     return if (round(s.spot)) rl.checkCollisionPointCircle(raster.vec(p), raster.middle(s.box), s.box.width / 2) else raster.holds(s.box, p);
+}
+
+fn hoveredHud(g: *const game.Game, p: mathx.P) ?Part {
+    var buf: [HUD_SPOTS]Part = undefined;
+    const n = hudSpots(g, &buf);
+    for (buf[0..n]) |s| if (underHud(s, p)) return s;
+    return null;
+}
+
+pub fn hoveredSlot(g: *const game.Game, p: mathx.P) ?usize {
+    const part = hoveredHud(g, p) orelse return null;
+    return if (part.spot == .slot) part.spot.slot else null;
 }
 
 pub fn hovered(g: *const game.Game) ?Part {
     if (!game.playShown(g) and g.mode != .aim) return null;
     const p = g.st.pointer orelse return null;
-    var buf: [SPOTS_MAX]Part = undefined;
-    for (spotsOf(g, &buf)) |s| {
-        if (under(g, s, p)) return s;
+    if (hoveredHud(g, p)) |part| return part;
+    const source_point = g.cinema.lens.sourcePoint(p, g.screen);
+    const cam = game.scene.Cam.of(g);
+    for (0..g.sim.pool.n) |i| {
+        const source = actorSource(g, cam, i) orelse continue;
+        if (raster.holds(source, source_point)) if (actorPart(g, source, i)) |part| return part;
     }
     return null;
 }

@@ -7,7 +7,7 @@ pub const Aim = struct {
     by: ?input.Button,
     set: skillbar.Set = .primary,
     mark: mathx.P,
-    action: union(enum) { single: skillbar.Act, wall_start: skillbar.Act, wall_end: struct { act: skillbar.Act, at: mathx.P } },
+    action: union(enum) { single: skillbar.Act, wall_start: skillbar.Act, wall_end: struct { act: skillbar.Act, at: mathx.P, dragging: bool = false } },
     /// The mark last confirmed with no visible target on its line, awaiting a second confirmation.
     asked: ?mathx.P = null,
 

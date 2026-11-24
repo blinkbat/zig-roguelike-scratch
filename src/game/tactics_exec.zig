@@ -62,11 +62,8 @@ fn warCry(g: *game.Game, from: P, rank: u8) void {
     }
 }
 
-pub fn valid(g: *const game.Game, from: P, at: P) bool {
-    return validAct(g, g.mode.aim.act(), from, at);
-}
-
 pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
+    if (act.reticle() == .bow and !g.sim.lv.inLos(at)) return false;
     if (!act.aimableIn(&g.sim.lv, from, at, g.sim.reachOf(act)) or strikesHidden(g, act, from, at)) return false;
     const start = (if (g.mode == .aim) g.mode.aim.anchor() else null) orelse at;
     if (act.consumes()) {
@@ -147,7 +144,7 @@ pub fn span(g: *const game.Game, act: skillbar.Act, from: P, start: P, end: P) ?
     };
 }
 
-pub fn strikesHidden(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
+fn strikesHidden(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
     switch (act.reticle() orelse return false) {
         .rush => return g.sim.untargetableAt(at),
         .swing => switch (act) {

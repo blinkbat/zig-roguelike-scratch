@@ -60,17 +60,12 @@ pub const Scene = struct {
         nd.stampAt(&self.lv, self.roll, from);
         map.stampNpcs(node, &self.lv, self.roll, &self.npc_at, atlas.EVERY_NPC);
         var rng = mathx.Rng.init(self.roll);
-        switch (nd.plan) {
-            .bespoke => if (nd.zoo) |z| {
-                atlas.spawnFoes(&self.lv, &self.rolled_foes, placing);
-                z.populate(&self.lv, &self.rolled_foes, &rng);
-            },
-            .procgen => {
-                const at = atlas.landing(&self.lv, from, placing) orelse from;
-                _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
-                nd.populate(&self.lv, &self.rolled_foes, &rng, at, self.roll);
-                self.lv.clear(at);
-            },
+        const rolled = nd.unrolled();
+        if (rolled or nd.zoo != null) {
+            const hero = if (rolled) atlas.landing(&self.lv, from, placing) orelse from else null;
+            if (hero) |at| _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
+            nd.populate(&self.lv, &self.rolled_foes, &rng, hero orelse from, self.roll);
+            if (hero) |at| self.lv.clear(at);
         }
         self.shown_n = 0;
         if (nd.zoo == null) for (nd.placed()) |f| self.show(f);

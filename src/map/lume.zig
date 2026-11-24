@@ -41,9 +41,8 @@ fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, 
     for (lv.torches()) |t| poolNear(lv, viewer, sight, .{ .at = torchFloor(t), .reach = TORCH_REACH }, out);
     var glows = lv.glowing();
     while (glows.next()) |p| poolNear(lv, viewer, sight, .{ .at = p, .reach = TORCH_REACH }, out);
-    for (&lv.flames, 0..) |left, i| {
-        if (left > 0) poolNear(lv, viewer, sight, .{ .at = grid.Level.of(i), .reach = FIRE_REACH }, out);
-    }
+    var flames = grid.Box.around(viewer, sight + FIRE_REACH).grown(0).cells();
+    while (flames.next()) |at| if (lv.burning(at)) fov.castInto(lv, at, FIRE_REACH, out);
     for (carried) |s| fov.castInto(lv, s.at, s.reach, out);
 }
 

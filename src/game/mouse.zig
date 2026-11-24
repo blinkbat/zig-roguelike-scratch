@@ -22,6 +22,7 @@ pub const State = struct {
     foe: ?u16 = null,
     fresh: bool = false,
     secondary: bool = false,
+    corners_shown: bool = false,
 
     pub fn stop(self: *State) void {
         self.target = null;
@@ -55,7 +56,8 @@ fn buttonAt(screen: P, p: P) ?input.Button {
 }
 
 pub fn draw(g: *game.Game) void {
-    if (g.st.device.pad() or !clickable(game.modeShown(g))) return;
+    g.mouse.corners_shown = !g.st.device.pad() and clickable(game.modeShown(g));
+    if (!g.mouse.corners_shown) return;
     for (CORNER) |c| menu.action(&g.face, buttonBox(g.screen, c.button), prompt_icon.Prompt.menuOf(&g.st, c.button), c.label);
 }
 
@@ -67,7 +69,7 @@ fn overUi(g: *const game.Game, p: P) bool {
     const layout = game.overlay.hudLayout(g);
     return raster.holds(raster.rect(layout.left, layout.top, hud.WIDTH, hud.COVER), p) or
         raster.holds(journal.box(g.screen), p) or raster.holds(game.scene.miniFrame(g.screen.x), p) or
-        buttonAt(g.screen, p) != null or overStatus(g, layout, p);
+        (g.mouse.corners_shown and buttonAt(g.screen, p) != null) or overStatus(g, layout, p);
 }
 
 fn overStatus(g: *const game.Game, layout: hud.Layout, p: P) bool {
@@ -101,24 +103,22 @@ pub fn prepare(g: *game.Game) void {
     const p = g.st.pointer orelse return;
     if (g.st.click) {
         forget(g);
-        if (buttonAt(g.screen, p)) |b| {
+        if (g.mouse.corners_shown) if (buttonAt(g.screen, p)) |b| {
             g.mode = .play;
             g.st.pressed.insert(b);
             return;
-        }
+        };
     }
     if (g.mode != .play) return;
-    if (game.overlay.hovered(g)) |part| {
-        if (part.spot == .slot) {
-            if (g.st.scroll != 0) g.mouse.secondary = g.st.scroll < 0;
-            if (g.st.click) {
-                const b = skillbar.SLOTS[part.spot.slot];
-                if (b == g.bar.modifier) {
-                    g.mouse.secondary = !g.mouse.secondary;
-                } else g.st.pressed.insert(b);
-            }
+    if (g.st.click or g.st.scroll != 0) if (game.overlay.hoveredSlot(g, p)) |slot| {
+        if (g.st.scroll != 0) g.mouse.secondary = g.st.scroll < 0;
+        if (g.st.click) {
+            const b = skillbar.SLOTS[slot];
+            if (b == g.bar.modifier) {
+                g.mouse.secondary = !g.mouse.secondary;
+            } else g.st.pressed.insert(b);
         }
-    }
+    };
     if (!g.st.click or !game.acceptsAction(g)) return;
     const at = cell(g) orelse return;
     if (!g.pic.seenShown(&g.sim, at)) return;
@@ -135,13 +135,24 @@ pub fn prepare(g: *game.Game) void {
 }
 
 pub fn aim(g: *game.Game) bool {
-    const dropped = g.st.left_released and g.mode.aim.act().spans() and g.mode.aim.anchor() != null;
+    const dropped = if (g.mode.aim.action == .wall_end) blk: {
+        const wall = &g.mode.aim.action.wall_end;
+        const dropped = wall.dragging and g.st.left_released and g.st.focused;
+        if (!g.st.left_down or !g.st.focused) wall.dragging = false;
+        break :blk dropped;
+    } else false;
     if (!g.st.pointing() and !dropped) return false;
     const at = cell(g) orelse return false;
     const h = g.sim.heroActor() orelse return false;
     const mark = if (g.mode.aim.act().reticle() == .swing) h.at.add((mathx.toward(h.at, at) orelse return false).delta()) else at;
     skills.markAim(g, h.at, mark);
     return g.st.click or dropped;
+}
+
+pub fn confirmAim(g: *game.Game) void {
+    const starts_wall = g.st.click and g.st.left_down and g.mode.aim.action == .wall_start;
+    skills.confirmAim(g);
+    if (starts_wall and g.mode == .aim and g.mode.aim.action == .wall_end) g.mode.aim.action.wall_end.dragging = true;
 }
 
 fn attack(g: *game.Game, id: u16) bool {
@@ -241,7 +252,10 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
             const t = g.sim.lv.at(q);
             if (!g.sim.lv.walkable(q) and !(end and (t.opened() != null or t.closedGate()))) continue;
             if ((g.sim.lv.barrelSeen(q) or (g.sim.lv.isLit(q) and g.sim.lv.npcAt(q) != null)) and !end) continue;
-            if (g.sim.lv.isLit(q) and ((g.sim.lv.taken(q) and !end and !g.sim.allyAt(q)) or g.sim.lv.harmful(q))) continue;
+            if (!end) if (g.sim.pool.getConst(g.sim.lv.who(q))) |body| {
+                if (body.seenFoe(&g.sim.lv)) continue;
+            };
+            if (g.sim.lv.isLit(q) and g.sim.lv.harmful(q)) continue;
             if (!end and g.sim.leadsTo(q) != null) continue;
             const way = if (head == 0) d else first[head];
             if (end) return way;
@@ -427,6 +441,75 @@ test "a mouse release that ends no wall drag leaves a smart-aimed reticle on its
     try std.testing.expectEqual(target, g.mode.aim.mark);
 }
 
+test "a wall drag can only start on the map before the first endpoint is chosen" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const from = P{ .x = 20, .y = 20 };
+    const start = P{ .x = 22, .y = 19 };
+    const end = P{ .x = 22, .y = 21 };
+    for ([_]bool{ false, true }) |from_map| {
+        h.heroArena(g, .wizard, from, &.{});
+        const camera = game.scene.Cam.of(g);
+        const clock = g.sim.clock;
+        if (from_map) h.useAct(g, .arcane_barrier) else h.aimAt(g, .arcane_barrier, start);
+        g.st = .{
+            .click = true,
+            .left_down = true,
+            .pointer = if (from_map) camera.mid(start) else raster.middleAt(journal.box(g.screen)),
+        };
+        game.update(g, 0);
+        try std.testing.expectEqual(start, g.mode.aim.anchor().?);
+        try std.testing.expectEqual(clock, g.sim.clock);
+        g.st = .{ .left_released = true, .pointer = camera.mid(end) };
+        game.update(g, 0);
+        try std.testing.expectEqual(from_map, g.sim.lv.hasBarrier(.{ .x = 22, .y = 20 }));
+        try std.testing.expectEqual(h.turned(clock, @intFromBool(from_map)), g.sim.clock);
+    }
+}
+
+test "hidden corner buttons pass the first mouse click through to the map" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const point = raster.middleAt(buttonBox(g.screen, menu.PAUSE));
+    g.st = .{ .device = .keys, .click = true, .pointer = point };
+    const at = cell(g) orelse return error.NoMapCell;
+    g.sim.lv.seen[grid.Level.idx(at)] = true;
+    g.pic.snapSight(&g.sim);
+    prepare(g);
+    try std.testing.expectEqual(@as(?P, at), g.mouse.target);
+    try std.testing.expect(!g.st.hit(menu.PAUSE));
+    g.mouse.corners_shown = true;
+    prepare(g);
+    try std.testing.expect(g.mouse.target == null and g.st.hit(menu.PAUSE));
+}
+
+test "mouse routing across lit shallows ignores submerged foes" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const leech = P{ .x = 22, .y = 20 };
+    const to = P{ .x = 24, .y = 20 };
+    game.harness.arena(g, from, &.{});
+    var cells = grid.Cells.of(from.sub(.{ .x = 1, .y = 1 }), to.add(.{ .x = 2, .y = 2 }));
+    while (cells.next()) |p| if (p.y != from.y) g.sim.lv.set(p, .wall);
+    @memset(&g.sim.lv.seen, false);
+    for (from.x..to.x + 1) |x| {
+        const i = grid.Level.idx(.{ .x = @intCast(x), .y = from.y });
+        g.sim.lv.seen[i] = true;
+        g.sim.lv.lit[i] = true;
+    }
+    g.sim.lv.set(leech, .shallows);
+    try std.testing.expectEqual(@as(?mathx.Dir, .e), next(g, from, to));
+    const id = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(.bog_leech, leech));
+    const body = g.sim.pool.get(id).?;
+    body.submerged = true;
+    try std.testing.expectEqual(@as(?mathx.Dir, .e), next(g, from, to));
+    body.submerged = false;
+    try std.testing.expectEqual(@as(?mathx.Dir, null), next(g, from, to));
+}
+
 test "mouse attacks skip combustion for unburning foes and cast it on burning foes" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -523,6 +606,7 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     try std.testing.expectEqual(book.Page.loot, g.character.page);
     try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
     game.harness.rightClick(g);
+    g.mouse.corners_shown = true;
     g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, menu.CHARACTER)) };
     game.update(g, 0);
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);

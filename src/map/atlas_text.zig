@@ -32,9 +32,15 @@ pub fn save(self: *atlas.Atlas, alloc: std.mem.Allocator, path: []const u8) !voi
 fn encode(self: *atlas.Atlas, alloc: std.mem.Allocator) !std.ArrayList(u8) {
     var text = std.ArrayList(u8).init(alloc);
     errdefer text.deinit();
-    try write(self, text.writer());
-    if (text.items.len > TEXT_CAP) return error.FileTooBig;
+    const Writer = std.io.Writer(*std.ArrayList(u8), error{ OutOfMemory, FileTooBig }, appendText);
+    try write(self, Writer{ .context = &text });
     return text;
+}
+
+fn appendText(text: *std.ArrayList(u8), bytes: []const u8) error{ OutOfMemory, FileTooBig }!usize {
+    if (bytes.len > TEXT_CAP - text.items.len) return error.FileTooBig;
+    try text.appendSlice(bytes);
+    return bytes.len;
 }
 
 test "map saving rejects expanded dialogue beyond the reader limit before publishing" {

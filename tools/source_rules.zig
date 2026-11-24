@@ -95,10 +95,7 @@ pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) 
             const node: u32 = @intCast(n);
             if (token >= tree.firstToken(node) and token <= tree.lastToken(node)) continue :tokens;
         }
-        if (i + 3 >= tags.len or tags[i + 1] != .l_paren or tags[i + 2] != .string_literal) return error.NonliteralImport;
-        const closing = i + 3 + @as(usize, @intFromBool(tags[i + 3] == .comma));
-        if (closing >= tags.len or tags[closing] != .r_paren) return error.NonliteralImport;
-        const literal = tree.tokenSlice(token + 2);
+        const literal = try importLiteral(&tree, token);
         const imported = try std.zig.string_literal.parseAlloc(alloc, literal);
         defer alloc.free(imported);
         std.mem.replaceScalar(u8, imported, '\\', '/');
@@ -108,6 +105,49 @@ pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) 
         if (!allowed(owner, target)) return .{ .line = tree.tokenLocation(0, token).line + 1, .imported = literal };
     }
     return null;
+}
+
+fn importLiteral(tree: *const std.zig.Ast, token: u32) ![]const u8 {
+    const tags = tree.tokens.items(.tag);
+    if (token + 3 >= tags.len or tags[token + 1] != .l_paren or tags[token + 2] != .string_literal) return error.NonliteralImport;
+    const closing = token + 3 + @as(usize, @intFromBool(tags[token + 3] == .comma));
+    if (closing >= tags.len or tags[closing] != .r_paren) return error.NonliteralImport;
+    return tree.tokenSlice(token + 2);
+}
+
+pub fn testRoster(alloc: std.mem.Allocator, source: [:0]const u8) !std.StringHashMapUnmanaged(void) {
+    var tree = try std.zig.Ast.parse(alloc, source, .zig);
+    defer tree.deinit(alloc);
+    if (tree.errors.len != 0) return error.InvalidSyntax;
+    var roster: std.StringHashMapUnmanaged(void) = .{};
+    errdefer roster.deinit(alloc);
+    var found = false;
+    const tags = tree.tokens.items(.tag);
+    for (tree.rootDecls()) |node| {
+        if (tree.nodes.items(.tag)[node] != .test_decl or tree.nodes.items(.data)[node].lhs != 0) continue;
+        found = true;
+        for (tree.firstToken(node)..tree.lastToken(node) + 1) |i| {
+            const token: u32 = @intCast(i);
+            if (tags[i] != .builtin or !std.mem.eql(u8, tree.tokenSlice(token), "@import")) continue;
+            const literal = try importLiteral(&tree, token);
+            try roster.put(alloc, literal[1 .. literal.len - 1], {});
+        }
+    }
+    if (!found) return error.MissingRoster;
+    return roster;
+}
+
+test "the test roster counts import tokens inside unnamed tests only" {
+    const alloc = std.testing.allocator;
+    var roster = try testRoster(alloc, "const live = @import(\"live.zig\");\n" ++
+        "test \"named\" { _ = @import(\"named.zig\"); }\n" ++
+        "test {\n    // @import(\"comment.zig\")\n" ++
+        "    _ =\n    \\\\@import(\"text.zig\")\n    ;\n" ++
+        "    _ = @import(\"actual.zig\");\n}\n");
+    defer roster.deinit(alloc);
+    try std.testing.expectEqual(@as(u32, 1), roster.count());
+    try std.testing.expect(roster.contains("actual.zig"));
+    try std.testing.expectError(error.MissingRoster, testRoster(alloc, "test \"named\" {}"));
 }
 
 test "source validation accepts small modules and rejects empty or truncated source in every layer" {

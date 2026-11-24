@@ -273,14 +273,15 @@ fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: her
 }
 
 fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Skill, buf: *Prose) ?[:0]const u8 {
-    if (progress.basic(s.act) or growth.maxed(s.act)) return null;
-    if (s.parent) |p| if (!growth.unlocked(p)) {
-        buf.say("Learn {s} first.", .{p.name()});
-        return buf.text();
+    const blocked = growth.learnBlocked(class, s.act) orelse return if (growth.unlocked(s.act)) ACTIVE.ready("upgrade") else ACTIVE.ready("learn");
+    return switch (blocked) {
+        .maxed, .other_class => null,
+        .parent => |p| blk: {
+            buf.say("Learn {s} first.", .{p.name()});
+            break :blk buf.text();
+        },
+        .points => ACTIVE.requires,
     };
-    if (growth.active_points < progress.POINT_COST) return ACTIVE.requires;
-    std.debug.assert(growth.canLearn(class, s.act));
-    return if (growth.unlocked(s.act)) ACTIVE.ready("upgrade") else ACTIVE.ready("learn");
 }
 
 fn drawAction(face: *const font.Face, label: [:0]const u8, enabled: bool) void {

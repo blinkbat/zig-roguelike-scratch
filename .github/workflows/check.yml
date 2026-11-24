@@ -24,10 +24,11 @@ jobs:
           python-version: '3.13'
       - name: Install pinned Zig
         run: |
-          $version = (Get-Content tools/release-deps.json -Raw | ConvertFrom-Json).zig_version
+          $lock = Get-Content tools/release-deps.json -Raw | ConvertFrom-Json
+          $version = $lock.zig_version
           $archive = Join-Path $env:RUNNER_TEMP 'zig.zip'
           Invoke-WebRequest "https://ziglang.org/download/$version/zig-x86_64-windows-$version.zip" -OutFile $archive
-          $expected = '554f5378228923ffd558eac35e21af020c73789d87afeabf4bfd16f2e6feed2c'
+          $expected = $lock.zig_windows_x86_64_sha256
           if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Zig archive checksum mismatch' }
           Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP
           "ZIG=$(Join-Path $env:RUNNER_TEMP "zig-x86_64-windows-$version/zig.exe")" >> $env:GITHUB_ENV

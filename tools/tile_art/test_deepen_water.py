@@ -134,6 +134,28 @@ source:close()
         self.assertTrue(self.output.is_file())
         self.assertFalse((self.work / 'water-depth-validation.txt').exists())
 
+    def test_draft_path_cannot_overwrite_its_source(self):
+        draft = self.work / 'deep-water-draft.aseprite'
+        self.source.replace(draft)
+        before = draft.read_bytes()
+        params = self.params(install='no')
+        params['source'] = self.work.as_posix() + '/./' + draft.name
+        result = aseprite(args.aseprite, DEEPEN, params)
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('Draft destination must differ from its source artwork', result.stdout + result.stderr)
+        self.assertEqual(before, draft.read_bytes())
+        self.assertFalse((self.work / 'water-depth-validation.txt').exists())
+
+    def test_same_bytes_at_another_path_get_a_fresh_draft(self):
+        draft = self.work / 'deep-water-draft.aseprite'
+        before = self.source.read_bytes()
+        draft.write_bytes(before)
+        result = self.command(DEEPEN, install='no')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(before, draft.read_bytes())
+        self.assertEqual(before, self.source.read_bytes())
+        self.assertNotEqual(before, (self.work / 'deep-water-draft-2.aseprite').read_bytes())
+
     @unittest.skipUnless(os.name == 'nt', 'Windows file sharing failure')
     def test_locked_stale_draft_with_missing_artwork_cannot_pass_validation(self):
         self.run_lua('''

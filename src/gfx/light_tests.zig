@@ -72,8 +72,13 @@ test "following new tiles refreshes open light fields even when sight and memory
     defer std.testing.allocator.destroy(l);
     const i = grid.Level.idx(at);
     try std.testing.expectEqual(@as(f32, 0), l.visibility.carry_open[i]);
+    lv.flames[i] = 2;
+    l.follow(&lv);
+    try std.testing.expectEqual(@as(f32, 1), l.visibility.carry_open[i]);
+    const revision = l.visibility.revision;
     lv.flames[i] = 1;
     l.follow(&lv);
+    try std.testing.expectEqual(revision, l.visibility.revision);
     try std.testing.expectEqual(@as(f32, 1), l.visibility.carry_open[i]);
     lv.flames[i] = 0;
     l.follow(&lv);

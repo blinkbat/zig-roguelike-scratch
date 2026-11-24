@@ -18,11 +18,11 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(any(path.parent != release.MAPS for path in maps))
         with tempfile.TemporaryDirectory(prefix='cistern-release-test-') as temporary:
             root = pathlib.Path(temporary)
-            binary = root / release.EXE
-            binary.write_bytes(b'test executable')
+            binary = b'test executable'
+            provenance = {'source_sha256': release.source_hash()}
             for platform in ('linux', 'macos'):
                 with self.subTest(platform=platform), contextlib.redirect_stdout(io.StringIO()):
-                    release.package(binary, root, {}, platform, 'x86_64')
+                    release.package(binary, root, dict(provenance), platform, 'x86_64')
                     name = release.archive_name(platform, 'x86_64')
                     with tarfile.open(root / (name + '.tar.gz')) as archive:
                         actual = {
@@ -103,15 +103,15 @@ class ReleaseTests(unittest.TestCase):
     def test_packages_are_reproducible_and_every_member_matches_its_manifest(self):
         with tempfile.TemporaryDirectory(prefix='cistern-release-test-') as temporary:
             root = pathlib.Path(temporary)
-            binary = root / release.EXE
-            binary.write_bytes(b'test executable')
+            binary = b'test executable'
+            source = release.source_hash()
             for platform, arch in (('linux', 'x86_64'), ('macos', 'x86_64'), ('macos', 'arm64')):
                 with self.subTest(platform=platform, arch=arch), contextlib.redirect_stdout(io.StringIO()):
-                    release.package(binary, root, {'target': arch}, platform, arch)
+                    release.package(binary, root, {'target': arch, 'source_sha256': source}, platform, arch)
                     name = release.archive_name(platform, arch)
                     archive_path = root / (name + '.tar.gz')
                     first = archive_path.read_bytes()
-                    release.package(binary, root, {'target': arch}, platform, arch)
+                    release.package(binary, root, {'target': arch, 'source_sha256': source}, platform, arch)
                     self.assertEqual(first, archive_path.read_bytes())
                     checksum = archive_path.with_suffix(archive_path.suffix + '.sha256').read_text(encoding='ascii')
                     self.assertEqual(release.sha256(first) + '  ' + archive_path.name + '\n', checksum)
@@ -151,6 +151,18 @@ class ReleaseTests(unittest.TestCase):
             self.assertNotEqual(before, release.source_hash())
         print('release source hash detects a nested map change without writing it')
 
+    def test_a_changed_map_snapshot_prevents_publication(self):
+        maps = release.read_maps()
+        before = release.source_hash(maps)
+        path = next(iter(maps))
+        maps[path] += b'\n'
+        with tempfile.TemporaryDirectory(prefix='cistern-release-test-') as temporary:
+            root = pathlib.Path(temporary)
+            with patch.object(release, 'read_maps', return_value=maps):
+                with self.assertRaisesRegex(RuntimeError, 'Sources changed during the build'):
+                    release.package(b'test executable', root, {'source_sha256': before}, 'linux', 'x86_64')
+            self.assertEqual([], list(root.iterdir()))
+
     def test_source_hash_embeds_what_build_zig_embeds(self):
         build = (release.ROOT / 'build.zig').read_text(encoding='utf-8')
         listed = re.search(r'^const EMBEDDED = \[_\]\[\]const u8\{(.*)\};$', build, re.M)
@@ -176,6 +188,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIsNotNone(wanted)
         lock = json.loads(release.LOCK_PATH.read_text(encoding='utf-8'))
         self.assertEqual(wanted.group(1), lock['zig_version'])
+        self.assertRegex(lock['zig_windows_x86_64_sha256'], r'^[0-9a-f]{64}$')
         toolchain = (release.ROOT / '_zig.cmd').read_text(encoding='utf-8')
         self.assertIn('set "ZIG_VERSION=' + lock['zig_version'] + '"', toolchain)
         print('release lock, Windows wrapper and build.zig.zon all pin Zig', lock['zig_version'])

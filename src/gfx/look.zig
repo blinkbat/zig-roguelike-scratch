@@ -295,6 +295,10 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .open_gate = .{ .sym = "d", .ch = 'd', .fg = DIM, .bg = null, .mini = DIM, .mini_dim = SHADE },
     .zoo_key = .{ .sym = "k", .ch = 'k', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = SHADE },
     .key_taken = .{ .sym = ".", .ch = '.', .fg = DIM, .bg = null, .mini = SHADE, .mini_dim = SHADE },
+    .crate = .{ .sym = "#", .ch = '#', .fg = rgb(0xb08850), .bg = null, .mini = rgb(0x7a5c36), .mini_dim = rgb(0x3a2c1c) },
+    .sacks = .{ .sym = "%", .ch = '%', .fg = rgb(0xc8b080), .bg = null, .mini = rgb(0x8a7a56), .mini_dim = rgb(0x403a2a) },
+    .bedroll = .{ .sym = "=", .ch = '=', .fg = rgb(0xa8604c), .bg = null, .mini = rgb(0x6e4034), .mini_dim = rgb(0x34201a) },
+    .tent = .{ .sym = "^", .ch = '^', .fg = rgb(0xd8ccae), .bg = null, .mini = rgb(0xa89a7a), .mini_dim = rgb(0x4a443a) },
 });
 
 const CARAVAN_INK = .{ .fg = rgb(0xd8c8a4), .mini = rgb(0x9a7a52), .mini_dim = rgb(0x46382a) };

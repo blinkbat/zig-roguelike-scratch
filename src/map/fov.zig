@@ -96,6 +96,7 @@ fn scan(lv: *const grid.Level, sink: anytype, q: Quad, row_in: Row, radius: i32)
 
 pub fn sees(lv: *const grid.Level, watcher: P, hero: P, reach: i32) bool {
     if (!grid.Level.inside(watcher) or !grid.Level.inside(hero) or mathx.dist(watcher, hero) > reach) return false;
+    if (watcher.eq(hero)) return true;
     var found = false;
     const Probe = struct {
         target: P,
@@ -105,7 +106,12 @@ pub fn sees(lv: *const grid.Level, watcher: P, hero: P, reach: i32) bool {
             if (p.eq(self.target)) self.found.* = true;
         }
     };
-    castWith(lv, hero, @intFromFloat(@ceil(mathx.distEuclid(watcher, hero))), Probe{ .target = watcher, .found = &found });
+    const probe = Probe{ .target = watcher, .found = &found };
+    const radius: i32 = @intFromFloat(@ceil(mathx.distEuclid(watcher, hero)));
+    const delta = watcher.sub(hero);
+    const row = Row{ .depth = 1, .start = -1, .end = 1 };
+    if (@abs(delta.y) >= @abs(delta.x)) scan(lv, probe, .{ .origin = hero, .card = if (delta.y < 0) .n else .s }, row, radius);
+    if (!found and @abs(delta.x) >= @abs(delta.y)) scan(lv, probe, .{ .origin = hero, .card = if (delta.x < 0) .w else .e }, row, radius);
     return found;
 }
 
@@ -125,6 +131,28 @@ test "foe sight reads current occluders independently of hero sight and memory" 
     try std.testing.expect(sees(&lv, watcher, hero, 3));
     lv.set(between, .wall);
     try std.testing.expect(!sees(&lv, watcher, hero, 3));
+}
+
+test "targeted sight matches full casts around boundaries and burning cover" {
+    var lv = grid.openFloor();
+    var rng = mathx.Rng.init(7);
+    for (0..grid.CELLS) |i| switch (rng.below(6)) {
+        0 => lv.tile[i] = .wall,
+        1, 2 => {
+            lv.tile[i] = .reeds;
+            lv.flames[i] = @intCast(rng.below(2));
+        },
+        else => {},
+    };
+    for ([_]P{ .{ .x = 0, .y = 0 }, grid.MIDDLE, grid.SIZE.sub(.{ .x = 1, .y = 1 }) }) |origin| {
+        var targets = grid.Box.around(origin, 8).grown(0).cells();
+        while (targets.next()) |watcher| {
+            var whole: [grid.CELLS]bool = @splat(false);
+            const radius: i32 = @intFromFloat(@ceil(mathx.distEuclid(watcher, origin)));
+            castInto(&lv, origin, radius, &whole);
+            try std.testing.expectEqual(whole[grid.Level.idx(watcher)], sees(&lv, watcher, origin, 8));
+        }
+    }
 }
 
 test "burning foliage and smoke pass sight light and targeting while solid cover stays opaque" {

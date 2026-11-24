@@ -26,6 +26,60 @@ function files.work(folder)
   return work
 end
 
+function files.pathKey(path)
+  local windows=app.fs.pathSeparator=='\\'
+  local value=path:gsub('\\','/')
+  local cwd=app.fs.currentPath:gsub('\\','/')
+  if windows then
+    assert(not value:match('^%a:') or value:match('^%a:/'),'Use an absolute path instead of a drive-relative path')
+    if value:sub(1,1)=='/' and value:sub(1,2)~='//' then
+      value=assert(cwd:match('^%a:'),'Current directory has no drive')..value
+    elseif not value:match('^%a:/') and value:sub(1,2)~='//' then value=app.fs.joinPath(cwd,value) end
+  elseif value:sub(1,1)~='/' then value=app.fs.joinPath(cwd,value) end
+  value=app.fs.normalizePath(value):gsub('\\','/'):gsub('/+$','')
+  return windows and value:lower() or value
+end
+
+function files.requireOutside(path,folder)
+  local destination=files.pathKey(path)
+  local parent=files.pathKey(folder)
+  local message='a stand-in must be exported outside assets/'
+  assert(destination~=parent and destination:sub(1,#parent+1)~=parent..'/',message)
+  local function hex(value)
+    return (value:gsub('.',function(c) return ('%02x'):format(c:byte()) end))
+  end
+  local python=app.fs.pathSeparator=='\\' and 'python' or 'python3'
+  local resolve='from pathlib import Path; import sys; '
+    ..'path, folder = (Path(bytes.fromhex(x).decode()).resolve() for x in sys.argv[1:]); '
+    ..'linked = path.is_file() and path.stat().st_nlink > 1; '
+    .."protected = path.is_relative_to(folder) or (linked and any(p.is_file() and p.samefile(path) for p in folder.rglob('*'))); "
+    ..'sys.exit(3 if protected else 0)'
+  local ok,_,status=os.execute(python..' -c "'..resolve..'" '..hex(path)..' '..hex(folder))
+  assert(status~=3,message)
+  assert(ok,'Could not resolve the draft path with Python')
+end
+
+function files.draft(path,...)
+  local destination=files.pathKey(path)
+  local occupied=app.fs.isFile(path) and bytesOf(path)
+  for _,source in ipairs({...}) do
+    assert(destination~=files.pathKey(source),'Draft destination must differ from its source artwork: '..source)
+    if occupied and app.fs.isFile(source) and occupied==bytesOf(source) then
+      local folder=app.fs.filePath(path)
+      local stem=app.fs.fileTitle(path)
+      local ext=app.fs.fileExtension(path)
+      local i=2
+      local candidate
+      repeat
+        candidate=app.fs.joinPath(folder,stem..'-'..i..'.'..ext)
+        i=i+1
+      until not app.fs.isFile(candidate) and not app.fs.isDirectory(candidate)
+      return candidate
+    end
+  end
+  return path
+end
+
 function files.rgb(r,g,b) return app.pixelColor.rgba(r,g,b,255) end
 
 function files.scaleRgb(p,scale,divisor)

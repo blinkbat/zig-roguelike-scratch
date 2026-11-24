@@ -164,7 +164,7 @@ s:newCel(l,1,extension,Point(0,0))
 sourceFiles.hide(s,sourceFiles.LAYER.under)
 drawing.stackIndex=#s.layers
 app.layer=l
-local dest=install and path or work..name..'-draft.aseprite'
+local dest=install and path or sourceFiles.draft(work..name..'-draft.aseprite',path,art_path)
 s:saveAs(dest)
 s:saveCopyAs(work..name..'-sheet.png')
 s:close()

@@ -3,7 +3,6 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const script = @import("../map/script.zig");
 const trigger = @import("../play/trigger.zig");
-const ground_items = @import("../play/ground_items.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
 const look = @import("../gfx/look.zig");
 const menu = @import("../ui/menu.zig");
@@ -26,21 +25,6 @@ pub fn arrived(g: *game.Game) void {
     restand(g);
 }
 
-const Standing = struct {
-    rt: *const trigger.Runtime,
-    s: *const script.Script,
-    w: trigger.World,
-    ground: *const ground_items.Ground,
-
-    pub fn shows(self: Standing, i: usize) bool {
-        return self.rt.shows(self.s, i, self.w);
-    }
-
-    pub fn lying(self: Standing) grid.CellSet {
-        return self.ground.lying();
-    }
-};
-
 pub fn stampNpcs(g: *game.Game, n: usize, lv: *grid.Level) void {
     stampIn(g, n, lv, g.sim.world());
 }
@@ -57,7 +41,7 @@ pub fn stampEntering(g: *game.Game, n: usize, at: P, back: bool) void {
 fn stampIn(g: *game.Game, n: usize, lv: *grid.Level, world: trigger.World) void {
     const w = g.sim.map orelse return lv.clearNpcs();
     const ground = if (n == g.sim.node) &g.sim.ground else &g.sim.visits[n].ground;
-    w.stampNpcs(n, lv, game.rollOf(g.sim.seed, n), &g.sim.plot.spots, Standing{ .rt = &g.sim.plot, .s = &w.script, .w = world, .ground = ground });
+    w.stampNpcs(n, lv, game.rollOf(g.sim.seed, n), &g.sim.plot.spots, atlas.Npcs{ .plot = &g.sim.plot, .script = &w.script, .world = world, .ground = ground });
 }
 
 pub fn restand(g: *game.Game) void {
@@ -126,10 +110,15 @@ fn shownOf(g: *game.Game, s: *const script.Script, out: *Shown) bool {
     const ln = rt.lineOf(s) orelse return false;
     var picks: [script.MAX_CHOICES]u8 = undefined;
     const offered = rt.offered(s, g.sim.world(), &picks);
+    show(g, s, ln, offered, out);
+    return true;
+}
+
+fn show(g: *game.Game, s: *const script.Script, ln: *const script.Line, offered: []const u8, out: *Shown) void {
+    const rt = &g.sim.plot;
     for (offered, 0..) |c, i| out.labels[i] = ln.choice[c].ask.text();
     out.view = panel.View.ofLine(ln, rt.speaker(s), out.labels[0..offered.len], rt.talk.?.cursor, prompt_icon.Prompt.menuOf(&g.st, menu.CONFIRM), figureOf(g, s, ln));
     out.layout.of(&g.face, g.screen, out.view);
-    return true;
 }
 
 fn figureOf(g: *const game.Game, s: *const script.Script, ln: *const script.Line) ?panel.Figure {
@@ -138,27 +127,34 @@ fn figureOf(g: *const game.Game, s: *const script.Script, ln: *const script.Line
 
 pub fn step(g: *game.Game) void {
     const s = g.sim.script() orelse return finished(g);
-    var shown: Shown = .{ .view = undefined };
-    if (!shownOf(g, s, &shown)) return finished(g);
-    const w = g.sim.world();
     const rt = &g.sim.plot;
-    rt.talk.?.cursor = @intCast(@min(rt.talk.?.cursor, shown.layout.row_n -| 1));
-    if (g.st.walk) |d| if (d.delta().y != 0 and shown.layout.row_n > 0) rt.moveCursor(s, w, d.delta().y);
-    if (shown.layout.shown_n < shown.layout.row_n) {
-        if (g.st.pointer) |at| if (raster.holds(shown.layout.panel, at)) {
-            rt.talk.?.cursor = @intCast(g.st.scrolled(rt.talk.?.cursor, shown.layout.row_n));
-        };
-    }
+    const ln = rt.lineOf(s) orelse return finished(g);
+    const w = g.sim.world();
+    var picks: [script.MAX_CHOICES]u8 = undefined;
+    const offered = rt.offered(s, w, &picks);
+    const pointer_input = g.st.pointing() or (g.st.pointer != null and g.st.scroll != 0);
+    var shown: Shown = .{ .view = undefined };
+    if (pointer_input) show(g, s, ln, offered, &shown);
+    rt.talk.?.cursor = @intCast(@min(rt.talk.?.cursor, offered.len -| 1));
+    if (g.st.walk) |d| if (d.delta().y != 0 and offered.len > 0) rt.moveCursor(s, w, d.delta().y);
     var picked = false;
-    const pointer_selects = g.st.click or shown.layout.shown_n == shown.layout.row_n;
-    if (pointer_selects and g.st.pointing()) if (shown.layout.rowAt(g.st.pointer.?)) |row| {
-        rt.talk.?.cursor = @intCast(row);
-        if (g.st.click) {
-            rt.pick(s, row, w, &g.sim.log);
-            picked = true;
+    var action_clicked = false;
+    if (pointer_input) {
+        const pointer = g.st.pointer.?;
+        if (shown.layout.shown_n < offered.len and raster.holds(shown.layout.panel, pointer)) {
+            rt.talk.?.cursor = @intCast(g.st.scrolled(rt.talk.?.cursor, offered.len));
         }
-    };
-    if (!picked and rt.talk != null and (g.st.hit(menu.CONFIRM) or g.st.clicked(shown.layout.action))) {
+        const pointer_selects = g.st.click or shown.layout.shown_n == offered.len;
+        if (pointer_selects and g.st.pointing()) if (shown.layout.rowAt(pointer)) |row| {
+            rt.talk.?.cursor = @intCast(row);
+            if (g.st.click) {
+                rt.pick(s, row, w, &g.sim.log);
+                picked = true;
+            }
+        };
+        action_clicked = g.st.clicked(shown.layout.action);
+    }
+    if (!picked and rt.talk != null and (g.st.hit(menu.CONFIRM) or action_clicked)) {
         rt.confirm(s, w, &g.sim.log);
         picked = true;
     }

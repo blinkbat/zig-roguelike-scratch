@@ -865,8 +865,8 @@ pub const Presentation = struct {
 
     pub fn settleSky(self: *Presentation, sim: *const Simulation) void {
         self.hour_shown = sim.clock.hour();
-        self.weather_shown = sim.weatherHere();
         self.local_weather_shown = sim.localWeather();
+        self.weather_shown = climate.strongest(self.local_weather_shown);
     }
 
     pub fn showProgress(self: *Presentation, sim: *const Simulation) void {
@@ -895,10 +895,11 @@ pub const Presentation = struct {
         self.stepSighted(sim, dt);
         self.stepSeenCells(sim, &ground.lit, mathx.easing(dt, visibility.REVEAL));
         self.hour_shown = day.wrapHour(self.hour_shown + day.toward(self.hour_shown, sim.clock.hour()) * mathx.easing(dt, HOUR_EASE));
-        self.weather_shown = climate.eased(self.weather_shown, sim.weatherHere(), mathx.easing(dt, WEATHER_EASE));
         const local_weather = sim.localWeather();
+        const weather_ease = mathx.easing(dt, WEATHER_EASE);
+        self.weather_shown = climate.eased(self.weather_shown, climate.strongest(local_weather), weather_ease);
         for (std.enums.values(climate.Location)) |place| {
-            self.local_weather_shown.set(place, climate.eased(self.local_weather_shown.get(place), local_weather.get(place), mathx.easing(dt, WEATHER_EASE)));
+            self.local_weather_shown.set(place, climate.eased(self.local_weather_shown.get(place), local_weather.get(place), weather_ease));
         }
         self.xp_shown = mathx.ease(self.xp_shown, self.xp_aim, mathx.easing(dt, XP_EASE), 1);
         const resource_ease = mathx.easing(dt, RESOURCE_EASE);

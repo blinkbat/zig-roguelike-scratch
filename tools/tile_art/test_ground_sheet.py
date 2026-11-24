@@ -1,4 +1,5 @@
 import hashlib
+import os
 import unittest
 
 from art_support import WorkTest, arguments, aseprite, main, run_lua, sheet_sizes_lua
@@ -52,6 +53,33 @@ labels:saveAs(app.params.labels)
 
     def test_unchanged_blank_template_can_be_replaced(self):
         self.generate(replace=True)
+
+    def test_underdrawing_checks_the_resolved_assets_directory(self):
+        helpers = self.work / 'tools/tile_art'
+        helpers.mkdir(parents=True)
+        for name in ('source_files.lua', 'ground_port.lua', 'ground_layout.lua', 'ground_corners.lua'):
+            (helpers / name).write_bytes((args.scripts_dir / name).read_bytes())
+        assets = self.work / 'assets/ground'
+        assets.mkdir(parents=True)
+        root = self.work.resolve().as_posix() + '/'
+        script = args.scripts_dir / 'export_ground.lua'
+        params = {'root': root, 'source': self.sheet, 'name': 'grass', 'from': 'underdrawing'}
+        protected = assets / 'grass-ground.png'
+        result = self.command(script, out=protected, **params)
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('must be exported outside assets/', result.stdout + result.stderr)
+        self.assertFalse(protected.exists())
+        protected.write_bytes(b'owner artwork')
+        alias = self.work / 'alias.png'
+        os.link(protected, alias)
+        result = self.command(script, out=alias, **params)
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('must be exported outside assets/', result.stdout + result.stderr)
+        self.assertEqual(b'owner artwork', protected.read_bytes())
+        safe = self.work / 'draft.png'
+        result = self.command(script, out=safe, **params)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertTrue(safe.is_file())
 
     def test_modified_templates_are_refused_without_changing_the_file(self):
         baseline = self.sheet.read_bytes()

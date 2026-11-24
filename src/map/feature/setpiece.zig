@@ -9,7 +9,7 @@ const P = mathx.P;
 pub const COUNT_MAX: u8 = 8;
 pub const APART_MAX: u8 = 30;
 
-pub const Piece = enum { circle, cairns, camp, graveyard, well, tower, shrine, corral, oasis, chest_niche, light_niche };
+pub const Piece = enum { circle, cairns, camp, graveyard, well, tower, shrine, corral, oasis, chest_niche, light_niche, moat_camp };
 
 /// In `grid.groundOf`'s legend, save the niches, whose '#', '.' and ',' are the palette's solid, open and path; ' ' leaves the ground as it is.
 pub fn rows(p: Piece) []const []const u8 {
@@ -105,7 +105,25 @@ pub fn rows(p: Piece) []const []const u8 {
             "  #,,.#  ",
             "   ,,.   ",
         },
+        .moat_camp => &.{
+            "    ~~~~~    ",
+            "  ~~~---~~~  ",
+            " ~~--,,,--~~ ",
+            " ~-,,b,b,,-~ ",
+            "~~-,X,,,U,-~~",
+            "~--,b,!,b,--~",
+            "~~-,U,,,X,-~~",
+            " ~-,,b,b,,-~ ",
+            " ~~--,,,--~~ ",
+            "  ~~~---~~~  ",
+            "    ~~~~~    ",
+        },
     };
+}
+
+/// Ringed by water, it opens onto nothing until the joins bridge it.
+pub fn moated(p: Piece) bool {
+    return p == .moat_camp;
 }
 
 pub const Params = struct {
@@ -129,7 +147,7 @@ const Niche = struct {
         return switch (p) {
             .chest_niche => .{ .art = rows(p), .reward = .chest },
             .light_niche => .{ .art = rows(p), .reward = .glow_plant },
-            .circle, .cairns, .camp, .graveyard, .well, .tower, .shrine, .corral, .oasis => null,
+            .circle, .cairns, .camp, .graveyard, .well, .tower, .shrine, .corral, .oasis, .moat_camp => null,
         };
     }
 
@@ -354,6 +372,37 @@ test "niches adapt to each biome palette, protect occupied lots and leave their 
         }
     }
     try std.testing.expect(placed >= std.meta.fields(procgen.Algo).len);
+}
+
+test "moat camps in a thick wood keep their water ring and are bridged to the door" {
+    const procgen = @import("../procgen.zig");
+    const door = P{ .x = 0, .y = grid.H / 2 };
+    var lv: grid.Level = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    const runs = 20;
+    const count = 4;
+    var beds: usize = 0;
+    var bridged: usize = 0;
+    for (0..runs) |i| {
+        procgen.roll(&lv, 0x30A7 +% i *% grid.TEST_SEED_STRIDE, &.{door}, .{ .wilds = .{ .thicket = 58 } }, &.{
+            .{ .border = .{ .tile = .water, .width = 3, .rough = 3 } },
+            .{ .setpiece = .{ .piece = .moat_camp, .count = count, .apart = 3 } },
+        });
+        try grid.expectAllReached(&lv, door, &dist, &queue);
+        bridged += carve.count(&lv, .bridge);
+        for (lv.tile, 0..) |t, k| {
+            if (t != .bedroll) continue;
+            beds += 1;
+            var round = grid.Cells.around(grid.Level.of(k), 3);
+            const wet = while (round.next()) |q| {
+                if (grid.Level.inside(q) and lv.at(q) == .water) break true;
+            } else false;
+            try std.testing.expect(wet and dist[k] >= 0);
+        }
+    }
+    try std.testing.expect(beds * 10 >= runs * count * 6 * 7);
+    try std.testing.expect(bridged > 0);
 }
 
 test "pieces land apart on open ground" {

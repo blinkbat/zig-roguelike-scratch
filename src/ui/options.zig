@@ -168,10 +168,10 @@ fn step(c: *cinema.Cinema, selection: *menu.Menu, st: *const input.State, screen
         drag(c, entries[i], menu.rowBox(screen, win, i), st.pointer.?.x);
         return null;
     }
-    const picked = selection.stepAt(st, entries.len, screen);
+    const picked = selection.activateAt(st, entries.len, screen);
     const row = entries[selection.at];
     if (range(row)) |r| {
-        if (st.click and picked != null) {
+        if (picked != null and picked.? == .mouse) {
             const box = menu.rowBox(screen, win, selection.at);
             const rail = track(box);
             const p = st.pointer.?;
@@ -257,6 +257,25 @@ test "a diagonal press moves the visuals cursor without nudging the slider it la
     _ = step(&c, &selection, &.{ .walk = .se }, window.SCREEN_720, .visuals, &display);
     try std.testing.expectEqual(@as(usize, 1), selection.at);
     try std.testing.expectEqualDeep(before, c);
+}
+
+test "a simultaneous click and navigation cannot grab a slider outside the drawn list" {
+    var c: cinema.Cinema = .{};
+    var selection: menu.Menu = .{ .at = rows(.visuals).len - 1 };
+    var display: window.Display = .{};
+    const screen = mathx.P{ .x = 800, .y = 400 };
+    const win = menu.window(screen.y, rows(.visuals).len, selection.at);
+    try std.testing.expect(win.from > 0);
+    const st = input.State{
+        .walk = .s,
+        .pressed = .initOne(menu.CONFIRM),
+        .click = true,
+        .left_down = true,
+        .pointer = raster.middleAt(menu.rowBox(screen, win, selection.at)),
+    };
+    _ = step(&c, &selection, &st, screen, .visuals, &display);
+    try std.testing.expectEqual(@as(usize, 0), selection.at);
+    try std.testing.expect(selection.dragging == null);
 }
 
 test "visual sliders clamp, reset and drag without changing other effects" {

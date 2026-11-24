@@ -17,6 +17,7 @@ comptime {
 }
 const BY = "by";
 const FAR = "far";
+const ON_GROUND = "on";
 const ARROW = " -> ";
 const NONE = script.NONE;
 const ONCE = [2][]const u8{ "repeats", "once" };
@@ -117,6 +118,7 @@ pub fn write(s: *const Script, w: anytype) !void {
         switch (f.spot) {
             .at => |p| try w.print("{d} {d}", .{ p.x, p.y }),
             .by => |t| try w.print(BY ++ " {s}", .{@tagName(t)}),
+            .on => |t| try w.print(ON_GROUND ++ " {s}", .{@tagName(t)}),
             .far => try w.writeAll(FAR),
         }
         try w.print(" {s}", .{if (f.dialog) |d| s.dialog[d].name.text() else NONE});
@@ -475,6 +477,7 @@ fn questOf(s: *const Script, f: *Tokens) Error!u8 {
 
 fn spotOf(f: *Tokens) Error!script.Spot {
     if (takeWord(f, BY)) return .{ .by = try value(grid.Tile, f) };
+    if (takeWord(f, ON_GROUND)) return .{ .on = try value(grid.Tile, f) };
     if (takeWord(f, FAR)) return .far;
     return .{ .at = try cell(f) };
 }

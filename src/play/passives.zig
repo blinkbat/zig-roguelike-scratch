@@ -531,8 +531,18 @@ fn armAngle(a: Arm) f32 {
         inline else => |t| comptime ARM_STEP * @as(comptime_float, @floatFromInt(ARMS.len - 1 - @intFromEnum(t))),
     };
 }
+const UNIT_POSITIONS: [N]Point = blk: {
+    @setEvalBranchQuota(20_000);
+    var positions: [N]Point = undefined;
+    for (NODES, &positions) |node, *position| position.* = polarPosition(node);
+    break :blk positions;
+};
+
 pub fn unitPos(i: usize) Point {
-    const n = NODES[i];
+    return UNIT_POSITIONS[i];
+}
+
+fn polarPosition(n: Node) Point {
     var angle = armAngle(n.arm);
     if (n.seam) |s| {
         angle = armAngle(s.from()) - ARM_STEP / 2.0;

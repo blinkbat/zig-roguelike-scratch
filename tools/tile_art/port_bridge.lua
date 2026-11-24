@@ -59,11 +59,20 @@ end
 local cols={}
 for lx=WEST,63 do cols[#cols+1]=lx end
 for lx=0,31 do cols[#cols+1]=lx end
+local pair,joint={},{}
+for i,lx in ipairs(cols) do
+  pair[i],joint[i]={},{}
+  for r=1,RMAX do
+    pair[i][r]={}
+    joint[i][r]=joint_cost(lx,r)
+    for q=1,RMAX do pair[i][r][q]=pair_cost(lx,r,q) end
+  end
+end
 local best,splice
 for r0=1,RMAX do
   local cost={}
   local back={}
-  for r=1,RMAX do cost[r]=r==r0 and joint_cost(cols[1],r) or math.huge end
+  for r=1,RMAX do cost[r]=r==r0 and joint[1][r] or math.huge end
   for i=2,#cols do
     local nxt={}
     back[i]={}
@@ -71,17 +80,17 @@ for r0=1,RMAX do
       local bc,bq=math.huge,nil
       for q=1,RMAX do
         if cost[q]<math.huge then
-          local cq=cost[q]+pair_cost(cols[i-1],q,r)
+          local cq=cost[q]+pair[i-1][q][r]
           if cq<bc then bc,bq=cq,q end
         end
       end
-      nxt[r]=bc+joint_cost(cols[i],r)
+      nxt[r]=bc+joint[i][r]
       back[i][r]=bq
     end
     cost=nxt
   end
   for r=1,RMAX do
-    local total=cost[r]+pair_cost(cols[#cols],r,r0)
+    local total=cost[r]+pair[#cols][r][r0]
     if not best or total<best then
       best=total
       splice={}
@@ -292,7 +301,7 @@ s:newCel(l,1,extension,Point(0,0))
 drawing.isVisible=false
 sourceFiles.hide(s,sourceFiles.LAYER.under)
 app.layer=l
-local dest=install and path or work..'bridge-draft.aseprite'
+local dest=install and path or sourceFiles.draft(work..'bridge-draft.aseprite',path,app.params.previous)
 s:saveAs(dest)
 s:close()
 local back=assert(app.open(dest))
