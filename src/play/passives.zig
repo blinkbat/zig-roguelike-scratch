@@ -581,11 +581,11 @@ pub fn step(cur: usize, dx: f32, dy: f32) usize {
 }
 
 test "radial branches preserve capstone routes, bridge crossings, live grants and directional reach" {
-    var kinds = std.StaticBitSet(std.enums.values(Kind).len).initEmpty();
+    var kinds = std.EnumSet(Kind).initEmpty();
     var tiers = std.EnumArray(Tier, usize).initFill(0);
     for (NODES, 0..) |n, i| {
         tiers.getPtr(n.tier).* += 1;
-        kinds.set(@intFromEnum(n.grant.kind));
+        kinds.insert(n.grant.kind);
         for ([_]?Grant{ n.grant, n.bump }) |maybe| {
             const g = maybe orelse continue;
             var a = attrs.Attrs.of(.{ .strength = 0, .dexterity = 0, .intelligence = 0 });

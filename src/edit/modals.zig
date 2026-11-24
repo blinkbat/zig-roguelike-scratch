@@ -51,14 +51,15 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
         .open => std.fmt.bufPrintZ(&title_buf, "Open: {s}", .{ed.listing.dirPath(&dir_buf)}) catch "Open",
     };
     const f = widgets.modalFrame(&g.face, g.screen, widgets.MODAL_W, widgets.MODAL_HEAD + body + widgets.ROW_H + widgets.PAD, title, true);
-    const x = f.x;
+    const col = f.column();
+    const x = col.left();
     var y = f.y;
     const buttons_y = y + body;
-    const inner = f.w - widgets.PAD * 2;
+    const inner = col.inner();
     switch (prompt) {
         .confirm => {
             var fit_buf: [widgets.LINE]u8 = undefined;
-            widgets.textFace(&g.face).draw(widgets.fitBefore(&g.face, &buf, &fit_buf, ed.path(), " has changes that are not saved.", inner), x + widgets.PAD, y, widgets.TEXT, look.TEXT);
+            widgets.textFace(&g.face).draw(widgets.fitBefore(&g.face, &buf, &fit_buf, ed.path(), " has changes that are not saved.", inner), x, y, widgets.TEXT, look.TEXT);
             std.debug.assert(y + widgets.TEXT <= buttons_y);
             y = buttons_y;
             if (editor.modalButton(ed, g, f.button(y, 2), widgets.keyed("Save", Desk.ENTER_CAPTION), false, true, null)) ed.saveAndCommit();
@@ -66,25 +67,25 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
             backButton(ed, g, f, y, "Cancel");
         },
         .name => {
-            fieldRow(ed, g, widgets.row(x + widgets.PAD, y, inner));
+            fieldRow(ed, g, widgets.row(x, y, inner));
             y += widgets.ROW_STEP;
             var pbuf: [listing.PATH_MAX]u8 = undefined;
             const note = if (ed.namedPath(&pbuf)) |p| std.fmt.bufPrintZ(&buf, "Makes {s}", .{p}) catch "" else "Type a name";
-            widgets.drawFit(&g.face, note, DETAIL, inner, false, x + widgets.PAD, y, look.DIM);
+            widgets.drawFit(&g.face, note, DETAIL, inner, false, x, y, look.DIM);
             std.debug.assert(y + DETAIL <= buttons_y);
             y = buttons_y;
             if (editor.modalButton(ed, g, f.button(y, 1), widgets.keyed("OK", Desk.ENTER_CAPTION), false, true, null)) ed.named();
             backButton(ed, g, f, y, "Cancel");
         },
         .open => {
-            if (ed.listing.n == 0) widgets.textFace(&g.face).draw(atlas.NO_MAPS, x + widgets.PAD, y, widgets.TEXT, look.DIM);
+            if (ed.listing.n == 0) widgets.textFace(&g.face).draw(atlas.NO_MAPS, x, y, widgets.TEXT, look.DIM);
             for (ed.listed_top..@min(ed.listing.n, ed.listed_top + widgets.MODAL_ROWS)) |i| {
                 const label = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ switch (ed.listing.entry(i)) {
                     .up => "^  ",
                     .folder => "+  ",
                     .map => "   ",
                 }, ed.listing.label(i) }) catch "";
-                const r = widgets.row(x + widgets.PAD, y, inner);
+                const r = widgets.row(x, y, inner);
                 widgets.hoverEdge(r, i == ed.listed_at);
                 if (editor.modalButton(ed, g, r, label, std.mem.eql(u8, ed.listing.at(i), ed.path()), true, OPEN_TIPS.get(ed.listing.entry(i)))) {
                     return ed.openListed(i);
@@ -92,7 +93,7 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
                 y += widgets.ROW_H;
             }
             std.debug.assert(y + @as(i32, if (ed.listing.n == 0) widgets.TEXT else 0) <= buttons_y);
-            widgets.textFace(&g.face).draw(OPEN_CRIB, x + widgets.PAD, buttons_y + widgets.DETAIL_DY, DETAIL, look.DIM);
+            widgets.textFace(&g.face).draw(OPEN_CRIB, x, buttons_y + widgets.DETAIL_DY, DETAIL, look.DIM);
             backButton(ed, g, f, buttons_y, "Cancel");
         },
     }
@@ -140,10 +141,9 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     var cells = panel.Tiles{ .x = 0, .y = 0, .cols = VIEW_COLS, .pitch = pitch, .size = pitch - widgets.GAP };
     const cells_h = cells.height(editor.SEEN.len);
     const f = widgets.modalFrame(&g.face, g.screen, VIEW_W, chrome + cells_h, OBJECTS_TITLE, false);
-    const x = f.x;
-    const w = f.w;
+    const col = f.column();
     const y = f.y;
-    cells.x = x + widgets.PAD;
+    cells.x = col.left();
     cells.y = y;
     for (editor.SEEN, 0..) |s, i| {
         const r = cells.at(i);
@@ -152,17 +152,18 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
         if (hh.hit) ed.seen_at = i;
     }
     const s = editor.SEEN[ed.seen_at];
-    const dx = x + widgets.PAD + grid_w + widgets.PAD;
+    const dx = col.left() + grid_w + widgets.PAD;
     var dy = y;
-    seenPicture(g, s, raster.rect(dx, dy, VIEW_BIG, VIEW_BIG));
-    menu.border(raster.rect(dx, dy, VIEW_BIG, VIEW_BIG), look.BORDER);
+    const big = raster.rect(dx, dy, VIEW_BIG, VIEW_BIG);
+    seenPicture(g, s, big);
+    menu.border(big, look.BORDER);
     dy += VIEW_BIG + widgets.PAD;
     widgets.textFace(&g.face).draw(seenName(s), dx, dy, TITLE, look.TEXT);
     dy += TITLE + widgets.GAP;
     var facts = Facts{};
     seenFacts(s, &facts);
     for (facts.all()) |l| {
-        widgets.drawFit(&g.face, l, DETAIL, x + w - widgets.PAD - dx, false, dx, dy, look.TEXT);
+        widgets.drawFit(&g.face, l, DETAIL, col.left() + col.inner() - dx, false, dx, dy, look.TEXT);
         dy += widgets.DETAIL_STEP;
     }
     backButton(ed, g, f, y + cells_h, "Close");

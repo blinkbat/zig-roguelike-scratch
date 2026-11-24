@@ -562,8 +562,7 @@ pub const Atlas = struct {
         }
         for (npcs, 0..) |*npc, i| {
             if (npc.node != n or !shown.shows(i)) continue;
-            const at = self.reserveNpcSpot(i, lv, stood, &avoid) orelse continue;
-            if (lv.vacant(at)) lv.putNpc(at, i);
+            self.standNpc(i, lv, stood, &avoid);
         }
         var conds = self.script.condIter();
         while (conds.next()) |c| {
@@ -574,9 +573,13 @@ pub const Atlas = struct {
         }
         for (npcs, 0..) |*npc, i| {
             if (npc.node != n or npc.shows == null or npc.shows.?.kind != .near or !shown.shows(i)) continue;
-            const at = self.reserveNpcSpot(i, lv, stood, &avoid) orelse continue;
-            if (lv.vacant(at)) lv.putNpc(at, i);
+            self.standNpc(i, lv, stood, &avoid);
         }
+    }
+
+    fn standNpc(self: *const Atlas, i: usize, lv: *grid.Level, stood: *script.Stood, avoid: *grid.CellSet) void {
+        const at = self.reserveNpcSpot(i, lv, stood, avoid) orelse return;
+        if (lv.vacant(at)) lv.putNpc(at, i);
     }
 
     fn reserveNpcSpot(self: *const Atlas, i: usize, lv: *const grid.Level, stood: *script.Stood, avoid: *grid.CellSet) ?P {

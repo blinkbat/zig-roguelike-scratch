@@ -2,6 +2,8 @@ local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local source=root..'assets/source/forest-tree-walls.aseprite'
 local desktop=sourceFiles.DESKTOP..'forest-tree-walls.aseprite'
+local png=root..'assets/walls/forest-tree-walls.png'
+local grass_png=root..'assets/ground/grass.png'
 local stamp=os.date(sourceFiles.STAMP)
 local rgb=sourceFiles.rgb
 local colours={
@@ -28,18 +30,23 @@ for _,layer in ipairs(sprite.layers) do
 end
 assert(changed>0,'Forest palette already toned or owner palette changed')
 sourceFiles.copy(source,root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.aseprite')
-sourceFiles.copy(root..'assets/walls/forest-tree-walls.png',root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.png')
-sourceFiles.copy(root..'assets/ground/grass.png',root..'assets/backup/grass.'..stamp..'.png')
-sprite:saveAs(source)
+sourceFiles.copy(png,root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.png')
+sourceFiles.copy(grass_png,root..'assets/backup/grass.'..stamp..'.png')
+local staged=sourceFiles.stage('forest-tree-walls.aseprite')
+sprite:saveAs(staged)
 sprite:close()
-local reopened=assert(app.open(source))
+local reopened=assert(app.open(staged))
 for name,expected in pairs(tonedLayers) do sourceFiles.checkCel(reopened,name,expected.image,expected.position) end
+local atlas=dofile(root..'tools/tile_art/forest_atlas.lua')(sourceFiles,dofile(root..'tools/tile_art/wall_masks.lua'),reopened)
 reopened:close()
-sourceFiles.copy(source,desktop)
-local grass=Image{fromFile=root..'assets/ground/grass.png'}
+local grass=Image{fromFile=grass_png}
 for pixel in grass:pixels() do pixel(sourceFiles.scaleRgb(pixel(),0.85)) end
-sourceFiles.savePng(grass,root..'assets/ground/grass.png')
-dofile(root..'tools/tile_art/export_forest.lua')
+sourceFiles.publish({
+  sourceFiles.staged(source,staged),
+  sourceFiles.staged(desktop,staged),
+  sourceFiles.stagePng(grass,grass_png),
+  sourceFiles.stagePng(atlas,png,'Export changed the visible artwork'),
+})
 local report=sourceFiles.report(sourceFiles.work()..'forest-tone.txt')
 report:write(('%d foliage pixels darkened; trunks and alpha unchanged. Grass RGB reduced 15%%, alpha unchanged.\n'):format(changed))
 report:write('Sources and previous PNGs backed up in assets/backup/; Desktop and assets/source sources updated.\n')

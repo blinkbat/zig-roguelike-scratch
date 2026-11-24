@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from art_support import arguments, aseprite, main, run_lua, sheet_sizes_lua
+from art_support import arguments, aseprite, install_scripts, main, run_lua, sheet_sizes_lua
 
 
 args, remaining = arguments()
@@ -51,8 +51,8 @@ layer('Exact connection guide (hidden)')
 layer('Pixel extension - copied colors, chips and bricks')
 if app.params.existing=='yes' then layer('Ideas - hide before export') end
 layer('Draw here')
-for i=1,47 do
- local slice=s:newSlice(Rectangle(((i-1)%8)*64,64+math.floor((i-1)/8)*64,64,64))
+for i=1,WALL_COUNT do
+ local slice=s:newSlice(Rectangle(((i-1)%WALL_COLS)*CELL,HEAD_H+((i-1)//WALL_COLS)*CELL,CELL,CELL))
  slice.name='Connection '..i
 end
 s:saveAs(app.params.source); s:close()
@@ -84,7 +84,7 @@ local function generated(color)
  im:putPixel(70,130,color)
  return im
 end
-local FACE,NORTH=23,false
+local FACE,NORTH=masks.FACE,false
 local faced=generated(app.pixelColor.rgba(17,43,81,255))
 local flat=generated(app.pixelColor.rgba(19,47,89,255))
 local completed=Image(faced)
@@ -142,7 +142,7 @@ class SavedLayerTests(unittest.TestCase):
         result = run_lua(args.aseprite, directory / 'fixture.lua', body, params)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def publication(self, directory, body, destination, blocked, **params):
+    def publication(self, directory, body, destination, blocked, expect='Saved artwork layer', **params):
         before = destination.read_bytes()
         script = directory / 'publication.lua'
         script.write_text(body, encoding='utf-8')
@@ -153,7 +153,7 @@ class SavedLayerTests(unittest.TestCase):
         if blocked:
             self.assertIn('INJECTED_SAVE_NOOP', output)
             self.assertNotEqual(0, result.returncode, output)
-            self.assertIn('Saved artwork layer', output)
+            self.assertIn(expect, output)
             self.assertNotIn('PUBLICATION_COMPLETE', output)
             self.assertNotIn('EXPORT_REACHED', output)
             self.assertEqual(before, destination.read_bytes())
@@ -201,10 +201,10 @@ class SavedLayerTests(unittest.TestCase):
     def pinch(self, shots, blocked):
         with tempfile.TemporaryDirectory(prefix='cistern-saved-pinch-test-') as temporary:
             work = Path(temporary)
-            for folder in ('assets/source', 'assets/water', 'shots', 'tools/tile_art'):
+            for folder in ('assets/source', 'assets/water', 'shots'):
                 (work / folder).mkdir(parents=True)
-            for helper in ('source_files.lua', 'water_cliff_layout.lua', 'water_cliff_materials.lua', 'water_cliff_names.lua'):
-                (work / 'tools/tile_art' / helper).write_bytes((args.scripts_dir / helper).read_bytes())
+            install_scripts(work, ('source_files.lua', 'water_cliff_layout.lua', 'water_cliff_materials.lua', 'water_cliff_names.lua'),
+                            args.scripts_dir)
             params = dict(work=work.as_posix() + '/', root=work.as_posix() + '/',
                           faces=work / 'faces.png')
             if shots:
@@ -213,7 +213,7 @@ class SavedLayerTests(unittest.TestCase):
             name = 'water-cliff-connections' if shots else 'water-cliff-edge'
             destination = work / 'assets/source' / (name + '.aseprite')
             body = (args.scripts_dir / 'pinch_shallow_cliff.lua').read_text(encoding='utf-8')
-            self.publication(work, body, destination, blocked, **params)
+            self.publication(work, body, destination, blocked, expect='File not found', **params)
             if blocked:
                 self.assertFalse((work / 'pinch.txt').exists())
                 self.assertFalse((work / 'assets/water/dirt-shallows-edges.png').exists())

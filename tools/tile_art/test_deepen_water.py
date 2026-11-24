@@ -2,7 +2,7 @@ import hashlib
 import os
 import unittest
 
-from art_support import WorkTest, arguments, aseprite, main, read_locked, run_lua, sheet_sizes_lua
+from art_support import WorkTest, arguments, aseprite, install_scripts, main, read_locked, run_lua, sheet_sizes_lua
 
 
 args, remaining = arguments()
@@ -17,10 +17,7 @@ class DeepenWaterTests(WorkTest):
         self.output = self.work / 'deep.aseprite'
         self.canonical = self.work / 'assets/source/deep-water.aseprite'
         self.canonical.parent.mkdir(parents=True)
-        helpers = self.work / 'tools/tile_art'
-        helpers.mkdir(parents=True)
-        for name in ('source_files.lua', 'ground_port.lua', 'ground_layout.lua'):
-            (helpers / name).write_bytes((args.scripts_dir / name).read_bytes())
+        install_scripts(self.work, ('source_files.lua', 'ground_port.lua', 'ground_layout.lua'), args.scripts_dir)
         self.run_lua('''
 local s=Sprite(GROUND_W,GROUND_H,ColorMode.RGB)
 s.layers[1].name='Draw here'
@@ -32,8 +29,8 @@ local extension=s:newLayer(); extension.name='Water extensions'
 s:newCel(extension,1,paint,Point(70,130))
 local labels=s:newLayer(); labels.name='Labels - hide before export'
 s:newCel(labels,1,paint,Point(12,8))
-for i=1,16 do
- local slice=s:newSlice(Rectangle(((i-1)%4)*64,64+((i-1)//4)*64,64,64))
+for i=1,GROUND_COLS*GROUND_COLS do
+ local slice=s:newSlice(Rectangle(((i-1)%GROUND_COLS)*CELL,HEAD_H+((i-1)//GROUND_COLS)*CELL,CELL,CELL))
  slice.name='Corners '..(i-1)
 end
 s:saveAs(app.params.source); s:close()
@@ -131,7 +128,7 @@ source:close()
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(source_before, self.source.read_bytes())
         self.assertTrue(self.canonical.is_dir())
-        self.assertTrue(self.output.is_file())
+        self.assertFalse(self.output.exists())
         self.assertFalse((self.work / 'water-depth-validation.txt').exists())
 
     def test_draft_path_cannot_overwrite_its_source(self):

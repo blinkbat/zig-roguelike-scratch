@@ -41,7 +41,7 @@ local canonical=app.params.canonical
 local install=app.params.install=='yes'
 local sourceFiles=dofile(app.params.helper)
 local name=app.params.name
-local layer_name=name:gsub('^%l',string.upper)..' extensions'
+local layer_name=dofile(app.params.ground_port).extension(name)
 local width,height=tonumber(app.params.width),tonumber(app.params.height)
 local original=Image(2,2,ColorMode.RGB)
 original:clear(app.pixelColor.rgba(91,122,153,255))
@@ -59,6 +59,7 @@ s:saveAs(path)
 ''' + publication + '\nprint("PUBLICATION_COMPLETE")\n', encoding='utf-8')
             result = self.run_lua(script, work=work, source=working, canonical=canonical,
                                   helper=args.scripts_dir / 'source_files.lua',
+                                  ground_port=args.scripts_dir / 'ground_port.lua',
                                   name=name, width=width, height=height, install='yes')
             output = result.stdout + result.stderr
             self.assertTrue(working.is_file(), output)
@@ -120,7 +121,9 @@ env=setmetatable({
    files.DESKTOP=realapp.params.desktop_dir
    return files
   end
-  assert(path==root..'tools/tile_art/export_forest.lua','Unexpected script')
+  if path==root..'tools/tile_art/wall_masks.lua' then return {} end
+  assert(path==root..'tools/tile_art/forest_atlas.lua','Unexpected script')
+  return function(_,_,sprite) return Image(sprite.width,sprite.height,ColorMode.RGB),0 end
  end,
 },{__index=_G})
 assert(loadfile(realapp.params.script,'t',env))()
@@ -135,11 +138,15 @@ assert(loadfile(realapp.params.script,'t',env))()
             if fail:
                 self.assertNotEqual(0, result.returncode, output)
                 self.assertIn('injected publication failure', output)
+                self.assertNotIn('Could not restore', output)
                 self.assertFalse(report.exists())
-                self.assertNotEqual(source.read_bytes(), desktop.read_bytes())
                 backups = list((work / 'assets/backup').glob('*.aseprite'))
                 self.assertEqual(1, len(backups))
                 self.assertEqual(desktop.read_bytes(), backups[0].read_bytes())
+                self.assertEqual(source.read_bytes(), backups[0].read_bytes())
+                for png, kept in (('assets/walls/forest-tree-walls.png', 'forest-tree-walls-before-tone.*.png'),
+                                  ('assets/ground/grass.png', 'grass.*.png')):
+                    self.assertEqual(next((work / 'assets/backup').glob(kept)).read_bytes(), (work / png).read_bytes(), png)
             else:
                 self.assertEqual(0, result.returncode, output)
                 self.assertTrue(report.is_file())

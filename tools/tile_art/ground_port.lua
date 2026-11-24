@@ -7,16 +7,26 @@ port.H=port.HEAD+port.SIZE
 port.QUARTERS={{bit=NW,x=8,y=8},{bit=NE,x=48,y=8},{bit=SW,x=8,y=48},{bit=SE,x=48,y=48}}
 port.SOURCE={shallows='water',water='deep-water'}
 port.EXTENSION={['deep-water']='Water extensions'}
+port.CORNER='Corners '
 
 function port.source(material) return port.SOURCE[material] or material end
 function port.extension(source) return port.EXTENSION[source] or source:gsub('^%l',string.upper)..' extensions' end
+function port.png(material) return 'assets/ground/'..material..'-ground.png' end
+function port.fill(order)
+  for i,m in ipairs(order) do
+    if m==port.FULL then
+      local x,y=port.at(i)
+      return x,y-port.HEAD
+    end
+  end
+end
 
 function port.at(i) return ((i-1)%port.COLS)*port.CELL,port.HEAD+(i-1)//port.COLS*port.CELL end
 
 function port.corner(sprite,m)
   local found
   for _,slice in ipairs(sprite.slices) do
-    if slice.name=='Corners '..m then found=slice end
+    if slice.name==port.CORNER..m then found=slice end
   end
   return found
 end

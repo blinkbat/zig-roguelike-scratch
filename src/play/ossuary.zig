@@ -232,7 +232,7 @@ test "the ossuary file round-trips, and a damaged, cut, foreign or reordered one
     var h = Hall{};
     for (0..5) |i| {
         var e = testEntry(@intCast(10 * i));
-        e.class = @enumFromInt(i % 3);
+        e.class = heroes.CLASSES[i % heroes.CLASSES.len];
         e.say("Slain by a rat.");
         _ = h.entomb(e);
     }

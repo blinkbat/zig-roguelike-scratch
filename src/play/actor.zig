@@ -286,6 +286,8 @@ pub const Row = struct {
 };
 
 const SIGHT: i32 = 7;
+const HERO_SIGHT: i32 = 10;
+const HERO_LIGHT: i32 = 5;
 const LURK_REACH: i32 = 1;
 
 pub const SWEEP_VERB = "sweeps";
@@ -312,8 +314,8 @@ const HOOK = Hook{ .range = 4, .every = 4, .blow = .{ .hit = .{ .lo = 1, .hi = 3
 const HURL = Hurl{ .name = "firebolt", .verb = "burns", .range = 7, .speed = 2, .every = 2, .hit = .{ .lo = 3, .hi = 5 }, .burns = 40, .element = .fire };
 const CHAOS_ORB = Hurl{ .name = "chaos orb", .verb = "strikes", .range = 7, .speed = 2, .every = 2, .hit = .{ .lo = 4, .hi = 6 }, .burns = 0, .element = .chaos, .careful = true };
 const WEAKNESS: i16 = -50;
-const ICY = damage.Resists.init(.{ .cold = damage.RESIST_MAX, .fire = WEAKNESS, .chaos = 0, .lightning = 0 });
-const FIERY = damage.Resists.init(.{ .cold = WEAKNESS, .fire = damage.RESIST_MAX, .chaos = 0, .lightning = 0 });
+const ICY = damage.Resists.initDefault(0, .{ .cold = damage.RESIST_MAX, .fire = WEAKNESS });
+const FIERY = damage.Resists.initDefault(0, .{ .cold = WEAKNESS, .fire = damage.RESIST_MAX });
 
 const RESIST_SUFFIX = "_resist";
 
@@ -378,7 +380,7 @@ pub fn holds(k: Kind, lv: *const grid.Level, p: P) bool {
 }
 
 fn heroRow(comptime c: heroes.Class) Row {
-    return .{ .name = wording.word(c), .foe_type = null, .hp = c.attrs().life(), .sight = 10, .light = 5, .blow = .{ .strike = c.strike() } };
+    return .{ .name = wording.word(c), .foe_type = null, .hp = c.attrs().life(), .sight = HERO_SIGHT, .light = HERO_LIGHT, .blow = .{ .strike = c.strike() } };
 }
 
 fn smaller(of: Kind, name: [:0]const u8, splits: ?Kind) Row {
@@ -771,13 +773,9 @@ const WAVES_MOST: i32 = 8;
 
 pub fn ripples(lv: *const grid.Level, from: P, to: P, reach: i32) bool {
     if (mathx.dist(from, to) > reach or !lv.at(to).wet()) return false;
-    var waves = grid.Walk(WAVES_MOST, *const grid.Level, wetAt).init(lv, from, reach);
+    var waves = grid.Walk(WAVES_MOST, *const grid.Level, grid.Level.wetAt).init(lv, from, reach);
     while (waves.next()) |p| if (p.eq(to)) return true;
     return false;
-}
-
-fn wetAt(lv: *const grid.Level, p: P) bool {
-    return lv.at(p).wet();
 }
 
 pub fn approach(lv: *const grid.Level, from: P, id: u16, toward: P) ?mathx.Dir {

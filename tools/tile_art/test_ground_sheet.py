@@ -2,7 +2,7 @@ import hashlib
 import os
 import unittest
 
-from art_support import WorkTest, arguments, aseprite, main, run_lua, sheet_sizes_lua
+from art_support import WorkTest, arguments, aseprite, install_scripts, main, run_lua, sheet_sizes_lua
 
 
 args, remaining = arguments()
@@ -55,10 +55,8 @@ labels:saveAs(app.params.labels)
         self.generate(replace=True)
 
     def test_underdrawing_checks_the_resolved_assets_directory(self):
-        helpers = self.work / 'tools/tile_art'
-        helpers.mkdir(parents=True)
-        for name in ('source_files.lua', 'ground_port.lua', 'ground_layout.lua', 'ground_corners.lua'):
-            (helpers / name).write_bytes((args.scripts_dir / name).read_bytes())
+        install_scripts(self.work, ('source_files.lua', 'ground_port.lua', 'ground_layout.lua', 'ground_corners.lua'),
+                        args.scripts_dir)
         assets = self.work / 'assets/ground'
         assets.mkdir(parents=True)
         root = self.work.resolve().as_posix() + '/'

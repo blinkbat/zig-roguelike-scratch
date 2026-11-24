@@ -167,13 +167,16 @@ pub const State = struct {
 };
 
 pub const Seen = struct {
-    npcs: usize = 0,
-    dialogs: usize = 0,
-    triggers: usize = 0,
-    quests: usize = 0,
+    lists: u64 = 0,
 
     pub fn of(m: *const Script) Seen {
-        return .{ .npcs = m.npc_n, .dialogs = m.dialog_n, .triggers = m.trigger_n, .quests = m.quest_n };
+        var h = std.hash.Wyhash.init(0);
+        std.hash.autoHash(&h, .{ m.npc_n, m.dialog_n, m.trigger_n, m.quest_n });
+        for (m.npcs()) |*n| std.hash.autoHashStrat(&h, .{ n.node, n.spot, n.name.text() }, .Deep);
+        for (m.dialogs()) |*d| std.hash.autoHashStrat(&h, d.name.text(), .Deep);
+        for (m.triggers()) |*t| std.hash.autoHashStrat(&h, t.name.text(), .Deep);
+        for (m.quests()) |*q| std.hash.autoHashStrat(&h, q.name.text(), .Deep);
+        return .{ .lists = h.final() };
     }
 };
 
@@ -537,6 +540,13 @@ fn indexStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: []const 
     ed.bank();
 }
 
+fn amongStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, comptime T: type, v: *T, among: []const T, label: []const u8, tip: [:0]const u8) bool {
+    const by = stepper(ed, g, r, label, among.len > 1, tip, false);
+    if (by == 0) return false;
+    v.* = mathx.stepIn(T, among, v.*, by, 0);
+    return true;
+}
+
 fn optIndexStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: []const u8, live: bool, slot: *?u8, n: usize, tip: [:0]const u8) void {
     const by = stepper(ed, g, r, label, live, tip, false);
     if (by == 0) return;
@@ -652,20 +662,8 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     const moved = stepper(ed, g, stands.take(TALK_W), spotWords(npc.spot, &buf), true, "On its painted cell, beside a prop, on a ground, or far from the doors; the last three are found afresh on each roll of its node", false);
     if (moved != 0) stepSpot(ed, i, moved);
     switch (npc.spot) {
-        .by => |*t| {
-            const prop_by = stepper(ed, g, stands.take(WHICH_W), @tagName(t.*), PROPS.len > 1, "Which prop it stands beside: the first in reading order with room round it", false);
-            if (prop_by != 0) {
-                t.* = mathx.stepIn(grid.Tile, &PROPS, t.*, prop_by, 0);
-                ed.changed();
-            }
-        },
-        .on => |*t| {
-            const ground_by = stepper(ed, g, stands.take(WHICH_W), @tagName(t.*), GROUNDS.len > 1, "Which ground it stands on: the free cell nearest the middle of all of it", false);
-            if (ground_by != 0) {
-                t.* = mathx.stepIn(grid.Tile, &GROUNDS, t.*, ground_by, 0);
-                ed.changed();
-            }
-        },
+        .by => |*t| if (amongStep(ed, g, stands.take(WHICH_W), grid.Tile, t, PROPS, @tagName(t.*), "Which prop it stands beside: the first in reading order with room round it")) ed.changed(),
+        .on => |*t| if (amongStep(ed, g, stands.take(WHICH_W), grid.Tile, t, GROUNDS, @tagName(t.*), "Which ground it stands on: the free cell nearest the middle of all of it")) ed.changed(),
         .at, .far => {},
     }
     y += STEP;
@@ -696,26 +694,22 @@ fn drawNpc(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) v
     }
 }
 
-const PROPS = blk: {
+fn tilesWhere(comptime has: fn (grid.Tile) bool) []const grid.Tile {
     var out: []const grid.Tile = &.{};
     for (std.enums.values(grid.Tile)) |t| {
-        if (script.besideable(t)) out = out ++ &[_]grid.Tile{t};
+        if (has(t)) out = out ++ &[_]grid.Tile{t};
     }
-    break :blk out[0..out.len].*;
-};
+    return out;
+}
+
+const PROPS = tilesWhere(script.besideable);
 const FIRST_PROP: grid.Tile = .caravan;
-const GROUNDS = blk: {
-    var out: []const grid.Tile = &.{};
-    for (std.enums.values(grid.Tile)) |t| {
-        if (script.standable(t)) out = out ++ &[_]grid.Tile{t};
-    }
-    break :blk out[0..out.len].*;
-};
+const GROUNDS = tilesWhere(script.standable);
 const FIRST_GROUND: grid.Tile = grid.STONE_SPAN;
 
 comptime {
-    std.debug.assert(std.mem.indexOfScalar(grid.Tile, &PROPS, FIRST_PROP) != null);
-    std.debug.assert(std.mem.indexOfScalar(grid.Tile, &GROUNDS, FIRST_GROUND) != null);
+    std.debug.assert(std.mem.indexOfScalar(grid.Tile, PROPS, FIRST_PROP) != null);
+    std.debug.assert(std.mem.indexOfScalar(grid.Tile, GROUNDS, FIRST_GROUND) != null);
 }
 
 fn spotWords(s: script.Spot, buf: []u8) []const u8 {
@@ -871,7 +865,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i32)
         y += GAP;
     }
     const used = ln.thenUsed();
-    caption(g, x, y, LABEL_W, if (used) "Then" else "Then (unused)", if (used) look.TEXT else look.DIM);
+    caption(g, x, y, LABEL_W, if (used) "Then" else "Then (unused)", widgets.liveInk(used));
     var then = widgets.Lay{ .x = x + LABEL_W, .y = y };
     targetStep(ed, g, then.take(TARGET_W), d, &ln.then);
     caption(g, then.x, y, w - LABEL_W - TARGET_W, "where a line with no choices goes on", look.DIM);
@@ -1160,11 +1154,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
         .talked => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &c.slot),
         .deaths, .alive => {
             const ws = splitBy(fw, FOE_CMP_NUMBER);
-            const by = stepper(ed, g, lay.take(ws[0]), actor.row(c.foe).name, true, "Which foe; a slime counts its halves", false);
-            if (by != 0) {
-                c.foe = mathx.stepIn(actor.Kind, &actor.FOES, c.foe, by, 0);
-                ed.bank();
-            }
+            if (amongStep(ed, g, lay.take(ws[0]), actor.Kind, &c.foe, &actor.FOES, actor.row(c.foe).name, "Which foe; a slime counts its halves")) ed.bank();
             cmpStep(ed, g, lay.take(ws[1]), &c.cmp);
             numberStep(ed, g, lay.take(ws[2]), &c.n, c.kind.span(), "", "How many");
         },

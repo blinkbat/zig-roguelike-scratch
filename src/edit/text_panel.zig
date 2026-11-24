@@ -761,7 +761,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
             rl.drawRectangle(x + left, yy, widthTo(&g.face, &buf, hi - start) - left, LINE_H, widgets.ROW_ON);
         }
         displayBytes(buf[0 .. end - start]);
-        g.face.draw(buf[0 .. end - start :0], x, yy, TEXT, if (editable) look.TEXT else look.DIM);
+        g.face.draw(buf[0 .. end - start :0], x, yy, TEXT, widgets.liveInk(editable));
         if (focused and caret_line == line) {
             rl.drawRectangle(x + widthTo(&g.face, &buf, @min(f.cursor, end) - start), yy, CARET_W, TEXT, look.UI_FOCUS);
         }

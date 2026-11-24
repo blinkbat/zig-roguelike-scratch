@@ -31,7 +31,6 @@ pub const Shot = projectiles.Shot;
 const BoltShown = projectiles.BoltShown;
 const MotionView = projectiles.MotionView;
 pub const flown = projectiles.flown;
-const BOLT_CELL_S = projectiles.BOLT_CELL_S;
 const TAKEN_MAX = 4;
 
 /// `snare`: a net, holding the hero as it lands, or dodged (null).
@@ -405,7 +404,7 @@ pub const Presentation = struct {
     pub fn recordBolt(self: *Presentation, sim: *const Simulation, by: actor.ActorSlot, was: firebolt.Bolt, now: firebolt.Bolt, flew: firebolt.Flew, element: damage.Element, wait: f32) f32 {
         const old = self.bolts[by.index];
         const from = if (old) |b| b.to() else was.point();
-        const span = @as(f32, @floatFromInt(flew.cells)) * BOLT_CELL_S;
+        const span = projectiles.boltFlown(flew.cells);
         const lands = wait + span;
         self.bolts[by.index] = .{ .element = element, .line = now, .view = if (old) |b| b.view else .{}, .from = from, .t = -wait, .span = span, .after = flew.stop == null };
         const seen = for (was.flown..@as(usize, now.flown) + 1) |k| {
@@ -1068,14 +1067,15 @@ pub const Presentation = struct {
             if (gl.bump != null or std.meta.eql(gl.from, glide.cellPx(gl.to))) continue;
             if (self.pictured[i].down() or actor.row(self.pictured[i].kind).movement != .ground) continue;
             const at = self.drawnAt(sim, i) orelse continue;
-            const under = self.tileShown(sim, game.cellUnder(at));
+            const mid = game.middle(at);
+            const under = self.tileShown(sim, mathx.cellOf(mid));
             if (under == .shallows) {
-                self.fx.splash(game.middle(at));
+                self.fx.splash(mid);
             } else if (under == .grass or under == .tall_grass) {
-                self.fx.leaves(game.middle(at));
+                self.fx.leaves(mid);
             } else if (under == .bridge) {
-                self.fx.woodDust(game.middle(at));
-            } else if (look.stepDust(under)) |col| self.fx.dust(game.middle(at), col);
+                self.fx.woodDust(mid);
+            } else if (look.stepDust(under)) |col| self.fx.dust(mid, col);
         }
     }
 

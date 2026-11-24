@@ -31,7 +31,8 @@ for y=0,H-1 do for x=0,W-1 do
   end
 end end
 assert(count>0)
-local canopy=Image(source,Rectangle(0,0,CELL,50))
+local CANOPY=50
+local canopy=Image(source,Rectangle(0,0,CELL,CANOPY))
 local cells={}
 local sheet=Image(W,H,ColorMode.RGB)
 local atlas=Image(masks.W,masks.H,ColorMode.RGB)
@@ -95,8 +96,8 @@ local map={
 masks.preview(cells,pc.rgba(104,112,77,255),work..'forest-tree-walls-connected.png',map)
 local report=sourceFiles.report(work..'forest-tree-walls-validation.txt')
 report:write('Source: '..path..'\nSaved: '..destination..'\nBackup: '..backup..'\n')
-report:write('47 distinct 64x64 cells. Original Draw here pixels and position verified after reopen.\n')
-report:write('Source: cell 01 at sheet (0,64), 64x64; canopy crop (0,64), 64x50.\n')
+report:write(('%d distinct %dx%d cells. Original Draw here pixels and position verified after reopen.\n'):format(#masks,CELL,CELL))
+report:write(('Source: cell 01 at sheet (0,%d), %dx%d; canopy crop (0,%d), %dx%d.\n'):format(HEAD,CELL,CELL,HEAD,CELL,CANOPY))
 report:write('Whole pieces translated by 32 pixels, painted north-to-south and west-to-east. No scaling, rotation, palette changes or hand-drawn repairs.\n')
 report:write('N/E/S/W bridge copies require their neighbour. Diagonal copies require both cardinals and their diagonal.\n')
 report:write('Trunks retained only on south-exposed cells. North/south bridge copies use the canopy crop.\n')

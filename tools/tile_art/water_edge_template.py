@@ -6,16 +6,18 @@ import tempfile
 from PIL import Image, ImageDraw
 
 sys.dont_write_bytecode = True
-from art_support import ROOT, SCRIPTS, arial, layer_names, quote, water_cliff_layout, water_cliff_names, water_cliff_slice
+from art_support import (DESKTOP, ROOT, SCRIPTS, arial, corner_order, ground_layout, layer_names, quote,
+                         water_cliff_layout, water_cliff_names, water_cliff_slice)
 
 
-DESKTOP = Path.home() / 'Desktop'
 OUTPUT = DESKTOP / 'water-cliff-edge.aseprite'
 WORK = Path(tempfile.mkdtemp(prefix='cistern-water-cliff-'))
 SIZE = (512, 512)
 CELL = water_cliff_layout()['cell']
 NAMES = water_cliff_names()
 LAYERS = layer_names()
+GROUND = ground_layout()
+ORDER = corner_order()
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=OUTPUT)
 parser.add_argument('--replace-blank', action='store_true')
@@ -45,6 +47,12 @@ def face(draw, x, y, kind, height, fill, lip):
     draw.line((left, y, right, y), fill=lip)
 
 
+def ground_cell(mask):
+    i = ORDER.index(mask)
+    x, y = (i % GROUND['COLS']) * GROUND['CELL'], (i // GROUND['COLS']) * GROUND['CELL']
+    return (x, y, x + GROUND['CELL'], y + GROUND['CELL'])
+
+
 text(12, 8, 'WATER CLIFF EDGE', 23, True)
 text(12, 39, 'Six separate tiles / 64 x 64 px / paint each depth independently')
 kinds = NAMES['pieces']
@@ -60,8 +68,9 @@ for depth, y, height, asset in zip(NAMES['depths'], (104, 232), (12, 24), ('shal
         slices.append((water_cliff_slice(NAMES, depth, kind), x, y))
     with Image.open(ROOT / 'assets/ground' / asset) as source:
         atlas = source.convert('RGBA')
-        assert atlas.size == (256, 256)
-        for x, edge, crop in ((324, 'NORTH EDGE', (64, 0, 128, 64)), (420, 'SOUTH EDGE', (192, 128, 256, 192))):
+        assert atlas.size == (GROUND['SIZE'], GROUND['SIZE'])
+        for x, edge, crop in ((324, 'NORTH EDGE', ground_cell(GROUND['SW'] | GROUND['SE'])),
+                              (420, 'SOUTH EDGE', ground_cell(GROUND['NW'] | GROUND['NE']))):
             tile = atlas.crop(crop)
             water_reference.paste(tile, (x, y))
             assert water_reference.crop((x, y, x + 64, y + 64)).tobytes() == tile.tobytes()

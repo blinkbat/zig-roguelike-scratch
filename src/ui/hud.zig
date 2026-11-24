@@ -217,7 +217,7 @@ pub fn statuses(layout: Layout, face: *const font.Face, status: std.EnumArray(fx
         const box = statusBox(layout, shown.len, k);
         const x = raster.left(box);
         const y = raster.top(box);
-        menu.boxed(box, look.backingAt(.hud), look.BORDER);
+        menu.boxed(box, look.BACKING, look.BORDER);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         if (s == .resistant) {
             raster.meter(x + RESIST_INSET, y + STATUS_PX - RESIST_RISE, RESIST_W, RESIST_H, resistance, mathx.PERCENT, look.EDGE, look.UI_GOLD);
@@ -277,7 +277,7 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const sprite.Sprites, l
     const y = at.y;
     const h = at.h;
     const shown = at.shown;
-    const first = @min(scroll, n - shown);
+    const first = mathx.clampTop(scroll, n, shown);
     menu.titledCard(face, sprites, x, y, TIP_W, h, .menu, TIP_PAD, title);
     var rich = font.Rich.init(body);
     for (lines[0..first]) |line| rich.skip(line);

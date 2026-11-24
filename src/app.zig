@@ -595,9 +595,7 @@ const App = struct {
         const g = app.g;
         const w = menu.listWidth(g.screen);
         const pad = menu.PANEL_PAD;
-        var wrapped: font.Wrapped = undefined;
-        var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
-        const n = font.wrap(&g.face, e.text(), font.BODY, w - 2 * pad, &wrapped, &lines);
+        const n = font.lineCount(&g.face, e.text(), font.BODY, w - 2 * pad);
         const feet_dy = pad + BONES_SCALE * look.SPRITE_PX;
         const stats_dy = feet_dy + BONES_GAP;
         const text_dy = stats_dy + font.BODY_LINE + BONES_GAP;
@@ -612,11 +610,7 @@ const App = struct {
         var stats: [LINE + 1]u8 = undefined;
         const said = std.fmt.bufPrintZ(&stats, BONES_RANK ++ menu.SEP ++ "Kills {d}" ++ menu.SEP ++ hero.GOLD_FMT, .{ e.level, e.class.title(), e.renown, e.kills, e.gold }) catch "";
         menu.mid(g.face, g.screen, said, top + stats_dy, font.BODY, look.UI_GOLD);
-        var y = top + text_dy;
-        for (lines[0..n]) |l| {
-            g.face.text(l, x + pad, y, font.BODY, look.TEXT);
-            y += font.BODY_LINE;
-        }
+        _ = g.face.paragraphWith(font.Face.text, e.text(), x + pad, top + text_dy, w - 2 * pad, font.BODY, look.TEXT);
     }
 };
 

@@ -57,7 +57,7 @@ pub fn sceneryMargin(sprites: *const sprite.Sprites) i32 {
     var scale: f32 = 1;
     for (sprite_assets.PICTURE_CASTERS) |kind| {
         const tex = sprites.tileOf(kind, null) orelse continue;
-        const rect = look.tileRect(kind, tex, .{ .x = 0, .y = 0, .width = 1, .height = 1 });
+        const rect = look.tileRect(kind, tex, raster.rect(0, 0, 1, 1));
         scale = @max(scale, @max(rect.width, rect.height));
     }
     return @intFromFloat(@ceil(CAST_REACH * scale));

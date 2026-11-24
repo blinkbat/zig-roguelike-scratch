@@ -3,7 +3,6 @@ local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local path=app.params.source or sourceFiles.DESKTOP..'regular-walls.aseprite'
 local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
-assert(#masks==47)
 local W,H=masks.W,masks.H
 local CELL=masks.CELL
 local LAST=CELL-1
@@ -11,8 +10,8 @@ local LAST=CELL-1
 local FACE=masks.FACE
 local sprite=assert(app.open(path))
 assert(sprite.width==W and sprite.height==masks.SHEET_H)
-local painted=sourceFiles.layer(sprite,'Layer 1')
-local wall=dofile(root..'tools/tile_art/wall_strips.lua')(assert(painted,'no Layer 1'):cel(1).image,painted:cel(1).position,masks)
+local painted=sourceFiles.layer(sprite,sourceFiles.LAYER.original)
+local wall=dofile(root..'tools/tile_art/wall_strips.lua')(assert(painted,'no '..sourceFiles.LAYER.original):cel(1).image,painted:cel(1).position,masks)
 sprite:close()
 local source,tan,sideRow,decorate=wall.source,wall.tan,wall.sideRow,wall.decorate
 local brick,faceEdge,side,capTop,capCorner=wall.brick,wall.faceEdge,wall.side,wall.capTop,wall.capCorner
@@ -74,7 +73,7 @@ for i,mask in ipairs(masks) do
   atlas:drawImage(image,Point(masks.at(i)))
 end
 local runtime=Sprite(W,H,ColorMode.RGB)
-runtime.layers[1].name='Runtime walls'
+runtime.layers[1].name=sourceFiles.LAYER.runtime
 runtime:newCel(runtime.layers[1],1,atlas,Point(0,0))
 runtime.data='Full-cell walls built from Desktop regular-walls.aseprite Layer 1 strips by tools/tile_art/export_walls.lua; cell i is mask i of wall_masks.lua.'
 for i,mask in ipairs(masks) do
@@ -88,7 +87,7 @@ local staged=sourceFiles.stage(app.fs.fileName(canonical))
 runtime:saveAs(staged)
 runtime:close()
 local check=assert(app.open(staged))
-sourceFiles.checkLayer(check,'Runtime walls',atlas,Point(0,0))
+sourceFiles.checkLayer(check,sourceFiles.LAYER.runtime,atlas,Point(0,0))
 check:close()
 sourceFiles.keep(canonical,sourceFiles.work(),'export',os.date(sourceFiles.STAMP))
 sourceFiles.publish({sourceFiles.staged(canonical,staged),png})

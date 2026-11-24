@@ -169,16 +169,12 @@ fn drawCoins(g: *const game.Game, c: Cam, pile: ground_items.Coins) void {
     }
 }
 
-fn bagged(bags: *const grid.CellSet, p: P) bool {
-    return bags.isSet(grid.Level.idx(p));
-}
-
 fn looseBag(here: grid.Tile, bags: *const grid.CellSet, p: P) bool {
-    return here != .chest_open and bagged(bags, p);
+    return here != .chest_open and grid.inSet(bags, p);
 }
 
 fn chestShines(here: grid.Tile, p: P, bags: *const grid.CellSet) bool {
-    return here == .chest or (here == .chest_open and bagged(bags, p));
+    return here == .chest or (here == .chest_open and grid.inSet(bags, p));
 }
 
 fn outline(c: Cam, p: P, col: rl.Color) void {
@@ -209,7 +205,11 @@ pub fn terrainSeen(g: *const game.Game, p: P) bool {
 }
 
 pub fn shownAt(g: *game.Game, stood: *const grid.CellSet, p: P) bool {
-    return (grid.Level.inside(p) and stood.isSet(grid.Level.idx(p))) or barrelShownAt(g, p);
+    return insideSet(stood, p) or barrelShownAt(g, p);
+}
+
+fn insideSet(set: *const grid.CellSet, p: P) bool {
+    return grid.Level.inside(p) and grid.inSet(set, p);
 }
 
 pub fn stoodNow(g: *game.Game) grid.CellSet {
@@ -250,6 +250,10 @@ const Prop = struct {
     fn at(g: *game.Game, c: Cam, p: P, casting: bool) Prop {
         const mid = mathx.centre(p);
         return .{ .s = c.corner(p), .mid = mid, .shine = if (casting) g.light.onCaster(mid, false) else g.light.onBody(mid, false) };
+    }
+
+    fn remembered(c: Cam, p: P) Prop {
+        return .{ .s = c.corner(p), .mid = mathx.centre(p), .shine = .{ .ambient = @splat(1) } };
     }
 
     fn over(g: *game.Game, c: Cam, p: P, kind: grid.Tile) Prop {
@@ -375,7 +379,7 @@ pub fn shownBags(g: *const game.Game, ground: *const grid.Level) grid.CellSet {
 
 /// `here` is `ground.at(p)`.
 fn tileTexture(g: *const game.Game, ground: *const grid.Level, here: grid.Tile, p: P, bags: *const grid.CellSet) ?rl.Texture2D {
-    if (here == .chest_open and bagged(bags, p)) return g.sprites.chest_item_bag;
+    if (here == .chest_open and grid.inSet(bags, p)) return g.sprites.chest_item_bag;
     if (here == .chest and g.pic.mimicAt(&g.sim, p)) return g.sprites.mimic_closed;
     return g.sprites.tileAt(ground, p);
 }
@@ -590,8 +594,7 @@ fn drawMirrorScenery(g: *game.Game, c: Cam, ground: *const grid.Level, view: gri
             if (g.sprites.item_bag) |t| mirrorSprite(g, c, ground, p, kind, t, true, g.pic.cellAlpha(p));
         }
         if (barrelShownAt(g, p)) {
-            var b = Prop.at(g, c, p, false);
-            if (memory) b.shine = .{ .ambient = @splat(1) };
+            var b = if (memory) Prop.remembered(c, p) else Prop.at(g, c, p, false);
             drawBarrel(g, &b, true);
         }
     }
@@ -694,7 +697,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     var coin_cells = view.cells();
     while (coin_cells.next()) |p| {
         const cell = g.pic.seen_cells[grid.Level.idx(p)];
-        if (cell.alpha <= 0 or cell.coins <= 0 or ground.at(p).isChest() or bagged(&bags, p)) continue;
+        if (cell.alpha <= 0 or cell.coins <= 0 or ground.at(p).isChest() or grid.inSet(&bags, p)) continue;
         drawCoins(g, c, .{ .at = p, .amount = cell.coins });
     }
     if (g.sim.heroSlot()) |hero| {
@@ -787,7 +790,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     var occluders = view.grown(1).cells();
     while (occluders.next()) |p| {
         const kind = ground.at(p);
-        const fronts = look.occludes(kind) or (grid.Level.inside(p) and crossed.isSet(grid.Level.idx(p)) and walled(ground, p));
+        const fronts = look.occludes(kind) or (insideSet(&crossed, p) and walled(ground, p));
         if (!fronts or !footprintSeen(g, p, kind)) continue;
         const depth = mathx.centre(p)[1];
         while (next_body < order.len and bodies[order[next_body]].mid[1] <= depth) : (next_body += 1) {
@@ -1019,7 +1022,7 @@ fn kinOf(g: *const game.Game, p: P) Kin {
     var kin = Kin.initEmpty();
     for (mathx.ALL_DIRS) |d| {
         const q = p.add(d.delta());
-        if (grid.Level.inside(q) and flameAlpha(g, grid.Level.idx(q)) > 0) kin.insert(d);
+        if (grid.Level.inside(q) and flamesSeen(g, q)) kin.insert(d);
     }
     return kin;
 }
@@ -1137,16 +1140,16 @@ pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
     var pictured = g.pic.shownBodies(&g.sim);
     while (pictured.next()) |b| {
         const i = b.slot;
-        const at = b.at;
+        const mid = game.middle(b.at);
         const pic = b.body.pic;
         if (pic.down()) continue;
         if (look.bodyGlow(pic.kind)) |col| {
-            const source = fx.BODY_GLOW.lit(game.middle(at), col, 1);
+            const source = fx.BODY_GLOW.lit(mid, col, 1);
             emitFaded(g, ground, source, g.pic.sighted[i]);
         }
         const flicker = g.pic.fx.statusFlicker(@floatFromInt(i));
         const source = for (std.enums.values(fx.Status)) |s| {
-            if (pic.status.get(s) > 0) if (s.emission(game.middle(at), flicker)) |e| break e;
+            if (pic.status.get(s) > 0) if (s.emission(mid, flicker)) |e| break e;
         } else continue;
         emitFaded(g, ground, source, g.pic.sighted[i]);
     }

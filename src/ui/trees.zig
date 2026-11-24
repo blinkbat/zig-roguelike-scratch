@@ -100,9 +100,7 @@ pub fn cellBox(panel: Panel, class: hero.Class, i: usize, view: View) rl.Rectang
             const layout = wheelLayout(view);
             const p = layout.at(i);
             const r = nodeRadius(i, layout.unit) + NODE_HIT_GROW;
-            const x = @max(layout.box.x, p.x - r);
-            const y = @max(layout.box.y, p.y - r);
-            break :blk .{ .x = x, .y = y, .width = @max(0, @min(layout.box.x + layout.box.width, p.x + r) - x), .height = @max(0, @min(layout.box.y + layout.box.height, p.y + r) - y) };
+            break :blk rl.getCollisionRec(raster.around(p.x, p.y, r, r), layout.box);
         },
     };
 }
@@ -633,11 +631,7 @@ test "every class skill stays in its canvas and is reachable by directional sele
             try std.testing.expect(box.x >= area.x and box.y >= area.y);
             try std.testing.expect(box.x + box.width + plaque_over <= area.x + area.width);
             try std.testing.expect(box.y + box.height + name_foot <= footer_top);
-            for (boxes[0..i]) |other| {
-                const overlaps = box.x < other.x + other.width and other.x < box.x + box.width and
-                    box.y < other.y + other.height and other.y < box.y + box.height;
-                try std.testing.expect(!overlaps);
-            }
+            for (boxes[0..i]) |other| try std.testing.expect(!rl.checkCollisionRecs(box, other));
         }
         var reached = std.StaticBitSet(skillbar.ACTS.len).initEmpty();
         reached.set(0);

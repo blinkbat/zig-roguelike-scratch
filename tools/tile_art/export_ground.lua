@@ -9,7 +9,7 @@ local source=app.params.source or (sourceFiles.DESKTOP..source_name..'.aseprite'
 local stand_in=app.params.from=='underdrawing'
 assert(app.params.from==nil or stand_in,'from=underdrawing or nothing')
 assert(not stand_in or app.params.out,'a stand-in never goes into assets/: give out=')
-local out=app.params.out or (root..'assets/ground/'..name..'-ground.png')
+local out=app.params.out or (root..groundPort.png(name))
 assert(out:lower():match('%.png$'),'out= must be a .png')
 if stand_in then
   sourceFiles.requireOutside(out,app.fs.joinPath(root,'assets'))

@@ -38,7 +38,6 @@ const captureAlong = @import("capture.zig").captureAlong;
 const dropAtlas = @import("capture.zig").dropAtlas;
 const drawOver = @import("capture.zig").drawOver;
 const exportDrawn = @import("capture.zig").exportDrawn;
-const exportTarget = @import("capture.zig").exportTarget;
 const heapAtlas = @import("capture.zig").heapAtlas;
 const pixels = @import("capture.zig").pixels;
 const readTarget = @import("capture.zig").readTarget;
@@ -950,6 +949,9 @@ fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
     for (0..list.n) |i| {
         try w.load(std.heap.c_allocator, list.at(i));
         w.node[w.start.node].stampAt(&g.sim.lv, SHOT_SEED +% i, w.start.at);
+        var buf: [OVERVIEW_PATH_MAX]u8 = undefined;
+        const name = try overviewPath(&buf, list.at(i));
+        try std.fs.cwd().makePath(std.fs.path.dirname(name).?);
         drawOver(target, look.BG);
         for (0..grid.CELLS) |k| {
             const p = grid.Level.of(k);
@@ -965,11 +967,7 @@ fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
             } else look.inkTile(&g.face, t, cx, cy, OVERVIEW_INK);
         }
         for (g.sim.lv.torches()) |t| g.face.glyph(look.TORCH.ch, t.x * OVERVIEW_CELL + OVERVIEW_MID, t.y * OVERVIEW_CELL + OVERVIEW_MID, OVERVIEW_INK, look.TORCH.fg);
-        rl.endTextureMode();
-        var buf: [OVERVIEW_PATH_MAX]u8 = undefined;
-        const name = try overviewPath(&buf, list.at(i));
-        try std.fs.cwd().makePath(std.fs.path.dirname(name).?);
-        try exportTarget(target, name);
+        try exportDrawn(target, name);
     }
 }
 

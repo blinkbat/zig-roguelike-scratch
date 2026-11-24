@@ -15,6 +15,7 @@ const MARGIN: i32 = 24;
 const PAD: i32 = 28;
 const SAY_SIZE: i32 = 24;
 const SAY_PITCH: i32 = 36;
+const LINES_MIN: usize = 3;
 const NUMBER_W: i32 = 32;
 const TALK_VEIL = look.fade(look.BG, 0.45);
 const FIGURE_BOX: i32 = 140;
@@ -115,7 +116,7 @@ pub const Layout = struct {
             self.ends[i] = total;
         }
         self.last = total;
-        const visible: i32 = @intCast(@min(@max(total, 3), capacity));
+        const visible: i32 = @intCast(@min(@max(total, LINES_MIN), capacity));
         const h = 2 * PAD + header + visible * SAY_PITCH + footer;
         const x = @divTrunc(screen.x - w, 2);
         const y = @max(MARGIN, screen.y - @max(RAISE_MIN, @divTrunc(screen.y, RAISE_DIV)) - h);

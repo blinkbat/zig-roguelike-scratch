@@ -5,7 +5,7 @@ import unittest
 
 from PIL import Image
 
-from art_support import WorkTest, arguments, aseprite, generate, main, read_locked, water_cliff_layout
+from art_support import WorkTest, arguments, aseprite, generate, install_scripts, main, read_locked, water_cliff_layout
 
 
 args, remaining = arguments()
@@ -69,7 +69,7 @@ assert(loadfile(app.params.assembly,'t',env))()
 ''', encoding='utf-8')
         for path in self.before:
             with self.subTest(target=path.name):
-                result = self.assemble(wrapper, target=path.as_posix(), assembly=assembly.as_posix())
+                result = self.assemble(wrapper, target=path.resolve().as_posix(), assembly=assembly.as_posix())
                 self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertIn('injected input close failure', result.stdout + result.stderr)
                 self.assertEqual(self.before, {p: p.read_bytes() for p in self.before})
@@ -97,11 +97,9 @@ assert(loadfile(app.params.assembly,'t',env))()
 
     def test_assembly_and_edge_export_follow_a_shifted_shared_layout(self):
         root = self.work / 'project'
-        scripts = root / 'tools/tile_art'
-        scripts.mkdir(parents=True)
-        for name in ('water_cliff_connected.py', 'art_support.py', 'source_files.lua', 'ground_corners.lua',
-                     'ground_layout.lua', 'water_cliff_materials.lua', 'water_cliff_names.lua', 'export_water_edges.lua'):
-            shutil.copyfile(args.scripts_dir / name, scripts / name)
+        scripts = install_scripts(root, ('water_cliff_connected.py', 'art_support.py', 'source_files.lua', 'ground_corners.lua',
+                                         'ground_layout.lua', 'ground_port.lua', 'water_cliff_materials.lua', 'water_cliff_names.lua',
+                                         'export_water_edges.lua'), args.scripts_dir)
         shifted = dict(LAYOUT, x=LAYOUT['x'] + 8, y=LAYOUT['y'] + 8, stride=LAYOUT['stride'] - 8)
         (scripts / 'water_cliff_layout.lua').write_text(
             'return {' + ','.join(f'{key}={value}' for key, value in shifted.items()) + '}\n', encoding='utf-8')

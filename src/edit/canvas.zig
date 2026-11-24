@@ -40,19 +40,21 @@ fn drawCells(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) vo
         const r = ed.cellRect(c, p);
         const here = ed.scene.lv.at(p);
         if (p.x < v.lo.x) {
-            if (p.x + here.wide() <= v.lo.x) continue;
-            if (g.sprites.tileAt(&ed.scene.lv, p)) |t| raster.stretch(t, look.tileRect(here, t, r), look.LIT);
+            if (p.x + here.wide() > v.lo.x) _ = tileSprite(ed, g, p, here, r);
             continue;
         }
         if (sprite.glyphGround(here, &g.sprites)) widgets.tileGlyph(&g.face, here, r);
         if (here.isPart() or !look.standsOver(here)) continue;
-        if (g.sprites.tileAt(&ed.scene.lv, p)) |t| {
-            raster.stretch(t, look.tileRect(here, t, r), look.LIT);
-            continue;
-        }
+        if (tileSprite(ed, g, p, here, r)) continue;
         if (look.tileBg(here) orelse if (here == .wall) look.BARE_WALL else null) |bg| rl.drawRectangleRec(r, bg);
         if (here != .wall) widgets.tileGlyph(&g.face, here, r);
     }
+}
+
+fn tileSprite(ed: *editor.Editor, g: *game.Game, p: P, here: grid.Tile, r: rl.Rectangle) bool {
+    const t = g.sprites.tileAt(&ed.scene.lv, p) orelse return false;
+    raster.stretch(t, look.tileRect(here, t, r), look.LIT);
+    return true;
 }
 
 pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {

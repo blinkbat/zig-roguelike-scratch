@@ -348,7 +348,7 @@ const ITEM_LINES = std.EnumArray(item_bases.Kind, []const [4]f32).init(.{
 pub const SKILL_PX: i32 = 30;
 
 pub fn drawSkill(sprites: *const sprite.Sprites, a: skillbar.Act, x: i32, y: i32, alpha: f32) void {
-    const ink = look.fade(rl.Color.white, alpha);
+    const ink = look.fade(look.LIT, alpha);
     const t = sprites.skills orelse return inkSkill(a, x, y, ink);
     raster.blit(t, raster.rect(skillX(a), 0, SKILL_PX, SKILL_PX), raster.rect(x, y, SKILL_PX, SKILL_PX), ink);
 }

@@ -29,16 +29,16 @@ pub const Event = union(enum) {
     shimmer: state.Shimmer,
     whirl: [2]f32,
 
-    const Bound = struct { slot: actor.ActorSlot, after: ?state.After };
+    const Bound = struct { slot: actor.ActorSlot, after: ?*const state.After };
 
     fn bound(d: *const Event) ?Bound {
         return switch (d.*) {
             .blow => |*b| switch (b.impact) {
-                .actor => |a| .{ .slot = a.slot, .after = a.after },
+                .actor => |*a| .{ .slot = a.slot, .after = if (a.after) |*x| x else null },
                 .barrel => null,
             },
-            .sting => |*s| .{ .slot = s.slot, .after = s.after },
-            .settle => |*s| .{ .slot = s.slot, .after = s.after },
+            .sting => |*s| .{ .slot = s.slot, .after = if (s.after) |*x| x else null },
+            .settle => |*s| .{ .slot = s.slot, .after = &s.after },
             .burst, .zap, .puff, .shimmer, .whirl => null,
         };
     }
@@ -60,6 +60,11 @@ pub const Event = union(enum) {
     }
 
     pub fn after(d: *const Event) ?state.After {
+        const a = d.afterOf() orelse return null;
+        return a.*;
+    }
+
+    fn afterOf(d: *const Event) ?*const state.After {
         return (d.bound() orelse return null).after;
     }
 };
@@ -104,7 +109,7 @@ pub const Queue = struct {
     }
 
     fn revealed(e: *const Event) ?actor.ActorSlot {
-        return (e.after() orelse return null).reveals;
+        return (e.afterOf() orelse return null).reveals;
     }
 
     fn tally(self: *Queue, what: *const Event, comptime up: bool) void {

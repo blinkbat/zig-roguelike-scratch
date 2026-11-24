@@ -92,7 +92,6 @@ const POND_TRIES: usize = 400;
 const SITE_TRIES: usize = 400;
 const CHEST_APART: i32 = 3;
 const CLEAR_OF_CARTS: i32 = 12;
-const CAMP_BOX = grid.Box.inMap(2);
 const CAMP_ART = setpiece.rows(.camp);
 
 comptime {
@@ -332,37 +331,41 @@ const Spot = struct {
         return s.lv.tile[i] == TRAIL and s.unheld(i);
     }
 
+    fn stacks(s: Spot, q: P) bool {
+        return s.free(q) and !grid.anyNeighbour(q, s.lv, prizedAt);
+    }
+
+    fn prizedAt(lv: *const grid.Level, q: P) bool {
+        return lv.at(q).prized();
+    }
+
     fn unheld(s: Spot, i: usize) bool {
         return !s.kept.isSet(i) and !s.lv.barrel[i];
     }
 
+    fn pitchable(s: Spot, q: P) bool {
+        if (grid.Level.onRim(q)) return false;
+        const i = grid.Level.idx(q);
+        const t = s.lv.tile[i];
+        return (t == TRAIL or t == OPEN) and s.unheld(i);
+    }
+
     fn pitches(s: Spot, foot: grid.Box) bool {
-        var cells = foot.grown(1).cells();
-        while (cells.next()) |n| {
-            if (!s.lv.walkable(n) or s.lv.at(n).wet()) return false;
-        }
-        var feet = foot.cells();
-        while (feet.next()) |n| {
-            if (grid.Level.onRim(n)) return false;
-            const i = grid.Level.idx(n);
-            const t = s.lv.tile[i];
-            if ((t != TRAIL and t != OPEN) or !s.unheld(i)) return false;
-        }
-        return true;
+        return s.clears(foot, true, pitchable);
     }
 
     fn roomy(s: Spot, q: P, t: grid.Tile) bool {
-        return s.roomyBox(t.footprint(q));
+        return s.clears(t.footprint(q), false, free);
     }
 
-    fn roomyBox(s: Spot, foot: grid.Box) bool {
+    fn clears(s: Spot, foot: grid.Box, comptime off_water: bool, comptime fits: fn (Spot, P) bool) bool {
         var cells = foot.grown(1).cells();
         while (cells.next()) |n| {
-            if (!s.lv.walkable(n)) return false;
+            if (!s.lv.walkable(n) or (off_water and s.lv.at(n).wet())) return false;
         }
         var feet = foot.cells();
         while (feet.next()) |n| {
-            if (!s.free(n)) return false;
+            if (!fits(s, n)) return false;
         }
         return true;
     }
@@ -387,11 +390,11 @@ fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.Ce
         lv.set(at, .chest);
     }
     for (0..p.barrels) |_| {
-        const at = byCart(rng, c, carts.slice(), spot) orelse continue;
+        const at = byCart(rng, c, carts.slice(), spot, Spot.free) orelse continue;
         lv.putBarrel(at);
     }
     for (0..p.goods) |k| {
-        const at = byCart(rng, c, carts.slice(), spot) orelse continue;
+        const at = byCart(rng, c, carts.slice(), spot, Spot.stacks) orelse continue;
         lv.set(at, if (k % 2 == 0) .crate else .sacks);
     }
     for (0..p.bedrolls) |_| {
@@ -402,24 +405,26 @@ fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.Ce
 
 fn tentAt(rng: *mathx.Rng, c: P, r: f32, spot: Spot) ?grid.Box {
     for (0..TRIES) |_| {
-        const a = rng.angle();
-        const d = rng.between(r * TENT_NEAR, r + TENT_OUT);
-        const b = grid.Box.sizedP(c.add(mathx.roundCell(@cos(a) * d, @sin(a) * d)), TENT);
+        const b = grid.Box.sizedP(rollAround(rng, c, r * TENT_NEAR, r + TENT_OUT), TENT);
         if (spot.pitches(b)) return b;
     }
     return null;
 }
 
-fn byCart(rng: *mathx.Rng, c: P, carts: []const P, spot: Spot) ?P {
+fn rollAround(rng: *mathx.Rng, c: P, near: f32, far: f32) P {
+    const u = mathx.polar(rng.angle());
+    const d = rng.between(near, far);
+    return c.add(mathx.roundCell(u[0] * d, u[1] * d));
+}
+
+fn byCart(rng: *mathx.Rng, c: P, carts: []const P, spot: Spot, comptime fits: fn (Spot, P) bool) ?P {
     const near = if (carts.len > 0) rng.pick(P, carts) else c;
-    return grid.Box.around(near, BARREL_REACH).rollWhere(rng, TRIES, spot, Spot.free);
+    return grid.Box.around(near, BARREL_REACH).rollWhere(rng, TRIES, spot, fits);
 }
 
 fn around(rng: *mathx.Rng, c: P, r: f32, t: grid.Tile, spot: Spot) ?P {
     for (0..TRIES) |_| {
-        const a = rng.angle();
-        const d = rng.between(r * PROP_NEAR, r - PROP_EDGE);
-        const q = c.add(mathx.roundCell(@cos(a) * d, @sin(a) * d));
+        const q = rollAround(rng, c, r * PROP_NEAR, r - PROP_EDGE);
         if (spot.roomy(q, t)) return q;
     }
     return null;
@@ -575,7 +580,7 @@ fn goblinCamps(lv: *grid.Level, rng: *mathx.Rng, caravan: P, p: Params, kept: *g
     const half = @divTrunc(@max(size.x, size.y), 2);
     const site = Site{ .spot = .{ .lv = lv, .kept = kept }, .caravan = caravan, .clear = @as(i32, p.camp) + CLEAR_OF_CARTS + half };
     for (0..p.camps) |_| {
-        const at = CAMP_BOX.rollForWhere(rng, size.x, size.y, SITE_TRIES, site, Site.campFits) orelse continue;
+        const at = setpiece.SITE_BOX.rollForWhere(rng, size.x, size.y, SITE_TRIES, site, Site.campFits) orelse continue;
         setpiece.place(lv, at, CAMP_ART, PAL);
         grid.markBox(kept, grid.Box.sizedP(at, size).grown(1));
     }
@@ -617,6 +622,7 @@ fn rolled(lv: *grid.Level, seed: u64, doors: []const P, p: Params) void {
 }
 
 const RUNS: usize = 100;
+const DOOR = [_]P{.{ .x = 0, .y = 46 }};
 
 fn bridgeAt(lv: *const grid.Level) !P {
     return grid.Level.of(std.mem.indexOfScalar(grid.Tile, &lv.tile, grid.STONE_SPAN) orelse return error.NoBridge);
@@ -641,7 +647,6 @@ fn farBank(lv: *const grid.Level) i32 {
 test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
     var lv: grid.Level = undefined;
     const p = (Params{}).fit();
-    const door = [_]P{.{ .x = 0, .y = 46 }};
     var corner_open: usize = 0;
     var carts: usize = 0;
     var bridged: usize = 0;
@@ -664,9 +669,9 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
         rolled(&lv, 0x7E0 +% i *% grid.TEST_SEED_STRIDE, &low_door, low);
         var under = foot.cells();
         while (under.next()) |q| low_foot_open += @intFromBool(lv.walkable(q));
-        rolled(&lv, 0x17f78a +% i *% grid.TEST_SEED_STRIDE, &door, narrowed);
+        rolled(&lv, 0x17f78a +% i *% grid.TEST_SEED_STRIDE, &DOOR, narrowed);
         narrow = @min(narrow, farBank(&lv));
-        rolled(&lv, 0x7EE +% i *% grid.TEST_SEED_STRIDE, &door, p);
+        rolled(&lv, 0x7EE +% i *% grid.TEST_SEED_STRIDE, &DOOR, p);
         bank = @min(bank, farBank(&lv));
         for ([_]grid.Box{ grid.Box.sized(.{ .x = 1, .y = 1 }, 8, 20), grid.Box.sized(.{ .x = grid.W - 9, .y = 1 }, 8, 20), foot }) |b| {
             var cells = b.cells();
@@ -721,13 +726,12 @@ test "a tee's goods stand beside its carts, its bedrolls and whole tents in the 
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     const p = (Params{ .goods = 10, .bedrolls = 4, .tents = 2 }).fit();
-    const door = [_]P{.{ .x = 0, .y = 46 }};
     var goods: [2]usize = .{ 0, 0 };
     var beds: [2]usize = .{ 0, 0 };
     var tents: usize = 0;
     var carted: usize = 0;
     for (0..RUNS) |i| {
-        rolled(&lv, 0x60D5 +% i *% grid.TEST_SEED_STRIDE, &door, p);
+        rolled(&lv, 0x60D5 +% i *% grid.TEST_SEED_STRIDE, &DOOR, p);
         _ = grid.distances(&lv, try bridgeAt(&lv), &dist, &queue);
         const tent_cells = carve.count(&lv, .tent);
         try std.testing.expectEqual(@as(usize, 0), tent_cells % @as(usize, @intCast(TENT.x * TENT.y)));
@@ -756,6 +760,29 @@ test "a tee's goods stand beside its carts, its bedrolls and whole tents in the 
     try std.testing.expectEqual(beds[0], beds[1]);
 }
 
+test "a tee's goods never stack against its chests, so every chest is walked to from the bridge" {
+    var lv: grid.Level = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    const p = (Params{ .goods = GOODS_MAX, .barrels = 0, .chests = CHESTS_MAX }).fit();
+    var chests: usize = 0;
+    for (0..RUNS) |i| {
+        rolled(&lv, 0xC4E5 +% i *% grid.TEST_SEED_STRIDE, &DOOR, p);
+        _ = grid.distances(&lv, try bridgeAt(&lv), &dist, &queue);
+        for (lv.tile, 0..) |t, k| {
+            if (!t.isChest()) continue;
+            const q = grid.Level.of(k);
+            chests += 1;
+            try std.testing.expect(grid.reachedBeside(q, &dist));
+            for (grid.STEPS) |d| {
+                const g = lv.at(q.add(d));
+                try std.testing.expect(g != .crate and g != .sacks);
+            }
+        }
+    }
+    try std.testing.expect(chests >= RUNS);
+}
+
 fn nearCart(lv: *const grid.Level, q: P) bool {
     var round = grid.Cells.around(q, BARREL_REACH + 1);
     while (round.next()) |n| {
@@ -769,12 +796,11 @@ test "a tee's crescent pond, its chests and its goblin camps' fires are all walk
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     const p = (Params{ .spurs = 6, .pond = 6, .pond_chests = 2, .camps = 2 }).fit();
-    const door = [_]P{.{ .x = 0, .y = 46 }};
     var ponds: usize = 0;
     var chests = [2]usize{ 0, 0 };
     var fires = [2]usize{ 0, 0 };
     for (0..RUNS) |i| {
-        rolled(&lv, 0x7F0 +% i *% grid.TEST_SEED_STRIDE, &door, p);
+        rolled(&lv, 0x7F0 +% i *% grid.TEST_SEED_STRIDE, &DOOR, p);
         _ = grid.distances(&lv, try bridgeAt(&lv), &dist, &queue);
         ponds += @intFromBool(carve.count(&lv, .water) > 0 and carve.count(&lv, .shallows) > 0);
         for (lv.tile, 0..) |t, k| {
@@ -784,11 +810,7 @@ test "a tee's crescent pond, its chests and its goblin camps' fires are all walk
                 else => continue,
             };
             const q = grid.Level.of(k);
-            var round = grid.Cells.around(q, 1);
-            const wet = t == .lava or while (round.next()) |n| {
-                if (!n.eq(q) and !lv.at(n).wet()) break false;
-            } else true;
-            if (!wet) continue;
+            if (t != .lava and !grid.allNeighbours(q, &lv, grid.Level.wetAt)) continue;
             which[0] += 1;
             which[1] += @intFromBool(grid.reachedBeside(q, &dist));
         }

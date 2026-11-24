@@ -17,9 +17,7 @@ pub const Tone = enum {
         return switch (tone) {
             .physical => look.KEYWORD_PHYSICAL,
             .mental => look.KEYWORD_MENTAL,
-            .fire => look.elementInk(.fire),
-            .cold => look.elementInk(.cold),
-            .lightning => look.elementInk(.lightning),
+            inline .fire, .cold, .lightning => |t| look.elementInk(@field(damage.Element, @tagName(t))),
         };
     }
 

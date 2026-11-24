@@ -66,7 +66,9 @@ Verify read-only destination failures with
 Forest export preserves native canopy/trunk geometry and the separate extension.
 `port_forest.lua` constructs connections from native canopy copies and refuses an
 existing extension. `tone_forest.lua` records the owner-requested forest palette
-change and grass darkening; do not apply transforms twice.
+change and grass darkening, and publishes the toned source, Desktop copy, grass and
+forest atlas (built by `forest_atlas.lua`, shared with `export_forest.lua`) together;
+do not apply transforms twice.
 Connected shrubs use the forest atlas; isolated shrubs retain stable visual
 variants without consuming gameplay RNG. Brick and shrub shape queries remain
 separate for lighting. Inspect `forest.png` and relevant `shadows-*.png` captures.
@@ -119,10 +121,11 @@ Forest toning and HUD border export use the same checked reads and backups befor
 overwriting artwork. Verify their failure paths with
 `python -B tools/tile_art/test_backup_failures.py --aseprite <aseprite.exe>`; all fixtures stay in TEMP.
 
-Ground, bridge and forest ports, deep-water installation and forest toning publish
-the reopened working source through checked byte-copy I/O. A failed canonical or
-Desktop write aborts before the success report; the installed copy contains the
-exact validated source bytes.
+Ground, bridge and forest ports, deep-water installation, forest toning, the shallow-cliff
+pinch and the wall, ground, water-cliff, water-edge and HUD border exports stage their
+outputs and publish them through checked byte-copy I/O. A failed canonical or
+Desktop write aborts before the success report and restores every destination
+already written; the installed copy contains the exact validated source bytes.
 The water-cliff edit port verifies the reopened layered composite before exporting
 its preview or reporting that the edits were saved.
 Verify publication failures and exact copies with

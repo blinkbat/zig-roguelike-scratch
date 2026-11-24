@@ -18,6 +18,8 @@ files.LAYER={
   exact='Exact connection guide (hidden)',
   forest='Forest extensions',
   ported='Extension - ported painted edges',
+  original='Layer 1',
+  runtime='Runtime walls',
 }
 
 function files.work(folder)
@@ -144,15 +146,23 @@ function files.stagePng(image,path,message)
   return files.staged(path,staged)
 end
 
+local function restore(path,bytes)
+  if bytes then pcall(files.write,path,bytes) elseif app.fs.isFile(path) then os.remove(path) end
+  local read,now=pcall(function() return app.fs.isFile(path) and bytesOf(path) end)
+  return read and now==bytes
+end
+
 function files.publish(staged)
   local before={}
   for i,item in ipairs(staged) do before[i]=app.fs.isFile(item.path) and bytesOf(item.path) end
   for i,item in ipairs(staged) do
     local ok,err=pcall(files.write,item.path,item.bytes)
     if not ok then
+      local unrestored={}
       for j=i,1,-1 do
-        if before[j] then pcall(files.write,staged[j].path,before[j]) else os.remove(staged[j].path) end
+        if not restore(staged[j].path,before[j]) then unrestored[#unrestored+1]=staged[j].path end
       end
+      if #unrestored>0 then err=tostring(err)..'\nCould not restore: '..table.concat(unrestored,', ') end
       error(err,0)
     end
   end

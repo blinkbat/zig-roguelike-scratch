@@ -71,7 +71,7 @@ const FINGERPRINT = blk: {
     std.debug.assert(i + 1 == types.len);
     break :blk store.legacy.fingerprint(types) ^ TREE;
 };
-/// What the tree's hash takes for a node's missing branch, seam or rider.
+/// What the tree's hash takes for a node's missing branch, seam or bump.
 const NO_PART: u8 = 255;
 /// The passive tree's layout, which saved allocations index by node.
 const TREE = blk: {

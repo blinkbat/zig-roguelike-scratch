@@ -709,6 +709,19 @@ test "the Dialog page forgets an NPC pick whose list changed while it was shut" 
     try std.testing.expect(ed.plot.pick != .npc);
 }
 
+test "the Dialog page forgets an NPC pick whose list was reordered at the same length while it was shut" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    for (0..3) |i| _ = ed.map.script.addNpc(.{ .spot = .{ .at = .{ .x = @intCast(2 + i), .y = 2 } } }).?;
+    editor.plot.openNpc(ed, 1);
+    ed.plot.seen = editor.plot.Seen.of(&ed.map.script);
+    ed.modal = .none;
+    ed.map.script.dropNpc(0);
+    _ = ed.map.script.addNpc(.{ .spot = .{ .at = .{ .x = 5, .y = 2 } } }).?;
+    editor.plot.open(ed, .dialogs);
+    try std.testing.expect(ed.plot.pick != .npc);
+}
+
 test "the Dialog page falls back to the first dialog's opening line" {
     const ed = try testEditor();
     defer ed.destroy();

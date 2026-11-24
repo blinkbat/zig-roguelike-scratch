@@ -92,8 +92,12 @@ fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: 
 pub fn buttonSized(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, size: i32, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     buttonBack(r, live);
     const h = plateHit(controls, r, on, live, modal, tip);
-    drawFit(face, label, size, insetW(r), false, textX(r), midY(r, size), if (live) look.TEXT else look.DIM);
+    drawFit(face, label, size, insetW(r), false, textX(r), midY(r, size), liveInk(live));
     return h.hit;
+}
+
+pub fn liveInk(live: bool) rl.Color {
+    return if (live) look.TEXT else look.DIM;
 }
 
 pub fn buttonBack(r: rl.Rectangle, live: bool) void {
@@ -498,6 +502,10 @@ pub const Frame = struct {
     pub fn button(f: Frame, y: i32, k: i32) rl.Rectangle {
         return row(f.buttonX() - (MODAL_BTN_W + GAP) * k, y, MODAL_BTN_W);
     }
+
+    pub fn column(f: Frame) Column {
+        return .{ .x = f.x, .w = f.w };
+    }
 };
 
 pub fn modalFrame(face: *const font.Face, screen: P, want_w: i32, h: i32, title: [:0]const u8, keep_end: bool) Frame {
@@ -515,7 +523,7 @@ const Page = struct {
     bottom: i32,
 
     pub fn column(p: Page) Column {
-        return .{ .x = p.frame.x, .w = p.frame.w };
+        return p.frame.column();
     }
 
     pub fn foot(p: Page) i32 {

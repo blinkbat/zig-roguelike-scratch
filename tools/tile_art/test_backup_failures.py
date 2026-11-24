@@ -52,7 +52,7 @@ env=setmetatable({
  io=customio,
  app={params=p,pixelColor=realapp.pixelColor,open=function() return sprite end,
   fs={tempPath=p.work,joinPath=realapp.fs.joinPath,fileName=realapp.fs.fileName,
-   makeAllDirectories=realapp.fs.makeAllDirectories,isFile=realapp.fs.isFile}},
+   makeAllDirectories=realapp.fs.makeAllDirectories,isFile=realapp.fs.isFile,isDirectory=realapp.fs.isDirectory}},
  dofile=function(path)
   assert(path==root..'tools/tile_art/source_files.lua','Unexpected script: '..path)
   local files=assert(loadfile(p.helper,'t',env))()

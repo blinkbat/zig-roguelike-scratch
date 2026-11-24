@@ -9,11 +9,9 @@ import sys
 from PIL import Image, ImageDraw
 
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'tools/tile_art'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tile_art'))
 sys.dont_write_bytecode = True
-from art_support import SCRIPTS, arial, quote
-DESKTOP = Path.home() / 'Desktop'
+from art_support import DESKTOP, ROOT, SCRIPTS, arial, layer_names, quote
 OUTPUT = DESKTOP / 'hud-elements.aseprite'
 SOURCE = ROOT / 'assets/source/hud-elements.aseprite'
 WORK = Path(tempfile.gettempdir()) / 'hud-template'
@@ -218,13 +216,14 @@ lua = [f'for _,path in ipairs({{{quote(OUTPUT)},{quote(SOURCE)}}}) do', 'assert(
 layers = [('PAPER - hide before export', 'paper', 255), ('GUIDE - underdrawing 25%', 'under', 64), ('GUIDE - alignment 22%', 'guides', 56), ('GUIDE - labels and separators 45%', 'labels', 115)]
 for index, (name, file, opacity) in enumerate(layers):
     lua.extend(['do', 'local layer=' + ('sprite.layers[1]' if index == 0 else 'sprite:newLayer()'), f'layer.name={quote(name)}', f'layer.opacity={opacity}', f'local img=Image{{fromFile={quote(WORK / (file + ".png"))}}}', 'sprite:newCel(layer,1,img,Point(0,0))', 'layer.isEditable=false', 'expected[#expected+1]={name=layer.name,opacity=layer.opacity,image=img}', 'end'])
-lua.extend(['local paint=sprite:newLayer()', 'paint.name="Draw here"', 'sprite:newCel(paint,1,Image(sprite.width,sprite.height,ColorMode.RGB),Point(0,0))', 'app.layer=paint'])
+DRAW = quote(layer_names()['draw'])
+lua.extend(['local paint=sprite:newLayer()', f'paint.name={DRAW}', 'sprite:newCel(paint,1,Image(sprite.width,sprite.height,ColorMode.RGB),Point(0,0))', 'app.layer=paint'])
 for s in slices:
     lua.extend(['do', f'local slice=sprite:newSlice(Rectangle({s["x"]},{s["y"]},{s["w"]},{s["h"]}))', f'slice.name={quote(s["name"])}', f'slice.data={quote(s["description"])}'])
     if s.get('center'):
         lua.append('slice.center=Rectangle(' + ','.join(map(str, s['center'])) + ')')
     lua.append('end')
 lua.extend([f'sprite.data={quote("HUD component template. Native pixels; only Draw here is artwork. See docs/HUD_LAYOUT.md. Named slices exclude labels. Assembled reference is not an export.")}', f'sprite:saveAs({quote(OUTPUT)})', f'sprite:saveCopyAs({quote(SOURCE)})', f'sprite:saveCopyAs({quote(WORK / "hud-elements-preview.png")})', 'sprite:close()'])
-lua.extend([f'for _,path in ipairs({{{quote(OUTPUT)},{quote(SOURCE)}}}) do', 'local saved=assert(app.open(path))', f'assert(saved.width=={SIZE[0]} and saved.height=={SIZE[1]} and #saved.frames==1)', f'assert(#saved.layers=={len(layers) + 1} and #saved.slices=={len(slices)})', 'for i,want in ipairs(expected) do', 'local layer=saved.layers[i]', 'assert(layer.name==want.name and layer.opacity==want.opacity and not layer.isEditable)', 'local image=Image(saved.width,saved.height,ColorMode.RGB)', 'local cel=assert(layer:cel(1))', 'image:drawImage(cel.image,cel.position)', 'assert(image:isEqual(want.image),"Guide pixels changed on save")', 'end', f'local paint=saved.layers[{len(layers) + 1}]', 'assert(paint.name=="Draw here" and paint.opacity==255 and paint.isEditable)', 'if paint:cel(1) then assert(paint:cel(1).image:isEmpty(),"Paint layer is not blank") end', 'local borders=0', 'for _,slice in ipairs(saved.slices) do', f'assert(slice.bounds.x>=0 and slice.bounds.y>=0 and slice.bounds.x+slice.bounds.width<={SIZE[0]} and slice.bounds.y+slice.bounds.height<={SIZE[1]})', 'if slice.name=="hud_border_9slice" then assert(slice.center.x==16 and slice.center.y==16 and slice.center.width==16 and slice.center.height==16); borders=borders+1 end', 'end', 'assert(borders==1)', 'saved:close()', 'end', f'local sourceFiles=dofile({quote(SCRIPTS / "source_files.lua")})', f'sourceFiles.write({quote(WORK / "validation.txt")},"Verified both Aseprite files after reopening: {SIZE[0]}x{SIZE[1]}, {len(layers) + 1} layers, {len(slices) - 1} component slices plus 1 reference; 16px nine-slice center; faint guides locked, paint layer blank and editable. Guide pixels unchanged.\\n")'])
+lua.extend([f'for _,path in ipairs({{{quote(OUTPUT)},{quote(SOURCE)}}}) do', 'local saved=assert(app.open(path))', f'assert(saved.width=={SIZE[0]} and saved.height=={SIZE[1]} and #saved.frames==1)', f'assert(#saved.layers=={len(layers) + 1} and #saved.slices=={len(slices)})', 'for i,want in ipairs(expected) do', 'local layer=saved.layers[i]', 'assert(layer.name==want.name and layer.opacity==want.opacity and not layer.isEditable)', 'local image=Image(saved.width,saved.height,ColorMode.RGB)', 'local cel=assert(layer:cel(1))', 'image:drawImage(cel.image,cel.position)', 'assert(image:isEqual(want.image),"Guide pixels changed on save")', 'end', f'local paint=saved.layers[{len(layers) + 1}]', f'assert(paint.name=={DRAW} and paint.opacity==255 and paint.isEditable)', 'if paint:cel(1) then assert(paint:cel(1).image:isEmpty(),"Paint layer is not blank") end', 'local borders=0', 'for _,slice in ipairs(saved.slices) do', f'assert(slice.bounds.x>=0 and slice.bounds.y>=0 and slice.bounds.x+slice.bounds.width<={SIZE[0]} and slice.bounds.y+slice.bounds.height<={SIZE[1]})', 'if slice.name=="hud_border_9slice" then assert(slice.center.x==16 and slice.center.y==16 and slice.center.width==16 and slice.center.height==16); borders=borders+1 end', 'end', 'assert(borders==1)', 'saved:close()', 'end', f'local sourceFiles=dofile({quote(SCRIPTS / "source_files.lua")})', f'sourceFiles.write({quote(WORK / "validation.txt")},"Verified both Aseprite files after reopening: {SIZE[0]}x{SIZE[1]}, {len(layers) + 1} layers, {len(slices) - 1} component slices plus 1 reference; 16px nine-slice center; faint guides locked, paint layer blank and editable. Guide pixels unchanged.\\n")'])
 (WORK / 'assemble.lua').write_text('\n'.join(lua) + '\n', encoding='utf-8')
 print(f'Prepared {len(slices) - 1} component guides and native Aseprite assembly: {WORK / "assemble.lua"}')

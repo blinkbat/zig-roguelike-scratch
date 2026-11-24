@@ -227,7 +227,7 @@ pub const Gpu = struct {
         if (!enabled or sh == null or normals == null) {
             const fading = self.beginMirrorFade(fade_bounds);
             defer if (fading) rl.endShaderMode();
-            raster.blit(tex, src, dest, look.fade(s.drawn(rl.Color.white, flash), opacity));
+            raster.blit(tex, src, dest, look.fade(s.drawn(look.LIT, flash), opacity));
             return;
         }
         var pos: [model.BODY_LIGHTS][3]f32 = undefined;
@@ -249,7 +249,7 @@ pub const Gpu = struct {
             shaders.setUniforms(b.shader, b.lpos, &pos, n);
             shaders.setUniforms(b.shader, b.lcol, &col, n);
         }
-        raster.blit(tex, src, dest, look.fade(rl.Color.white, opacity));
+        raster.blit(tex, src, dest, look.fade(look.LIT, opacity));
         rl.gl.rlDrawRenderBatchActive();
     }
 

@@ -97,7 +97,7 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
     var cells = grid.Cells.around(at, game.INTERACT_REACH);
     while (cells.next()) |p| {
         if (!grid.Level.inside(p)) continue;
-        if (!listed.isSet(grid.Level.idx(p))) {
+        if (!grid.inSet(&listed, p)) {
             const chest = chestReached(g, at, p);
             const gold = goldReached(g, at, p);
             if (chest or gold != null) _ = mathx.push(book.Nearby, out, &n, if (chest or g.sim.lv.at(p).isChest()) .{ .chest = p } else .{ .gold = gold.? });

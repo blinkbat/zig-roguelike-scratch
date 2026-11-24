@@ -103,8 +103,8 @@ s:newCel(s.layers[1],1,im,Point(0,0))
 for _,name in ipairs({'Exact connection guide (hidden)','Draw here'}) do
  local layer=s:newLayer(); layer.name=name; s:newCel(layer,1,im,Point(0,0))
 end
-for i=1,47 do
- local slice=s:newSlice(Rectangle(((i-1)%8)*64,64+((i-1)//8)*64,64,64))
+for i=1,WALL_COUNT do
+ local slice=s:newSlice(Rectangle(((i-1)%WALL_COLS)*CELL,HEAD_H+((i-1)//WALL_COLS)*CELL,CELL,CELL))
  slice.name='Connection '..i
 end
 s:saveAs(app.params.source); s:close()

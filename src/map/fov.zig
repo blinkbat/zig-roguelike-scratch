@@ -19,6 +19,8 @@ const Row = struct {
     depth: i32,
     start: f32,
     end: f32,
+
+    const FIRST = Row{ .depth = 1, .start = -1, .end = 1 };
 };
 
 fn slope(depth: i32, col: i32) f32 {
@@ -63,7 +65,7 @@ const Into = struct {
 fn castWith(lv: *const grid.Level, origin: P, radius: i32, sink: anytype) void {
     sink.mark(origin);
     for (QUADS) |c| {
-        scan(lv, sink, .{ .origin = origin, .card = c }, .{ .depth = 1, .start = -1, .end = 1 }, radius);
+        scan(lv, sink, .{ .origin = origin, .card = c }, Row.FIRST, radius);
     }
 }
 
@@ -109,9 +111,8 @@ pub fn sees(lv: *const grid.Level, watcher: P, hero: P, reach: i32) bool {
     const probe = Probe{ .target = watcher, .found = &found };
     const radius: i32 = @intFromFloat(@ceil(mathx.distEuclid(watcher, hero)));
     const delta = watcher.sub(hero);
-    const row = Row{ .depth = 1, .start = -1, .end = 1 };
-    if (@abs(delta.y) >= @abs(delta.x)) scan(lv, probe, .{ .origin = hero, .card = if (delta.y < 0) .n else .s }, row, radius);
-    if (!found and @abs(delta.x) >= @abs(delta.y)) scan(lv, probe, .{ .origin = hero, .card = if (delta.x < 0) .w else .e }, row, radius);
+    if (@abs(delta.y) >= @abs(delta.x)) scan(lv, probe, .{ .origin = hero, .card = if (delta.y < 0) .n else .s }, Row.FIRST, radius);
+    if (!found and @abs(delta.x) >= @abs(delta.y)) scan(lv, probe, .{ .origin = hero, .card = if (delta.x < 0) .w else .e }, Row.FIRST, radius);
     return found;
 }
 

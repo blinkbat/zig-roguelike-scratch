@@ -15,16 +15,17 @@ assert(#order==COLS*COLS)
 local W,H,HEAD,CELL,HALF,LINE=groundPort.W,groundPort.H,groundPort.HEAD,groundPort.CELL,groundPort.CELL//2,2
 local NW,NE,SW,SE=groundPort.NW,groundPort.NE,groundPort.SW,groundPort.SE
 local LAYER=sourceFiles.LAYER
+local bit=groundPort.bit
 
 for i,m in ipairs(order) do
   local col,row=(i-1)%COLS,(i-1)//COLS
   if col<COLS-1 then
     local e=order[i+1]
-    assert(((m&NE)~=0)==((e&NW)~=0) and ((m&SE)~=0)==((e&SW)~=0),'east seam '..m)
+    assert(bit(m,NE)==bit(e,NW) and bit(m,SE)==bit(e,SW),'east seam '..m)
   end
   if row<COLS-1 then
     local s=order[i+COLS]
-    assert(((m&SW)~=0)==((s&NW)~=0) and ((m&SE)~=0)==((s&NE)~=0),'south seam '..m)
+    assert(bit(m,SW)==bit(s,NW) and bit(m,SE)==bit(s,NE),'south seam '..m)
   end
 end
 
@@ -82,15 +83,15 @@ local guides={
   {name=LAYER.labels,image=labels_image,opacity=255},
   {name='64x64 grid + X unused - hide before export',image=grid,opacity=255},
 }
+local slices={}
+for i,m in ipairs(order) do
+  local x,y=groundPort.at(i)
+  slices[#slices+1]={name=groundPort.CORNER..m,bounds=Rectangle(x,y,CELL,CELL)}
+end
 
 if app.fs.isFile(path) then
   assert(app.params.replace=='yes','already exists: '..path..' (replace=yes only replaces an unchanged blank template)')
   local old=assert(app.open(path))
-  local slices={}
-  for i,m in ipairs(order) do
-    local x,y=groundPort.at(i)
-    slices[#slices+1]={name='Corners '..m,bounds=Rectangle(x,y,CELL,CELL)}
-  end
   sourceFiles.checkBlankTemplate(old,{width=W,height=H,colorMode=ColorMode.RGB,guides=guides,slices=slices},path)
   sourceFiles.keep(path,work,'ground',os.date(sourceFiles.STAMP))
   old:close()
@@ -109,10 +110,9 @@ local first=sprite.layers[1]
 for _,guide in ipairs(guides) do layer(guide.name,guide.image,guide.opacity) end
 local drawing=layer(LAYER.draw,Image(W,H,ColorMode.RGB))
 sprite:deleteLayer(first)
-for i,m in ipairs(order) do
-  local x,y=groundPort.at(i)
-  local s=sprite:newSlice(Rectangle(x,y,CELL,CELL))
-  s.name='Corners '..m
+for _,slice in ipairs(slices) do
+  local s=sprite:newSlice(slice.bounds)
+  s.name=slice.name
 end
 sprite.data='Paint on Draw here. 16 dual-grid 64x64 cells in tools/tile_art/ground_corners.lua order: each sits where four map cells meet, '
   ..'its shaded quarters this terrain (mask NW 1, NE 2, SW 4, SE 8), the clear ones what lies under it. '
@@ -131,15 +131,15 @@ assert(blank(sourceFiles.layer(reopened,LAYER.draw):cel(1).image))
 assert(#reopened.slices==#order)
 local seen={}
 for _,s in ipairs(reopened.slices) do
-  local m=assert(tonumber(s.name:match('^Corners (%d+)$')),s.name)
+  local m=assert(tonumber(s.name:match('^'..groundPort.CORNER..'(%d+)$')),s.name)
   assert(not seen[m]) seen[m]=true
   local u=reopened.layers[2]:cel(1).image
-  for _,q in ipairs({{8,8,NW},{CELL-9,8,NE},{8,CELL-9,SW},{CELL-9,CELL-9,SE}}) do
-    local shaded=pc.rgbaA(u:getPixel(s.bounds.x+q[1],s.bounds.y+q[2]))>0
-    assert(shaded==((m&q[3])~=0),'quarter '..q[3]..' of '..m)
+  for _,q in ipairs(groundPort.QUARTERS) do
+    local shaded=pc.rgbaA(u:getPixel(s.bounds.x+q.x,s.bounds.y+q.y))>0
+    assert(shaded==bit(m,q.bit),'quarter '..q.bit..' of '..m)
   end
 end
 local base=app.fs.fileTitle(path)
 reopened:saveCopyAs(work..base..'-ground-template.png')
 reopened:close()
-sourceFiles.write(work..base..'-ground-template.txt',path..': 16 cells, masks distinct, quarters match, shared corners agree, Draw here empty\n')
+sourceFiles.write(work..base..'-ground-template.txt',path..': '..#order..' cells, masks distinct, quarters match, shared corners agree, Draw here empty\n')

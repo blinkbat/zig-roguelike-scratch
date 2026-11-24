@@ -30,7 +30,7 @@ class ReleaseTests(unittest.TestCase):
                             for entry in archive if entry.name.startswith(name + '/maps/')
                         }
                         metadata = json.load(archive.extractfile(name + '/build-info.json'))
-                        for license_path in ('fonts/Balthazar-OFL.txt', 'fonts/SourceSans3-OFL.txt', 'data/gamecontrollerdb-LICENSE'):
+                        for license_path in release.LICENSES:
                             license_name = pathlib.PurePosixPath(license_path).name
                             self.assertEqual((release.ASSETS / license_path).read_bytes(), archive.extractfile(name + '/licenses/' + license_name).read())
                     self.assertEqual(expected, actual)

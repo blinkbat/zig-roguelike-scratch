@@ -199,7 +199,6 @@ test "source boundaries reject rendering and application imports in domain code"
         }
         try std.testing.expect((try check(alloc, owner, "const ok = @import(\"../core/wording.zig\");")) == null);
     }
-    try std.testing.expect((try check(alloc, "game/attacks.zig", "const sim = @import(\"sim.zig\");")) == null);
     try std.testing.expect((try check(alloc, "game/projectile_motion.zig", "const bad = @import(\"presentation.zig\");")) != null);
     try std.testing.expect((try check(alloc, "edit/plot_fields.zig", "const bad = @import(\"plot.zig\");")) != null);
     for (SPLIT_FROM) |split| for (split.owners) |owner| {

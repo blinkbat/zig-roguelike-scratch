@@ -6,6 +6,8 @@ local names=dofile(root..'tools/tile_art/water_cliff_names.lua')
 local stamp=os.date(sourceFiles.STAMP)
 local HALF_HEIGHT='Shallow cliff - half height'
 local PAINTED=8
+local CONNECTIONS=root..'assets/source/water-cliff-connections.aseprite'
+local EDGE=root..'assets/source/water-cliff-edge.aseprite'
 local function unpinched(name) return 'Before shallow pinch'..names.SEP..name end
 if app.params.shots then
  local shots=app.params.shots
@@ -30,10 +32,11 @@ if app.params.shots then
  replace(names.owner,owner,Point(0,0))
  local preview=work..'updated-template.png'
  local width,height=s.width,s.height
- sourceFiles.keep(root..'assets/source/water-cliff-connections.aseprite',work,'pinch',stamp)
- s:saveAs(root..'assets/source/water-cliff-connections.aseprite')
+ sourceFiles.keep(CONNECTIONS,work,'pinch',stamp)
+ local staged=sourceFiles.stage(app.fs.fileName(CONNECTIONS))
+ s:saveAs(staged)
  s:close()
- local saved=assert(app.open(root..'assets/source/water-cliff-connections.aseprite'))
+ local saved=assert(app.open(staged))
  assert(saved.width==width and saved.height==height,'Saved sheet dimensions changed')
  for name,expected in pairs(replacements) do
   sourceFiles.checkLayer(saved,name,expected.image,expected.position)
@@ -51,6 +54,7 @@ if app.params.shots then
   local p=inside and expected:getPixel(x-block.x,y-block.y) or before:getPixel(x,y)
   assert(after:getPixel(x,y)==p,'Unexpected connected-template change')
  end end
+ sourceFiles.publishTo(staged,CONNECTIONS)
  return
 end
 local faces=Image{fromFile=assert(app.params.faces,'faces=<previous template-0-faces.png>')}
@@ -97,10 +101,11 @@ s.layers[PAINTED].isVisible=false
 local l=s:newLayer(); l.name=HALF_HEIGHT
 s:newCel(l,1,compressed,Point(0,0))
 local width,height=s.width,s.height
-sourceFiles.keep(root..'assets/source/water-cliff-edge.aseprite',work,'pinch',stamp)
-s:saveAs(root..'assets/source/water-cliff-edge.aseprite')
+sourceFiles.keep(EDGE,work,'pinch',stamp)
+local staged=sourceFiles.stage(app.fs.fileName(EDGE))
+s:saveAs(staged)
 s:close()
-local saved=assert(app.open(root..'assets/source/water-cliff-edge.aseprite'))
+local saved=assert(app.open(staged))
 assert(saved.width==width and saved.height==height,'Saved sheet dimensions changed')
 sourceFiles.checkLayer(saved,HALF_HEIGHT,compressed,Point(0,0))
 assert(not saved.layers[PAINTED].isVisible,'Original layer was not hidden')
@@ -115,8 +120,9 @@ for row=0,layout.block//layout.cell-1 do for x=0,layout.block-1 do
   end end
  end
 end end
-sourceFiles.keep(root..'assets/water/'..edges_png,work,'pinch',stamp)
-sourceFiles.savePng(edges,root..'assets/water/'..edges_png)
+local runtime_edges=root..'assets/water/'..edges_png
+sourceFiles.keep(runtime_edges,work,'pinch',stamp)
+sourceFiles.publish({sourceFiles.staged(EDGE,staged),sourceFiles.stagePng(edges,runtime_edges)})
 local report=sourceFiles.report(work..'pinch.txt')
 report:write(string.format('%d painted columns compressed to ceil(height/2), lip row and width preserved; endpoints sampled without smoothing. Original layer retained hidden. Matching face-span border edits compressed identically.\n',columns))
 report:close()

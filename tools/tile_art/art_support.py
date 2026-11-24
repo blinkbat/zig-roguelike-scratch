@@ -13,6 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / 'tools/tile_art'
+DESKTOP = Path.home() / 'Desktop'
 
 
 def arguments():
@@ -56,6 +57,14 @@ def generate(script, *arguments, temp=None):
     return subprocess.run([sys.executable, '-B', str(script), *map(str, arguments)],
                           env=environment(temp, PYTHONIOENCODING='utf-8'),
                           capture_output=True, text=True, encoding='utf-8', timeout=30)
+
+
+def install_scripts(root, names, scripts=SCRIPTS):
+    helpers = root / 'tools/tile_art'
+    helpers.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (helpers / name).write_bytes((scripts / name).read_bytes())
+    return helpers
 
 
 class WorkTest(unittest.TestCase):
@@ -126,17 +135,19 @@ def ground_layout(scripts=SCRIPTS):
 def wall_layout(scripts=SCRIPTS):
     text = (scripts / 'wall_masks.lua').read_text(encoding='utf-8')
     layout = lua_fields(text, 'masks')
-    count = len(re.search(r'^local masks=\{([^}]+)\}', text, re.M).group(1).split(','))
+    layout['COUNT'] = len(re.search(r'^local masks=\{([^}]+)\}', text, re.M).group(1).split(','))
     layout['W'] = layout['COLS'] * layout['CELL']
-    layout['H'] = -(-count // layout['COLS']) * layout['CELL']
+    layout['H'] = -(-layout['COUNT'] // layout['COLS']) * layout['CELL']
     layout['SHEET_H'] = layout['HEAD'] + layout['H']
     return layout
 
 
 def sheet_sizes_lua(scripts=SCRIPTS):
     ground, wall = ground_layout(scripts), wall_layout(scripts)
-    return (f'local GROUND_W,GROUND_H={ground["W"]},{ground["H"]}\n'
-            f'local WALL_W,WALL_H,HEAD_H={wall["W"]},{wall["SHEET_H"]},{wall["HEAD"]}\n')
+    assert (ground['CELL'], ground['HEAD']) == (wall['CELL'], wall['HEAD'])
+    return (f'local GROUND_W,GROUND_H,GROUND_COLS={ground["W"]},{ground["H"]},{ground["COLS"]}\n'
+            f'local WALL_W,WALL_H,WALL_COLS,WALL_COUNT={wall["W"]},{wall["SHEET_H"]},{wall["COLS"]},{wall["COUNT"]}\n'
+            f'local CELL,HEAD_H={wall["CELL"]},{wall["HEAD"]}\n')
 
 
 def layer_names(scripts=SCRIPTS):

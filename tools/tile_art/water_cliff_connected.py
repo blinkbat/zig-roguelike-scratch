@@ -5,13 +5,13 @@ import tempfile
 
 from PIL import Image, ImageDraw
 sys.dont_write_bytecode = True
-from art_support import (ROOT, SCRIPTS, arial, corner_order, ground_layout, layer_names, quote as q, water_cliff_layer,
-                         water_cliff_layout, water_cliff_names, water_cliff_slice)
+from art_support import (DESKTOP, ROOT, SCRIPTS, arial, corner_order, ground_layout, layer_names, quote as q,
+                         water_cliff_layer, water_cliff_layout, water_cliff_names, water_cliff_slice)
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('shots', type=Path)
-parser.add_argument('--output', type=Path, default=Path.home() / 'Desktop' / 'water-cliff-connections.aseprite')
+parser.add_argument('--output', type=Path, default=DESKTOP / 'water-cliff-connections.aseprite')
 parser.add_argument('--replace', action='store_true')
 args = parser.parse_args()
 args.output, args.shots = args.output.resolve(), args.shots.resolve()
@@ -24,6 +24,7 @@ layout = water_cliff_layout()
 size = (layout['width'], layout['height'])
 block_x, block_y, stride, block, cell = (layout[key] for key in ('x', 'y', 'stride', 'block', 'cell'))
 cols = block // cell
+faces_y = 496
 corners = ground_layout()
 labels = Image.new('RGBA', size)
 guides = Image.new('RGBA', size)
@@ -108,10 +109,10 @@ for n, name in enumerate(names):
         ])
 for n, (depth, asset) in enumerate(zip(cliff_names['depths'], cliff_names['face_files'])):
     layer(water_cliff_layer(cliff_names, depth.capitalize(), 'original faces'), ROOT / 'assets/water' / f'{asset}.png',
-          block_x + n * stride, 496)
+          block_x + n * stride, faces_y)
     for i, piece in enumerate(cliff_names['pieces']):
         lua.extend([
-            f'local slice=s:newSlice(Rectangle({block_x+n*stride+i*cell},496,{cell},{cell}))',
+            f'local slice=s:newSlice(Rectangle({block_x+n*stride+i*cell},{faces_y},{cell},{cell}))',
             f'slice.name={q(water_cliff_slice(cliff_names, depth, piece))}',
         ])
 layer('64px grid - toggle while painting', work / 'grid.png', editable=False, visible=False)

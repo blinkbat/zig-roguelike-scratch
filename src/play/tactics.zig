@@ -283,13 +283,10 @@ pub fn covered(from: P, dir: mathx.Dir, at: P) bool {
 const TOP_RANK = @import("progress.zig").RANKS;
 pub const Wall = grid.Bounded(P, @max(ArcaneBarrier.length(TOP_RANK), FireWall.length(TOP_RANK)));
 pub fn wall(lv: *const grid.Level, hero: P, start: P, end: P, rank: u8) ?Wall {
-    return line(lv, hero, start, end, ArcaneBarrier.length(rank), ArcaneBarrier.RANGE, raisable);
+    return line(lv, hero, start, end, ArcaneBarrier.length(rank), ArcaneBarrier.RANGE, grid.Level.vacant);
 }
 pub fn blaze(lv: *const grid.Level, hero: P, start: P, end: P, rank: u8) ?Wall {
     return line(lv, hero, start, end, FireWall.length(rank), FireWall.RANGE, flammable);
-}
-fn raisable(lv: *const grid.Level, p: P) bool {
-    return lv.vacant(p);
 }
 fn flammable(lv: *const grid.Level, p: P) bool {
     return lv.walkable(p) and !lv.hasBarrel(p) and !lv.at(p).wet() and !lv.frozen(p);

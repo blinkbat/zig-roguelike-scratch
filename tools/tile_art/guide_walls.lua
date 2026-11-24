@@ -4,7 +4,6 @@ local path=assert(app.params.source,'source=<sheet.aseprite>')
 local work=sourceFiles.work()
 local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
-assert(#masks==47)
 local bit=masks.bit
 -- Walls face south, a liquid's bank north.
 local FACE=tonumber(app.params.rows) or masks.FACE
@@ -79,7 +78,7 @@ under:cel(1).image=sheet(true)
 under:cel(1).position=Point(0,0)
 exact:cel(1).image=sheet(false)
 exact:cel(1).position=Point(0,0)
-sprite.data='Paint on Draw here. 47 full 64x64 cells in tools/tile_art/wall_masks.lua order, the runtime wall rules: an outline on each side a cell does not join, a notch at a corner it does not, and a '..FACE..'-row '..(NORTH and 'bank where nothing joins it from the north' or 'face where nothing joins it from the south')..'. Exact connection guide is the same without it. X is unused.'
+sprite.data='Paint on Draw here. '..#masks..' full '..masks.CELL..'x'..masks.CELL..' cells in tools/tile_art/wall_masks.lua order, the runtime wall rules: an outline on each side a cell does not join, a notch at a corner it does not, and a '..FACE..'-row '..(NORTH and 'bank where nothing joins it from the north' or 'face where nothing joins it from the south')..'. Exact connection guide is the same without it. X is unused.'
 drawing.stackIndex=#sprite.layers
 app.layer=drawing
 sprite:saveAs(path)

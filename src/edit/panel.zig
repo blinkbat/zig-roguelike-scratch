@@ -252,7 +252,7 @@ fn smallButton(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: [:0]co
 }
 
 fn labelButton(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
-    return widgets.flatButton(ed.controls(), &g.face, r, label, if (live) look.TEXT else look.DIM, on, live, false, tip);
+    return widgets.flatButton(ed.controls(), &g.face, r, label, widgets.liveInk(live), on, live, false, tip);
 }
 
 fn drawTools(ed: *editor.Editor, g: *game.Game, col: Column, top: i32, f: editor.Family) i32 {
@@ -278,7 +278,7 @@ fn toolRow(ed: *editor.Editor, g: *game.Game, col: Column, y: *i32, t: editor.To
     const pic = widgets.pictureAt(r, @floatFromInt(widgets.GAP + KEY_W), TOOL_PIC);
     toolIcon(ed, g, t, pic);
     const name_x = raster.right(pic) + widgets.GAP * 2;
-    widgets.drawFit(&g.face, t.name(), widgets.TEXT, raster.right(r) - name_x - widgets.GAP, false, name_x, widgets.midY(r, widgets.TEXT), if (live) look.TEXT else look.DIM);
+    widgets.drawFit(&g.face, t.name(), widgets.TEXT, raster.right(r) - name_x - widgets.GAP, false, name_x, widgets.midY(r, widgets.TEXT), widgets.liveInk(live));
     if (!live) rl.drawRectangleRec(r, UNLIVE);
     if (h.hit) ed.takeTool(t);
 }

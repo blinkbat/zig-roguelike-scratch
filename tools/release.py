@@ -24,6 +24,7 @@ LINUX_ARCH = 'x86_64'
 LINUX_TRIPLE = LINUX_ARCH + '-linux-gnu'
 EMBEDDED = ('.png', '.ttf', '.txt')
 UNEMBEDDED = ('source', 'backup')
+LICENSES = ('fonts/Balthazar-OFL.txt', 'fonts/SourceSans3-OFL.txt', 'data/gamecontrollerdb-LICENSE')
 PREFIX_LAYOUT = 1
 GLIBC = (2, 31)
 MACOS = (11, 0)
@@ -299,7 +300,7 @@ def archive_name(platform, arch):
 def package(binary, output, metadata, platform, arch):
     name = archive_name(platform, arch)
     maps = read_maps()
-    license_paths = [ASSETS / name for name in ('fonts/Balthazar-OFL.txt', 'fonts/SourceSans3-OFL.txt', 'data/gamecontrollerdb-LICENSE')]
+    license_paths = [ASSETS / name for name in LICENSES]
     licenses = {path: path.read_bytes() for path in license_paths}
     if source_hash(maps, captured=licenses) != metadata['source_sha256']:
         raise RuntimeError('Sources changed during the build; rerun to package a consistent snapshot.')

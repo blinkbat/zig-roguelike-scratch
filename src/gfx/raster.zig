@@ -188,7 +188,7 @@ pub fn beginReplace() void {
 
 /// A render texture over the whole frame, flipped the right way up.
 pub fn drawTarget(t: rl.Texture2D) void {
-    drawTargetPart(t, whole(t), rl.Color.white);
+    drawTargetPart(t, whole(t), look.LIT);
 }
 
 pub fn drawTargetPart(t: rl.Texture2D, r: rl.Rectangle, tint: rl.Color) void {

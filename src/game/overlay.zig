@@ -93,9 +93,7 @@ fn bindFace(g: *const game.Game) font.Face {
 
 fn descLines(g: *const game.Game, face: *const font.Face, act: skillbar.Act) usize {
     var desc: [TIP_BODY_MAX + 1]u8 = undefined;
-    var buf: font.Wrapped = undefined;
-    var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
-    return font.wrap(face, describe(g, act, &desc), font.SMALL, BIND_DESC_W, &buf, &lines);
+    return font.lineCount(face, describe(g, act, &desc), font.SMALL, BIND_DESC_W);
 }
 
 /// Tall enough for the longest description among the skills it can bind, so it keeps its size while browsing.
