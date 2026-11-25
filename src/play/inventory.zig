@@ -44,13 +44,12 @@ pub const Inventory = struct {
         return consumable.stock(&self.stacks, k);
     }
 
-    /// Kinds carried, in `consumable.KINDS` order.
-    pub fn carriedCount(self: *const Inventory) usize {
-        return consumable.stocked(&self.stacks);
+    pub fn rowCount(self: *const Inventory) usize {
+        return goodsCount(&self.stacks, self.n);
     }
 
-    pub fn carriedAt(self: *const Inventory, row: usize) ?consumable.Kind {
-        return consumable.stockedAt(&self.stacks, row);
+    pub fn rowAt(self: *const Inventory, row: usize) ?Goods {
+        return goodsAt(&self.stacks, self.n, row);
     }
 
     pub fn remove(self: *Inventory, at: usize) items.Item {
@@ -108,6 +107,21 @@ pub const Inventory = struct {
         self.gear = after;
     }
 };
+
+pub const Goods = union(enum) {
+    supply: consumable.Kind,
+    item: usize,
+};
+
+pub fn goodsCount(stacks: *const consumable.Stacks, item_count: usize) usize {
+    return consumable.stocked(stacks) + item_count;
+}
+
+pub fn goodsAt(stacks: *const consumable.Stacks, item_count: usize, row: usize) ?Goods {
+    if (consumable.stockedAt(stacks, row)) |kind| return .{ .supply = kind };
+    const index = row - consumable.stocked(stacks);
+    return if (index < item_count) .{ .item = index } else null;
+}
 
 test "flasks start worn in their own slots, never roll as loot, and come off and back like gear" {
     var rng = mathx.Rng.init(0xF1A5);

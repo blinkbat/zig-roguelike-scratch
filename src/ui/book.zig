@@ -120,7 +120,7 @@ pub const Book = struct {
     fn count(self: *const Book, view: View) usize {
         return switch (self.page) {
             .equipment => item_bases.SLOTS.len,
-            .inventory => view.inventory.carriedCount() + view.inventory.n,
+            .inventory => view.inventory.rowCount(),
             .stats, .quests => 0,
             .passives => passives.NODES.len,
             .skills => progress.skills(view.class).len,
@@ -183,11 +183,13 @@ pub const Book = struct {
     }
     /// The bag item under the cursor; carried consumables list above the bag.
     fn bagIndex(self: *const Book, view: View) ?usize {
-        const above = view.inventory.carriedCount();
-        return if (self.cursor >= above and self.cursor - above < view.inventory.n) self.cursor - above else null;
+        const row = view.inventory.rowAt(self.cursor) orelse return null;
+        return if (row == .item) row.item else null;
     }
     fn carriedRow(self: *const Book, view: View) ?consumable.Kind {
-        return if (self.page == .inventory) view.inventory.carriedAt(self.cursor) else null;
+        if (self.page != .inventory) return null;
+        const row = view.inventory.rowAt(self.cursor) orelse return null;
+        return if (row == .supply) row.supply else null;
     }
     fn selected(self: *const Book, view: View) ?items.Item {
         return switch (self.page) {
@@ -211,7 +213,10 @@ pub const Book = struct {
                 self.choose(.inventory);
                 break :blk null;
             },
-            .inventory => if (view.inventory.carriedAt(self.cursor)) |k| .{ .use = k } else if (self.selected(view).?.kind.equippable()) .{ .equip = .{ .index = self.bagIndex(view).?, .slot = self.destination(view) } } else null,
+            .inventory => switch (view.inventory.rowAt(self.cursor).?) {
+                .supply => |kind| .{ .use = kind },
+                .item => |index| if (view.inventory.bag[index].kind.equippable()) .{ .equip = .{ .index = index, .slot = self.destination(view) } } else null,
+            },
             .stats, .quests => null,
             .passives => if (view.growth.canAllocate(self.cursor)) .{ .passive = self.cursor } else null,
             .skills => blk: {
@@ -266,6 +271,7 @@ pub const Book = struct {
         self.top = self.settledTop(view);
         if (local.click) if (local.pointer) |p| if (self.buttonAt(p, view)) |b| {
             if (b == menu.BACK) return .close;
+            if (b == menu.CONFIRM) return if (menu.closed(st)) .close else self.select(view);
             if (self.page == .passives and b == input.TreeKeys.PAD_OVERVIEW) local.tree.reset = true else local.pressed.insert(b);
             local.click = false;
         };
@@ -530,7 +536,7 @@ pub const Book = struct {
         if (self.selected(view)) |it| {
             const slot = self.destination(view);
             item_card.draw(face, layout.DETAIL_X, y, layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), null);
-        } else if (supply) |k| item_card.drawSupply(face, layout.DETAIL_X, y, layout.DETAIL_W, k, view.inventory.stacks.get(k), null);
+        } else if (supply) |k| item_card.drawSupply(face, layout.DETAIL_X, y, layout.DETAIL_W, k, view.inventory.stacks.get(k), view.inventory.gear.wider());
     }
 
     fn positionOf(self: *const Book, view: View) menu.Note(50) {
@@ -589,17 +595,19 @@ pub const Book = struct {
                         if (named) face.centred(face.fit(&fitted, worn.name(&name_buf), font.SMALL, inner, false), glyph.x, name_mid, font.SMALL, inkOf(worn));
                     } else line_icons.drawItem(sprites, slotGlyph(slot), side, glyph.x, glyph.y, look.fade(look.DIM, look.FADED_A));
                 },
-                .inventory => if (view.inventory.carriedAt(i)) |k| {
-                    var carried: menu.Note(24) = .{};
-                    carried.say(item_card.CARRIED_FMT, .{view.inventory.stacks.get(k)});
-                    rowGlyph(sprites, x, row_mid, null, k);
-                    listRow(face, x, row_mid, menu.titleOf(k), inkOf(null), carried.text(), look.DIM);
-                } else {
-                    const at = i - view.inventory.carriedCount();
-                    const it = view.inventory.bag[at];
-                    const slots = it.kind.slots();
-                    rowGlyph(sprites, x, row_mid, it, null);
-                    listRow(face, x, row_mid, it.name(&name_buf), inkOf(it), if (!it.kind.equippable()) "" else if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slotChoice(it.kind)) menu.titleOf(it.kind) else slots[0].name(), look.DIM);
+                .inventory => switch (view.inventory.rowAt(i).?) {
+                    .supply => |kind| {
+                        var carried: menu.Note(24) = .{};
+                        carried.say(item_card.CARRIED_FMT, .{view.inventory.stacks.get(kind)});
+                        rowGlyph(sprites, x, row_mid, null, kind);
+                        listRow(face, x, row_mid, menu.titleOf(kind), inkOf(null), carried.text(), look.DIM);
+                    },
+                    .item => |index| {
+                        const it = view.inventory.bag[index];
+                        const slots = it.kind.slots();
+                        rowGlyph(sprites, x, row_mid, it, null);
+                        listRow(face, x, row_mid, it.name(&name_buf), inkOf(it), if (!it.kind.equippable()) "" else if (item_bases.spec(it.kind).two_handed) BOTH_HANDS else if (slotChoice(it.kind)) menu.titleOf(it.kind) else slots[0].name(), look.DIM);
+                    },
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];
@@ -636,7 +644,7 @@ pub const Book = struct {
         const y = layout.CONTENT_TOP;
         if (self.count(view) == 0) return;
         const it = self.selected(view) orelse {
-            if (self.carriedRow(view)) |k| return item_card.drawSupply(face, x, y, layout.DETAIL_W, k, view.inventory.stacks.get(k), null);
+            if (self.carriedRow(view)) |k| return item_card.drawSupply(face, x, y, layout.DETAIL_W, k, view.inventory.stacks.get(k), view.inventory.gear.wider());
             if (self.page == .equipment) if (offhandWeapon(view.inventory.gear, item_bases.SLOTS[self.cursor])) |weapon| {
                 face.draw(BOTH_IN_USE, x, y, font.HEAD, look.TEXT);
                 _ = face.paragraph(weapon.name(&name_buf), x, y + layout.HELD_NOTE_DY, layout.DETAIL_W, font.SMALL, look.DIM);
@@ -1008,6 +1016,23 @@ test "loot exposes single pickup and take all through controller and mouse contr
     view.loot_gold = 37;
     try std.testing.expectEqual(@as(usize, 1), book.count(view));
     try std.testing.expectEqual(@as(usize, 7), book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).?.pickup);
+}
+
+test "clicking a loot action uses the shown item when navigation arrives in the same frame" {
+    const inv = inventory.Inventory{};
+    const growth = progress.State.of(.archer);
+    var view = testView(&inv, &growth);
+    view.nearby = &.{
+        .{ .loot = .{ .index = 7, .item = .{ .kind = .cap } } },
+        .{ .loot = .{ .index = 9, .item = .{ .kind = .axe } } },
+    };
+    var book = Book{ .page = .loot };
+    const screen = display.SCREEN_720;
+    const box = book.actionBox(menu.CONFIRM, view);
+    const p = book.surface(screen, view).screenOf(raster.middle(box));
+    const command = book.step(&.{ .click = true, .pointer = p, .scroll = -1 }, screen, view).?;
+    try std.testing.expectEqual(@as(usize, 7), command.pickup);
+    try std.testing.expectEqual(@as(usize, 0), book.cursor);
 }
 
 test "trade lists the shelf or the bag, swaps them on change, and the priced card of the fullest item clears the actions" {

@@ -80,7 +80,13 @@ pub const FrostVial = struct {
     pub const CHANCE = glacial.CHANCE;
     pub const afflict = glacial.afflict;
     pub const AILMENT = glacial.AILMENT;
-    pub const DESCRIPTION = std.fmt.comptimePrint("A thrown vial shatters into cold, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), glacial.CHILL_NOTE });
+    const DESCRIPTION_FMT = "A thrown vial shatters into cold, hitting every foe within {d} tile{s}. {s}.";
+    pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIPTION_FMT, .{ BLAST, mathx.plural(BLAST), glacial.CHILL_NOTE });
+
+    pub fn describeArea(w: anytype, wider: i32) void {
+        const radius = areas.expanded(BLAST, wider);
+        w.print(DESCRIPTION_FMT, .{ radius, mathx.plural(radius), glacial.CHILL_NOTE }) catch {};
+    }
 
     pub const burst = areas.Patch(BLAST).burst;
 };

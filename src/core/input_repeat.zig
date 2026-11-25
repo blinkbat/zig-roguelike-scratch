@@ -45,10 +45,11 @@ pub const Stepper = struct {
         self.due += gap;
         if (self.due <= self.held) self.due = self.held + gap;
         self.fired += 1;
+        const step = self.owed orelse now;
         self.owed = null;
         self.fresh = self.press;
         self.press = false;
-        return now;
+        return step;
     }
 
     /// Rearm only on release or direction change; staggered diagonal release stays held.
@@ -226,6 +227,16 @@ test "a quick diagonal tap let go one key at a time steps the diagonal" {
         s.tick(dt, 0, 0, settle),
     };
     try std.testing.expectEqualSlices(?mathx.Dir, &.{ null, null, null, .ne }, &got);
+}
+
+test "a staggered diagonal release fires the diagonal before repeating the remaining direction" {
+    var s = Stepper{};
+    const settle = Stepper.SETTLE;
+    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(0, 1, mathx.Dir.n.heading(), settle));
+    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(0, 1, mathx.Dir.ne.heading(), settle));
+    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(0, 1, mathx.Dir.e.heading(), settle));
+    try std.testing.expectEqual(@as(?mathx.Dir, .ne), s.tick(settle, 1, mathx.Dir.e.heading(), settle));
+    try std.testing.expectEqual(@as(?mathx.Dir, .e), s.tick(Stepper.DAS, 1, mathx.Dir.e.heading(), settle));
 }
 
 test "a held walk that has stepped owes nothing when it is let go" {

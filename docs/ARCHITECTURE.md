@@ -356,6 +356,8 @@ The room is stamped after terrain generation, with a walkable perimeter and
 short connections for its approach and key chest that stay outside its walls. These
 connections and the key chest's bypass preserve painted section walls wherever a
 route around them exists, breaking the fewest painted solid cells, chests and glow plants when enclosed.
+Connections also avoid water occupied by authored swimmers. If a crossing must
+use one of their cells, shallows keep the route walkable and the swimmer in place.
 Connections target the arriving hero's floor component (in standalone node previews the
 start cell on the start node, else the first travel door; the largest component if no
 entrance is known).

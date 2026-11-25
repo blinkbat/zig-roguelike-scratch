@@ -28,6 +28,10 @@ pub fn capped(wanted: i32) i32 {
     return @min(wanted, BURST_MAX);
 }
 
+pub fn expanded(base: i32, wider: i32) i32 {
+    return capped(base + wider);
+}
+
 fn reached(lv: *const grid.Level, at: P, wanted: i32, comptime ground: fn (*const grid.Level, P) bool, ctx: anytype, comptime keep: fn (@TypeOf(ctx), P) bool) Burst {
     const range = capped(wanted);
     var out = Burst{};
@@ -50,11 +54,11 @@ pub fn Patch(comptime range: i32) type {
     comptime std.debug.assert(range <= BURST_MAX);
     return struct {
         pub fn area(lv: *const grid.Level, at: P, wider: i32) Burst {
-            return patch(lv, at, range + wider);
+            return patch(lv, at, expanded(range, wider));
         }
 
         pub fn burst(lv: *const grid.Level, _: P, impact: P, wider: i32) Burst {
-            return patch(lv, impact, range + wider);
+            return area(lv, impact, wider);
         }
     };
 }

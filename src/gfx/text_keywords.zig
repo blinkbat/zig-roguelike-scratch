@@ -59,12 +59,15 @@ const ENTRIES = blk: {
         while (words.next()) |word| result = result ++ [_]Entry{.{ .word = word, .tone = group.tone }};
     }
     for (std.enums.values(resilience.Kind)) |value| {
-        const tone: Tone = switch (value) {
-            .burn => .fire,
-            .chill => .cold,
-            .shock => .lightning,
-            .blind, .confusion, .fright => .mental,
-            .stun, .bleed, .pin, .sunder, .enfeeble, .maim => .physical,
+        const tone: Tone = switch (resilience.primaryTag(value)) {
+            .wounds, .slows => .physical,
+            .mental => .mental,
+            .elemental => switch (value) {
+                .burn => .fire,
+                .chill => .cold,
+                .shock => .lightning,
+                else => @compileError("Missing elemental tone for " ++ @tagName(value)),
+            },
         };
         result = result ++ [_]Entry{.{ .word = wording.named(value), .tone = tone }};
     }

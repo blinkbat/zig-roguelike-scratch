@@ -621,6 +621,7 @@ fn mouseAt() mathx.P {
 }
 
 pub const Desk = struct {
+    pub const TOOL_KEYS_BY = bindings.Desk.TOOL_KEYS_BY;
     pub const TOOL_KEYS = bindings.Desk.TOOL_KEYS;
     pub const TOOL_CAPTIONS = bindings.Desk.TOOL_CAPTIONS;
     pub const SHAPE_KEYS_BY = bindings.Desk.SHAPE_KEYS_BY;

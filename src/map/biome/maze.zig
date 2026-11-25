@@ -192,6 +192,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
 const POOL_R: f32 = 1.6;
 
 fn pool(lv: *grid.Level, c: P) void {
+    if (keepsNearbyWays(lv, c)) return carve.disc(lv, c, POOL_R, .lava, null);
     var st: carve.Stretches = .{};
     _ = st.label(lv);
     const region = st.region;
@@ -199,6 +200,50 @@ fn pool(lv: *grid.Level, c: P) void {
     carve.disc(lv, c, POOL_R, .lava, null);
     _ = st.label(lv);
     if (st.parts(&region)) lv.tile = was;
+}
+
+fn keepsNearbyWays(lv: *const grid.Level, centre: P) bool {
+    const Crossing = struct {
+        lv: *const grid.Level,
+        centre: P,
+        window: grid.Box,
+
+        fn submerged(self: @This(), p: P) bool {
+            return !grid.Level.onRim(p) and carve.inDisc(self.centre, p, POOL_R);
+        }
+
+        fn removed(self: @This(), p: P) bool {
+            return self.submerged(p) and self.lv.walkable(p);
+        }
+
+        fn survives(self: @This(), p: P) bool {
+            return self.window.holds(p) and !self.submerged(p) and self.lv.walkable(p);
+        }
+    };
+    const reach = carve.discReach(POOL_R);
+    const crossing = Crossing{ .lv = lv, .centre = centre, .window = grid.Box.around(centre, reach + 2).grown(0) };
+    var cells = grid.Box.around(centre, reach + 1).grown(0).cells();
+    var exits = grid.CellSet.initEmpty();
+    var start: ?P = null;
+    var remaining: usize = 0;
+    while (cells.next()) |p| {
+        if (!crossing.survives(p) or !grid.anyNeighbour(p, crossing, Crossing.removed)) continue;
+        exits.set(grid.Level.idx(p));
+        start = p;
+        remaining += 1;
+    }
+    if (remaining <= 1) return true;
+    var seen = grid.CellSet.initEmpty();
+    var queue: [grid.CELLS]u32 = undefined;
+    var walk = grid.Spread(Crossing, Crossing.survives){ .ctx = crossing, .steps = &grid.STEPS, .seen = &seen, .queue = &queue };
+    walk.seed(start.?);
+    while (walk.next()) |p| {
+        if (exits.isSet(grid.Level.idx(p))) {
+            remaining -= 1;
+            if (remaining == 0) return true;
+        }
+    }
+    return false;
 }
 
 test "a lava maze's pools never part ground its ways join" {
@@ -217,6 +262,13 @@ test "a lava maze's pools never part ground its ways join" {
         }
     }
     try std.testing.expectEqual(@as(usize, 0), parted);
+
+    lv = grid.Level.blank();
+    const centre = P{ .x = 12, .y = 12 };
+    carve.box(&lv, grid.Box.sized(.{ .x = 7, .y = 12 }, 11, 1), .floor);
+    try std.testing.expect(!keepsNearbyWays(&lv, centre));
+    pool(&lv, centre);
+    try std.testing.expectEqual(grid.Tile.floor, lv.at(centre));
 }
 
 test "a maze sets the rooms asked, joined, and merging adds loops" {

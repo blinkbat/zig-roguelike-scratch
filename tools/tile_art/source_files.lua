@@ -225,6 +225,18 @@ function files.checkCel(sprite,name,image,position)
   return cel
 end
 
+function files.publishExtension(sprite,port)
+  local staged=files.stage(app.fs.fileName(port.destination))
+  sprite:saveAs(staged)
+  if port.preview then sprite:saveCopyAs(port.preview) end
+  sprite:close()
+  local saved=assert(app.open(staged))
+  files.checkCel(saved,files.LAYER.draw,port.original,port.position)
+  files.checkLayer(saved,port.layer,port.image,Point(0,0))
+  saved:close()
+  files.publishTo(staged,port.destination,port.canonical)
+end
+
 function files.checkBlankTemplate(old,want,label)
   local pc=app.pixelColor
   assert(old.width==want.width and old.height==want.height and old.colorMode==want.colorMode and #old.frames==1

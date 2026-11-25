@@ -321,6 +321,7 @@ pub const Catalog = struct {
             }
         }
         var ordinal: usize = 0;
+        var lines = LineScan{};
         for (ts, 0..) |token, i| {
             try contexts.step(i);
             if (token.tag != .string_literal) continue;
@@ -334,7 +335,7 @@ pub const Catalog = struct {
             const semantic = try contexts.describe();
             try self.list.append(a, .{
                 .path = path,
-                .line = lineOf(bytes, token.loc.start),
+                .line = lines.at(bytes, token.loc.start),
                 .text = decoded,
                 .category = semantic.category,
                 .owner = semantic.owner,
@@ -353,6 +354,7 @@ pub const Catalog = struct {
 
     fn enumLabels(self: *Catalog, path: []const u8, category: []const u8, bytes: []const u8, ts: []const Token, pairs: []const usize, excluded: []const bool, file: usize) !void {
         const a = self.arena.allocator();
+        var lines = LineScan{};
         for (ts, 0..) |token, i| {
             if (token.tag != .keyword_enum or excluded[i]) continue;
             const open = bodyOpen(ts, pairs, i);
@@ -371,7 +373,7 @@ pub const Catalog = struct {
                         const key = if (type_name) |tn| try wording.keyAlloc(a, tn, name) else null;
                         const allowed = if (type_name) |tn| wording.allowed(tn, name) else false;
                         const identity = key orelse try std.fmt.allocPrint(a, "{s}.{s}", .{ path, name });
-                        try self.list.append(a, .{ .path = path, .line = lineOf(bytes, ts[at].loc.start), .text = if (key) |k| try a.dupe(u8, wording.lookup(self.labels, k) orelse label) else label, .category = category, .owner = try humanize(a, name), .role = "Display name", .context = identity, .editable = allowed, .reason = if (allowed) "Display alias; saves to " ++ LABEL_FILE ++ " without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
+                        try self.list.append(a, .{ .path = path, .line = lines.at(bytes, ts[at].loc.start), .text = if (key) |k| try a.dupe(u8, wording.lookup(self.labels, k) orelse label) else label, .category = category, .owner = try humanize(a, name), .role = "Display name", .context = identity, .editable = allowed, .reason = if (allowed) "Display alias; saves to " ++ LABEL_FILE ++ " without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
                     }
                     field = false;
                 }
@@ -445,71 +447,71 @@ const ACTOR_SOURCE = "play/actor.zig";
 const BURNING_SOURCE = "play/burning.zig";
 const BLEEDING_SOURCE = "play/bleeding.zig";
 const JUKE_SOURCE = "play/juke.zig";
-const STATUS_SOURCES = [_][]const u8{ BURNING_SOURCE, BLEEDING_SOURCE, "play/blind.zig", "play/shock.zig", "play/glacial.zig", JUKE_SOURCE, "play/resilience.zig", "play/pinning.zig", "play/sunder.zig", "play/confusion.zig", "play/enfeeble.zig", "play/maim.zig" };
+const STATUS_SOURCES = blk: {
+    var paths: []const []const u8 = &.{ JUKE_SOURCE, "play/resilience.zig" };
+    for (std.enums.values(resilience.Kind)) |kind| {
+        const module = resilience.module(kind) orelse continue;
+        var path = @typeName(module)[0..@typeName(module).len].*;
+        std.mem.replaceScalar(u8, &path, '.', '/');
+        paths = paths ++ &[_][]const u8{&path ++ ZIG};
+    }
+    break :blk paths[0..paths.len].*;
+};
 const CATEGORY_SOURCES = LOG_SOURCES ++ DIALOGUE_SOURCES ++ [_][]const u8{ QUESTS_SOURCE, ACTOR_SOURCE } ++ ITEM_TEXT_SOURCES ++ CHARACTER_SOURCES ++ SKILL_TEXT_SOURCES ++ BINDING_SOURCES ++ HUD_SOURCES ++ STATUS_SOURCES;
 const KEYBOARD_DECL = "LETTERS";
-const TECHNICAL_DECLS = [_][]const u8{ "SYMBOLS", "TTF", "DATA_TTF" };
-const SPOKEN_DECLS = [_][]const u8{ "NAME", "NUMBERS", FRIGHT_WORDS };
-const DECL_SOURCES = [_][2][]const u8{
-    .{ KEYBOARD_SOURCE, KEYBOARD_DECL },
-    .{ "map/biome/site.zig", "SYMBOLS" },
-    .{ FONT_SOURCE, "TTF" },
-    .{ FONT_SOURCE, "DATA_TTF" },
-    .{ "map/gas.zig", "NAME" },
-    .{ HERO_SOURCE, "NUMBERS" },
-    .{ FX_SOURCE, FRIGHT_WORDS },
-    .{ "play/bow.zig", "VERB" },
-    .{ JUKE_SOURCE, "DONE" },
-    .{ BURNING_SOURCE, "TAKES" },
-    .{ BLEEDING_SOURCE, "RETAKES" },
-    .{ ACTOR_SOURCE, "SWEEP_VERB" },
+const SymbolUse = enum { keyboard, technical, spoken, action };
+const SourceSymbol = struct { path: []const u8, name: []const u8, use: SymbolUse };
+const DECL_SOURCES = [_]SourceSymbol{
+    .{ .path = KEYBOARD_SOURCE, .name = KEYBOARD_DECL, .use = .keyboard },
+    .{ .path = "map/biome/site.zig", .name = "SYMBOLS", .use = .technical },
+    .{ .path = FONT_SOURCE, .name = "TTF", .use = .technical },
+    .{ .path = FONT_SOURCE, .name = "DATA_TTF", .use = .technical },
+    .{ .path = "map/gas.zig", .name = "NAME", .use = .spoken },
+    .{ .path = HERO_SOURCE, .name = "NUMBERS", .use = .spoken },
+    .{ .path = FX_SOURCE, .name = FRIGHT_WORDS, .use = .spoken },
+    .{ .path = "play/bow.zig", .name = "VERB", .use = .action },
+    .{ .path = JUKE_SOURCE, .name = "DONE", .use = .action },
+    .{ .path = BURNING_SOURCE, .name = "TAKES", .use = .action },
+    .{ .path = BLEEDING_SOURCE, .name = "RETAKES", .use = .action },
+    .{ .path = ACTOR_SOURCE, .name = "SWEEP_VERB", .use = .action },
 };
+const TECHNICAL_DECLS = symbolsOf(&DECL_SOURCES, .technical);
+const SPOKEN_DECLS = symbolsOf(&DECL_SOURCES, .spoken);
+const ACTION_WORDS = symbolsOf(&DECL_SOURCES, .action);
 
 comptime {
     @setEvalBranchQuota(100_000);
     for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES ++ [_][]const u8{SKILLBAR_SOURCE} ++ ITEMS_SOURCES ++ CATEGORY_SOURCES) |p| _ = @embedFile("../" ++ p);
-    for (DECL_SOURCES) |d| {
-        if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "const " ++ d[1] ++ " ") == null) @compileError(d[0] ++ " no longer declares " ++ d[1]);
-        if (!contains(&([_][]const u8{KEYBOARD_DECL} ++ TECHNICAL_DECLS ++ SPOKEN_DECLS ++ ACTION_WORDS), d[1])) @compileError(d[1] ++ " is checked but never read");
+    for (DECL_SOURCES) |decl| {
+        if (std.mem.indexOf(u8, @embedFile("../" ++ decl.path), "const " ++ decl.name ++ " ") == null) @compileError(decl.path ++ " no longer declares " ++ decl.name);
     }
-    for (std.enums.values(resilience.Kind)) |k| {
-        const m = resilience.module(k) orelse continue;
-        var path = @typeName(m)[0..@typeName(m).len].*;
-        std.mem.replaceScalar(u8, &path, '.', '/');
-        if (!contains(&STATUS_SOURCES, &path ++ ZIG)) @compileError("STATUS_SOURCES lacks the module of " ++ @tagName(k));
-    }
-    for (TECHNICAL_DECLS ++ SPOKEN_DECLS ++ ACTION_WORDS) |name| {
-        for (DECL_SOURCES) |d| {
-            if (std.mem.eql(u8, d[1], name)) break;
-        } else @compileError(name ++ " has no source to check");
-    }
-    for (FN_SOURCES) |d| {
-        if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "fn " ++ d[1] ++ "(") == null) @compileError(d[0] ++ " no longer defines " ++ d[1]);
-        for (TECHNICAL_FNS ++ TEXT_FNS) |name| {
-            if (std.mem.eql(u8, d[1], name)) break;
-        } else @compileError(d[1] ++ " is checked but never read");
-    }
-    for (TECHNICAL_FNS ++ TEXT_FNS) |name| {
-        for (FN_SOURCES) |d| {
-            if (std.mem.eql(u8, d[1], name)) break;
-        } else @compileError(name ++ " has no source to check");
+    for (FN_SOURCES) |func| {
+        if (std.mem.indexOf(u8, @embedFile("../" ++ func.path), "fn " ++ func.name ++ "(") == null) @compileError(func.path ++ " no longer defines " ++ func.name);
     }
 }
 
 const FONT_SOURCE = "gfx/font.zig";
 const EDITOR_SOURCE = "edit/editor.zig";
 const WIDGETS_SOURCE = "edit/widgets.zig";
-const FN_SOURCES = [_][2][]const u8{
-    .{ APP_SOURCE, "capturePage" },
-    .{ EDITOR_SOURCE, "capture" },
-    .{ EDITOR_SOURCE, "snap" },
-    .{ WIDGETS_SOURCE, "button" },
-    .{ WIDGETS_SOURCE, "buttonOn" },
-    .{ WIDGETS_SOURCE, "drawFit" },
-    .{ FONT_SOURCE, "drawMid" },
+const FN_SOURCES = [_]SourceSymbol{
+    .{ .path = APP_SOURCE, .name = "capturePage", .use = .technical },
+    .{ .path = EDITOR_SOURCE, .name = "capture", .use = .technical },
+    .{ .path = EDITOR_SOURCE, .name = "snap", .use = .technical },
+    .{ .path = WIDGETS_SOURCE, .name = "button", .use = .spoken },
+    .{ .path = WIDGETS_SOURCE, .name = "buttonOn", .use = .spoken },
+    .{ .path = WIDGETS_SOURCE, .name = "drawFit", .use = .spoken },
+    .{ .path = FONT_SOURCE, .name = "drawMid", .use = .spoken },
 };
-const TECHNICAL_FNS = [_][]const u8{ "capture", "snap", "capturePage" };
-const TEXT_FNS = [_][]const u8{ "drawMid", "drawFit", "button", "buttonOn" };
+const TECHNICAL_FNS = symbolsOf(&FN_SOURCES, .technical);
+const TEXT_FNS = symbolsOf(&FN_SOURCES, .spoken);
+
+fn symbolsOf(comptime sources: []const SourceSymbol, comptime use: SymbolUse) []const []const u8 {
+    comptime var names: []const []const u8 = &.{};
+    inline for (sources) |source| {
+        if (source.use == use) names = names ++ &[_][]const u8{source.name};
+    }
+    return names;
+}
 
 fn inputSource(path: []const u8) bool {
     return std.mem.startsWith(u8, path, SRC) and contains(&INPUT_SOURCES, path[SRC.len..]);
@@ -659,13 +661,12 @@ fn textRole(name: []const u8) ?[]const u8 {
     if (std.ascii.eqlIgnoreCase(name, "label") or std.ascii.eqlIgnoreCase(name, "caption")) return "Label";
     if (std.ascii.eqlIgnoreCase(name, "tip")) return "Tooltip";
     if (std.ascii.eqlIgnoreCase(name, "status")) return "Status";
-    if (contains(&ACTION_WORDS, name)) return "Action wording";
+    if (contains(ACTION_WORDS, name)) return "Action wording";
     if (std.mem.eql(u8, name, FRIGHT_WORDS)) return "Fright speech";
     return null;
 }
 
 const NAME_ROLE = "Name";
-const ACTION_WORDS = [_][]const u8{ "VERB", "DONE", "TAKES", "RETAKES", "SWEEP_VERB" };
 const FRIGHT_WORDS = "FRIGHT_WORDS";
 
 const Semantic = struct { category: []const u8, owner: []const u8, role: []const u8, context: []const u8 };
@@ -864,7 +865,7 @@ const CONTEXT_NAMES = [_][]const u8{ "name", "label", "title", "description", "d
 
 fn technicalCall(bytes: []const u8, ts: []const Token, i: usize) bool {
     const name = slice(bytes, ts[i]);
-    if (contains(&TECHNICAL_CALLS, name)) return true;
+    if (contains(TECHNICAL_CALLS, name)) return true;
     if (std.mem.eql(u8, name, "print") and i >= 2 and std.mem.eql(u8, slice(bytes, ts[i - 2]), "debug")) return true;
     return false;
 }
@@ -879,8 +880,8 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     }
     if (letters == 0) return false;
     const decl = declaration(bytes, ts, i) orelse "";
-    if (contains(&TECHNICAL_DECLS, decl) or std.mem.endsWith(u8, decl, "_FIELDS")) return false;
-    if (contains(&ACTION_WORDS, decl) or contains(&SPOKEN_DECLS, decl)) return true;
+    if (contains(TECHNICAL_DECLS, decl) or std.mem.endsWith(u8, decl, "_FIELDS")) return false;
+    if (contains(ACTION_WORDS, decl) or contains(SPOKEN_DECLS, decl)) return true;
     for ([_][]const u8{ ZIG, ".png", ".ttf", atlas.EXT, ".json", "#version", "void main", "uniform ", "layout(", MAP_WORD, "shots/", "assets/", atlas.PREFIX, store.DIR ++ "/" }) |part| {
         if (std.mem.indexOf(u8, text, part) != null) return false;
     }
@@ -889,7 +890,7 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     for (ts[from..i]) |token| {
         if (token.tag != .identifier) continue;
         const name = slice(bytes, token);
-        if (contains(&CONTEXT_NAMES, name)) context = true;
+        if (contains(CONTEXT_NAMES, name)) context = true;
     }
     if (context) return true;
     if (std.mem.indexOfScalar(u8, text, ' ') != null and letters >= 3) return true;
@@ -898,9 +899,17 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     return false;
 }
 
-fn lineOf(bytes: []const u8, at: usize) usize {
-    return 1 + std.mem.count(u8, bytes[0..at], "\n");
-}
+const LineScan = struct {
+    offset: usize = 0,
+    line: usize = 1,
+
+    fn at(self: *LineScan, bytes: []const u8, offset: usize) usize {
+        if (offset < self.offset) self.* = .{};
+        self.line += std.mem.count(u8, bytes[self.offset..offset], "\n");
+        self.offset = offset;
+        return self.line;
+    }
+};
 
 pub fn hash(text: []const u8) u64 {
     return std.hash.Wyhash.hash(0, text);

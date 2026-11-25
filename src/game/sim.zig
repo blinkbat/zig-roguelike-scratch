@@ -283,15 +283,21 @@ pub const Simulation = struct {
 
     pub fn localWeather(self: *const Simulation) climate.Local {
         if (!self.outdoors) return climate.CALM;
-        const overrides = if (self.nodeHere()) |node| node.locations else climate.Locations.initFill(null);
-        return climate.local(self.climateNow(), overrides, self.seed, self.clock.since(self.days));
+        return climate.local(self.climateNow(), self.weatherOverrides(), self.seed, self.clock.since(self.days));
     }
 
     pub fn rainField(self: *const Simulation) climate.Rain {
-        const weather = self.localWeather();
         var rain = climate.Rain{ .field = &self.locations };
-        for (std.enums.values(climate.Location)) |place| rain.local.set(place, weather.get(place).get(.rain));
+        if (!self.outdoors) return rain;
+        const weather = self.climateNow();
+        const overrides = self.weatherOverrides();
+        const minutes = self.clock.since(self.days);
+        for (std.enums.values(climate.Location)) |place| rain.local.set(place, weather.in(overrides, place).rain(self.seed, minutes));
         return rain;
+    }
+
+    fn weatherOverrides(self: *const Simulation) climate.Locations {
+        return if (self.nodeHere()) |node| node.locations else .initFill(null);
     }
 
     pub fn weatherHere(self: *const Simulation) climate.Now {

@@ -480,7 +480,18 @@ pub const Node = struct {
         }
         if (self.zoo) |z| {
             const authored = if (laid) |s| s.cells() else grid.CellSet.initEmpty();
-            z.stampToward(lv, if (laid != null) &authored else null, entrance, if (self.plan == .bespoke) .authored else .rolled);
+            var swimmers = grid.CellSet.initEmpty();
+            var foes: [MAX_FOES]Foe = undefined;
+            for (self.laidFoes(laid, &foes)) |f| {
+                const tile = lv.at(f.at);
+                if (actor.row(f.kind).movement == .swimming and tile.solid() and tile.wet()) swimmers.set(grid.Level.idx(f.at));
+            }
+            z.stampToward(lv, .{
+                .authored = if (laid != null) &authored else null,
+                .swimmers = if (swimmers.count() > 0) &swimmers else null,
+                .entrance = entrance,
+                .torches = if (self.plan == .bespoke) .authored else .rolled,
+            });
         }
     }
 
@@ -1450,6 +1461,59 @@ test "a zoo connects to the entrance even when a sealed room is larger" {
     while (it.next()) |p| try std.testing.expectEqual(if (vault.onEdge(p)) grid.Tile.wall else grid.Tile.floor, lv.at(p));
     try std.testing.expect(map.standable(map.start, &lv));
     try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(nd.zoo.?.approach())));
+}
+
+test "a bespoke zoo connector preserves authored swimmers along its route" {
+    const from = P{ .x = 5, .y = 21 };
+    const water = P{ .x = 20, .y = 21 };
+    var nd = Node{ .plan = .{ .bespoke = .{} }, .zoo = .{} };
+    const authored = &nd.plan.bespoke;
+    @memset(&authored.tile, .rock);
+    authored.tile[grid.Level.idx(from)] = .floor;
+    authored.tile[grid.Level.idx(water)] = .water;
+    try std.testing.expect(authored.addFoe(.{ .kind = .bog_leech, .at = water }));
+    try std.testing.expect(nd.bespokeValid(authored) and nd.zooFits());
+    var lv: grid.Level = undefined;
+    nd.stampAt(&lv, 0, from);
+    try std.testing.expect(grid.inSet(&grid.reached(&lv, from), nd.zoo.?.approach()));
+    try std.testing.expectEqual(grid.Tile.water, lv.at(water));
+    var pool: actor.Pool = .{};
+    var rng = mathx.Rng.init(0);
+    nd.populate(&lv, &pool, &rng, from, 0);
+    try std.testing.expectEqual(actor.Kind.bog_leech, pool.getConst(lv.who(water)).?.kind);
+}
+
+test "a zoo crossing through a fixed section keeps the affected swimmer in shallow water" {
+    const from = P{ .x = 5, .y = 21 };
+    var nd = Node{ .plan = .{ .procgen = .{ .floor = .{ .open = .{
+        .litter = .{ .boulders = 0 },
+        .decor = .{ .tiny_shrubs = 0, .tall_grass = 0, .shrooms = 0 },
+    } } } }, .zoo = .{} };
+    const pg = &nd.plan.procgen;
+    try std.testing.expect(pg.addFeature(.scatter));
+    pg.feature[0] = .{ .scatter = .{ .tile = .rock, .on = .grass, .amount = mathx.MILLE } };
+    var channel = grid.Box.sized(.{ .x = 20, .y = 1 }, 1, grid.H - 2).cells();
+    while (channel.next()) |p| {
+        try std.testing.expect(pg.section.paint(p, .water));
+        try std.testing.expect(pg.section.addFoe(.{ .kind = .bog_leech, .at = p }));
+    }
+    nd.door[0] = .{ .at = from };
+    nd.door_n = 1;
+    try std.testing.expect(nd.zooFits() and pg.section.valid());
+    var lv: grid.Level = undefined;
+    nd.stampAt(&lv, 0, from);
+    try std.testing.expect(grid.inSet(&grid.reached(&lv, from), nd.zoo.?.approach()));
+    var pool: actor.Pool = .{};
+    var rng = mathx.Rng.init(0);
+    nd.populate(&lv, &pool, &rng, from, 0);
+    var crossed = false;
+    for (pg.section.foes()) |foe| {
+        const tile = lv.at(foe.at);
+        try std.testing.expect(tile == .water or tile == .shallows);
+        try std.testing.expectEqual(foe.kind, pool.getConst(lv.who(foe.at)).?.kind);
+        crossed = crossed or tile == .shallows;
+    }
+    try std.testing.expect(crossed);
 }
 
 test "zoo connections preserve a valid fixed section outside the encounter" {

@@ -69,7 +69,11 @@ pub const GravityWell = struct {
     pub const COOLDOWN: u8 = 5;
     pub const RANGE: i32 = 6;
     pub const RADIUS: i32 = 2;
-    pub const DESCRIPTION = std.fmt.comptimePrint("Pull foes within {d} cells toward a visible center.", .{RADIUS});
+    const DESCRIPTION_FMT = "Pull foes within {d} cells toward a visible center.";
+    pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIPTION_FMT, .{RADIUS});
+    pub fn describeArea(w: anytype, wider: i32) void {
+        w.print(DESCRIPTION_FMT, .{areas.expanded(RADIUS, wider)}) catch {};
+    }
     pub fn pulls(rank: u8) usize {
         return if (rank == TOP_RANK) 2 else 1;
     }

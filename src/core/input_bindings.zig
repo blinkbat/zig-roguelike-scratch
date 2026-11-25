@@ -199,17 +199,45 @@ pub const TreeKeys = struct {
 };
 
 pub const Desk = struct {
-    pub const TOOL_KEYS = DIGIT_KEYS ++ [_]rl.KeyboardKey{ .grave, .semicolon, .apostrophe, .comma, .period, .slash, .backslash, .h, .j, .k, .u, .i, .p, .t };
+    pub const TOOL_KEYS_BY = .{
+        .paint = rl.KeyboardKey.one,
+        .barrel = rl.KeyboardKey.two,
+        .torch = rl.KeyboardKey.three,
+        .rat = rl.KeyboardKey.four,
+        .slime = rl.KeyboardKey.five,
+        .bloat = rl.KeyboardKey.six,
+        .pib = rl.KeyboardKey.seven,
+        .beefy_pib = rl.KeyboardKey.eight,
+        .bandit_crossbowman = rl.KeyboardKey.nine,
+        .bandit_netter = rl.KeyboardKey.zero,
+        .bandit_shieldbearer = rl.KeyboardKey.grave,
+        .frost_wisp = rl.KeyboardKey.semicolon,
+        .pyre_bloat = rl.KeyboardKey.apostrophe,
+        .pib_shaman = rl.KeyboardKey.comma,
+        .bog_leech = rl.KeyboardKey.period,
+        .mimic = rl.KeyboardKey.slash,
+        .goblin = rl.KeyboardKey.backslash,
+        .sluice_crab = rl.KeyboardKey.h,
+        .chain_gaoler = rl.KeyboardKey.j,
+        .cinder_imp = rl.KeyboardKey.k,
+        .npc = rl.KeyboardKey.u,
+        .door = rl.KeyboardKey.i,
+        .link = rl.KeyboardKey.p,
+        .start = rl.KeyboardKey.t,
+    };
+    pub const TOOL_KEYS = namedKeys(TOOL_KEYS_BY);
     pub const TOOL_CAPTIONS = glyphCaptions(&TOOL_KEYS);
     /// The editor's shapes, named and ordered as its `Shape` is.
     pub const SHAPE_KEYS_BY = .{ .brush = rl.KeyboardKey.b, .line = rl.KeyboardKey.l, .rect = rl.KeyboardKey.r, .box = rl.KeyboardKey.o, .fill = rl.KeyboardKey.f, .select = rl.KeyboardKey.m };
-    pub const SHAPE_KEYS = blk: {
-        const fs = std.meta.fields(@TypeOf(SHAPE_KEYS_BY));
-        var out: [fs.len]rl.KeyboardKey = undefined;
-        for (fs, 0..) |f, i| out[i] = @field(SHAPE_KEYS_BY, f.name);
-        break :blk out;
-    };
+    pub const SHAPE_KEYS = namedKeys(SHAPE_KEYS_BY);
     pub const SHAPE_CAPTIONS = glyphCaptions(&SHAPE_KEYS);
+
+    fn namedKeys(comptime by_name: anytype) [std.meta.fields(@TypeOf(by_name)).len]rl.KeyboardKey {
+        const fields = std.meta.fields(@TypeOf(by_name));
+        var keys: [fields.len]rl.KeyboardKey = undefined;
+        inline for (fields, 0..) |field, i| keys[i] = @field(by_name, field.name);
+        return keys;
+    }
 
     pub const PAN_KEYS = blk: {
         var out: [DPAD.len]Walk = undefined;
@@ -271,6 +299,7 @@ pub const Desk = struct {
     pub const UNDO_CAPTION = CTRL ++ keyGlyph(UNDO_KEY);
     pub const REDO_CAPTION = CTRL ++ keyGlyph(REDO_KEY) ++ " / " ++ CTRL_SHIFT ++ keyGlyph(UNDO_KEY);
     pub const TOOLS_CAPTION = blk: {
+        std.debug.assert(std.mem.eql(rl.KeyboardKey, TOOL_KEYS[0..DIGIT_KEYS.len], &DIGIT_KEYS));
         var s: [:0]const u8 = TOOL_CAPTIONS[0] ++ " to " ++ TOOL_CAPTIONS[DIGIT_KEYS.len - 1];
         for (TOOL_CAPTIONS[DIGIT_KEYS.len..]) |c| s = s ++ " " ++ c;
         break :blk s;

@@ -40,7 +40,7 @@ pub fn targetAt(run: *const game.Game, act: skillbar.Act, from: P, id: u16) ?P {
     const a = run.sim.pool.getConst(id) orelse return null;
     if (!a.seenFoe(&run.sim.lv) or !tactics_exec.validAct(run, act, from, a.at)) return null;
     if (act.reticle() == .bow) {
-        const hit = if (shownPiercing(run, from, act, a.at)) |pierced|
+        const hit = if (piercing(&run.sim, from, act, a.at, true)) |pierced|
             pierced.hits(id)
         else
             bow.previewAmong(&run.sim.lv, &run.sim.pool, from, a.at).hits(id);
@@ -474,15 +474,22 @@ pub fn confirmAim(run: *game.Game) void {
 
 /// The flight the reticle shows toward `mark`, passing over bodies the hero cannot see.
 pub fn shownFlight(run: *const game.Game, from: P, act: skillbar.Act, mark: P) bow.Flight {
-    if (shownPiercing(run, from, act, mark)) |pierced| return pierced.flight;
+    if (piercing(&run.sim, from, act, mark, true)) |pierced| return pierced.flight;
     return bow.previewAmong(&run.sim.lv, &run.sim.pool, from, mark);
 }
 
-fn shownPiercing(run: *const game.Game, from: P, act: skillbar.Act, mark: P) ?bow.Pierced {
-    if (act.pierces()) return bow.piercePreviewAmong(&run.sim.lv, &run.sim.pool, from, mark);
-    const extra = skewers(&run.sim, act);
-    if (extra > 0) return bow.skewerPreviewAmong(&run.sim.lv, &run.sim.pool, from, mark, act.reach(), extra);
-    return null;
+fn piercing(sim: *const game.simulation.Simulation, from: P, act: skillbar.Act, mark: P, comptime visible_only: bool) ?bow.Pierced {
+    if (act.pierces()) return if (visible_only)
+        bow.piercePreviewAmong(&sim.lv, &sim.pool, from, mark)
+    else
+        bow.pierce(&sim.lv, from, mark);
+    const extra = skewers(sim, act);
+    if (extra == 0) return null;
+    const reach = act.reach();
+    return if (visible_only)
+        bow.skewerPreviewAmong(&sim.lv, &sim.pool, from, mark, reach, extra)
+    else
+        bow.skewer(&sim.lv, from, mark, reach, extra);
 }
 
 /// The extra foes worn pierce lets a single-target projectile pass through.
@@ -494,8 +501,7 @@ fn skewers(sim: *const game.simulation.Simulation, act: skillbar.Act) usize {
 pub const UNSEEN_ASK = "There's no visible target, {s} anyway?";
 
 fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
-    const extra = skewers(&run.sim, act);
-    const pierced = if (act.pierces()) bow.pierce(&run.sim.lv, from, to) else if (extra > 0) bow.skewer(&run.sim.lv, from, to, act.reach(), extra) else null;
+    const pierced = piercing(&run.sim, from, act, to, false);
     const flight = if (pierced) |p| p.flight else bow.fly(&run.sim.lv, from, to);
     const stroke = run.pic.recordProjectile(from, act, flight);
     if (flight.struck) |hit| {

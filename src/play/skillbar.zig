@@ -110,10 +110,12 @@ pub const Act = enum {
         };
     }
 
-    pub fn describe(a: Act, w: anytype, bonus: flask.Bonus, reach_: i32) void {
+    pub fn describe(a: Act, w: anytype, bonus: flask.Bonus, reach_: i32, wider: i32) void {
         switch (a) {
             inline else => |t| if (comptime t.declares("describe"))
                 module(t).?.describe(w, bonus)
+            else if (comptime t.declares("describeArea"))
+                module(t).?.describeArea(w, wider)
             else if (comptime t.moves())
                 contracts.describeReach(module(t).?, w, reach_)
             else

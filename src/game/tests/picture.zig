@@ -6,6 +6,7 @@ const grid = @import("../../map/grid.zig");
 const hud = @import("../../ui/hud.zig");
 const actor = @import("../../play/actor.zig");
 const bow = @import("../../play/bow.zig");
+const firebolt = @import("../../play/firebolt.zig");
 const areas = @import("../../play/area.zig");
 const burning = @import("../../play/burning.zig");
 const flask = @import("../../play/flask.zig");
@@ -1052,6 +1053,53 @@ test "loot hazards NPCs and missiles fade from their last visible state only" {
     harness.ease(g, mathx.FRAME_DT);
     try std.testing.expect(g.pic.cellAlpha(p) > 0 and g.pic.cellAlpha(p) < 0.5);
     try std.testing.expect(!g.pic.seen_cells[i].barrier and g.pic.seen_cells[i].npc == null);
+}
+
+test "projectiles that end in darkness keep fading from the last visible position" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const to = P{ .x = 22, .y = 20 };
+    const slot = actor.ActorSlot.fromIndex(0);
+    for ([_]bool{ false, true }) |end_lit| {
+        harness.arena(g, from, &.{});
+        g.sim.lv.lightless();
+        g.sim.lv.light(from);
+        if (end_lit) g.sim.lv.light(to);
+        const shot: game.presentation.Shot = .{ .from = from, .flight = bow.fly(&g.sim.lv, from, to) };
+        g.pic.shot = shot;
+        g.pic.foe_shots[slot.index] = shot;
+        const bolt = firebolt.Bolt.aimed(from, to, 2);
+        g.pic.recordHurl(slot.id(), bolt, .fire, from, 0);
+        g.pic.snapSight(&g.sim);
+        const last = g.pic.shot.?.view.at;
+        const last_bolt = g.pic.bolts[slot.index].?.view.at;
+        try std.testing.expect(last != null and last_bolt != null);
+
+        var arrived = bolt;
+        arrived.flown = 2;
+        const duration = g.pic.recordBolt(&g.sim, slot, bolt, arrived, .{ .cells = 2, .stop = .spent }, .fire, 0);
+        g.pic.advance(&g.sim, duration);
+        g.pic.stepMotion(&g.sim, duration);
+        harness.ease(g, mathx.FRAME_DT);
+        if (!end_lit) {
+            try std.testing.expect(g.pic.shot != null and g.pic.foe_shots[slot.index] != null and g.pic.bolts[slot.index] != null);
+            try std.testing.expectEqual(last, g.pic.shot.?.view.at);
+            try std.testing.expectEqual(last, g.pic.foe_shots[slot.index].?.view.at);
+            try std.testing.expectEqual(last_bolt, g.pic.bolts[slot.index].?.view.at);
+            try std.testing.expect(g.pic.shot.?.view.alpha > 0 and g.pic.shot.?.view.alpha < 1);
+            g.sim.lv.light(to);
+            g.pic.advance(&g.sim, mathx.FRAME_DT);
+            g.pic.stepMotion(&g.sim, mathx.FRAME_DT);
+            harness.ease(g, mathx.FRAME_DT);
+            try std.testing.expectEqual(last, g.pic.shot.?.view.at);
+            try std.testing.expectEqual(last_bolt, g.pic.bolts[slot.index].?.view.at);
+            harness.ease(g, harness.FADED_S);
+            g.pic.advance(&g.sim, mathx.FRAME_DT);
+            g.pic.stepMotion(&g.sim, mathx.FRAME_DT);
+        }
+        try std.testing.expect(g.pic.shot == null and g.pic.foe_shots[slot.index] == null and g.pic.bolts[slot.index] == null);
+    }
 }
 
 test "the minimap and the day beneath it fit in the top right, clear of the hud" {

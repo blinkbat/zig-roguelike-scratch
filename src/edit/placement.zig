@@ -46,19 +46,25 @@ pub const PastePreview = struct {
 };
 
 pub fn brushAt(ed: *Editor, p: P) void {
-    brushWith(ed, p, ed.stroke == .erase);
+    const erase = ed.stroke == .erase;
+    if (!ed.tool.broad()) return apply(ed, p, erase);
+    var paint = PaintBatch.init(ed, erase);
+    eachBrushCell(ed, p, &paint);
+    if (paint.changed) ed.changed();
 }
 
-fn brushWith(ed: *Editor, p: P, erase: bool) void {
-    eachBrushCell(ed, p, Laid{ .ed = ed, .erase = erase });
-}
+const PaintBatch = struct {
+    node: *const atlas.Node,
+    plan: *atlas.Bespoke,
+    ink: grid.Tile,
+    changed: bool = false,
 
-const Laid = struct {
-    ed: *Editor,
-    erase: bool,
+    fn init(ed: *Editor, erase: bool) PaintBatch {
+        return .{ .node = ed.here(), .plan = &ed.plan().bespoke, .ink = ed.ink.get(.of(erase)) };
+    }
 
-    fn at(l: Laid, p: P) void {
-        apply(l.ed, p, l.erase);
+    fn at(self: *PaintBatch, p: P) void {
+        if (paintInto(self.node, self.plan, p, self.ink)) self.changed = true;
     }
 };
 
@@ -96,8 +102,12 @@ pub fn spanOf(ed: *Editor, shift: bool) ?Spanned {
 }
 
 pub fn laySpan(ed: *Editor, s: Span, to: P) void {
-    eachSpanCell(ed, s, to, Laid{ .ed = ed, .erase = s.erase });
-    if (s.shape != .select) return;
+    if (s.shape != .select) {
+        var paint = PaintBatch.init(ed, s.erase);
+        eachSpanCell(ed, s, to, &paint);
+        if (paint.changed) ed.changed();
+        return;
+    }
     const b = grid.Box.between(s.from, to);
     ed.selection = b;
     ed.say("{d} by {d} selected: {s} copies, {s} cuts, {s} clears", .{ b.width(), b.height(), Desk.COPY_CAPTION, Desk.CUT_CAPTION, Desk.DELETE_CAPTION });

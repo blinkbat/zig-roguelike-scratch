@@ -204,6 +204,25 @@ test "nearby visible foes suppress automatic chests and bags but permit delibera
     try std.testing.expectEqual(game.Move.open, game.heroMove(g, .e));
 }
 
+test "stepping onto a bag skips automatic loot when the step reveals a foe" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const bag = P{ .x = 21, .y = 20 };
+    const foe = P{ .x = 26, .y = 20 };
+    harness.arena(g, from, &.{foe});
+    g.sim.outdoors = false;
+    g.sim.lv.lightless();
+    game.settle(g);
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = bag }));
+    try std.testing.expect(!game.foesNear(g));
+    try std.testing.expectEqual(game.Move.loot, game.heroMove(g, .e));
+    harness.nudge(g, .e);
+    try std.testing.expectEqual(bag, g.sim.heroActor().?.at);
+    try std.testing.expect(game.foesNear(g));
+    try harness.expectMode(g, .play);
+}
+
 test "a chest first bump reveals loot and stops held walking; the next enters and opens loot" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

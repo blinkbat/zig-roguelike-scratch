@@ -537,6 +537,84 @@ fn expectRefusedEitherWay(source: *game.Game, bytes: *std.ArrayList(u8), target:
     }
 }
 
+test "save readers reject missing door markers in active and visited levels" {
+    const alloc = std.testing.allocator;
+    const map = try testMap();
+    defer alloc.destroy(map);
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    try game.beginMapAt(source, map, map.start, 37);
+    source.sim.travel = .{ .node = 1, .door = 0 };
+    source.pic.busy = 0;
+    game.update(source, 0);
+    try std.testing.expectEqual(@as(usize, 1), source.sim.node);
+    try std.testing.expect(source.sim.visited.isSet(0));
+
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    game.begin(target, 91);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    into.* = .{};
+    var kept = try format.Untouched.init(alloc, target, into);
+    defer kept.deinit();
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    for ([_]*grid.Level{ &source.sim.visits[0].lv, &source.sim.lv }, 0..) |lv, i| {
+        const door = &lv.door[grid.Level.idx(map.node[i].door[0].at)];
+        const marker = door.*;
+        try std.testing.expect(marker != grid.NO_DOOR);
+        door.* = grid.NO_DOOR;
+        try expectRefusedEitherWay(source, &bytes, target, into, &kept);
+        door.* = marker;
+    }
+}
+
+test "resuming a save rebuilds the hero's resistance after worn item rolls are mended" {
+    const alloc = std.testing.allocator;
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    game.begin(source, 37);
+    const ring = items.affixed(.ring, &.{.{ .kind = .resistance, .element = .fire, .value = 35 }});
+    try std.testing.expect(source.sim.inventory.add(ring));
+    try source.sim.inventory.equip(0, .right_ring, source.sim.growth.attributes(source.sim.class));
+    game.syncStats(source);
+    try std.testing.expectEqual(@as(i16, 35), source.sim.heroActor().?.resists.get(.fire));
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    try sealed(source, &bytes);
+
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    try read(bytes.items, target, into);
+    const resistance = target.sim.heroAttrs().resists.get(.fire);
+    try std.testing.expectEqual(@as(i16, 20), resistance);
+    try std.testing.expectEqual(resistance, target.sim.heroActor().?.resists.get(.fire));
+}
+
+test "save readers reject duplicate coin piles at the same position" {
+    const alloc = std.testing.allocator;
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    game.begin(source, 37);
+    try std.testing.expect(source.sim.ground.gold(source.sim.heroActor().?.at, 5));
+    source.sim.ground.coins[1] = source.sim.ground.coins[0];
+    source.sim.ground.coin_n = 2;
+    var bytes = std.ArrayList(u8).init(alloc);
+    defer bytes.deinit();
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    game.begin(target, 91);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    into.* = .{};
+    var kept = try format.Untouched.init(alloc, target, into);
+    defer kept.deinit();
+    try expectRefusedEitherWay(source, &bytes, target, into, &kept);
+}
+
 test "a run reads back as it was written, and a short or foreign file leaves the game alone" {
     const alloc = std.testing.allocator;
     const w = try testMap();
@@ -545,7 +623,11 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     defer game.shut(alloc, g);
     try game.beginMap(g, w);
     g.sim.name = hero.Name.of("Arwen");
-    try std.testing.expect(g.sim.inventory.add(items.affixed(.ring, &.{.{ .kind = .intelligence, .value = 2 }})));
+    try std.testing.expect(g.sim.inventory.add(items.affixed(.ring, &.{
+        .{ .kind = .intelligence, .value = 2 },
+        .{ .kind = .resistance, .value = 20, .element = .fire },
+        .{ .kind = .resistance, .value = 15, .element = .cold },
+    })));
     try g.sim.inventory.equip(0, .right_ring, g.sim.growth.attributes(g.sim.class));
     try std.testing.expect(g.sim.inventory.add(.{ .kind = .sword }));
     _ = g.sim.growth.gain(100);
@@ -558,8 +640,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     g.sim.flasks.getPtr(.life).drink(12);
     _ = g.sim.flasks.getPtr(.life).tick();
     g.sim.cooldown.set(.juke, 2);
-    g.sim.heroActor().?.resists.set(.fire, 50);
-    g.sim.heroActor().?.resists.set(.cold, 25);
+    game.syncStats(g);
     g.sim.heroActor().?.burn = .{ .turns = 2 };
     g.sim.heroActor().?.resilience.meters.set(.burn, .{ .percent = 50, .turns = 4 });
     g.sim.heroActor().?.bleed = .{ .turns = 3, .amount = 2, .move_bonus = 1 };
@@ -614,8 +695,8 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqualDeep(g.sim.flasks, back.sim.flasks);
     try std.testing.expectEqual(@as(u8, 2), back.sim.cooldown.get(.juke));
     try std.testing.expect(back.sim.stepped);
-    try std.testing.expectEqual(@as(i16, 50), back.sim.heroActor().?.resists.get(.fire));
-    try std.testing.expectEqual(@as(i16, 25), back.sim.heroActor().?.resists.get(.cold));
+    try std.testing.expectEqual(@as(i16, 20), back.sim.heroActor().?.resists.get(.fire));
+    try std.testing.expectEqual(@as(i16, 15), back.sim.heroActor().?.resists.get(.cold));
     try std.testing.expectEqual(@as(u8, 2), back.sim.heroActor().?.burn.turns);
     try std.testing.expectEqualDeep(g.sim.heroActor().?.resilience, back.sim.heroActor().?.resilience);
     try std.testing.expectEqualDeep(g.sim.heroActor().?.bleed, back.sim.heroActor().?.bleed);
@@ -633,7 +714,8 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     const s = try peek(buf.items);
     const menu = @import("ui/menu.zig");
     var line: [menu.NOTE_MAX]u8 = undefined;
-    try std.testing.expectEqualStrings(comptime std.fmt.comptimePrint(hero.HP_FMT, .{ 19, actor.row(actor.HERO).hp }) ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.details(&line));
+    var expected: [menu.NOTE_MAX]u8 = undefined;
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, hero.HP_FMT ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", .{ 19, g.sim.lifeMax() }), s.details(&line));
 }
 
 test "a merchant's shelf comes back from a save as it was left, and one naming no NPC is refused" {

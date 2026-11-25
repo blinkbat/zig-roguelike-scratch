@@ -650,6 +650,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     const view = viewBox(g, c);
     const lo = view.lo;
     const hi = view.hi;
+    g.light.bake(ground, lo, hi);
     const aim_from: ?P = if (g.mode != .aim) null else if (g.sim.heroActor()) |a| a.at else null;
     const aim_legal = if (aim_from) |from| skills.aimable(g, from, g.mode.aim.mark) else false;
 
@@ -679,7 +680,6 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     }
     const bodies = shown[0..n];
 
-    g.light.bake(ground, lo, hi);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;
     const flames = g.light.flames(ground, &flame_buf);
     g.weather_blend.follow(&g.sim.locations);

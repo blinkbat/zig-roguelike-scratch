@@ -116,11 +116,13 @@ pub const Weather = struct {
 
     pub fn draw(self: *const Weather, now: ?climate.Now, local: climate.Local, blend: *const climate.Blend, sight: *const [grid.CELLS]f32, ox: f32, oy: f32, cell: f32, bright: f32) void {
         const n = now orelse return;
-        const fall = fallOf(n.get(.rain)) orelse return;
+        const intensity = n.get(.rain);
+        const fall = fallOf(intensity) orelse return;
         if (self.n == 0 or self.w <= 0 or self.h <= 0) return;
         const scale = look.pxScale(cell);
         const lean = fall.drift / fall.speed;
         const len = fall.len * scale;
+        const alpha = fall.alpha * std.math.clamp(bright, DIM_FLOOR, 1);
         var spokes: [SPLASH_DROPS][2]f32 = undefined;
         for (&spokes, 0..) |*s, i| {
             const angle = mathx.spoke(@floatFromInt(i), SPLASH_DROPS);
@@ -133,11 +135,13 @@ pub const Weather = struct {
             const y = @mod(d.y + oy, self.h);
             const in_cells = look.cellOfScreen(.{ .x = x, .y = y }, ox, oy, cell);
             const at = mathx.cellOf(in_cells);
-            const rain = blend.at(local, in_cells).get(.rain);
+            const sighted = grid.cellOr(f32, sight, at, 0);
+            if (sighted <= 0) continue;
+            const rain = blend.layerAt(&local, in_cells, .rain);
             if (rain <= 0) continue;
-            const seen = grid.cellOr(f32, sight, at, 0) * @min(1, rain / n.get(.rain));
+            const seen = sighted * @min(1, rain / intensity);
             if (seen <= 0) continue;
-            const a = fall.alpha * std.math.clamp(bright, DIM_FLOOR, 1) * seen;
+            const a = alpha * seen;
             if (d.since < 0) {
                 const tail = rl.Vector2{ .x = x - lean * len, .y = y - len };
                 quads.line(tail, .{ .x = x, .y = y }, fall.width, scale, look.fade(INK, a));

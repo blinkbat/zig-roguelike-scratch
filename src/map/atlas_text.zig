@@ -160,6 +160,8 @@ fn putTorchesAndFoes(w: anytype, torches: []const P, foes: []const atlas.Foe) !v
 fn takePaint(s: *section.Section, f: *Tokens) Error!void {
     const at = try cell(f);
     const run = f.next() orelse return error.BadLine;
+    const room = section.ROOM;
+    if (!room.holds(at) or run.len > @as(usize, @intCast(room.hi.x - at.x))) return error.BadLine;
     for (run, 0..) |c, k| {
         if (c == section.UNPAINTED) continue;
         const p = at.add(.{ .x = @intCast(k), .y = 0 });
@@ -934,6 +936,8 @@ test "a procgen node's section saves and loads back the same, and paint off the 
     const bad = [_][]const u8{
         "paint 0 5 ...\n",
         "paint 93 5 ...\n",
+        "paint 94 5 ._\n",
+        "paint 0 5 _..\n",
         "paint 5 5 .Q.\n",
         "paint 5 5 .O.\n",
         "paint 5 5 ...\npaint 6 5 .\n",

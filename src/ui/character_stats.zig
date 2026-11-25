@@ -260,15 +260,6 @@ const Column = struct {
     }
 };
 
-fn statusGroup(kind: resilience.Kind) resilience.Tag {
-    return switch (kind) {
-        .bleed, .sunder, .enfeeble, .maim => .wounds,
-        .stun, .pin => .slows,
-        .blind, .confusion, .fright => .mental,
-        .burn, .chill, .shock => .elemental,
-    };
-}
-
 /// Each ailment a hit may bring, the skill's own roll first and the weapon's only if that missed, as combat rolls them.
 fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: item_bases.WeaponEffect) std.EnumArray(resilience.Kind, u32) {
     var out = std.EnumArray(resilience.Kind, u32).initFill(0);
@@ -361,7 +352,7 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool, on: menu.Surface
         group.y = group_top;
         group.groupHeading(tag, view.keywords, on);
         for (std.enums.values(resilience.Kind)) |k| {
-            if (statusGroup(k) != tag) continue;
+            if (resilience.primaryTag(k) != tag) continue;
             const measure = view.status_resist.get(k);
             if (measure.turns > 0) text.say("{d}%, {d} turn{s}", .{ measure.percent, measure.turns, mathx.plural(measure.turns) }) else text.say("{d}%", .{measure.percent});
             group.entry(menu.named(k), text.text(), .plain, quiet(measure.percent, look.ailmentInk(k)));
@@ -375,13 +366,13 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool, on: menu.Surface
 test "advanced status groups assign every ailment once without losing its tags" {
     var counts = std.EnumArray(resilience.Tag, usize).initFill(0);
     for (std.enums.values(resilience.Kind)) |kind| {
-        const tag = statusGroup(kind);
+        const tag = resilience.primaryTag(kind);
         try std.testing.expect(resilience.tags(kind).contains(tag));
         counts.getPtr(tag).* += 1;
     }
     for (counts.values) |count| try std.testing.expect(count > 0);
-    try std.testing.expectEqual(resilience.Tag.wounds, statusGroup(.maim));
-    try std.testing.expectEqual(resilience.Tag.elemental, statusGroup(.chill));
+    try std.testing.expectEqual(resilience.Tag.wounds, resilience.primaryTag(.maim));
+    try std.testing.expectEqual(resilience.Tag.elemental, resilience.primaryTag(.chill));
 }
 
 fn resistanceLabel(e: anytype) [:0]const u8 {

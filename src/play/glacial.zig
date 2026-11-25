@@ -18,7 +18,12 @@ pub const TAKES = "is chilled";
 pub const ELEMENT: damage.Element = .cold;
 pub const STATUS = std.fmt.comptimePrint("Lose 1 action in every {d}.", .{CYCLE});
 pub const CHILL_NOTE = std.fmt.comptimePrint("{d}% chill chance", .{CHANCE.percent});
-pub const DESCRIPTION = std.fmt.comptimePrint("An arrow bursts into a {d}-tile cone of cold. {s}.", .{ RANGE, CHILL_NOTE });
+const DESCRIPTION_FMT = "An arrow bursts into a {d}-tile cone of cold. {s}.";
+pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIPTION_FMT, .{ RANGE, CHILL_NOTE });
+
+pub fn describeArea(w: anytype, wider: i32) void {
+    w.print(DESCRIPTION_FMT, .{ areas.expanded(RANGE, wider), CHILL_NOTE }) catch {};
+}
 
 pub const Chill = struct {
     turns: u8 = 0,
@@ -57,7 +62,7 @@ const Ahead = struct {
 
 pub fn cone(lv: *const grid.Level, from: P, impact: P, wider: i32) areas.Burst {
     if (from.eq(impact)) return .{};
-    return areas.spread(lv, impact, RANGE + wider, Ahead{ .impact = impact, .heading = impact.sub(from) }, Ahead.holds);
+    return areas.spread(lv, impact, areas.expanded(RANGE, wider), Ahead{ .impact = impact, .heading = impact.sub(from) }, Ahead.holds);
 }
 
 pub const burst = cone;

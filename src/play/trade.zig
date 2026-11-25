@@ -36,11 +36,7 @@ pub fn offered(asked: i32) i32 {
     return @max(1, @divTrunc(asked, SELL_DIVISOR));
 }
 
-/// A row of either list: a stacked supply, or an item by its index on the shelf or in the bag.
-pub const Ware = union(enum) {
-    supply: consumable.Kind,
-    item: usize,
-};
+pub const Ware = inventory.Goods;
 
 pub const Wares = struct {
     pub const COUNTED = .{.{ "item", "item_n" }};
@@ -63,12 +59,12 @@ pub const Wares = struct {
     }
 
     pub fn count(self: *const Wares) usize {
-        return rowsOf(&self.supplies, self.item_n);
+        return inventory.goodsCount(&self.supplies, self.item_n);
     }
 
     /// Supplies first, in `consumable.KINDS` order, then the items.
     pub fn at(self: *const Wares, row: usize) ?Ware {
-        return rowOf(&self.supplies, self.item_n, row);
+        return inventory.goodsAt(&self.supplies, self.item_n, row);
     }
 
     pub fn cost(self: *const Wares, w: Ware) i32 {
@@ -92,25 +88,15 @@ pub const Wares = struct {
 
 /// The hero's goods as a merchant lists them: carried supplies, then the bag; worn gear is not for sale.
 pub fn carried(inv: *const inventory.Inventory) usize {
-    return rowsOf(&inv.stacks, inv.n);
+    return inv.rowCount();
 }
 
 pub fn carriedAt(inv: *const inventory.Inventory, row: usize) ?Ware {
-    return rowOf(&inv.stacks, inv.n, row);
+    return inv.rowAt(row);
 }
 
 pub fn worth(inv: *const inventory.Inventory, w: Ware) i32 {
     return offered(asking(w, inv.bag[0..inv.n]));
-}
-
-fn rowsOf(stacks: *const consumable.Stacks, n: usize) usize {
-    return consumable.stocked(stacks) + n;
-}
-
-fn rowOf(stacks: *const consumable.Stacks, n: usize, row: usize) ?Ware {
-    if (consumable.stockedAt(stacks, row)) |k| return .{ .supply = k };
-    const at = row - consumable.stocked(stacks);
-    return if (at < n) .{ .item = at } else null;
 }
 
 fn asking(w: Ware, goods: []const items.Item) i32 {

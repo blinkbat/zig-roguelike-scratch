@@ -421,8 +421,8 @@ pub const Presentation = struct {
 
     fn catchUpBolts(self: *Presentation, sim: *const Simulation) void {
         for (sim.pool.constSlice(), self.bolts[0..sim.pool.n]) |a, *shown| {
-            if (shown.*) |b| {
-                if (b.done() and (!b.after or a.bolt == null)) shown.* = null;
+            if (shown.*) |*b| {
+                if (b.done() and (!b.after or a.bolt == null) and !b.view.fadeAfterEnd(self.litShown(sim, mathx.cellOf(b.to())))) shown.* = null;
             } else if (a.bolt) |bolt| shown.* = BoltShown.resting(bolt, actor.row(a.kind).hurls.?.element);
         }
     }
@@ -1047,18 +1047,19 @@ pub const Presentation = struct {
     pub fn stepMotion(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.footfalls(sim);
         const lit = self.litCells(sim);
-        if (self.shot) |*s| {
-            if (!s.fly(&self.fx, &sim.lv, lit, dt)) self.shot = null;
-        }
-        for (&self.foe_shots) |*pending| {
-            if (pending.*) |*s| {
-                if (!s.fly(&self.fx, &sim.lv, lit, dt)) pending.* = null;
-            }
-        }
+        stepShot(&self.shot, &self.fx, &sim.lv, lit, dt);
+        for (&self.foe_shots) |*pending| stepShot(pending, &self.fx, &sim.lv, lit, dt);
         for (&self.bolts) |*pending| if (pending.*) |*b| if (b.moving()) {
             if (b.at()) |at| self.fx.hurlTrail(&sim.lv, lit, at, b.heading(), b.element);
         };
         self.stepTurning(dt);
+    }
+
+    fn stepShot(pending: *?Shot, effects: *fx.Fx, lv: *const grid.Level, lit: *const [grid.CELLS]bool, dt: f32) void {
+        const s = if (pending.*) |*shot| shot else return;
+        if (!s.view.fading and s.fly(effects, lv, lit, dt)) return;
+        const seen_end = grid.cellOr(bool, lit, mathx.cellOf(s.position(s.ends())), false);
+        if (!s.view.fadeAfterEnd(seen_end)) pending.* = null;
     }
 
     pub fn footfalls(self: *Presentation, sim: *const Simulation) void {

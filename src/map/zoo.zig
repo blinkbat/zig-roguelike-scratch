@@ -15,7 +15,13 @@ const SIZE_MAX: u8 = 10;
 const MARGIN: i32 = 2;
 pub const Entry = struct { kind: actor.Kind = .rat, weight: u8 = 1 };
 pub const Side = enum { n, e, s, w };
-pub const TorchOrigin = enum { rolled, authored };
+const TorchOrigin = enum { rolled, authored };
+pub const StampOptions = struct {
+    authored: ?*const grid.CellSet = null,
+    swimmers: ?*const grid.CellSet = null,
+    entrance: ?P = null,
+    torches: TorchOrigin = .rolled,
+};
 pub const Spec = struct {
     pub const COUNTED = .{.{ "pool", "pool_n" }};
     at: P = .{ .x = 40, .y = 18 },
@@ -125,10 +131,10 @@ pub const Spec = struct {
     }
 
     fn stampAround(s: *const Spec, lv: *grid.Level, authored: ?*const grid.CellSet) void {
-        s.stampToward(lv, authored, null, .rolled);
+        s.stampToward(lv, .{ .authored = authored });
     }
 
-    pub fn stampToward(s: *const Spec, lv: *grid.Level, authored: ?*const grid.CellSet, entrance: ?P, torches: TorchOrigin) void {
+    pub fn stampToward(s: *const Spec, lv: *grid.Level, options: StampOptions) void {
         const r = s.room();
         var outside = grid.CellSet.initEmpty();
         var protected = grid.CellSet.initEmpty();
@@ -137,7 +143,7 @@ pub const Spec = struct {
             var counts: [grid.CELLS]u32 = undefined;
             const sizes = counts[0..stretches.n];
             @memset(sizes, 0);
-            var near = grid.Nearest{ .from = entrance orelse .{ .x = 0, .y = 0 } };
+            var near = grid.Nearest{ .from = options.entrance orelse .{ .x = 0, .y = 0 } };
             for (0..grid.CELLS) |i| {
                 const p = grid.Level.of(i);
                 if (!lv.walkable(p) or s.occupies(p)) continue;
@@ -145,7 +151,7 @@ pub const Spec = struct {
                 near.offer(p);
             }
             var main = carve.Stretches.biggestOf(sizes);
-            if (entrance != null) {
+            if (options.entrance != null) {
                 if (near.best) |p| main = stretches.of(p);
             }
             var related = carve.Regions.initEmpty();
@@ -166,17 +172,17 @@ pub const Spec = struct {
             _ = lv.breakBarrel(p);
         }
         const way_in = s.approach();
-        s.connectTo(lv, way_in, &outside, &protected, authored);
+        s.connectTo(lv, way_in, &outside, &protected, options);
         if (s.key) |k| {
             lv.set(k, .floor);
             _ = lv.breakBarrel(k);
             const joined = grid.reached(lv, way_in);
-            s.connectTo(lv, k, &joined, &protected, authored);
+            s.connectTo(lv, k, &joined, &protected, options);
             lv.set(k, .chest);
             const kept = grid.reached(lv, way_in);
             for (grid.STEPS) |d| {
                 const n = k.add(d);
-                if (grid.Level.inside(n) and joined.isSet(grid.Level.idx(n)) and !kept.isSet(grid.Level.idx(n))) s.connectTo(lv, n, &kept, &protected, authored);
+                if (grid.Level.inside(n) and joined.isSet(grid.Level.idx(n)) and !kept.isSet(grid.Level.idx(n))) s.connectTo(lv, n, &kept, &protected, options);
             }
         }
         const back = carve.sideAt(inner, s.dir().opposite(), s.along());
@@ -190,7 +196,7 @@ pub const Spec = struct {
             const torch = lume.torchOver(inner, x);
             if (!gen.bearsTorch(lv, torch)) continue;
             if (lv.torch.has(torch)) return;
-            if (!lv.torch.takes(torch) and !evictTorch(lv, authored, torches)) return;
+            if (!lv.torch.takes(torch) and !evictTorch(lv, options.authored, options.torches)) return;
             lv.addTorch(torch);
             return;
         }
@@ -209,16 +215,16 @@ pub const Spec = struct {
         while (it.next()) |p| if (lv.walkable(p)) related.set(stretches.of(p));
     }
 
-    fn connectTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet, protected: *const grid.CellSet, authored: ?*const grid.CellSet) void {
+    fn connectTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet, protected: *const grid.CellSet, options: StampOptions) void {
         if (targets.count() == 0) return;
         var dist: [grid.CELLS]i32 = undefined;
         var reach: [grid.CELLS]u32 = undefined;
         var flood = grid.Flood.init(lv, from, &dist, &reach);
         if (flood.first(targets, grid.inSet) != null) return;
-        if (!s.carveTo(lv, from, targets, protected, authored)) _ = s.carveTo(lv, from, targets, &grid.CellSet.initEmpty(), authored);
+        if (!s.carveTo(lv, from, targets, protected, options)) _ = s.carveTo(lv, from, targets, &grid.CellSet.initEmpty(), options);
     }
 
-    fn carveTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet, protected: *const grid.CellSet, authored: ?*const grid.CellSet) bool {
+    fn carveTo(s: *const Spec, lv: *grid.Level, from: P, targets: *const grid.CellSet, protected: *const grid.CellSet, options: StampOptions) bool {
         var destinations = targets.*;
         var target = targets.iterator(.{});
         while (target.next()) |i| {
@@ -233,7 +239,7 @@ pub const Spec = struct {
             lv: *const grid.Level,
             to: *const grid.CellSet,
             protected: *const grid.CellSet,
-            authored: ?*const grid.CellSet,
+            options: StampOptions,
 
             pub const ON_TAKE = true;
             pub const LIT_LAST = false;
@@ -243,7 +249,7 @@ pub const Spec = struct {
             }
 
             pub fn last(w: @This(), k: usize) bool {
-                return carve.breaksLast(w.lv, w.authored, k);
+                return carve.breaksLast(w.lv, w.options.authored, k) or pinned(w.options.swimmers, grid.Level.of(k));
             }
 
             pub fn done(w: @This(), k: usize) bool {
@@ -252,10 +258,12 @@ pub const Spec = struct {
         };
         var search: carve.Fewest = .{};
         search.seed(grid.Level.idx(from));
-        const found = search.run(lv, Way{ .s = s, .lv = lv, .to = &destinations, .protected = protected, .authored = authored }) orelse return false;
+        const found = search.run(lv, Way{ .s = s, .lv = lv, .to = &destinations, .protected = protected, .options = options }) orelse return false;
         var way = search.trace(found.end);
         while (way.next()) |q| {
-            carve.layWith(lv, q, .floor, grid.STONE_SPAN);
+            if (pinned(options.swimmers, q) and lv.at(q).solid()) {
+                lv.set(q, .shallows);
+            } else carve.layWith(lv, q, .floor, grid.STONE_SPAN);
             _ = lv.breakBarrel(q);
         }
         return true;
@@ -347,7 +355,7 @@ test "a zoo connects an isolated map edge entrance without opening other rim cel
         var lv = grid.Level.blank();
         @memset(&lv.tile, .rock);
         lv.set(entrance, .floor);
-        s.stampToward(&lv, null, entrance, .rolled);
+        s.stampToward(&lv, .{ .entrance = entrance });
         try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(s.approach())));
         for (0..grid.CELLS) |i| {
             const p = grid.Level.of(i);
@@ -363,7 +371,7 @@ test "a zoo behind a sealed strip spanning the map still connects its gate" {
     const entrance = P{ .x = 1, .y = 21 };
     for (1..20) |x| lv.set(.{ .x = @intCast(x), .y = 21 }, .floor);
     for (2..grid.H - 2) |y| lv.set(.{ .x = 22, .y = @intCast(y) }, .floor);
-    s.stampToward(&lv, null, entrance, .rolled);
+    s.stampToward(&lv, .{ .entrance = entrance });
     try std.testing.expect(grid.reached(&lv, entrance).isSet(grid.Level.idx(s.approach())));
 }
 
@@ -394,7 +402,7 @@ test "a zoo's torch in a full pool of only authored torches is left out" {
     var bespoke = lv;
     s.stampAround(&lv, &all);
     try std.testing.expectEqualSlices(P, before.slice(), lv.torch.slice());
-    s.stampToward(&bespoke, null, null, .authored);
+    s.stampToward(&bespoke, .{ .torches = .authored });
     try std.testing.expectEqualSlices(P, before.slice(), bespoke.torch.slice());
 }
 

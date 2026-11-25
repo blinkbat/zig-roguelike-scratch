@@ -1032,6 +1032,13 @@ test "Sweeping widens a frost nova by a cell" {
         harness.toughenFoes(g);
         g.sim.mana = harness.TEST_MANA;
         if (wide) g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .area, .value = 1 }));
+        var desc: [256]u8 = undefined;
+        for ([_]skillbar.Act{ .fireball, .frost_vial }) |act| {
+            try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, act, &desc), if (wide) "within 2 tiles" else "within 1 tile") != null);
+        }
+        try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .frost_nova, &desc), if (wide) "within 3 tiles" else "within 2 tiles") != null);
+        try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .glacial_shot, &desc), if (wide) "3-tile cone" else "2-tile cone") != null);
+        try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .gravity_well, &desc), if (wide) "within 3 cells" else "within 2 cells") != null);
         harness.useAct(g, .frost_nova);
         try std.testing.expectEqual(wide, harness.foes(g)[0].hp < harness.TEST_HP);
     }

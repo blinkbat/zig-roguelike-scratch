@@ -544,6 +544,9 @@ fn validatePlot(plot: *const @FieldType(data.Portable, "plot"), s: *const atlas.
 }
 
 fn validateDoors(level: *const grid.Level, node: ?*const atlas.Node) !void {
+    if (node) |owner| for (owner.doors(), 0..) |door, i| {
+        if (level.doorAt(door.at) != i) return error.Damaged;
+    };
     for (level.door, 0..) |door, cell| {
         if (door == grid.NO_DOOR) continue;
         const owner = node orelse return error.Damaged;
@@ -593,7 +596,13 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *ground_it
         if (!grid.Level.inside(drop.at) or drop.source > pool.n) return error.Damaged;
         drop.item.mend();
     }
-    for (ground.coins[0..ground.coin_n]) |coins| if (!grid.Level.inside(coins.at) or coins.amount <= 0) return error.Damaged;
+    var piles = grid.CellSet.initEmpty();
+    for (ground.coins[0..ground.coin_n]) |coins| {
+        if (!grid.Level.inside(coins.at) or coins.amount <= 0) return error.Damaged;
+        const cell = grid.Level.idx(coins.at);
+        if (piles.isSet(cell)) return error.Damaged;
+        piles.set(cell);
+    }
     for (ground.supplies[0..ground.supply_n]) |s| if (!grid.Level.inside(s.at) or s.source > pool.n) return error.Damaged;
 }
 

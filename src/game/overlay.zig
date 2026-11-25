@@ -273,7 +273,7 @@ pub fn describe(g: *const game.Game, act: skillbar.Act, buf: []u8) [:0]const u8 
 }
 
 fn writeDescription(g: *const game.Game, act: skillbar.Act, w: anytype) void {
-    act.describe(w, g.sim.heroDraughts(), g.sim.reachOf(act));
+    act.describe(w, g.sim.heroDraughts(), g.sim.reachOf(act), g.sim.wider());
     w.writeAll(" ") catch {};
     g.sim.growth.writeUsage(act, g.sim.inventory.gear.quicker(), w);
     w.writeAll(". ") catch {};

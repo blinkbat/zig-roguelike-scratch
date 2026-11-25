@@ -112,6 +112,23 @@ pub const Blend = struct {
 
     /// `at` in cells, a cell spanning [p, p + 1).
     pub fn at(self: *const Blend, weather: Local, c: [2]f32) Now {
+        const shares = self.sharesAt(c);
+        var result = Now.initFill(0);
+        for (std.enums.values(Location)) |place| addShare(&result, weather.getPtrConst(place), shares.get(place));
+        return result;
+    }
+
+    pub fn layerAt(self: *const Blend, weather: *const Local, c: [2]f32, layer: Layer) f32 {
+        const shares = self.sharesAt(c);
+        var result: f32 = 0;
+        for (std.enums.values(Location)) |place| {
+            const share = shares.get(place);
+            if (share > 0) result += weather.getPtrConst(place).get(layer) * share;
+        }
+        return result;
+    }
+
+    fn sharesAt(self: *const Blend, c: [2]f32) std.EnumArray(Location, f32) {
         const fx = std.math.clamp(c[0] - 0.5, 0, @as(f32, COLS - 1));
         const fy = std.math.clamp(c[1] - 0.5, 0, @as(f32, ROWS - 1));
         const x0: usize = @intFromFloat(@floor(fx));
@@ -120,10 +137,10 @@ pub const Blend = struct {
         const y1 = @min(y0 + 1, ROWS - 1);
         const tx = fx - @as(f32, @floatFromInt(x0));
         const ty = fy - @as(f32, @floatFromInt(y0));
-        var result = Now.initFill(0);
+        var result = std.EnumArray(Location, f32).initUndefined();
         for (std.enums.values(Location)) |place| {
             const w = self.weight.getPtrConst(place);
-            addShare(&result, weather.getPtrConst(place), mathx.bilerp(.{ w[y0 * COLS + x0], w[y0 * COLS + x1], w[y1 * COLS + x0], w[y1 * COLS + x1] }, tx, ty));
+            result.set(place, mathx.bilerp(.{ w[y0 * COLS + x0], w[y0 * COLS + x1], w[y1 * COLS + x0], w[y1 * COLS + x1] }, tx, ty));
         }
         return result;
     }
@@ -150,6 +167,7 @@ test "weather fades across a few cells where locations meet and is whole away fr
     var x: f32 = 33;
     while (x < 47) : (x += 0.25) {
         const r = blend.at(weather, .{ x, y }).get(.rain);
+        try std.testing.expectEqual(r, blend.layerAt(&weather, .{ x, y }, .rain));
         try std.testing.expect(r >= last - 1e-6 and r - last < 0.06);
         last = r;
     }
@@ -158,7 +176,13 @@ test "weather fades across a few cells where locations meet and is whole away fr
 
 pub fn local(c: Climate, overrides: Locations, seed: u64, minutes: u64) Local {
     var result = Local.initUndefined();
-    for (std.enums.values(Location)) |place| result.set(place, c.in(overrides, place).now(seed, minutes));
+    var profiles = std.EnumArray(Weather, ?Now).initFill(null);
+    for (std.enums.values(Location)) |place| {
+        const profile = c.in(overrides, place);
+        const now = profiles.getPtr(profile.weather);
+        if (now.* == null) now.* = profile.now(seed, minutes);
+        result.set(place, now.*.?);
+    }
     return result;
 }
 
@@ -270,13 +294,18 @@ pub const Climate = struct {
     }
 
     pub fn now(c: Climate, seed: u64, minutes: u64) Now {
-        const p = PROFILES.get(c.weather);
-        var d = std.EnumArray(Drive, f32).initUndefined();
-        for (std.enums.values(Drive)) |k| d.set(k, drive(seed, k, p.cycle.get(k), minutes));
+        const p = PROFILES.getPtrConst(c.weather);
+        var drives = std.EnumArray(Drive, ?f32).initFill(null);
         var n = Now.initUndefined();
         for (std.enums.values(Layer)) |l| {
             const span = p.layer.get(l);
-            n.set(l, span.at(d.get(span.on)));
+            if (span.least == span.most) {
+                n.set(l, span.least);
+                continue;
+            }
+            const value = drives.getPtr(span.on);
+            if (value.* == null) value.* = drive(seed, span.on, p.cycle.get(span.on), minutes);
+            n.set(l, span.at(value.*.?));
         }
         n.set(.overcast, @max(n.get(.overcast), c.light.overcast()));
         return n;

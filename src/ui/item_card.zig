@@ -159,12 +159,14 @@ fn head(face: *const font.Face, x: i32, y: i32, width: i32, caption: ?[:0]const 
     menu.edgeRule(x, y + CARD_RULE, width);
 }
 
-pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consumable.Kind, carried: u8, caption: ?[:0]const u8) void {
-    head(face, x, y, width, caption);
+pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consumable.Kind, carried: u8, wider: i32) void {
+    head(face, x, y, width, null);
     _ = face.paragraph(menu.named(k), x, y + CARD_NAME, width, font.BODY, look.itemInk(.normal));
     face.draw(CONSUMABLE, x, y + SLOT_Y, font.LABEL, look.DIM);
     const act = skillbar.Act.ofSupply(k);
-    const top = face.richParagraph(act.desc(), x, y + CARD_STATS, width, font.SMALL, look.TEXT);
+    var desc: menu.Note(256) = .{};
+    act.describe(desc.writer(), .{}, act.reach(), wider);
+    const top = face.richParagraph(desc.text(), x, y + CARD_STATS, width, font.SMALL, look.TEXT);
     var line: menu.Note(40) = .{};
     line.say(CARRIED_FMT ++ ", 1 turn to use", .{carried});
     face.draw(line.text(), x, top + MODS_BELOW, font.LABEL, look.DIM);

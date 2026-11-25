@@ -15,7 +15,12 @@ pub const VERB = "freezes";
 pub const DONE = "casts a frost nova";
 pub const TAKES = glacial.TAKES;
 pub const ELEMENT = glacial.ELEMENT;
-pub const DESCRIPTION = std.fmt.comptimePrint("A cold blast hits every foe within {d} tiles. {s}.", .{ RANGE, glacial.CHILL_NOTE });
+const DESCRIPTION_FMT = "A cold blast hits every foe within {d} tiles. {s}.";
+pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIPTION_FMT, .{ RANGE, glacial.CHILL_NOTE });
+
+pub fn describeArea(w: anytype, wider: i32) void {
+    w.print(DESCRIPTION_FMT, .{ areas.expanded(RANGE, wider), glacial.CHILL_NOTE }) catch {};
+}
 
 comptime {
     std.debug.assert(RANGE <= areas.BURST_MAX);
@@ -29,7 +34,7 @@ pub const AILMENT = glacial.AILMENT;
 
 /// Every cell within `RANGE` of `from` the burst reaches past the terrain, `from` aside.
 pub fn around(lv: *const grid.Level, from: P, wider: i32) areas.Burst {
-    return areas.spread(lv, from, RANGE + wider, from, notAt);
+    return areas.spread(lv, from, areas.expanded(RANGE, wider), from, notAt);
 }
 
 fn notAt(from: P, p: P) bool {

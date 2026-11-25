@@ -43,9 +43,11 @@ Lengths and counts are bounded before indexing. Unknown enum/union tags, invalid
 booleans, numeric overflow, non-finite floats, all-zero RNG states, duplicate known fields, impossible
 actor references, incomplete required data and checksum failures are rejected.
 The hero retains the first actor-pool slot across active and visited levels.
-Active and visited levels validate occupancy and positions. Summary data must agree
-with the run. Parsing and validation complete before either the live game or its map
-is changed. A successful load marks the run dirty for an atomic canonical rewrite.
+Active and visited levels validate occupancy, positions, door markers and unique
+coin piles. Loading rebuilds the hero's maximum life, maximum mana and elemental
+resistances from repaired gear and progression. Summary data must agree with the
+run. Parsing and validation complete before either the live game or its map is
+changed. A successful load marks the run dirty for an atomic canonical rewrite.
 Reading a save never changes its file.
 Starting a run checks for a missing or empty slot with a one-byte read. The Load
 menu decodes each slot to report whether its run can be loaded.

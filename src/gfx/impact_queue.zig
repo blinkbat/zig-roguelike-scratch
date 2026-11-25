@@ -1,5 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
 const chain = @import("../play/chain.zig");
 const state = @import("effect_state.zig");
@@ -18,6 +19,9 @@ pub const OWED_KINDS: usize = 16;
 const LOOSE_DUE: usize = 2;
 /// Capacity for turn effects, hero hits, sweeps, source-target death consequences and loose effects.
 const DUE: usize = actor.MAX * (OWED_KINDS + actor.SWEEP_CELLS + actor.MAX) + @max(LOOSE_DUE, chain.JUMPS);
+comptime {
+    std.debug.assert(DUE <= std.math.maxInt(u16));
+}
 
 pub const Event = union(enum) {
     blow: state.Blow,
@@ -47,16 +51,10 @@ pub const Event = union(enum) {
         return (d.bound() orelse return null).slot;
     }
 
-    fn blowOf(d: *const Event) ?*const state.Blow {
-        return switch (d.*) {
-            .blow => |*b| b,
-            .sting, .settle, .burst, .zap, .puff, .shimmer, .whirl => null,
-        };
-    }
-
-    fn onBarrel(d: *const Event) bool {
-        const b = d.blowOf() orelse return false;
-        return b.impact == .barrel;
+    fn barrelAt(d: *const Event) ?mathx.P {
+        if (d.* != .blow) return null;
+        const impact = &d.blow.impact;
+        return if (impact.* == .barrel) impact.barrel else null;
     }
 
     pub fn after(d: *const Event) ?state.After {
@@ -77,8 +75,8 @@ pub const Queue = struct {
     dying: [actor.MAX]f32 = @splat(0),
     due: [DUE]struct { t: f32, what: Event } = undefined,
     due_n: usize = 0,
-    barrels_due: usize = 0,
-    reveals_due: usize = 0,
+    barrels_due: [grid.CELLS]u16 = @splat(0),
+    reveals_due: [actor.MAX]u16 = @splat(0),
     /// Indexed by pool slot: queued events bound to it.
     due_on: [actor.MAX]u32 = @splat(0),
     /// Indexed by pool slot: the body as the latest-dealt of the blows landed on it left it.
@@ -104,7 +102,7 @@ pub const Queue = struct {
 
     /// Seconds until the blow that reveals the slot lands; 0 when none is due.
     pub fn revealsIn(self: *const Queue, slot: actor.ActorSlot) f32 {
-        if (self.reveals_due == 0) return 0;
+        if (self.reveals_due[slot.index] == 0) return 0;
         return self.lastDue(slot, revealed);
     }
 
@@ -113,13 +111,14 @@ pub const Queue = struct {
     }
 
     fn tally(self: *Queue, what: *const Event, comptime up: bool) void {
-        stepCount(&self.barrels_due, what.onBarrel(), up);
-        stepCount(&self.reveals_due, revealed(what) != null, up);
-        if (what.on()) |s| stepCount(&self.due_on[s.index], true, up);
+        if (what.barrelAt()) |p| {
+            if (grid.Level.inside(p)) stepCount(&self.barrels_due[grid.Level.idx(p)], up);
+        }
+        if (revealed(what)) |s| stepCount(&self.reveals_due[s.index], up);
+        if (what.on()) |s| stepCount(&self.due_on[s.index], up);
     }
 
-    fn stepCount(n: anytype, on: bool, comptime up: bool) void {
-        if (!on) return;
+    fn stepCount(n: anytype, comptime up: bool) void {
         if (up) n.* += 1 else n.* -= 1;
     }
 
@@ -137,6 +136,7 @@ pub const Queue = struct {
     }
 
     pub fn landsIn(self: *const Queue, slot: actor.ActorSlot) f32 {
+        if (!self.pending(slot)) return 0;
         return self.lastDue(slot, Event.on);
     }
 
@@ -147,11 +147,7 @@ pub const Queue = struct {
     }
 
     pub fn breaking(self: *const Queue, p: mathx.P) bool {
-        if (self.barrels_due == 0) return false;
-        for (self.due[0..self.due_n]) |*d| {
-            if (d.what.onBarrel() and d.what.blowOf().?.impact.barrel.eq(p)) return true;
-        }
-        return false;
+        return grid.cellOr(u16, &self.barrels_due, p, 0) != 0;
     }
 
     pub fn flashOf(self: *const Queue, slot: actor.ActorSlot) f32 {
@@ -190,10 +186,6 @@ pub const Queue = struct {
         return self.due_n;
     }
 
-    fn hasBarrels(self: *const Queue) bool {
-        return self.barrels_due > 0;
-    }
-
     pub fn isDying(self: *const Queue, slot: actor.ActorSlot) bool {
         return self.dying[slot.index] > 0;
     }
@@ -229,11 +221,11 @@ const ReadyIterator = struct {
     pub fn next(self: *ReadyIterator) ?Ready {
         const queue = self.queue;
         while (self.index < queue.due_n) {
-            const pending = queue.due[self.index];
-            if (pending.t > 0) {
+            if (queue.due[self.index].t > 0) {
                 self.index += 1;
                 continue;
             }
+            const pending = queue.due[self.index];
             queue.due_n -= 1;
             queue.due[self.index] = queue.due[queue.due_n];
             queue.tally(&pending.what, false);
@@ -280,7 +272,7 @@ test "a full impact queue preserves pending barrels and returns overflow for imm
     const overflow = queue.schedule(2, event).?;
     try std.testing.expectEqual(@as(f32, 0), overflow.late);
     try std.testing.expectEqual(DUE, queue.count());
-    try std.testing.expect(queue.hasBarrels() and queue.breaking(at));
+    try std.testing.expect(queue.breaking(at));
     queue.advance(0.5);
     var early = queue.ready();
     try std.testing.expect(early.next() == null);
@@ -290,9 +282,9 @@ test "a full impact queue preserves pending barrels and returns overflow for imm
     while (ready.next()) |_| count += 1;
     try std.testing.expectEqual(DUE, count);
     try std.testing.expectEqual(@as(usize, 0), queue.count());
-    try std.testing.expect(!queue.hasBarrels() and !queue.breaking(at));
+    try std.testing.expect(!queue.breaking(at));
     try std.testing.expect(queue.schedule(1, event) == null);
     queue.clear();
     try std.testing.expectEqual(@as(usize, 0), queue.count());
-    try std.testing.expect(!queue.hasBarrels());
+    try std.testing.expect(!queue.breaking(at));
 }

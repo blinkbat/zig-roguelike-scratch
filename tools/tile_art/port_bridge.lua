@@ -301,14 +301,10 @@ drawing.isVisible=false
 sourceFiles.hide(s,sourceFiles.LAYER.under)
 app.layer=l
 local dest=install and path or sourceFiles.draft(work..'bridge-draft.aseprite',path,app.params.previous)
-local staged=sourceFiles.stage(app.fs.fileName(dest))
-s:saveAs(staged)
-s:close()
-local back=assert(app.open(staged))
-sourceFiles.checkCel(back,sourceFiles.LAYER.draw,original,position)
-sourceFiles.checkLayer(back,layer_name,extension,Point(0,0))
-back:close()
-sourceFiles.publishTo(staged,dest,install and canonical or nil)
+sourceFiles.publishExtension(s,{
+  destination=dest,canonical=install and canonical or nil,
+  original=original,position=position,layer=layer_name,image=extension,
+})
 atlas:saveAs(work..'bridge-atlas.png')
 local zoom=Image(atlas)
 zoom:resize(4*groundPort.SIZE,4*groundPort.SIZE)

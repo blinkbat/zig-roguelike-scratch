@@ -317,7 +317,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     if (progress.basic(s.act)) rank.say("Basic attack", .{}) else if (learned) rank.say("Rank {d} of {d}", .{ growth.ranks.get(s.act), progress.rankLimit(s.act) }) else rank.say("Not learned", .{});
     face.draw(rank.text(), x, RANK_Y, font.SMALL, skillInk(class, growth, s));
     var desc: menu.Note(256) = .{};
-    s.act.describe(desc.writer(), loadout.gear.draughtsOver(growth.perks()), s.act.reachWith(loadout.gear.bounding()));
+    s.act.describe(desc.writer(), loadout.gear.draughtsOver(growth.perks()), s.act.reachWith(loadout.gear.bounding()), loadout.gear.wider());
     const end = paragraph(face, desc.text(), x, DESC_Y, TEXT_W, look.TEXT);
     var top: i32 = @max(RULE_MIN_Y, end + RULE_GAP);
     menu.edgeRule(x, top, TEXT_W);

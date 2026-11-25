@@ -14,8 +14,15 @@ pub const MotionView = struct {
     at: ?[2]f32 = null,
     alpha: f32 = 0,
     fresh: bool = true,
+    fading: bool = false,
 
-    pub fn step(self: *MotionView, at: ?[2]f32, visible: bool, k: f32) void {
+    pub fn fadeAfterEnd(self: *MotionView, seen_end: bool) bool {
+        self.fading = self.at != null and (self.fading or !seen_end);
+        return self.fading;
+    }
+
+    pub fn step(self: *MotionView, at: ?[2]f32, seen: bool, k: f32) void {
+        const visible = seen and !self.fading;
         if (visible) self.at = at;
         const first = self.fresh and at != null;
         if (at != null) self.fresh = false;

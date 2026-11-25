@@ -17,7 +17,13 @@ pub const BOLT_RANGE: i32 = 6;
 pub const TAKES = burning.TAKES;
 pub const ELEMENT = burning.ELEMENT;
 pub const KINDLE = fire.Kindle{ .chance = 50 };
-pub const DESCRIPTION = std.fmt.comptimePrint("A fire bolt bursts on impact, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), burning.BURN_NOTE });
+const DESCRIPTION_FMT = "A fire bolt bursts on impact, hitting every foe within {d} tile{s}. {s}.";
+pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIPTION_FMT, .{ BLAST, mathx.plural(BLAST), burning.BURN_NOTE });
+
+pub fn describeArea(w: anytype, wider: i32) void {
+    const radius = areas.expanded(BLAST, wider);
+    w.print(DESCRIPTION_FMT, .{ radius, mathx.plural(radius), burning.BURN_NOTE }) catch {};
+}
 
 pub const BASE = damage.Base{ .lo = 3, .hi = 6 };
 

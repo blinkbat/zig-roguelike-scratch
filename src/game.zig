@@ -569,7 +569,7 @@ pub fn resumeRun(g: *Game) void {
     toDefaults(&g.sim, &(SimFields.resumed ++ SimFields.rebuilt));
     g.sim.unsaved = g.sim.growth.refundExcessRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
-    _ = fitLife(g);
+    _ = fitStats(g);
     talking.restand(g);
     var left = g.sim.visited.iterator(.{});
     while (left.next()) |n| if (n != g.sim.node) talking.stampNpcs(g, n, &g.sim.visits[n].lv);
@@ -680,7 +680,10 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
                 tactics_exec.shoved(g, ally);
             }
             if (h.limp(h.afflictions())) g.sim.log.say("{s} " ++ maim.LIMPS ++ ".", .{g.sim.name.text()});
-            if (loot and !foesNear(g)) character.openLoot(g, to);
+            if (loot) {
+                castSight(g, to);
+                if (!foesNear(g)) character.openLoot(g, to);
+            }
         },
         .blocked => return,
     }
@@ -712,17 +715,17 @@ pub fn heroTo(g: *Game, to: P) void {
 }
 
 pub fn syncStats(g: *Game) void {
-    const h = fitLife(g) orelse return;
-    h.resists = g.sim.heroAttrs().resists;
-    g.pic.settleHero(&g.sim, 0);
+    if (fitStats(g)) g.pic.settleHero(&g.sim, 0);
 }
 
-fn fitLife(g: *Game) ?*actor.Actor {
+fn fitStats(g: *Game) bool {
     g.sim.clampMana();
-    const h = g.sim.heroActor() orelse return null;
-    h.max = g.sim.lifeMax();
+    const h = g.sim.heroActor() orelse return false;
+    const stats = g.sim.heroAttrs();
+    h.max = stats.life();
     h.hp = @min(h.hp, h.max);
-    return h;
+    h.resists = stats.resists;
+    return true;
 }
 
 pub fn characterShown(g: *const Game) bool {

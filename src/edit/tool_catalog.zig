@@ -135,7 +135,7 @@ pub const Tool = union(enum) {
             .torch => TORCH_RULE,
             .foe => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
             .npc => NPC_RULE ++ "; on a rolled node, beside the first prop of the kind clicked or far from the doors; " ++ Desk.PAINT_CAPTION ++ " on one gives it words, " ++ Desk.ERASE_CAPTION ++ " takes it away",
-            .door => "any cell of any node; a procgen node's floor is rolled round its doors each run",
+            .door => "place outside zoos and their key chests; a procgen node's floor is rolled round its doors each run",
             .link => Desk.PAINT_CAPTION ++ " a door, then the door it leads to on any node; " ++ Desk.ERASE_CAPTION ++ " unlinks",
             .start => "where the map begins, and " ++ Desk.PLAY_CAPTION ++ " plays from",
         };
@@ -143,13 +143,23 @@ pub const Tool = union(enum) {
 };
 
 pub const TOOLS = blk: {
-    var out: []const Tool = &.{};
-    for (std.enums.values(std.meta.Tag(Tool))) |tag| {
-        if (tag == .foe) {
-            for (actor.FOES) |k| out = out ++ &[_]Tool{.{ .foe = k }};
-        } else out = out ++ &[_]Tool{@unionInit(Tool, @tagName(tag), {})};
+    @setEvalBranchQuota(20_000);
+    const fields = std.meta.fields(@TypeOf(Desk.TOOL_KEYS_BY));
+    var out: [fields.len]Tool = undefined;
+    for (fields, &out) |field, *tool| {
+        const tag = std.meta.stringToEnum(std.meta.Tag(Tool), field.name);
+        const kind = std.meta.stringToEnum(actor.Kind, field.name);
+        if (tag) |name| {
+            if (name == .foe or (kind != null and kind.?.stocked())) @compileError("Ambiguous editor tool: " ++ field.name);
+            tool.* = @unionInit(Tool, field.name, {});
+        } else {
+            const foe = kind orelse @compileError("Unknown editor tool: " ++ field.name);
+            if (!foe.stocked()) @compileError("Editor tool must name a stocked foe: " ++ field.name);
+            tool.* = .{ .foe = foe };
+        }
     }
-    break :blk out[0..out.len].*;
+    std.debug.assert(out.len == std.enums.values(std.meta.Tag(Tool)).len - 1 + actor.FOES.len);
+    break :blk out;
 };
 pub const PALETTE_RULE = Desk.PAINT_CAPTION ++ " first ink, " ++ Desk.ERASE_CAPTION ++ " second";
 const UNGENERATED = blk: {
@@ -163,8 +173,6 @@ pub const GENERATED = "A procgen node is generated; it takes only " ++ UNGENERAT
 
 comptime {
     @setEvalBranchQuota(10_000);
-    std.debug.assert(TOOLS.len == Desk.TOOL_KEYS.len);
-    for (actor.FOES) |k| std.debug.assert(k.stocked());
     for (FAMILIES) |f| _ = f.first();
 }
 
@@ -243,7 +251,7 @@ pub const HELP = [_]HelpSection{
         Desk.TOOLS_CAPTION ++ " tool",
         Desk.SHAPES_CAPTION ++ " shape",
         SHAPE_NOUNS,
-        Desk.RECT_CAPTION ++ " rectangle with any shape",
+        Desk.RECT_CAPTION ++ " filled rectangle while painting",
         Desk.BRUSH_CAPTION ++ " brush size",
         Desk.PICK_CAPTION ++ " pick from under cursor",
         "Palette: " ++ PALETTE_RULE,

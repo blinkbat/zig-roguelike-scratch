@@ -143,6 +143,7 @@ pub const Cinema = struct {
     scene: ?rl.RenderTexture2D = null,
     spread: ?rl.RenderTexture2D = null,
     active_bloom: bool = false,
+    active_air: bool = false,
     active_beams: bool = false,
 
     pub fn load(self: *Cinema) void {
@@ -165,6 +166,7 @@ pub const Cinema = struct {
 
     pub fn prepare(self: *Cinema, lv: *const grid.Level, l: *const light.Light, view: grid.Box, flames: []const light.Flame, blend: *const climate.Blend, weather: climate.Local) void {
         self.active_bloom = false;
+        self.active_air = false;
         self.active_beams = false;
         const air_on = self.airs(l);
         if (!self.options.bloom and !air_on) return;
@@ -183,15 +185,18 @@ pub const Cinema = struct {
             if (look.reflects(t)) {
                 @field(pixel, FIELD.water) = 255;
                 self.active_bloom = true;
+                self.active_air = air_on;
             }
             if (look.crowned(t)) @field(pixel, FIELD.crown) = 255;
             if (air_on) {
                 const local = blend.cell(weather, i);
                 const beam = unitByte(local.get(.beams));
+                const mist = unitByte(local.get(.mist));
                 self.active_beams = self.active_beams or beam > 0;
+                self.active_air = self.active_air or beam > 0 or mist > 0;
                 const cell = &weather_pixels[i];
                 @field(cell, WEATHER.beam) = beam;
-                @field(cell, WEATHER.mist) = unitByte(local.get(.mist));
+                @field(cell, WEATHER.mist) = mist;
                 @field(cell, WEATHER.seen) = 255;
             }
         }
@@ -202,7 +207,7 @@ pub const Cinema = struct {
             if (markEmissive(pixels, e.source.drawn())) self.active_bloom = true;
         }
         rl.updateTexture(tex, pixels);
-        if (!air_on) return;
+        if (!self.active_air) return;
         if (self.weather_field) |w| rl.updateTexture(w, weather_pixels);
         const s = self.sight_field orelse return;
         const v = &l.visibility;
@@ -285,7 +290,7 @@ pub const Cinema = struct {
     }
 
     pub fn drawAir(self: *Cinema, l: *light.Light, origin: [2]f32, cell: f32, screen: mathx.P, hour: f32, reflections: bool) void {
-        if (!self.airs(l)) return;
+        if (!self.active_air or !self.airs(l)) return;
         const k = l.sky.?;
         const a = self.air orelse return;
         const field = self.field orelse return;

@@ -27,15 +27,19 @@ pub const Tag = enum {
     }
 };
 
-pub fn tags(kind: Kind) Tags {
+pub fn primaryTag(kind: Kind) Tag {
     return switch (kind) {
-        .bleed, .sunder, .enfeeble => Tags.initOne(.wounds),
-        .maim => Tags.initMany(&.{ .wounds, .slows }),
-        .stun, .pin => Tags.initOne(.slows),
-        .chill => Tags.initMany(&.{ .slows, .elemental }),
-        .blind, .confusion, .fright => Tags.initOne(.mental),
-        .burn, .shock => Tags.initOne(.elemental),
+        .bleed, .sunder, .enfeeble, .maim => .wounds,
+        .stun, .pin => .slows,
+        .blind, .confusion, .fright => .mental,
+        .burn, .chill, .shock => .elemental,
     };
+}
+
+pub fn tags(kind: Kind) Tags {
+    var result = Tags.initOne(primaryTag(kind));
+    if (kind == .maim or kind == .chill) result.insert(.slows);
+    return result;
 }
 
 pub const GAIN: u8 = 25;

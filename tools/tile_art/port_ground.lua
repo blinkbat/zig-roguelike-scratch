@@ -164,15 +164,10 @@ sourceFiles.hide(s,sourceFiles.LAYER.under)
 drawing.stackIndex=#s.layers
 app.layer=l
 local dest=install and path or sourceFiles.draft(work..name..'-draft.aseprite',path,art_path)
-local staged=sourceFiles.stage(app.fs.fileName(dest))
-s:saveAs(staged)
-s:saveCopyAs(work..name..'-sheet.png')
-s:close()
-local back=assert(app.open(staged))
-sourceFiles.checkCel(back,sourceFiles.LAYER.draw,original,position)
-sourceFiles.checkLayer(back,layer_name,extension,Point(0,0))
-back:close()
-sourceFiles.publishTo(staged,dest,install and canonical or nil)
+sourceFiles.publishExtension(s,{
+  destination=dest,canonical=install and canonical or nil,preview=work..name..'-sheet.png',
+  original=original,position=position,layer=layer_name,image=extension,
+})
 atlas:saveAs(work..name..'-atlas.png')
 local zoom=Image(atlas)
 zoom:resize(3*groundPort.SIZE,3*groundPort.SIZE)
