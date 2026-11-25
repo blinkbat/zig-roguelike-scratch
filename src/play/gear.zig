@@ -228,9 +228,17 @@ pub const Gear = struct {
 
     /// A loaded save can wear unmet gear after a retune; only a change that unmeets an item is refused.
     pub fn validFrom(self: Gear, before: Gear, base: attrs.Attrs) bool {
+        if (!self.shaped()) return false;
+        for (item_bases.SLOTS) |slot| if (self.slots.get(slot) != null) {
+            if (!self.keepsMet(before, slot, base)) return false;
+        };
+        return true;
+    }
+
+    pub fn shaped(self: Gear) bool {
         if (!self.handsFit()) return false;
         for (item_bases.SLOTS) |slot| if (self.slots.get(slot)) |it| {
-            if (!it.fits(slot) or !self.keepsMet(before, slot, base)) return false;
+            if (!it.fits(slot)) return false;
         };
         return true;
     }

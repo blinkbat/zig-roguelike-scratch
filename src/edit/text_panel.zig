@@ -403,6 +403,7 @@ pub const State = struct {
     fn reindex(s: *State, alloc: std.mem.Allocator) !void {
         s.order.clearRetainingCapacity();
         s.groups.clearRetainingCapacity();
+        s.tree.clearRetainingCapacity();
         s.results.clearRetainingCapacity();
         s.category = null;
         s.owner = null;
@@ -456,6 +457,7 @@ pub const State = struct {
             }
         }
         s.top = mathx.clampTop(s.top, s.results.items.len, s.rows);
+        s.buildTree();
         s.view_dirty = false;
     }
 
@@ -780,7 +782,6 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
 
 fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8, count: usize, on: bool, depth: Depth) bool {
     const s = &ed.words;
-    if (ordinal < s.nav_top or ordinal >= s.nav_top + s.nav_rows) return false;
     const indent = @as(i32, @intFromEnum(depth)) * NAV_INDENT;
     const x = raster.left(s.nav_box) + indent;
     const y = raster.top(s.nav_box) + @as(i32, @intCast(ordinal - s.nav_top)) * NAV_ROW;
@@ -802,11 +803,11 @@ fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bot
     yy += widgets.ROW_STEP;
     s.nav_box = raster.rect(x, yy, w, @max(0, bottom - yy));
     s.nav_rows = widgets.rowsIn(bottom - yy, NAV_ROW);
-    s.buildTree();
     const count = s.tree.items.len;
     s.nav_count = count;
     s.nav_top = mathx.clampTop(s.nav_top, count, s.nav_rows);
-    for (s.tree.items, 0..) |row, ordinal| {
+    const end = @min(count, s.nav_top + s.nav_rows);
+    for (s.tree.items[s.nav_top..end], s.nav_top..) |row, ordinal| {
         const group = s.groups.items[row.group];
         const label = switch (row.depth) {
             .category => group.category,
@@ -984,15 +985,12 @@ test "text browser groups semantic owners and protects a dirty passage during na
     try s.reindex(alloc);
     try std.testing.expectEqual(@as(usize, 3), s.groups.items.len);
     try std.testing.expectEqual(@as(usize, 3), s.results.items.len);
-    s.buildTree();
     try std.testing.expectEqual(@as(usize, 1), s.tree.items.len);
     s.selectTree(s.tree.items[0]);
     s.refresh();
-    s.buildTree();
     try std.testing.expectEqual(@as(usize, 3), s.tree.items.len);
     s.selectTree(s.tree.items[1]);
     s.refresh();
-    s.buildTree();
     try std.testing.expectEqual(@as(usize, 5), s.tree.items.len);
     try std.testing.expectEqual(Depth.owner, s.tree.items[2].depth);
     try std.testing.expectEqualSlices(usize, &.{ 0, 2 }, s.results.items);

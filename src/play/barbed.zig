@@ -10,9 +10,7 @@ pub const VERB = "shoots a barbed arrow into";
 pub const TAKES = bleeding.TAKES;
 pub const DESCRIPTION = "Arrow damage. Inflicts bleeding.";
 
-pub const CHANCE: u32 = mathx.PERCENT;
-pub const procs = damage.chance(CHANCE);
-pub const chance = damage.flat(CHANCE);
+pub const CHANCE = damage.AfflictionChance{ .percent = mathx.PERCENT };
 
 pub const afflict = resilience.Starts(AILMENT).afflict;
 
@@ -20,7 +18,7 @@ test "a barbed arrow always opens a bleed" {
     var rng = mathx.Rng.init(0xBA4B);
     var a: struct { bleed: bleeding.Bleed = .{} } = .{};
     const tries = 100;
-    for (0..tries) |_| try std.testing.expect(procs(&rng, 0));
+    for (0..tries) |_| try std.testing.expect(CHANCE.roll(&rng, 0));
     afflict(&a, &rng);
     try std.testing.expectEqual(bleeding.TURNS, a.bleed.turns);
 }

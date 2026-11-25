@@ -443,7 +443,8 @@ const Crescent = struct {
     fn of(c: P, r: f32, angle: f32) Crescent {
         const cx: f32 = @floatFromInt(c.x);
         const cy: f32 = @floatFromInt(c.y);
-        return .{ .c = c, .r = r, .hollow_x = cx + @cos(angle) * r * HOLLOW_OFF, .hollow_y = cy + @sin(angle) * r * HOLLOW_OFF };
+        const u = mathx.polar(angle);
+        return .{ .c = c, .r = r, .hollow_x = cx + u[0] * r * HOLLOW_OFF, .hollow_y = cy + u[1] * r * HOLLOW_OFF };
     }
 
     /// Cells in from its nearer edge; under 0 outside it.

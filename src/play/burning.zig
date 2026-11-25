@@ -1,19 +1,18 @@
 const std = @import("std");
-const mathx = @import("../core/mathx.zig");
 const fire = @import("../map/fire.zig");
 const damage = @import("damage.zig");
 const resilience = @import("resilience.zig");
 
 pub const COST: i32 = 4;
 pub const AILMENT = resilience.Kind.burn;
-pub const CHANCE: u32 = 50;
+pub const CHANCE = damage.AfflictionChance{ .percent = 50 };
 pub const TURNS: u8 = 3;
 pub const PER_TURN: i32 = 4;
 pub const VERB = "shoots a burning arrow into";
 pub const TAKES = "catches fire";
 pub const ELEMENT: damage.Element = .fire;
 pub const KINDLE = fire.Kindle{ .chance = 15 };
-pub const BURN_NOTE = std.fmt.comptimePrint("{d}% burn chance", .{CHANCE});
+pub const BURN_NOTE = std.fmt.comptimePrint("{d}% burn chance", .{CHANCE.percent});
 pub const STATUS = std.fmt.comptimePrint("Take {d} fire damage per turn, reduced by fire resistance.", .{PER_TURN});
 pub const DESCRIPTION = std.fmt.comptimePrint("Add fire damage to an arrow. {s}.", .{BURN_NOTE});
 
@@ -24,9 +23,6 @@ fn seared(fire_resist: i16) i32 {
 }
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
-
-pub const procs = damage.chance(CHANCE);
-pub const chance = damage.flat(CHANCE);
 
 pub const afflict = resilience.Starts(AILMENT).afflict;
 
@@ -40,10 +36,4 @@ test "burning begins next turn, lasts three ticks and refreshes without stacking
     for (0..TURNS) |_| total += b.tick(50).?;
     try std.testing.expectEqual(damage.resisted(PER_TURN, 50) * TURNS, total);
     try std.testing.expectEqual(@as(?i32, null), b.tick(0));
-    var rng = mathx.Rng.init(811);
-    var hits: usize = 0;
-    for (0..1000) |_| {
-        if (procs(&rng, 0)) hits += 1;
-    }
-    try std.testing.expect(hits > 400 and hits < 600);
 }

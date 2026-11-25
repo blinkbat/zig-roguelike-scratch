@@ -129,9 +129,9 @@ test "spoils applies to chest and foe quality and every gold pickup route" {
     }
 }
 
-fn runTwoRooms(g: *game.Game, w: *atlas.Atlas) usize {
+fn runTwoRooms(g: *game.Game, w: *atlas.Atlas) !usize {
     const b = harness.twoRooms(w);
-    game.beginMapAt(g, w, w.start, TWO_ROOMS_SEED);
+    try game.beginMapAt(g, w, w.start, TWO_ROOMS_SEED);
     return b;
 }
 
@@ -816,7 +816,7 @@ test "loot on a nearby door preserves both loot and travel choices" {
     defer std.testing.allocator.destroy(w);
     const door = harness.WEST_DOOR;
     for (1..4) |contents| {
-        _ = runTwoRooms(g, w);
+        _ = try runTwoRooms(g, w);
         if (contents & 1 != 0) try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = door }));
         if (contents & 2 != 0) try std.testing.expect(g.sim.ground.gold(door, 5));
         var buf: game.NearbyBuf = undefined;
@@ -853,7 +853,7 @@ test "a door is listed nearby only once no body is drawn on it" {
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    _ = runTwoRooms(g, w);
+    _ = try runTwoRooms(g, w);
     const door = harness.WEST_DOOR;
     const from = g.sim.heroActor().?.at;
     const rat = harness.spawnAt(g, .rat, door, false);
@@ -871,7 +871,7 @@ test "the nearby list closes once a body takes the last door it listed" {
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    _ = runTwoRooms(g, w);
+    _ = try runTwoRooms(g, w);
     try std.testing.expect(character.openNearby(g));
     try harness.expectMode(g, .pause);
     _ = harness.spawnAt(g, .rat, harness.WEST_DOOR, false);
@@ -885,7 +885,7 @@ test "interact during door travel stays an interaction on arrival" {
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    const b = runTwoRooms(g, w);
+    const b = try runTwoRooms(g, w);
     harness.nudge(g, .w);
     const minute = g.sim.clock.minute;
     try std.testing.expect(g.sim.travel != null);
@@ -907,7 +907,7 @@ test "travel and chest opening from the nearby list turn the hero toward them" {
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    _ = runTwoRooms(g, w);
+    _ = try runTwoRooms(g, w);
     const at = g.sim.heroActor().?.at;
     const slot = g.sim.heroSlot().?;
     g.pic.facing[slot] = .right;
@@ -928,7 +928,7 @@ test "a door trip finishes behind Character opened during it, so item commands c
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    const b = runTwoRooms(g, w);
+    const b = try runTwoRooms(g, w);
     harness.nudge(g, .w);
     try std.testing.expect(g.sim.travel != null);
     g.st = .{ .character_page = .inventory };
@@ -947,7 +947,7 @@ test "a pinned hero on the door it came through struggles there instead of going
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    const b = runTwoRooms(g, w);
+    const b = try runTwoRooms(g, w);
     harness.nudge(g, .w);
     game.update(g, harness.GLIDED_S);
     try std.testing.expectEqual(b, g.sim.node);
@@ -966,7 +966,7 @@ test "clicking the hero on the door it came through waits instead of going back"
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    const b = runTwoRooms(g, w);
+    const b = try runTwoRooms(g, w);
     harness.nudge(g, .w);
     game.update(g, harness.GLIDED_S);
     try std.testing.expectEqual(b, g.sim.node);
@@ -987,7 +987,7 @@ test "inspect opened during a door trip opens, and the trip still finishes behin
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    const b = runTwoRooms(g, w);
+    const b = try runTwoRooms(g, w);
     harness.nudge(g, .w);
     try std.testing.expect(g.sim.travel != null);
     harness.press(g, skillbar.INSPECT);
@@ -1246,9 +1246,9 @@ test "siphoning mana lands with the kill and draughts enlarge a mana drink" {
     g.pic.catchUp(&g.sim);
     harness.slay(g, harness.foeId(0), g.sim.heroActor().?.at);
     try std.testing.expectEqual(@as(i32, 2), g.sim.mana);
-    try std.testing.expectEqual(@as(i32, 0), g.pic.manaShown(&g.sim));
+    try std.testing.expectEqual(@as(i32, 0), g.pic.manaShown(&g.sim).now);
     harness.drawnOut(g);
-    try std.testing.expectEqual(@as(i32, 2), g.pic.manaShown(&g.sim));
+    try std.testing.expectEqual(@as(i32, 2), g.pic.manaShown(&g.sim).now);
     const drink = flask.recovers(.mana, 0, g.sim.heroDraughts());
     var desc: [256]u8 = undefined;
     try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .mana_flask, &desc), "Recover 12 mana") != null);
@@ -1265,9 +1265,9 @@ test "each kill's siphoned mana shows as its own death is drawn, not the turn's 
     g.pic.catchUp(&g.sim);
     for ([_]u16{ harness.foeId(0), harness.foeId(1) }) |id| harness.slay(g, id, g.sim.heroActor().?.at);
     try std.testing.expectEqual(@as(i32, 4), g.sim.mana);
-    try std.testing.expectEqual(@as(i32, 0), g.pic.manaShown(&g.sim));
+    try std.testing.expectEqual(@as(i32, 0), g.pic.manaShown(&g.sim).now);
     g.pic.pictured[harness.foeSlot(0)].hp = 0;
-    try std.testing.expectEqual(@as(i32, 2), g.pic.manaShown(&g.sim));
+    try std.testing.expectEqual(@as(i32, 2), g.pic.manaShown(&g.sim).now);
 }
 
 test "an open chest out of sight shows the contents last seen in it" {

@@ -16,9 +16,7 @@ pub const DESCRIPTION = std.fmt.comptimePrint("Strike an adjacent foe. Inflicts 
 
 pub const BASE = damage.Base{ .lo = 1, .hi = 3 };
 
-pub const CHANCE: u32 = mathx.PERCENT;
-pub const procs = damage.chance(CHANCE);
-pub const chance = damage.flat(CHANCE);
+pub const CHANCE = damage.AfflictionChance{ .percent = mathx.PERCENT };
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.bleed.startWith(BLEED);
@@ -35,7 +33,7 @@ test "rend reaches a body beside the knight and opens a bleed stronger than an a
     try std.testing.expect(!aimable(&lv, from, .{ .x = 22, .y = 20 }));
     var rng = mathx.Rng.init(0x4E4D);
     var a: struct { bleed: bleeding.Bleed = .{} } = .{};
-    try std.testing.expect(procs(&rng, 0));
+    try std.testing.expect(CHANCE.roll(&rng, 0));
     afflict(&a, &rng);
     try std.testing.expectEqual(bleeding.TURNS, a.bleed.turns);
     try std.testing.expectEqual(BLEED, a.bleed.amount);

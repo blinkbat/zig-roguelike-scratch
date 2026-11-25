@@ -84,11 +84,11 @@ pub const Fields = struct {
     /// Worked out from the map as a run starts, a node is entered and a saved run resumes.
     pub const derived = [_][]const u8{"outdoors"};
     /// Defaulted as a run starts, and again as a saved one resumes.
-    pub const rebuilt = [_][]const u8{"chronicle"};
+    pub const rebuilt = [_][]const u8{ "chronicle", "visits_changed" };
     pub const run = [_][]const u8{ "kills", "gold", "mana_recovery", "life_recovery", "flasks", "cooldown", "stepped", "log", "inventory", "ground", "plot" };
     pub const resumed = [_][]const u8{"unsaved"};
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
-    pub const turn = [_][]const u8{ "travel", "order_n", "flowed", "visits_changed" };
+    pub const turn = [_][]const u8{ "travel", "order_n", "flowed" };
     /// Defaulted as each turn ends, and as a turn starts afresh.
     pub const marks = [_][]const u8{ "ran", "displaced" };
     /// Given their values by hand: by the app, as a run begins, or as a node is entered or left.

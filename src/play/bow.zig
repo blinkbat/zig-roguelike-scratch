@@ -94,9 +94,13 @@ const Step = struct { c: P, cell: Cell, w: u16, body: ?u16 };
 /// `last`: a closed chest, which takes the missile whole; a mimic in it is struck.
 const Cell = enum { stop, unseen, open, last };
 
-pub fn aimable(lv: *const grid.Level, from: P, to: P, reach: i32) bool {
+fn inRange(from: P, to: P, reach: i32) bool {
     const d = mathx.dist(from, to);
-    return d >= 1 and d <= reach and grid.Level.inside(to) and grid.clearLine(lv, from, to);
+    return d >= 1 and d <= reach;
+}
+
+pub fn aimable(lv: *const grid.Level, from: P, to: P, reach: i32) bool {
+    return inRange(from, to, reach) and grid.Level.inside(to) and grid.clearLine(lv, from, to);
 }
 
 pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P, reach: i32) ?P {
@@ -125,6 +129,19 @@ pub fn clearShot(lv: *const grid.Level, from: P, to: P, reach: i32, id: u16) ?Fl
     if (!aimable(lv, from, to, reach)) return null;
     const flight = fly(lv, from, to);
     return if (flight.hits(id)) flight else null;
+}
+
+pub fn visibleLane(lv: *const grid.Level, from: P, to: P, reach: i32) bool {
+    if (!inRange(from, to, reach) or !lv.isLit(to)) return false;
+    var flight = Flight{};
+    var ray = grid.Ray.init(from, to);
+    while (ray.next()) |at| switch (flight.enter(lv, at, to, true)) {
+        .stop => return false,
+        .last => if (lv.isLit(at)) return false,
+        .open => if (flight.prop(lv, at)) return false,
+        .unseen => {},
+    };
+    return true;
 }
 
 pub fn preview(lv: *const grid.Level, from: P, to: P) Flight {

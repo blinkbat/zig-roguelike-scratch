@@ -125,8 +125,8 @@ pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
         editor.openPopup(ed, file, .file, 0, g.screen.y);
     }
     verbs.group();
-    if (verbs.button("Undo", false, ed.history.at > 0, widgets.keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
-    if (verbs.button("Redo", false, ed.history.at < ed.history.len, widgets.keyed("Redo", Desk.REDO_CAPTION))) ed.redo();
+    if (verbs.button("Undo", false, ed.history.undoable(), widgets.keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
+    if (verbs.button("Redo", false, ed.history.redoable(), widgets.keyed("Redo", Desk.REDO_CAPTION))) ed.redo();
     verbs.group();
     if (verbs.button(modals.OBJECTS_TITLE, ed.modal == .objects, true, widgets.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
     if (verbs.button(effects.TITLE, ed.modal == .effects, true, "Every particle effect and drawn missile, playing")) effects.open(ed);

@@ -373,7 +373,7 @@ pub fn captureGeneral(g: *game.Game) !void {
         try overviews(g, w);
         {
             try w.load(std.heap.c_allocator, atlas.mapPath(SHOT_BIOME));
-            game.beginMapAt(g, w, w.start, SHOT_SEED);
+            try game.beginMapAt(g, w, w.start, SHOT_SEED);
             try capture(g, target, SHOTS_DIR ++ "/biome.png");
         }
         {
@@ -392,14 +392,14 @@ pub fn captureGeneral(g: *game.Game) !void {
         {
             try w.load(std.heap.c_allocator, atlas.mapPath(SHOT_OUTDOOR));
             for (SHOT_HOURS) |s| {
-                game.beginMapAt(g, w, w.start, SHOT_SEED);
+                try game.beginMapAt(g, w, w.start, SHOT_SEED);
                 g.sim.lv.seen = @splat(false);
                 g.sim.clock = day.Clock.at(s.hour);
                 game.settle(g);
                 try capture(g, target, s.path);
             }
             inline for ([_]f32{ BLEAK_MORNING, day.NOON, DUSK, day.DEAD_OF_NIGHT }) |hour| {
-                game.beginMapAt(g, w, w.start, SHOT_SEED);
+                try game.beginMapAt(g, w, w.start, SHOT_SEED);
                 g.sim.clock = day.Clock.at(hour);
                 game.settle(g);
                 g.light.sky = sky.under(hour, climate.Light.bleak.overcast());
@@ -428,7 +428,7 @@ pub fn captureGeneral(g: *game.Game) !void {
 
 pub fn loadStrand(g: *game.Game, w: *atlas.Atlas) !void {
     try w.load(std.heap.c_allocator, atlas.START);
-    game.beginMapAt(g, w, w.start, SHOT_SEED);
+    try game.beginMapAt(g, w, w.start, SHOT_SEED);
     for (0..RAIN_FRAMES) |_| game.update(g, mathx.FRAME_DT);
 }
 
@@ -446,7 +446,7 @@ fn capturePlayground(g: *game.Game, target: rl.RenderTexture2D) !void {
     }) |pose| {
         const box = if (pose.patch == .floor) null else playground.boxOf(playground.indexOf(.{ .tile = pose.patch }));
         const at = if (box) |b| b.lo.add(.{ .x = -1, .y = 1 }) else playground.HERO;
-        game.beginMapAt(g, w, .{ .node = 0, .at = at }, SHOT_SEED);
+        try game.beginMapAt(g, w, .{ .node = 0, .at = at }, SHOT_SEED);
         if (pose.fading != null) {
             var cells = box.?.cells();
             while (cells.next()) |p| fire.lay(&g.sim.lv, p, 1, 0);

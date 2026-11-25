@@ -328,7 +328,7 @@ pub fn entered(g: *game.Game, id: u16) void {
 }
 
 pub fn watches(lv: *const grid.Level, from: P, d: mathx.Dir, p: P) bool {
-    return tactics.covered(from, d, p) and bow.aimable(lv, from, p, tactics.Overwatch.RANGE);
+    return tactics.covered(from, d, p) and bow.visibleLane(lv, from, p, tactics.Overwatch.RANGE);
 }
 
 pub fn landed(g: *game.Game, id: u16) void {
@@ -374,6 +374,32 @@ test "tactical caltrops ranks pin entering ground foes and unlock stronger bleed
         game.update(g, 1);
         try std.testing.expectEqual(turns, g.sim.lv.caltrops[grid.Level.idx(foe.at)].turns);
     }
+}
+
+test "the overwatch cone stops at visible projectile blockers and ignores bodies and dark props" {
+    var lv = grid.openFloor();
+    lv.lit = @splat(true);
+    var pool: actor.Pool = .{};
+    const from = P{ .x = 20, .y = 20 };
+    const between = P{ .x = 22, .y = 20 };
+    const target = P{ .x = 24, .y = 20 };
+    const foe = pool.spawn(&lv, actor.Actor.of(.rat, target));
+    try std.testing.expect(watches(&lv, from, .e, target));
+    try std.testing.expect(bow.clearShot(&lv, from, target, tactics.Overwatch.RANGE, foe) != null);
+    for ([_]grid.Tile{ .chest, .glow_plant }) |prop| {
+        lv.set(between, prop);
+        try std.testing.expect(!watches(&lv, from, .e, target));
+        try std.testing.expect(bow.clearShot(&lv, from, target, tactics.Overwatch.RANGE, foe) == null);
+    }
+    lv.set(between, .floor);
+    lv.putBarrel(between);
+    try std.testing.expect(!watches(&lv, from, .e, target));
+    lv.lit[grid.Level.idx(between)] = false;
+    try std.testing.expect(watches(&lv, from, .e, target));
+    try std.testing.expect(lv.breakBarrel(between));
+    lv.lit[grid.Level.idx(between)] = true;
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, between));
+    try std.testing.expect(watches(&lv, from, .e, target));
 }
 
 test "tactical overwatch waits for a moving foe to enter gameplay sight" {

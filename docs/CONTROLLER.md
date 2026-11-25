@@ -96,7 +96,7 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   the slot holding "Activate Secondary Skill Set" is Ctrl instead, so moving the modifier renumbers the rest. The bar
   and bind screen show whichever the device is, as icons.
 - **Menus and targeting have their own keys.** In play the numbers, Ctrl, Tab, Esc and I handle skills and screens (`State.context`); Enter and Space interact with visible objects underfoot or adjacent, while menu letters never fire a slot. While a name is typed the letters and Space type, so
-  Enter is done there. Esc gets out of whatever is open, a step at a time.
+  Enter is done there. Esc cancels targeting or backs out of menus, a step at a time.
 - **Target once, then confirm or back out.** A (Cross), Enter, Space or Z confirms a target; B (Circle), Select, X or
   Esc cancels. On the keyboard the skill's own number confirms too (1, then 1); on the pad pressing the skill again
   does not confirm it unless that button is also the standard confirm. B always cancels, even when it opened the skill. Secondary skills keep their selected set after the modifier is released.
@@ -124,7 +124,7 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   Visual effects default on. Debug settings last for the application session and are not saved.
   Reveal changes neither normal sight nor saved exploration. Back returns one submenu at a time,
   retaining the parent selection, before returning to Pause.
-- **Character** contains equipment, inventory, stats, shared passives and class skills. Shoulders / Q and E change pages; the cursor never sits on the tabs. Clicking a tab opens its page. Back closes Character. Equip, unequip, drop and point allocation each take one deliberate action; no action submenu or confirmation modal. Rings have an explicit destination switch and the comparison follows that destination. Successful item actions keep the screen open and still spend one turn. Point allocation is free of simulation turns. The underlying inventory/progression transactions remain authoritative.
+- **Character** contains equipment, inventory, stats, shared passives, class skills and quests. Shoulders / Q and E change pages; the cursor never sits on the tabs. Clicking a tab opens its page. Back closes Character. Equip, unequip, drop and point allocation each take one deliberate action; no action submenu or confirmation modal. Rings have an explicit destination switch and the comparison follows that destination. Successful item actions keep the screen open and still spend one turn. Point allocation is free of simulation turns. The underlying inventory/progression transactions remain authoritative.
 - Loot opening, gold collection and turn accounting follow
   [PROGRESSION.md](PROGRESSION.md#inventory-and-loot-transactions).
   Loot offers Take item on confirm and Take all on change, with glyphs and clickable

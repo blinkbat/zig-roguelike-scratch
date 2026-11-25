@@ -1293,7 +1293,7 @@ test "dodging spends the foe turn without damage, bleeding or mana shield loss" 
                 try std.testing.expect(g.pic.busy > 0);
                 harness.drawnOut(g);
                 try std.testing.expectEqual(h.hp, g.pic.heroShown(&g.sim).?.hp);
-                try std.testing.expectEqual(g.sim.mana, g.pic.manaShown(&g.sim));
+                try std.testing.expectEqual(g.sim.mana, g.pic.manaShown(&g.sim).now);
                 if (dodged) try std.testing.expectEqual(@as(f32, 0), g.pic.fx.impacts.flashOf(g.sim.heroActorSlot().?));
             }
         }

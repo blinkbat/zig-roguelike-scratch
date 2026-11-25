@@ -50,8 +50,8 @@ const Caravan = struct {
         return .{ .g = g, .map = map, .z = map.node[CARAVAN].zoo.? };
     }
 
-    fn begin(c: Caravan, at: P) void {
-        game.beginMapAt(c.g, c.map, .{ .node = CARAVAN, .at = at }, 77);
+    fn begin(c: Caravan, at: P) !void {
+        try game.beginMapAt(c.g, c.map, .{ .node = CARAVAN, .at = at }, 77);
     }
 
     fn deinit(c: Caravan) void {
@@ -66,7 +66,7 @@ test "the caravan zoo opens by bump or interact and only spends a turn after unl
     defer c.deinit();
     const g = c.g;
     const z = c.z;
-    c.begin(z.approach());
+    try c.begin(z.approach());
     h.toughen(g.sim.heroActor().?);
     const before = g.sim.clock;
     const toward = mathx.dirTo(g.sim.heroAt().?, z.door()).?;
@@ -89,7 +89,7 @@ test "interact beside a locked jail gate still reaches a bag lying in reach" {
     const g = c.g;
     const z = c.z;
     const at = z.approach();
-    c.begin(at);
+    try c.begin(at);
     try std.testing.expect(beside(g) != null);
     try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = at }));
     game.harness.pressInteract(g);
@@ -106,7 +106,7 @@ test "a chest holds a Small Key and keyboard controller and mouse can release th
     const z = c.z;
     const Mode = enum { bump, interact, mouse };
     for (std.enums.values(Mode)) |mode| {
-        c.begin(z.key.?.add(.{ .x = 0, .y = 1 }));
+        try c.begin(z.key.?.add(.{ .x = 0, .y = 1 }));
         try std.testing.expectEqual(grid.Tile.chest, g.sim.lv.at(z.key.?));
         try std.testing.expectEqual(@as(usize, 0), g.sim.inventory.n);
         try std.testing.expectEqual(rewards.Chest.opened, rewards.openChest(&g.sim, z.key.?));

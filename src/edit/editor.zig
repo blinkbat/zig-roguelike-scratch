@@ -227,10 +227,8 @@ pub const Editor = struct {
     pub fn create(alloc: std.mem.Allocator) !*Editor {
         const w = try alloc.create(atlas.Atlas);
         errdefer alloc.destroy(w);
-        const s = try alloc.create(atlas.Atlas);
-        errdefer alloc.destroy(s);
         const ed = try alloc.create(Editor);
-        ed.* = .{ .alloc = alloc, .map = w, .history = .{ .alloc = alloc, .transaction = .{ .before = s } } };
+        ed.* = .{ .alloc = alloc, .map = w, .history = .{ .alloc = alloc } };
         freshMap(w);
         return ed;
     }
@@ -242,7 +240,6 @@ pub const Editor = struct {
         const alloc = ed.alloc;
         if (ed.effects) |v| alloc.destroy(v);
         ed.history.deinit();
-        alloc.destroy(ed.history.transaction.before);
         alloc.destroy(ed.map);
         alloc.destroy(ed);
     }
@@ -259,16 +256,15 @@ pub const Editor = struct {
     /// Loads `p`, or starts a map there when it is not yet; a file that does not parse is left alone.
     pub fn open(ed: *Editor, p: []const u8) !void {
         if (p.len > PATH_FIELD_MAX) return error.NameTooLong;
+        const incoming = try ed.alloc.create(atlas.Atlas);
+        defer ed.alloc.destroy(incoming);
         var fresh = false;
-        ed.history.transaction.before.load(ed.alloc, p) catch |e| {
-            if (e != error.FileNotFound) {
-                ed.history.transaction.before.* = ed.map.*;
-                return e;
-            }
-            freshMap(ed.history.transaction.before);
+        incoming.load(ed.alloc, p) catch |e| {
+            if (e != error.FileNotFound) return e;
+            freshMap(incoming);
             fresh = true;
         };
-        ed.map.* = ed.history.transaction.before.*;
+        ed.map.* = incoming.*;
         ed.setPath(p);
         ed.settle();
         ed.say("{s} {s}", .{ if (fresh) "New map; it saves to" else "Opened", p });
@@ -359,23 +355,22 @@ pub const Editor = struct {
 
     fn swapHistory(ed: *Editor, comptime step: anytype) bool {
         ed.dropHeld();
-        const nodes = ed.map.node_n;
-        _ = step(&ed.history, ed.map) catch return false;
+        const before = (step(&ed.history, ed.map) catch return false) orelse return false;
         ed.clampSelection();
-        if (ed.map.node_n != nodes) ed.enterNode();
+        if (ed.map.node_n != before.nodes.len) ed.enterNode();
         ed.stale();
-        ed.thumbnails.changedMap(ed.map, ed.history.transaction.before);
+        ed.thumbnails.changedMap(ed.map, before.nodes, before.start);
         return true;
     }
 
     pub fn undo(ed: *Editor) void {
         ed.keepDrag();
-        if (ed.history.at == 0) return ed.say("Nothing to undo", .{});
+        if (!ed.history.undoable()) return ed.say("Nothing to undo", .{});
         if (ed.swapHistory(history.History.undo)) ed.say("Undone ({d} more)", .{ed.history.at});
     }
 
     pub fn redo(ed: *Editor) void {
-        if (ed.history.at == ed.history.len) {
+        if (!ed.history.redoable()) {
             ed.keepDrag();
             return ed.say("Nothing to redo", .{});
         }
@@ -930,7 +925,6 @@ pub fn modalButton(ed: *Editor, g: *const game.Game, r: rl.Rectangle, label: []c
 fn prepare(ed: *Editor, g: *game.Game) void {
     ed.preview();
     if (g.art == .editor) return;
-    g.light.clearFigures();
     g.sprites.sync(sprite_assets.Assets.everything());
     g.art = .editor;
 }

@@ -12,7 +12,6 @@ const carve = @import("../map/carve.zig");
 const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
-const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const menu = @import("../ui/menu.zig");
 const knobs = @import("knobs.zig");

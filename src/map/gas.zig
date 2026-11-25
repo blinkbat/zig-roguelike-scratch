@@ -52,7 +52,8 @@ pub fn boil(lv: *grid.Level, cells: []const P) usize {
 }
 
 fn any(vol: *const [grid.CELLS]u16) bool {
-    return std.mem.indexOfNone(u16, vol, &.{0}) != null;
+    const empty: [grid.CELLS]u16 = @splat(0);
+    return !std.mem.eql(u16, vol, &empty);
 }
 
 /// A floor without gas rolls nothing.

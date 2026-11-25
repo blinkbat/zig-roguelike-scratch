@@ -89,6 +89,13 @@ pub const Status = enum {
         };
     }
 
+    pub fn counted(s: Status) bool {
+        return switch (s) {
+            .unyielding, .steady => false,
+            .stunned, .bleeding, .burning, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .exposed, .warded, .resistant, .guarding, .overwatch, .imbued, .biding => true,
+        };
+    }
+
     pub fn ailment(s: Status) ?resilience.Kind {
         return switch (s) {
             .stunned => .stun,

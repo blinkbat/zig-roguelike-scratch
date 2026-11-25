@@ -60,7 +60,7 @@ for i,mask in ipairs(masks) do
   if i>1 then sheet:drawImage(tile,Point(masks.sheetAt(i))) end
 end
 local backup=(install and backups or work)..'forest-tree-walls.'..os.date(sourceFiles.STAMP)..'.aseprite'
-sourceFiles.copy(path,backup)
+backup=sourceFiles.backup(path,backup)
 local extension=sprite:newLayer()
 extension.name=sourceFiles.LAYER.forest
 sprite:newCel(extension,1,sheet,Point(0,0))
@@ -93,7 +93,7 @@ local map={
   '.#####............',
   '...................',
 }
-masks.preview(cells,pc.rgba(104,112,77,255),work..'forest-tree-walls-connected.png',map)
+masks.preview(cells,sourceFiles.rgb(104,112,77),work..'forest-tree-walls-connected.png',map)
 local report=sourceFiles.report(work..'forest-tree-walls-validation.txt')
 report:write('Source: '..path..'\nSaved: '..destination..'\nBackup: '..backup..'\n')
 report:write(('%d distinct %dx%d cells. Original Draw here pixels and position verified after reopen.\n'):format(#masks,CELL,CELL))

@@ -607,7 +607,7 @@ test "each afflicting skill's stated chance is what its roll lands" {
     inline for (ACTS) |a| if (comptime a.ailment()) |ail| {
         var rng = mathx.Rng.init(0xA11);
         var landed: u32 = 0;
-        for (0..TRIES) |_| landed += @intFromBool(Act.skill(a).procs(&rng, 0));
+        for (0..TRIES) |_| landed += @intFromBool(Act.skill(a).CHANCE.roll(&rng, 0));
         const pc = landed * mathx.PERCENT / TRIES;
         try std.testing.expect(pc + 3 >= ail.chance and pc <= ail.chance + 3);
     };

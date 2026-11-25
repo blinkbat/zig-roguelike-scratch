@@ -155,9 +155,8 @@ end
 groundPort.checkCells(s,order,cells)
 groundPort.checkJoins(cells)
 local stamp=os.date(sourceFiles.STAMP)
-local backup=work..name..'-before-'..stamp..'.aseprite'
-sourceFiles.copy(path,backup)
-if art_path~=path then sourceFiles.copy(art_path,work..name..'-painting-before-'..stamp..'.aseprite') end
+local backup=sourceFiles.backup(path,work..name..'-before-'..stamp..'.aseprite')
+if art_path~=path then sourceFiles.backup(art_path,work..name..'-painting-before-'..stamp..'.aseprite') end
 local l=s:newLayer()
 l.name=layer_name
 s:newCel(l,1,extension,Point(0,0))
@@ -178,7 +177,7 @@ atlas:saveAs(work..name..'-atlas.png')
 local zoom=Image(atlas)
 zoom:resize(3*groundPort.SIZE,3*groundPort.SIZE)
 zoom:saveAs(work..name..'-atlas-3x.png')
-groundPort.preview(cells,pc.rgba(146,122,93,255),work..name..'-connected.png')
+groundPort.preview(cells,sourceFiles.rgb(146,122,93),work..name..'-connected.png')
 local report=sourceFiles.report(work..name..'-validation.txt')
 report:write('Source: '..path..'\nPainting: '..art_path..'\nSaved: '..dest..'\nBackup: '..backup..'\nOriginal image and position verified after reopening. Source palette retained.\n')
 report:write('15 painted 64x64 cells; mask 0 empty; mask 15 fully opaque. All 128 legal adjacent pairs checked at their quarter cores.\n')

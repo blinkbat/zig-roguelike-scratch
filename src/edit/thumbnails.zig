@@ -24,13 +24,13 @@ pub const Thumbnails = struct {
         self.valid = .initEmpty();
     }
 
-    pub fn changedMap(self: *Thumbnails, now: *const atlas.Atlas, before: *const atlas.Atlas) void {
-        if (now.node_n != before.node_n) return self.invalidateAll();
-        if (!std.meta.eql(now.start, before.start)) {
+    pub fn changedMap(self: *Thumbnails, now: *const atlas.Atlas, before: []const atlas.Node, start: atlas.Start) void {
+        if (now.node_n != before.len) return self.invalidateAll();
+        if (!std.meta.eql(now.start, start)) {
             self.invalidate(now.start.node);
-            self.invalidate(before.start.node);
+            self.invalidate(start.node);
         }
-        for (now.node[0..now.node_n], before.node[0..before.node_n], 0..) |*current, *previous, n| {
+        for (now.node[0..now.node_n], before, 0..) |*current, *previous, n| {
             if (!std.mem.eql(u8, std.mem.asBytes(current), std.mem.asBytes(previous))) self.invalidate(n);
         }
     }
@@ -98,17 +98,17 @@ test "thumbnail invalidation follows changed nodes and discards identities after
     var thumbnails = Thumbnails{};
     thumbnails.valid = .initFull();
     _ = map.node[1].rename("Changed");
-    thumbnails.changedMap(map, before);
+    thumbnails.changedMap(map, before.nodes(), before.start);
     try std.testing.expect(thumbnails.valid.isSet(0));
     try std.testing.expect(!thumbnails.valid.isSet(1));
     try std.testing.expect(thumbnails.valid.isSet(2));
     thumbnails.valid.set(1);
     map.start = .{ .node = 2, .at = grid.MIDDLE };
-    thumbnails.changedMap(map, before);
+    thumbnails.changedMap(map, before.nodes(), before.start);
     try std.testing.expect(!thumbnails.valid.isSet(0));
     try std.testing.expect(!thumbnails.valid.isSet(2));
     map.remove(0);
-    thumbnails.changedMap(map, before);
+    thumbnails.changedMap(map, before.nodes(), before.start);
     try std.testing.expectEqual(@as(usize, 0), thumbnails.valid.count());
     thumbnails.valid = .initFull();
     thumbnails.invalidate(2);

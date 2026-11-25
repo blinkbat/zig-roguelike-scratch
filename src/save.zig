@@ -302,11 +302,19 @@ fn slotAt(alloc: std.mem.Allocator, i: usize) Slot {
     return .{ .run = s };
 }
 
-pub fn free(list: *const [SLOTS]Slot) ?usize {
-    for (list, 0..) |s, i| {
-        if (s == .empty) return i;
+pub fn firstEmpty() ?usize {
+    for (0..SLOTS) |slot| {
+        if (slotEmpty(slot)) return slot;
     }
     return null;
+}
+
+fn slotEmpty(slot: usize) bool {
+    var buf: [PATH_MAX]u8 = undefined;
+    const file = std.fs.cwd().openFile(path(&buf, slot), .{}) catch |err| return err == error.FileNotFound;
+    defer file.close();
+    var probe: [1]u8 = undefined;
+    return (file.read(&probe) catch return false) == 0;
 }
 
 /// Must not move while a write is under way.
@@ -493,7 +501,7 @@ test "save terrain refuses unvisited bespoke torches outside the map before muta
     world.node[1].plan = .{ .bespoke = .{} };
     const source = try game.boot(alloc);
     defer game.shut(alloc, source);
-    game.beginMapAt(source, world, world.start, 37);
+    try game.beginMapAt(source, world, world.start, 37);
     const target = try game.boot(alloc);
     defer game.shut(alloc, target);
     game.begin(target, 91);
@@ -511,17 +519,21 @@ test "save terrain refuses unvisited bespoke torches outside the map before muta
         .{ .x = 10, .y = grid.H },
         .{ .x = 10, .y = std.math.maxInt(i32) },
     };
+    for (invalid) |at| {
+        world.node[1].plan.bespoke.torch = .{};
+        _ = world.node[1].plan.bespoke.torch.add(at);
+        try expectRefusedEitherWay(source, &corrupt, target, into, &kept);
+    }
+}
+
+fn expectRefusedEitherWay(source: *game.Game, bytes: *std.ArrayList(u8), target: *game.Game, into: *Map, kept: *format.Untouched) !void {
     for ([_]bool{ false, true }) |legacy| {
-        for (invalid) |at| {
-            world.node[1].plan.bespoke.torch = .{};
-            _ = world.node[1].plan.bespoke.torch.add(at);
-            corrupt.clearRetainingCapacity();
-            if (legacy) try writeLegacy(source, &corrupt) else try write(source, &corrupt);
-            seal(&corrupt);
-            try std.testing.expectError(error.Damaged, peek(corrupt.items));
-            try std.testing.expectError(error.Damaged, read(corrupt.items, target, into));
-            try kept.expectKept();
-        }
+        bytes.clearRetainingCapacity();
+        if (legacy) try writeLegacy(source, bytes) else try write(source, bytes);
+        seal(bytes);
+        try std.testing.expectError(error.Damaged, peek(bytes.items));
+        try std.testing.expectError(error.Damaged, read(bytes.items, target, into));
+        try kept.expectKept();
     }
 }
 
@@ -531,7 +543,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     defer alloc.destroy(w);
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
-    game.beginMap(g, w);
+    try game.beginMap(g, w);
     g.sim.name = hero.Name.of("Arwen");
     try std.testing.expect(g.sim.inventory.add(items.affixed(.ring, &.{.{ .kind = .intelligence, .value = 2 }})));
     try g.sim.inventory.equip(0, .right_ring, g.sim.growth.attributes(g.sim.class));
@@ -631,7 +643,7 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
     _ = w.script.addNpc(.{ .node = 0, .spot = .far }).?;
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
-    game.beginMapAt(g, w, w.start, 7);
+    try game.beginMapAt(g, w, w.start, 7);
     const shelf = g.sim.plot.shelf(0, g.sim.seed, .high);
     g.sim.gold = 1000;
     _ = try @import("play/trade.zig").buy(shelf, shelf.count() - 1, &g.sim.inventory, &g.sim.gold);
@@ -652,6 +664,34 @@ test "a merchant's shelf comes back from a save as it was left, and one naming n
     try std.testing.expectError(error.Damaged, read(buf.items, back, into));
 }
 
+test "a save wearing gear its slots or hands cannot hold is refused" {
+    const alloc = std.testing.allocator;
+    const w = try testMap();
+    defer alloc.destroy(w);
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    try game.beginMapAt(g, w, w.start, 7);
+    const back = try game.boot(alloc);
+    defer game.shut(alloc, back);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    var buf = std.ArrayList(u8).init(alloc);
+    defer buf.deinit();
+    const worn = &g.sim.inventory.gear.slots;
+    worn.set(.right_hand, .{ .kind = .axe });
+    worn.set(.left_hand, .{ .kind = .axe });
+    try sealed(g, &buf);
+    into.* = .{};
+    try std.testing.expectError(error.Damaged, read(buf.items, back, into));
+    worn.set(.left_hand, null);
+    worn.set(.helm, .{ .kind = .axe });
+    try sealed(g, &buf);
+    try std.testing.expectError(error.Damaged, read(buf.items, back, into));
+    worn.set(.helm, null);
+    try sealed(g, &buf);
+    try read(buf.items, back, into);
+}
+
 /// The raw legacy schema accepted by this migration reader.
 const RECORDED_FINGERPRINT: Print = 0x536d302d59db896b;
 
@@ -666,7 +706,7 @@ test "zoo keys doors populations and visits survive portable saves" {
     const into = try alloc.create(Map);
     defer alloc.destroy(into);
     const z = w.node[atlas.CARAVAN_NODE].zoo.?;
-    game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, 17);
+    try game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, 17);
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     for (0..3) |phase| {
@@ -740,7 +780,7 @@ test "legacy zoo key tiles migrate to chests and interchangeable Small Keys once
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     for (0..6) |phase| {
-        game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, 17);
+        try game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, 17);
         g.sim.lv.set(z.key.?, if (phase == 0 or phase == 4) .zoo_key else .key_taken);
         if (phase == 2) g.sim.lv.set(z.door(), .open_gate);
         if (phase == 3 or phase == 5) while (g.sim.inventory.add(.{ .kind = .cap })) {};
@@ -763,7 +803,7 @@ test "legacy zoo key tiles migrate to chests and interchangeable Small Keys once
         try read(buf.items, back, into);
         try std.testing.expectEqual(count, back.sim.inventory.n);
     }
-    game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, 17);
+    try game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, 17);
     g.sim.lv.set(z.key.?, .key_taken);
     g.sim.travel = .{ .node = 0, .door = 0 };
     g.pic.busy = 0;
@@ -778,7 +818,7 @@ test "legacy zoo key tiles migrate to chests and interchangeable Small Keys once
 const sealed = format.sealed;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
-    game.beginMapAt(g, w, w.start, 7);
+    try game.beginMapAt(g, w, w.start, 7);
     g.sim.name = hero.Name.of("Fixture");
     try std.testing.expect(g.sim.inventory.add(.{ .kind = .sword }));
     g.pic.facing[0] = .left;
@@ -994,14 +1034,7 @@ test "save readers reject an all-zero combat or loot random stream before applyi
     inline for (.{ "rng", "loot_rng" }) |field| {
         const saved = @field(source.sim, field);
         @field(source.sim, field).impl.s = @splat(0);
-        for ([_]bool{ false, true }) |legacy| {
-            changed.clearRetainingCapacity();
-            if (legacy) try writeLegacy(source, &changed) else try write(source, &changed);
-            seal(&changed);
-            try std.testing.expectError(error.Damaged, peek(changed.items));
-            try std.testing.expectError(error.Damaged, read(changed.items, target, map));
-            try kept.expectKept();
-        }
+        try expectRefusedEitherWay(source, &changed, target, map, &kept);
         @field(source.sim, field) = saved;
     }
 }
@@ -1024,14 +1057,7 @@ test "save readers reject a hero outside the first pool slot before changing the
     defer kept.deinit();
     var bytes = std.ArrayList(u8).init(alloc);
     defer bytes.deinit();
-    for ([_]bool{ false, true }) |legacy| {
-        bytes.clearRetainingCapacity();
-        if (legacy) try writeLegacy(source, &bytes) else try write(source, &bytes);
-        seal(&bytes);
-        try std.testing.expectError(error.Damaged, peek(bytes.items));
-        try std.testing.expectError(error.Damaged, read(bytes.items, target, map));
-        try kept.expectKept();
-    }
+    try expectRefusedEitherWay(source, &bytes, target, map, &kept);
 }
 
 test "a listed save must have the complete run that loading requires" {

@@ -415,14 +415,10 @@ pub const Sprites = struct {
 
     pub fn beginMirror(self: *Sprites, screen: mathx.P, outer: u32, memory: bool) bool {
         if (self.water == null) return false;
-        if (!raster.beginTarget(if (memory) &self.mirror_memory else &self.mirror, screen, outer, rl.Color.blank)) return false;
-        rl.gl.rlDisableBackfaceCulling();
-        return true;
+        return raster.beginTarget(if (memory) &self.mirror_memory else &self.mirror, screen, outer, rl.Color.blank);
     }
 
     pub fn endMirror(self: *const Sprites, outer: u32) Mirrors {
-        rl.gl.rlDrawRenderBatchActive();
-        rl.gl.rlEnableBackfaceCulling();
         raster.endTarget(outer);
         return .{ .live = self.mirror.?.texture, .memory = self.mirror_memory.?.texture };
     }

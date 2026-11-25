@@ -159,8 +159,7 @@ pub fn slotBox(layout: hud.Layout, i: usize) rl.Rectangle {
     return raster.rect(layout.skills.x + game.SLOT_XS[i], layout.skills.y, game.SLOT_PX, game.SLOT_PX);
 }
 
-fn drawSkills(g: *game.Game, layout: hud.Layout) void {
-    const mana = g.pic.manaShown(&g.sim);
+fn drawSkills(g: *game.Game, layout: hud.Layout, mana: i32) void {
     const pinned = if (g.pic.heroShown(&g.sim)) |h| h.status.get(.pinned) > 0 else false;
     for (skillbar.SLOTS, 0..) |b, i| {
         const box = slotBox(layout, i);
@@ -285,8 +284,9 @@ pub fn drawHud(g: *game.Game) void {
     const layout = hudLayout(g);
     hud.frame(layout, &g.sprites);
     const life = g.pic.lifeShown(&g.sim);
-    hud.resources(layout, &g.face, g.sprites.hud_life_frame, g.sprites.hud_mana_frame, life.hp, life.max, g.pic.manaShown(&g.sim), g.sim.manaMax(), g.pic.life_fill, g.pic.mana_fill);
-    drawSkills(g, layout);
+    const mana = g.pic.manaShown(&g.sim);
+    hud.resources(layout, &g.face, g.sprites.hud_life_frame, g.sprites.hud_mana_frame, life.now, life.max, mana.now, mana.max, g.pic.life_fill, g.pic.mana_fill);
+    drawSkills(g, layout, mana.now);
     hud.experience(layout, g.pic.xp_shown - @floor(g.pic.xp_shown));
     if (g.pic.heroShown(&g.sim)) |h| hud.statuses(layout, &g.face, h.status, @intCast(h.resilience.peak().percent));
     game.mouseControls.draw(g);
@@ -467,24 +467,18 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
     return switch (s) {
         .actor => |id| actorTip(g, id, title_buf, body_buf),
         .log => null,
-        .life => blk: {
-            const life = g.pic.lifeShown(&g.sim);
-            break :blk .{
-                .title = hud.LIFE,
-                .body = std.fmt.bufPrint(body_buf, ORB_TIP, .{ life.hp, life.max }) catch "",
-            };
-        },
-        .mana => .{
-            .title = hud.MANA,
-            .body = std.fmt.bufPrint(body_buf, ORB_TIP, .{ g.pic.manaShown(&g.sim), g.sim.manaMax() }) catch "",
-        },
+        .life => orbTip(hud.LIFE, g.pic.lifeShown(&g.sim), body_buf),
+        .mana => orbTip(hud.MANA, g.pic.manaShown(&g.sim), body_buf),
         .slot => |i| blk: {
             const v = slotShown(g, i) orelse break :blk .{ .title = "Empty skill slot", .body = "" };
             const act = v.act;
             var body = std.io.fixedBufferStream(body_buf);
             const w = body.writer();
             writeDescription(g, act, w);
-            if (act.reticle() != null) w.print("\nRange: {d} cells", .{g.sim.reachOf(act)}) catch {};
+            if (act.reticle() != null) {
+                const reach = g.sim.reachOf(act);
+                w.print("\nRange: {d} cell{s}", .{ reach, plural(reach) }) catch {};
+            }
             if (g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, act, g.sim.heroReadied())) |h| {
                 if (h.physical.hi > 0) w.print("\n" ++ damage.PHYSICAL_FMT, .{ h.physical.lo, h.physical.hi }) catch {};
                 if (h.element) |e| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi }) catch {};
@@ -513,12 +507,17 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             }
             const turns = if (g.pic.heroShown(&g.sim)) |h| h.status.get(st) else 0;
             if (st.ailment()) |kind| writeStatusTags(kind, w);
+            if (!st.counted()) break :blk .{ .title = st.title(), .body = body.getWritten() };
             break :blk .{
                 .title = std.fmt.bufPrintZ(title_buf, "{s}, {d} turn{s}", .{ st.title(), turns, plural(turns) }) catch st.title(),
                 .body = body.getWritten(),
             };
         },
     };
+}
+
+fn orbTip(title: [:0]const u8, v: game.presentation.Vital, body_buf: []u8) Tip {
+    return .{ .title = title, .body = std.fmt.bufPrint(body_buf, ORB_TIP, .{ v.now, v.max }) catch "" };
 }
 
 fn writeStatusTags(kind: resilience.Kind, w: anytype) void {

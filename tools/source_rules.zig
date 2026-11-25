@@ -80,16 +80,25 @@ fn allowed(owner: []const u8, target: []const u8) bool {
         (!std.mem.startsWith(u8, owner, "ui/") or !std.mem.eql(u8, target, "ui/book.zig"));
 }
 
-pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) !?Violation {
+fn parse(alloc: std.mem.Allocator, source: [:0]const u8) !std.zig.Ast {
     var tree = try std.zig.Ast.parse(alloc, source, .zig);
-    defer tree.deinit(alloc);
+    errdefer tree.deinit(alloc);
     if (tree.errors.len != 0) return error.InvalidSyntax;
+    return tree;
+}
+
+fn isImport(tree: *const std.zig.Ast, token: u32) bool {
+    return tree.tokens.items(.tag)[token] == .builtin and std.mem.eql(u8, tree.tokenSlice(token), "@import");
+}
+
+pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) !?Violation {
+    var tree = try parse(alloc, source);
+    defer tree.deinit(alloc);
     if (tree.rootDecls().len == 0) return error.EmptyModule;
     if (!governed(owner)) return null;
-    const tags = tree.tokens.items(.tag);
-    tokens: for (tags, 0..) |tag, i| {
+    tokens: for (0..tree.tokens.len) |i| {
         const token: u32 = @intCast(i);
-        if (tag != .builtin or !std.mem.eql(u8, tree.tokenSlice(token), "@import")) continue;
+        if (!isImport(&tree, token)) continue;
         for (tree.nodes.items(.tag), 0..) |node_tag, n| {
             if (node_tag != .test_decl) continue;
             const node: u32 = @intCast(n);
@@ -116,19 +125,17 @@ fn importLiteral(tree: *const std.zig.Ast, token: u32) ![]const u8 {
 }
 
 pub fn testRoster(alloc: std.mem.Allocator, source: [:0]const u8) !std.StringHashMapUnmanaged(void) {
-    var tree = try std.zig.Ast.parse(alloc, source, .zig);
+    var tree = try parse(alloc, source);
     defer tree.deinit(alloc);
-    if (tree.errors.len != 0) return error.InvalidSyntax;
     var roster: std.StringHashMapUnmanaged(void) = .{};
     errdefer roster.deinit(alloc);
     var found = false;
-    const tags = tree.tokens.items(.tag);
     for (tree.rootDecls()) |node| {
         if (tree.nodes.items(.tag)[node] != .test_decl or tree.nodes.items(.data)[node].lhs != 0) continue;
         found = true;
         for (tree.firstToken(node)..tree.lastToken(node) + 1) |i| {
             const token: u32 = @intCast(i);
-            if (tags[i] != .builtin or !std.mem.eql(u8, tree.tokenSlice(token), "@import")) continue;
+            if (!isImport(&tree, token)) continue;
             const literal = try importLiteral(&tree, token);
             try roster.put(alloc, literal[1 .. literal.len - 1], {});
         }

@@ -2,7 +2,7 @@ local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')
 local path=assert(app.params.source,'source=<sheet.aseprite>')
 local work=sourceFiles.work()
-local pc=app.pixelColor
+local rgb=sourceFiles.rgb
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bit=masks.bit
 -- Walls face south, a liquid's bank north.
@@ -11,9 +11,9 @@ local NORTH=app.params.face=='north'
 assert(NORTH or (app.params.face or 'south')=='south')
 local LINE=2
 local CELL,LAST,NOTCH=masks.CELL,masks.CELL-1,4
-local outline=pc.rgba(34,34,34,255)
-local cap=pc.rgba(152,152,152,255)
-local face=pc.rgba(96,96,96,255)
+local outline=rgb(34,34,34)
+local cap=rgb(152,152,152)
+local face=rgb(96,96,96)
 local sprite=assert(app.open(path))
 assert(sprite.width==masks.W and sprite.height==masks.SHEET_H and #sprite.slices==#masks)
 local under=sourceFiles.layer(sprite,sourceFiles.LAYER.under)

@@ -735,16 +735,23 @@ pub const Atlas = struct {
     pub const parse = atlas_text.parse;
 
     pub fn standable(self: *const Atlas, from: Start, scratch: *grid.Level) bool {
+        if (from.node >= self.node_n) return false;
+        if (self.node[from.node].unrolled()) return true;
+        var plot: trigger.Runtime = .{};
+        return self.stampFresh(from, 0, scratch, &plot) != null;
+    }
+
+    pub fn stampFresh(self: *const Atlas, from: Start, roll: u64, scratch: *grid.Level, plot: *trigger.Runtime) ?P {
+        if (from.node >= self.node_n or !grid.Level.inside(from.at)) return null;
         const nd = &self.node[from.node];
-        if (nd.unrolled()) return true;
-        nd.stampAt(scratch, 0, from.at);
-        var plot = trigger.Runtime{};
-        self.stampNpcs(from.node, scratch, 0, &plot.spots, Npcs{
-            .plot = &plot,
+        nd.stampAt(scratch, roll, from.at);
+        self.stampNpcs(from.node, scratch, roll, &plot.spots, Npcs{
+            .plot = plot,
             .script = &self.script,
             .world = .{ .node = from.node, .hero = from.at },
         });
-        return landing(scratch, from.at, nd.placed()) != null;
+        var foes: [MAX_FOES]Foe = undefined;
+        return landing(scratch, from.at, nd.placedOn(roll, &foes));
     }
 };
 

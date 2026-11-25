@@ -29,6 +29,11 @@ pub fn meanDraw(g: *game.Game, target: rl.RenderTexture2D, warm: usize, n: usize
 
 const BENCH_FRAMES: usize = 3600;
 const BENCH_DRAWS: usize = BENCH_FRAMES / 6;
+const BENCH_WARM: usize = 1;
+
+fn benchDraw(g: *game.Game, target: rl.RenderTexture2D) !f64 {
+    return meanDraw(g, target, BENCH_WARM, BENCH_DRAWS);
+}
 
 pub fn ms(ns: u64) f64 {
     return @as(f64, @floatFromInt(ns)) / std.time.ns_per_ms;
@@ -66,7 +71,7 @@ pub fn benchWalk(g: *game.Game) !void {
     try benchAssets(g);
     try benchEffects(g, target);
     poseWaterMirrors(g, day.NOON, true);
-    std.debug.print("smooth water with mirrors and glints: {d:.3} ms mean draw over {d} frames\n", .{ try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
+    std.debug.print("smooth water with mirrors and glints: {d:.3} ms mean draw over {d} frames\n", .{ try benchDraw(g, target), BENCH_DRAWS });
     try benchGrass(g, target);
     try benchStrand(g, target);
     try benchHistory();
@@ -86,9 +91,9 @@ fn benchHistory() !void {
     }
     const edits = timer.lap();
     const retained = ed.history.retainedBytes();
-    for (0..history.CAPACITY) |_| if (!try ed.history.undo(ed.map)) return error.MissingHistory;
+    for (0..history.CAPACITY) |_| if ((try ed.history.undo(ed.map)) == null) return error.MissingHistory;
     const undone = timer.lap();
-    for (0..history.CAPACITY) |_| if (!try ed.history.redo(ed.map)) return error.MissingHistory;
+    for (0..history.CAPACITY) |_| if ((try ed.history.redo(ed.map)) == null) return error.MissingHistory;
     const redone = timer.read();
     std.debug.print("editor history: Atlas {d} bytes, capacity {d}, create {d:.3} ms; edit {d:.3}, undo {d:.3}, redo {d:.3} ms each\n", .{ @sizeOf(atlas.Atlas), history.CAPACITY, ms(created), ms(edits / history.CAPACITY), ms(undone / history.CAPACITY), ms(redone / history.CAPACITY) });
     std.debug.print("editor history retained: {d} bytes\n", .{retained});
@@ -101,7 +106,7 @@ fn benchStrand(g: *game.Game, target: rl.RenderTexture2D) !void {
     g.sim.clock = day.Clock.at(day.NOON);
     game.settle(g);
     game.prepare(g);
-    std.debug.print("strand at noon: {d:.3} ms mean draw over {d} frames\n", .{ try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
+    std.debug.print("strand at noon: {d:.3} ms mean draw over {d} frames\n", .{ try benchDraw(g, target), BENCH_DRAWS });
 }
 
 fn benchGrass(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -110,16 +115,16 @@ fn benchGrass(g: *game.Game, target: rl.RenderTexture2D) !void {
     game.prepare(g);
     const alt = g.sprites.grass2 orelse return error.GrassAlternateMissing;
     defer g.sprites.grass2 = alt;
-    const varied = try meanDraw(g, target, 1, BENCH_DRAWS);
+    const varied = try benchDraw(g, target);
     g.sprites.grass2 = null;
-    const plain = try meanDraw(g, target, 1, BENCH_DRAWS);
+    const plain = try benchDraw(g, target);
     g.sprites.grass2 = alt;
-    const repeated = try meanDraw(g, target, 1, BENCH_DRAWS);
+    const repeated = try benchDraw(g, target);
     std.debug.print("flat grass: alternate {d:.3}/{d:.3} ms, plain {d:.3} ms mean draw over {d} frames\n", .{ varied, repeated, plain, BENCH_DRAWS });
     for (0..8) |i| g.sim.lv.set(.{ .x = 20 + @as(i32, @intCast(i)), .y = 21 }, .large_tree);
     studyLit(g, true, day.NOON);
     game.prepare(g);
-    std.debug.print("flat grass with 8 tall trees: {d:.3} ms mean draw over {d} frames\n", .{ try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
+    std.debug.print("flat grass with 8 tall trees: {d:.3} ms mean draw over {d} frames\n", .{ try benchDraw(g, target), BENCH_DRAWS });
 }
 
 fn benchEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -130,7 +135,7 @@ fn benchEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
             const at = mathx.centre(.{ .x = 15 + @as(i32, @intCast(i % 8)), .y = 14 + @as(i32, @intCast(i / 8)) });
             g.pic.fx.glow(at, look.FIRE, .{ .reach = fx.EMBER_GLOW.reach, .life = 1 });
         }
-        std.debug.print("effects {d}: {d:.3} ms mean draw over {d} frames\n", .{ count, try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
+        std.debug.print("effects {d}: {d:.3} ms mean draw over {d} frames\n", .{ count, try benchDraw(g, target), BENCH_DRAWS });
     }
 }
 
@@ -140,7 +145,7 @@ fn benchAssets(g: *game.Game) !void {
     defer dropAtlas(g, w);
     inline for ([_][]const u8{ SHOT_OUTDOOR, SHOT_BIOME, SHOT_OUTDOOR }) |name| {
         try w.load(alloc, atlas.mapPath(name));
-        game.beginMapAt(g, w, w.start, SHOT_SEED);
+        try game.beginMapAt(g, w, w.start, SHOT_SEED);
         var t = try std.time.Timer.start();
         game.prepare(g);
         const loaded = t.read();

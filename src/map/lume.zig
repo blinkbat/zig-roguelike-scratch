@@ -50,17 +50,6 @@ fn poolNear(lv: *const grid.Level, viewer: P, sight: i32, s: Source, out: *[grid
     if (mathx.dist(s.at, viewer) <= sight + s.reach) fov.castInto(lv, s.at, s.reach, out);
 }
 
-fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool, was_seen: *const [grid.CELLS]bool) void {
-    lv.los = lv.lit;
-    for (0..grid.CELLS) |i| {
-        if (!lv.lit[i]) continue;
-        const near = mathx.reaches(viewer, grid.Level.of(i), sky);
-        lv.lit[i] = near or lit_by[i];
-        lv.seen[i] = was_seen[i] or lv.lit[i];
-        if (lv.lit[i]) lv.barrel_seen[i] = lv.barrel[i];
-    }
-}
-
 pub fn pooled(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, p: P) bool {
     var lit_by: [grid.CELLS]bool = undefined;
     pools(lv, viewer, sight, carried, &lit_by);
@@ -68,11 +57,19 @@ pub fn pooled(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Sou
 }
 
 pub fn see(lv: *grid.Level, viewer: P, sight: i32, sky: f32, carried: []const Source) void {
-    const was = lv.seen;
-    fov.cast(lv, viewer, sight);
+    lv.lightless();
+    @memset(&lv.los, false);
+    fov.castInto(lv, viewer, sight, &lv.los);
     var lit_by: [grid.CELLS]bool = undefined;
-    if (sky < @as(f32, @floatFromInt(sight))) pools(lv, viewer, sight, carried, &lit_by) else @memset(&lit_by, false);
-    dim(lv, viewer, sky, &lit_by, &was);
+    const need_pools = sky < @as(f32, @floatFromInt(sight));
+    if (need_pools) pools(lv, viewer, sight, carried, &lit_by);
+    var cells = grid.Box.around(viewer, @max(0, sight)).grown(0).cells();
+    while (cells.next()) |p| {
+        const i = grid.Level.idx(p);
+        if (!lv.los[i] or !(mathx.reaches(viewer, p, sky) or (need_pools and lit_by[i]))) continue;
+        lv.light(p);
+        lv.barrel_seen[i] = lv.barrel[i];
+    }
 }
 
 fn count(cells: *const [grid.CELLS]bool) usize {

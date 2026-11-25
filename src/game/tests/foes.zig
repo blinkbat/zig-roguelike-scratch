@@ -101,12 +101,14 @@ test "thorns kills grant rewards and harvest after a shielded hit without blow r
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
         g.sim.inventory.gear.slots.set(.chest, THORNS);
         g.sim.inventory.gear.slots.set(.left_ring, harness.harvestRing());
+        g.sim.inventory.gear.slots.set(.right_ring, harness.affixed(.ring, .{ .kind = .mana_on_kill, .value = 2 }));
         const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
         g.sim.pool.get(id).?.hp = 1;
         const hero = g.sim.heroActor().?;
         hero.hp = if (lethal_hero) 1 else hero.max - 3;
         if (!lethal_hero) hero.ward.turns = 2;
         const hp = hero.hp;
+        g.sim.mana = g.sim.manaMax();
         game.settle(g);
         const kills = g.sim.kills;
         g.sim.rng = harness.foeAttacksRng(g, &.{.{ .id = id, .lands = true }});
@@ -120,10 +122,14 @@ test "thorns kills grant rewards and harvest after a shielded hit without blow r
         } else {
             try std.testing.expectEqual(hp + harness.HARVEST_LIFE, g.sim.heroActor().?.hp);
             try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].thorns.?.recovery != null);
+            try std.testing.expect(g.pic.mana_held > 0);
+            try std.testing.expect(g.pic.mana_killed[actor.Pool.slot(id)] > 0);
+            try std.testing.expectEqual(g.sim.manaMax(), g.pic.manaShown(&g.sim).now);
         }
         harness.stagger(g);
         harness.drawnOut(g);
         try std.testing.expect(!g.pic.standing(&g.sim, actor.Pool.slot(id)));
+        try std.testing.expectEqual(g.sim.mana, g.pic.manaShown(&g.sim).now);
     }
 }
 

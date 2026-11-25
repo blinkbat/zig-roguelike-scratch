@@ -965,9 +965,9 @@ pub const Meander = struct {
             return c;
         }
         self.bend = std.math.clamp(self.bend + rng.spread(MEANDER) * self.wander, -BEND_MAX * self.wander, BEND_MAX * self.wander);
-        const h = std.math.atan2(dy, dx) + self.bend;
-        self.x += @cos(h);
-        self.y += @sin(h);
+        const u = mathx.polar(std.math.atan2(dy, dx) + self.bend);
+        self.x += u[0];
+        self.y += u[1];
         return c;
     }
 

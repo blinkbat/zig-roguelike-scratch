@@ -24,8 +24,8 @@ if previous then
 end
 local c=assert(drawing:cel(1))
 local original,position,painted,palette,painted_count=groundPort.painting(c,10837)
-local O=pc.rgba(128,104,78,255)
-local K=pc.rgba(0,0,0,255)
+local O=sourceFiles.rgb(128,104,78)
+local K=sourceFiles.rgb(0,0,0)
 assert(palette[O] and palette[K])
 local px=groundPort.reader(painted)
 local NW,NE,SW,SE=groundPort.NW,groundPort.NE,groundPort.SW,groundPort.SE
@@ -292,8 +292,7 @@ end end
 groundPort.checkJoins(cells)
 
 local stamp=os.date(sourceFiles.STAMP)
-local backup=work..'bridge-before-'..stamp..'.aseprite'
-sourceFiles.copy(path,backup)
+local backup=sourceFiles.backup(path,work..'bridge-before-'..stamp..'.aseprite')
 if previous then s:deleteLayer(previous) end
 local l=s:newLayer()
 l.name=layer_name
@@ -314,7 +313,7 @@ atlas:saveAs(work..'bridge-atlas.png')
 local zoom=Image(atlas)
 zoom:resize(4*groundPort.SIZE,4*groundPort.SIZE)
 zoom:saveAs(work..'bridge-atlas-4x.png')
-groundPort.preview(cells,pc.rgba(54,75,106,255),work..'bridge-connected.png')
+groundPort.preview(cells,sourceFiles.rgb(54,75,106),work..'bridge-connected.png')
 local report=sourceFiles.report(work..'bridge-validation.txt')
 report:write('Source: '..path..'\nSaved: '..dest..'\nBackup: '..backup..'\n')
 report:write('Draw here unchanged ('..painted_count..' pixels), hidden; Bridge extensions holds all 15 cells.\n')

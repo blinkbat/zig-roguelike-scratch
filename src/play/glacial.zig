@@ -9,7 +9,7 @@ const P = mathx.P;
 
 pub const COST: i32 = 4;
 pub const AILMENT = resilience.Kind.chill;
-pub const CHANCE: u32 = 50;
+pub const CHANCE = damage.AfflictionChance{ .percent = 50, .resists_element = true };
 pub const TURNS: u8 = 3;
 pub const RANGE: i32 = 2;
 pub const CYCLE: u8 = 3;
@@ -17,7 +17,7 @@ pub const VERB = "frosts";
 pub const TAKES = "is chilled";
 pub const ELEMENT: damage.Element = .cold;
 pub const STATUS = std.fmt.comptimePrint("Lose 1 action in every {d}.", .{CYCLE});
-pub const CHILL_NOTE = std.fmt.comptimePrint("{d}% chill chance", .{CHANCE});
+pub const CHILL_NOTE = std.fmt.comptimePrint("{d}% chill chance", .{CHANCE.percent});
 pub const DESCRIPTION = std.fmt.comptimePrint("An arrow bursts into a {d}-tile cone of cold. {s}.", .{ RANGE, CHILL_NOTE });
 
 pub const Chill = struct {
@@ -37,14 +37,6 @@ pub const Chill = struct {
 };
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
-
-pub fn chance(resist: i16) u32 {
-    return damage.resistedChance(CHANCE, resist);
-}
-
-pub fn procs(rng: *mathx.Rng, resist: i16) bool {
-    return damage.procs(rng, chance(resist));
-}
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.chill.apply();
@@ -91,17 +83,17 @@ test "chill skips one action in three and refreshing never postpones the skipped
 }
 
 test "cold resistance reduces chill probability independently of rounded cold damage" {
-    try std.testing.expectEqual(@as(u32, 50), chance(0));
-    try std.testing.expectEqual(@as(u32, 25), chance(50));
-    try std.testing.expectEqual(@as(u32, 0), chance(100));
-    try std.testing.expectEqual(@as(u32, 0), chance(200));
-    try std.testing.expectEqual(@as(u32, 75), chance(-50));
-    try std.testing.expectEqual(@as(u32, 100), chance(-200));
+    try std.testing.expectEqual(@as(u32, 50), CHANCE.effective(0));
+    try std.testing.expectEqual(@as(u32, 25), CHANCE.effective(50));
+    try std.testing.expectEqual(@as(u32, 0), CHANCE.effective(100));
+    try std.testing.expectEqual(@as(u32, 0), CHANCE.effective(200));
+    try std.testing.expectEqual(@as(u32, 75), CHANCE.effective(-50));
+    try std.testing.expectEqual(@as(u32, 100), CHANCE.effective(-200));
     var counts = [_]usize{ 0, 0, 0 };
     for ([_]i16{ 0, 50, 100 }, 0..) |resist, i| {
         var rng = mathx.Rng.init(812);
         for (0..1000) |_| {
-            if (procs(&rng, resist)) counts[i] += 1;
+            if (CHANCE.roll(&rng, resist)) counts[i] += 1;
         }
     }
     try std.testing.expect(counts[0] > 400 and counts[0] < 600);

@@ -13,7 +13,7 @@ pub fn captureZoo(g: *game.Game) !void {
     defer capture.dropAtlas(g, w);
     try w.load(std.heap.c_allocator, atlas.START);
     const z = w.node[atlas.CARAVAN_NODE].zoo orelse return error.NoZoo;
-    game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.key.?.add(.{ .x = 0, .y = 1 }) }, capture.SHOT_SEED);
+    try game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.key.?.add(.{ .x = 0, .y = 1 }) }, capture.SHOT_SEED);
     g.sim.clock = day.Clock.at(day.NOON);
     game.harness.toughen(g.sim.heroActor().?);
     game.settle(g);
@@ -38,7 +38,7 @@ pub fn captureZoo(g: *game.Game) !void {
     game.harness.drawnOut(g);
     try capture.capture(g, target, capture.SHOTS_DIR ++ "/zoo-rush.png");
 
-    game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, capture.SHOT_SEED);
+    try game.beginMapAt(g, w, .{ .node = atlas.CARAVAN_NODE, .at = z.approach() }, capture.SHOT_SEED);
     g.sim.clock = day.Clock.at(day.NOON);
     if (!g.sim.inventory.add(.{ .kind = .small_key }) or !z.open(&g.sim.lv, &g.sim.pool, &g.sim.inventory)) return error.DoorDidNotOpen;
     game.heroTo(g, z.threshold());

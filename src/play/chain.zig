@@ -13,13 +13,11 @@ pub const BOLT = "chain lightning";
 pub const BOLT_RANGE: i32 = 6;
 pub const TAKES = shock.TAKES;
 pub const ELEMENT: damage.Element = .lightning;
-pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {d}% chance to shock each.", .{ JUMPS, JUMP_RANGE, CHANCE });
+pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {d}% chance to shock each.", .{ JUMPS, JUMP_RANGE, CHANCE.percent });
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 5 };
 
-pub const CHANCE: u32 = 50;
-pub const procs = damage.chance(CHANCE);
-pub const chance = damage.flat(CHANCE);
+pub const CHANCE = damage.AfflictionChance{ .percent = 50 };
 pub const afflict = shock.afflict;
 pub const AILMENT = shock.AILMENT;
 

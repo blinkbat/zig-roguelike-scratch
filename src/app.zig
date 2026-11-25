@@ -218,22 +218,20 @@ const App = struct {
         menu.mid(g.face, g.screen, app.note.text(), raster.bottom(last) + menu.NOTE_GAP, menu.NOTE, look.DIM);
     }
 
-    fn slotFree(app: *App) bool {
-        app.rescan();
-        return save.free(&app.list) != null;
-    }
-
     fn newRun(app: *App, name: hero.Name) void {
         const g = app.g;
-        const slot = save.free(&app.list) orelse return app.toTitle();
+        const slot = save.firstEmpty() orelse {
+            app.toTitle();
+            _ = app.refuse();
+            return;
+        };
         const path = app.chosen orelse atlas.START;
         app.plain(app.class);
         if (app.map.load(app.alloc, path)) {
-            if (!app.map.standable(app.map.start, &g.sim.lv)) {
+            game.beginMap(g, app.map) catch {
                 app.toTitle();
                 return app.say(atlas.NO_FLOOR, .{path});
-            }
-            game.beginMap(g, app.map);
+            };
         } else |e| {
             if (app.chosen != null or e != error.FileNotFound) {
                 app.toTitle();
@@ -285,7 +283,10 @@ const App = struct {
     }
 
     fn launch(app: *App, map: *const atlas.Atlas, from: atlas.Start) void {
-        game.beginMapAt(app.g, map, from, game.freshSeed());
+        game.beginMapAt(app.g, map, from, game.freshSeed()) catch {
+            var title: [atlas.TITLE_MAX]u8 = undefined;
+            return app.ed.?.say(atlas.NO_FLOOR, .{map.node[from.node].title(from.node, &title)});
+        };
         app.g.st.device = .keys;
         app.play(.editor, app.g.sim.class.unnamed());
     }
@@ -442,12 +443,12 @@ const App = struct {
                 menu.draw(g.face, &g.sprites, g.screen, comptime menu.caps(NAME), &rows, app.title.at, note);
                 switch (MAIN_ROWS[picked orelse return true]) {
                     .new => {
-                        if (!app.slotFree()) return app.refuse();
+                        if (save.firstEmpty() == null) return app.refuse();
                         app.chosen = null;
                         app.goPage(.class);
                     },
                     .maps => {
-                        if (!app.slotFree()) return app.refuse();
+                        if (save.firstEmpty() == null) return app.refuse();
                         app.listing.scan();
                         if (app.listing.n == 0) {
                             app.say(atlas.NO_MAPS, .{});

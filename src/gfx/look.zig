@@ -174,7 +174,7 @@ pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32
         else => {},
     }
     const l = TILES.getPtrConst(t);
-    face.symbol(l.sym, l.ch, cx, cy, size, l.fg);
+    face.symbol(l.sym, l.ascii(), cx, cy, size, l.fg);
 }
 
 const JAIL_STONE = rgb(0x625b55);
@@ -214,7 +214,7 @@ fn jailTile(t: grid.Tile, cx: i32, cy: i32, size: i32) void {
 
 pub fn tile(t: grid.Tile) Look {
     const l = TILES.getPtrConst(t);
-    return .{ .ch = l.ch, .fg = l.fg };
+    return .{ .ch = l.ascii(), .fg = l.fg };
 }
 
 pub fn tileBg(t: grid.Tile) ?rl.Color {
@@ -247,7 +247,18 @@ pub fn standsOver(t: grid.Tile) bool {
     return ground.of(t) == null;
 }
 
-const TileLook = struct { sym: [:0]const u8, ch: u8, fg: rl.Color, bg: ?rl.Color, mini: rl.Color, mini_dim: rl.Color };
+const TileLook = struct {
+    sym: [:0]const u8,
+    fallback: ?u8 = null,
+    fg: rl.Color,
+    bg: ?rl.Color,
+    mini: rl.Color,
+    mini_dim: rl.Color,
+
+    fn ascii(l: *const TileLook) u8 {
+        return l.fallback orelse l.sym[0];
+    }
+};
 
 const TREE_INK = .{ .fg = rgb(0x788650), .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) };
 const SHRUB_INK = rgb(0x6f9a4a);
@@ -258,57 +269,57 @@ const PIB_INK = rgb(0xe89aa6);
 const OPEN_CHEST_INK = rgb(0x96724d);
 
 const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
-    .wall = .{ .sym = "#", .ch = '#', .fg = rgb(0x9a8e78), .bg = null, .mini = STONE_INK, .mini_dim = rgb(0x46434c) },
-    .floor = .{ .sym = "·", .ch = '.', .fg = rgb(0x5e5a50), .bg = FLOOR_BG, .mini = rgb(0x3a3830), .mini_dim = rgb(0x1c1c22) },
-    .grass = .{ .sym = "\"", .ch = '"', .fg = rgb(0x4f7a3a), .bg = GRASS_BG, .mini = rgb(0x2e4426), .mini_dim = rgb(0x182016) },
-    .shrub = .{ .sym = "¥", .ch = '&', .fg = SHRUB_INK, .bg = null, .mini = rgb(0x5e8a3e), .mini_dim = rgb(0x2e3c2a) },
-    .rock = .{ .sym = "#", .ch = '#', .fg = rgb(0x8a7e6c), .bg = rgb(0x262220), .mini = rgb(0x6e6558), .mini_dim = rgb(0x38332e) },
-    .dirt = .{ .sym = "·", .ch = '.', .fg = rgb(0x8a6a44), .bg = rgb(0x1a140e), .mini = rgb(0x4a3a28), .mini_dim = rgb(0x231c14) },
-    .sand = .{ .sym = "·", .ch = '.', .fg = rgb(0xd8c084), .bg = rgb(0x2e2716), .mini = rgb(0x8a7a50), .mini_dim = rgb(0x403a28) },
-    .snow = .{ .sym = "°", .ch = '*', .fg = rgb(0xe6eef2), .bg = rgb(0x2c3036), .mini = rgb(0x9aa2a8), .mini_dim = rgb(0x464a50) },
-    .water = .{ .sym = "≈", .ch = '~', .fg = rgb(0x4a80d0), .bg = rgb(0x0e1a36), .mini = rgb(0x24508a), .mini_dim = rgb(0x142640) },
-    .shallows = .{ .sym = "~", .ch = '~', .fg = rgb(0x78b0d4), .bg = rgb(0x14283c), .mini = rgb(0x3e6e8e), .mini_dim = rgb(0x1e3444) },
-    .bridge = .{ .sym = "=", .ch = '=', .fg = rgb(0xa87c48), .bg = rgb(0x1e160e), .mini = rgb(0x7a5a36), .mini_dim = rgb(0x3a2c1c) },
-    .reeds = .{ .sym = "¦", .ch = '|', .fg = rgb(0xa8b24a), .bg = null, .mini = rgb(0x6a7030), .mini_dim = rgb(0x32361a) },
-    .rubble = .{ .sym = "•", .ch = ',', .fg = STONE_INK, .bg = rgb(0x18161a), .mini = rgb(0x4e4840), .mini_dim = rgb(0x26241f) },
-    .fence = .{ .sym = "∏", .ch = '#', .fg = rgb(0x9a6638), .bg = null, .mini = rgb(0x7a5030), .mini_dim = rgb(0x3a2818) },
-    .lava = .{ .sym = "≈", .ch = '~', .fg = rgb(0xff8a30), .bg = rgb(0x501406), .mini = rgb(0xc8501a), .mini_dim = rgb(0x5a240c) },
-    .fungus = .{ .sym = "¶", .ch = 'T', .fg = rgb(0xb882e0), .bg = null, .mini = rgb(0x7a4e9a), .mini_dim = rgb(0x3a2a48) },
-    .chasm = .{ .sym = "·", .ch = ':', .fg = rgb(0x24222a), .bg = rgb(0x030305), .mini = rgb(0x0c0c10), .mini_dim = rgb(0x060608) },
-    .ice = .{ .sym = "·", .ch = '_', .fg = rgb(0xb8e4f4), .bg = rgb(0x1c3440), .mini = rgb(0x7ab0c8), .mini_dim = rgb(0x3a5462) },
-    .grave = .{ .sym = "†", .ch = '+', .fg = rgb(0xc8c4b8), .bg = null, .mini = rgb(0x8a8680), .mini_dim = rgb(0x44423e) },
-    .crop = .{ .sym = "¥", .ch = '"', .fg = rgb(0xd8b84a), .bg = rgb(0x1e1a0a), .mini = rgb(0x8a7a30), .mini_dim = rgb(0x403a18) },
-    .tiny_shrub = .{ .sym = "'", .ch = '\'', .fg = SHRUB_INK, .bg = null, .mini = rgb(0x4e7436), .mini_dim = rgb(0x26341f) },
-    .boulder = .{ .sym = "o", .ch = 'o', .fg = rgb(0x9a8e90), .bg = null, .mini = rgb(0x7a7072), .mini_dim = rgb(0x3c3638) },
-    .tall_grass = .{ .sym = "\"", .ch = '"', .fg = rgb(0x7aa84e), .bg = null, .mini = rgb(0x3a5630), .mini_dim = rgb(0x1c2818) },
-    .shrooms = .{ .sym = "•", .ch = ',', .fg = rgb(0xd8ccb4), .bg = null, .mini = rgb(0x3c4a30), .mini_dim = rgb(0x1e241a) },
-    .chest = .{ .sym = "C", .ch = 'C', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = rgb(0x66502b) },
-    .chest_open = .{ .sym = "O", .ch = 'O', .fg = OPEN_CHEST_INK, .bg = null, .mini = OPEN_CHEST_INK, .mini_dim = rgb(0x443422) },
-    .swamp_tree = inkRow("S", 'S', TREE_INK),
-    .large_tree = inkRow("L", 'L', TREE_INK),
-    .glow_plant = .{ .sym = "&", .ch = '&', .fg = rgb(0x9fd2ff), .bg = null, .mini = rgb(0x7fb2e0), .mini_dim = rgb(0x2e4256) },
-    .caravan = inkRow("H", 'H', CARAVAN_INK),
-    .caravan_part = inkRow("h", 'h', CARAVAN_INK),
-    .stone_bridge = .{ .sym = "=", .ch = '=', .fg = STONE_INK, .bg = rgb(0x1c1a18), .mini = rgb(0x6e665a), .mini_dim = rgb(0x34302a) },
-    .gate = .{ .sym = "D", .ch = 'D', .fg = DIM, .bg = null, .mini = DIM, .mini_dim = SHADE },
-    .locked_gate = .{ .sym = "J", .ch = 'J', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = SHADE },
-    .open_gate = .{ .sym = "d", .ch = 'd', .fg = DIM, .bg = null, .mini = DIM, .mini_dim = SHADE },
-    .zoo_key = .{ .sym = "k", .ch = 'k', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = SHADE },
-    .key_taken = .{ .sym = ".", .ch = '.', .fg = DIM, .bg = null, .mini = SHADE, .mini_dim = SHADE },
-    .crate = .{ .sym = "#", .ch = '#', .fg = rgb(0xb08850), .bg = null, .mini = rgb(0x7a5c36), .mini_dim = rgb(0x3a2c1c) },
-    .sacks = .{ .sym = "%", .ch = '%', .fg = rgb(0xc8b080), .bg = null, .mini = rgb(0x8a7a56), .mini_dim = rgb(0x403a2a) },
-    .bedroll = .{ .sym = "=", .ch = '=', .fg = rgb(0xa8604c), .bg = null, .mini = rgb(0x6e4034), .mini_dim = rgb(0x34201a) },
-    .tent = .{ .sym = "^", .ch = '^', .fg = rgb(0xd8ccae), .bg = null, .mini = rgb(0xa89a7a), .mini_dim = rgb(0x4a443a) },
+    .wall = .{ .sym = "#", .fg = rgb(0x9a8e78), .bg = null, .mini = STONE_INK, .mini_dim = rgb(0x46434c) },
+    .floor = .{ .sym = "·", .fallback = '.', .fg = rgb(0x5e5a50), .bg = FLOOR_BG, .mini = rgb(0x3a3830), .mini_dim = rgb(0x1c1c22) },
+    .grass = .{ .sym = "\"", .fg = rgb(0x4f7a3a), .bg = GRASS_BG, .mini = rgb(0x2e4426), .mini_dim = rgb(0x182016) },
+    .shrub = .{ .sym = "¥", .fallback = '&', .fg = SHRUB_INK, .bg = null, .mini = rgb(0x5e8a3e), .mini_dim = rgb(0x2e3c2a) },
+    .rock = .{ .sym = "#", .fg = rgb(0x8a7e6c), .bg = rgb(0x262220), .mini = rgb(0x6e6558), .mini_dim = rgb(0x38332e) },
+    .dirt = .{ .sym = "·", .fallback = '.', .fg = rgb(0x8a6a44), .bg = rgb(0x1a140e), .mini = rgb(0x4a3a28), .mini_dim = rgb(0x231c14) },
+    .sand = .{ .sym = "·", .fallback = '.', .fg = rgb(0xd8c084), .bg = rgb(0x2e2716), .mini = rgb(0x8a7a50), .mini_dim = rgb(0x403a28) },
+    .snow = .{ .sym = "°", .fallback = '*', .fg = rgb(0xe6eef2), .bg = rgb(0x2c3036), .mini = rgb(0x9aa2a8), .mini_dim = rgb(0x464a50) },
+    .water = .{ .sym = "≈", .fallback = '~', .fg = rgb(0x4a80d0), .bg = rgb(0x0e1a36), .mini = rgb(0x24508a), .mini_dim = rgb(0x142640) },
+    .shallows = .{ .sym = "~", .fg = rgb(0x78b0d4), .bg = rgb(0x14283c), .mini = rgb(0x3e6e8e), .mini_dim = rgb(0x1e3444) },
+    .bridge = .{ .sym = "=", .fg = rgb(0xa87c48), .bg = rgb(0x1e160e), .mini = rgb(0x7a5a36), .mini_dim = rgb(0x3a2c1c) },
+    .reeds = .{ .sym = "¦", .fallback = '|', .fg = rgb(0xa8b24a), .bg = null, .mini = rgb(0x6a7030), .mini_dim = rgb(0x32361a) },
+    .rubble = .{ .sym = "•", .fallback = ',', .fg = STONE_INK, .bg = rgb(0x18161a), .mini = rgb(0x4e4840), .mini_dim = rgb(0x26241f) },
+    .fence = .{ .sym = "∏", .fallback = '#', .fg = rgb(0x9a6638), .bg = null, .mini = rgb(0x7a5030), .mini_dim = rgb(0x3a2818) },
+    .lava = .{ .sym = "≈", .fallback = '~', .fg = rgb(0xff8a30), .bg = rgb(0x501406), .mini = rgb(0xc8501a), .mini_dim = rgb(0x5a240c) },
+    .fungus = .{ .sym = "¶", .fallback = 'T', .fg = rgb(0xb882e0), .bg = null, .mini = rgb(0x7a4e9a), .mini_dim = rgb(0x3a2a48) },
+    .chasm = .{ .sym = "·", .fallback = ':', .fg = rgb(0x24222a), .bg = rgb(0x030305), .mini = rgb(0x0c0c10), .mini_dim = rgb(0x060608) },
+    .ice = .{ .sym = "·", .fallback = '_', .fg = rgb(0xb8e4f4), .bg = rgb(0x1c3440), .mini = rgb(0x7ab0c8), .mini_dim = rgb(0x3a5462) },
+    .grave = .{ .sym = "†", .fallback = '+', .fg = rgb(0xc8c4b8), .bg = null, .mini = rgb(0x8a8680), .mini_dim = rgb(0x44423e) },
+    .crop = .{ .sym = "¥", .fallback = '"', .fg = rgb(0xd8b84a), .bg = rgb(0x1e1a0a), .mini = rgb(0x8a7a30), .mini_dim = rgb(0x403a18) },
+    .tiny_shrub = .{ .sym = "'", .fg = SHRUB_INK, .bg = null, .mini = rgb(0x4e7436), .mini_dim = rgb(0x26341f) },
+    .boulder = .{ .sym = "o", .fg = rgb(0x9a8e90), .bg = null, .mini = rgb(0x7a7072), .mini_dim = rgb(0x3c3638) },
+    .tall_grass = .{ .sym = "\"", .fg = rgb(0x7aa84e), .bg = null, .mini = rgb(0x3a5630), .mini_dim = rgb(0x1c2818) },
+    .shrooms = .{ .sym = "•", .fallback = ',', .fg = rgb(0xd8ccb4), .bg = null, .mini = rgb(0x3c4a30), .mini_dim = rgb(0x1e241a) },
+    .chest = .{ .sym = "C", .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = rgb(0x66502b) },
+    .chest_open = .{ .sym = "O", .fg = OPEN_CHEST_INK, .bg = null, .mini = OPEN_CHEST_INK, .mini_dim = rgb(0x443422) },
+    .swamp_tree = inkRow("S", TREE_INK),
+    .large_tree = inkRow("L", TREE_INK),
+    .glow_plant = .{ .sym = "&", .fg = rgb(0x9fd2ff), .bg = null, .mini = rgb(0x7fb2e0), .mini_dim = rgb(0x2e4256) },
+    .caravan = inkRow("H", CARAVAN_INK),
+    .caravan_part = inkRow("h", CARAVAN_INK),
+    .stone_bridge = .{ .sym = "=", .fg = STONE_INK, .bg = rgb(0x1c1a18), .mini = rgb(0x6e665a), .mini_dim = rgb(0x34302a) },
+    .gate = .{ .sym = "D", .fg = DIM, .bg = null, .mini = DIM, .mini_dim = SHADE },
+    .locked_gate = .{ .sym = "J", .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = SHADE },
+    .open_gate = .{ .sym = "d", .fg = DIM, .bg = null, .mini = DIM, .mini_dim = SHADE },
+    .zoo_key = .{ .sym = "k", .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = SHADE },
+    .key_taken = .{ .sym = ".", .fg = DIM, .bg = null, .mini = SHADE, .mini_dim = SHADE },
+    .crate = .{ .sym = "#", .fg = rgb(0xb08850), .bg = null, .mini = rgb(0x7a5c36), .mini_dim = rgb(0x3a2c1c) },
+    .sacks = .{ .sym = "%", .fg = rgb(0xc8b080), .bg = null, .mini = rgb(0x8a7a56), .mini_dim = rgb(0x403a2a) },
+    .bedroll = .{ .sym = "=", .fg = rgb(0xa8604c), .bg = null, .mini = rgb(0x6e4034), .mini_dim = rgb(0x34201a) },
+    .tent = .{ .sym = "^", .fg = rgb(0xd8ccae), .bg = null, .mini = rgb(0xa89a7a), .mini_dim = rgb(0x4a443a) },
 });
 
 const CARAVAN_INK = .{ .fg = rgb(0xd8c8a4), .mini = rgb(0x9a7a52), .mini_dim = rgb(0x46382a) };
 
-fn inkRow(comptime sym: [:0]const u8, comptime ch: u8, comptime ink: anytype) TileLook {
-    return .{ .sym = sym, .ch = ch, .fg = ink.fg, .bg = null, .mini = ink.mini, .mini_dim = ink.mini_dim };
+fn inkRow(comptime sym: [:0]const u8, comptime ink: anytype) TileLook {
+    return .{ .sym = sym, .fg = ink.fg, .bg = null, .mini = ink.mini, .mini_dim = ink.mini_dim };
 }
 
 comptime {
-    for (TILES.values) |l| std.debug.assert(l.sym.len != 1 or l.sym[0] == l.ch);
+    for (TILES.values) |l| std.debug.assert((l.sym.len == 1) == (l.fallback == null));
 }
 
 pub const TILE_CODEPOINTS = blk: {
@@ -740,7 +751,7 @@ test "every glyph is printable ascii" {
             return std.ascii.isPrint(c) and c != ' ';
         }
     }.f;
-    for (std.enums.values(grid.Tile)) |t| try std.testing.expect(inked(TILES.get(t).ch));
+    for (std.enums.values(grid.Tile)) |t| try std.testing.expect(inked(TILES.getPtrConst(t).ascii()));
     for (std.enums.values(actor.Kind)) |k| try std.testing.expect(inked(body(k).ch));
     try std.testing.expect(inked(TORCH.ch));
     try std.testing.expect(inked(BARREL.ch));

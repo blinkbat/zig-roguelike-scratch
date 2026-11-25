@@ -189,7 +189,7 @@ const BEVEL_DEPTH: f32 = 2.0;
 const ART_MAX: i32 = 2 * look.SPRITE_PX;
 const SOLID_A: u8 = 25;
 
-pub const NO_FIGURES: [sprite_assets.FIGURES]?rl.Texture2D = @splat(null);
+const NO_FIGURES: [sprite_assets.FIGURES]?rl.Texture2D = @splat(null);
 
 pub const Gpu = struct {
     /// `ox, oy` is where the map's top-left corner lands on screen.

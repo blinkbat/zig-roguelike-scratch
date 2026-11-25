@@ -120,7 +120,7 @@ if args.replace_blank:
         f'if app.fs.isFile({quote(OUTPUT)}) then',
         f'local old=assert(app.open({quote(OUTPUT)}))',
         f'sourceFiles.checkBlankTemplate(old,{{width=s.width,height=s.height,colorMode=s.colorMode,guides=expected,slices=s.slices}},{quote(OUTPUT)})',
-        f'sourceFiles.copy({quote(OUTPUT)},{quote(WORK / "previous-template.aseprite")})', 'old:close()', 'end',
+        f'sourceFiles.backup({quote(OUTPUT)},{quote(WORK / "previous-template.aseprite")})', 'old:close()', 'end',
     ])
 else:
     lua.append(f'assert(not app.fs.isFile({quote(OUTPUT)}),"Refusing to overwrite editable artwork")')

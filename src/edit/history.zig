@@ -46,9 +46,7 @@ test "compact history preserves long text and unfinished references through undo
     defer alloc.destroy(map);
     map.* = .{};
     _ = map.add(.{ .bespoke = .{} });
-    const before = try alloc.create(atlas.Atlas);
-    defer alloc.destroy(before);
-    var history = History{ .alloc = alloc, .transaction = .{ .before = before } };
+    var history = History{ .alloc = alloc };
     defer history.deinit();
     map.script.dialog_n = 1;
     const dialog = &map.script.dialog[0];
@@ -74,14 +72,14 @@ test "compact history preserves long text and unfinished references through undo
     history.record();
     history.markSaved();
     try std.testing.expect(history.retainedBytes() < @sizeOf(atlas.Atlas) / 10);
-    try std.testing.expect(try history.undo(map));
+    try std.testing.expect((try history.undo(map)) != null);
     try std.testing.expectEqual(line.say.buf.len, line.say.n);
     for (line.say.text(), 0..) |c, i| try std.testing.expectEqual(@as(u8, if (i == 19) '\n' else 'x'), c);
     try std.testing.expectEqual(@as(?u8, 15), line.choice[0].next);
     try std.testing.expectEqualStrings("First reply\nSecond reply", line.choice[0].ask.text());
     try std.testing.expectEqual(original_pos, map.node[0].pos);
     try std.testing.expect(history.dirty);
-    try std.testing.expect(try history.redo(map));
+    try std.testing.expect((try history.redo(map)) != null);
     try std.testing.expectEqualStrings("Shorter", line.say.text());
     try std.testing.expectEqual(@as(?u8, null), line.choice[0].next);
     try std.testing.expectEqual(original_pos.x + 20, map.node[0].pos.x);
@@ -94,9 +92,7 @@ test "history allocation failures preserve open gestures redo and saved position
     defer alloc.destroy(map);
     map.* = .{};
     _ = map.add(.{ .procgen = .{} });
-    const before = try alloc.create(atlas.Atlas);
-    defer alloc.destroy(before);
-    var history = History{ .alloc = alloc, .transaction = .{ .before = before } };
+    var history = History{ .alloc = alloc };
     defer history.deinit();
     try history.begin(map);
     map.node[0].pos.x += 1;
@@ -111,7 +107,7 @@ test "history allocation failures preserve open gestures redo and saved position
         try std.testing.expect(!history.dirty);
     }
     history.alloc = alloc;
-    try std.testing.expect(try history.undo(map));
+    try std.testing.expect((try history.undo(map)) != null);
     try history.begin(map);
     const position = map.node[0].pos;
     const retained = history.retainedBytes();
@@ -131,7 +127,7 @@ test "history allocation failures preserve open gestures redo and saved position
     }
     history.alloc = alloc;
     history.cancelPreview(map);
-    try std.testing.expect(try history.redo(map));
+    try std.testing.expect((try history.redo(map)) != null);
     try std.testing.expectEqual(position.x + 1, map.node[0].pos.x);
     history.reset();
     try std.testing.expectEqual(@as(usize, 0), history.retainedBytes());
@@ -145,35 +141,15 @@ comptime {
 }
 
 const Transaction = struct {
-    before: *atlas.Atlas,
     state: enum { closed, open, recorded } = .closed,
     changed: bool = false,
-
-    fn begin(self: *Transaction, map: *const atlas.Atlas) void {
-        self.before.* = map.*;
-        self.state = .open;
-        self.changed = false;
-    }
-
-    pub fn previewNode(self: *Transaction, map: *atlas.Atlas, node: usize, to: mathx.P) void {
-        map.node[node].pos = to;
-        self.changed = !self.before.node[node].pos.eq(to);
-    }
-
-    fn cancel(self: *Transaction, map: *atlas.Atlas) void {
-        if (self.state == .open) map.* = self.before.*;
-        self.close();
-    }
-
-    fn close(self: *Transaction) void {
-        self.state = .closed;
-        self.changed = false;
-    }
 };
+
+pub const Before = struct { nodes: []const atlas.Node, start: atlas.Start };
 
 pub const History = struct {
     alloc: std.mem.Allocator,
-    transaction: Transaction,
+    transaction: Transaction = .{},
     states: [CAPACITY]?Snapshot = @splat(null),
     pending: ?Snapshot = null,
     base: usize = 0,
@@ -212,14 +188,19 @@ pub const History = struct {
         self.at = 0;
         self.saved_at = 0;
         self.dirty = false;
-        self.transaction.close();
+        self.transaction = .{};
     }
 
     pub fn begin(self: *History, map: *const atlas.Atlas) !void {
         const pending = try Snapshot.capture(self.alloc, map);
         self.discardPending();
         self.pending = pending;
-        self.transaction.begin(map);
+        self.transaction = .{ .state = .open };
+    }
+
+    pub fn previewNode(self: *History, map: *atlas.Atlas, node: usize, to: mathx.P) void {
+        map.node[node].pos = to;
+        self.transaction.changed = !self.pending.?.nodes[node].pos.eq(to);
     }
 
     pub fn record(self: *History) void {
@@ -254,7 +235,8 @@ pub const History = struct {
     }
 
     pub fn cancelPreview(self: *History, map: *atlas.Atlas) void {
-        self.transaction.cancel(map);
+        if (self.transaction.state == .open) self.pending.?.restore(map);
+        self.transaction = .{};
         self.discardPending();
     }
 
@@ -267,31 +249,38 @@ pub const History = struct {
         return &self.states[(self.base + index) % CAPACITY];
     }
 
-    fn swap(self: *History, map: *atlas.Atlas, index: usize) !void {
+    fn swap(self: *History, map: *atlas.Atlas, index: usize) !Before {
         const outgoing = try Snapshot.capture(self.alloc, map);
-        const scratch = self.transaction.before;
-        scratch.* = map.*;
         const state = self.kept(index);
         state.*.?.restore(map);
         discard(state);
         state.* = outgoing;
         self.discardPending();
-        self.transaction.close();
+        self.transaction = .{};
+        return .{ .nodes = outgoing.nodes, .start = outgoing.start };
     }
 
-    pub fn undo(self: *History, map: *atlas.Atlas) !bool {
-        if (self.at == 0) return false;
-        try self.swap(map, self.at - 1);
+    pub fn undoable(self: *const History) bool {
+        return self.at > 0;
+    }
+
+    pub fn redoable(self: *const History) bool {
+        return self.at < self.len;
+    }
+
+    pub fn undo(self: *History, map: *atlas.Atlas) !?Before {
+        if (!self.undoable()) return null;
+        const before = try self.swap(map, self.at - 1);
         self.at -= 1;
         self.dirty = self.saved_at != self.at;
-        return true;
+        return before;
     }
 
-    pub fn redo(self: *History, map: *atlas.Atlas) !bool {
-        if (self.at == self.len) return false;
-        try self.swap(map, self.at);
+    pub fn redo(self: *History, map: *atlas.Atlas) !?Before {
+        if (!self.redoable()) return null;
+        const before = try self.swap(map, self.at);
         self.at += 1;
         self.dirty = self.saved_at != self.at;
-        return true;
+        return before;
     }
 };

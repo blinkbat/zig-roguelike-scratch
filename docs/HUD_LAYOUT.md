@@ -18,7 +18,7 @@ typography follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md).
 | Minimap | Existing upper-right map, outside the bottom assembly |
 | Time of day | A thin line under the minimap: the sun rides it from sunrise to sunset, the moon from sunset to sunrise, following the drawn hour (`Presentation.hour_shown`) |
 | Event log | Bottom-left panel, newest at bottom, color-coded events during exploration and combat |
-| Character and Menu | Clickable actions with glyphs in the bottom-right gutter while keyboard/mouse hints are active |
+| Character and Menu | Small, borderless actions with glyphs in the bottom-right gutter while keyboard/mouse hints are active |
 
 The live HUD omits the hero-name label, enemy counters, gold tally and permanent control instructions. No screen names a key or button in words; menus and the bind screen show concise action labels beside device glyphs. Life and mana flasks use assigned skill slots, including remaining drinks. Exact XP, levels, equipment and both skill trees appear in Character.
 
@@ -89,6 +89,6 @@ Numbers, resource labels, button captions and cooldowns remain code-rendered. Th
 
 ## Painted border
 
-`C:/Users/DavidBennett/Desktop/border.aseprite` holds the owner's gold border on `Layer 1`, a 73x55 cel at (1,1) on a 128x128 canvas. `tools/hud_art/export_border.lua` preserves that source and copies it to `assets/source/hud-border.aseprite`, exporting the native 73x55 rectangle to `assets/ui/hud-border.png`. It backs up existing files in `%TEMP%/hud-border-export/` and checks the reopened pixels and clear center. Run it with the Aseprite batch command in `TILE_ART_WORKFLOW.md`; inspect later owner edits before exporting again.
+`C:/Users/DavidBennett/Desktop/border.aseprite` holds the owner's gold border on `Layer 1`, a 73x55 cel at (1,1) on a 128x128 canvas. `tools/hud_art/export_border.lua` preserves that source and copies it to `assets/source/hud-border.aseprite`, exporting the native 73x55 rectangle to `assets/ui/hud-border.png`. It backs up existing files in `%TEMP%/hud-border-export/`, numbering backups with matching filenames, and checks the reopened pixels and clear center. Run it with the Aseprite batch command in `TILE_ART_WORKFLOW.md`; inspect later owner edits before exporting again.
 
 `sprites.hudBorder` keeps the four original 9x9 corner regions and repeats the matching horizontal and vertical strips, clipping the last repeat without scaling, mirroring, rotating or recolouring the art. Nine-pixel cuts keep the dark corner-to-rail transition out of the repeated bottom edge. The texture loads with common play graphics and is shared by the bottom plate, skill slots and bind picker, status boxes, minimap, the character card, tooltips and prompts, the event log, menus and save rows, conversations and the death panel. Selected slots retain a coloured inner outline and unavailable slots retain their opacity fade. Status boxes are 40px to keep their icons and counts clear of the painted trim, and the minimap reserves a 9px frame. `hud-life-frame.png` and `hud-mana-frame.png` sit over the procedural resource fills at native scale.

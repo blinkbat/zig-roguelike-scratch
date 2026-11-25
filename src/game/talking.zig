@@ -29,12 +29,10 @@ pub fn stampNpcs(g: *game.Game, n: usize, lv: *grid.Level) void {
     stampIn(g, n, lv, g.sim.world());
 }
 
-/// Node `n`'s NPCs as the hero arrives at `at`, before a fresh node's foes stand: its own world, not the one left.
-pub fn stampEntering(g: *game.Game, n: usize, at: P, back: bool) void {
+pub fn stampReturning(g: *game.Game, n: usize, at: P) void {
     var world = g.sim.world();
     world.node = n;
     world.hero = at;
-    if (!back) world.alive = .initFill(0);
     stampIn(g, n, &g.sim.lv, world);
 }
 
@@ -206,7 +204,8 @@ const Fixture = struct {
     fn start(w: *atlas.Atlas) !Fixture {
         errdefer std.testing.allocator.destroy(w);
         const g = try game.boot(std.testing.allocator);
-        game.beginMapAt(g, w, w.start, SEED);
+        errdefer game.shut(std.testing.allocator, g);
+        try game.beginMapAt(g, w, w.start, SEED);
         return .{ .w = w, .g = g };
     }
 
@@ -589,7 +588,7 @@ test "a proximity condition can reference an automatic NPC before it appears" {
     const spot = g.sim.plot.spots[0] orelse return error.NoPlace;
     try std.testing.expectEqual(@as(?usize, null), g.sim.lv.npcAt(spot));
     const beside_spot = spot.add(.{ .x = -1, .y = 0 });
-    game.beginMapAt(g, f.w, .{ .node = 0, .at = beside_spot }, SEED);
+    try game.beginMapAt(g, f.w, .{ .node = 0, .at = beside_spot }, SEED);
     try std.testing.expectEqual(@as(?P, spot), g.sim.plot.spots[0]);
     try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(spot));
     game.heroStep(g, .e, 0);
@@ -607,7 +606,7 @@ test "a proximity condition can reference a visible automatic NPC listed later" 
     const spot = g.sim.plot.spots[1] orelse return error.NoPlace;
     const lookout = P{ .x = 3, .y = 3 };
     try std.testing.expectEqual(@as(?usize, null), g.sim.lv.npcAt(lookout));
-    game.beginMapAt(g, f.w, .{ .node = 0, .at = spot.add(.{ .x = -1, .y = 0 }) }, SEED);
+    try game.beginMapAt(g, f.w, .{ .node = 0, .at = spot.add(.{ .x = -1, .y = 0 }) }, SEED);
     try std.testing.expectEqual(@as(?usize, 0), g.sim.lv.npcAt(lookout));
 }
 
@@ -677,7 +676,7 @@ test "the caravan merchant trades only after the stolen pib is returned" {
     const baby_dialog = s.findDialog("baby_pib").?;
     const merchant = try npcWith(s, merchant_dialog);
     const baby = try npcWith(s, baby_dialog);
-    game.beginMapAt(g, w, .{ .node = s.npc[merchant].node, .at = grid.MIDDLE }, SEED);
+    try game.beginMapAt(g, w, .{ .node = s.npc[merchant].node, .at = grid.MIDDLE }, SEED);
     const turns = g.sim.plot.turns;
     const Pick = struct {
         fn reply(run: *game.Game, label: []const u8) !void {

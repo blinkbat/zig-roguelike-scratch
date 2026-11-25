@@ -37,9 +37,7 @@ pub const Pin = struct {
     }
 };
 
-pub const CHANCE: u32 = mathx.PERCENT;
-pub const procs = damage.chance(CHANCE);
-pub const chance = damage.flat(CHANCE);
+pub const CHANCE = damage.AfflictionChance{ .percent = mathx.PERCENT };
 
 pub fn afflict(a: anytype, rng: *mathx.Rng) void {
     a.pin.extend(@intCast(rng.range(TURNS_LO, TURNS_HI)));

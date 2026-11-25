@@ -154,7 +154,7 @@ pub const Tile = enum(u8) {
     }
 
     pub fn isPart(t: Tile) bool {
-        return TERRAIN.getPtrConst(t).part;
+        return t.whole() != t;
     }
 
     pub fn partOf(t: Tile) ?Tile {
@@ -329,7 +329,6 @@ comptime {
         std.debug.assert(!a.bursts() or a.ground() != null);
         std.debug.assert(a.wide() >= 1 and !(a.isPart() and a.wide() > 1));
         std.debug.assert((a.wide() > 1) == (a.partOf() != null));
-        if (a.partOf()) |q| std.debug.assert(q.isPart());
         for (std.enums.values(Tile)[0..i]) |b| std.debug.assert(a.letter() != b.letter());
     }
 }
@@ -351,7 +350,6 @@ const Terrain = struct {
     tinder: bool = false,
     spans: bool = false,
     wide: u8 = 1,
-    part: bool = false,
     piece: ?Tile = null,
     zoo: bool = false,
 };
@@ -366,7 +364,6 @@ const DECOR = Terrain{ .solid = false, .blind = false, .ground = .grass };
 const TALL_PROP = Terrain{ .solid = true, .blind = true, .ground = .grass };
 const LOW_PROP = Terrain{ .solid = true, .blind = false, .ground = .grass };
 const CART = Terrain{ .solid = true, .blind = true, .ground = .grass, .wide = 2, .piece = .caravan_part };
-const CART_PART = Terrain{ .solid = true, .blind = true, .ground = .grass, .part = true };
 const GATE = Terrain{ .solid = true, .blind = true, .ground = .floor, .zoo = true };
 const PEN_FLOOR = Terrain{ .solid = false, .blind = false, .ground = .floor, .zoo = true };
 
@@ -401,7 +398,7 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .large_tree = TALL_PROP,
     .glow_plant = .{ .solid = true, .blind = false, .ground = .grass, .glows = true, .bursts = true },
     .caravan = CART,
-    .caravan_part = CART_PART,
+    .caravan_part = TALL_PROP,
     .stone_bridge = .{ .solid = false, .blind = false, .spans = true },
     .gate = GATE,
     .locked_gate = GATE,
@@ -419,7 +416,10 @@ const WHOLES = blk: {
     var out = std.EnumArray(Tile, Tile).initUndefined();
     for (std.enums.values(Tile)) |t| out.set(t, t);
     for (std.enums.values(Tile)) |head| {
-        if (head.partOf()) |part| out.set(part, head);
+        if (head.partOf()) |part| {
+            std.debug.assert(head != part and out.get(part) == part);
+            out.set(part, head);
+        }
     }
     break :blk out;
 };

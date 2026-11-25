@@ -151,9 +151,9 @@ pub fn rawElementFor(sim: *Simulation, comptime act: skillbar.Act) damage.Damage
 /// Roll status before nonlethal damage so split halves inherit it.
 pub fn afflicted(sim: *Simulation, a: *actor.Actor, comptime M: type, lands: bool, resist: i16) bool {
     const takes = lands and if (sim.combatStats(a).statuses.get(M.AILMENT) < 0)
-        sim.procStatus(a, M.AILMENT, M.chance(resist))
+        sim.procStatus(a, M.AILMENT, M.CHANCE.effective(resist))
     else
-        M.procs(&sim.rng, resist) and sim.takeStatus(a, M.AILMENT);
+        M.CHANCE.roll(&sim.rng, resist) and sim.takeStatus(a, M.AILMENT);
     if (takes) {
         M.afflict(a, &sim.rng);
         if (comptime M.AILMENT == .bleed) sim.grieve(&a.bleed);

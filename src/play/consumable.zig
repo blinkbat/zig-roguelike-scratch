@@ -78,8 +78,6 @@ pub const FrostVial = struct {
     pub const ELEMENT = glacial.ELEMENT;
     pub const BASE = damage.Base{ .lo = 1, .hi = 3 };
     pub const CHANCE = glacial.CHANCE;
-    pub const procs = glacial.procs;
-    pub const chance = glacial.chance;
     pub const afflict = glacial.afflict;
     pub const AILMENT = glacial.AILMENT;
     pub const DESCRIPTION = std.fmt.comptimePrint("A thrown vial shatters into cold, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), glacial.CHILL_NOTE });

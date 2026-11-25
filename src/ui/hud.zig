@@ -222,7 +222,7 @@ pub fn statuses(layout: Layout, face: *const font.Face, status: std.EnumArray(fx
         if (s == .resistant) {
             raster.meter(x + RESIST_INSET, y + STATUS_PX - RESIST_RISE, RESIST_W, RESIST_H, resistance, mathx.PERCENT, look.EDGE, look.UI_GOLD);
         }
-        counter(face, box, turns);
+        if (s.counted()) counter(face, box, turns);
     }
 }
 
@@ -357,7 +357,7 @@ fn tipLines(room: i32) usize {
 }
 
 fn tipHeight(shown: usize) i32 {
-    return TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(shown)) * TIP_LINE;
+    return menu.cardHeight(TIP_PAD, TIP_GAP, TIP_LINE, shown);
 }
 
 fn above(top: i32, h: i32) i32 {

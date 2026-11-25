@@ -105,8 +105,7 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
     if (has(d, "afflict")) {
         if (!has(d, "AILMENT") or !has(d, "CHANCE") or !@hasDecl(m, "TAKES") or !@hasDecl(m, "VERB")) return "afflict requires AILMENT, CHANCE, TAKES and VERB";
         if (!signature(m, "afflict", &.{ null, *mathx.Rng }, void)) return "afflict must accept (actor: anytype, rng: *Rng) and return void";
-        if (!signature(m, "procs", &.{ *mathx.Rng, i16 }, bool)) return "procs must accept (*Rng, i16) and return bool";
-        if (!signature(m, "chance", &.{i16}, u32)) return "chance must accept (resist: i16) and return u32";
+        if (@TypeOf(m.CHANCE) != damage.AfflictionChance) return "CHANCE must be a damage.AfflictionChance";
     }
     if (has(d, "burst")) {
         if (d.reticle != .bow or !has(d, "ELEMENT") or !has(d, "afflict")) return "burst requires an elemental afflicting projectile";
@@ -171,7 +170,7 @@ pub fn interpret(comptime name: []const u8, comptime d: Definition) Contract {
         .declarations = declarations,
         .source = if (arrow) .arrow else if (elemental) .elemental else if (has(d, "BASE")) .physical else .none,
         .bases = .{ .physical = if (arrow) bow.BASE else if (!elemental) value(d, "BASE", @as(?damage.Base, null)) else null, .element = if (elemental) d.module.?.BASE else null },
-        .ailment = if (has(d, "afflict")) .{ .kind = d.module.?.AILMENT, .chance = d.module.?.CHANCE } else null,
+        .ailment = if (has(d, "afflict")) .{ .kind = d.module.?.AILMENT, .chance = d.module.?.CHANCE.percent } else null,
         .element = value(d, "ELEMENT", @as(?damage.Element, null)),
         .bolt = value(d, "BOLT", @as(?[]const u8, null)),
         .flask_kind = value(d, "KIND", @as(?flask.Kind, null)),

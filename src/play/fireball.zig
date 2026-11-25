@@ -22,8 +22,6 @@ pub const DESCRIPTION = std.fmt.comptimePrint("A fire bolt bursts on impact, hit
 pub const BASE = damage.Base{ .lo = 3, .hi = 6 };
 
 pub const CHANCE = burning.CHANCE;
-pub const procs = burning.procs;
-pub const chance = burning.chance;
 pub const afflict = burning.afflict;
 pub const AILMENT = burning.AILMENT;
 

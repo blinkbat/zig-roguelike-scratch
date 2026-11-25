@@ -625,12 +625,11 @@ fn drawFlame(g: *game.Game, c: Cam, f: light.Flame, lit: f32) void {
 
 pub fn drawMirrors(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.Box, bags: *const grid.CellSet, bodies: []const Shown, flames: []const light.Flame) ?sprite.Mirrors {
     if (!g.sprites.beginMirror(g.screen, g.framebuffer, true)) return null;
+    rl.gl.rlDisableBackfaceCulling();
+    defer rl.gl.rlEnableBackfaceCulling();
     drawMirrorScenery(g, c, ground, view, bags, true);
     drawMirrorTorches(g, c, ground, flames, true);
-    if (!g.sprites.beginMirror(g.screen, g.framebuffer, false)) {
-        rl.gl.rlEnableBackfaceCulling();
-        return null;
-    }
+    if (!g.sprites.beginMirror(g.screen, g.framebuffer, false)) return null;
     drawMirrorScenery(g, c, ground, view, bags, false);
     for (bodies) |*b| drawBody(g, b, true);
     drawMirrorTorches(g, c, ground, flames, false);
@@ -696,7 +695,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     drawGroundPass(g, c, ground, beds, &stood, mirror, burnt);
     var coin_cells = view.cells();
     while (coin_cells.next()) |p| {
-        const cell = g.pic.seen_cells[grid.Level.idx(p)];
+        const cell = &g.pic.seen_cells[grid.Level.idx(p)];
         if (cell.alpha <= 0 or cell.coins <= 0 or ground.at(p).isChest() or grid.inSet(&bags, p)) continue;
         drawCoins(g, c, .{ .at = p, .amount = cell.coins });
     }
@@ -745,7 +744,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
             .overwatch => if (mathx.toward(from, g.mode.aim.mark)) |d| {
                 var covered = grid.Cells.around(from, tactics.Overwatch.RANGE);
                 while (covered.next()) |p| {
-                    if (g.sim.lv.isLit(p) and tactics_exec.watches(&g.sim.lv, from, d, p)) fillCell(c, p, look.AIM_PATH);
+                    if (tactics_exec.watches(&g.sim.lv, from, d, p)) fillCell(c, p, look.AIM_PATH);
                 }
             },
             inline else => |a| if (comptime a.sweeps()) {
@@ -766,7 +765,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     }
     var npc_cells = grid.Cells.of(lo, hi);
     while (npc_cells.next()) |p| {
-        const cell = g.pic.seen_cells[grid.Level.idx(p)];
+        const cell = &g.pic.seen_cells[grid.Level.idx(p)];
         const i = cell.npc orelse continue;
         if (cell.alpha <= 0) continue;
         const f = Prop.at(g, c, p, false);
@@ -1134,6 +1133,7 @@ pub fn effectSources(effects: *const fx.Fx, carrier: ?[2]f32, shot: ?*const game
 
 pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
     g.light.clearEffects();
+    if (!g.light.options.effect_lights) return;
     var buf: [EFFECT_SOURCES]light.Emission = undefined;
     for (effectSources(&g.pic.fx, g.pic.carrierAt(&g.sim), null, &buf)) |source| g.light.emit(ground, source);
     if (g.pic.shot) |s| if (s.view.at) |at| if (fx.missileLight(at, s.act)) |source| emitFaded(g, ground, source, s.view.alpha);

@@ -13,6 +13,8 @@ const menu = @import("../ui/menu.zig");
 const book = @import("../ui/book.zig");
 const hud = @import("../ui/hud.zig");
 const journal = @import("../ui/journal.zig");
+const font = @import("../gfx/font.zig");
+const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
 const P = mathx.P;
@@ -31,9 +33,11 @@ pub const State = struct {
     }
 };
 
-const BUTTON = P{ .x = 144, .y = 32 };
+const BUTTON = P{ .x = 108, .y = 24 };
 const BUTTON_RIGHT: i32 = hud.EDGE;
 const BUTTON_BOTTOM: i32 = 16;
+const BUTTON_PROMPT: i32 = 16;
+const BUTTON_GAP: i32 = 6;
 const Corner = struct { button: input.Button, label: [:0]const u8 };
 const CORNER = [_]Corner{
     .{ .button = menu.PAUSE, .label = "Menu" },
@@ -58,7 +62,17 @@ fn buttonAt(screen: P, p: P) ?input.Button {
 pub fn draw(g: *game.Game) void {
     g.mouse.corners_shown = !g.st.device.pad() and clickable(game.modeShown(g));
     if (!g.mouse.corners_shown) return;
-    for (CORNER) |c| menu.action(&g.face, buttonBox(g.screen, c.button), prompt_icon.Prompt.menuOf(&g.st, c.button), c.label);
+    for (CORNER) |c| {
+        const box = buttonBox(g.screen, c.button);
+        const middle = raster.middleAt(box);
+        const hovered = if (g.st.pointer) |p| raster.holds(box, p) else false;
+        const prompt = prompt_icon.Prompt.menuOf(&g.st, c.button);
+        const label_w = g.face.width(c.label, font.LABEL);
+        const total_w = prompt.width(&g.face, BUTTON_PROMPT) + BUTTON_GAP + label_w;
+        rl.drawRectangleRec(box, look.fade(look.BG, if (hovered) 0.83 else 0.58));
+        const end = prompt.drawFrom(&g.face, middle.x - @divTrunc(total_w, 2), middle.y, BUTTON_PROMPT, if (hovered) 1 else 0.8);
+        g.face.centred(c.label, end + BUTTON_GAP + @divTrunc(label_w, 2), middle.y, font.LABEL, if (hovered) look.TEXT else look.DIM);
+    }
 }
 
 pub fn clickable(mode: game.Mode) bool {

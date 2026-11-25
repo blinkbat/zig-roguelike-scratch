@@ -718,7 +718,7 @@ pub const Pool = struct {
         const a = self.get(id) orelse return null;
         const next = row(a.kind).splits orelse return null;
         if (a.hp * 2 >= a.max or self.n == MAX) return null;
-        const d = rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, Step{ .lv = lv, .from = a.at, .id = grid.NO_ONE }, Step.free) orelse return null;
+        const d = stumble(lv, a.at, grid.NO_ONE, rng) orelse return null;
         const hp = @max(1, @divTrunc(a.hp, SPLIT_INTO));
         a.kind = next;
         a.hp = hp;

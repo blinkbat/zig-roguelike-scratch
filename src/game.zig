@@ -52,6 +52,7 @@ const window = @import("core/window.zig");
 const binds = @import("game/binds.zig");
 const skills = @import("game/skills.zig");
 const tactics_exec = @import("game/tactics_exec.zig");
+const trigger = @import("play/trigger.zig");
 pub const presentation = @import("game/presentation.zig");
 pub const simulation = @import("game/sim.zig");
 pub const epitaph = @import("game/epitaph.zig");
@@ -301,13 +302,14 @@ pub fn begin(g: *Game, seed: u64) void {
     var buf: [Log.COLS]u8 = undefined;
     var out = std.io.fixedBufferStream(&buf);
     for (actor.FOES, 0..) |k, i| {
-        out.writer().print("{s}{d} {s}", .{ menu.listSep(i, actor.FOES.len, .@"and"), g.sim.pool.tally(k).total, actor.plural(k) }) catch break;
+        const n = g.sim.pool.tally(k).total;
+        out.writer().print("{s}{d} {s}", .{ menu.listSep(i, actor.FOES.len, .@"and"), n, if (n == 1) actor.row(k).name else actor.plural(k) }) catch break;
     }
     g.sim.log.say("{s} somewhere on this floor. Seed {d}.", .{ out.getWritten(), seed });
 }
 
-pub fn beginMap(g: *Game, w: *const atlas.Atlas) void {
-    beginMapAt(g, w, w.start, freshSeed());
+pub fn beginMap(g: *Game, w: *const atlas.Atlas) error{NoFloor}!void {
+    try beginMapAt(g, w, w.start, freshSeed());
 }
 
 pub fn enterPlayground(g: *Game, w: *atlas.Atlas) void {
@@ -316,14 +318,21 @@ pub fn enterPlayground(g: *Game, w: *atlas.Atlas) void {
     g.sim.class = playground.CLASS;
 }
 
-pub fn beginMapAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64) void {
+pub fn beginMapAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64) error{NoFloor}!void {
+    var level: grid.Level = undefined;
+    var plot: trigger.Runtime = .{};
+    const to = w.stampFresh(from, rollOf(seed, from.node), &level, &plot) orelse return error.NoFloor;
     startRun(g, w, seed);
     freshRun(g);
-    _ = enter(g, from.node, from.at, &.{});
+    g.sim.lv = level;
+    g.sim.plot.spots = plot.spots;
+    _ = enter(g, from.node, to, &.{}, .start);
 }
 
+const Entry = enum { start, travel };
+
 /// The hero takes the first pool slot, keeping its id; returns how many `followers` fit.
-fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
+fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor, entry: Entry) usize {
     const w = g.sim.map.?;
     var carried = actor.Actor.of(g.sim.class.kind(), at);
     if (g.sim.heroActor()) |h| {
@@ -335,18 +344,20 @@ fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor) usize {
     g.sim.node = n;
     g.sim.outdoors = g.sim.outdoorsNow();
     const roll = rollOf(g.sim.seed, n);
-    if (back) {
-        revisit(g, &g.sim.visits[n]);
-        const hero = g.sim.heroSlot().?;
-        g.sim.lv.clear(g.sim.pool.items[hero].at);
-    } else {
-        w.node[n].stampAt(&g.sim.lv, roll, at);
-        g.sim.ground = .{};
-    }
-    talking.stampEntering(g, n, at, back);
-    var laid: [atlas.MAX_FOES]atlas.Foe = undefined;
-    const placing: []const atlas.Foe = if (back) &.{} else w.node[n].placedOn(roll, &laid);
-    const to = atlas.landing(&g.sim.lv, at, placing) orelse at;
+    const to = switch (entry) {
+        .start => at,
+        .travel => landing: {
+            if (!back) {
+                g.sim.ground = .{};
+                break :landing w.stampFresh(.{ .node = n, .at = at }, roll, &g.sim.lv, &g.sim.plot) orelse at;
+            }
+            revisit(g, &g.sim.visits[n]);
+            const hero = g.sim.heroSlot().?;
+            g.sim.lv.clear(g.sim.pool.items[hero].at);
+            talking.stampReturning(g, n, at);
+            break :landing atlas.landing(&g.sim.lv, at, &.{}) orelse at;
+        },
+    };
     if (back) {
         const hero = g.sim.heroSlot().?;
         g.sim.pool.items[hero].at = to;
@@ -433,7 +444,7 @@ fn goThrough(g: *Game, l: atlas.Link) void {
     var title: [atlas.TITLE_MAX]u8 = undefined;
     g.sim.log.say("Entered {s}.", .{g.sim.map.?.node[l.node].title(l.node, &title)});
     const same = l.node == from;
-    const placed = enter(g, l.node, g.sim.map.?.door(l).at, followers.slice());
+    const placed = enter(g, l.node, g.sim.map.?.door(l).at, followers.slice(), .travel);
     if (!same) {
         followersLeft(&g.sim.visits[from], placed);
         g.sim.visits_changed.set(from);
@@ -468,7 +479,12 @@ pub fn leave(g: *Game) void {
 }
 
 pub fn restart(g: *Game) void {
-    if (g.sim.map) |w| beginMap(g, w) else begin(g, freshSeed());
+    if (g.sim.map) |w| {
+        beginMap(g, w) catch {
+            var title: [atlas.TITLE_MAX]u8 = undefined;
+            g.sim.log.say(atlas.NO_FLOOR, .{w.node[w.start.node].title(w.start.node, &title)});
+        };
+    } else begin(g, freshSeed());
 }
 
 fn spawnHero(g: *Game, at: P) void {

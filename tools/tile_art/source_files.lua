@@ -61,19 +61,20 @@ function files.requireOutside(path,folder)
   assert(ok,'Could not resolve the draft path with Python')
 end
 
+local function suffixed(path,suffix,folder)
+  return app.fs.joinPath(folder or app.fs.filePath(path),app.fs.fileTitle(path)..suffix..'.'..app.fs.fileExtension(path))
+end
+
 function files.draft(path,...)
   local destination=files.pathKey(path)
   local occupied=app.fs.isFile(path) and bytesOf(path)
   for _,source in ipairs({...}) do
     assert(destination~=files.pathKey(source),'Draft destination must differ from its source artwork: '..source)
     if occupied and app.fs.isFile(source) and occupied==bytesOf(source) then
-      local folder=app.fs.filePath(path)
-      local stem=app.fs.fileTitle(path)
-      local ext=app.fs.fileExtension(path)
       local i=2
       local candidate
       repeat
-        candidate=app.fs.joinPath(folder,stem..'-'..i..'.'..ext)
+        candidate=suffixed(path,'-'..i)
         i=i+1
       until not app.fs.isFile(candidate) and not app.fs.isDirectory(candidate)
       return candidate
@@ -108,6 +109,17 @@ function files.copy(source,destination)
   files.write(destination,bytesOf(source))
 end
 
+function files.backup(source,destination)
+  local path=destination
+  local n=1
+  while app.fs.isFile(path) do
+    n=n+1
+    path=suffixed(destination,'-'..n)
+  end
+  files.copy(source,path)
+  return path
+end
+
 function files.report(path)
   local parts={}
   return {
@@ -118,7 +130,7 @@ end
 
 function files.keep(path,folder,tag,stamp)
   if app.fs.isFile(path) then
-    files.copy(path,app.fs.joinPath(folder,app.fs.fileTitle(path)..'-before-'..tag..'-'..stamp..'.'..app.fs.fileExtension(path)))
+    files.backup(path,suffixed(path,'-before-'..tag..'-'..stamp,folder))
   end
 end
 
@@ -194,9 +206,13 @@ function files.canvas(sprite,cel)
   return image
 end
 
-function files.checkLayer(sprite,name,image,position)
+local function savedCel(sprite,name)
   local layer=files.layer(sprite,name) or error('Saved artwork layer missing: '..name)
-  local cel=assert(layer:cel(1),'Saved artwork cel missing: '..name)
+  return layer,assert(layer:cel(1),'Saved artwork cel missing: '..name)
+end
+
+function files.checkLayer(sprite,name,image,position)
+  local layer,cel=savedCel(sprite,name)
   local expected=Image(sprite.width,sprite.height,ColorMode.RGB)
   expected:drawImage(image,position)
   assert(files.canvas(sprite,cel):isEqual(expected),'Saved artwork layer changed: '..name)
@@ -204,8 +220,7 @@ function files.checkLayer(sprite,name,image,position)
 end
 
 function files.checkCel(sprite,name,image,position)
-  local layer=files.layer(sprite,name) or error('Saved artwork layer missing: '..name)
-  local cel=assert(layer:cel(1),'Saved artwork cel missing: '..name)
+  local _,cel=savedCel(sprite,name)
   assert(cel.image:isEqual(image) and cel.position.x==position.x and cel.position.y==position.y,'Saved artwork cel changed: '..name)
   return cel
 end

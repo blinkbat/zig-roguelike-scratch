@@ -221,7 +221,7 @@ test "portable autosave snapshots own every byte while the live run changes" {
     world.* = .{};
     _ = world.add(.{ .procgen = .{} });
     world.start = .{ .node = 0, .at = .{ .x = 10, .y = 10 } };
-    game.beginMapAt(source, world, world.start, 73);
+    try game.beginMapAt(source, world, world.start, 73);
     game.keepVisit(source, 0);
     const snapshot = try alloc.create(Snapshot);
     defer alloc.destroy(snapshot);
@@ -240,7 +240,7 @@ test "portable autosave snapshots own every byte while the live run changes" {
     try std.testing.expectEqualSlices(u8, before.items, frozen.items);
 }
 
-test "a held autosave snapshot recopies only the visits written since it was taken, and every one after a fresh turn" {
+test "a held autosave snapshot recopies only changed visits across scene resets" {
     const alloc = std.testing.allocator;
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
@@ -250,7 +250,7 @@ test "a held autosave snapshot recopies only the visits written since it was tak
     _ = world.add(.{ .procgen = .{} });
     _ = world.add(.{ .procgen = .{} });
     world.start = .{ .node = 0, .at = .{ .x = 10, .y = 10 } };
-    game.beginMapAt(g, world, world.start, 73);
+    try game.beginMapAt(g, world, world.start, 73);
     game.keepVisit(g, 0);
     game.keepVisit(g, 1);
     const snapshot = try alloc.create(Snapshot);
@@ -265,8 +265,9 @@ test "a held autosave snapshot recopies only the visits written since it was tak
     try std.testing.expectEqual(kept, snapshot.visits[0].?.lv.tile[0]);
     try std.testing.expectEqual(grid.Tile.water, snapshot.visits[1].?.lv.tile[0]);
     g.sim.resetTransientTurn();
+    try std.testing.expect(!g.sim.visits_changed.isSet(0) and g.sim.visits_changed.isSet(1));
     try captureOver(g, snapshot, true, true);
-    try std.testing.expectEqual(grid.Tile.lava, snapshot.visits[0].?.lv.tile[0]);
+    try std.testing.expectEqual(kept, snapshot.visits[0].?.lv.tile[0]);
 }
 
 test "legacy key migration failure leaves the live run and map unchanged" {
@@ -354,7 +355,7 @@ pub fn parse(bytes: []const u8) !*Snapshot {
     const snapshot = try std.heap.page_allocator.create(Snapshot);
     errdefer std.heap.page_allocator.destroy(snapshot);
     try Code.read(file.body, snapshot);
-    if (file.version != VERSION) placeFromLevel(snapshot);
+    if (file.version <= PLACELESS) placeFromLevel(snapshot);
     if (file.version == FLASKLESS) snapshot.run.inventory.gear.wearFlasks();
     if (file.version == FLASKLESS or (file.version == UNARMED and armless(&snapshot.run.inventory, snapshot.run.class))) snapshot.run.inventory.gear.arm(snapshot.run.class);
     try validate(snapshot);
@@ -431,7 +432,7 @@ pub fn validate(snapshot: *Snapshot) !void {
         if (bottle.left < 0) return error.Damaged;
         bottle.mend();
     }
-    if (run.inventory.n > inventory.BAG_MAX) return error.Damaged;
+    if (run.inventory.n > inventory.BAG_MAX or !run.inventory.gear.shaped()) return error.Damaged;
     run.inventory.mend();
     for (&snapshot.portable.plot.wares) |*shelf| if (shelf.*) |*w| {
         if (!w.valid()) return error.Damaged;

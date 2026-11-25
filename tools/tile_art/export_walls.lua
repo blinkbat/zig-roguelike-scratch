@@ -18,7 +18,7 @@ local brick,faceEdge,side,capTop,capCorner=wall.brick,wall.faceEdge,wall.side,wa
 local EDGE,CAP=wall.EDGE,wall.CAP
 local palette={}
 for it in source:pixels() do if pc.rgbaA(it())>0 then palette[it()]=true end end
-local dark=pc.rgba(84,15,0,255)
+local dark=sourceFiles.rgb(84,15,0)
 assert(palette[dark])
 -- Face row by -> painted row: the cap's edge, the top mortar, courses alternating A (101) and B (104), the last C (107) with the foot.
 local faceRows={99,100}

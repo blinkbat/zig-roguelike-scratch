@@ -320,7 +320,7 @@ pub fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (d.paint) {
         if (!dr.moved and mathx.dist(d.mouse, dr.from) > DRAG_PX) dr.moved = true;
         if (!dr.moved) return;
-        ed.history.transaction.previewNode(ed.map, dr.node, atlas.clampPos(graphAt(ed, c, d.mouse).sub(dr.grab)));
+        ed.history.previewNode(ed.map, dr.node, atlas.clampPos(graphAt(ed, c, d.mouse).sub(dr.grab)));
         return;
     }
     if (!dr.moved) {

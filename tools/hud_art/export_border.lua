@@ -34,9 +34,10 @@ for y = CUT, H - CUT - 1 do rail(RAIL, y); rail(W - 1 - RAIL, y) end
 
 local png = root .. 'assets/ui/hud-border.png'
 local canonical = root .. 'assets/source/hud-border.aseprite'
+local stamp = os.date(sourceFiles.STAMP)
 for _, path in ipairs({source, canonical, png}) do
   if app.fs.isFile(path) then
-    sourceFiles.copy(path, app.fs.joinPath(work, os.date(sourceFiles.STAMP) .. '-' .. app.fs.fileName(path)))
+    sourceFiles.backup(path, app.fs.joinPath(work, stamp .. '-' .. app.fs.fileName(path)))
   end
 end
 local exported = sourceFiles.stagePng(border, png, 'Export changed the painted pixels')

@@ -298,7 +298,7 @@ fn captureTalk(g: *game.Game) !void {
         const shot = try targetAt(g, size);
         defer shot.close(g);
         const target = shot.target;
-        game.beginMapAt(g, w, w.start, 5);
+        try game.beginMapAt(g, w, w.start, 5);
         g.st = .{ .device = .keys };
         g.sim.plot = .{};
         game.talking.speak(g, 0);
@@ -587,7 +587,7 @@ pub fn captureCharacter(g: *game.Game) !void {
     const target = shot.target;
     spar.author(w, .slime);
     g.sim.class = heroes.DEFAULT;
-    game.beginMapAt(g, w, w.start, SHOT_SEED);
+    try game.beginMapAt(g, w, w.start, SHOT_SEED);
     _ = g.sim.growth.gain(100);
     _ = g.sim.inventory.add(game.harness.affixed(.cap, .{ .kind = .life, .value = 3 }));
     try g.sim.inventory.equip(0, .helm, g.sim.growth.attributes(g.sim.class));

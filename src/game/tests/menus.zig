@@ -336,7 +336,7 @@ test "an arena restart restores its selected opponent and hero" {
     const map = try atlas.testAtlas();
     defer std.testing.allocator.destroy(map);
     spar.author(map, .bloat);
-    game.beginMap(g, map);
+    try game.beginMap(g, map);
     _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), 100);
     _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 3);
     g.sim.mana = 0;
@@ -355,7 +355,7 @@ test "the playground's wizard casts freely and cannot die, and a restart lays it
     const map = try atlas.testAtlas();
     defer std.testing.allocator.destroy(map);
     game.enterPlayground(g, map);
-    game.beginMap(g, map);
+    try game.beginMap(g, map);
     for (progress.skills(playground.CLASS)) |s| try std.testing.expect(g.sim.growth.unlocked(s.act) and g.bar.slotOf(s.act) != null);
     const clock = g.sim.clock;
     for (0..3) |_| {
@@ -500,7 +500,7 @@ test "Debug restart begins the map anew and clears visited nodes" {
     defer std.testing.allocator.destroy(map);
     _ = map.add(.{ .procgen = .{} });
     _ = map.add(.{ .procgen = .{} });
-    game.beginMapAt(g, map, .{ .node = 1, .at = grid.MIDDLE }, 12);
+    try game.beginMapAt(g, map, .{ .node = 1, .at = grid.MIDDLE }, 12);
     g.sim.visited.set(1);
     g.sim.gold = 99;
     g.sim.heroActor().?.hp = 1;

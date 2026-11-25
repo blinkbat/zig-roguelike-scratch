@@ -27,7 +27,7 @@ pub fn captureLandscapes(g: *game.Game) !void {
     for (PLACES) |place| {
         const node = place.node;
         const name = place.name;
-        game.beginMapAt(g, w, .{ .node = node, .at = w.node[node].door[0].at }, capture.SHOT_SEED);
+        try game.beginMapAt(g, w, .{ .node = node, .at = w.node[node].door[0].at }, capture.SHOT_SEED);
         studyLit(g, true, day.NOON);
         game.prepare(g);
         for (0..DOWN) |y| {

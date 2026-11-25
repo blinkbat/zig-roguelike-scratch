@@ -209,6 +209,10 @@ pub fn cardBodyY(pad: i32, gap: i32) i32 {
     return pad + font.BODY + gap;
 }
 
+pub fn cardHeight(pad: i32, gap: i32, line: i32, rows: usize) i32 {
+    return cardBodyY(pad, gap) + pad + @as(i32, @intCast(rows)) * line;
+}
+
 const ACTION_PAD: i32 = 10;
 pub const PROMPT_GAP: i32 = 8;
 pub const ACTION_BOX = mathx.P{ .x = 164, .y = 36 };

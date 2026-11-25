@@ -835,31 +835,23 @@ pub const Presentation = struct {
         return !a.alive and !self.pictured[i].down();
     }
 
-    pub fn manaShown(self: *const Presentation, sim: *const Simulation) i32 {
+    pub fn manaShown(self: *const Presentation, sim: *const Simulation) Vital {
         var killed: i32 = 0;
         for (sim.pool.constSlice(), 0..) |a, i| {
             if (self.fallingUnshown(a, i)) killed += self.mana_killed[i];
         }
-        return @max(0, @min(sim.manaMax(), sim.mana + self.mana_held) - killed);
+        const max = sim.manaMax();
+        return .{ .now = std.math.clamp(sim.mana + self.mana_held - killed, 0, max), .max = max };
     }
 
-    pub fn lifeShown(self: *const Presentation, sim: *const Simulation) Life {
-        const h = self.heroShown(sim) orelse return .{ .hp = 0, .max = sim.lifeMax() };
-        return .{ .hp = h.hp, .max = h.max };
-    }
-
-    fn lifeFill(self: *const Presentation, sim: *const Simulation) f32 {
-        const life = self.lifeShown(sim);
-        return mathx.fillOf(life.hp, life.max);
-    }
-
-    fn manaFill(self: *const Presentation, sim: *const Simulation) f32 {
-        return mathx.fillOf(self.manaShown(sim), sim.manaMax());
+    pub fn lifeShown(self: *const Presentation, sim: *const Simulation) Vital {
+        const h = self.heroShown(sim) orelse return .{ .now = 0, .max = sim.lifeMax() };
+        return .{ .now = h.hp, .max = h.max };
     }
 
     pub fn settleResources(self: *Presentation, sim: *const Simulation) void {
-        self.life_fill = self.lifeFill(sim);
-        self.mana_fill = self.manaFill(sim);
+        self.life_fill = self.lifeShown(sim).fill();
+        self.mana_fill = self.manaShown(sim).fill();
     }
 
     pub fn settleSky(self: *Presentation, sim: *const Simulation) void {
@@ -902,8 +894,8 @@ pub const Presentation = struct {
         }
         self.xp_shown = mathx.ease(self.xp_shown, self.xp_aim, mathx.easing(dt, XP_EASE), 1);
         const resource_ease = mathx.easing(dt, RESOURCE_EASE);
-        self.life_fill = mathx.ease(self.life_fill, self.lifeFill(sim), resource_ease, resource_ease);
-        self.mana_fill = mathx.ease(self.mana_fill, self.manaFill(sim), resource_ease, resource_ease);
+        self.life_fill = mathx.ease(self.life_fill, self.lifeShown(sim).fill(), resource_ease, resource_ease);
+        self.mana_fill = mathx.ease(self.mana_fill, self.manaShown(sim).fill(), resource_ease, resource_ease);
     }
 
     fn stepProjectileView(self: *const Presentation, sim: *const Simulation, view: *MotionView, at: ?[2]f32, easing: f32) void {
@@ -994,9 +986,18 @@ pub const Presentation = struct {
             if (self.litShown(sim, p)) self.cover(tiles, glide.cellPx(p), &covered);
         }
         const k = mathx.easing(dt, OCCLUSION_EASE);
-        for (tiles, &self.occlusion, 0..) |t, *hidden, i| {
-            if (hidden.* == 0 and !covered.isSet(i)) continue;
-            hidden.* = if (look.occludes(t)) mathx.easeTo(hidden.*, covered.isSet(i), k) else 0;
+        const WORD = @bitSizeOf(grid.CellSet.MaskInt);
+        comptime std.debug.assert(grid.CELLS % WORD == 0);
+        const Run = @Vector(WORD, f32);
+        for (covered.masks, 0..) |mask, w| {
+            const base = w * WORD;
+            const run: Run = self.occlusion[base..][0..WORD].*;
+            if (mask == 0 and !@reduce(.Or, run != @as(Run, @splat(0)))) continue;
+            for (base..base + WORD) |i| {
+                const hidden = &self.occlusion[i];
+                if (hidden.* == 0 and !covered.isSet(i)) continue;
+                hidden.* = if (look.occludes(tiles[i])) mathx.easeTo(hidden.*, covered.isSet(i), k) else 0;
+            }
         }
     }
 
@@ -1399,7 +1400,14 @@ pub const Stroke = struct {
     }
 };
 
-pub const Life = struct { hp: i32, max: i32 };
+pub const Vital = struct {
+    now: i32,
+    max: i32,
+
+    fn fill(v: Vital) f32 {
+        return mathx.fillOf(v.now, v.max);
+    }
+};
 
 const LAID_LAYERS = .{ "flames", "barrier", "caltrops" };
 const PACE = schedule.Pace{ .stagger = game.STAGGER_S, .bump_lands = game.BUMP_LANDS };

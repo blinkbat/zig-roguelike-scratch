@@ -113,7 +113,7 @@ For `port_ground.lua`, `port_forest.lua` and `port_bridge.lua`, `install=yes`
 also requires any existing canonical source to match the input file byte for byte
 before either is changed. `source_files.lua` owns this shared check and the checked
 byte-copy backups used by the ground and bridge ports; read, write or close failures
-stop installation. Verify with
+stop installation. Repeated backup names receive a numbered suffix. Verify with
 `python -B tools/tile_art/test_port_sources.py --aseprite <aseprite.exe>` and
 `python -B tools/tile_art/test_source_files.py --aseprite <aseprite.exe>`; fixtures stay in TEMP.
 

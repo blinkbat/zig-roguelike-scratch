@@ -163,6 +163,73 @@ class ReleaseTests(unittest.TestCase):
                     release.package(b'test executable', root, {'source_sha256': before}, 'linux', 'x86_64')
             self.assertEqual([], list(root.iterdir()))
 
+    def test_a_changed_unembedded_license_prevents_publication(self):
+        license_file = next(path for path in release.license_paths() if path.suffix not in release.EMBEDDED)
+        before = release.source_hash()
+        read_bytes = pathlib.Path.read_bytes
+
+        def changed(path):
+            data = read_bytes(path)
+            return data + b'\n' if path == license_file else data
+
+        with tempfile.TemporaryDirectory(prefix='cistern-release-test-') as temporary:
+            root = pathlib.Path(temporary)
+            with patch.object(pathlib.Path, 'read_bytes', changed):
+                with self.assertRaisesRegex(RuntimeError, 'Sources changed during the build'):
+                    release.package(b'test executable', root, {'source_sha256': before}, 'linux', 'x86_64')
+            self.assertEqual([], list(root.iterdir()))
+
+    def test_failed_repack_preserves_previous_archive_and_checksum(self):
+        with tempfile.TemporaryDirectory(prefix='cistern-release-test-') as temporary:
+            root = pathlib.Path(temporary)
+            source = release.source_hash()
+            with contextlib.redirect_stdout(io.StringIO()):
+                release.package(b'old executable', root, {'source_sha256': source}, 'linux', 'x86_64')
+            before = {path: path.read_bytes() for path in root.iterdir()}
+            with patch.object(tarfile.TarFile, 'addfile', side_effect=OSError('archive write failed')):
+                with self.assertRaisesRegex(OSError, 'archive write failed'):
+                    release.package(b'new executable', root, {'source_sha256': source}, 'linux', 'x86_64')
+            self.assertEqual(before, {path: path.read_bytes() for path in root.iterdir()})
+
+    def test_failed_archive_replacement_restores_previous_checksum(self):
+        with tempfile.TemporaryDirectory(prefix='cistern-release-test-') as temporary:
+            root = pathlib.Path(temporary)
+            source = release.source_hash()
+            with contextlib.redirect_stdout(io.StringIO()):
+                release.package(b'old executable', root, {'source_sha256': source}, 'linux', 'x86_64')
+            before = {path: path.read_bytes() for path in root.iterdir()}
+            replace = pathlib.Path.replace
+
+            def locked(path, target):
+                if target.name.endswith('.tar.gz'):
+                    raise PermissionError('archive is locked')
+                return replace(path, target)
+
+            with patch.object(pathlib.Path, 'replace', locked):
+                with self.assertRaisesRegex(PermissionError, 'archive is locked'):
+                    release.package(b'new executable', root, {'source_sha256': source}, 'linux', 'x86_64')
+            self.assertEqual(before, {path: path.read_bytes() for path in root.iterdir()})
+
+    def test_failed_checksum_replacement_restores_previous_archive(self):
+        with tempfile.TemporaryDirectory(prefix='cistern-release-test-') as temporary:
+            root = pathlib.Path(temporary)
+            source = release.source_hash()
+            with contextlib.redirect_stdout(io.StringIO()):
+                release.package(b'old executable', root, {'source_sha256': source}, 'linux', 'x86_64')
+            before = {path: path.read_bytes() for path in root.iterdir()}
+            replace = pathlib.Path.replace
+            locks = [PermissionError('checksum is locked')]
+
+            def locked(path, target):
+                if target.name.endswith('.sha256') and locks:
+                    raise locks.pop()
+                return replace(path, target)
+
+            with patch.object(pathlib.Path, 'replace', locked):
+                with self.assertRaisesRegex(PermissionError, 'checksum is locked'):
+                    release.package(b'new executable', root, {'source_sha256': source}, 'linux', 'x86_64')
+            self.assertEqual(before, {path: path.read_bytes() for path in root.iterdir()})
+
     def test_source_hash_embeds_what_build_zig_embeds(self):
         build = (release.ROOT / 'build.zig').read_text(encoding='utf-8')
         listed = re.search(r'^const EMBEDDED = \[_\]\[\]const u8\{(.*)\};$', build, re.M)

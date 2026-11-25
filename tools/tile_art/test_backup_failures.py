@@ -52,6 +52,7 @@ env=setmetatable({
  io=customio,
  app={params=p,pixelColor=realapp.pixelColor,open=function() return sprite end,
   fs={tempPath=p.work,joinPath=realapp.fs.joinPath,fileName=realapp.fs.fileName,
+   filePath=realapp.fs.filePath,fileTitle=realapp.fs.fileTitle,fileExtension=realapp.fs.fileExtension,
    makeAllDirectories=realapp.fs.makeAllDirectories,isFile=realapp.fs.isFile,isDirectory=realapp.fs.isDirectory}},
  dofile=function(path)
   assert(path==root..'tools/tile_art/source_files.lua','Unexpected script: '..path)
@@ -65,12 +66,13 @@ assert(loadfile(p.script,'t',env))()
 
 
 class BackupFailureTests(unittest.TestCase):
-    def check_failure(self, kind, failure, destination='source', occurrence=1):
+    def check_failure(self, kind, failure, destination='source', occurrence=1, same_basename=False):
         with tempfile.TemporaryDirectory(prefix='cistern-backup-failure-') as temporary:
             work = Path(temporary)
             root = work / 'root'
+            source_name = 'hud-border.aseprite' if same_basename else 'input.aseprite'
             files = {
-                'source': root / ('input.aseprite' if kind == 'border' else 'assets/source/forest-tree-walls.aseprite'),
+                'source': root / (source_name if kind == 'border' else 'assets/source/forest-tree-walls.aseprite'),
                 'canonical': root / 'assets/source/hud-border.aseprite',
                 'png': root / ('assets/ui/hud-border.png' if kind == 'border' else 'assets/walls/forest-tree-walls.png'),
                 'grass': root / 'assets/ground/grass.png',
@@ -79,6 +81,8 @@ class BackupFailureTests(unittest.TestCase):
             for path in files.values():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b'owner\x00original\xffartwork')
+            if same_basename:
+                files['canonical'].write_bytes(b'different canonical artwork')
             (root / 'assets/backup').mkdir()
             (work / 'scratch').mkdir()
             if failure == 'missing_desktop':
@@ -104,9 +108,9 @@ class BackupFailureTests(unittest.TestCase):
                     self.assertEqual(before[files['png']], files['png'].read_bytes() if files['png'].exists() else None)
                     self.assertTrue((work / 'scratch/tile-art-stage/hud-border.png').read_bytes().startswith(b'\x89PNG\r\n\x1a\n'))
                 backups = list((root / 'assets/backup' if kind == 'tone' else work / 'scratch/hud-border-export').iterdir())
-                self.assertEqual(1 if failure == 'missing_border_destinations' else 3, len(backups))
-                for backup in backups:
-                    self.assertEqual(b'owner\x00original\xffartwork', backup.read_bytes())
+                keys = ('source', 'png', 'grass') if kind == 'tone' else ('source', 'canonical', 'png')
+                self.assertCountEqual([before[files[key]] for key in keys if before[files[key]] is not None],
+                                      [backup.read_bytes() for backup in backups])
                 return
             self.assertNotIn('UNSAFE_DESTINATION_WRITE', output)
             if failure != 'missing_desktop':
@@ -147,6 +151,9 @@ class BackupFailureTests(unittest.TestCase):
 
     def test_border_allows_genuinely_absent_destinations(self):
         self.check_failure('border', 'missing_border_destinations')
+
+    def test_border_keeps_distinct_backups_for_matching_basenames(self):
+        self.check_failure('border', 'none', same_basename=True)
 
 
 if __name__ == '__main__':

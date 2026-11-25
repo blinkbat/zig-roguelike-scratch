@@ -695,10 +695,6 @@ pub const Light = struct {
         self.gpu.syncFigures(figures);
     }
 
-    pub fn clearFigures(self: *Light) void {
-        self.gpu.syncFigures(&light_gpu.NO_FIGURES);
-    }
-
     pub fn unload(self: *Light) void {
         self.gpu.unload();
         self.gpu = .{};

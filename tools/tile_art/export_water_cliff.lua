@@ -30,7 +30,7 @@ for i,name in ipairs(names) do
 end
 local cap=Image(atlas.width,atlas.height,ColorMode.RGB)
 local pc=app.pixelColor
-local COVER=pc.rgba(255,255,255,255)
+local COVER=sourceFiles.rgb(255,255,255)
 local LAST=CELL-1
 local HALF=CELL//2
 for x=0,atlas.width-1 do

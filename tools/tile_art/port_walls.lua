@@ -79,7 +79,7 @@ for i,mask in ipairs(masks) do
   masks.checkJoined(tile,mask,23,40)
   references[#references+1]=tile
 end
-sourceFiles.copy(path,work..'regular-walls-before-ported-edges-'..os.date(sourceFiles.STAMP)..'.aseprite')
+sourceFiles.backup(path,work..'regular-walls-before-ported-edges-'..os.date(sourceFiles.STAMP)..'.aseprite')
 extension.name=sourceFiles.LAYER.ported
 extension:cel(1).image=completed
 extension:cel(1).position=Point(0,0)

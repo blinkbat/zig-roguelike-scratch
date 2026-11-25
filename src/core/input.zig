@@ -690,7 +690,7 @@ pub const Desk = struct {
     mouse: mathx.P = .{ .x = 0, .y = 0 },
     moved: mathx.P = .{ .x = 0, .y = 0 },
     /// Whole notches this frame.
-    wheel: f32 = 0,
+    wheel: i32 = 0,
     wheel_acc: Wheel = .{},
     paint: bool = false,
     paint_hit: bool = false,
@@ -749,9 +749,9 @@ pub const Desk = struct {
         return self.paint_hit or self.erase_hit;
     }
 
-    /// One step down a list for the wheel turned toward the user, one up for away, 0 when it is still.
+    /// List movement for the wheel's whole notches, positive down.
     pub fn notch(self: *const Desk) i32 {
-        return if (self.wheel > 0) -1 else if (self.wheel < 0) 1 else 0;
+        return -self.wheel;
     }
 
     pub fn navigationOnly(self: *const Desk) Desk {
@@ -765,7 +765,7 @@ pub const Desk = struct {
         const d = rl.getMouseDelta();
         self.mouse = mouseAt();
         self.moved = .{ .x = @intFromFloat(d.x), .y = @intFromFloat(d.y) };
-        self.wheel = if (live) @floatFromInt(self.wheel_acc.notches(rl.getMouseWheelMove())) else 0;
+        self.wheel = if (live) self.wheel_acc.notches(rl.getMouseWheelMove()) else 0;
         self.paint = live and rl.isMouseButtonDown(PAINT_BUTTON);
         self.paint_hit = live and rl.isMouseButtonPressed(PAINT_BUTTON);
         self.erase = live and rl.isMouseButtonDown(ERASE_BUTTON);
@@ -979,6 +979,9 @@ test "a smooth wheel's fractions add up to whole notches, in the game and the ed
     for (0..10) |_| notches += wheel.notches(-0.1);
     try std.testing.expectEqual(@as(i32, 2), notches);
     try std.testing.expectEqual(@as(i32, -2), wheel.notches(-2));
+    wheel = .{};
+    try std.testing.expectEqual(@as(i32, -3), (Desk{ .wheel = wheel.notches(3) }).notch());
+    try std.testing.expectEqual(@as(i32, 2), (Desk{ .wheel = wheel.notches(-2) }).notch());
 }
 
 test "losing focus cancels unsettled movement and held actions without forgetting the controller" {

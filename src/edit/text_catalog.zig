@@ -355,8 +355,7 @@ pub const Catalog = struct {
         const a = self.arena.allocator();
         for (ts, 0..) |token, i| {
             if (token.tag != .keyword_enum or excluded[i]) continue;
-            var open = i + 1;
-            if (open < ts.len and ts[open].tag == .l_paren) open = pairs[open] + 1;
+            const open = bodyOpen(ts, pairs, i);
             if (open >= ts.len or ts[open].tag != .l_brace) continue;
             const end = pairs[open];
             const type_name = try enumType(a, path, bytes, ts, pairs, i);
@@ -818,8 +817,7 @@ fn enumType(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []con
     try name.appendSlice(try moduleOf(a, path));
     for (ts[0..at], 0..) |token, i| {
         if (token.tag != .keyword_struct and token.tag != .keyword_union and token.tag != .keyword_enum) continue;
-        var open = i + 1;
-        if (open < ts.len and ts[open].tag == .l_paren) open = pairs[open] + 1;
+        const open = bodyOpen(ts, pairs, i);
         if (open >= at or ts[open].tag != .l_brace or pairs[open] < at) continue;
         if (!namesConst(ts, i)) return null;
         try name.append('.');
@@ -828,6 +826,11 @@ fn enumType(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []con
     try name.append('.');
     try name.appendSlice(slice(bytes, ts[at - 2]));
     return try name.toOwnedSlice();
+}
+
+fn bodyOpen(ts: []const Token, pairs: []const usize, keyword: usize) usize {
+    const after = keyword + 1;
+    return if (after < ts.len and ts[after].tag == .l_paren) pairs[after] + 1 else after;
 }
 
 fn namesConst(ts: []const Token, at: usize) bool {

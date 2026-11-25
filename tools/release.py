@@ -13,6 +13,7 @@ import tarfile
 import tempfile
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
 SELF = pathlib.Path(__file__).resolve()
 ROOT = SELF.parents[1]
@@ -49,7 +50,8 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def publish(dest, write, check=None):
+@contextmanager
+def staged_file(dest, write, check=None):
     with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as temporary:
         pending = pathlib.Path(temporary.name)
     try:
@@ -57,10 +59,28 @@ def publish(dest, write, check=None):
             write(stream)
         if check:
             check(pending)
-        pending.replace(dest)
-    except BaseException:
+        yield pending
+    finally:
         pending.unlink(missing_ok=True)
-        raise
+
+
+def publish(dest, write, check=None):
+    with staged_file(dest, write, check) as pending:
+        pending.replace(dest)
+
+
+def read_existing(path):
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def restore(path, data):
+    if data is None:
+        path.unlink(missing_ok=True)
+    else:
+        publish(path, lambda stream: stream.write(data))
 
 
 def download(record, cache):
@@ -277,14 +297,19 @@ def read_maps():
     return {path: path.read_bytes() for path in map_paths()}
 
 
+def license_paths():
+    return [ASSETS / name for name in LICENSES]
+
+
 def source_hash(maps=None, *, captured=None):
     if maps is None:
         maps = read_maps()
     captured = {**maps, **(captured or {})}
-    paths = [ROOT / 'build.zig', ROOT / 'build.zig.zon', ROOT / 'tools/source_rules.zig', LOCK_PATH, SELF]
-    paths += list((ROOT / 'src').rglob('*.zig'))
-    paths += [p for p in ASSETS.rglob('*') if p.is_file() and p.suffix in EMBEDDED and p.relative_to(ASSETS).parts[0] not in UNEMBEDDED]
-    paths += list(maps)
+    paths = {ROOT / 'build.zig', ROOT / 'build.zig.zon', ROOT / 'tools/source_rules.zig', LOCK_PATH, SELF}
+    paths.update((ROOT / 'src').rglob('*.zig'))
+    paths.update(p for p in ASSETS.rglob('*') if p.is_file() and p.suffix in EMBEDDED and p.relative_to(ASSETS).parts[0] not in UNEMBEDDED)
+    paths.update(maps)
+    paths.update(license_paths())
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda p: p.relative_to(ROOT).as_posix()):
         digest.update(path.relative_to(ROOT).as_posix().encode() + b'\0')
@@ -300,8 +325,7 @@ def archive_name(platform, arch):
 def package(binary, output, metadata, platform, arch):
     name = archive_name(platform, arch)
     maps = read_maps()
-    license_paths = [ASSETS / name for name in LICENSES]
-    licenses = {path: path.read_bytes() for path in license_paths}
+    licenses = {path: path.read_bytes() for path in license_paths()}
     if source_hash(maps, captured=licenses) != metadata['source_sha256']:
         raise RuntimeError('Sources changed during the build; rerun to package a consistent snapshot.')
     files = {EXE: (binary, 0o755), 'run.sh': (LINUX_LAUNCHER if platform == 'linux' else LAUNCHER, 0o755)}
@@ -356,10 +380,24 @@ Type-checked, compiled and statically inspected. This build command does not lau
                     raise ValueError('Packaged content or mode mismatch: ' + entry.name)
 
     sidecar = destination.with_suffix(destination.suffix + '.sha256')
-    sidecar.unlink(missing_ok=True)
-    publish(destination, write, check)
-    checksum = sha256(destination.read_bytes())
-    publish(sidecar, lambda stream: stream.write((checksum + '  ' + destination.name + '\n').encode('ascii')))
+    with staged_file(destination, write, check) as pending:
+        checksum = sha256(pending.read_bytes())
+        checksum_line = (checksum + '  ' + destination.name + '\n').encode('ascii')
+        with staged_file(sidecar, lambda stream: stream.write(checksum_line)) as pending_sidecar:
+            previous = read_existing(sidecar)
+            previous_archive = read_existing(destination)
+            sidecar.unlink(missing_ok=True)
+            try:
+                pending.replace(destination)
+            except OSError:
+                restore(sidecar, previous)
+                raise
+            try:
+                pending_sidecar.replace(sidecar)
+            except OSError:
+                restore(destination, previous_archive)
+                restore(sidecar, previous)
+                raise
     print('PACKAGED: ' + str(destination), flush=True)
     print('SHA256: ' + checksum, flush=True)
 

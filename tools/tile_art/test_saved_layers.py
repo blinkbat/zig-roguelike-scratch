@@ -165,7 +165,7 @@ class SavedLayerTests(unittest.TestCase):
     def wall(self, filename, blocked, existing=False):
         source = (args.scripts_dir / filename).read_text(encoding='utf-8')
         if filename == 'port_walls.lua':
-            body = source[source.index('sourceFiles.copy(path,work'):]
+            body = source[source.index('sourceFiles.backup(path,work'):]
             generated = ''
         else:
             body = source[source.index('local base='):]

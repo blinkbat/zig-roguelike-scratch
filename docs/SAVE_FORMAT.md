@@ -47,9 +47,12 @@ Active and visited levels validate occupancy and positions. Summary data must ag
 with the run. Parsing and validation complete before either the live game or its map
 is changed. A successful load marks the run dirty for an atomic canonical rewrite.
 Reading a save never changes its file.
+Starting a run checks for a missing or empty slot with a one-byte read. The Load
+menu decodes each slot to report whether its run can be loaded.
 Autosave copies owned snapshot data on the frame; the existing worker performs
 encoding, checksum calculation and atomic writing. Snapshot and byte buffers are
 reused only after worker completion, and failed encodes or writes rearm dirty state.
+Travel keeps dirty flags for modified visit snapshots across scene resets.
 
 Atlas nodes default a missing `zoo` to none. Small Keys use ordinary saved items;
 chests and gates retain their level tiles, and occupants use the ordinary actor

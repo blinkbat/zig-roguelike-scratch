@@ -25,7 +25,7 @@ class LegacyBackupTests(WorkTest):
         for filename, marker in BACKUPS.items():
             source = (args.scripts_dir / filename).read_text(encoding='utf-8')
             candidates = [line.strip() for line in source.splitlines()
-                          if marker in line and ('sourceFiles.copy(' in line or 'sourceFiles.keep(' in line
+                          if marker in line and ('sourceFiles.backup(' in line or 'sourceFiles.keep(' in line
                                                  or ':saveCopyAs(' in line)]
             if filename == 'port_forest.lua' and not candidates:
                 candidates = [line.strip() for line in source.splitlines()

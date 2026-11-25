@@ -4,23 +4,19 @@ const resilience = @import("resilience.zig");
 
 pub const Element = enum { cold, fire, chaos, lightning };
 
-/// A skill's `procs` landing `pc` percent of the time, whatever the resistance; certain, it draws nothing.
-pub fn chance(comptime pc: u32) fn (*mathx.Rng, i16) bool {
-    if (pc >= mathx.PERCENT) return always;
-    return struct {
-        fn procs(rng: *mathx.Rng, _: i16) bool {
-            return rng.percent(pc);
-        }
-    }.procs;
-}
+pub const AfflictionChance = struct {
+    percent: u32,
+    resists_element: bool = false,
 
-pub fn flat(comptime pc: u32) fn (i16) u32 {
-    return struct {
-        fn of(_: i16) u32 {
-            return pc;
-        }
-    }.of;
-}
+    pub fn effective(self: AfflictionChance, resist: i16) u32 {
+        return if (self.resists_element) resistedChance(self.percent, resist) else self.percent;
+    }
+
+    pub fn roll(self: AfflictionChance, rng: *mathx.Rng, resist: i16) bool {
+        if (self.resists_element) return procs(rng, self.effective(resist));
+        return self.percent >= mathx.PERCENT or rng.percent(self.percent);
+    }
+};
 
 pub fn resistedChance(pc: u32, resist: i16) u32 {
     return @intCast(@min(mathx.PERCENT, resisted(std.math.lossyCast(i32, pc), resist)));
@@ -29,10 +25,6 @@ pub fn resistedChance(pc: u32, resist: i16) u32 {
 /// Lands `pc` percent of the time; at 0, never, drawing nothing.
 pub fn procs(rng: *mathx.Rng, pc: u32) bool {
     return pc > 0 and rng.percent(pc);
-}
-
-pub fn always(_: *mathx.Rng, _: i16) bool {
-    return true;
 }
 
 pub const Resists = std.EnumArray(Element, i16);
@@ -118,6 +110,20 @@ pub fn clampResist(v: i32) i16 {
 pub fn resisted(amount: i32, resist: i16) i32 {
     const scale: i64 = mathx.PERCENT - @as(i64, clampResist(resist));
     return std.math.lossyCast(i32, @divTrunc(@as(i64, @max(0, amount)) * scale, mathx.PERCENT));
+}
+
+test "certain flat afflictions skip the roll while resisted afflictions keep it" {
+    const flat = AfflictionChance{ .percent = mathx.PERCENT };
+    const elemental = AfflictionChance{ .percent = 50, .resists_element = true };
+    var rng = mathx.Rng.init(7);
+    var expected = rng;
+    try std.testing.expect(flat.roll(&rng, 100));
+    try std.testing.expect(!elemental.roll(&rng, 100));
+    try std.testing.expectEqualDeep(expected, rng);
+    try std.testing.expectEqual(@as(u32, 100), elemental.effective(-100));
+    try std.testing.expect(elemental.roll(&rng, -100));
+    _ = expected.percent(100);
+    try std.testing.expectEqualDeep(expected, rng);
 }
 
 test "each elemental resistance reduces only its own damage and leaves physical damage whole" {

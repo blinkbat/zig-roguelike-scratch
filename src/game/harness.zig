@@ -66,7 +66,7 @@ pub fn procRng(g: *const game.Game, comptime act: skillbar.Act, procs: usize, wa
             var raw = attacks.rollRaw(rng, act, p.bases);
             for (0..p.n) |_| {
                 _ = attacks.scaled(rng, p.by, p.scaling, raw);
-                if (skillbar.Act.skill(act).procs(rng, 0) != p.want) return false;
+                if (skillbar.Act.skill(act).CHANCE.roll(rng, 0) != p.want) return false;
                 raw.physical = 0;
             }
             return true;

@@ -137,6 +137,8 @@ screen, window-size and run/turn resets. Gameplay rules never read it.
 
 `game/sim.zig` (Simulation)
 - Owns run data, the seeded RNG and consumed turn ticks.
+- A new run stamps its seeded starting floor and resolves a vacant landing before
+  replacing the current run.
 - Free actions and idle frames do not age it.
 - Saved integer actor references stay stable; typed adapters change neither the legacy fingerprint nor portable save identities.
 - Pool replacement keeps the initialized `var` copy of a carried actor (Zig 0.14.1).
@@ -252,7 +254,9 @@ for a reaction. Add the action and registry definition in
 [skill_contract](../src/play/skill_contract.zig) interprets the module once and
 validates its targeting, damage, status and special execution requirements. Registry
 errors identify the skill; the `invalid` diagnostic path is also tested with incomplete
-sample modules. Specialized tactical execution stays explicit in `game/tactics_exec.zig`.
+sample modules. An afflicting skill's `damage.AfflictionChance` supplies the displayed
+odds and the roll, including any elemental resistance. Specialized tactical execution
+stays explicit in `game/tactics_exec.zig`.
 
 Wire the class kit and defaults in skillbar, ranks/costs in
 [progress](../src/play/progress.zig), the icon in
@@ -284,7 +288,7 @@ once. Editor does not keep a second graphics-stale flag.
 
 History records the starting map on the first actual change and keeps later changes
 in that same step. A no-op gesture does not truncate redo. Graph movement uses
-`Transaction.previewNode`, then `commitPreview` or `cancelPreview`: cancellation
+`History.previewNode`, then `commitPreview` or `cancelPreview`: cancellation
 restores the starting map without modifying the history ring or saved position.
 Losing window focus cancels an unfinished shape, graph drag or door link and
 ends a freehand stroke at its last applied cell.

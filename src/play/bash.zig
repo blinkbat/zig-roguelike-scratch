@@ -9,16 +9,14 @@ const P = mathx.P;
 pub const COST: i32 = 3;
 pub const AILMENT = @import("resilience.zig").Kind.stun;
 pub const COOLDOWN: u8 = 3;
-pub const CHANCE: u32 = 50;
+pub const CHANCE = damage.AfflictionChance{ .percent = 50 };
 pub const VERB = "shield-bashes";
 pub const ARMS = @import("skill_contract.zig").Arms.shield;
 pub const TAKES = clock.STUNNED;
-pub const DESCRIPTION = std.fmt.comptimePrint("Strike an adjacent foe and knock it back a tile. {s}.", .{clock.stunNote(CHANCE)});
+pub const DESCRIPTION = std.fmt.comptimePrint("Strike an adjacent foe and knock it back a tile. {s}.", .{clock.stunNote(CHANCE.percent)});
 
 pub const BASE = damage.Base{ .lo = 1, .hi = 3 };
 
-pub const procs = damage.chance(CHANCE);
-pub const chance = damage.flat(CHANCE);
 pub const afflict = clock.stuns;
 
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {

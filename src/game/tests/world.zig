@@ -21,6 +21,44 @@ const P = mathx.P;
 const HERO = actor.HERO;
 const LATE_DUSK: f32 = day.SUNSET - 0.5;
 
+test "a procgen run rejects a blocked starting floor without replacing the current run" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    game.begin(g, 37);
+    const was = g.sim.heroActor().?.at;
+    const layout =
+        \\roguelike-map 1
+        \\start 0 10 10
+        \\node procgen rooms
+        \\size 7 7
+        \\rooms 1
+        \\room_w 3 3
+        \\room_h 3 3
+        \\torches 0
+        \\barrels 0
+        \\section fixed
+        \\paint 46 30 ###
+        \\paint 46 32 ###
+        \\
+    ;
+    inline for (.{
+        "paint 46 31 #.#\nfoe rat 47 31\n",
+        "paint 46 31 #.#\nnpc 0 on floor -\n",
+        "paint 46 31 #0#\n",
+    }) |ending| {
+        try w.parse(layout ++ ending);
+        try std.testing.expectError(error.NoFloor, game.beginMapAt(g, w, w.start, 73));
+        try std.testing.expect(g.sim.map == null);
+        try std.testing.expectEqual(@as(u64, 37), g.sim.seed);
+        try std.testing.expectEqual(was, g.sim.heroActor().?.at);
+    }
+    try w.parse(layout ++ "paint 46 31 #.#\n");
+    try game.beginMapAt(g, w, w.start, 73);
+    try std.testing.expectEqual(P{ .x = 47, .y = 31 }, g.sim.heroActor().?.at);
+}
+
 test "a body faces right until it steps, aims or turns on someone to its left, and straight up or down keeps it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -172,7 +210,7 @@ test "a node's sky shows its light and its weather out of doors, and neither und
     g.screen = game.SCREEN_1080;
     for ([_]usize{ strand, cave }) |n| {
         w.start = .{ .node = n, .at = grid.MIDDLE };
-        game.beginMap(g, w);
+        try game.beginMap(g, w);
         for (0..10) |_| game.update(g, mathx.FRAME_DT);
         if (n == strand) {
             const bright = sky.brightness(g.light.sky.?);
@@ -234,7 +272,7 @@ test "a door takes the archer to the door it leads to, and a node left is found 
     const d1 = w.addDoor(cave, .{ .x = 30, .y = 30 }).?;
     w.link(.{ .node = room, .door = d0 }, .{ .node = cave, .door = d1 });
     w.start = .{ .node = room, .at = .{ .x = 10, .y = 5 } };
-    game.beginMap(g, w);
+    try game.beginMap(g, w);
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
     _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 5);
     harness.nudge(g, .e);
@@ -272,7 +310,7 @@ test "a skeleton follows the hero through a door, leaving none behind" {
     defer std.testing.allocator.destroy(w);
     const b = harness.twoRooms(w);
     const a = w.start.node;
-    game.beginMap(g, w);
+    try game.beginMap(g, w);
     const id = harness.spawnAt(g, .skeleton, .{ .x = 4, .y = 5 }, true);
     g.sim.pool.get(id).?.hp -= 3;
     const hp = g.sim.pool.get(id).?.hp;
@@ -304,7 +342,7 @@ test "a skeleton follows through a door that leads to another door on the same n
     const west = w.addDoor(a, harness.WEST_DOOR).?;
     const east = w.addDoor(a, harness.EAST_DOOR).?;
     w.link(.{ .node = a, .door = west }, .{ .node = a, .door = east });
-    game.beginMap(g, w);
+    try game.beginMap(g, w);
     _ = harness.spawnAt(g, .skeleton, .{ .x = 4, .y = 5 }, true);
     var allies: usize = 0;
     for (0..3) |_| {
@@ -334,7 +372,7 @@ test "same-node travel keeps followers that cannot fit in the destination chambe
     try std.testing.expect(w.linksValid());
     for (0..3) |room| {
         for (1..3) |x| b.tile[grid.Level.idx(destination.add(.{ .x = @intCast(x), .y = 0 }))] = if (x <= room) .floor else .wall;
-        game.beginMapAt(g, w, w.start, 1);
+        try game.beginMapAt(g, w, w.start, 1);
         var ids: [2]u16 = undefined;
         var bodies: [2]actor.Actor = undefined;
         for (&ids, &bodies, 0..) |*id, *body, i| {
@@ -368,11 +406,11 @@ test "same-node travel keeps followers that cannot fit in the destination chambe
 
 const RAID_DOOR = P{ .x = 40, .y = 0 };
 
-fn raidNode(g: *game.Game, w: *atlas.Atlas, start: P) void {
+fn raidNode(g: *game.Game, w: *atlas.Atlas, start: P) !void {
     const n = w.add(.{ .procgen = .{ .floor = .{ .open = .{} }, .foes = .{ .packs = 0 }, .raid = .{ .raiders = 3 } } }).?;
     _ = w.addDoor(n, RAID_DOOR).?;
     w.start = .{ .node = n, .at = start };
-    game.beginMapAt(g, w, w.start, 7);
+    try game.beginMapAt(g, w, w.start, 7);
     g.sim.unkillable = true;
     g.sim.clock = day.Clock.at(day.SUNSET - 1);
 }
@@ -382,7 +420,7 @@ test "a night raider is drawn coming in only once the hero's action of that turn
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    raidNode(g, w, .{ .x = 40, .y = 2 });
+    try raidNode(g, w, .{ .x = 40, .y = 2 });
     defer g.sim.unkillable = false;
     const lead: f32 = 0.2;
     for (0..400) |_| {
@@ -414,7 +452,7 @@ test "a node's night raiders come in by its raid door, each at its own turn, fro
     defer game.shut(std.testing.allocator, g);
     const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
-    raidNode(g, w, .{ .x = 40, .y = 30 });
+    try raidNode(g, w, .{ .x = 40, .y = 30 });
     defer g.sim.unkillable = false;
     const first = g.sim.pool.n;
     var seen = first;
@@ -478,7 +516,7 @@ test "a caravan guard stays behind when the hero goes through a door" {
     defer std.testing.allocator.destroy(w);
     const b = harness.twoRooms(w);
     const a = w.start.node;
-    game.beginMap(g, w);
+    try game.beginMap(g, w);
     const post = P{ .x = 4, .y = 5 };
     _ = harness.spawnAt(g, .caravan_guard, post, true);
     harness.nudge(g, .w);
@@ -499,7 +537,7 @@ test "a skeleton following back and forth takes the slot it left, so no node's p
     defer std.testing.allocator.destroy(w);
     const b = harness.twoRooms(w);
     const a = w.start.node;
-    game.beginMap(g, w);
+    try game.beginMap(g, w);
     _ = harness.spawnAt(g, .skeleton, .{ .x = 4, .y = 5 }, true);
     harness.nudge(g, .w);
     harness.idle(g);
@@ -540,7 +578,7 @@ test "a door keeps the low glow, a level-up, the archer's facing and a walk pres
     const b = harness.twoRooms(w);
     const a = w.start.node;
     _ = w.node[b].plan.bespoke.addFoe(.{ .kind = .rat, .at = harness.EAST_DOOR });
-    game.beginMap(g, w);
+    try game.beginMap(g, w);
     _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, actor.row(HERO).hp - 1);
     g.st = .{};
     harness.idleFor(g, 480 * harness.TEST_DT);
@@ -739,7 +777,7 @@ test "a procgen node's section foe stands on its painted cell once the hero arri
     w.start = .{ .node = n, .at = .{ .x = 60, .y = 30 } };
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    game.beginMapAt(g, w, w.start, 11);
+    try game.beginMapAt(g, w, w.start, 11);
     const id = g.sim.lv.who(den);
     try std.testing.expectEqual(actor.Kind.goblin, g.sim.pool.getConst(id).?.kind);
 }

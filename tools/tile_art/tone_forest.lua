@@ -29,9 +29,9 @@ for _,layer in ipairs(sprite.layers) do
   end
 end
 assert(changed>0,'Forest palette already toned or owner palette changed')
-sourceFiles.copy(source,root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.aseprite')
-sourceFiles.copy(png,root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.png')
-sourceFiles.copy(grass_png,root..'assets/backup/grass.'..stamp..'.png')
+sourceFiles.backup(source,root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.aseprite')
+sourceFiles.backup(png,root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.png')
+sourceFiles.backup(grass_png,root..'assets/backup/grass.'..stamp..'.png')
 local staged=sourceFiles.stage('forest-tree-walls.aseprite')
 sprite:saveAs(staged)
 sprite:close()
