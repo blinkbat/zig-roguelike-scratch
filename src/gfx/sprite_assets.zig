@@ -29,7 +29,7 @@ pub const PICTURE_CASTERS = blk: {
 
 pub const FIGURES: usize = LIT_FIGURES + PICTURE_CASTERS.len + WALL_MASKS.len + PROP_FIGURES.len;
 pub const PROP_FIGURES = [_][:0]const u8{ "item_bag", "chest_item_bag", "mimic_closed", "shrub2" };
-/// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
+/// Figures in this prefix use generated normals.
 pub const LIT_FIGURES: usize = Bodies.len + 1;
 
 pub const Assets = struct {
@@ -392,7 +392,7 @@ const WALL_CELL = blk: {
     break :blk all;
 };
 
-/// raylib's `imageFromImage` copies without clamping, so a cell off the sheet would read past it.
+/// raylib's imageFromImage does not clamp the source rectangle.
 pub fn wallCell(sheet: rl.Image, i: usize) ?rl.Image {
     const at = mathx.unslot(i, WALL_COLS);
     const end = sheetSize(at.x + 1, at.y + 1);

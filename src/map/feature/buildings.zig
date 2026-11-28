@@ -43,16 +43,15 @@ pub const Params = struct {
 
 const Box = grid.Box;
 
-/// Every lot a floor's features take, so no feature raises one over another's.
 pub const Lots = struct {
     box: [@import("../procgen.zig").LOTS_MAX]Box = undefined,
     n: usize = 0,
     mine: usize = 0,
 
-    /// Cells between two lots at the least, so neither's ring opens the other.
+    /// Leave room for each lot's ring.
     pub const GAP: i32 = 1;
 
-    /// A feature starts taking lots, as `procgen` has each: its own keep its gap apart, the earlier features' `GAP`.
+    /// New lots use the feature's spacing among themselves and GAP against earlier features.
     pub fn begin(self: *Lots) void {
         self.mine = self.n;
     }
@@ -193,7 +192,7 @@ fn cutLine(b: Box, across: bool, at: i32) Box {
         .{ .lo = .{ .x = b.lo.x, .y = at }, .hi = .{ .x = b.hi.x, .y = at + 1 } };
 }
 
-/// What is left of `b` either side of a cut at `at`, left then right `across`, else top then bottom.
+/// Returns left/right for a vertical cut and top/bottom for a horizontal cut.
 pub fn cutBoxes(b: Box, across: bool, at: i32) [2]Box {
     return if (across)
         .{ .{ .lo = b.lo, .hi = .{ .x = at, .y = b.hi.y } }, .{ .lo = .{ .x = at + 1, .y = b.lo.y }, .hi = b.hi } }
@@ -201,7 +200,7 @@ pub fn cutBoxes(b: Box, across: bool, at: i32) [2]Box {
         .{ .{ .lo = b.lo, .hi = .{ .x = b.hi.x, .y = at } }, .{ .lo = .{ .x = b.lo.x, .y = at + 1 }, .hi = b.hi } };
 }
 
-/// Cut by walls, each with a doorway, till no room is wider than twice `least`.
+/// Leave a doorway in each partition wall.
 pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, walls: grid.Tile) void {
     var stack: [PARTS_MAX]Box = undefined;
     stack[0] = inside;

@@ -7,7 +7,7 @@ const look = @import("look.zig");
 
 var shader_failures: u32 = 0;
 
-/// Null when it does not compile: raylib then hands back its default shader rather than an error.
+/// Treat raylib's default shader fallback as a compile failure.
 pub fn shader(fs: [:0]const u8) ?rl.Shader {
     const s = rl.loadShaderFromMemory(null, fs) catch {
         shader_failures += 1;

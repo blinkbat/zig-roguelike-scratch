@@ -27,7 +27,10 @@ pub fn captureLandscapes(g: *game.Game) !void {
     for (PLACES) |place| {
         const node = place.node;
         const name = place.name;
-        try game.beginMapAt(g, w, .{ .node = node, .at = w.node[node].door[0].at }, capture.SHOT_SEED);
+        if (node >= w.node_n) return error.NoLandscapeNode;
+        const doors = w.node[node].doors();
+        if (doors.len == 0) return error.NoLandscapeDoor;
+        try game.beginMapAt(g, w, .{ .node = node, .at = doors[0].at }, capture.SHOT_SEED);
         studyLit(g, true, day.NOON);
         game.prepare(g);
         for (0..DOWN) |y| {

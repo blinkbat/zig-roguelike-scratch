@@ -9,7 +9,7 @@ const areas = @import("area.zig");
 const P = mathx.P;
 
 pub const COST: i32 = 5;
-/// Tiles round what it strikes that its blast reaches.
+/// Blast radius in cells.
 pub const BLAST: i32 = 1;
 pub const VERB = "blasts";
 pub const BOLT = "fireball";

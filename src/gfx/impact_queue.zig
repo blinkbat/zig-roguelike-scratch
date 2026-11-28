@@ -8,16 +8,16 @@ const state = @import("effect_state.zig");
 pub const FLASH_S: f32 = 0.16;
 pub const FLASH_GAIN: f32 = 0.75;
 pub const DEATH_S: f32 = 0.22;
-/// Of `DEATH_S`, the first part, over which it darkens wholly before it fades.
+/// Fraction of the death fade spent darkening first.
 pub const DEATH_DARKEN: f32 = 0.35;
 
 pub const Dying = struct { dark: f32 = 0, alpha: f32 = 1 };
 
-/// The kinds of turn effect a body can owe: `presentation.Owed`'s fields.
+/// Must match presentation.Owed's field count.
 pub const OWED_KINDS: usize = 16;
 /// A burst and a puff.
 const LOOSE_DUE: usize = 2;
-/// Capacity for turn effects, hero hits, sweeps, source-target death consequences and loose effects.
+/// The quadratic term allows every source-target death consequence.
 const DUE: usize = actor.MAX * (OWED_KINDS + actor.SWEEP_CELLS + actor.MAX) + @max(LOOSE_DUE, chain.JUMPS);
 comptime {
     std.debug.assert(DUE <= std.math.maxInt(u16));
@@ -71,15 +71,14 @@ const Ready = struct { event: Event, late: f32 };
 
 pub const Queue = struct {
     flash: [actor.MAX]f32 = @splat(0),
-    /// Indexed by pool slot: seconds left of a foe's death fade.
+    /// Seconds remaining in each pool slot's death fade.
     dying: [actor.MAX]f32 = @splat(0),
     due: [DUE]struct { t: f32, what: Event } = undefined,
     due_n: usize = 0,
     barrels_due: [grid.CELLS]u16 = @splat(0),
     reveals_due: [actor.MAX]u16 = @splat(0),
-    /// Indexed by pool slot: queued events bound to it.
     due_on: [actor.MAX]u32 = @splat(0),
-    /// Indexed by pool slot: the body as the latest-dealt of the blows landed on it left it.
+    /// Latest landed body by simulation sequence, indexed by pool slot.
     landed: [actor.MAX]?state.Body = @splat(null),
     mana_landed: i32 = 0,
     pub fn dyingOf(self: *const Queue, slot: actor.ActorSlot) Dying {
@@ -100,7 +99,7 @@ pub const Queue = struct {
         return self.revealsIn(slot) > 0;
     }
 
-    /// Seconds until the blow that reveals the slot lands; 0 when none is due.
+    /// Seconds to the revealing blow, or zero when none is pending.
     pub fn revealsIn(self: *const Queue, slot: actor.ActorSlot) f32 {
         if (self.reveals_due[slot.index] == 0) return 0;
         return self.lastDue(slot, revealed);
@@ -175,7 +174,7 @@ pub const Queue = struct {
         self.* = .{};
     }
 
-    /// Drops what landed on a slot's former body before a new one takes it.
+    /// Call before reusing a former body's pool slot.
     pub fn forget(self: *Queue, slot: actor.ActorSlot) void {
         self.flash[slot.index] = 0;
         self.dying[slot.index] = 0;

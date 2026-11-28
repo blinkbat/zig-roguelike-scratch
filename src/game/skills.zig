@@ -36,9 +36,30 @@ pub fn openAim(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     aimAt(run, by, act, hero.at, null);
 }
 
-pub fn targetAt(run: *const game.Game, act: skillbar.Act, from: P, id: u16) ?P {
+pub fn targetGround(run: *game.Game, from: P, act: skillbar.Act) *const grid.Level {
+    const lv = &run.sim.lv;
+    if (act.reticle() == .bow) return lv;
+    const reach = run.sim.reachOf(act);
+    const shown = &run.drawn.aim_ground;
+    var copied = false;
+    for (run.sim.pool.constSlice()) |a| {
+        if (!a.alive or a.seenIn(lv) or mathx.dist(from, a.at) > reach) continue;
+        if (!copied) {
+            shown.* = lv.*;
+            copied = true;
+        }
+        shown.clear(a.at);
+    }
+    return if (copied) shown else lv;
+}
+
+pub fn targetAt(run: *game.Game, act: skillbar.Act, from: P, id: u16) ?P {
+    return targetAtOn(run, targetGround(run, from, act), act, from, id);
+}
+
+fn targetAtOn(run: *const game.Game, lv: *const grid.Level, act: skillbar.Act, from: P, id: u16) ?P {
     const a = run.sim.pool.getConst(id) orelse return null;
-    if (!a.seenFoe(&run.sim.lv) or !tactics_exec.validAct(run, act, from, a.at)) return null;
+    if (!a.seenFoe(lv) or !tactics_exec.validOn(run, lv, act, from, a.at)) return null;
     if (act.reticle() == .bow) {
         const hit = if (piercing(&run.sim, from, act, a.at, true)) |pierced|
             pierced.hits(id)
@@ -50,10 +71,11 @@ pub fn targetAt(run: *const game.Game, act: skillbar.Act, from: P, id: u16) ?P {
 }
 
 fn preferredTarget(run: *game.Game, act: skillbar.Act, from: P) ?P {
-    if (run.target) |id| if (targetAt(run, act, from, id)) |at| return at;
+    const lv = targetGround(run, from, act);
+    if (run.target) |id| if (targetAtOn(run, lv, act, from, id)) |at| return at;
     var near = grid.Nearest{ .from = from };
     for (0..run.sim.pool.n) |i| {
-        if (targetAt(run, act, from, actor.Pool.idOf(i))) |at| near.offer(at);
+        if (targetAtOn(run, lv, act, from, actor.Pool.idOf(i))) |at| near.offer(at);
     }
     return near.best;
 }
@@ -69,16 +91,17 @@ pub fn openLeap(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     aiming(run, by, act);
     const ahead = hero.at.add(run.stride.delta());
-    run.mode.aim.mark = if (act == .raise_skeleton and grid.Level.inside(ahead) and tactics_exec.validAct(run, act, hero.at, ahead)) ahead else hero.at;
+    run.mode.aim.mark = if (act == .raise_skeleton and grid.Level.inside(ahead) and aimable(run, hero.at, ahead)) ahead else hero.at;
 }
 
 fn openSwing(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     if (preferredTarget(run, act, hero.at)) |at| return aimAt(run, by, act, hero.at, at);
     var mark: ?P = null;
+    const lv = targetGround(run, hero.at, act);
     for (mathx.ALL_DIRS) |d| {
         const p = hero.at.add(d.delta());
-        if (!tactics_exec.validAct(run, act, hero.at, p)) continue;
+        if (!tactics_exec.validOn(run, lv, act, hero.at, p)) continue;
         const foe = if (run.sim.pool.get(run.sim.lv.who(p))) |a| a.seenFoe(&run.sim.lv) else false;
         if (foe or (mark == null and !run.sim.allyAt(p))) mark = p;
         if (foe) break;
@@ -180,8 +203,9 @@ fn spend(run: *game.Game, act: skillbar.Act) void {
 
 const plural = mathx.plural;
 
-pub fn aimable(run: *const game.Game, from: P, to: P) bool {
-    return tactics_exec.validAct(run, run.mode.aim.act(), from, to);
+pub fn aimable(run: *game.Game, from: P, to: P) bool {
+    const act = run.mode.aim.act();
+    return tactics_exec.validOn(run, targetGround(run, from, act), act, from, to);
 }
 
 fn leap(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
@@ -366,10 +390,11 @@ fn openRush(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     if (preferredTarget(run, act, hero.at)) |at| return aimAt(run, by, act, hero.at, at);
     var near = grid.Nearest{ .from = hero.at };
     var empty = grid.Nearest{ .from = hero.at };
+    const lv = targetGround(run, hero.at, act);
     var cells = grid.Cells.around(hero.at, run.sim.reachOf(act));
     while (cells.next()) |p| {
-        if (tactics_exec.validAct(run, act, hero.at, p)) {
-            const who = run.sim.lv.who(p);
+        if (tactics_exec.validOn(run, lv, act, hero.at, p)) {
+            const who = lv.who(p);
             if (who == grid.NO_ONE) {
                 empty.offer(p);
             } else if (run.sim.pool.getConst(who)) |a| if (a.foe()) near.offer(p);
@@ -420,10 +445,12 @@ pub fn nudgeAim(run: *game.Game, d: mathx.Dir) void {
 
 fn targetToward(run: *game.Game, from: P, d: mathx.Dir) ?P {
     const way = d.delta();
+    const act = run.mode.aim.act();
+    const lv = targetGround(run, from, act);
     var best: ?P = null;
     var best_score: i32 = std.math.maxInt(i32);
     for (0..run.sim.pool.n) |i| {
-        const at = targetAt(run, run.mode.aim.act(), from, actor.Pool.idOf(i)) orelse continue;
+        const at = targetAtOn(run, lv, act, from, actor.Pool.idOf(i)) orelse continue;
         const delta = at.sub(run.mode.aim.mark);
         const along = delta.x * way.x + delta.y * way.y;
         if (along <= 0) continue;
@@ -443,7 +470,9 @@ pub fn confirmAim(run: *game.Game) void {
     const act = run.mode.aim.act();
     if (!ready(run, act)) return;
     const reticle = act.reticle().?;
-    if (!aimable(run, hero.at, run.mode.aim.mark)) {
+    const choosing_start = run.mode.aim.action == .wall_start;
+    const legal = if (choosing_start) aimable(run, hero.at, run.mode.aim.mark) else tactics_exec.validAct(run, act, hero.at, run.mode.aim.mark);
+    if (!legal) {
         switch (reticle) {
             .bow => run.sim.log.say("Can't shoot there.", .{}),
             .leap => run.sim.log.say("{s} needs a visible, empty landing within {d} tiles.", .{ act.name(), run.sim.reachOf(act) }),
@@ -472,7 +501,7 @@ pub fn confirmAim(run: *game.Game) void {
     }
 }
 
-/// The flight the reticle shows toward `mark`, passing over bodies the hero cannot see.
+/// Preview skips bodies the hero cannot see.
 pub fn shownFlight(run: *const game.Game, from: P, act: skillbar.Act, mark: P) bow.Flight {
     if (piercing(&run.sim, from, act, mark, true)) |pierced| return pierced.flight;
     return bow.previewAmong(&run.sim.lv, &run.sim.pool, from, mark);
@@ -492,7 +521,6 @@ fn piercing(sim: *const game.simulation.Simulation, from: P, act: skillbar.Act, 
         bow.skewer(&sim.lv, from, mark, reach, extra);
 }
 
-/// The extra foes worn pierce lets a single-target projectile pass through.
 fn skewers(sim: *const game.simulation.Simulation, act: skillbar.Act) usize {
     if (act.reticle() != .bow or act.pierces() or act.bursts() or act.chains()) return 0;
     return sim.inventory.gear.pierce();

@@ -63,7 +63,6 @@ pub const Book = struct {
     last_page: Page = .equipment,
     last_cursor: usize = 0,
     loot_at: P = .{ .x = 0, .y = 0 },
-    /// The NPC the trade page deals with.
     dealer: u8 = 0,
     zoom: f32 = trees.ZOOM_START,
     pan: rl.Vector2 = .{ .x = 0, .y = 0 },
@@ -71,7 +70,6 @@ pub const Book = struct {
     mouse_panning: bool = false,
     message: menu.Note(80) = .{},
     advanced: bool = false,
-    /// On the trade page: the hero's goods listed, not the merchant's.
     selling: bool = false,
 
     pub fn open(self: *Book) void {
@@ -181,7 +179,7 @@ pub const Book = struct {
     fn turnBy(self: *Book, d: i32, view: View) void {
         self.turnTo(mathx.stepIn(Page, &PAGES, self.page, d, 0), view);
     }
-    /// The bag item under the cursor; carried consumables list above the bag.
+    /// Consumables precede bag items in the inventory list.
     fn bagIndex(self: *const Book, view: View) ?usize {
         const row = view.inventory.rowAt(self.cursor) orelse return null;
         return if (row == .item) row.item else null;
@@ -855,11 +853,7 @@ fn offhandWeapon(gear: Gear, slot: item_bases.Slot) ?items.Item {
 
 fn dependent(view: View, at: usize, slot: item_bases.Slot) ?items.Item {
     const after = view.inventory.swapped(at, slot) catch return null;
-    for (item_bases.SLOTS) |s| {
-        if (s == slot) continue;
-        if (after.slots.get(s)) |other| if (!after.keepsMet(view.inventory.gear, s, view.base)) return other;
-    }
-    return null;
+    return after.firstUnmet(view.inventory.gear, view.base, slot);
 }
 
 fn inkOf(it: ?items.Item) rl.Color {
@@ -1090,7 +1084,12 @@ test "item card requirements exclude the item itself and every displaced hand" {
     var book = Book{ .page = .inventory };
     try std.testing.expectEqual(@as(i32, 10), book.requirementAttrs(view, .right_hand).get(.strength));
     try std.testing.expectError(error.Requirements, inv.preview(0, .right_hand, base));
+    try std.testing.expect(dependent(view, 0, .right_hand) == null);
     try std.testing.expect(inv.gear.slots.get(.left_hand) != null and inv.n == 1);
+    inv.gear.slots.set(.chest, .{ .kind = .mail });
+    inv.bag[0] = .{ .kind = .axe };
+    try std.testing.expectEqual(item_bases.Kind.mail, dependent(view, 0, .right_hand).?.kind);
+    inv.gear.slots.set(.chest, null);
     inv.gear.slots.set(.left_hand, null);
     inv.gear.slots.set(.left_ring, items.affixed(.ring, &.{.{ .kind = .strength, .value = 3 }}));
     inv.gear.slots.set(.right_ring, items.affixed(.ring, &.{.{ .kind = .strength, .value = 7 }}));

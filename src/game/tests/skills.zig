@@ -2149,6 +2149,47 @@ test "piercing shot strikes every foe in its line, each as the arrow reaches it,
     try std.testing.expectEqual(g.sim.pool.get(far).?.hp, g.pic.pictured[actor.Pool.slot(far)].hp);
 }
 
+test "target previews ignore a submerged leech and confirmation preserves its occupied cell" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 22, .y = 20 };
+    const beyond = P{ .x = 23, .y = 20 };
+    harness.heroArena(g, .wizard, from, &.{});
+    g.sim.lv.set(at, .shallows);
+    const id = harness.spawnAt(g, .bog_leech, at, false);
+    const leech = g.sim.pool.get(id).?;
+    const mana = g.sim.mana;
+    const clock = g.sim.clock;
+
+    for ([_]skillbar.Act{ .blink, .raise_skeleton, .arcane_barrier }) |act| {
+        skills.aiming(g, null, act);
+        g.mode.aim.mark = at;
+        leech.submerged = false;
+        try std.testing.expect(!skills.aimable(g, from, at));
+        leech.submerged = true;
+        try std.testing.expect(skills.aimable(g, from, at));
+        if (act.spans()) {
+            skills.confirmAim(g);
+            try std.testing.expectEqual(at, g.mode.aim.anchor().?);
+            g.mode.aim.mark = beyond;
+            try std.testing.expect(skills.aimable(g, from, beyond));
+        }
+        skills.confirmAim(g);
+        try harness.expectMode(g, .aim);
+        try std.testing.expectEqual(id, g.sim.lv.who(at));
+        try std.testing.expectEqual(mana, g.sim.mana);
+        try std.testing.expectEqualDeep(clock, g.sim.clock);
+        try std.testing.expect(!g.sim.lv.hasBarrier(at));
+        skills.closeAim(g);
+    }
+
+    skills.aiming(g, null, .charge);
+    try std.testing.expect(skills.aimable(g, from, beyond));
+    leech.submerged = false;
+    try std.testing.expect(!skills.aimable(g, from, beyond));
+}
+
 test "caltrops and an arcane barrier are drawn as their cast lands, not as it begins" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

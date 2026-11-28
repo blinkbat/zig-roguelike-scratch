@@ -37,13 +37,13 @@ const MEMORY_GREY: f32 = 0.9;
 const MEMORY_BRIGHTNESS: f32 = 0.7;
 
 const FOCUS_MAX: f32 = 0.24;
-/// Screen pixels between the bloom blur's taps, across then down.
+/// Screen pixels between blur taps.
 const BLOOM_STEP: f32 = 2.0;
 /// Rows from the hero that stay sharp, and from which scenery is softened fully.
 const SHARP_ROWS: f32 = 3.5;
 const SOFT_ROWS: f32 = 7.5;
 const EMISSIVE_REACH: f32 = 1.5;
-/// The dimmest sky the water mist is still drawn under, as a share of a clear noon.
+/// Minimum sky brightness for water mist, relative to clear noon.
 const AIR_DARKEST: f32 = 0.06;
 const SHAFT_NEAR: f32 = 1.1;
 const SHAFT_SLANT: f32 = 0.48;
@@ -62,7 +62,6 @@ const SHAFT_COLS: i32 = @intFromFloat(@ceil((SHAFT_WIDTH[1] * SHAFT_POOL_WIDTH +
 const SHAFT_REFLECT_COLS: i32 = 1 + @as(i32, @intFromFloat(@ceil((2 * SHAFT_SLANT * SHAFT_REACH[1] * SHAFT_REFLECT + SHAFT_WIDTH[1] + SHAFT_SWAY) / SHAFT_SPACING[0])));
 const FIELD_MARGIN: i32 = @intFromFloat(@ceil(@max(SHAFT_REACH[1], SHAFT_REACH[1] * SHAFT_SLANT + SHAFT_WIDTH[1] * SHAFT_POOL_WIDTH) + SHAFT_NEAR));
 const BLOOM_GAIN: f32 = 0.22;
-/// Peak opacity of the water mist, the canopy's light shafts and the large dust motes in them.
 const MIST_GAIN: f32 = 0.065;
 const SHAFT_GAIN: f32 = 0.14;
 const DUST_GAIN: f32 = 0.64;
@@ -74,7 +73,6 @@ const SHAFT_REFLECT_GAIN: f32 = 0.45;
 const SHAFT_POOL_GAIN: f32 = 0.65;
 /// In cells; each holds at most one mote.
 const DUST_SIZE = [2]f32{ 0.65, 1.6 };
-/// Of the dust cells, the share with no mote: a seed below this.
 const DUST_EMPTY: f32 = 0.36;
 const DUST_LARGE: f32 = 0.91;
 /// In cells; each holds at most one leaf, which falls its height in a lifetime.
@@ -82,21 +80,21 @@ const LEAF_SIZE = [2]f32{ 2.2, 3.2 };
 const LEAF_EMPTY: f32 = 0.45;
 /// Lifetimes a second.
 const LEAF_FALL = [2]f32{ 0.07, 0.11 };
-/// Radians a second of the side-to-side swoop; its reach in cells, the rise at each end, and the tilt there.
+/// Swoop frequency in radians/s and reach in cells.
 const LEAF_SWING = [2]f32{ 1.5, 2.3 };
 const LEAF_SWAY: f32 = 0.3;
 const LEAF_LIFT: f32 = 0.12;
 const LEAF_TILT: f32 = 0.7;
-/// In sprite pixels from the middle to the tip, and the blade's depth.
+/// Half-length and blade depth in sprite pixels.
 const LEAF_LENGTH: f32 = 1.6;
 const LEAF_WIDTH: f32 = 0.8;
 const LEAF_STEM: f32 = 0.55;
 const LEAF_GAIN: f32 = 0.8;
 const LEAF_SHADE: f32 = 0.35;
 const LEAF_DIM: f32 = 0.4;
-/// Cells a second the mist drifts east.
+/// Eastward drift in cells/s.
 const AIR_DRIFT: f32 = 0.025;
-/// In the thickest weather mist, how many times over the water mist thickens, and the peak opacity of the mist over land.
+/// Maximum water mist multiplier and land mist opacity.
 const WEATHER_MIST_WATER: f32 = 2;
 const WEATHER_MIST_LAND: f32 = 0.11;
 
@@ -110,7 +108,7 @@ const FIELD = .{ .lit = "r", .water = "g", .emissive = "b", .crown = "a" };
 const WEATHER = .{ .beam = "r", .mist = "g", .seen = "a" };
 const FIELD_DEFINES = shaders.channelDefines(FIELD) ++ shaders.channelDefines(WEATHER);
 
-fn markEmissive(pixels: *[grid.CELLS]rl.Color, at: [2]f32) bool {
+fn markEmissive(pixels: *[grid.CELLS]rl.Color, at: [2]f32, view: grid.Box) bool {
     var marked = false;
     var cells = grid.Box.around(mathx.cellOf(at), @intFromFloat(@ceil(EMISSIVE_REACH))).grown(0).cells();
     while (cells.next()) |p| {
@@ -118,7 +116,7 @@ fn markEmissive(pixels: *[grid.CELLS]rl.Color, at: [2]f32) bool {
         if (@field(pixel, FIELD.lit) == 0) continue;
         if (light.offMiddle(p, at) >= EMISSIVE_REACH) continue;
         @field(pixel, FIELD.emissive) = 255;
-        marked = true;
+        marked = marked or view.holds(p);
     }
     return marked;
 }
@@ -135,7 +133,6 @@ pub const Cinema = struct {
     field: ?rl.Texture2D = null,
     weather_field: ?rl.Texture2D = null,
     sight_field: ?rl.Texture2D = null,
-    /// The visibility fields `sight_field` holds.
     sight_of: ?struct { from: *const light_visibility.Visibility, revision: u32 } = null,
     field_pixels: [grid.CELLS]rl.Color = undefined,
     weather_pixels: [grid.CELLS]rl.Color = undefined,
@@ -171,11 +168,37 @@ pub const Cinema = struct {
         const air_on = self.airs(l);
         if (!self.options.bloom and !air_on) return;
         const tex = self.field orelse return;
+        self.fillTerrain(lv, view, blend, weather, air_on);
+        if (self.options.bloom) {
+            for (flames) |f| {
+                if (f.live() and markEmissive(&self.field_pixels, f.at, view)) self.active_bloom = true;
+            }
+            for (l.effects[0..l.effect_n]) |*e| {
+                if (markEmissive(&self.field_pixels, e.source.drawn(), view)) self.active_bloom = true;
+            }
+        }
+        if (!self.blooms() and !self.active_air) return;
+        rl.updateTexture(tex, &self.field_pixels);
+        if (!self.active_air) return;
+        if (self.weather_field) |w| rl.updateTexture(w, &self.weather_pixels);
+        const s = self.sight_field orelse return;
+        const v = &l.visibility;
+        if (self.sight_of) |was| if (was.from == v and was.revision == v.revision) return;
+        v.sightPixels(&self.sight_pixels);
+        rl.updateTexture(s, &self.sight_pixels);
+        self.sight_of = .{ .from = v, .revision = v.revision };
+    }
+
+    fn fillTerrain(self: *Cinema, lv: *const grid.Level, view: grid.Box, blend: *const climate.Blend, weather: climate.Local, air_on: bool) void {
         const pixels = &self.field_pixels;
         @memset(pixels, rl.Color.blank);
         const weather_pixels = &self.weather_pixels;
         if (air_on) @memset(weather_pixels, rl.Color.blank);
-        var cells = view.grown(FIELD_MARGIN).cells();
+        const field = if (air_on) view.grown(FIELD_MARGIN) else view;
+        var crowns = false;
+        var beam_weather = false;
+        var mist = false;
+        var cells = field.cells();
         while (cells.next()) |p| {
             if (!lv.isSeen(p)) continue;
             const t = lv.at(p);
@@ -184,37 +207,27 @@ pub const Cinema = struct {
             @field(pixel, FIELD.lit) = if (lv.isLit(p)) 255 else 0;
             if (look.reflects(t)) {
                 @field(pixel, FIELD.water) = 255;
-                self.active_bloom = true;
-                self.active_air = air_on;
+                self.active_bloom = self.active_bloom or view.holds(p);
+                mist = air_on;
             }
-            if (look.crowned(t)) @field(pixel, FIELD.crown) = 255;
+            if (look.crowned(t)) {
+                @field(pixel, FIELD.crown) = 255;
+                crowns = true;
+            }
             if (air_on) {
                 const local = blend.cell(weather, i);
                 const beam = unitByte(local.get(.beams));
-                const mist = unitByte(local.get(.mist));
-                self.active_beams = self.active_beams or beam > 0;
-                self.active_air = self.active_air or beam > 0 or mist > 0;
+                const mist_amount = unitByte(local.get(.mist));
+                beam_weather = beam_weather or beam > 0;
+                mist = mist or mist_amount > 0;
                 const cell = &weather_pixels[i];
                 @field(cell, WEATHER.beam) = beam;
-                @field(cell, WEATHER.mist) = mist;
+                @field(cell, WEATHER.mist) = mist_amount;
                 @field(cell, WEATHER.seen) = 255;
             }
         }
-        for (flames) |f| {
-            if (f.live() and markEmissive(pixels, f.at)) self.active_bloom = true;
-        }
-        for (l.effects[0..l.effect_n]) |*e| {
-            if (markEmissive(pixels, e.source.drawn())) self.active_bloom = true;
-        }
-        rl.updateTexture(tex, pixels);
-        if (!self.active_air) return;
-        if (self.weather_field) |w| rl.updateTexture(w, weather_pixels);
-        const s = self.sight_field orelse return;
-        const v = &l.visibility;
-        if (self.sight_of) |was| if (was.from == v and was.revision == v.revision) return;
-        v.sightPixels(&self.sight_pixels);
-        rl.updateTexture(s, &self.sight_pixels);
-        self.sight_of = .{ .from = v, .revision = v.revision };
+        self.active_beams = crowns and beam_weather;
+        self.active_air = mist or self.active_beams;
     }
 
     fn blooms(self: *const Cinema) bool {
@@ -370,16 +383,20 @@ const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .BLOOM_GAI
     \\uniform float amount;
     \\vec3 sampleLight(vec2 uv) {
     \\    uv = insetUv(uv, screen);
-    \\    vec3 c = texture(texture0, uv).rgb;
-    \\    if (extract == 0) return c;
+    \\    if (extract == 0) return texture(texture0, uv).rgb;
     \\    vec2 p = cellAtPixel(targetPixel(uv));
     \\    vec4 f = fieldAt(p);
+    \\    float source = f.EMISSIVE;
+    \\    if (f.WATER > source) {
+    \\        vec3 glint = texture(glints, p / CELLS).rgb;
+    \\        source = max(source, f.WATER * smoothstep(0.015, 0.12, max(glint.r, max(glint.g, glint.b))));
+    \\    }
+    \\    if (source == 0.0) return vec3(0.0);
+    \\    vec3 c = texture(texture0, uv).rgb;
     \\    float high = max(c.r, max(c.g, c.b));
     \\    float lum = dot(c, LUMA);
     \\    float core = max(smoothstep(0.80, 1.0, lum), smoothstep(0.92, 1.0, high) * 0.65);
-    \\    vec3 glint = texture(glints, p / CELLS).rgb;
-    \\    float water = f.WATER * smoothstep(0.015, 0.12, max(glint.r, max(glint.g, glint.b)));
-    \\    return c * core * max(water, f.EMISSIVE) * liveAt(p);
+    \\    return c * core * source * liveAt(p);
     \\}
     \\void main() {
     \\    vec2 d = direction / screen;
@@ -611,6 +628,55 @@ test "cinema focus preserves nearby scenery and every gameplay tile" {
     try std.testing.expectEqual(look.SOFTENED.count(), focused);
 }
 
+test "cinema bloom uses visible water and emissive footprints while air keeps its wider field" {
+    var cinema = Cinema{};
+    var lv = grid.Level.blank();
+    const blend = climate.Blend{};
+    const view = grid.Box.sized(.{ .x = 10, .y = 10 }, 3, 1);
+    const edge = mathx.P{ .x = 12, .y = 10 };
+    const outside = mathx.P{ .x = 15, .y = 10 };
+    for ([_]mathx.P{ edge, outside }) |p| {
+        lv.seen[grid.Level.idx(p)] = true;
+        lv.lit[grid.Level.idx(p)] = true;
+    }
+    lv.set(outside, .water);
+    cinema.fillTerrain(&lv, view, &blend, climate.CALM, true);
+    try std.testing.expect(cinema.active_air and !cinema.active_bloom);
+    try std.testing.expectEqual(@as(u8, 255), @field(cinema.field_pixels[grid.Level.idx(outside)], FIELD.water));
+    try std.testing.expect(!markEmissive(&cinema.field_pixels, mathx.centre(outside), view));
+    try std.testing.expect(markEmissive(&cinema.field_pixels, .{ 13.5, 10.5 }, view));
+    try std.testing.expectEqual(@as(u8, 255), @field(cinema.field_pixels[grid.Level.idx(edge)], FIELD.emissive));
+    lv.set(edge, .water);
+    cinema.fillTerrain(&lv, view, &blend, climate.CALM, false);
+    try std.testing.expect(cinema.active_bloom);
+}
+
+test "beam weather needs a seen crown in the padded field while mist and water work without trees" {
+    const at = mathx.P{ .x = 20, .y = 20 };
+    const edge = at.add(.{ .x = FIELD_MARGIN, .y = 0 });
+    const view = grid.Box.sized(at, 1, 1);
+    var lv = grid.Level.blank();
+    lv.seen[grid.Level.idx(at)] = true;
+    lv.set(edge, .large_tree);
+    var weather = climate.CALM;
+    weather.getPtr(.inland).set(.beams, 1);
+    const blend = climate.Blend{};
+    var cinema = Cinema{};
+    cinema.fillTerrain(&lv, view, &blend, weather, true);
+    try std.testing.expect(!cinema.active_beams and !cinema.active_air);
+    lv.set(at, .water);
+    cinema.fillTerrain(&lv, view, &blend, weather, true);
+    try std.testing.expect(!cinema.active_beams and cinema.active_air);
+    lv.set(at, .floor);
+    weather.getPtr(.inland).set(.mist, 1);
+    cinema.fillTerrain(&lv, view, &blend, weather, true);
+    try std.testing.expect(!cinema.active_beams and cinema.active_air);
+    weather.getPtr(.inland).set(.mist, 0);
+    lv.seen[grid.Level.idx(edge)] = true;
+    cinema.fillTerrain(&lv, view, &blend, weather, true);
+    try std.testing.expect(cinema.active_beams and cinema.active_air);
+}
+
 test "cinema emissive bounds preserve fractional lights and visible map edges" {
     const width: f32 = @floatFromInt(grid.W);
     const height: f32 = @floatFromInt(grid.H);
@@ -624,7 +690,7 @@ test "cinema emissive bounds preserve fractional lights and visible map edges" {
                 @field(pixel, FIELD.emissive) = 0;
                 @field(pixel, FIELD.crown) = 39;
             }
-            const marked = markEmissive(&pixels, .{ x, y });
+            const marked = markEmissive(&pixels, .{ x, y }, grid.MAP);
             var expected_count: usize = 0;
             for (pixels, 0..) |pixel, i| {
                 const expected = i % 5 != 0 and light.offMiddle(grid.Level.of(i), .{ x, y }) < EMISSIVE_REACH;

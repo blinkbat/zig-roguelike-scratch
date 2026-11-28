@@ -16,7 +16,6 @@ const JITTER: f32 = 0.06;
 const SIDE_REACH: i32 = 14;
 /// A side path's clearing, a share of a spot's.
 const SIDE_CLEARING: f32 = 0.6;
-/// A grid layout's paths left out, so it is no lattice.
 const GRID_GAP: f32 = 0.3;
 const RIM_GAP: i32 = 2;
 /// Of the box's shorter side, a bowl's and the arena's half-width.
@@ -60,9 +59,7 @@ const Graph = struct {
     edges: []const Edge,
     big_of: f32 = BOWL_OF,
     gap: f32 = 0,
-    /// Clearings are ovals stretched by each spot's `wide` and `tall`.
     ovals: bool = false,
-    /// Paths through grass are worn to dirt.
     trodden: bool = false,
 };
 
@@ -141,7 +138,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     }
 }
 
-/// Of an oval's radii, its edge before noise and how far noise pushes it out; and the box searched round it.
 const OVAL_EDGE: f32 = 0.9;
 const OVAL_FRAY: f32 = 0.35;
 const OVAL_REACH: f32 = 1.25;

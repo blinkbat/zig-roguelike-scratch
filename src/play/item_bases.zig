@@ -244,11 +244,10 @@ pub const Spec = struct {
     slots: []const Slot,
     needs: attrs.Needs = .{},
     damage: ?damage.Base = null,
-    /// What its attack scales with, or for a caster its spells; null takes the attack's own.
+    /// Overrides attack or spell scaling. Null uses the attack default.
     scales: ?attrs.Scaling = null,
     attack: attrs.Attack = .melee,
     two_handed: bool = false,
-    /// A spellcaster's implement, which rolls spell modifiers.
     caster: bool = false,
     /// An offhand worn beside a ranged weapon or an empty main hand.
     quiver: bool = false,

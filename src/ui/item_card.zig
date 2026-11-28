@@ -77,7 +77,7 @@ const CardLines = struct {
         self.n += 1;
     }
 
-    /// `spec`'s lines for `slot`; with no `available`, every requirement is unmet by one, the most and widest lines it can have.
+    /// Null availability forces maximum requirement rows for card sizing.
     fn of(spec: item_bases.Spec, slot: item_bases.Slot, available: ?attr.Attrs) CardLines {
         var out: CardLines = .{};
         if (spec.damage) |hit| {

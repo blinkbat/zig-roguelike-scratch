@@ -192,10 +192,11 @@ test "editor zoo reservations keep rejected placements out of saved maps" {
     ed.map.start = .{ .node = 0, .at = .{ .x = 10, .y = 10 } };
     const before = ed.map.start;
     for ([_]P{ z.threshold(), z.approach(), z.key.? }) |p| {
-        for ([_]editor.Tool{ .door, .{ .foe = .rat } }) |tool| {
+        for ([_]editor.Tool{ .barrel, .door, .{ .foe = .rat } }) |tool| {
             ed.tool = tool;
             try std.testing.expect(!placement.legal(ed, p));
             placement.place(ed, p);
+            try std.testing.expect(!ed.plan().bespoke.barrelAt(p));
             try std.testing.expectEqual(@as(usize, 0), ed.here().door_n);
             try std.testing.expectEqual(@as(usize, 0), ed.plan().bespoke.foe_n);
         }

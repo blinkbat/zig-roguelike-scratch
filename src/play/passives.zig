@@ -80,7 +80,7 @@ pub const Seam = enum {
         return SEAMS.get(s).to;
     }
 };
-/// An arm's two branches: the one whose bridges reach the next arm in `Arm`'s order, then the one reached from the previous.
+/// Identifies the neighbor reached by each branch's bridges in arm order.
 pub const Lane = enum { next, previous };
 const BRANCHES = std.EnumArray(Arm, std.EnumArray(Lane, Branch)).init(.{
     .warrior = .init(.{ .next = .warrior_life, .previous = .warrior_berserk }),
@@ -514,11 +514,11 @@ pub const NODES: [N]Node = blk: {
     break :blk out;
 };
 
-/// Radians a branch turns off its arm's bearing, and its ring's slots spread either side, wider further out.
+/// Angular offsets in radians for branches and slots.
 const LANE_TURN: f32 = 0.42;
 const SLOT_TURN: f32 = 0.130;
 const SLOT_TURN_PER_RING: f32 = 0.032;
-/// A step browses only to nodes within 60 degrees of the push, sideways distance costing more than distance ahead.
+/// Limit navigation to a 60-degree cone and penalize lateral distance.
 const STEP_COS: f32 = 0.5;
 const STEP_AHEAD: f32 = 0.65;
 

@@ -5,7 +5,7 @@ const resilience = @import("resilience.zig");
 const areas = @import("area.zig");
 
 pub const TURNS: u8 = 3;
-/// Cells from where lightning lands that the water it lands in carries it.
+/// Maximum conduction distance in connected wet cells.
 pub const CONDUCT: i32 = 2;
 pub const CONDUCTS = "The water carries the shock!";
 
@@ -18,7 +18,7 @@ pub const AILMENT = resilience.Kind.shock;
 pub const TAKES = "is shocked";
 pub const STATUS = std.fmt.comptimePrint("The next hit taken deals {d}% more damage.", .{MORE});
 
-/// Its turns left waiting for a hit; the first that deals damage spends it.
+/// Consumed on the first hit that deals damage.
 pub const Shock = resilience.Turns(TURNS);
 
 pub fn spend(s: *Shock, dmg: i32) i32 {
@@ -29,7 +29,7 @@ pub fn spend(s: *Shock, dmg: i32) i32 {
 
 pub const afflict = resilience.Starts(AILMENT).afflict;
 
-/// The deep water and shallows joined to `at` within `CONDUCT` cells of it; none where `at` is dry.
+/// Connected wet cells within the conduction radius.
 pub fn conducted(lv: *const grid.Level, at: mathx.P) areas.Burst {
     var out = areas.Burst{};
     if (!lv.at(at).wet()) return out;

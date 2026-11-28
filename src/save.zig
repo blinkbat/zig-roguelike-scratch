@@ -53,7 +53,6 @@ const Unreadable = enum {
 
 pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
 
-/// The file's types in order: the summary, the header with the map's flag before it, then the tail.
 const FINGERPRINT = blk: {
     const head = std.meta.fields(Header);
     var types: [head.len + 3]type = undefined;
@@ -71,9 +70,8 @@ const FINGERPRINT = blk: {
     std.debug.assert(i + 1 == types.len);
     break :blk store.legacy.fingerprint(types) ^ TREE;
 };
-/// What the tree's hash takes for a node's missing branch, seam or bump.
 const NO_PART: u8 = 255;
-/// The passive tree's layout, which saved allocations index by node.
+/// Legacy saves index passive nodes by position.
 const TREE = blk: {
     @setEvalBranchQuota(100_000);
     var h = std.hash.Wyhash.init(0);
@@ -113,7 +111,6 @@ const Raw = struct { map: RawMap, visit: RawVisit, lv: RawLevel };
 
 const Error = format.OpenError;
 
-/// Into an empty `out`, all but the sum `seal` ends it with.
 fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
     std.debug.assert(out.items.len == 0);
     const w = out.writer();
@@ -147,12 +144,10 @@ fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
     try out.ensureUnusedCapacity(store.SUM);
 }
 
-/// Ends a file `write` began in `out` with its sum, in the room `write` kept, so it may run off the frame.
 fn seal(out: *std.ArrayList(u8)) void {
     if (portable(out.items)) format.seal(out) else store.sealReserved(out, HEAD);
 }
 
-/// Written by `format`, not the raw legacy writer.
 fn portable(bytes: []const u8) bool {
     return std.mem.startsWith(u8, bytes, format.MAGIC);
 }
@@ -199,7 +194,6 @@ fn inspect(bytes: []const u8) Error!Contents {
     return .{ .summary = s, .seed = seed, .has_map = has_map, .body = b };
 }
 
-/// All of it is measured before any of it reaches `g`, so a file that does not read leaves the game as it was.
 fn parseLegacy(bytes: []const u8) !*format.Snapshot {
     const c = try inspect(bytes);
     const snapshot = try std.heap.page_allocator.create(format.Snapshot);
@@ -293,7 +287,7 @@ pub fn slots(alloc: std.mem.Allocator) [SLOTS]Slot {
     return out;
 }
 
-/// Read whole, so a slot listed as a run is one `load` will take.
+/// Fully validate slots before listing them as loadable.
 fn slotAt(alloc: std.mem.Allocator, i: usize) Slot {
     const bytes = readSlot(alloc, i) catch |e| return if (e == error.FileNotFound) .empty else .{ .unreadable = .damaged };
     defer alloc.free(bytes);
@@ -322,11 +316,10 @@ pub const Autosave = struct {
     slot: usize,
     bytes: std.ArrayList(u8),
     snapshot: ?*format.Snapshot = null,
-    /// The run's map, fixed for an autosave's life, that `snapshot.map` already copies.
+    /// Immutable map already held by the worker snapshot.
     mapped: ?*const atlas.Atlas = null,
     visits_held: bool = false,
     since: f32 = GAP_S,
-    /// Copy the run on the frame, then write the snapshot off-thread.
     writer: ?std.Thread = null,
     finished: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
     failed: ?anyerror = null,
@@ -348,7 +341,7 @@ pub const Autosave = struct {
         return self.failed;
     }
 
-    /// Not mid-door, mid-turn or mid loot visit: a foe's turn to face the hero is only in `facing` once it is drawn, and a visit's turn is spent as it closes.
+    /// Facing settles at impact. A loot visit spends its turn on close.
     pub fn step(self: *Autosave, g: *game.Game, dt: f32) void {
         self.since += dt;
         if (!self.finished.load(.acquire)) return;
@@ -408,7 +401,7 @@ pub const Autosave = struct {
         self.writer = null;
     }
 
-    /// A slot that will not delete is emptied, so it holds no run that would load.
+    /// Fall back to an empty slot if deletion fails.
     pub fn end(self: *Autosave) ?anyerror {
         self.wait();
         remove(self.slot) catch |e| {

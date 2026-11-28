@@ -1,186 +1,40 @@
 # Items and progression
 
-Balance, skill paths and item catalogs live in source. This document records
-transaction rules and integration behavior.
+## Equipment and loot
 
-| Responsibility | Owner under `src/` |
+Any class can wear gear whose requirements it meets. Validate the complete loadout, excluding each item's own bonuses from its requirements. A swap must leave room in the bag for every displaced item and preserve requirements already met by retained gear. Old saves can contain unmet requirements. Such items may come off or remain in their existing slots. A quiver fits beside a ranged weapon, including a two-handed one, or an empty main hand. [Gear rules](../src/play/gear.zig) · [Inventory transactions](../src/play/inventory.zig)
+
+Each class starts with its own weapons and both flasks. Skills check their weapon, implement or shield requirement at use. A bump uses the wielded melee weapon or the class's unarmed blow. Equipping, removing or dropping an item costs an action. Raising maximum life through equipment or allocation preserves current HP. [Class kits](../src/play/hero.zig) · [Skill requirements](../src/play/skillbar.zig)
+
+| Interaction | Result |
 | --- | --- |
-| Item identity, bases and innate effects | `play/items.zig`, `play/item_bases.zig` |
-| Legal modifiers, rolls and names | `play/affixes.zig`, `play/loot.zig` |
-| Loadout validation and storage | `play/gear.zig`, `play/inventory.zig`, `play/ground_items.zig` |
-| Attributes and class bases | `play/attrs.zig`, `play/hero.zig` |
-| XP, ranks, costs and point spending | `play/progress.zig` |
-| Passive graph and grants | `play/passives.zig` |
-| Flasks and supplies | `play/flask.zig`, `play/consumable.zig` |
-| Combat and recovery integration | `game/sim.zig`, `game/attacks.zig`, `game/combat.zig`, `game/skills.zig`, `game/rewards.zig` |
-| Equipment and loot commands | `game/character.zig` |
+| Open a closed chest | Spend an action to reveal its contents in place. A mimic reveals itself. The jail's outside chest holds an interchangeable Small Key, consumed on a successful unlock. |
+| Step onto a stocked bag or open chest | Movement opens its loot panel when no foe is visible. Deliberate Interact browses a sole bag or open chest for free. Doors always require a choice. |
+| Take items or supplies | Take all fills available bag and stack space from the selected cell. Closing the panel spends one action for everything taken. Browsing is free. |
+| Collect gold | Loose coins collect on arrival, or for an action through Interact. Bag and chest gold collects free when closing that cell's loot panel. A chest with only gold needs no panel. |
 
-## Inventory and loot transactions
+The ground displays one bag per stocked cell and distinct sprites for loose coins, stocked chests and empty chests. Arrival names items underfoot. [Loot commands](../src/game/character.zig) · [Reward resolution](../src/game/rewards.zig)
 
-Inventory is a list without weight or stash. Equipment has main hand, offhand,
-helm, chest, belt, gloves, boots, two rings, amulet and two flask slots.
-A main-hand item allows an offhand unless it occupies both hands; a quiver goes
-beside a ranged weapon, two-handed included, or an empty main hand. Newly equipped
-items must meet their requirements, and changes cannot make another item's met
-requirements unmet; an item cannot fund its own requirement. Unchanged gear whose
-requirements were already unmet on load does not block changes to other slots.
+## Item rolls and damage
 
-Any class may equip any base whose requirements it meets, and loot and merchant
-shelves roll every base. Each class starts wearing its own weapons
-(`hero.Class.arms`). A skill needs its weapon in hand (`skillbar.Act.arms`):
-melee skills a melee weapon, ranged skills a ranged weapon, spells a wand or
-staff and Shield Bash a shield; flasks and supplies need nothing. Without it the
-skill is dimmed and refused. A bump uses an equipped melee weapon, falling back to
-the class's own blow when none is equipped.
+Normal gear has fixed base properties. Magic names reflect affixes. Rare names persist independently of modifiers. Gear rolls draw from the equippable bases except flasks. Small Keys have no equipment slot or affixes. A hidden tier limits eligible modifiers and their values. Chests and merchants use the area's door distance from the start. Foes use the higher of area level and the level derived from their base life. Spoils scales gold once at pickup with probabilistic rounding. Its rarity bonus scales the nested quality thresholds when loot rolls, preserving drop frequency. [Bases](../src/play/item_bases.zig) · [Affixes](../src/play/affixes.zig) · [Loot rolls](../src/play/loot.zig)
 
-Successful equip, unequip and drop each spend a turn. Raising maximum life through
-equipment or allocation does not heal current HP. Death loses run equipment,
-inventory and progression; persistence follows [SAVE_FORMAT.md](SAVE_FORMAT.md).
+Strength scales heavy weapons, Dexterity light weapons and Intelligence spells. Multi-style attacks take the mean increase. The equipped weapon supplies its delivery and scaling, and caster implements supply spell scaling. Apply bonuses to their matching damage components. Use the same prepared blow, hit range, reach, area and cooldown helpers for previews, inspection and resolution. [Progression calculations](../src/play/progress.zig) · [Combat resolution](../src/game/attacks.zig)
 
-A first bump or Interact opens a closed chest for one turn, revealing contents
-without a modal. Stepping onto a bag or stocked open chest opens loot for the
-movement turn; bags remain walkable with items left behind. Automatic opening
-is suppressed while a foe is visible. Deliberate Interact browses a sole bag/open
-chest for free. Multiple nearby objects offer a choice; doors always keep that
-choice so queued input cannot immediately return through an arrival door.
+| Effect | Rule |
+| --- | --- |
+| Serrated and Grievous | Serrated raises bleed chance for the wielded weapon's delivery. Grievous snapshots extra damage on a hero-inflicted bleed for ticks when its victim moves or is displaced. Refreshes keep the strongest base and movement bonus independently. Splits, travel and saves preserve the wound. |
+| Composure and Cleansing | Composure resists every mental-tagged status. A successful life-flask drink clears one wound in status declaration order before the turn advances. Its resistance buildup survives. |
+| Anchorage | Prevents a one-cell incoming knockback or pull while allowing the hit to resolve. |
+| Thorns | A connected adjacent melee hit retaliates even when shielded or lethal. Attacker armour applies. Thorns use a separate damage path from weapon procs, criticals, culling, blow recovery and Unyielding. Death, splits and rewards resolve with the incoming impact. |
+| Recovery | Equipment kill healing can trigger on status kills. Passive kill healing requires a killing blow. Show recovery with its hit or tick. Fractional regeneration progress survives travel and saves. |
 
-Small Keys are unequippable inventory items. A compatible locked gate consumes
-one on a successful unlock; an unlocked or already open gate consumes none.
-The jail encounter places its Small Key in the outside chest, using ordinary
-loot collection. Keys do not roll as equipment or receive affixes.
+## Turn and progression rules
 
-Loot shows only the selected cell. Take item affects its selected row; Take all
-fills available inventory space and leaves excess items. All items and supplies
-taken during one visit cost one turn together when loot closes, including Back
-or leaving for another screen. Closing without taking items or supplies is free.
-An empty modal closes.
+A level grants separate active and passive points. Only learned class skills and innate utilities can be bound. Shoot has one fixed rank. Compatible saves refund excess ranks once. Mana costs round up with a minimum of one for paid skills. Cooldown floors account for the turn spent casting. [Active skills](DIABLO2_SKILL_TREE.md) · [Passives](POE2_PASSIVE_TREE.md) · [Save format](SAVE_FORMAT.md)
 
-Ground gold without items is a coin drop, collected on stepping onto it without
-an extra turn or modal; Interact can take it for one turn. Gold with items shares
-their bag, and chest gold stays in its chest. Loot shows gold beside the position
-count, not as an item row, and takes it free as the modal closes. A chest containing
-only gold is collected without opening loot. Gold needs no inventory space.
-Movement and browsing do not collect gold from bags or chests.
+Worn flasks receive kill charges and can be drunk. Charges persist while unequipped. Drinking ends Guard and Overwatch and restarts that flask's recovery. Its first tick comes on the next spent turn before foes act. Supplies stack separately from equipment and can be used from inventory or a bound slot. [Flasks](../src/play/flask.zig) · [Supplies](../src/play/consumable.zig)
 
-One bag marker represents each item-bearing ground cell. Coin-only cells use coin
-sprites; nonempty open chests use the chest/bag sprite and empty ones the open
-chest sprite. Coins have no lights.
+Haste can spare the action's turn. Waiting and forced stun turns always advance time. Idle frames and free actions do not age statuses, preparations or ground effects. Unyielding can be switched off at zero mana. Ground effects stay on their node, and the hero carries active stances through doors. Movement clears Steady Aim. A raised skeleton fights visible foes, including surfaced swimmers within melee reach, and follows through doors when space permits. [Tactical skills](../src/play/tactics.zig) · [Foe rules](../src/game/foe_rules.zig)
 
-## Items and combat effects
-
-Base identity is independent of normal, magic or rare quality. Normal items have
-fixed base properties; magic and rare items add legal rolled modifiers.
-Magic names describe their prefix/suffix rolls. Rare two-part names are saved
-independently of their modifiers. Innate effects remain separate from affixes;
-`affixes.Mod.allows` owns equipment restrictions.
-
-Serrated adds to the wielded weapon's innate bleed chance, only for that weapon's
-delivery. Grievous is recorded on each hero-inflicted bleed, including skill bleeds;
-its extra damage applies only on a turn the victim moves or is displaced. Refreshes
-keep the stronger base and movement bonus independently; expiry resets both.
-Splits, travel and saves preserve the wound, and changing gear does not change it.
-Composure adds resistance to every mental-tagged status through the shared combat
-stats resolver. Anchorage reduces incoming knockbacks and pulls; current attacks
-move one tile, so the modifier prevents that displacement without preventing damage.
-Cleansing removes one active wound before a life flask's turn advances, in status
-order: bleed, sunder, enfeeble, maim. It clears the whole status, preserves resistance
-buildup, and does nothing for refused drinks or mana flasks.
-
-A hidden tier caps every rolled modifier, and items never store or show it.
-An area's level comes from its door distance to the start, and a foe's from its
-life. A foe drop rolls at the higher of the two, and chests and merchant shelves
-at their node's level. Lower tiers cap each value below its range's best and
-leave out the modifiers marked for higher tiers. Levels, tiers and gates live in
-`play/loot.zig` and `play/affixes.zig`.
-
-Strength scales heavy weapons, Dexterity light weapons and Intelligence spells.
-A base may scale with several styles, taking their mean increase; a caster
-implement's scaling applies to spells. Rank and Steady Aim bonuses raise each
-style in the scaling. Melee/ranged delivery independently selects the equipped
-weapon. Basic attacks, skills, rank bonuses and previews share weapon lookup and
-damage calculations. Caster implements have no innate attack. Weapon and spell
-critical bonuses are separate; damage-type bonuses affect only matching
-components.
-
-Equipment and passive recovery combine through `Simulation.heroPerks`.
-Worn-item kill recovery also applies to status kills; passive kill recovery
-applies only to blows. Recovery is pictured with its killing impact or tick.
-Mana recovery keeps partial progress across spent turns, travel and saves.
-Paid skill costs round up to whole mana with a minimum of one.
-
-Thorns retaliate against a connected adjacent melee hit, including one absorbed
-by Mana Shield or lethal to the hero. Dodges, arrows and damage over time do not
-trigger them. Attacker armour applies; thorns cannot crit, apply weapon statuses,
-cull, trigger blow recovery or recurse. Kills still award normal rewards and
-equipment kill recovery for a surviving hero. Picture returned damage, death and
-splits with the incoming impact, separately from Unyielding.
-
-Spoils supplies separate gold and item-rarity bonuses. Gold scales once on pickup,
-with probabilistic fractional rounding. Rarity changes quality rather than drop
-count and uses equipment at the time foes/chests roll items. Both rarity thresholds
-scale and cap independently; the rare threshold is nested inside magic-or-rare.
-Rarity values live in `play/loot.zig`; gold scaling and rounding in
-`attrs.Attrs.collectedGold`.
-
-Reach, area, penetration, recovery and cooldown modifiers must reach aiming,
-previews, resolution and inspection through their shared simulation/progression
-helpers. Haste can make an action free, aging nothing and giving foes no action;
-waiting and stunned turns cannot be hastened.
-
-## Flasks, supplies and skill lifetime
-
-New runs equip life and mana flasks, which do not roll as loot. They can be
-unequipped, dropped and worn for a turn. Only a worn flask can be drunk or receive
-kill charges; stored charges remain while unequipped.
-
-Consumables spend a turn. Flask drinking spends charges and applies its first
-recovery tick before foes act; later ticks follow spent turns. Drinking again
-restarts that flask's recovery. Supplies stack in Inventory and can be used there
-or through bound slots showing their counts. Exact effects, capacities, durations
-and drops belong to `play/consumable.zig` and `play/flask.zig`.
-
-Idle frames and free actions never age preparations, stances or ground effects.
-A flask drink is an action and ends Guard and Overwatch. Unyielding can always
-be turned off, even with no mana. Barriers, fire walls and caltrops persist with
-their level; hero preparations and stances travel with the hero.
-
-Barrier and Fire Wall share two-endpoint targeting but retain their own placement
-rules. Both preview and resolution read those rules. Barriers block movement and
-projectiles but allow sight and do not replace terrain. Fire Wall applies normal
-burn resistance and ignites flammable ground through the map fire system.
-Reaction, projectile and split timing follow [ARCHITECTURE.md](ARCHITECTURE.md).
-
-## Progression and statuses
-
-Each level grants separate active and passive points. Only learned class skills
-may be bound; innate utilities remain available. Shoot is a fixed basic attack
-with equipment/attribute scaling and no skill-rank bonus. Compatible old saves
-refund excess Shoot ranks once. Rank costs and cooldown floors come from
-`progress.State`, including the turn consumed by using a skill.
-
-See [active skills](DIABLO2_SKILL_TREE.md) and [passives](POE2_PASSIVE_TREE.md)
-for graph and panel contracts. Keep authored paths and grant values in their
-source tables rather than copying them here.
-
-Each harmful status has independent innate resistance and temporary buildup.
-Only successful applications build resistance or refresh its expiry. Free actions
-and idle frames never age it. Slime splits inherit meters and bleed strength;
-travel and saves preserve them. Terrain and rain modifiers are resolved at the
-occupied tile, as described in [TERRAIN.md](TERRAIN.md). Duration, stacking and
-proc values remain in the owning status modules.
-
-Statuses carry overlapping tags; `resilience.tags` owns membership. Tags provide
-family selection for future effects and modifiers; they do not share resistance
-buildup or alter damage resistance. Tag membership is derived metadata, not saved
-actor state.
-
-## Presentation
-
-Items, equipment layout and Stats follow
-[DATA_PRESENTATION.md](DATA_PRESENTATION.md); input follows
-[CONTROLLER.md](CONTROLLER.md). [HUD_LAYOUT.md](HUD_LAYOUT.md) owns pictured
-resource timing and the event log's placement.
-
-`play/log.zig` owns saved events; `ui/journal.zig` renders them newest at the
-bottom. New events return scrolling to the newest entry. Arrival on dropped items
-names them without collecting them or repeating while idle.
+Harmful statuses build and expire resistance independently. A successful application refreshes its meter. Tags can overlap and are derived by status kind. Slime halves inherit meters, which travel and saves preserve. [Status rules](../src/play/resilience.zig) · [Terrain modifiers](TERRAIN.md) · [Impact timing](ARCHITECTURE.md)

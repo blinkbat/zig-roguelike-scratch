@@ -149,9 +149,8 @@ pub const FLAME_FILL = rgb(0xff5a14);
 pub const LEVEL_GOLD = rgb(0xe6c57c);
 pub const LEVEL_CORE = rgb(0xffedbd);
 pub const LEVEL_BODY_TINT = [3]f32{ 1, 0.72, 0.28 };
-/// The light left on a wholly darkened body, per channel.
+/// Per-channel light at full death darkening.
 pub const DEATH_RGB = [3]f32{ 0.65, 0.35, 0.32 };
-/// A pale flash remains visible over red bodies.
 pub const FLASH_RGB = [3]f32{ 0.88, 0.38, 0.30 };
 /// The light remembered terrain is drawn under, after Brogue's memory colour.
 pub const MEMORY_LIGHT = rgb(0x2b2f4e);
@@ -468,7 +467,6 @@ pub fn mini(t: grid.Tile, lit: bool) rl.Color {
 
 pub const AIM_REACH = fade(GOLD, 0.10);
 pub const AIM_PATH = fade(GOLD, 0.28);
-/// A braced foe's line: where its charge or hook will go.
 pub const BRACED = fade(rgb(0xe0503c), 0.32);
 pub const CHAIN = rgb(0x9a958c);
 pub const COLD = rgb(0x8cddf5);
@@ -564,7 +562,7 @@ pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 pub const CLEAR_A: f32 = 0.004;
 pub const FADED_A: f32 = 0.35;
 
-/// A shader drawing over it again (the gas veil) softens its own alpha alike.
+/// The gas veil must apply the same focus fade on its second pass.
 pub const Focused = struct {
     texel: [2]f32 = .{ 0, 0 },
     strength: f32 = 0,
@@ -614,7 +612,7 @@ pub const BOX_SHINE_WIDTH_PX: f32 = 20;
 pub const BOX_SHINE_GAIN: f32 = 0.05;
 const BOX_SHINE_SEED: u64 = 0xB0C5;
 
-/// How far through its wipe a box's shine is; each `key` keeps its own phase.
+/// Normalized shine progress with a separate phase per key.
 pub fn boxShine(seconds: f32, key: usize) ?f32 {
     return shineWipe(seconds, BOX_SHINE_SEED, .{ .x = @intCast(key), .y = 0 });
 }
@@ -630,7 +628,7 @@ fn shineWipe(seconds: f32, seed: u64, p: mathx.P) ?f32 {
     return t / SHINE_WIPE_S;
 }
 
-/// Of the shallows' colours, what deep water's art keeps: `tools/tile_art/deepen_water.lua`.
+/// Shallow-art color percentage used by tools/tile_art/deepen_water.lua.
 pub const WATER_DEEP_PERCENT = 60;
 pub const WATER_DEEP: f32 = mathx.fraction(WATER_DEEP_PERCENT);
 pub const WATER_SHALLOW: f32 = 1;
@@ -680,7 +678,7 @@ pub fn premultiplied(c: sky.Rgb, a: f32) rl.Color {
 
 const BACKING_A: f32 = 0.7;
 const BACKING_INK = rgb(0x101114);
-/// Panels stacked over one another: HUD, then menus and tooltips, then keyword definitions.
+/// Backing opacity increases with stacking depth.
 pub const Depth = enum { hud, menu, definition };
 const BACKING_DEPTHS = std.EnumArray(Depth, f32).init(.{ .hud = BACKING_A, .menu = 0.92, .definition = 0.99 });
 pub const BACKING = backingAt(.hud);

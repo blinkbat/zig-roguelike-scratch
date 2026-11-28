@@ -177,7 +177,6 @@ pub const Visibility = struct {
     carry_open: [grid.CELLS]f32,
     clear: [grid.CELLS]bool,
     clear_row: [grid.CELLS]bool,
-    /// Bumped each time the softened fields change.
     revision: u32 = 0,
 
     pub fn reset(self: *Visibility) void {

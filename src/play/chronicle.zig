@@ -88,7 +88,7 @@ pub const Chronicle = struct {
         self.turns[self.head] = .{ .number = self.count, .start = start };
     }
 
-    /// The turn under way takes `start` if nothing has happened in it yet.
+    /// Update the current turn's start only while it has no events.
     pub fn restart(self: *Chronicle, start: Start) void {
         const t = self.current() orelse return self.begin(start);
         if (t.n == 0) t.start = start;
@@ -98,7 +98,7 @@ pub const Chronicle = struct {
         return if (self.n == 0) null else &self.turns[self.head];
     }
 
-    /// Past `EVENTS` in one turn the rest go unrecorded, but harm takes the last place so the killing blow is kept.
+    /// Reserve the final event for the latest harm so overflow cannot hide a killing blow.
     pub fn note(self: *Chronicle, e: Event) void {
         const t = self.current() orelse return;
         if (!mathx.push(Event, &t.events, &t.n, e) and e == .hurt) t.events[EVENTS - 1] = e;

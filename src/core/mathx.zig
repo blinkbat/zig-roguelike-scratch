@@ -31,13 +31,13 @@ pub fn unitToward(a: [2]f32, b: [2]f32) [2]f32 {
     return .{ (b[0] - a[0]) / l, (b[1] - a[1]) / l };
 }
 
-/// The line from `from` through `mark`, carried on to at least `reach` cells out.
+/// Extend the line through a distinct mark to at least reach cells.
 pub fn onTo(from: P, mark: P, reach: i32) P {
     const d = dist(from, mark);
     return from.add(mark.sub(from).scaled(@divFloor(reach + d - 1, d)));
 }
 
-/// Within this of its target an ease lands on it exactly.
+/// Snap tolerance for easing.
 pub const SETTLE: f32 = 1e-3;
 
 pub fn ease(v: f32, want: f32, up: f32, down: f32) f32 {
@@ -49,7 +49,7 @@ pub fn easing(dt: f32, rate: f32) f32 {
     return 1 - @exp(-dt * rate);
 }
 
-/// `std.math.pow`'s squarings for a whole power, without its generic path; equal wherever no step goes subnormal.
+/// Matches std.math.pow for normal intermediate values.
 pub fn powi(x: f32, comptime n: u32) f32 {
     var a: f32 = 1;
     var s = x;
@@ -74,7 +74,7 @@ pub fn roundTiesDown(v: f32) i32 {
     return @intFromFloat(@ceil(v - 0.5));
 }
 
-/// A cell. The grid is y-DOWN: north is (0, -1) everywhere.
+/// Grid coordinates increase southward.
 pub const P = struct {
     x: i32,
     y: i32,
@@ -108,7 +108,7 @@ pub const P = struct {
     }
 };
 
-/// The middle of `p`, in cells: `cellOf` of it is `p`.
+/// Cell center in grid coordinates.
 pub fn centre(p: P) [2]f32 {
     return .{ @as(f32, @floatFromInt(p.x)) + 0.5, @as(f32, @floatFromInt(p.y)) + 0.5 };
 }
@@ -141,12 +141,12 @@ pub fn percentCeil(v: i32, pc: i32) i32 {
     return std.math.lossyCast(i32, @divTrunc(@as(i64, v) * pc + PERCENT - 1, PERCENT));
 }
 
-/// A non-negative `v` cut by `pc` percent, rounded up.
+/// Remaining amount after a percentage reduction, rounded up.
 pub fn lessCeil(v: i32, pc: i32) i32 {
     return percentCeil(v, PERCENT - pc);
 }
 
-/// A non-negative amount counted in hundredths, rounded up as often as its fraction.
+/// Stochastically round nonnegative hundredths.
 pub fn percentRound(hundredths: i64, rng: *Rng) i64 {
     const part: u32 = @intCast(@mod(hundredths, PERCENT));
     return @divTrunc(hundredths, PERCENT) + @intFromBool(part > 0 and rng.percent(part));
@@ -196,7 +196,7 @@ pub fn wrap(i: usize, by: i32, n: usize) usize {
     return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
 }
 
-/// As `wrap`, over none and then `0..n`.
+/// Cycle through null followed by indices 0..n.
 pub fn wrapOptional(comptime T: type, i: ?T, by: i32, n: usize) ?T {
     const to = wrap(if (i) |v| @as(usize, v) + 1 else 0, by, n + 1);
     return if (to == 0) null else @intCast(to - 1);
@@ -208,7 +208,7 @@ pub fn cycleOptional(comptime T: type, v: ?T, by: i32) ?T {
     return if (wrapOptional(usize, at, by, all.len)) |i| all[i] else null;
 }
 
-/// As `wrap`, but held at the first and the last instead.
+/// Clamp movement at either end of the list.
 pub fn nudge(i: usize, by: i32, n: usize) usize {
     if (n == 0) return 0;
     return @intCast(std.math.clamp(@as(i32, @intCast(i)) + by, 0, @as(i32, @intCast(n - 1))));
@@ -228,13 +228,13 @@ pub fn clampTop(top: usize, n: usize, rows: usize) usize {
     return @min(top, n -| rows);
 }
 
-/// The value `by` places on from `v` in `list`, wrapping round; counted from `missing` when `v` is not in it.
+/// Use missing as the starting index when v is absent.
 pub fn stepIn(comptime T: type, list: []const T, v: T, by: i32, missing: ?usize) T {
     const at = std.mem.indexOfScalar(T, list, v) orelse missing.?;
     return list[wrap(at, by, list.len)];
 }
 
-/// Chebyshev, to match 8-way movement: every step, range and gap on the grid.
+/// Chebyshev distance in eight-way grid steps.
 pub fn dist(a: P, b: P) i32 {
     return @intCast(@max(@abs(a.x - b.x), @abs(a.y - b.y)));
 }
@@ -302,7 +302,7 @@ pub fn unslot(i: usize, w: usize) P {
     return .{ .x = @intCast(i % w), .y = @intCast(i / w) };
 }
 
-/// Sight's round reach: a cell half a cell past `r` is still in it.
+/// The sight radius includes a half-cell margin.
 pub fn reaches(a: P, b: P, r: f32) bool {
     return distEuclid(a, b) <= r + 0.5;
 }
@@ -315,7 +315,7 @@ pub fn ahead(origin: P, heading: P, p: P) bool {
     return along > 0 and @abs(across) <= along;
 }
 
-/// Every field of `p.*` that declares a default set to it, as `alloc.create` does not.
+/// Initialize only fields with declared defaults after alloc.create.
 pub fn defaults(p: anytype) void {
     inline for (std.meta.fields(@TypeOf(p.*))) |f| {
         if (comptime f.defaultValue()) |d| @field(p.*, f.name) = d;
@@ -415,7 +415,7 @@ const DELTAS = std.EnumArray(Dir, P).init(.{
 
 pub const ALL_DIRS = std.enums.values(Dir);
 
-/// The four straight steps, east, west, south, north: generators draw in this order.
+/// Cardinal order is part of seeded generation.
 pub const CARDINALS = [_]P{ Dir.e.delta(), Dir.w.delta(), Dir.s.delta(), Dir.n.delta() };
 
 pub fn stepDir(d: P) ?Dir {
@@ -457,7 +457,7 @@ pub fn headingOf(dx: f32, dy: f32) f32 {
 
 const HYST: f32 = 0.14;
 
-/// `bias` is the sector currently held, kept for an extra `HYST` radians so a thumb on a boundary does not flicker.
+/// Keep the held sector for an extra HYST radians at its boundary.
 pub fn dirOf(heading: f32, bias: ?Dir) Dir {
     const raw: Dir = @enumFromInt(@as(u3, @intCast(@mod(@as(i32, @intFromFloat(@floor(heading / SECTOR + 0.5))), @as(i32, ALL_DIRS.len)))));
     const b = bias orelse return raw;
@@ -538,7 +538,7 @@ pub const Rng = struct {
         return self.unit() * TAU;
     }
 
-    /// An index under `n`, each as likely as its `weight`; null when all weigh nothing.
+    /// Weighted random index, or null if all weights are zero.
     pub fn weighted(self: *Rng, n: usize, ctx: anytype, comptime weight: fn (@TypeOf(ctx), usize) u32) ?usize {
         var total: u32 = 0;
         for (0..n) |i| total += weight(ctx, i);
@@ -556,7 +556,7 @@ pub const Rng = struct {
         return items[self.below(@intCast(items.len))];
     }
 
-    /// One of the first `n.*` items at random, taken out by moving the last into its place.
+    /// Uniform draw with swap removal.
     pub fn takeFrom(self: *Rng, comptime T: type, items: []T, n: *usize) T {
         return swapRemove(T, items, n, self.below(@intCast(n.*)));
     }

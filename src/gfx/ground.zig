@@ -6,7 +6,7 @@ const look = @import("look.zig");
 
 const P = mathx.P;
 
-/// Lowest first among the grounds with a sheet, and among those without.
+/// Ascending layer order within each sheet-availability group.
 pub const Ground = enum {
     chasm,
     lava,
@@ -22,7 +22,7 @@ pub const Ground = enum {
     bridge,
     cobble,
 
-    /// Exported to `assets/ground/<name>-ground.png` by `export_ground.lua`, which names its Desktop source.
+    /// See tools/tile_art/export_ground.lua for Desktop sources.
     pub fn png(comptime g: Ground) []const u8 {
         return @tagName(g) ++ "-ground.png";
     }
@@ -96,7 +96,7 @@ comptime {
     }
 }
 
-/// Under standing tiles, the neighbours' majority ground (only seen ones vote with `seen_only`), lowest rank on ties; otherwise `look.under`.
+/// Use eligible neighbors (seen when requested), lowest rank on ties, then look.under.
 pub fn bedAt(lv: *const grid.Level, p: P, seen_only: bool) ?Ground {
     const t = lv.at(p);
     if (of(t)) |g| return g;
@@ -130,10 +130,10 @@ pub const Beds = struct {
     lo: P,
     hi: P,
     held: Box,
-    /// By `slot`: the map and a cell off each edge, so a point's corners are read unchecked.
+    /// One-cell border permits unchecked corner reads.
     rank: [SPAN * (grid.ROWS + 2)]u8,
     shown: Grounds,
-    /// The corner points from `lo` to `hi`, both included, row by row.
+    /// Row-major corners, both endpoints included.
     point: [grid.CORNERS_W * grid.CORNERS_H]Point,
     across: usize,
 
@@ -144,7 +144,7 @@ pub const Beds = struct {
         return @as(usize, @intCast(p.y + 1)) * SPAN + @as(usize, @intCast(p.x + 1));
     }
 
-    /// Slots back from a point's south-east cell to each of `AROUND`, in its order.
+    /// Offsets from the southeast cell in AROUND order.
     const AROUND_SLOT = blk: {
         var back: [AROUND.len]usize = undefined;
         for (AROUND, &back) |a, *o| o.* = @intCast(-(a.d.y * @as(i32, SPAN) + a.d.x));
@@ -160,7 +160,7 @@ pub const Beds = struct {
         }
     };
 
-    /// `seen_only` leaves out cells never seen, as play draws; the editor draws them all.
+    /// Enable seen_only for play and disable it for the editor.
     pub fn fill(b: *Beds, lv: *const grid.Level, lo: P, hi: P, seen_only: bool) void {
         b.lo = lo;
         b.hi = hi;
@@ -227,7 +227,7 @@ const SW: u4 = 4;
 const SE: u4 = 8;
 pub const FULL: u4 = NW | NE | SW | SE;
 
-/// A ground sheet's 16 cells, read across its 4x4 block, by mask: `tools/tile_art/ground_corners.lua`.
+/// Row-major 4×4 sheet cells by mask. See tools/tile_art/ground_corners.lua.
 pub const ORDER = [MASKS]u4{ 9, 12, 4, 8, 10, 15, 13, 14, 6, 11, 7, 3, 5, 2, 1, 0 };
 const MASKS: usize = @as(usize, FULL) + 1;
 pub const COLS: usize = 4;
@@ -257,7 +257,7 @@ comptime {
     }
 }
 
-/// The four cells round point `c`, which lies at the top-left corner of cell `c`, with their bits.
+/// Bit assignments around the top-left corner of cell c.
 pub const AROUND = [4]struct { d: P, bit: u4 }{
     .{ .d = .{ .x = -1, .y = -1 }, .bit = NW },
     .{ .d = .{ .x = 0, .y = -1 }, .bit = NE },
@@ -362,7 +362,7 @@ fn landBank(south: grid.Tile) ?Bank {
     };
 }
 
-/// A bank's face and cap across a dual-grid point, its columns in the art: the west end, a joined middle, the east end.
+/// Native sheet columns run from west end through joined middle to east end.
 pub const BankPiece = enum(u8) {
     left,
     repeat,
@@ -784,7 +784,7 @@ test "water cliff faces dry north banks with joined middles and separate ends" {
     try std.testing.expectEqual(@as(?f32, null), bankLip(&lv, .{ 10.75, 0 }));
 }
 
-/// The values in a tile-art script after `after`, to its `}` when it opens a table or else to the line's end, are `want`.
+/// Checks values after the marker through the closing brace or line ending.
 pub fn expectLuaList(comptime T: type, want: []const T, path: []const u8, after: []const u8) !void {
     const alloc = std.testing.allocator;
     const lua = try std.fs.cwd().readFileAlloc(alloc, path, 1 << 16);

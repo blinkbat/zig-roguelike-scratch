@@ -109,7 +109,7 @@ pub const Section = struct {
         } else true;
     }
 
-    /// Whether it changed; null erases. What no longer fits on or over the cell goes with it.
+    /// Null erases a cell. Painting prunes incompatible fixtures and foes.
     pub fn paint(self: *Section, p: P, t: ?grid.Tile) bool {
         if (!ROOM.holds(p)) return false;
         if (t) |put| if (put.stamped()) return false;
@@ -186,7 +186,7 @@ pub const Section = struct {
         return self.bodies() <= actor.MAX;
     }
 
-    /// Where a roll lays it, or null when it paints nothing.
+    /// Unpainted sections have no placement.
     pub fn lands(self: *const Section, seed: u64, doors: []const P) ?Placed {
         const b = self.box() orelse return null;
         const to = switch (self.anchor) {
@@ -197,7 +197,7 @@ pub const Section = struct {
     }
 };
 
-/// Every corner that keeps `b` in `ROOM` and its ring off the doors is as likely; with none, it stays where painted.
+/// Uniformly choose a fitting corner clear of doors, or keep the authored position.
 fn roam(b: grid.Box, seed: u64, doors: []const P) P {
     const corners = grid.Box{ .lo = ROOM.lo, .hi = ROOM.hi.sub(.{ .x = b.width() - 1, .y = b.height() - 1 }) };
     const w: usize = @intCast(corners.width());
@@ -245,7 +245,7 @@ pub const Placed = struct {
         return out;
     }
 
-    /// Its tiles and barrels over the roll's, and on its cells its own torches alone.
+    /// Painted cells replace generated tiles, barrels and torches.
     pub fn stamp(self: Placed, lv: *grid.Level) void {
         const s = self.section;
         for (s.tile, s.barrel, 0..) |t, b, i| {

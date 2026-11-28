@@ -96,7 +96,7 @@ fn descLines(g: *const game.Game, face: *const font.Face, act: skillbar.Act) usi
     return font.lineCount(face, describe(g, act, &desc), font.SMALL, BIND_DESC_W);
 }
 
-/// Tall enough for the longest description among the skills it can bind, so it keeps its size while browsing.
+/// Size for the longest bindable description so browsing keeps a fixed panel.
 pub fn bindPanel(g: *const game.Game) P {
     const face = bindFace(g);
     var kit_buf: skillbar.KitBuf = undefined;
@@ -133,7 +133,7 @@ fn drawSlot(g: *game.Game, box: rl.Rectangle, s: SlotLook) void {
     p.draw(&g.face, x + SLOT_MID, y + game.SLOT_PX + game.KEY_GAP + @divTrunc(game.PROMPT_PX, 2), game.PROMPT_PX, a);
 }
 
-/// While aiming, the set the reticle's skill was taken from, whatever is held now.
+/// Aiming retains the set chosen at activation.
 fn shownSet(g: *const game.Game) skillbar.Set {
     return if (g.mode == .aim) g.mode.aim.set else skills.activeSet(g);
 }
@@ -314,18 +314,19 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     var n = hudSpots(g, out[0..HUD_SPOTS]);
     const cam = game.scene.Cam.of(g);
     for (0..g.sim.pool.n) |i| {
-        const source = actorSource(g, cam, i) orelse continue;
+        const source = actorSource(g, cam, i, null) orelse continue;
         const part = actorPart(g, source, i) orelse continue;
         _ = mathx.push(Part, out, &n, part);
     }
     return out[0..n];
 }
 
-fn actorSource(g: *const game.Game, cam: game.scene.Cam, i: usize) ?rl.Rectangle {
+fn actorSource(g: *const game.Game, cam: game.scene.Cam, i: usize, mark: ?P) ?rl.Rectangle {
     const at = g.pic.drawnAt(&g.sim, i) orelse return null;
     if (g.pic.pictured[i].down()) return null;
+    if (mark) |cell| if (!game.cellUnder(at).eq(cell)) return null;
     const p = cam.px(at);
-    return raster.rect(p.x, p.y, game.CELL, game.CELL);
+    return raster.rect(p.x, p.y - g.pic.glide[i].lift(), game.CELL, game.CELL);
 }
 
 fn actorPart(g: *const game.Game, source: rl.Rectangle, i: usize) ?Part {
@@ -422,10 +423,35 @@ pub fn hovered(g: *const game.Game) ?Part {
     const source_point = g.cinema.lens.sourcePoint(p, g.screen);
     const cam = game.scene.Cam.of(g);
     for (0..g.sim.pool.n) |i| {
-        const source = actorSource(g, cam, i) orelse continue;
+        const source = actorSource(g, cam, i, null) orelse continue;
         if (raster.holds(source, source_point)) if (actorPart(g, source, i)) |part| return part;
     }
     return null;
+}
+
+fn aimedFoe(g: *const game.Game) ?Part {
+    if (g.mode != .aim) return null;
+    const mark = g.mode.aim.mark;
+    const id = g.sim.lv.who(mark);
+    const foe = g.sim.pool.getConst(id) orelse return null;
+    if (!foe.seenFoe(&g.sim.lv)) return null;
+    const i = actor.Pool.slot(id);
+    const source = actorSource(g, game.scene.Cam.of(g), i, mark) orelse return null;
+    return actorPart(g, source, i);
+}
+
+pub fn passiveTip(g: *const game.Game) ?Part {
+    if (g.keywords.focus != null or !g.st.device.pad()) {
+        if (g.keywords.keep_root) {
+            var buf: [SPOTS_MAX]Part = undefined;
+            return spotAt(spotsOf(g, &buf), g.inspecting);
+        }
+        if (hovered(g)) |here| {
+            if (here.spot == .actor) return aimedFoe(g) orelse here;
+            return here;
+        }
+    }
+    return aimedFoe(g);
 }
 
 pub fn drawTips(g: *game.Game) void {
@@ -437,17 +463,12 @@ pub fn drawTips(g: *game.Game) void {
         var buf: [SPOTS_MAX]Part = undefined;
         const spots = spotsOf(g, &buf);
         drawTip(g, inspected(g, spots));
-    } else if (g.keywords.focus != null or !g.st.device.pad()) {
-        if (g.keywords.keep_root) {
-            var buf: [SPOTS_MAX]Part = undefined;
-            if (spotAt(spotsOf(g, &buf), g.inspecting)) |here| drawTip(g, here);
-        } else if (hovered(g)) |here| drawTip(g, here);
-    }
+    } else if (passiveTip(g)) |here| drawTip(g, here);
 }
 
 fn drawTip(g: *game.Game, here: Part) void {
     if (g.mode == .play or g.mode == .aim) g.inspecting = here.spot;
-    hud.focus(here.box, round(here.spot));
+    if (g.mode != .aim or here.spot != .actor or here.spot.actor != g.sim.lv.who(g.mode.aim.mark)) hud.focus(here.box, round(here.spot));
     var title_buf: [TIP_TITLE_MAX]u8 = undefined;
     var body_buf: [TIP_BODY_MAX]u8 = undefined;
     const tip = tipOf(g, here.spot, &title_buf, &body_buf) orelse return;

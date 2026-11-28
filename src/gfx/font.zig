@@ -7,7 +7,7 @@ const keywords = @import("text_keywords.zig");
 const TTF = "Balthazar-Regular.ttf";
 const DATA_TTF = "SourceSans3-Regular.ttf";
 const ATLAS_PX: i32 = 96;
-/// Drawn from its own point-filtered atlas, not the mipmapped one.
+/// Native sizes use dedicated point-filtered atlases.
 const NATIVE_SIZES = [_]i32{ LABEL, SMALL, BODY, HEAD };
 /// Text size per pixel the shadow sits down and right.
 const SHADOW_STEP: i32 = 14;
@@ -26,7 +26,7 @@ pub const Face = struct {
     font: ?rl.Font = null,
     data_font: ?rl.Font = null,
     native: [NATIVE_SIZES.len]?rl.Font = @splat(null),
-    /// `load`'s symbols, whose glyphs follow the ASCII in the atlas; none when the atlas came out in another order.
+    /// Additional glyphs follow ASCII when the atlas preserves request order.
     symbols: [SYMBOLS_MAX]i32 = undefined,
     symbol_n: usize = 0,
     ordered: bool = false,
@@ -68,7 +68,6 @@ pub const Face = struct {
         return face;
     }
 
-    /// The font to walk `s` glyph by glyph at `size`; null where raylib's own text calls draw it.
     fn walkable(self: *const Face, s: []const u8, size: i32) ?rl.Font {
         if (!self.ordered or !printable(s)) return null;
         const fallback = if (dataSized(size)) self.data_font orelse self.font else self.font;
@@ -131,7 +130,7 @@ pub const Face = struct {
         }
     }
 
-    /// `s` whole, or as much of it as fits in `max` px beside "..." (its end kept when `keep_end`), in `buf`, which must not hold `s`.
+    /// Fit with an ellipsis, keeping the suffix when requested. Input must not alias buf.
     pub fn fit(self: *const Face, buf: []u8, s: []const u8, size: i32, max: i32, keep_end: bool) [:0]const u8 {
         const whole = std.fmt.bufPrintZ(buf, "{s}", .{s}) catch "";
         if (whole.len == s.len and self.width(whole, size) <= max) return whole;
@@ -241,7 +240,7 @@ pub const Face = struct {
         return cy - @divTrunc(size, 2);
     }
 
-    /// One symbol, UTF-8, its middle on `cx`, `cy`; `alt` where the font has no atlas.
+    /// Center one UTF-8 symbol, falling back to alt without an atlas.
     pub fn symbol(self: *const Face, sym: [:0]const u8, alt: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         const f = self.font orelse return self.glyph(alt, cx, cy, size, col);
         const cp = std.unicode.utf8Decode(sym) catch null;
@@ -392,7 +391,7 @@ const Ink = struct {
     }
 };
 
-/// `put` as raw quads inside an open `rl_quads` batch, coloured down the line by `ink`, split where its gradient bends.
+/// Requires an open rl_quads batch.
 fn putInked(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, ink: Ink) void {
     const src, const dst = placed(f, i, x, y, scale);
     const tw, const th = raster.sizeOf(f.texture);
@@ -490,7 +489,7 @@ test "font fitting preserves linear results for native fallback and long ASCII t
     }
 }
 
-/// Between wrapped lines of text, past the text's size.
+/// Extra pixels between wrapped lines.
 pub const LEADING: i32 = 4;
 pub const SMALL_LINE: i32 = SMALL + LEADING;
 pub const HEAD_LINE: i32 = HEAD + LEADING;
@@ -674,19 +673,19 @@ fn scaleOf(f: rl.Font, size: i32) f32 {
     return @as(f32, @floatFromInt(size)) / @as(f32, @floatFromInt(f.baseSize));
 }
 
-/// Glyph `i`'s advance as raylib's MeasureTextEx sums it, unscaled.
+/// Unscaled MeasureTextEx advance.
 fn measured(f: rl.Font, i: usize) f32 {
     const g = f.glyphs[i];
     return if (g.advanceX > 0) @floatFromInt(g.advanceX) else f.recs[i].width + @as(f32, @floatFromInt(g.offsetX));
 }
 
-/// Glyph `i`'s pen advance as raylib's DrawTextEx steps it.
+/// DrawTextEx pen advance.
 fn advance(f: rl.Font, i: usize, scale: f32) f32 {
     const g = f.glyphs[i];
     return if (g.advanceX == 0) f.recs[i].width * scale else @as(f32, @floatFromInt(g.advanceX)) * scale;
 }
 
-/// Glyph `i`'s padded atlas source and screen destination, as raylib's DrawTextCodepoint places them.
+/// DrawTextCodepoint atlas padding and screen placement.
 fn placed(f: rl.Font, i: usize, x: f32, y: f32, scale: f32) struct { rl.Rectangle, rl.Rectangle } {
     const g = f.glyphs[i];
     const r = f.recs[i];
@@ -701,7 +700,6 @@ fn placed(f: rl.Font, i: usize, x: f32, y: f32, scale: f32) struct { rl.Rectangl
     return .{ src, dst };
 }
 
-/// raylib's DrawTextCodepoint, glyph `i` already found.
 fn put(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, col: rl.Color) void {
     const src, const dst = placed(f, i, x, y, scale);
     raster.blit(f.texture, src, dst, col);

@@ -1,94 +1,49 @@
 # HUD layout
 
-The HUD is one fixed-width assembly centered at the bottom: red life orb, skills,
-then blue mana orb. Controls follow [CONTROLLER.md](CONTROLLER.md); wording and
-typography follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md).
+The map fills the window. A fixed 640px HUD sits at bottom center with room for the camera above `hud.COVER`. Geometry and drawing live in [ui/hud.zig](../src/ui/hud.zig). [game/overlay.zig](../src/game/overlay.zig) supplies pictured resources, skills and statuses.
 
-## Contents
+## Runtime layout
 
-| Show | Presentation |
-|---|---|
-| Life | Red circular reservoir, filled from the bottom; current / maximum above the orb |
-| Mana | Matching blue reservoir and current / maximum |
-| Assigned skills | Existing skill pictures and each slot's input icon (`prompt_icon.Prompt`); active secondary set uses the same slots |
-| Skill availability | Existing held/aimed state, dimming when unavailable, remaining cooldown on the skill |
-| Experience | Thin bar of 10 segments over the skill strip: a faint white track, filled with a warm parchment gradient through the current level |
-| Active ailments | Small icons with remaining turns, only while active, just above the central strip |
-| Status resistance | A gold buildup meter while active; inspection lists each status's resistance and expiry separately |
-| Minimap | Existing upper-right map, outside the bottom assembly |
-| Time of day | A thin line under the minimap: the sun rides it from sunrise to sunset, the moon from sunset to sunrise, following the drawn hour (`Presentation.hour_shown`) |
-| Event log | Bottom-left panel, newest at bottom, color-coded events during exploration and combat |
-| Character and Menu | Small, borderless actions with glyphs in the bottom-right gutter while keyboard/mouse hints are active |
+| Region | Placement and contents |
+| --- | --- |
+| Life and mana | Two 96px orbs flank the seven skill slots. Each shows a horizontal fill, dark empty well, highlight and exact current/maximum value above its painted rim. |
+| Skill plate | A continuous 94px-high backing at 70% opacity, with a 25% shadow, reaches each orb's center. Slots show the active set, input glyph, availability, cooldown or remaining drinks, and held/aimed state. |
+| Experience and statuses | Ten XP segments run over the skill strip. Active 40px status tiles stack upward, centered between the orbs. Tiles show remaining turns and active resistance buildup. Inspection gives individual resistance and expiry. Tooltips open above the highest row. |
+| Minimap | Top right in a 9px frame. Transparent unexplored cells expose a 70% fog-gray backing. A sun or moon moves along the line below it with `Presentation.hour_shown`. |
+| Event log | Bottom left, 12px from both edges, 360px tall and 120–330px wide. The newest event is at the bottom. Text, background and border fade to 10% at the top. New events return to the latest entry. |
+| Character and Menu | Small borderless glyph actions in the bottom-right gutter while keyboard/mouse hints are active. |
 
-The live HUD omits the hero-name label, enemy counters, gold tally and permanent control instructions. No screen names a key or button in words; menus and the bind screen show concise action labels beside device glyphs. Life and mana flasks use assigned skill slots, including remaining drinks. Exact XP, levels, equipment and both skill trees appear in Character.
-
-## Layout and placeholder art
-
-- Target a 640-pixel-wide assembly, horizontally centered from `Game.screen`. Its width does not grow on a wider display.
-- Two 96-pixel resource wells flank the seven-slot skill strip, each under its own painted frame. One continuous backing plate extends behind the skills to each orb's center, so the orbs cover its ends. The plate is 94px tall, at 70% opacity with a 25% shadow.
-- Status boxes sit just above the XP bar, centred between the orbs, and further rows stack upward. Tooltips open above the topmost row.
-- The minimap background uses the shared fog gray at 70% opacity. Unexplored texture cells are transparent so they do not obscure that background; terrain and markers retain their contrast.
-- Keep the log 12px from the left and bottom edges, 360px tall. Its width follows the free gutter beside the HUD, capped at 330px. It has no heading; text, background and border fade together to 10% of their base opacity at the top. Tooltips and item comparisons follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md): effects and properties lead, with no flavor text, and separate selected and equipped item cards.
-- Mount the assembly close to the bottom edge. Draw the map behind it and at both sides instead of reserving a full-width black footer.
-- Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
-- Use Source Sans 3 for compact resource values and cooldowns, with Balthazar for headings and symbols; inputs are icons, not captions. Avoid extra explanatory prose in play.
-- Keep geometry, colours and draw functions together so authored orb/frame art can replace the primitives later. Reuse the existing skill images.
+Character holds exact XP, level, equipment and skill trees. Keep the play view free of a hero-name label, enemy counters, a gold tally and permanent control instructions. [Controls](CONTROLLER.md) · [Typography and inspection](DATA_PRESENTATION.md)
 
 ## Ownership and timing
 
-`src/ui/hud.zig` owns geometry and drawing; `src/game/overlay.zig` supplies
-game data through `drawHud` and `drawSkills`. The map spans `Game.screen`,
-with camera clearance from `hud.COVER`. The bind panel sizes for skill rows,
-wrapped descriptions and actions using Character's scale.
+Life and Mana Shield loss follow the pictured impact. Skill spending and flask sips update immediately. Recovery and cooldowns follow spent turns. Orb fills ease in both directions, then settle immediately on floor entry or loading. Labels show exact pictured values. XP follows `Presentation.xp_shown` after the turn is drawn. Fill animations stay out of saves. [Presentation](../src/game/presentation.zig)
 
-Life uses `Presentation.pictured`; Mana Shield spending follows its impact.
-Skill spending and flask sips update immediately; natural recovery and cooldowns
-follow spent turns. Life/mana fills ease in both directions while labels remain
-exact. New floors and resumed saves settle fills immediately. These floats are
-presentation-only and unsaved. XP follows `Presentation.xp_shown` once the turn
-is drawn.
-
-`play/log.zig` owns saved history; `ui/journal.zig` draws it. New events return
-to the latest entry; the wheel or HUD inspector scrolls it.
-
-Use `--shot-ui` with [AGENTS.md](../AGENTS.md#verification). Inspect full,
-partial, critical and empty resources, ailments, cooldowns, unavailable skills,
-both sets, binding and device glyphs at 1280x720, 1600x900 and 1920x1080.
-Capture definitions live in `src/game/shots/`.
-
-Status cards show underlined group names using `ui/keywords.zig`. Hovering a name
-or focusing it with Inspect opens a short definition above the parent card.
-The parent stays visible while entering the word or definition; keyword inputs
-never activate the underlying HUD or advance a turn. Capture coverage includes
-mouse hover, controller navigation and the scaled Advanced Stats menu.
+The log saves history in `play/log.zig` and renders it through `ui/journal.zig`. Use `--shot-ui` to inspect full, partial, critical and empty resources, ailments, cooldowns, both sets, bindings and glyphs at 1280×720 and larger supported sizes. [Verification](../AGENTS.md#verification)
 
 ## Aseprite paint template
 
-The working file is `C:/Users/DavidBennett/Desktop/hud-elements.aseprite`. Its canonical source copy is `assets/source/hud-elements.aseprite`. The sheet is 1024x1024 at native pixel scale; paint the individual components below the assembled reference on the top **Draw here** layer. Save the Aseprite document to preserve its layers and named slices.
+The 1024×1024 sheet has 21 named slices (20 components and one assembled reference). Its Desktop working file is `C:/Users/DavidBennett/Desktop/hud-elements.aseprite` and its canonical copy is `assets/source/hud-elements.aseprite`. Inspect and back up the owner's latest paint before exporting. Slice dimensions below apply to the template.
 
-These are template dimensions, not current runtime geometry. Inspect owner edits before adapting the sheet; provenance is recorded in [ART_PROVENANCE.md](ART_PROVENANCE.md).
-
-The locked guide layers are **underdrawing (25%)**, **alignment (22%)**, and **labels and separators (45%)**, above a separate dark paper layer. The initial **Draw here** layer is blank, editable and 100% opaque; inspect for later paint before exporting. Hide paper and every GUIDE layer for artwork exports. The assembled reference is guide-only; it is not a component to export.
+Paint individual components on **Draw here** at native scale and preserve the layers and slices. The original guides are locked at 25% for underdrawing, 22% for alignment and 45% for labels/separators. Hide every guide and the paper layer for exports. The assembled reference is a guide.
 
 | Component slices | Size | Painting rule |
 | --- | --- | --- |
-| `hud_border_9slice` | 48x48 | 16px corners and edge strips; keep the central 16x16 clear. Slice metadata records the cuts. |
-| `hud_background_tile` | 32x32 | Seamless in both directions; match opposite edges without a border or baked lighting gradient. |
+| `hud_border_9slice` | 48x48 | 16px corners and edge strips, keep the central 16x16 clear. Slice metadata records the cuts. |
+| `hud_background_tile` | 32x32 | Seamless in both directions, match opposite edges without a border or baked lighting gradient. |
 | `skill_frame`, `skill_frame_active` | 56x56 | Keep the central 40x40 icon space clear (8px inset). |
-| `ailment_frame` | 32x32 | Transparent center; allow the turn count at bottom right. |
+| `ailment_frame` | 32x32 | Transparent center, allow the turn count at bottom right. |
 | `orb_frame_life`, `orb_frame_mana` | 104x104 | Keep the centered 88px opening clear (8px inset). |
 | `orb_well` | 88x88 | Empty circular reservoir, transparent outside its circle. |
-| `orb_fill_life`, `orb_fill_mana` | 88x88 | Paint full circular fills; resource amounts determine the visible fill height. |
+| `orb_fill_life`, `orb_fill_mana` | 88x88 | Paint full circular fills, resource amounts determine the visible fill height. |
 | `orb_glass` | 104x104 | Optional transparent highlight overlay, centered over the reservoir. |
 | Six `skill_*` icons | 40x40 | Shoot, Wait, Secondary Set, Juke, Burning Arrow and Glacial Shot. |
 | Three `ailment_*` icons | 24x24 | Bleeding, burning and chilled. |
 
-Numbers, resource labels, button captions and cooldowns remain code-rendered. The rectangular frames and life and mana rims use the owner's artwork. The resource fills, skill glyphs and status icons are drawn in code.
-
-`tools/hud_art/create_template.py` prepares the guides and a native Aseprite Lua assembly in `%TEMP%/hud-template/`. Both the generator and the generated assembly refuse to overwrite either editable source. Run that assembly with the Aseprite batch command from `TILE_ART_WORKFLOW.md`; it saves both sources, reopens them, and verifies all guide pixels, layer opacity and editability, the blank paint layer, 21 named slices (20 components plus the reference), and the nine-slice center. Previews and validation reports stay in TEMP. Before later ports, read the Desktop file for new owner painting and back it up; do not regenerate over it.
+Runtime code draws text, counts, resource fills, skill glyphs and status icons. Owner paintings supply the frame PNGs. For a fresh template, `tools/hud_art/create_template.py` prepares the guides and Lua assembly under `%TEMP%/hud-template/`. The batch assembly verifies guide pixels, layer settings, the initial blank paint layer, named slices and nine-slice center. The generator and assembly refuse to overwrite either editable source. [Aseprite workflow](TILE_ART_WORKFLOW.md) · [Art provenance](ART_PROVENANCE.md)
 
 ## Painted border
 
-`C:/Users/DavidBennett/Desktop/border.aseprite` holds the owner's gold border on `Layer 1`, a 73x55 cel at (1,1) on a 128x128 canvas. `tools/hud_art/export_border.lua` preserves that source and copies it to `assets/source/hud-border.aseprite`, exporting the native 73x55 rectangle to `assets/ui/hud-border.png`. It backs up existing files in `%TEMP%/hud-border-export/`, numbering backups with matching filenames, and checks the reopened pixels and clear center. Run it with the Aseprite batch command in `TILE_ART_WORKFLOW.md`; inspect later owner edits before exporting again.
+The owner's `Desktop/border.aseprite` contains a 73×55 cel at (1,1) on a 128×128 canvas, on `Layer 1`. `tools/hud_art/export_border.lua` copies the source to `assets/source/hud-border.aseprite`, exports the native rectangle to `assets/ui/hud-border.png`, and checks reopened pixels and the clear center. Numbered backups go under `%TEMP%/hud-border-export/`.
 
-`sprites.hudBorder` keeps the four original 9x9 corner regions and repeats the matching horizontal and vertical strips, clipping the last repeat without scaling, mirroring, rotating or recolouring the art. Nine-pixel cuts keep the dark corner-to-rail transition out of the repeated bottom edge. Common play graphics use this art for large frames such as the bottom plate and minimap. Neutral borders on small boxes, including status tiles and menu actions, use `hud-border-small.png` (52x35) with 4px cuts. Both sizes use `raster.frame`. Selected slots retain a coloured inner outline and unavailable slots retain their opacity fade. Status boxes are 40px to keep their icons and counts clear of the painted trim, and the minimap reserves a 9px frame. `hud-life-frame.png` and `hud-mana-frame.png` sit over the procedural resource fills at native scale.
+Large frames retain the 9×9 original corners. `raster.frame` tiles the rails at native scale and clips the final repeat, keeping the corner transitions out of the rails. Small boxes use the 52×35 `hud-border-small.png` with 4px cuts. Selected slots retain an inner outline and unavailable slots fade. The life and mana rim PNGs sit over their fills at native scale. [Frame renderer](../src/gfx/raster.zig)

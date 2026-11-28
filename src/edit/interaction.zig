@@ -335,7 +335,6 @@ fn graphAt(ed: *const Editor, c: rl.Rectangle, m: P) P {
     return m.sub(.{ .x = raster.left(c), .y = raster.top(c) }).add(.{ .x = @intFromFloat(ed.gcam[0]), .y = @intFromFloat(ed.gcam[1]) });
 }
 
-/// `anchor` stays over the same cell.
 fn zoom(ed: *Editor, c: rl.Rectangle, by: i32, anchor: P) void {
     const m = [2]f32{ @as(f32, @floatFromInt(anchor.x)) - c.x, @as(f32, @floatFromInt(anchor.y)) - c.y };
     const was = ed.px();

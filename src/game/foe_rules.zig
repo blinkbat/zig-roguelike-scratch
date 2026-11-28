@@ -36,14 +36,14 @@ pub fn orderFoes(sim: *Simulation, from: P) void {
 pub fn besideOf(sim: *const Simulation, at: P, side: Side) ?u16 {
     var best: ?u16 = null;
     for (mathx.ALL_DIRS) |direction| {
-        if (!sim.lv.passOk(at, direction)) continue;
-        const id = sim.lv.who(at.add(direction.delta()));
+        const to = at.add(direction.delta());
+        const id = sim.lv.who(to);
         const candidate = sim.pool.getConst(id) orelse continue;
         const fits = switch (side) {
-            .foe => candidate.foe(),
-            .ally => candidate.kind.ally(),
+            .foe => candidate.seenFoe(&sim.lv) and sim.lv.strikeable(to),
+            .ally => candidate.kind.ally() and !candidate.veiled() and sim.lv.walkable(to),
         };
-        if (!fits or candidate.veiled()) continue;
+        if (!fits) continue;
         if (best) |previous| if (sim.pool.items[actor.Pool.slot(previous)].hp <= candidate.hp) continue;
         best = id;
     }
@@ -137,13 +137,12 @@ pub fn crowded(sim: *const Simulation, id: u16, bolt: firebolt.Bolt, hero: P, ra
     return false;
 }
 
-/// Kept off the hero, yet within `reach` of it.
 fn inBand(at: P, hero: P, keeps: i32, reach: i32) bool {
     const gap = mathx.dist(at, hero);
     return gap > keeps and gap <= reach;
 }
 
-/// Where a netter too close to the hero darts, its quickstep spent and said; none while held, confused or recovering.
+/// Selects a legal retreat and spends its cooldown only on success.
 pub fn quickstep(sim: *Simulation, id: u16, af: actor.Afflicted) ?P {
     const body = sim.pool.get(id) orelse return null;
     const row = actor.row(body.kind);

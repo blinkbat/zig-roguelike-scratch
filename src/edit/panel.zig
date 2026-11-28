@@ -422,7 +422,7 @@ const INSPECT_TIPS = std.EnumArray(editor.Inspect, [:0]const u8).init(.{
     .generator = "What this procgen node's floor, sky and foes are rolled from",
 });
 
-/// The node dropdown's place; fixed, so a pose can open it without drawing first.
+/// The fixed slot is available before the first draw.
 pub fn nodeSlot(g: *const game.Game) rl.Rectangle {
     return editor.Editor.inspector(g).row(editor.Editor.bandOf(g.screen).top + widgets.PAD + widgets.HEADING_H);
 }
@@ -515,7 +515,8 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, col: Column, box: rl.Rectangle)
     heading(g, col, &y, "Problems");
     var wrong = Problems{ .ed = ed, .g = g, .col = col, .y = &y };
     if (is.start_walled) wrong.row("The start is on solid ground", .{}, ed.map.start.at);
-    if (is.unlinked > 0) wrong.row("{d} door(s) lead nowhere", .{is.unlinked}, null);
+    const unlinked = ed.here().unlinked();
+    if (unlinked > 0) wrong.row("{d} door(s) lead nowhere", .{unlinked}, null);
     if (is.cut_off > 0) wrong.row("{d} open cells no walk reaches (shaded)", .{is.cut_off}, is.reach_from);
     if (is.foes_cut_off > 0) wrong.row("{d} foe(s) no walk reaches", .{is.foes_cut_off}, null);
     if (ed.here().raidAstray()) wrong.row("Night raiders' door is not on this node", .{}, null);

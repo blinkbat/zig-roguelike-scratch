@@ -1,91 +1,13 @@
 # Passive tree
 
-The passive panel uses a sparse radial graph: simple circles, quiet connections
-and a persistent inspection sidebar. Path of Exile 2 informed the visual hierarchy;
-the owner's Soulslike tree supplied the three-arm structure. Cistern's source
-owns all topology, grants and allocation rules.
+The radial graph has three class origins, two branches per arm and bridges between neighboring arms. Keep topology, values, grants and roles in the source table. `feeders` defines both the drawn edges and the prerequisites. Branches unlock outward. A bridge accepts either anchor and opens the opposite anchor for onward progression. [Graph and feeders](../src/play/passives.zig)
 
-| Responsibility | Owner |
-| --- | --- |
-| Graph, stable identities, feeders, grants and roles | [`play/passives.zig`](../src/play/passives.zig) |
-| Point budget and allocation | [`play/progress.zig`](../src/play/progress.zig) |
-| Derived attributes | [`play/attrs.zig`](../src/play/attrs.zig) |
-| Layout, drawing and view transform | [`ui/trees.zig`](../src/ui/trees.zig) |
-| Navigation and commands | [`ui/book.zig`](../src/ui/book.zig) |
-| Persistence and migration | [SAVE_FORMAT.md](SAVE_FORMAT.md) |
+The chosen origin starts owned with its attributes already included in the class base. Other origins cost one passive point and need no feeder. Each additional node costs one point and requires an owned feeder. Apply every grant on a node, including its rider. Allocation takes no game turn, and maximum-life gains preserve current HP. Portable saves identify nodes by `(arm, branch, seam, ring, slot)`. Preserve those identities or migrate them and refund removed nodes. [Allocation](../src/play/progress.zig) · [Save format](SAVE_FORMAT.md)
 
-## Graph and allocation
+## Inspection and navigation
 
-The graph has three class origins, two branches per class and six bridges.
-Each branch has six rings with widths 1, 2, 3, 3, 2, 1: 81 nodes overall,
-including six terminal capstones. Knight branches are Fortitude/Might;
-Archer branches Agility/Finesse; Wizard branches Reserves/Sorcery.
-Bridges join neighboring arms at rings three and five. There is no central hub.
+Draw each edge once behind the nodes. Emphasize allocated routes, distinguish reachable edges even at zero points, and keep distant nodes inspectable. Show origins with class initials, bridges with a consistent mark and capstones with double rings. Focus has a separate outline. The sidebar shows the selected node's grants, any exception and its action or blocker. The free origin reads “Starting point.” [Panel rendering](../src/ui/trees.zig) · [Data presentation](DATA_PRESENTATION.md)
 
-`feeders` supplies both drawn links and allocation prerequisites. Branches
-advance outward; owning a later node does not unlock earlier layers. A bridge
-can be entered from either anchor and feeds the far anchor, allowing outward
-progression there. Geometric proximity alone never creates a connection.
+The panel opens zoomed at the class origin. Drawing, hit testing and directional navigation share the graph geometry. Directional selection recenters the view. Middle-drag or controller pan moves the view while retaining selection. Wheel and panel controls change zoom. Overview restores minimum zoom and recenters. Pan and zoom belong to the view and are unsaved. Clicking a node selects it. Allocation needs a separate deliberate action. [Book input](../src/ui/book.zig) · [Controls](CONTROLLER.md)
 
-The chosen class origin starts owned and adds no reward beyond the class's base
-attributes. Other origins are immediately purchasable. Each purchase costs one
-passive point; non-origin nodes also require an allocated feeder.
-`State.available`, `State.canAllocate`, `State.allocate` and `bonusAt` are authoritative.
-XP supplies separate active and passive point pools. Allocation takes no turn,
-and maximum-life gains do not heal current life.
-
-Stat, interest and capstone are semantic roles. Interest nodes and bridges may
-have an additional grant; both grants must appear in inspection and apply through
-runtime aggregation. Capstones describe their actual package without implying
-unsupported rule changes. Values and stacking belong in source.
-
-Portable saves identify nodes by `(arm, branch, seam, ring, slot)`, not array
-position. Preserve those meanings; changed meanings require migration. Removed
-identities refund points. Unknown legacy raw layouts remain incompatible.
-
-## Drawing and inspection
-
-Give the graph most of the panel, with details on the right and the point balance
-shown once. All centers, edges, hit targets and focus movement share one transform.
-Keep the near-black canvas sparse: no central spokes, node text plates, category
-legends, branch labels or arrowheads.
-
-Use modest size differences for stat, interest and capstone nodes, double rings
-for capstones, a consistent bridge mark and class initials at origins.
-Draw each connection once behind nodes. Allocated routes dominate; frontier
-connections reflect actual feeder direction, and remote paths stay faint.
-
-| State | Treatment |
-| --- | --- |
-| Allocated | Solid muted arm color and warm rim |
-| Reachable and affordable | Dark fill, clear rim and allocation action |
-| Reachable without points | Still visibly connected; explain missing point |
-| Unreached | Muted but inspectable; explain missing connection |
-| Focused | Separate ring regardless of ownership or eligibility |
-| Free class origin | Class name and “Starting point” |
-
-The sidebar shows a small name, every grant and rider, any essential exception,
-and one allocation action or blocker. Use complete modifier phrases and explicit
-units; omit repeated core rules and redundant role/status headings. Follow
-[DATA_PRESENTATION.md](DATA_PRESENTATION.md). Derive any current/after comparison
-through gameplay aggregation.
-
-## Navigation and verification
-
-The tree opens zoomed at the class origin. Initial zoom and bounds live in
-`ui/trees.zig`. Directional navigation follows geometry and can reach every node,
-regardless of eligibility; it recenters newly focused nodes. Manual pan may move
-away from selection. Pan/zoom preserve selection, clip to the canvas and remain
-unsaved navigation state. Overview resets pan and zoom.
-
-Clicking a node selects it; pointer motion preserves selection. The visible
-allocation action spends one point. Middle-drag starts inside the canvas and
-ends on release; wheel and on-screen controls zoom. Exact controller/keyboard
-bindings live in [CONTROLLER.md](CONTROLLER.md).
-
-Use `--shot-ui` and [AGENTS.md](../AGENTS.md#verification) for visual changes.
-Check all origins, branch silhouettes, both bridge depths, focus in every state,
-zero-point frontier visibility, multi-grant text and small-window clipping.
-Verify outward prerequisites, two-way bridge access, one-point transactions and
-save identity preservation when changing the graph. Browsing and cancellation
-must not allocate or advance a turn.
+When changing topology, verify outward prerequisites, bridge access from both anchors, one-point allocation and portable save identities. Inspect `--shot-ui` captures for focus, both bridge depths, zero-point frontiers, multi-grant text and small-window clipping. [Capture instructions](../AGENTS.md#verification)

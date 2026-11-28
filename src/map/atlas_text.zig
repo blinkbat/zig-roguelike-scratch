@@ -124,7 +124,6 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
     try script_text.write(&self.script, w);
 }
 
-/// A row's painted run from its first painted cell to its last.
 fn writeSection(w: anytype, s: *const section.Section) !void {
     if (s.anchor == .fixed and s.empty()) return;
     try w.print(says(.section) ++ "{s}\n", .{@tagName(s.anchor)});

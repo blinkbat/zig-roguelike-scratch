@@ -40,7 +40,7 @@ pub const Binds = struct {
     }
 };
 
-/// Picker cell 0 clears the slot; the rest are the class's acts in order. An empty slot opens it on the first act.
+/// Zero clears the slot. Empty slots initially select the first action.
 fn pickOf(kit: []const skillbar.Act, a: ?skillbar.Act) usize {
     return 1 + (std.mem.indexOfScalar(skillbar.Act, kit, a orelse kit[0]) orelse 0);
 }

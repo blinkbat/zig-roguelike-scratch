@@ -33,7 +33,7 @@ pub fn xpOf(k: actor.Kind) u32 {
     return @intCast(actor.row(k).hp);
 }
 
-/// What allocating node `i` grants `c`: nothing at its own free origin.
+/// The class's free origin gives no additional grant.
 pub fn bonusAt(c: hero.Class, i: usize) ?Node {
     return if (i == start(c)) null else NODES[i];
 }
@@ -251,7 +251,6 @@ pub const State = struct {
         return @as(i32, self.extraRanks(act)) * RANK_DAMAGE_PERCENT;
     }
 
-    /// What scales `act`'s blow with `gear`, for previews and live rolls alike.
     fn blowOf(self: *const State, equipped: attrs.Attrs, gear: Gear, act: skillbar.Act) ?Blow {
         const attack = act.attack() orelse return null;
         const scaling = gear.scaling(attack);
@@ -277,7 +276,7 @@ pub const State = struct {
         return out;
     }
 
-    /// The ailments a landing blow may bring: the weapon's, and Imbue's ignite while it holds.
+    /// Weapon ailments plus ignite while Imbue is active.
     pub fn onHit(self: *const State, gear: Gear, attack: attrs.Attack, readied: Readied) item_bases.WeaponEffect {
         var out = gear.onHit(attack);
         if (readied.imbues(attack)) out.imbue(tactics.Imbue.IMBUES, tactics.Imbue.ignites(self.ranks.get(.imbue)));
@@ -328,7 +327,7 @@ pub const State = struct {
         return out;
     }
 
-    /// `bar`, its flask slots given to the learned skills it leaves unbound, then Wait's once those run out.
+    /// Replace flask slots with unbound learned skills, then Wait.
     pub fn flasklessBar(self: *const State, c: hero.Class) skillbar.Bar {
         var out = self.bar(c);
         for (skillbar.EVERY_SLOT) |slot| {

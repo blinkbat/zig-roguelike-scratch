@@ -101,6 +101,22 @@ files.copy(app.params.source,app.params.destination)
             self.assertEqual(data, source.read_bytes())
             self.assertEqual(data, destination.read_bytes())
 
+    def test_exports_with_the_same_basename_keep_their_own_staged_bytes(self):
+        with tempfile.TemporaryDirectory(prefix='cistern-stage-test-') as temporary:
+            self.run_lua('''
+local files=dofile(app.params.module)
+local first=files.stage('sheet.png')
+files.write(first,'first')
+local second=files.stage('sheet.png')
+files.write(second,'second')
+local destination=app.params.destination
+files.publishTo(first,destination)
+assert(files.read(destination)=='first' and files.read(second)=='second')
+files.publishTo(second,destination)
+assert(files.read(destination)=='second')
+assert(not app.fs.isFile(first) and not app.fs.isFile(second))
+''', destination=(Path(temporary) / 'out.png').as_posix())
+
 
 if __name__ == '__main__':
     main(remaining)

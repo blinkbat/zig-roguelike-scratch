@@ -92,16 +92,15 @@ pub fn of(tile: grid.Tile) Modifiers {
     return EFFECTS.get(tile);
 }
 
-/// At the heaviest rain, the fire and burn resistance it lends whatever stands out in it.
+/// Fire and burn resistance at full rain intensity.
 const RAIN_FIRE: f32 = 30;
 const RAIN_BURN: f32 = 40;
 /// Rain's resistances move in steps of this, so a card reads whole fives.
 const RAIN_STEP: f32 = 5;
-/// Rain below these reads as a drizzle, then as rain; heavier is a downpour.
 const DRIZZLE_BELOW: f32 = 0.34;
 const RAIN_BELOW: f32 = 0.67;
 
-/// Out in rain of `rain`, 0 none to 1 a downpour.
+/// Rain intensity ranges from zero to one.
 pub fn rained(rain: f32) Modifiers {
     const r = std.math.clamp(rain, 0, 1);
     return .{
@@ -128,7 +127,7 @@ pub const Stats = struct {
     elements: damage.Resists = .initFill(0),
     statuses: std.EnumArray(resilience.Kind, i16) = .initFill(0),
 
-    /// On `tile` out in rain of `rain`, the two summed before the caps.
+    /// Combine rain and terrain before clamping resistance.
     pub fn onRained(base: Stats, tile: grid.Tile, rain: f32) Stats {
         return base.plus(of(tile).with(rained(rain)));
     }

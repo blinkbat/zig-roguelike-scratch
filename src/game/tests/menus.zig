@@ -171,6 +171,32 @@ test "the dead archer's floor restarts only once the death is shown" {
     try harness.expectMode(g, .play);
 }
 
+test "the reticle follows visible foes with their inspection card without a pointer" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const near = P{ .x = 21, .y = 20 };
+    const far = P{ .x = 22, .y = 20 };
+    harness.arena(g, from, &.{ near, far });
+    g.st = .{};
+    skills.openAim(g, .a, .shoot);
+    try std.testing.expectEqual(g.sim.lv.who(near), overlay.passiveTip(g).?.spot.actor);
+    g.mode.aim.mark = far;
+    const id = g.sim.lv.who(far);
+    try std.testing.expectEqual(id, overlay.passiveTip(g).?.spot.actor);
+    g.st = .{ .device = .keys, .pointer = raster.middleAt(overlay.slotBox(overlay.hudLayout(g), 0)) };
+    try std.testing.expectEqual(game.Spot{ .slot = 0 }, overlay.passiveTip(g).?.spot);
+    g.st.pointer = null;
+    g.sim.pool.get(id).?.disguised = true;
+    try std.testing.expect(overlay.passiveTip(g) == null);
+    g.mode.aim.mark = from;
+    try std.testing.expect(overlay.passiveTip(g) == null);
+    g.mode.aim.mark = .{ .x = 20, .y = 21 };
+    try std.testing.expect(overlay.passiveTip(g) == null);
+    g.mode = .play;
+    try std.testing.expect(overlay.passiveTip(g) == null);
+}
+
 test "the hud's tooltip stays up until the lethal bite is drawn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -663,6 +689,27 @@ test "the mouse over an orb, a slot or a status shows its tooltip while playing,
     g.st.pointer = raster.middleAt(spots[1].box);
     g.mode = .pause;
     try std.testing.expectEqual(@as(?overlay.Part, null), overlay.hovered(g));
+}
+
+test "actor inspection follows a hopping foe above its ground cell" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const foe = P{ .x = 20, .y = 20 };
+    harness.arena(g, .{ .x = 18, .y = 20 }, &.{foe});
+    const id = g.sim.lv.who(foe);
+    const motion = &g.pic.glide[actor.Pool.slot(id)];
+    motion.from.x -= game.CELL_F;
+    motion.t = motion.span() * 0.75;
+    const foot = game.scene.Cam.of(g).px(motion.now());
+    const box = raster.rect(foot.x, foot.y - motion.lift(), game.CELL, game.CELL);
+    try std.testing.expect(motion.lift() > 0);
+    g.st = .{ .device = .keys, .pointer = .{ .x = foot.x + game.HALF_CELL, .y = raster.top(box) + 1 } };
+    try std.testing.expectEqual(game.Spot{ .actor = id }, overlay.hovered(g).?.spot);
+    g.st.pointer.?.y = foot.y + game.CELL - 1;
+    try std.testing.expect(overlay.hovered(g) == null);
+    g.st = .{};
+    skills.openAim(g, .a, .shoot);
+    try std.testing.expectEqual(box, overlay.passiveTip(g).?.box);
 }
 
 test "actor inspection follows the perspective shown on screen" {

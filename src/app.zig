@@ -333,7 +333,7 @@ const App = struct {
         app.reburied();
     }
 
-    /// False once the app may close; a failed last write stays on the title instead, until the next close.
+    /// A failed final write keeps the title open until the next close request.
     fn quitRun(app: *App) bool {
         const shown = app.scene == .title and app.quit_warned;
         app.runToTitle();
@@ -346,7 +346,6 @@ const App = struct {
         a.deinit();
     }
 
-    /// False once the app should close.
     fn frame(app: *App) bool {
         const g = app.g;
         const closing = rl.windowShouldClose();
@@ -636,7 +635,6 @@ fn slotDetails(s: *const save.Slot, buf: *[LINE]u8) ?[:0]const u8 {
     };
 }
 
-/// About half the spotlight's way from one hero to the next.
 const HEROES_MID_DT: f32 = 0.08;
 const HEROES_DIR = capture.SHOTS_DIR ++ "/heroes";
 const MOUSE_DIR = capture.MOUSE_DIR;

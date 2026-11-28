@@ -195,7 +195,7 @@ pub fn line(a: rl.Vector2, b: rl.Vector2, width: f32, scale: f32, col: rl.Color)
     trace(a, b, width, scale, Filler{ .col = col });
 }
 
-/// The quads `rl.drawRectangle` would draw, in one session: nothing else may draw until `end`.
+/// Owns the draw batch until end. Do not interleave other drawing.
 pub const Quads = struct {
     u0: f32,
     v0: f32,

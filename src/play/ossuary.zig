@@ -64,7 +64,7 @@ test "renown counts kills, levels past the first, places and gold" {
     try std.testing.expectEqual(@as(u32, 230 + 300 + 75 + 28), renown(.{ .kills = 23, .level = 4, .gold = 140, .places = 3 }));
 }
 
-/// The `MAX` most renowned deaths, most renowned first; a tie keeps the earlier death above.
+/// Highest renown first. Earlier deaths win ties.
 pub const Hall = struct {
     entries: [MAX]Entry = undefined,
     n: usize = 0,

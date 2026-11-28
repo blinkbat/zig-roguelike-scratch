@@ -23,7 +23,7 @@ pub const Item = struct {
         return wording.recased(buf, self.composed(buf), .title);
     }
 
-    /// Lower case within a sentence, as the log says it; a rare item's own name keeps its capitals.
+    /// Uses sentence case except for rare proper names.
     pub fn spoken(self: Item, buf: []u8) [:0]const u8 {
         const text = self.composed(buf);
         return if (self.rare_name != null) text else wording.recased(buf, text, .lower);
@@ -68,7 +68,7 @@ pub const Item = struct {
         return a.rolls(r.tier) and r.item.allows(a.kind);
     }
 
-    /// A loaded item's modifiers, kept within what their rolls give.
+    /// Clamp loaded modifiers to their legal ranges.
     pub fn mend(self: *Item) void {
         for (&self.mods) |*maybe| if (maybe.*) |*m| {
             const a = affixes.affixOf(m.kind);

@@ -148,7 +148,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .caught = caught, .unmasked = unmasked, .mana = sim.mana - mana_before };
 }
 
-/// A living `family` foe that is no raider: raiders keep coming, so a node is cleared of its own.
+/// Ignore recurring raiders when deciding whether a node's native family is cleared.
 fn nativeLeft(sim: *const Simulation, family: actor.Kind) bool {
     for (sim.pool.constSlice()) |*a| {
         if (a.alive and !a.raider and a.kind.family() == family) return true;
@@ -191,7 +191,6 @@ pub fn livingIn(sim: *const Simulation, area: anytype) Caught {
     return out;
 }
 
-/// The bodies standing on water it boiled, or null when none boiled.
 fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
     _ = ice.melt(&sim.lv, areas.patch(&sim.lv, at, reach).slice());
     const wet = areas.wetIn(&sim.lv, at, reach);

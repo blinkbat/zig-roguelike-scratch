@@ -14,7 +14,7 @@ pub const Stepper = struct {
     held: f32 = 0,
     due: f32 = 0,
     fired: u32 = 0,
-    /// How long before this frame's end the last step was due.
+    /// Seconds overdue at frame end.
     late: f32 = 0,
     owed: ?mathx.Dir = null,
     press: bool = false,
@@ -67,7 +67,7 @@ pub const Stepper = struct {
         return self.due == HELD;
     }
 
-    /// A diagonal that has not stepped survives one of its keys coming up first.
+    /// Preserve a pending diagonal across staggered key releases.
     fn owe(self: Stepper, now: mathx.Dir) ?mathx.Dir {
         const last = self.latched orelse return now;
         if (self.fired > 0) return if (partOf(now, last)) null else now;

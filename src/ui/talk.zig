@@ -23,7 +23,7 @@ const FIGURE_GAP: i32 = 20;
 const FIGURE_INSET: i32 = 6;
 const FIGURE_GLYPH: i32 = 96;
 const FIGURE_WELL_A: f32 = 0.7;
-/// The prose keeps this much width, or the figure is left out.
+/// Hide the figure when prose would have less width.
 const TEXT_MIN_W: i32 = 420;
 const HEADER_GAP: i32 = 24;
 const FOOTER_GAP: i32 = 20;
@@ -78,7 +78,6 @@ pub const Layout = struct {
     starts: [script.MAX_CHOICES]usize = undefined,
     ends: [script.MAX_CHOICES]usize = undefined,
     line_n: usize = 0,
-    /// The spoken lines shown: whatever room the replies leave.
     said: usize = 0,
     last: usize = 0,
     who_y: i32 = 0,

@@ -88,7 +88,7 @@ pub const Surface = struct {
         sprite.layeredBacking(sprites, 0, 0, size.x, size.y, .menu);
     }
 
-    /// `f` as this surface draws it: scaled, from the mipmapped atlas rather than the native-size ones.
+    /// Scaled surfaces use the mipmapped atlas.
     pub fn faceFor(self: Surface, f: font.Face) font.Face {
         return if (self.scale != 1) f.mipmapped() else f;
     }
@@ -155,7 +155,7 @@ fn edgeLine(line: rl.Rectangle, across: bool) void {
     rl.drawRectangleRec(r, look.fade(look.BORDER, DIVIDER_A));
 }
 
-/// A square dot centred on `mid_y` at `x`; returns where text after it starts.
+/// Returns the text start after the dot.
 pub fn middot(x: i32, mid_y: i32, col: rl.Color) i32 {
     rl.drawRectangle(x + DOT_GAP, mid_y - @divTrunc(DOT, 2), DOT, DOT, col);
     return x + MIDDOT_W;
@@ -170,7 +170,7 @@ fn lines(r: rl.Rectangle, w: f32, col: rl.Color) void {
     rl.drawRectangleLinesEx(s.rect(r), s.of(w), col);
 }
 
-/// Panels draw under a zoomed camera: borders are measured in, and snapped to, whole screen pixels.
+/// Snap borders to whole screen pixels under the panel transform.
 const ScreenPx = struct {
     scale: f32,
     dx: f32,
@@ -491,14 +491,13 @@ pub fn rowInk(on: bool) rl.Color {
     return if (on) look.UI_FOCUS else look.DIM;
 }
 
-/// Printed into `buf` upper-cased, as a title is; empty if it does not fit.
+/// Uppercase title, or empty if buf is too small.
 pub fn shout(buf: []u8, comptime fmt: []const u8, args: anytype) [:0]const u8 {
     const s = std.fmt.bufPrintZ(buf, fmt, args) catch return "";
     _ = std.ascii.upperString(buf[0..s.len], s);
     return s;
 }
 
-/// `shout` for a string known at compile time; call it `comptime`.
 pub const caps = text.upper;
 
 pub const capital = wording.spoken;

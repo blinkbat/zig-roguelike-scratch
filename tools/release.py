@@ -373,11 +373,17 @@ Type-checked, compiled and statically inspected. This build command does not lau
                     archive.addfile(entry, io.BytesIO(data))
 
     def check(pending):
+        expected = {name + '/' + path for path in files}
         with tarfile.open(pending, 'r:gz') as archive:
             for entry in archive:
+                if entry.name not in expected or not entry.isfile():
+                    raise ValueError('Unexpected archive member: ' + entry.name)
+                expected.remove(entry.name)
                 data, mode = files[entry.name.removeprefix(name + '/')]
                 if archive.extractfile(entry).read() != data or entry.mode != mode:
                     raise ValueError('Packaged content or mode mismatch: ' + entry.name)
+        if expected:
+            raise ValueError('Missing archive members: ' + ', '.join(sorted(expected)))
 
     sidecar = destination.with_suffix(destination.suffix + '.sha256')
     with staged_file(destination, write, check) as pending:

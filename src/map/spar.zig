@@ -23,7 +23,6 @@ pub fn author(map: *atlas.Atlas, kind: actor.Kind) void {
     std.debug.assert(room.addFoe(.{ .kind = kind, .at = FOE }));
 }
 
-/// Cells round an opponent that cannot stand on floor that are water, short of the hero.
 const POND: i32 = 1;
 
 comptime {

@@ -8,7 +8,7 @@ const PILLAR_STEP: i32 = 4;
 const PILLAR_GAP: i32 = 2;
 const ALCOVE_W: i32 = 3;
 const ALCOVE_D: i32 = 3;
-/// The Animated Forest's plant share, and the rows left clear below it, of the hall's height.
+/// Shrub chance (%) above the Animated Forest's clear lower rows.
 const GROVE_FILL: u32 = 50;
 const GROVE_CLEAR_OF: i32 = 3;
 const GROVE_PLANT: grid.Tile = .shrub;

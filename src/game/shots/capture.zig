@@ -143,15 +143,21 @@ pub fn veil(lv: *grid.Level, cells: grid.Cells) void {
     while (each.next()) |p| lv.gas[grid.Level.idx(p)] = VEIL_GAS;
 }
 
-/// Draws into `target`, whose batch raylib flushes at `endTextureMode`, and saves it.
+/// Save after endTextureMode flushes raylib's batch.
 pub fn capture(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {
     drawInto(g, target);
     try exportTarget(target, path);
 }
 
 pub fn captured(g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !rl.Image {
-    try capture(g, target, path);
-    return readTarget(target);
+    errdefer std.debug.print("{s} FAILED\n", .{path});
+    const img = try drawnImage(g, target);
+    errdefer rl.unloadImage(img);
+    var copy = rl.imageCopy(img);
+    if (copy.width == 0) return error.OutOfMemory;
+    defer rl.unloadImage(copy);
+    try writeScreenshot(&copy, path);
+    return img;
 }
 
 pub fn drawnImage(g: *game.Game, target: rl.RenderTexture2D) !rl.Image {
@@ -162,6 +168,11 @@ pub fn drawnImage(g: *game.Game, target: rl.RenderTexture2D) !rl.Image {
 pub fn capturef(g: *game.Game, target: rl.RenderTexture2D, comptime fmt: []const u8, args: anytype) !void {
     var path: [PATH_MAX]u8 = undefined;
     try capture(g, target, try std.fmt.bufPrintZ(&path, fmt, args));
+}
+
+pub fn capturedf(g: *game.Game, target: rl.RenderTexture2D, comptime fmt: []const u8, args: anytype) !rl.Image {
+    var path: [PATH_MAX]u8 = undefined;
+    return captured(g, target, try std.fmt.bufPrintZ(&path, fmt, args));
 }
 
 pub fn captureAlong(g: *game.Game, target: rl.RenderTexture2D, times: []const f32, comptime prefix: []const u8) !void {
@@ -199,9 +210,13 @@ pub fn exportTarget(target: rl.RenderTexture2D, path: [:0]const u8) !void {
     errdefer std.debug.print("{s} FAILED\n", .{path});
     var img = try readTarget(target);
     defer rl.unloadImage(img);
+    try writeScreenshot(&img, path);
+}
+
+fn writeScreenshot(img: *rl.Image, path: [:0]const u8) !void {
     // Blending leaves alpha in the target that a window never shows.
-    rl.imageFormat(&img, .uncompressed_r8g8b8);
-    try exportImage(img, path);
+    rl.imageFormat(img, .uncompressed_r8g8b8);
+    try exportImage(img.*, path);
     std.debug.print("{s} written\n", .{path});
 }
 

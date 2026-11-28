@@ -21,7 +21,7 @@ pub const GOODS_MAX: u8 = 24;
 pub const BEDROLLS_MAX: u8 = 12;
 pub const TENTS_MAX: u8 = 4;
 const TENT = P{ .x = 3, .y = 2 };
-/// Of the camp's radius, the nearest a tent stands to its middle.
+/// Minimum tent distance from the centre, in camp radii.
 const TENT_NEAR: f32 = 0.6;
 /// Cells past the camp's edge a tent may stand, on its grass.
 const TENT_OUT: f32 = 3;
@@ -46,7 +46,7 @@ const THICKET_SCALE: f32 = 4;
 const CAMP_SCALE: f32 = 3;
 const CAMP_LO: f32 = 0.8;
 const CAMP_SPAN: f32 = 0.4;
-/// Cells west of the river where the edge warp starts, and over which it ramps to full.
+/// Cells over which the warp reaches full strength west of the river.
 const WARP_RAMP = 12;
 const WARP_SWAY: f32 = 1.5;
 const WARP_DROP: f32 = 0.8;
@@ -55,13 +55,11 @@ const WARP_DROP_SCALE: f32 = 22;
 const WARP_SWAY_LANE: i32 = 17;
 const WARP_DROP_LANE: i32 = 91;
 const PATH_WANDER: f32 = 0.85;
-/// A road's sideways arc, per cell of its length, and its cap.
 const ARC_PER_CELL: f32 = 0.18;
 const ARC_MAX: f32 = 7;
 const ARC_LEFT_PERCENT: u32 = 50;
 /// Cells from either end over which a road eases into its wander.
 const BEND_REACH: f32 = 10;
-/// Extra radius a road swells by, and how fast that swell cycles per step.
 const SHOULDER: f32 = 0.65;
 const SHOULDER_RATE: f32 = 0.22;
 const RIVER_WANDER: f32 = 0.2;
@@ -81,10 +79,9 @@ const SPUR_WANDER: f32 = 1;
 const SPUR_BOX = grid.Box.inMap(2);
 const GLADE_R: f32 = 2;
 const GLADE_PERCENT: u8 = 35;
-/// Of the pond's radius, the hollow cut from its disc to leave a crescent, and how far that hollow sits off its middle.
+/// Hollow radius and offset as fractions of pond radius.
 const HOLLOW: f32 = 0.7;
 const HOLLOW_OFF: f32 = 0.6;
-/// Cells in from the crescent's edge where the water is deep.
 const DEEP: f32 = 0.6;
 /// Cells past the disc's edge kept dry, so no other water joins the pond.
 const WATER_APART: f32 = 2;
@@ -111,7 +108,6 @@ pub const Params = struct {
     camp: u8 = 8,
     carts: u8 = 3,
     barrels: u8 = 6,
-    /// Crates and sacks beside the carts.
     goods: u8 = 0,
     bedrolls: u8 = 0,
     tents: u8 = 0,
@@ -170,7 +166,7 @@ const Plan = struct {
     bar: grid.Box,
     stem: grid.Box,
     camp: P,
-    /// Where the river and its far bank begin, in from the east rim; `grid.W` with none.
+    /// Planned western river edge, or grid.W without a river.
     river_w: i32,
 
     fn of(rng: *mathx.Rng, p: Params) Plan {
@@ -221,7 +217,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     for (0..p.spurs) |_| spur(lv, rng);
 }
 
-/// Summed value noise keeps near its middle; this spreads it to about -1..1.
+/// Rescale centre-weighted noise to roughly [-1, 1].
 fn swing(v: f32) f32 {
     return std.math.clamp((v - 0.5) * NOISE_GAIN, -1, 1);
 }
@@ -503,7 +499,7 @@ const Site = struct {
     }
 };
 
-/// Apart from other water so it stays its own pond, with some shore on the T's grass so nothing need be cut to it.
+/// Keep the pond isolated from other water and accessible from grass.
 const PondSite = struct {
     site: Site,
     r: f32,

@@ -1647,6 +1647,36 @@ test "a fresh walk tap pressed after a queued skill replaces it, the latest pres
     try std.testing.expect(g.sim.heroActor().?.at.eq(at.add(mathx.Dir.e.delta())));
 }
 
+test "fresh input replaces a buffered action on the frame the turn finishes" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    harness.arena(g, at, &.{});
+    const by = harness.boundTo(g, .life_flask);
+    var press = input.State{ .pressed = .initOne(by.by.?), .down = .initOne(by.by.?) };
+    if (by.set == .secondary) press.down.insert(g.bar.modifier.?);
+    g.sim.heroActor().?.hp -= 5;
+    g.pic.busy = game.GLIDE_S;
+    g.st = press;
+    game.update(g, 0);
+    try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);
+    g.st = .{ .walk = .e, .step = .{ .latched = .e, .fresh = true } };
+    game.update(g, harness.GLIDED_S);
+    try std.testing.expectEqual(at.add(mathx.Dir.e.delta()), g.sim.heroAt().?);
+    try std.testing.expectEqual(flask.CHARGES, g.sim.flasks.get(.life).charges);
+
+    const chest = g.sim.heroAt().?.add(mathx.Dir.n.delta());
+    g.sim.lv.set(chest, .chest);
+    game.settle(g);
+    g.pic.busy = game.GLIDE_S;
+    harness.pressInteract(g);
+    try std.testing.expect(g.pending.? == .interact);
+    g.st = press;
+    game.update(g, harness.GLIDED_S);
+    try std.testing.expectEqual(flask.CHARGES - flask.USE, g.sim.flasks.get(.life).charges);
+    try std.testing.expectEqual(grid.Tile.chest, g.sim.lv.at(chest));
+}
+
 test "losing focus discards a queued walk while the current turn finishes drawing" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

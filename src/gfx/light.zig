@@ -25,7 +25,6 @@ pub const Emission = model.Emission;
 pub const Reach = model.Reach;
 pub const Options = model.Options;
 
-/// Each light hung steps its flicker seed on by this from the first's.
 const TORCH_SEED_STEP: u32 = 0x27D4EB2F;
 const TORCH_SEED_BASE: u32 = 0x165667B1;
 
@@ -36,11 +35,11 @@ pub const Light = struct {
     visibility: visibility.Visibility,
     torch: [LIGHTS]model.Torch,
     torch_n: usize = 0,
-    /// Lights hung since the level settled; each takes its flicker seed from it, never shared after an uproot.
+    /// Monotonic light index preserves unique flicker seeds after uprooting.
     hung: u32 = 0,
-    /// The hero's centre as drawn, cells.
+    /// Pictured hero center in cells.
     carrier: ?[2]f32 = null,
-    /// Cells round the carrier its light fades out by.
+    /// Carried-light radius in cells.
     carry_r: f32 = model.CARRY_R,
     sky: ?sky.Sky = null,
     /// Integral image of caster counts at cell corners.
@@ -50,7 +49,7 @@ pub const Light = struct {
     clouds_held: ?struct { box: grid.Box, t: f32 } = null,
     t: mathx.Seconds = .{},
     texels: std.EnumArray(model.Layer, [model.TEXELS]rl.Color),
-    /// The rows of `texels` baked since the texture was last sent, all it needs sent.
+    /// Dirty texel rows since the last upload.
     baked: [2]i32,
     scratch: grid.Level,
     gpu: light_gpu.Gpu = .{},
@@ -60,7 +59,7 @@ pub const Light = struct {
     reveal_map: bool = false,
     composed: bool = false,
     canopy: [grid.CELLS]f32,
-    /// Per light-map texel, `dapplingAt` its centre: fixed while the crowns are.
+    /// Per-texel dappling changes only with the tree crowns.
     dappling: [model.TEXELS]f32,
     banks: dual.Banks,
 
@@ -327,7 +326,7 @@ pub const Light = struct {
         return if (self.profile()) |k| model.SunRay.of(k) else null;
     }
 
-    /// The sun the clouds let through at `q`, composed; from the cached dappling when `q` is light-map texel `map_at`'s centre.
+    /// Use cached dappling only at the corresponding texel center.
     fn composedAt(self: *const Light, map_at: ?usize, q: [2]f32, cloud: f32) f32 {
         const k = self.sky orelse return cloud;
         if (!self.composed or k.sun() == 0) return cloud;
@@ -364,7 +363,7 @@ pub const Light = struct {
         return model.mix(self.carryColour(), model.NIGHT_GLOW, warm);
     }
 
-    /// Before a frame's `emit`s: effect lights last one frame.
+    /// Reset once per frame before emitting lights.
     pub fn clearEffects(self: *Light) void {
         self.effect_n = 0;
     }
@@ -407,7 +406,7 @@ pub const Light = struct {
         return self.shade(lv, torches, self.effectsNear(c), q, null, self.visibility.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
     }
 
-    /// `cloud` is the share of the sky's light the clouds let through, read only with a `ray`.
+    /// Cloud transmittance applies only when a sun ray is present.
     pub fn shade(self: *const Light, lv: *const grid.Level, torches: []const model.TorchIx, effects: model.EffectSet, q: [2]f32, map_at: ?usize, v: View, ray: ?*const model.SunRay, cloud: f32) model.Rgb {
         return self.shadeWithSun(lv, dual.LiveBanks{ .lv = lv }, torches, effects, q, map_at, v, ray, cloud, self.floors()).colour;
     }
@@ -463,7 +462,7 @@ pub const Light = struct {
         return .{ .colour = model.remembered(floor, view, sight, memory), .sun = sun };
     }
 
-    /// Cells `lo` up to `hi`, and a texel round them for the filter.
+    /// Half-open cell bounds plus a one-texel filter margin.
     pub fn bake(self: *Light, lv: *const grid.Level, lo: model.P, hi: model.P) void {
         var ids: [LIGHTS]model.TorchIx = undefined;
         const torches = self.near((grid.Box{ .lo = lo, .hi = hi }).grown(1), &ids);
@@ -671,7 +670,7 @@ pub const Light = struct {
         return ray.dim(sun, cloud);
     }
 
-    /// A flame hangs on its wall's south face, so a wall seen only from behind shows none, and burns live only while that face's floor is in sight.
+    /// A wall flame is visible from its south face and burns live while that floor is in sight.
     pub fn flames(self: *const Light, lv: *const grid.Level, out: *[LIGHTS]Flame) []const Flame {
         var n: usize = 0;
         for (self.torch[0..self.torch_n]) |*t| {
@@ -733,7 +732,7 @@ pub const Light = struct {
         return dest.y + artY(tex, dest, self.gpu.art(tex).top);
     }
 
-    /// Screen pixels below `dest`'s top that texel row `row` of `tex` lands.
+    /// Screen-pixel offset from the top of dest to the texture row.
     pub fn artY(tex: rl.Texture2D, dest: rl.Rectangle, row: f32) f32 {
         return row * dest.height / raster.sizeOf(tex)[1];
     }

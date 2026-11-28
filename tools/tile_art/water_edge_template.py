@@ -115,25 +115,16 @@ lua.extend(['s:deleteLayer(initial)', 'local paint=s:newLayer()', f'paint.name={
 for name, x, y in slices:
     lua.extend(['do', f'local slice=s:newSlice(Rectangle({x},{y},{CELL},{CELL}))',
                 f'slice.name={quote(name)}', 'end'])
-if args.replace_blank:
-    lua.extend([
-        f'if app.fs.isFile({quote(OUTPUT)}) then',
-        f'local old=assert(app.open({quote(OUTPUT)}))',
-        f'sourceFiles.checkBlankTemplate(old,{{width=s.width,height=s.height,colorMode=s.colorMode,guides=expected,slices=s.slices}},{quote(OUTPUT)})',
-        f'sourceFiles.backup({quote(OUTPUT)},{quote(WORK / "previous-template.aseprite")})', 'old:close()', 'end',
-    ])
-else:
-    lua.append(f'assert(not app.fs.isFile({quote(OUTPUT)}),"Refusing to overwrite editable artwork")')
 lua.extend([
     's.data="Six independent 64px water cliff tiles: left, repeat, right at x12/108/204; shallow y104, deep y232. Lip at local y16; bottom y28 shallow, y40 deep (exclusive). Paint both depths on Draw here. Locked water references at x324/420 are unchanged 64px crops of runtime shallows-ground.png and water-ground.png, masks 12 and 3. No runtime integration."',
-    f's:saveAs({quote(OUTPUT)})', 's:close()', f'local saved=assert(app.open({quote(OUTPUT)}))',
+    'local staged=sourceFiles.stage("water-cliff-edge.aseprite")',
+    's:saveAs(staged)', 's:close()', 'local saved=assert(app.open(staged))',
     f'assert(saved.width=={SIZE[0]} and saved.height=={SIZE[1]} and #saved.frames==1)',
     f'assert(#saved.layers=={len(layers) + 1} and #saved.slices=={len(slices)})',
     'for i,want in ipairs(expected) do', 'local l=saved.layers[i]',
     'assert(l.name==want.name and l.opacity==want.opacity and not l.isEditable)',
-    'local im=Image(saved.width,saved.height,ColorMode.RGB)',
-    'local cel=assert(l:cel(1)); im:drawImage(cel.image,cel.position)',
-    'assert(im:isEqual(want.image),"Guide pixels changed")', 'end',
+    'local cel=assert(l:cel(1))',
+    'assert(sourceFiles.canvas(saved,cel):isEqual(want.image),"Guide pixels changed")', 'end',
     f'local p=saved.layers[{len(layers) + 1}]', f'assert(p.name=={quote(LAYERS["draw"])} and p.isEditable and p.isVisible)',
     'assert(not p:cel(1) or p:cel(1).image:isEmpty())',
     'local names={' + ','.join(f'[{quote(name)}]={{{x},{y}}}' for name, x, y in slices) + '}',
@@ -141,7 +132,19 @@ lua.extend([
     'local want=assert(names[slice.name])',
     f'assert(want[1]==slice.bounds.x and want[2]==slice.bounds.y and slice.bounds.width=={CELL} and slice.bounds.height=={CELL})',
     'names[slice.name]=nil', 'end', 'assert(next(names)==nil)',
-    f'saved:saveCopyAs({quote(WORK / "preview.png")})', 'saved:close()',
+    f'saved:saveCopyAs({quote(WORK / "preview.png")})',
+])
+if args.replace_blank:
+    lua.extend([
+        f'if app.fs.isFile({quote(OUTPUT)}) then',
+        f'local old=assert(app.open({quote(OUTPUT)}))',
+        f'sourceFiles.checkBlankTemplate(old,{{width=saved.width,height=saved.height,colorMode=saved.colorMode,guides=expected,lockedGuides=true,slices=saved.slices}},{quote(OUTPUT)})',
+        f'sourceFiles.backup({quote(OUTPUT)},{quote(WORK / "previous-template.aseprite")})', 'old:close()', 'end',
+    ])
+else:
+    lua.append(f'assert(not app.fs.isFile({quote(OUTPUT)}),"Refusing to overwrite editable artwork")')
+lua.extend([
+    'saved:close()', f'sourceFiles.publishTo(staged,{quote(OUTPUT)})',
     f'sourceFiles.write({quote(WORK / "validation.txt")},"Verified saved Aseprite: {SIZE[0]}x{SIZE[1]}, six paint slices and four water reference slices, six locked guide/reference layers preserved pixel-for-pixel, water references at full opacity, blank editable Draw here. No runtime assets exported.\\n")',
 ])
 (WORK / 'assemble.lua').write_text('\n'.join(lua), encoding='utf-8')

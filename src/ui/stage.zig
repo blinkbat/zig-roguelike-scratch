@@ -45,7 +45,7 @@ fn scaleFor(screen: mathx.P) i32 {
     return @max(1, @min(tall, wide));
 }
 
-/// Every hero's body that is not resident yet, loaded beside what is; true when any was missing.
+/// Add missing hero textures to the resident set. Returns whether a load was needed.
 pub fn loadHeroes(sprites: *sprite.Sprites) bool {
     var need = sprites.resident();
     var missing = false;
@@ -57,7 +57,7 @@ pub fn loadHeroes(sprites: *sprite.Sprites) bool {
     return missing;
 }
 
-/// `k` standing with its feet's middle on `feet`, `scale` times its pixels, `light` from shadow (0) to its own colours (1).
+/// Anchor at the feet. Light ranges from shadow (0) to original color (1).
 pub fn figure(sprites: *const sprite.Sprites, k: actor.Kind, feet: mathx.P, scale: i32, light: f32) void {
     const tex = sprites.body(k) orelse return;
     const size = look.SPRITE_PX * scale;

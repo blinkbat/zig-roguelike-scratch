@@ -1,130 +1,40 @@
 # Save compatibility
 
-Run saves and ossuary records use versioned envelopes and named values. They no
-longer contain Zig struct bytes, padding, compiler versions or enum ordinals.
-`save.zig` owns slots and asynchronous writes; `save_data.zig` classifies saved
-fields; `save_format.zig` parses, validates and applies detached snapshots;
-`save_values.zig` owns conversions for gameplay values.
+`save.zig` owns slots and autosave. `save_data.zig` classifies fields, `save_format.zig` validates detached snapshots, and `save_values.zig` converts gameplay values.
 
 ## Loading policy
 
-Preserve recoverable state and convert on parse. Missing fields with declared
-defaults use those defaults; unknown record fields are skipped. Required identity
-and world state must still be present. Renaming a persistent field or enum requires
-an explicit alias or migration: its spelling is now part of the file contract. A renamed
-field lists `(new, old)` in its struct's `WAS` (`wire.formerly`); an enum rename needs a
-`save_values.zig` conversion.
-Changing record order, enum ordinals, native alignment or integer widths within
-the stored value's range needs no migration.
+Load and slot inspection use the same decoder. Starting a run checks only whether a slot is missing or empty. A failed load preserves the live game, map and file. A successful load marks the run dirty for an atomic rewrite on its next save.
 
-Bleeds store a movement damage bonus with a zero default for older portable saves.
-The five wound/defense affix identities and this bleed field change the raw layout
-fingerprint; portable item and actor values retain their named compatibility.
+Name, class, level state, actor pool, hero reference, combat RNG and progression are required. Missing optional fields take their declared defaults. These include empty inventory, ground and history, full inactive flasks, zero mana and cooldowns, the starting clock, right-facing bodies and loot RNG seed 1. Restore starting skills and class origins, derive a missing skill bar from learned skills and refund excess ranks. Restore maximum life, maximum mana and elemental resistances from repaired gear and progression.
 
-Actor projectile and quickstep cooldowns default to zero in older portable saves.
-In-flight orbs retain the existing bolt record; their element comes from the
-thrower's actor kind. The new cooldown fields change the raw-layout fingerprint.
+Validate collection sizes, numeric ranges, enum tags, booleans, finite floats and RNG state before applying a snapshot. Check actor identities and occupancy, door markers, unique coin piles, and agreement between summary and run. The hero occupies the first pool slot on active and visited levels. Reject missing required data, duplicate known fields and checksum failures.
 
-Missing run fields use empty inventory/ground/history, zero counters and cooldowns,
-full inactive flasks, initial clock, right-facing bodies and deterministic loot RNG
-seed 1. Missing mana starts at zero. A missing skill bar uses the loaded class and
-learned skills. Name, class, level state, actor pool, hero reference, combat RNG and
-progression are required. Within progression, absent additions have their declared
-defaults; class origins and initial skills are restored. Reduced rank limits refund
-excess points. Flask capacities and generator settings fit current supported ranges.
-
-Passive allocations use `(arm, branch, seam, ring, slot)` identities, independent of
-array order, display names and grants. Removed identities refund a passive point;
-duplicates are rejected. Preserve those identities when rearranging the tree, and
-add an explicit migration if their meaning changes. RNG state explicitly names
-Xoshiro256 and stores its four words; changing algorithms requires a converter.
-
-Lengths and counts are bounded before indexing. Unknown enum/union tags, invalid
-booleans, numeric overflow, non-finite floats, all-zero RNG states, duplicate known fields, impossible
-actor references, incomplete required data and checksum failures are rejected.
-The hero retains the first actor-pool slot across active and visited levels.
-Active and visited levels validate occupancy, positions, door markers and unique
-coin piles. Loading rebuilds the hero's maximum life, maximum mana and elemental
-resistances from repaired gear and progression. Summary data must agree with the
-run. Parsing and validation complete before either the live game or its map is
-changed. A successful load marks the run dirty for an atomic canonical rewrite.
-Reading a save never changes its file.
-Starting a run checks for a missing or empty slot with a one-byte read. The Load
-menu decodes each slot to report whether its run can be loaded.
-Autosave copies owned snapshot data on the frame; the existing worker performs
-encoding, checksum calculation and atomic writing. Snapshot and byte buffers are
-reused only after worker completion, and failed encodes or writes rearm dirty state.
-Travel keeps dirty flags for modified visit snapshots across scene resets.
-
-Atlas nodes default a missing `zoo` to none. Small Keys use ordinary saved items;
-chests and gates retain their level tiles, and occupants use the ordinary actor
-pool. Legacy loose zoo keys become closed key chests. A taken legacy key for a
-still-locked gate becomes a carried Small Key, or returns to its chest if the bag
-is full; opened gates grant no key. A chest cell with a body standing on it, or one
-that would close the only way to the gate, opens instead, with the key lying in it. Active and visited levels migrate once, without
-duplicating the active level's older visit snapshot. Existing
-portable runs keep their saved maps; new encounters in authored map files appear
-when starting a new run.
-
-## Legacy files
-
-The zoo node field and gate/key tile names change the raw-layout fingerprint;
-pre-zoo raw saves are not claimed as compatible. So does the clock's `stunned`
-flag; portable saves without it load unstunned. Portable saves retain named-value
-compatibility, including absent zoo definitions.
-The Small Key and quiver item identities also change the raw fingerprint;
-portable item identities remain compatible by name. So does the Attack skill;
-portable skill bars and ranks name their skills.
-Node location weather overrides default to inheritance in portable saves that
-predate them. Location masks are derived from terrain as a level is entered and
-saved with the run; version 3 and older runs derive them from their saved level. The new node field and beams weather name change the raw-layout
-fingerprint; earlier portable saves remain compatible.
-The encampment layout and chest/light niche setpiece names also change the raw
-fingerprint; portable maps retain their existing named layouts and pieces.
-So do the crate, sacks, bedroll and tent tiles, the moat camp piece and the NPC
-`on` spot; portable saves name them.
-
-A raw file loads only when its ABI/type/tree fingerprint matches this exact build.
-The fingerprint names every enum member reachable from the raw layout, so adding a
-tile, biome or other enum value changes it and earlier raw files then report as
-another build's. Its counts, primitive tags and semantic state are
-checked in detached storage before applying it. Its next save uses the portable
-format; legacy ossuary records similarly become dirty after conversion.
-
-Raw files with an unknown layout cannot be safely inferred from a fingerprint:
-they carry no field schema. They remain untouched and are reported as incompatible.
-Supporting one requires its original schema and an explicit migration. Keep
-`RECORDED_FINGERPRINT` and the legacy fixtures as guards against accidentally
-claiming compatibility.
-
-The reader takes the map and level in their raw shape without the fields added
-to their ends since (`save_data.LegacyMap`, `LegacyLevel`: the script and the level's fields from `LEVEL_ADDED_FROM` on),
-then converts with those fields defaulted. Run state added after the raw format
-(`PORTABLE_FIELDS`: the trigger runtime, the days elapsed, life recovery progress and climate locations) lives in portable saves alone.
+Autosave captures owned state on the frame. Its worker encodes, checksums and atomically replaces the slot. Join the worker before reusing snapshot or byte storage. Failed writes rearm dirty state. Track changed visits across travel so a reused snapshot includes every modified level.
 
 ## Encoding and evolution
 
-`core/store.zig` supplies atomic replacement and an envelope: magic, a little-endian
-u64 format version, body, and a little-endian u64 Wyhash checksum of that body.
-The checksum detects damage; it is not authentication. Unknown envelope versions
-are refused. Run magic is `cistern-save\n`, version 4; ossuary magic is
-`cistern-ossuary-v1\n`, version 1. Version 1 runs predate flasks worn as items and load
-with both flasks equipped; version 2 keeps an empty flask slot empty. Version 1 runs
-predate starting class arms and load with each arm worn in its empty slot where the
-hands still fit. Version 2 spans builds before and after heroes started armed, so a
-version 2 run is armed that way only when both hands are empty and no class arm is
-in the bag; version 3 keeps an emptied hand empty. Version 3 and older runs predate saved climate locations.
+`core/store.zig` wraps the body in magic, a little-endian u64 version and a little-endian u64 Wyhash body checksum. Run magic is `cistern-save\n`. Ossuary magic is `cistern-ossuary-v1\n`, version 1.
 
-`core/wire.zig` writes structs as a u16 field count followed by length-delimited
-named fields. Each field has a u16 name length, name bytes, u32 payload length and
-payload. Integers carry a signedness byte and 64 little-endian bits; floats use
-little-endian f64 bits. Enum and union tags are names. Arrays have u32 counts,
-byte arrays have byte payloads, and optionals have a checked presence byte.
-Enum-indexed arrays use key names. Counted containers write only active entries.
-Fixed geometric arrays must retain their exact dimensions.
+| Run version | Migration on load |
+| --- | --- |
+| 1 | Equip the original flasks. Restore class arms in empty slots where the hand rules allow. |
+| 2 | Preserve empty flask slots. Restore class arms only if both hands are empty and the bag holds no class arm. |
+| 3 | Preserve deliberately emptied hands. Versions 1–3 derive climate locations from the saved level. |
+| 4 | Read saved climate locations. Missing node weather overrides inherit the node's weather. |
 
-Add defaults only when omission has a safe meaning. Keep essential fields required.
-For changed identities or representations, add conversions in `save_values.zig`
-or a version-specific reader, plus in-memory fixtures proving both recovery and
-rejection without mutation. Never silently reinterpret an unknown tag or truncate
-an overflowing value. Tests must not write save files.
+`core/wire.zig` writes a u16 field count. Each field has a u16 name length, name bytes, u32 payload length and payload. Integers use a signedness byte and 64 little-endian bits. Floats use little-endian f64 bits. Enums and union tags use names. Arrays have u32 counts, byte arrays store bytes directly, and optionals have a checked presence byte. Enum-indexed arrays use key names. Counted containers store active entries. Fixed geometry requires exact dimensions.
+
+Record order, alignment, enum ordinals and integer widths can change while represented values still fit. Skip unknown record fields. Renamed fields need a `(new, old)` entry in `WAS`. Renamed enum tags or changed representations need an explicit conversion. Preserve Xoshiro256's four state words and passive node identities `(arm, branch, seam, ring, slot)`. Retired nodes refund a point. Duplicate identities are invalid.
+
+Older portable actors default missing bleed movement bonuses and projectile or quickstep cooldowns to zero. Missing stun defaults to false. In-flight orbs use the thrower's kind for their element. Missing zoo definitions default to none. Authored map edits affect new runs.
+
+Legacy loose zoo keys become key chests. For a taken key at a still-locked gate, restore the carried Small Key or put it back in its chest if the bag is full. A chest that would block a body or cut off the gate opens and leaves the key on the ground if space permits. An open gate grants no replacement. Migrate each visited level once, skipping the stale copy of the active level.
+
+## Legacy files
+
+Raw saves have no field schema. Accept only a matching ABI, type and passive-tree fingerprint, then validate the detached state. Enum membership and raw layouts contribute to that fingerprint. Other fingerprints require their original schema and a migration. Keep the recorded fingerprint and legacy fixtures.
+
+`LegacyMap` omits the script and `LegacyLevel` omits fields from `LEVEL_ADDED_FROM` onward. Conversion fills their defaults. `PORTABLE_FIELDS` holds trigger state, elapsed days, life recovery and climate locations. A converted run or ossuary is marked for portable rewrite.
+
+Use in-memory fixtures to verify recovery and rejection before mutation when changing a persistent identity or representation.

@@ -112,9 +112,8 @@ pub const State = struct {
     reveal_added: ?*const u8 = null,
     reveal_coined: ?script.Table = null,
     field_box: rl.Rectangle = widgets.NO_BOX,
-    /// The script's lists as the page last drew them; a picked index means nothing once they changed elsewhere.
+    /// External list changes invalidate selected indices.
     seen: Seen = .{},
-    /// A line drawn as the game draws it, over the page.
     preview: ?LineAt = null,
     preview_cursor: usize = 0,
 

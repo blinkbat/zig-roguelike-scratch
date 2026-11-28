@@ -46,7 +46,6 @@ pub const Context = struct {
         return self.open == 0 and self.beside > 0;
     }
 
-    /// The killing blow was the best its foe can roll.
     fn unlucky(self: *const Context) bool {
         return self.killer.best and self.killer.by == .foe;
     }
@@ -102,15 +101,12 @@ const WARD_UNUSED: f32 = 0.3;
 const LOW_SHARE: i32 = 2;
 const BEST_ROLL: f32 = 0.15;
 const PER_MISS: f32 = 0.05;
-/// The killing blow did at least this much past the life left, and at least as much again.
 const OVERKILL_MIN: i32 = 3;
 const CHIP_HITS: usize = 5;
 /// No chip hit took more than this share of full life.
 const CHIP_SHARE: i32 = 6;
-/// Foes this frail are beneath a hero of `TRASH_LEVEL`.
 const TRASH_HP: i32 = 6;
 const TRASH_LEVEL: u16 = 3;
-/// Within this share of the next level.
 const ALMOST_SHARE: u64 = 5;
 const RECENT_MILESTONE: u32 = 10;
 
@@ -143,7 +139,6 @@ fn hurtFrom(ctx: *const Context, from: usize) bool {
     return false;
 }
 
-/// Some turn a ready defence (with life low, if `low`) went unused, with harm still to come.
 fn unused(ctx: *const Context, comptime field: std.meta.FieldEnum(chronicle.Start), act: skillbar.Act, comptime low: bool) bool {
     for (ctx.turns, 0..) |*turn, i| {
         const s = turn.start;
@@ -284,7 +279,7 @@ pub const Report = struct {
 
 const Writer = std.io.FixedBufferStream([]u8).Writer;
 
-/// A few plain sentences on how the hero died, each from something that happened; a sentence that does not fit is left out whole.
+/// Drop whole sentences when the report reaches capacity.
 pub fn write(ctx: *const Context) Report {
     var r = Report{};
     var stream = std.io.fixedBufferStream(&r.buf);

@@ -166,7 +166,7 @@ const ShadowShader = struct {
 const Art = struct {
     id: u32,
     top: f32,
-    /// Texel rows from the sprite's top to just under its lowest opaque row.
+    /// Exclusive bottom of opaque pixels, measured from the top.
     foot: f32,
     normals: ?rl.Texture2D,
 
@@ -183,7 +183,7 @@ const Art = struct {
     }
 };
 
-/// Texels in from the silhouette over which a body's edge rounds off, and how steeply.
+/// Bevel reach in texels.
 const BEVEL_PX: i32 = 5;
 const BEVEL_DEPTH: f32 = 2.0;
 const ART_MAX: i32 = 2 * look.SPRITE_PX;
@@ -192,7 +192,7 @@ const SOLID_A: u8 = 25;
 const NO_FIGURES: [sprite_assets.FIGURES]?rl.Texture2D = @splat(null);
 
 pub const Gpu = struct {
-    /// `ox, oy` is where the map's top-left corner lands on screen.
+    /// Map origin in screen pixels.
     pub fn drawMap(self: *const Gpu, ox: i32, oy: i32, cell: i32) void {
         const tex = self.layers.get(.map) orelse return;
         comptime std.debug.assert(model.OVERBRIGHT == 2);
@@ -217,7 +217,7 @@ pub const Gpu = struct {
         }
     }
 
-    /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
+    /// Center in cells, flash as a fraction of FLASH_RGB.
     pub fn drawBody(self: *const Gpu, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const model.Shine, flash: f32, opacity: f32, fade_bounds: [2]f32, enabled: bool) void {
         const size = raster.sizeOf(tex);
         const w, const h = size;
@@ -261,7 +261,7 @@ pub const Gpu = struct {
         return true;
     }
 
-    /// Halos meet by channelwise maximum in a screen target, then add to the scene once, never brighter than the brightest.
+    /// Combine overlapping halos by channelwise maximum before adding to the scene.
     pub fn drawGlows(self: *Gpu, flames_: []const model.Flame, ox: f32, oy: f32, cell: f32, screen: mathx.P, outer: u32) void {
         const g = self.halo orelse return;
         for (flames_) |f| {
@@ -284,7 +284,7 @@ pub const Gpu = struct {
 
     layers: std.EnumArray(model.Layer, ?rl.Texture2D) = .initFill(null),
     glow: ?rl.Texture2D = null,
-    /// `glow` premultiplied, for halos meeting by maximum.
+    /// Premultiplied glow for maximum blending.
     halo: ?rl.Texture2D = null,
     halos: ?rl.RenderTexture2D = null,
     streak: ?rl.Texture2D = null,
@@ -293,9 +293,8 @@ pub const Gpu = struct {
     shadow: ?ShadowShader = null,
     receiver: ?ReceiverShader = null,
     shade: ?rl.Shader = null,
-    /// The screen's shadows, white where there are none; sized to the screen when drawn.
+    /// White marks unshadowed pixels.
     mask: ?rl.RenderTexture2D = null,
-    /// The framebuffer the mask was drawn from, to go back to.
     outer: u32 = 0,
     arts: [sprite_assets.FIGURES]?Art = @splat(null),
     by_id: [sprite_assets.FIGURES]Art = undefined,
@@ -383,7 +382,7 @@ fn rowSolid(solid: *const [ART_MAX * ART_MAX]bool, w: i32, y: i32) bool {
     return false;
 }
 
-/// Laigter soft bevel: quarter-circle height from clear-pixel distance; `solid` is packed width-first.
+/// Laigter quarter-circle bevel from clear-pixel distance. Solid is row-major.
 fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Texture2D {
     var height: [ART_MAX * ART_MAX]f32 = undefined;
     const reach = BEVEL_PX + 1;

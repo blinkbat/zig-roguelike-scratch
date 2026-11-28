@@ -19,9 +19,9 @@ pub const HEALING_BURST: u16 = 350;
 /// Brogue updates gas twice a hundred ticks, which is one turn.
 pub const PASSES: usize = 2;
 pub const GASSED_UP: u16 = 20;
-/// The share of passes a cell that held gas loses a unit; Brogue's healing gas dissipates as quickly.
+/// Brogue dissipates healing and caustic gas at the same rate.
 pub const DISSIPATE: f32 = 0.5;
-/// Brogue's `T_CAUSES_DAMAGE` and `T_CAUSES_HEALING` alike: a fifteenth of the body's full hp a turn.
+/// Brogue's T_CAUSES_DAMAGE and T_CAUSES_HEALING use a fifteenth of full HP.
 const HARM_PART: i32 = 15;
 pub const BOIL: u16 = 60;
 pub const CONDENSE: u32 = 3;
@@ -112,7 +112,6 @@ fn thinning(kind: grid.Gas) ?u32 {
     };
 }
 
-/// The high corner exclusive.
 fn reach(vol: *const [grid.CELLS]u16) ?grid.Box {
     if (!any(vol)) return null;
     return grid.boundsWhere(vol, held).?.grown(1);

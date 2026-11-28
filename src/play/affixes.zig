@@ -198,7 +198,7 @@ pub fn imbued(e: damage.Element) resilience.Kind {
     };
 }
 
-/// How strong a roll may be, from the level of the foe or area it drops in; never shown.
+/// Hidden roll tier derived from foe or area level.
 pub const Tier = enum(u8) {
     low,
     mid,
@@ -227,7 +227,7 @@ pub const AffixRoll = struct {
         return t.reaches(a.least);
     }
 
-    /// The best value tier `t` rolls: the full range only at the top tier.
+    /// Only the top tier reaches the full roll ceiling.
     pub fn ceiling(a: AffixRoll, t: Tier) i32 {
         return a.lo + @divTrunc((a.hi - a.lo) * (@as(i32, @intFromEnum(t)) + 1), Tier.COUNT);
     }

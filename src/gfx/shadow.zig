@@ -25,7 +25,7 @@ const SHADOW_SQUASH: f32 = 0.55;
 pub const SHADOW_OVERHEAD: f32 = 0.05;
 const SHADOW_NEAR: f32 = 0.5;
 const SHADOW_PAD: f32 = SHADOW_SOFT_TIP * @as(f32, @floatFromInt(model.SHADOW_TAPS));
-/// Texels between the shadow shader's blur taps, at its tip and at its foot.
+/// Tip and foot blur tap spacing in texels.
 const SHADOW_SOFT_TIP: f32 = 2.0;
 const SHADOW_SOFT_FOOT: f32 = 0.6;
 const THIN_LO: f32 = 0.06;
@@ -109,7 +109,7 @@ pub fn endShadows(self: *light.Light, ox: i32, oy: i32, cell: i32) void {
     raster.drawTarget(t);
 }
 
-/// Before the walls, which cover whatever of it reaches them.
+/// Draw before walls so they occlude the shadow.
 pub fn drawShadows(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const light.Shine, opacity: f32) void {
     const f = footOf(self, tex, dest, s, 1, opacity) orelse return;
     const fx = f.x;
@@ -217,7 +217,7 @@ const Sides = packed struct(u4) {
 };
 pub const ForestCast = struct { tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, cast: [model.BODY_LIGHTS]Cast, n: usize, joined: Sides };
 pub const FOREST_QUEUE: usize = 2048;
-/// `flushForest`'s sort key: the queue index below, the texture id over it, the joined sides on top.
+/// Sort key packs index, texture ID and joined sides from low to high bits.
 const INDEX_BITS = 16;
 const JOINED_AT = INDEX_BITS + @bitSizeOf(u32);
 
@@ -319,7 +319,7 @@ pub fn streakAlpha(u: f32, v: f32) f32 {
     return along * across * across;
 }
 
-/// Downward lean reverses the quad's winding; reverse its corners to avoid back-face culling.
+/// Reverse downward quads to preserve winding under back-face culling.
 fn silhouette(tex: rl.Texture2D, fx: f32, fy: f32, width: f32, foot: f32, left: bool, c: Cast) void {
     const lean = c.lean;
     const pad = SHADOW_PAD / raster.sizeOf(tex)[0];

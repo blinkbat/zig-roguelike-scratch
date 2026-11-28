@@ -57,7 +57,7 @@ pub fn areaLevel(hops: usize) u8 {
     return @intCast(@min(1 + AREA_LEVELS_PER_HOP * hops, std.math.maxInt(u8)));
 }
 
-/// What a foe's drop may roll: the foe's level or the area's, the higher.
+/// Use the higher of area and foe level.
 pub fn foeTier(k: actor.Kind, area: u8) affixes.Tier {
     return .of(@max(foeLevel(k), area));
 }
@@ -70,7 +70,7 @@ pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32, tier: affixes.Tier) Loot {
     };
 }
 
-/// What a chest holds, rolled item, gold, then supply.
+/// Seeded roll order is item, gold, then supply.
 pub fn chestLoot(rng: *mathx.Rng, item_rarity: i32, tier: affixes.Tier) Loot {
     const item = items.roll(rng, item_rarity, tier);
     const gold = CHEST_GOLD.roll(rng);
@@ -84,7 +84,7 @@ pub fn mimicLoot(rng: *mathx.Rng, item_rarity: i32, tier: affixes.Tier) Loot {
     return loot;
 }
 
-/// Its gold, then now and then a white item, rolled only where `room` lets it lie.
+/// Rolls gold first. A normal item can drop only when room remains.
 pub fn barrelLoot(rng: *mathx.Rng, room: bool) Loot {
     const gold = BARREL_GOLD.roll(rng);
     return .{ .gold = gold, .item = if (rng.percent(BARREL_ITEM_PERCENT) and room) items.unrolled(rng) else null };

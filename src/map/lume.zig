@@ -4,11 +4,9 @@ const grid = @import("grid.zig");
 const fov = @import("fov.zig");
 const day = @import("day.zig");
 
-// Light that decides what is seen; `gfx/light.zig` only draws it.
-
 const P = mathx.P;
 
-/// Cells a torch's flame lights, from the floor below it, or a glowing plant from its own cell.
+/// Torch radius in cells, centred below its wall. Glow plants use their own cell.
 pub const TORCH_REACH: i32 = 7;
 pub const FIRE_REACH: i32 = 3;
 

@@ -10,7 +10,7 @@ pub const Lane = grid.Bounded(P, LONGEST);
 /// The nearest a hero is braced at; beside it, it strikes instead.
 pub const NEAREST: i32 = 2;
 
-/// The cells along `d` from `from`, `reach` at most, stopping short of the first a step cannot enter.
+/// Walkable cells along `d`, excluding the first blocked cell.
 pub fn lane(lv: *const grid.Level, from: P, d: mathx.Dir, reach: i32) Lane {
     std.debug.assert(reach <= LONGEST);
     var out = Lane{};

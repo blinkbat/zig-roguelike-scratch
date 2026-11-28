@@ -21,7 +21,7 @@ comptime {
     std.debug.assert(actor.row(GUARD).posted);
 }
 
-/// Up to `post.guards` guards beside the carts, a cart at a time in reading order; fewer when the carts or the pool run out of room.
+/// Fill cart posts in reading order until the guard quota or available space runs out.
 pub fn place(lv: *grid.Level, pool: *actor.Pool, post: Post, off: *const grid.CellSet) void {
     var left = post.fit().guards;
     while (left > 0) {

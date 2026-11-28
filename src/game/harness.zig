@@ -490,7 +490,7 @@ pub fn drawn(g: *game.Game, slot: usize) bool {
     return !undrawn(g, slot);
 }
 
-/// An arrow shot from `SHOT_FROM` at `SHOT_AT`, its full reach off, lands `SHOT_LANDS` in.
+/// Full-range arrow fixture. Impact is due at `SHOT_LANDS`.
 pub const SHOT_FROM = P{ .x = 22, .y = 20 };
 pub const SHOT_AT = P{ .x = SHOT_FROM.x + bow.RANGE, .y = SHOT_FROM.y };
 pub const SHOT_LANDS = game.presentation.flown(bow.RANGE - 1);

@@ -1,5 +1,4 @@
 @echo off
-REM Pass -Doptimize=ReleaseFast for an optimized run; GAME_ARGS go to the game.
 setlocal
 set "HERE=%~dp0"
 call "%HERE%_zig.cmd" || exit /b 1

@@ -13,7 +13,6 @@ const EDGE: f32 = 0.42;
 const RING: f32 = 0.12;
 /// An island's share of a blob's size.
 const ISLAND_OF: f32 = 0.35;
-/// The noise is weighed by this less a cell's distance over the radius, so the middle fills and the edge frays.
 const FALLOFF: f32 = 1.4;
 const TRIES: usize = 80;
 

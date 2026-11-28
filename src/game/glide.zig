@@ -20,7 +20,7 @@ pub const Glide = struct {
     stepped: bool = false,
     /// Retain mid-hop height when a new step starts.
     from_lift: f32 = 0,
-    /// Pixels toward what a melee blow strikes, at the bump's height; null for a step.
+    /// Bump offset at the apex, in pixels. Null for a step.
     bump: ?rl.Vector2 = null,
     priors: [PRIORS]?Prior = @splat(null),
 
@@ -95,7 +95,7 @@ pub const Glide = struct {
         return gl;
     }
 
-    /// Whether a part of the motion not yet finished ends on `p`.
+    /// Includes unfinished segments of a chained glide.
     pub fn reaching(self: Glide, p: P) bool {
         if (self.to.eq(p) and self.left() > 0) return true;
         const w = self.waiting() orelse return false;
@@ -162,7 +162,7 @@ pub const Glide = struct {
         return self.from_lift * (1 - k) + hop;
     }
 
-    /// Pixels above the ground the body is drawn; its shadow, bar, light and the camera stay on the ground.
+    /// Pixel lift for the figure. Its shadow, bar, light and camera stay grounded.
     pub fn lift(self: Glide) i32 {
         return mathx.roundTiesUp(self.height());
     }

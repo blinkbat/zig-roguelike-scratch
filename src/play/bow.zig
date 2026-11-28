@@ -32,7 +32,7 @@ pub const Flight = struct {
         return f.end();
     }
 
-    /// Where it came down, struck or not; none when it never left the bow.
+    /// Final cell, or null for an empty flight.
     pub fn end(f: *const Flight) ?P {
         if (f.len == 0) return null;
         return f.path[f.len - 1];
@@ -148,7 +148,7 @@ pub fn preview(lv: *const grid.Level, from: P, to: P) Flight {
     return trace(lv, null, from, to, true);
 }
 
-/// `preview`, passing over the bodies in `pool` the hero cannot see where lit.
+/// Omits unseen bodies even on lit cells.
 pub fn previewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to: P) Flight {
     return trace(lv, pool, from, to, true);
 }
@@ -184,7 +184,7 @@ pub const Pierced = struct {
     }
 };
 
-/// On through every body past `to`, out to full range; a barrel, wall or barrier still stops it.
+/// Continues past the mark to full range unless terrain or a barrel stops it.
 pub fn pierce(lv: *const grid.Level, from: P, to: P) Pierced {
     return through(lv, null, from, to, RANGE, LONGEST, false);
 }
@@ -193,7 +193,7 @@ pub fn piercePreviewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: 
     return through(lv, pool, from, to, RANGE, LONGEST, true);
 }
 
-/// `fly`, but a body it strikes lets it on through, up to `extra` more, out to `reach`.
+/// Continues past up to `extra` bodies, bounded by `reach`.
 pub fn skewer(lv: *const grid.Level, from: P, to: P, reach: i32, extra: usize) Pierced {
     return skewered(lv, null, from, to, reach, extra, false);
 }

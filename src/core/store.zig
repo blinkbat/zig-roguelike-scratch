@@ -1,7 +1,7 @@
 const std = @import("std");
 pub const legacy = @import("store_legacy.zig");
 
-/// Written beside itself and renamed over it, so a write that fails part-way leaves the last one standing.
+/// Atomic replacement preserves the previous file on write failure.
 pub fn replace(path: []const u8, bytes: []const u8) !void {
     const parent = std.fs.path.dirname(path);
     var dir = if (parent) |p| try std.fs.cwd().makeOpenPath(p, .{}) else std.fs.cwd();
@@ -40,7 +40,7 @@ pub fn sum(bytes: []const u8) u64 {
     return std.hash.Wyhash.hash(0, bytes);
 }
 
-/// Bytes before a file's body: its magic, then its format version.
+/// Body offset after magic and format version.
 pub fn head(magic: []const u8) usize {
     return magic.len + PRINT;
 }
@@ -54,12 +54,12 @@ pub fn stamp(bytes: []u8, magic: []const u8, print: u64) void {
     std.mem.writeInt(u64, bytes[magic.len..][0..PRINT], print, .little);
 }
 
-/// Ends a file with the sum of its `body`, everything after its head.
+/// Append the checksum of the body.
 pub fn seal(w: anytype, body: []const u8) !void {
     try w.writeInt(u64, sum(body), .little);
 }
 
-/// `seal` into room `out` already holds, so it may run off the frame; its body starts `head_len` bytes in.
+/// Caller reserves SUM bytes before handing the buffer to the writer.
 pub fn sealReserved(out: *std.ArrayList(u8), head_len: usize) void {
     var bytes: [SUM]u8 = undefined;
     std.mem.writeInt(u64, &bytes, sum(out.items[head_len..]), .little);

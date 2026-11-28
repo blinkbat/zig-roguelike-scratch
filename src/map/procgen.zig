@@ -192,12 +192,12 @@ pub const LOTS_MAX: usize = blk: {
 pub const KEPT_MAX: usize = 2;
 const SECTION_LOTS: usize = 1;
 
-/// Reproducible from the seed, the doors and the plan; the edge sealed, then every open cell joined, each door too.
+/// Identical inputs produce the same connected floor and doors.
 pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features: []const Feature) void {
     rollWith(lv, seed, doors, floor, features, null, &.{});
 }
 
-/// `roll`, the section's box and `kept` held from every feature's lots, the section's cells painted over theirs; doors win its cells.
+/// Reserve the section and kept boxes from feature lots. Doors take precedence over painted cells.
 pub fn rollWith(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features: []const Feature, authored: ?section.Placed, kept: []const grid.Box) void {
     std.debug.assert(kept.len <= KEPT_MAX);
     std.debug.assert(doors.len <= grid.MAX_DOORS);
@@ -341,7 +341,6 @@ test "every base, bare and under every feature, joins its ground, reaches its do
 const SECTION_ROOM = grid.Box.sized(.{ .x = 30, .y = 20 }, 9, 7);
 const SECTION_TORCH = P{ .x = SECTION_ROOM.centre().x, .y = SECTION_ROOM.lo.y };
 
-/// A walled room, its way in on the south side unless `shut`, a barrel and a torch inside.
 fn testSection(anchor: section.Anchor, shut: bool) section.Section {
     var s = section.Section{ .anchor = anchor };
     var it = SECTION_ROOM.cells();
@@ -788,7 +787,6 @@ fn filled(lv: *const grid.Level, cells: *const grid.CellSet) bool {
     return false;
 }
 
-/// Excludes changes to the base's open ground.
 fn laidOver(lv: *const grid.Level, was: *const [grid.CELLS]grid.Tile, base: *const [grid.CELLS]grid.Tile, pal: carve.Palette) bool {
     for (lv.tile, was, base) |t, w, s| {
         if (w != s and w != pal.open and t != w) return true;

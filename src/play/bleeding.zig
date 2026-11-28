@@ -20,7 +20,7 @@ pub const Bleed = struct {
         self.startWith(STILL);
     }
 
-    /// What starting it now says: read before it starts.
+    /// Read before applying the wound.
     pub fn said(self: Bleed) []const u8 {
         return if (self.turns == 0) TAKES else RETAKES;
     }

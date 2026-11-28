@@ -22,14 +22,14 @@ pub fn resistedChance(pc: u32, resist: i16) u32 {
     return @intCast(@min(mathx.PERCENT, resisted(std.math.lossyCast(i32, pc), resist)));
 }
 
-/// Lands `pc` percent of the time; at 0, never, drawing nothing.
+/// A zero chance consumes no RNG.
 pub fn procs(rng: *mathx.Rng, pc: u32) bool {
     return pc > 0 and rng.percent(pc);
 }
 
 pub const Resists = std.EnumArray(Element, i16);
 
-/// A skill's damage roll before its attribute, `lo` to `hi`, both included.
+/// Inclusive damage range before attribute scaling.
 pub const Base = struct {
     lo: i32,
     hi: i32,
@@ -62,7 +62,7 @@ pub const Damage = struct {
     }
 };
 
-/// Harm a turn for `TURNS` turns from the turn after it starts; started again, it refreshes without stacking or delaying a due tick.
+/// First tick is next turn. Refreshing preserves due ticks without stacking.
 pub fn Lasting(comptime TURNS: u8, comptime Arg: type, comptime amount: fn (Arg) i32) type {
     return struct {
         turns: u8 = 0,
@@ -82,7 +82,7 @@ pub fn Lasting(comptime TURNS: u8, comptime Arg: type, comptime amount: fn (Arg)
     };
 }
 
-/// Starts or refreshes a lasting harm's `turns` and `fresh`; true when it was not already running.
+/// True on first application, false on refresh.
 pub fn begin(self: anytype, turns: u8) bool {
     const new = self.turns == 0;
     if (new) self.fresh = true;
@@ -90,7 +90,7 @@ pub fn begin(self: anytype, turns: u8) bool {
     return new;
 }
 
-/// Spends one of a lasting harm's turns, unless it started this turn: whether it harms now.
+/// Skip the first tick. Each due tick spends one duration turn.
 pub fn due(self: anytype) bool {
     if (self.turns == 0) return false;
     if (self.fresh) {

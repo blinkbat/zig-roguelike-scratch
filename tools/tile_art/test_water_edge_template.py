@@ -1,7 +1,7 @@
 import hashlib
 from pathlib import Path
 
-from art_support import WorkTest, arguments, aseprite, generate, main
+from art_support import WorkTest, arguments, aseprite, generate, main, run_lua
 
 
 args, remaining = arguments()
@@ -13,12 +13,15 @@ class WaterTemplateTests(WorkTest):
         self.sheet = self.work / 'water.aseprite'
         self.generate()
 
-    def generate(self, replace=False, expected=0, temporary=None):
+    def prepare(self, replace=False, temporary=None):
         generated = generate(args.scripts_dir / 'water_edge_template.py', '--output', self.sheet,
                              *(['--replace-blank'] if replace else []), temp=temporary or self.work)
         self.assertEqual(0, generated.returncode, generated.stdout + generated.stderr)
-        assembly = Path(generated.stdout.strip()) / 'assemble.lua'
-        result = aseprite(args.aseprite, assembly, timeout=None)
+        return Path(generated.stdout.strip()) / 'assemble.lua'
+
+    def generate(self, replace=False, expected=0, temporary=None):
+        assembly = self.prepare(replace, temporary)
+        result = aseprite(args.aseprite, assembly, timeout=None, temp=self.work)
         if expected == 0:
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         else:
@@ -27,6 +30,18 @@ class WaterTemplateTests(WorkTest):
 
     def test_blank_template_can_be_replaced(self):
         self.generate(replace=True)
+
+    def test_failed_native_reopen_does_not_install_a_template(self):
+        self.sheet = self.work / 'new.aseprite'
+        assembly = self.prepare()
+        result = run_lua(args.aseprite, self.work / 'fail-reopen.lua', '''
+local env=setmetatable({app=setmetatable({open=function() error('injected reopen failure') end},{__index=app})},{__index=_G})
+assert(loadfile(app.params.assembly,'t',env))()
+''', {'assembly': assembly}, temp=self.work)
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('injected reopen failure', result.stdout + result.stderr)
+        self.assertFalse(self.sheet.exists())
+        self.assertFalse((assembly.parent / 'validation.txt').exists())
 
     def test_unicode_output_and_temporary_paths(self):
         directory = self.work / 'caf\u00e9-\u6c34'
@@ -44,7 +59,10 @@ class WaterTemplateTests(WorkTest):
             'painted group': "s:deleteLayer(s.layers[7]); local g=s:newGroup(); g.name='Draw here'; local l=s:newLayer(); l.parent=g; s:newCel(l,1,paint,Point(0,0))",
             'off-canvas painting': 'local c=s.layers[4]:cel(1); local im=Image(513,512,ColorMode.RGB); im:drawImage(c.image,c.position); im:putPixel(512,0,app.pixelColor.rgba(255,0,0,255)); s:newCel(s.layers[4],1,im,Point(0,0))',
             'guide opacity': 's.layers[4].opacity=128',
+            'unlocked reference': 's.layers[4].isEditable=true',
+            'drawing opacity': 's.layers[7].opacity=128',
             'moved slice': 's.slices[1].bounds=Rectangle(0,0,64,64)',
+            'marked slice': "s.slices[1].data='Keep this edge'",
         }
         for name, change in cases.items():
             with self.subTest(name=name):

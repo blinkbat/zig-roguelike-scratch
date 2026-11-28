@@ -148,7 +148,7 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
     return improveRound(lv, seed, doors, params, &grid.CellSet.initEmpty());
 }
 
-/// Digging no loop through a `kept` cell and leaving no reward on one.
+/// Kept cells exclude both new passages and rewards.
 pub fn improveRound(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Params, kept: *const grid.CellSet) Result {
     var result = Result{};
     const loops = params.loops;

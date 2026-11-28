@@ -174,20 +174,19 @@ pub fn linkDoors(ed: *Editor, from: atlas.Link, to: atlas.Link) void {
         if (t.eq(to)) return ed.say("Those doors lead to each other already", .{});
     }
     ed.map.link(from, to);
-    ed.relinked();
+    ed.bank();
     ed.say("Node {d} door {d} and node {d} door {d} lead to each other", .{ from.node, from.door, to.node, to.door });
 }
 
 pub fn unlinkDoor(ed: *Editor, l: atlas.Link) void {
     ed.map.unlink(l);
-    ed.relinked();
+    ed.bank();
 }
 
 fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
     if (paintInto(ed.here(), &ed.plan().bespoke, p, t)) ed.changed();
 }
 
-/// Whether `p`'s tile changed; a door keeps its own.
 fn paintInto(nd: *const atlas.Node, b: *atlas.Bespoke, p: P, t: grid.Tile) bool {
     const i = grid.Level.idx(p);
     if (b.tile[i] == t or nd.doorAt(p) != null) return false;
@@ -491,7 +490,7 @@ fn pickedAt(ed: *Editor, p: P) ?editor.Tool {
 
 const PICKS = [_]editor.Tool{ .npc, .{ .foe = actor.FOES[0] }, .barrel, .torch, .door };
 
-/// Whether tool `t` has something at `p` to take away; a fitting tool is the caller's to check.
+/// Caller must first check that the tool fits the node.
 fn holds(ed: *Editor, t: editor.Tool, p: P) bool {
     const nd = ed.here();
     const i = grid.Level.idx(p);

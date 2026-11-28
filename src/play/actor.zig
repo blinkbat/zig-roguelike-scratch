@@ -161,7 +161,7 @@ pub fn roomFor(bodies: usize, k: Kind) bool {
     return bodies + most(k) <= MAX;
 }
 
-/// `bleeds`/`stuns`: percent chance a blow that leaves its mark alive opens a bleed or stuns it.
+/// Bleed and stun chances are percentages rolled only on surviving targets.
 pub const Strike = struct {
     hit: damage.Base,
     verb: [:0]const u8,
@@ -184,7 +184,7 @@ pub const Burst = enum { gas, fire };
 
 pub const Blow = union(enum) {
     strike: Strike,
-    /// It dies instead (Brogue's kamikaze), and bursts however it dies.
+    /// Brogue's kamikaze attack. Bursts on death from any cause.
     burst: Burst,
 
     pub fn pyre(b: Blow) bool {
@@ -212,24 +212,24 @@ pub const FoeType = enum { beast, humanoid, aberration, undead, construct };
 
 pub const Ranged = struct { range: i32, retreat: i32 };
 
-/// Thrown every `every` turns at a hero within `range`, holding it for `pins` turns.
+/// Range is in cells. Pin duration and throw interval are in turns.
 pub const Net = struct { range: i32, pins: u8, every: u8 };
 
-/// Every `every` turns, while its net recovers: `cells` straight to a cell outside `keeps` and inside its net's range. A club beside the hero holds the net `club_holds` turns.
+/// Retreat `cells` straight beyond `keeps` while the net recovers. Clubbing delays the net by `club_holds` turns.
 pub const Quickstep = struct { cells: i32, every: u8, club_holds: u8 };
 
-/// Every `every` turns: heals the most hurt `kin` within `reach` by `amount`, or else wakes the sleeping ones.
+/// Mend the kin missing the greatest fraction of life, or wake sleeping kin within reach.
 pub const Mend = struct { reach: i32, amount: i32, every: u8, kin: []const Kind };
 
-/// Braces a turn at a hero `range` cells off along an open straight line, then rushes `rush` cells at most down it, striking `blow` on what stops it.
+/// After bracing for one turn, rush along the original line for up to `rush` cells.
 pub const Charge = struct { range: i32, rush: i32, every: u8, blow: Strike };
 
-/// Braces a turn at a hero `range` cells off on a straight line, then flings a hook down it every `every` turns, dragging the hero a cell closer.
+/// After bracing for one turn, hook along the original line and drag a struck hero one cell.
 pub const Hook = struct { range: i32, every: u8, blow: Strike };
 
 pub const Hurl = firebolt.Hurl;
 
-/// Cells a braced line runs, drawn as its warning.
+/// Warning length in cells.
 pub fn braceReach(k: Kind) ?i32 {
     const r = row(k);
     if (r.charges) |c| return c.rush;
@@ -247,7 +247,7 @@ pub const Row = struct {
     name: [:0]const u8,
     movement: Movement = .ground,
     foe_type: ?FoeType,
-    /// A fresh body's; one split off a slime has half what that slime had left.
+    /// Starting HP. Split halves use half the parent's remaining HP.
     hp: i32,
     sight: i32 = SIGHT,
     blow: Blow,
@@ -262,11 +262,11 @@ pub const Row = struct {
     resists: damage.Resists = .initFill(0),
     /// Ticks each of its actions takes (Brogue's `movementDuration`); a turn is drawn with one action at most.
     pace: i32 = clock.TURN,
-    /// Its turns from one sweep, a blow at every cell round it, to the next; 0, it never sweeps.
+    /// Turns between sweeps. Zero disables sweeping.
     sweep_every: u8 = 0,
     /// Unseen, even where lit, until the hero is beside it.
     lurks: bool = false,
-    /// Wakes to a hero wading in water joined to it within this many cells, never by sight; 0, it wakes by sight.
+    /// Water-connected wake radius in cells. Zero uses sight.
     waves: i32 = 0,
     /// Spawns as a closed chest, inert until opened.
     disguised: bool = false,
@@ -410,7 +410,7 @@ pub const Actor = struct {
     max: i32,
     awake: bool = false,
     alive: bool = true,
-    /// Split off, or flung out of its chest, this turn: it acts from the next.
+    /// New bodies skip their first action.
     waits: bool = false,
     resists: damage.Resists = .initFill(0),
     burn: burning.Burn = .{},
@@ -431,7 +431,7 @@ pub const Actor = struct {
     sweep_in: u8 = 0,
     /// Its turns until it can throw a net, mend, charge or hook again.
     ready_in: u8 = 0,
-    /// Its turns until it can hurl again.
+    /// Turns until the next hurl.
     projectile_in: u8 = 0,
     quickstep_in: u8 = 0,
     /// The line it braced along last turn, which its charge or hook follows this one.
@@ -482,7 +482,7 @@ pub const Actor = struct {
         return got;
     }
 
-    /// Runs at least `turns` more, never fewer than it already would; whether it was not running.
+    /// Extends flight and returns whether the actor just started fleeing.
     pub fn frighten(self: *Actor, turns: u8) bool {
         const fresh = self.fright == 0;
         resilience.lengthen(&self.fright, turns);
@@ -538,7 +538,7 @@ pub const Actor = struct {
         return self.pin.holding() or self.chill.turns > 0 or self.maim.turns > 0;
     }
 
-    /// A step taken on a turn worn under `af`: whether a limp costs it its next turn.
+    /// Returns whether the step delays the next action.
     pub fn limp(self: *Actor, af: Afflicted) bool {
         if (!af.contains(.maim) or !self.maim.step()) return false;
         self.clock.delay(clock.TURN);
@@ -713,7 +713,7 @@ pub const Pool = struct {
         return self.damage(lv, id, a.hp);
     }
 
-    /// Call after `damage`; with no free cell beside it, it splits on a later blow. The new body's id.
+    /// Call after damage. A blocked split can retry on a later blow. Returns the new body ID.
     pub fn split(self: *Pool, lv: *grid.Level, id: u16, rng: *mathx.Rng) ?u16 {
         const a = self.get(id) orelse return null;
         const next = row(a.kind).splits orelse return null;

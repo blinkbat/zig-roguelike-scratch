@@ -47,9 +47,8 @@ const LATE_DAY: f32 = SUNSET - 2.55;
 const DUSK_GLOW: f32 = SUNSET - 0.6;
 const KEY_SWAP_FADE: f32 = 0.45;
 const OVERHEAD: f32 = 1e-4;
-/// The palette's sky is a hemisphere's; seen from above it lights the ground in shade this many times over.
+/// Hemisphere sky gain for ground viewed from above.
 const SKY_GAIN: f32 = 1.6;
-/// The palette's key is a 3D scene's; on art drawn flat it is this strong.
 const KEY_GAIN: f32 = 0.85;
 const NIGHT_FILL_MIN: f32 = 0.72;
 const NIGHT_FILL_SPREAD: f32 = 0.4;
@@ -60,7 +59,7 @@ comptime {
     std.debug.assert(KEY_SWAP_DAWN < SUNRISE and KEY_SWAP_DUSK > SUNSET);
 }
 
-/// 0 to 1 across the day, then 1 to 2 across the night, measured on from sunset through midnight.
+/// Day maps to [0,1], night to [1,2] across midnight.
 fn dayU(hour: f32) f32 {
     const a = day.arc(hour);
     return if (a.day) a.u else 1 + a.u;
@@ -142,7 +141,6 @@ fn paletteAt(hour: f32) Palette {
 }
 
 pub const Sky = struct {
-    /// Toward the light that casts.
     dir: [3]f32,
     key: Rgb,
     ambient: Rgb,
@@ -164,7 +162,7 @@ pub const Sky = struct {
         return flatOf(s.dir);
     }
 
-    /// Along the ground toward it, a unit vector; south when it stands straight up.
+    /// Ground-plane unit vector, defaulting south for an overhead light.
     pub fn across(s: Sky) [2]f32 {
         const f = s.flat();
         return if (upright(f)) .{ 0, 1 } else .{ s.dir[0] / f, s.dir[1] / f };
@@ -193,7 +191,7 @@ fn lookAt(overcast: f32) Look {
     return mathx.lerpFields(Look, CLEAR, OVERCAST, std.math.clamp(overcast, 0, 1));
 }
 
-/// Rec. 709's weights of red, green and blue in what the eye reads as brightness.
+/// Rec. 709 luminance weights.
 pub const LUMA = [3]f32{ 0.2126, 0.7152, 0.0722 };
 
 pub fn luma(c: Rgb) f32 {

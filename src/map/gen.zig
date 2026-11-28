@@ -67,7 +67,7 @@ pub fn keepTorches(lv: *grid.Level) void {
     lv.torch.keep(@as(*const grid.Level, lv), bearsTorch);
 }
 
-/// Walls shaped afresh and the torches they no longer bear dropped, so a buried torch frees its slot.
+/// Reshaping also drops torches whose wall or floor disappeared.
 pub fn reshape(lv: *grid.Level) void {
     shapeWalls(lv);
     keepTorches(lv);
@@ -183,7 +183,7 @@ pub fn shapeWalls(lv: *grid.Level) void {
     restoreShapes(lv);
 }
 
-/// Every shaped tile without a shape given one, leaving the rest: all of a fresh level, or an older save's forests.
+/// Fill missing shapes only, including forests loaded from older saves.
 pub fn restoreShapes(lv: *grid.Level) void {
     for (&lv.tile, &lv.shape, 0..) |t, *s, i| {
         if (t.shaped() and s.* == null) s.* = wallShape(lv, grid.Level.of(i));

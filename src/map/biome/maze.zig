@@ -30,25 +30,22 @@ pub const Style = enum {
 const CAVE_WANDER: f32 = 0.6;
 const CAVE_LO: f32 = 0.55;
 const CAVE_SPAN: f32 = 0.6;
-/// The least inner size a tomb room takes its pillars in.
 const TOMB_INNER: i32 = 8;
 const GRAVE_CHANCE: f32 = 0.4;
 const TOMB_BARREL_CHANCE: f32 = 0.5;
 const TOMB_BARREL_AT = P{ .x = 2, .y = 3 };
-/// The rows of a sewer room's canal off its middle, and how far along its bridge reaches.
 const CANAL_FROM: i32 = 2;
 const CANAL_TO: i32 = 3;
 const BRIDGE_REACH: i32 = 1;
 const LAVA_CHANCE: f32 = 0.6;
 const LAVA_JITTER: i32 = 2;
-/// A snowfield's radius is the room's size over this.
 const SNOW_PER: f32 = 5;
 
 pub const Params = struct {
     style: Style = .caves,
     rooms: u8 = 14,
     size: u8 = 12,
-    /// A thousand: how often a room set beside another already there is joined to it too.
+    /// Chance per thousand of joining an adjacent room.
     merge: u16 = 500,
 
     pub fn fit(p: Params) Params {

@@ -74,7 +74,7 @@ fn scan(lv: *const grid.Level, sink: anytype, q: Quad, row_in: Row, radius: i32)
     var row = row_in;
     var prev_wall: ?bool = null;
     const d: f32 = @floatFromInt(row.depth);
-    // Ties round UP on the near edge and DOWN on the far edge; backwards, a wall corner becomes a peephole.
+    // Round near ties up and far ties down to block sight through wall corners.
     var col = mathx.roundTiesUp(d * row.start);
     const max_col = mathx.roundTiesDown(d * row.end);
     while (col <= max_col) : (col += 1) {

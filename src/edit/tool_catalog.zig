@@ -176,7 +176,7 @@ comptime {
     for (FAMILIES) |f| _ = f.first();
 }
 
-/// How the paint tool lays its ink, in `Desk.SHAPE_KEYS`' order; a selection is any tool's.
+/// Matches Desk.SHAPE_KEYS order. Selection works with every tool.
 pub const Shape = enum {
     brush,
     line,

@@ -148,7 +148,7 @@ const Arrows = struct { less: [:0]const u8, more: [:0]const u8, size: i32, modal
 pub const KNOB_ARROWS = Arrows{ .less = LESS, .more = MORE, .size = TEXT, .modal = false, .well = false };
 pub const PAGE_ARROWS = Arrows{ .less = "<", .more = ">", .size = DETAIL, .modal = true, .well = true };
 
-/// Arrows either side of `value`: -1 or 1 as one is pressed, `SHIFT_STEP` times that when `shift`; 0 otherwise.
+/// Pressed arrows return ±1, scaled by SHIFT_STEP while Shift is held.
 pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, value: []const u8, arrows: Arrows, steps: [2]Step, shift: bool) i32 {
     const x = raster.left(r);
     const y = raster.top(r);

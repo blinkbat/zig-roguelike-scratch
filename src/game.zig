@@ -95,7 +95,7 @@ pub const SKILLS_W: i32 = SLOT_XS[SLOT_XS.len - 1] + SLOT_PX;
 pub const SLOT_COLUMN_H: i32 = SLOT_PX + KEY_GAP + PROMPT_PX;
 pub const CAST_MARGIN: i32 = @intFromFloat(@ceil(shadow.CAST_REACH));
 const CAM_EASE: f32 = 12.0;
-/// One walk repeat, so the hops of a walk, held or routed, join end to end.
+/// Match walk repeat so consecutive hops join.
 pub const GLIDE_S: f32 = input.Stepper.ARR;
 const BEAT_S: f32 = 0.13;
 pub const HOP_PX: f32 = @floatFromInt(authored(10));
@@ -108,7 +108,7 @@ pub const BUMP_LANDS: f32 = BUMP_S * BUMP_HIT;
 pub const CAST_S: f32 = BUMP_LANDS;
 pub const ZAP_S = @import("game/projectile_motion.zig").ZAP_S;
 pub const BUMP_PX: f32 = CELL_F * 0.35;
-/// Ease-out-back's overshoot constant: 1.165 carries a slide 5% past its cell (1.70158, the usual one, 10%).
+/// Ease-out-back constant for 5% overshoot.
 pub const SLIDE_BACK: f32 = 1.165;
 /// `gen.build` rolls from the bare seed; without the salt the packs replay the floor's rolls.
 const PLAY_SALT = mathx.GOLDEN_GAMMA;
@@ -163,7 +163,7 @@ pub const Game = struct {
     sim: simulation.Simulation,
     pic: presentation.Presentation = .{},
     mode: ModeState = .play,
-    /// Drawn in place of `.dead` until the lethal turn is.
+    /// Mode shown until the lethal turn's animation finishes.
     died_in: Mode = .play,
     pause_menu: menu.Menu = .{},
     pause_page: PausePage = .main,
@@ -194,10 +194,10 @@ pub const Game = struct {
     inspect_scroll: usize = 0,
     stride: mathx.Dir = .e,
     keywords: keywords.State = .{},
-    /// Map pixels, eased toward the hero. Nothing in the simulation reads it.
+    /// Camera position in map pixels.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
     screen: P = WINDOW,
-    /// The framebuffer a frame draws into: the window's, or a texture's. Asking GL stalls it.
+    /// Track the active framebuffer to avoid a synchronous GL query.
     framebuffer: u32 = 0,
     pending: ?Queued = null,
     vignette: vignette.Vignette = .{},
@@ -273,11 +273,9 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
 pub const Fields = struct {
     pub const loot = [_][]const u8{ "character", "looted", "loot_gold" };
     pub const run = [_][]const u8{ "mode", "epitaph", "stride" };
-    /// Reset as a saved run resumes, besides `run` and `loot`.
     pub const resumed = [_][]const u8{"exit"};
     pub const turn = [_][]const u8{ "pending", "target", "inspecting", "inspect_scroll", "keywords" };
     pub const graphics = [_][]const u8{ "light", "cloud", "vignette", "mini", "cinema" };
-    /// Given their values by hand.
     pub const set = [_][]const u8{ "died_in", "pause_menu", "pause_page", "display", "debug", "back", "permadeath", "hall", "perf", "st", "mouse", "binds", "cam", "screen", "framebuffer", "rain", "sprites", "graphics_ready", "art", "face" };
     pub const scratch = [_][]const u8{ "nearby", "journal", "drawn", "weather_blend" };
 };
@@ -331,7 +329,7 @@ pub fn beginMapAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64)
 
 const Entry = enum { start, travel };
 
-/// The hero takes the first pool slot, keeping its id; returns how many `followers` fit.
+/// The hero retains the first pool slot. Returns the number of followers placed.
 fn enter(g: *Game, n: usize, at: P, followers: []const actor.Actor, entry: Entry) usize {
     const w = g.sim.map.?;
     var carried = actor.Actor.of(g.sim.class.kind(), at);
@@ -750,7 +748,6 @@ pub fn camWant(g: *const Game) rl.Vector2 {
     };
 }
 
-const Walk = struct { d: mathx.Dir, late: f32 };
 pub const Queued = union(enum) { walk: mathx.Dir, skill: skills.Use, interact };
 pub const COMBAT_QUEUE_S: f32 = 0.12;
 
@@ -780,41 +777,31 @@ fn queuePress(g: *Game) void {
         character.openInspect(g);
     } else if (skills.usedSkill(g)) |u| {
         queueAction(g, .{ .skill = u });
-    } else if (g.st.walk) |d| queueWalk(g, d);
-}
-
-fn interacted(g: *Game) bool {
-    if (queueInteract(g) and !g.pic.quiet()) return true;
-    if (takeQueued(g, .interact) == null) return false;
-    if (talking.beside(g)) |f| {
-        talking.speak(g, f);
-        return true;
+    } else if (g.st.walk) |d| {
+        if (g.mouse.target == null) queueWalk(g, d);
     }
-    return character.openNearby(g);
 }
 
-fn skillDue(g: *Game) ?skills.Use {
-    if (skills.usedSkill(g)) |u| queueAction(g, .{ .skill = u });
-    return takeQueued(g, .skill);
-}
-
-fn paced(g: *Game) ?Walk {
-    if (g.st.walk) |d| {
-        if (!g.pic.quiet()) {
-            queueWalk(g, d);
-            return null;
-        }
-        g.pending = null;
-        return .{ .d = d, .late = @min(g.st.late(), g.pic.sinceQuiet()) };
-    }
-    return .{ .d = takeQueued(g, .walk) orelse return null, .late = g.pic.sinceQuiet() };
-}
-
-fn takeQueued(g: *Game, comptime tag: std.meta.Tag(Queued)) ?std.meta.TagPayload(Queued, tag) {
-    const q = g.pending orelse return null;
-    if (q != tag or !g.pic.quiet()) return null;
+fn stepPlay(g: *Game) f32 {
+    queuePress(g);
+    if (g.mode != .play or !g.pic.quiet()) return 0;
+    const action = g.pending orelse {
+        _ = mouseControls.step(g);
+        return 0;
+    };
     g.pending = null;
-    return @field(q, @tagName(tag));
+    switch (action) {
+        .interact => if (talking.beside(g)) |npc| talking.speak(g, npc) else {
+            _ = character.openNearby(g);
+        },
+        .skill => |selection| skills.useSkill(g, selection),
+        .walk => |direction| {
+            const late = if (g.st.walk != null) @min(g.st.late(), g.pic.sinceQuiet()) else g.pic.sinceQuiet();
+            heroStep(g, direction, late);
+            return late;
+        },
+    }
+    return 0;
 }
 
 fn stunnedTurn(g: *Game) bool {
@@ -875,14 +862,7 @@ fn updateFrame(g: *Game, dt: f32) *const grid.Level {
             if (g.sim.travel) |l| {
                 queuePress(g);
                 if (g.pic.quiet()) goThrough(g, l);
-            } else if (interacted(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
-                character.openInspect(g);
-            } else if (skillDue(g)) |u| {
-                skills.useSkill(g, u);
-            } else if (mouseControls.step(g)) {} else if (paced(g)) |w| {
-                late = w.late;
-                heroStep(g, w.d, w.late);
-            }
+            } else late = stepPlay(g);
         },
         .aim => {
             const clicked = mouseControls.aim(g);

@@ -31,6 +31,26 @@ const CONFIRM = menu.CONFIRM;
 const HERO = actor.HERO;
 const THORNS = harness.affixed(.leather, .{ .kind = .thorns, .value = 2 });
 
+test "skeleton melee needs a visible foe and can reach a surfaced swimmer in deep water" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 21, .y = 20 };
+    const water = P{ .x = 21, .y = 21 };
+    const dark = P{ .x = 22, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{dark});
+    _ = harness.spawnAt(g, .skeleton, at, true);
+    g.sim.lv.set(water, .water);
+    const leech = harness.spawnAt(g, .bog_leech, water, true);
+    game.settle(g);
+    g.sim.lv.lit[grid.Level.idx(dark)] = false;
+    try std.testing.expectEqual(@as(?u16, leech), foe_rules.besideOf(&g.sim, at, .foe));
+    g.sim.lv.lit[grid.Level.idx(water)] = false;
+    try std.testing.expectEqual(@as(?u16, null), foe_rules.besideOf(&g.sim, at, .foe));
+    g.sim.lv.lit[grid.Level.idx(water)] = true;
+    g.sim.pool.get(leech).?.submerged = true;
+    try std.testing.expectEqual(@as(?u16, null), foe_rules.besideOf(&g.sim, at, .foe));
+}
+
 test "thorns returns melee damage with the incoming impact and ignores dodges and arrows" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -1781,7 +1801,6 @@ const LANE_HERO = P{ .x = 20, .y = 20 };
 const LANE_FOE = P{ .x = 24, .y = 20 };
 const OFF_LANE = P{ .x = 20, .y = 21 };
 
-/// `kind` four cells east of the hero, braced after one turn.
 fn braced(g: *game.Game, kind: actor.Kind) !u16 {
     harness.arena(g, LANE_HERO, &.{});
     const id = harness.spawnAt(g, kind, LANE_FOE, true);
@@ -1967,7 +1986,6 @@ test "a chain gaoler's hook catches on a barrel or a foe in its line and misses 
 
 const IMP_AT = P{ .x = 26, .y = 20 };
 
-/// A cinder imp six cells east of the hero throws, then falls, so only its bolt acts.
 fn thrown(g: *game.Game) !usize {
     harness.arena(g, LANE_HERO, &.{});
     const id = harness.spawnAt(g, .cinder_imp, IMP_AT, true);

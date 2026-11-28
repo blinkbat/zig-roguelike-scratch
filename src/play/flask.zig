@@ -59,7 +59,7 @@ pub const Flask = struct {
         return self.charges >= USE;
     }
 
-    /// Drunk again while recovering, it starts over on the new amount.
+    /// Replaces any unfinished recovery with the new amount.
     pub fn drink(self: *Flask, amount: i32) void {
         std.debug.assert(self.full());
         self.charges -= USE;

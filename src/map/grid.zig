@@ -17,7 +17,6 @@ pub const MIDDLE = P{ .x = @divTrunc(W, 2), .y = @divTrunc(H, 2) };
 pub const NO_ONE: u16 = 0;
 pub const OFF_MAP: Tile = .wall;
 pub const MAX_TORCHES: usize = 32;
-/// Only the first this many glowing tiles give light (`Level.glowing`).
 pub const MAX_GLOWS: usize = 64;
 pub const MAX_DOORS: usize = 16;
 pub const NO_DOOR: u8 = 0;
@@ -136,7 +135,6 @@ pub const Tile = enum(u8) {
         return t == .chest or t == .chest_open;
     }
 
-    /// A chest or glow plant, which trails step round.
     pub fn prized(t: Tile) bool {
         return t.isChest() or t == .glow_plant;
     }
@@ -255,11 +253,9 @@ pub const Tile = enum(u8) {
     }
 };
 
-/// `BARREL_GROUND` with a barrel on it.
 pub const BARREL_LETTER = '0';
 pub const BARREL_GROUND: Tile = .floor;
 pub const FROZEN: Tile = .ice;
-/// A crossing no fire takes down.
 pub const STONE_SPAN: Tile = .stone_bridge;
 
 pub fn groundOf(c: u8) ?Tile {
@@ -466,7 +462,7 @@ pub fn knobbable(comptime T: type, v: T) bool {
     return v.single();
 }
 
-/// Same-material neighbours, stamped by `gen.shapeWalls`; its bits are the wall sheets' masks.
+/// Wall sheet mask bits represent neighbours of the same material.
 pub const WallShape = packed struct(u8) {
     n: bool = false,
     e: bool = false,
@@ -477,7 +473,7 @@ pub const WallShape = packed struct(u8) {
     sw: bool = false,
     nw: bool = false,
 
-    /// A corner joins only where both sides beside it do, which leaves 47 shapes of the 256.
+    /// A diagonal needs both adjacent sides, yielding 47 shapes.
     pub fn joined(raw: WallShape) WallShape {
         var j = raw;
         j.ne = raw.ne and raw.n and raw.e;
@@ -590,7 +586,7 @@ pub const Level = struct {
     /// Caustic gas volume.
     gas: [CELLS]u16,
     torch: Torches,
-    /// 1-based into the map's NPCs; `NO_NPC` is none. The legacy save reader takes the fields before it.
+    /// One-based NPC index. Keep after fields read by legacy saves.
     npc: [CELLS]u8 = @splat(NO_NPC),
     healing: [CELLS]u16 = @splat(0),
     steam: [CELLS]u16 = @splat(0),
@@ -940,7 +936,7 @@ pub fn anyNear(p: P, others: []const P, gap: i32) bool {
     return false;
 }
 
-/// The cell round `foot` that `ok` takes: in front of it before its sides, its sides before behind it, reading order within each.
+/// Prefer front, sides, then back, breaking ties in reading order.
 pub fn besideFoot(foot: Box, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) ?P {
     var best: ?P = null;
     var rank: i32 = std.math.maxInt(i32);
@@ -955,7 +951,7 @@ pub fn besideFoot(foot: Box, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) boo
     return best;
 }
 
-/// The nearest cell offered within `reach`, by steps and then by the straighter line.
+/// Minimize king steps within reach, then Euclidean distance.
 pub const Nearest = struct {
     from: P,
     reach: i32 = std.math.maxInt(i32),
@@ -1034,7 +1030,7 @@ pub const Box = struct {
         return b.rollFor(rng, 1, 1);
     }
 
-    /// The corner of a `w` by `h` box that lies inside this one; x is drawn before y.
+    /// Draw a fitting top-left corner with the same x-first RNG order.
     pub fn rollFor(b: Box, rng: *mathx.Rng, w: i32, h: i32) P {
         const x = rng.range(b.lo.x, b.hi.x - w);
         return .{ .x = x, .y = rng.range(b.lo.y, b.hi.y - h) };
@@ -1245,7 +1241,6 @@ pub const Flood = struct {
     }
 };
 
-/// Every neighbour's offset, in `mathx.ALL_DIRS` order.
 pub const STEPS = blk: {
     var out: [mathx.ALL_DIRS.len]P = undefined;
     for (mathx.ALL_DIRS, &out) |d, *s| s.* = d.delta();
@@ -1315,7 +1310,7 @@ pub fn Spread(comptime Ctx: type, comptime ok: fn (Ctx, P) bool) type {
     };
 }
 
-/// Cells `ok` accepts within `reach` king steps of `from` by way of accepted cells, `from` first, nearest first.
+/// Visit reachable cells nearest first in king steps, including the origin.
 pub fn Walk(comptime MOST: i32, comptime Ctx: type, comptime ok: fn (Ctx, P) bool) type {
     const AREA: usize = @intCast(Cells.square(MOST));
     return struct {
@@ -1416,7 +1411,7 @@ pub fn projectileLine(lv: *const Level, from: P, to: P) bool {
     return lineOk(lv, from, to, .{ .projectiles = true });
 }
 
-/// `projectileLine`, and every cell on it lit, the target's too.
+/// The entire projectile path, including its target, must be lit.
 pub fn litLine(lv: *const Level, from: P, to: P) bool {
     return lineOk(lv, from, to, .{ .lit = true, .projectiles = true });
 }

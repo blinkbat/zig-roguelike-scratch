@@ -21,7 +21,7 @@ const gen = @import("../map/gen.zig");
 const day = @import("../map/day.zig");
 
 const TORCH_AT = P{ .x = 20, .y = 10 };
-/// Cells in from an edge, so a sample on it reads the seen cell and not the unseen one past it.
+/// Sample just inside the seen cell at a visibility boundary.
 const EDGE_EPS: f32 = 1e-4;
 
 fn wallAcross(lv: *grid.Level) void {

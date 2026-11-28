@@ -6,7 +6,7 @@ pub const SUNRISE: f32 = 6;
 pub const SUNSET: f32 = 20;
 pub const NOON: f32 = 12;
 pub const MIDNIGHT: f32 = 0;
-/// Midway between sunrise and sunset, where the sun stands highest; not `NOON`, as the day is lopsided.
+/// The sun peaks at the daylight midpoint.
 pub const SOLAR_NOON: f32 = (SUNRISE + SUNSET) / 2;
 pub const DAY_SPAN: f32 = SUNSET - SUNRISE;
 pub const NIGHT_SPAN: f32 = HOURS - DAY_SPAN;
@@ -47,7 +47,7 @@ pub fn wrapHour(h: f32) f32 {
     return if (r < 0) r + HOURS else r;
 }
 
-/// From `from` to `to` the short way round the clock, hours: negative going back.
+/// Signed hours along the shortest arc.
 pub fn toward(from: f32, to: f32) f32 {
     const d = wrapHour(to - from);
     return if (d > HOURS / 2) d - HOURS else d;

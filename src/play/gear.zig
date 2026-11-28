@@ -48,7 +48,7 @@ pub const Gear = struct {
         return out;
     }
 
-    /// Life its worn items heal for a kill, innate grants and rolled modifiers alike; passives' heal blows only.
+    /// Equipment heals on any eligible kill. Passive kill healing requires a blow.
     pub fn killRecovery(self: Gear) i32 {
         return self.perks(.{}).life_on_kill;
     }
@@ -69,12 +69,12 @@ pub const Gear = struct {
         return @max(0, self.sum(kind));
     }
 
-    /// Turns Alacrity takes off every cooldown.
+    /// Cooldown reduction in turns.
     pub fn quicker(self: Gear) u8 {
         return std.math.lossyCast(u8, self.floored(.alacrity));
     }
 
-    /// Cells Bounding adds to every movement skill's reach.
+    /// Additional movement-skill range in cells.
     pub fn bounding(self: Gear) i32 {
         return self.floored(.bounding);
     }
@@ -146,7 +146,7 @@ pub const Gear = struct {
         return std.math.clamp(self.sum(kind), 0, mathx.PERCENT);
     }
 
-    /// Each flask's recovery bonus: life from `held`, which already counts worn grants; mana from worn mods alone.
+    /// `held` already includes equipment life recovery. Mana recovery comes from worn modifiers.
     pub fn draughts(self: Gear, held: passives.Perks) flask.Bonus {
         return .{ .life = held.life_flask, .mana = self.sum(.mana_flask) };
     }
@@ -199,7 +199,7 @@ pub const Gear = struct {
         return out;
     }
 
-    /// Each of the class's starting arms whose slot is empty and whose hands still fit.
+    /// Fills empty starting weapon slots compatible with the current loadout.
     pub fn arm(self: *Gear, c: hero.Class) void {
         for (c.arms()) |k| {
             const slot = k.slots()[0];
@@ -228,11 +228,16 @@ pub const Gear = struct {
 
     /// A loaded save can wear unmet gear after a retune; only a change that unmeets an item is refused.
     pub fn validFrom(self: Gear, before: Gear, base: attrs.Attrs) bool {
-        if (!self.shaped()) return false;
-        for (item_bases.SLOTS) |slot| if (self.slots.get(slot) != null) {
-            if (!self.keepsMet(before, slot, base)) return false;
-        };
-        return true;
+        return self.shaped() and self.firstUnmet(before, base, null) == null;
+    }
+
+    pub fn firstUnmet(self: Gear, before: Gear, base: attrs.Attrs, exclude: ?item_bases.Slot) ?items.Item {
+        for (item_bases.SLOTS) |slot| {
+            if (slot == exclude) continue;
+            const it = self.slots.get(slot) orelse continue;
+            if (!self.keepsMet(before, slot, base)) return it;
+        }
+        return null;
     }
 
     pub fn shaped(self: Gear) bool {
@@ -243,7 +248,7 @@ pub const Gear = struct {
         return true;
     }
 
-    pub fn keepsMet(self: Gear, before: Gear, slot: item_bases.Slot, base: attrs.Attrs) bool {
+    fn keepsMet(self: Gear, before: Gear, slot: item_bases.Slot, base: attrs.Attrs) bool {
         if (self.wornMeets(slot, base)) return true;
         const was = before.slots.get(slot) orelse return false;
         return std.meta.eql(@as(?items.Item, was), self.slots.get(slot)) and !before.wornMeets(slot, base);

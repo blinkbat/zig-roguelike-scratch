@@ -207,14 +207,18 @@ fn checkTestRoster(b: *std.Build) void {
     var it = dir.walk(b.allocator) catch |e|
         std.debug.panic(SRC ++ "/ could not be walked ({s})", .{@errorName(e)});
     defer it.deinit();
+    var scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch.deinit();
     while (it.next() catch |e| std.debug.panic(SRC ++ "/ walk failed ({s})", .{@errorName(e)})) |ent| {
         if (ent.kind != .file or !std.mem.endsWith(u8, ent.path, ".zig")) continue;
         if (std.mem.eql(u8, ent.path, std.fs.path.basename(ROOT))) continue;
-        const slashed = b.allocator.dupe(u8, ent.path) catch @panic("OOM in the roster check");
+        defer _ = scratch.reset(.retain_capacity);
+        const alloc = scratch.allocator();
+        const slashed = alloc.dupe(u8, ent.path) catch @panic("OOM in the roster check");
         std.mem.replaceScalar(u8, slashed, '\\', '/');
-        const source = ent.dir.readFileAllocOptions(b.allocator, ent.basename, READ_MAX, null, @alignOf(u8), 0) catch |e|
+        const source = ent.dir.readFileAllocOptions(alloc, ent.basename, READ_MAX, null, @alignOf(u8), 0) catch |e|
             std.debug.panic(SRC ++ "/{s} could not be read ({s})", .{ slashed, @errorName(e) });
-        if (source_rules.check(b.allocator, slashed, source) catch |e|
+        if (source_rules.check(alloc, slashed, source) catch |e|
             std.debug.panic(SRC ++ "/{s}: source validation failed ({s})", .{ slashed, @errorName(e) })) |violation|
             std.debug.panic(SRC ++ "/{s}:{d}: {s} crosses this module's dependency boundary; see docs/ARCHITECTURE.md", .{ slashed, violation.line, violation.imported });
         if (!roster.contains(slashed)) {

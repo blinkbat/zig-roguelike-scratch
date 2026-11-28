@@ -9,7 +9,7 @@ const FOLDER_MAX: usize = 64;
 pub const PATH_MAX = atlas.PREFIX.len + FOLDER_MAX + FILE_MAX;
 const ListedPath = [PATH_MAX + 1]u8;
 
-/// The folder below `DIR` a map's path lies in, its '/' kept; none for a path outside `DIR`.
+/// Relative folder with trailing slash, or empty outside DIR.
 pub fn folderOf(path: []const u8) []const u8 {
     if (!std.mem.startsWith(u8, path, atlas.PREFIX)) return "";
     const rest = path[atlas.PREFIX.len..];

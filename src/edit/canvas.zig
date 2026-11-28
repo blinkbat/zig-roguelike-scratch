@@ -31,10 +31,21 @@ fn visible(ed: *const editor.Editor, c: rl.Rectangle) grid.Box {
     } };
 }
 
+pub const GroundView = struct {
+    beds: dual.Beds = undefined,
+    valid: bool = false,
+
+    fn update(self: *GroundView, lv: *const grid.Level, view: grid.Box) bool {
+        if (self.valid and self.beds.lo.eq(view.lo) and self.beds.hi.eq(view.hi)) return false;
+        self.beds.fill(lv, view.lo, view.hi, false);
+        self.valid = true;
+        return true;
+    }
+};
+
 fn drawCells(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) void {
-    var beds: dual.Beds = undefined;
-    beds.fill(&ed.scene.lv, v.lo, v.hi, false);
-    g.sprites.drawGround(&ed.scene.lv, &beds, ed.origin(c), ed.px(), null);
+    _ = ed.ground.update(&ed.scene.lv, v);
+    g.sprites.drawGround(&ed.scene.lv, &ed.ground.beds, ed.origin(c), ed.px(), null);
     var cells = grid.Cells.of(.{ .x = @max(0, v.lo.x - PROP_REACH.x), .y = v.lo.y }, v.hi);
     while (cells.next()) |p| {
         const r = ed.cellRect(c, p);
@@ -94,6 +105,32 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     }
     drawCursor(ed, g, c);
     if (ed.here().unrolled()) plaque(g, c, "One roll of this node (" ++ Desk.REROLL_CAPTION ++ " rolls another); play rolls it afresh each run");
+}
+
+test "editor ground reuses an unchanged view and follows pans, terrain edits and undo" {
+    const ed = try editor.Editor.create(std.testing.allocator);
+    defer ed.destroy();
+    const at = ed.map.start.at;
+    const view = grid.Box.around(at, 2);
+    ed.preview();
+    try std.testing.expect(ed.ground.update(&ed.scene.lv, view));
+    try std.testing.expectEqual(dual.Ground.cobble, ed.ground.beds.ground(at).?);
+    ed.preview();
+    try std.testing.expect(!ed.ground.update(&ed.scene.lv, view));
+
+    const panned = grid.Box.around(at.add(.{ .x = 1, .y = 0 }), 2);
+    try std.testing.expect(ed.ground.update(&ed.scene.lv, panned));
+    try std.testing.expect(!ed.ground.update(&ed.scene.lv, panned));
+    try ed.gesture();
+    ed.ink.set(.first, .grass);
+    placement.brushAt(ed, at);
+    ed.preview();
+    try std.testing.expect(ed.ground.update(&ed.scene.lv, panned));
+    try std.testing.expectEqual(dual.Ground.grass, ed.ground.beds.ground(at).?);
+    ed.undo();
+    ed.preview();
+    try std.testing.expect(ed.ground.update(&ed.scene.lv, panned));
+    try std.testing.expectEqual(dual.Ground.cobble, ed.ground.beds.ground(at).?);
 }
 
 const PROP_REACH = P{ .x = grid.WIDEST - 1, .y = 0 };

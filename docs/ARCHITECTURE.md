@@ -1,338 +1,88 @@
 # Runtime contracts
 
-Ordinary feature changes should stay within an owning module and its integration
-contract. The simulation is authoritative; the picture follows resolved facts at
-their scheduled impact. Saved field classification lives in `src/save_data.zig`; portable parsing and
-conversion live in `save_format.zig` and `save_values.zig`. See [save compatibility](SAVE_FORMAT.md).
+Simulation owns gameplay state and RNG. Presentation records each resolved event and displays it at impact. Save field classification, versioning and migrations are documented in [save compatibility](SAVE_FORMAT.md).
 
-| Contract | Owner | Tests |
+| Change | Owner | Regression coverage |
 | --- | --- | --- |
-| Actor and barrel impacts differ; misses cannot destroy barrels | `gfx/effect_state.zig`, `gfx/impact_queue.zig` | [hero](../src/game/tests/hero.zig), [picture](../src/game/tests/picture.zig) |
-| Chosen attacks and reactions have distinct attribution | `play/chronicle.zig` | [hero](../src/game/tests/hero.zig) |
-| Attack rules cannot update graphics or input | `game/attacks.zig`, `game/sim.zig` | [hero](../src/game/tests/hero.zig), [skills](../src/game/tests/skills.zig), [terrain](../src/game/tests/terrain.zig) |
-| Each resolution is pictured at its own impact | `game/presentation.zig`, `gfx/impact_queue.zig` | [impact_queue](../src/gfx/impact_queue.zig), [picture](../src/game/tests/picture.zig), [tactics_exec](../src/game/tactics_exec.zig) |
-| Damage, split and death consequences capture their snapshots before another resolution | `game/combat_impacts.zig` | [hero](../src/game/tests/hero.zig), [picture](../src/game/tests/picture.zig), [foes](../src/game/tests/foes.zig) |
-| Turn timing uses one time origin without reading simulation or rendering state | `game/turn_schedule.zig` | [turn_schedule](../src/game/turn_schedule.zig), [hero](../src/game/tests/hero.zig), [source_rules](../tools/source_rules.zig) |
-| Sprite selection, GPU resources and appearance have separate owners | `gfx/sprite_assets.zig`, `gfx/sprites.zig`, `gfx/sprite_materials.zig`, `gfx/look.zig` | [sprite_assets](../src/gfx/sprite_assets.zig), [sprites](../src/gfx/sprites.zig) |
-| Turn stages preserve causality and clean up on death | `game/combat.zig`, `game/sim.zig` | [skills](../src/game/tests/skills.zig), [hero](../src/game/tests/hero.zig) |
-| Enemy ordering, targeting and support rules cannot schedule presentation | `game/foe_rules.zig` | [foe_rules](../src/game/foe_rules.zig), [foes](../src/game/tests/foes.zig) |
-| Projectile motion keeps impact times and never tracks hidden positions in its fading picture | `game/projectile_motion.zig` | [projectile_motion](../src/game/projectile_motion.zig), [picture](../src/game/tests/picture.zig) |
-| Status marks draw from time and explicit drawing inputs without access to the effects queue | `gfx/status_marks.zig` | [source_rules](../tools/source_rules.zig), headless effect captures |
-| Targeting is valid only while active | `game.zig`, `game/skills.zig`, `game/targeting.zig` | [skills](../src/game/tests/skills.zig), [picture](../src/game/tests/picture.zig) |
-| Transients reset at their declared lifetime | `game.zig`, `game/presentation.zig` | [world](../src/game/tests/world.zig), [loot](../src/game/tests/loot.zig), [save](../src/save.zig) |
-| A skill declares a checked integration contract | `play/skill_contract.zig`, `play/skillbar.zig` | [skill_contract](../src/play/skill_contract.zig), [skills](../src/game/tests/skills.zig) |
-| Death and loot rules cannot update the picture or menus | `game/rewards.zig` | [rewards](../src/game/rewards.zig), [loot](../src/game/tests/loot.zig) |
-| A gesture owns one history transaction | `edit/history.zig` | [edit](../src/edit/tests.zig) |
-| Editor input routing needs neither the game nor drawing resources | `edit/interaction.zig` | [edit](../src/edit/tests.zig) |
-| Cosmetic visibility has one owner | `gfx/light_visibility.zig` | [light_tests](../src/gfx/light_tests.zig) |
-| Editor drawing cannot mutate maps or game state through widgets | `edit/widgets.zig` | [edit](../src/edit/tests.zig), [widgets](../src/edit/widgets.zig) |
-| Placement and cursor previews share geometry and legality | `edit/placement.zig`, `edit/canvas.zig` | [edit](../src/edit/tests.zig) |
-| Derived editor data cannot mutate the authored map | `edit/preview.zig` | [preview](../src/edit/preview.zig) |
-| Graph textures have one owner and explicit invalidation | `edit/thumbnails.zig` | [thumbnails](../src/edit/thumbnails.zig), [canvas](../src/edit/canvas.zig) |
-| A map's script never names past its own tables | `map/script.zig`, `play/trigger.zig`, `game/talking.zig` | [script](../src/map/script.zig), [script_text](../src/map/script_text.zig), [trigger](../src/play/trigger.zig), [talking](../src/game/talking.zig), [edit](../src/edit/tests.zig) |
-| Plot field lookup and name validation depend only on script data | `edit/plot_fields.zig` | [plot_fields](../src/edit/plot_fields.zig), [plot](../src/edit/plot.zig) |
-| A procgen node's painted section keeps its cells through the roll, is joined round its walls, and neither its box nor the node's zoo ring takes a feature's lot | `map/section.zig`, `map/procgen.zig`, `carve.connect` | [procgen](../src/map/procgen.zig), [section](../src/map/section.zig), [atlas](../src/map/atlas.zig), [atlas_text](../src/map/atlas_text.zig), [save](../src/save.zig) |
-| Gameplay does not depend on UI or rendering modules | `tools/source_rules.zig` | [source_rules](../tools/source_rules.zig), [save](../src/save.zig) |
+| Start, travel, resume, queued actions | `game.zig`, `game/sim.zig`, `game/presentation.zig` | [World](../src/game/tests/world.zig), [saves](../src/save.zig) |
+| Attack rolls, chosen actions and reactions | `game/attacks.zig`, `play/chronicle.zig` | [Hero](../src/game/tests/hero.zig), [skills](../src/game/tests/skills.zig) |
+| Foe ordering, targeting, allies and support | `game/foe_rules.zig`, `game/combat.zig` | [Foes](../src/game/tests/foes.zig) |
+| Damage, splits, deaths and rewards | `game/combat_impacts.zig`, `game/rewards.zig` | [Picture](../src/game/tests/picture.zig), [loot](../src/game/tests/loot.zig) |
+| Turn deadlines and impact delivery | `game/turn_schedule.zig`, `gfx/impact_queue.zig` | [Schedule](../src/game/turn_schedule.zig), [queue](../src/gfx/impact_queue.zig) |
+| Terrain, status effects and sight | `map/grid.zig`, `map/fov.zig`, `map/lume.zig`, `play/terrain.zig` | [Terrain](../src/game/tests/terrain.zig), [lighting](../src/gfx/light_tests.zig) |
+| Skill contracts and execution | `play/skill_contract.zig`, `play/skillbar.zig`, `game/skills.zig`, `game/tactics_exec.zig` | [Contracts](../src/play/skill_contract.zig), [tactics](../src/game/tactics_exec.zig) |
+| Authored scripts, dialogue and quests | `map/script.zig`, `map/script_text.zig`, `play/trigger.zig`, `game/talking.zig` | [Script parser](../src/map/script_text.zig), [triggers](../src/play/trigger.zig), [dialogue](../src/game/talking.zig) |
+| Editor transactions, placement and derived data | `edit/history.zig`, `edit/placement.zig`, `edit/preview.zig`, `edit/thumbnails.zig` | [Editor](../src/edit/tests.zig), [preview](../src/edit/preview.zig) |
+| Procedural terrain and encounters | `map/procgen.zig`, `map/section.zig`, `map/zoo.zig` | [Procgen](../src/map/procgen.zig), [atlas](../src/map/atlas.zig), [map text](../src/map/atlas_text.zig) |
 
 ## Dependency boundaries
 
-`gfx/lens.zig` owns screen-space filters after the world and before HUD/menus.
-`game/mouse.zig` uses its inverse perspective mapping for cell picking.
-Actor inspection uses that inverse mapping for picking and projected bounds for
-focus, navigation and tooltip placement; HUD targets stay in screen coordinates.
-`ui/options.zig` owns Visuals controls; Display settings live beside them.
-Settings last for the application session and do not enter run saves.
+`tools/source_rules.zig` checks actual import tokens, exempts test bodies and enforces direct dependencies. The build checks that each source module parses, declares something and appears in the unnamed test roster in `main.zig`. [Boundary checker](../tools/source_rules.zig)
 
-Visited terrain outside current sight is darkened and strongly desaturated by
-the cinema memory grade, blending back to full colour with visibility.
-Water highlights, bloom and atmosphere use the same smooth visibility field across
-known terrain, including the fade into memory; gameplay sight still gates dynamic
-emissive sources. Unexplored terrain does not populate the atmospheric field.
-Nodes may override weather by inland, coast and forest location using
-"location forest beams" / "location coast coastal" map lines. Unspecified locations
-inherit the node's weather. The climate module derives coast from edge-connected
-sand and water (including bridges and temporarily frozen water), then forest from
-cells within two tiles of trees; coast takes priority.
-The location field is derived on level entry and kept in the run save. Rain resistance, fire
-dampening and inspection read a cell's own location; rendering reads `climate.Blend`,
-the same field blurred so weather fades over a few cells where locations meet, sampled at
-the hero's drawn position for the sky. Beam weather adds warm
-Screen-blended pixel shafts and rising motes near trees. Shafts have crisp pixel sides,
-independent lengths and landing heights, upward and bottom fades, softly moving light,
-ground pools and rippled water reflections. Atmosphere composites over world objects,
-units and projectiles before scene grading and UI. Its field bounds derive from the same
-geometry constants. Beam strength fades in from 08:00–10:00 and out from 16:00–18:00
-using the eased presentation clock; motes retain their daylight response.
-Atmosphere reconstructs presentation sight from the visibility
-owner's float support texture, so bright shafts cannot bleed into hidden ground.
-Visible loot bags and stocked open chests have a faint steady sprite glow and
-a stronger shine sweep, fading with their pictured visibility.
-Visibility transitions use short presentation-only fades. Bodies, projectiles,
-NPCs, loose loot and ground hazards retain their last visible picture while fading
-out; hidden movement and state never update that picture. Hook chains are clipped
-to visible cells at the chain's height so a visible head cannot reveal its hidden thrower.
-Targeting and interaction
-continue to use strict gameplay sight. Exploration feathering extends inward over
-known tiles only, with overlapping edge fades rounding the inner corners; unseen
-cells stay fully covered. Wall-adjacent feather widths interpolate continuously
-to keep narrow corridors clear. Automatic chest/bag opening is
-suppressed while a foe is visible; deliberate interaction still works.
+- Gameplay rules, map code, editor preview and plot-field validation depend on core, play and map data. The four game rule modules may share rules. Attack resolution can import only Simulation from that group.
+- `turn_schedule` accepts explicit motion, visibility and occupancy facts. Its imports are limited to std, core and play. `combat_impacts` captures completed outcomes and calls `tactics_exec.counter` for melee reactions and `tactics_exec.landed` for split bodies. Its dependency boundary excludes `combat`, `skills` and `foe_rules`.
+- Editor widgets, metadata, naming, history and thumbnails work without Game, App or Editor. Interaction receives Editor and canvas bounds. Character view, layout, cards and stats work without Book navigation.
+- Sprite assets/materials, light model/GPU resources, input mappings, status marks and impact payloads stay independent of their coordinators. Device polling belongs in `core/input.zig`. Shared wording and bounded text live in core. `play/log.zig` owns saved history and `ui/journal.zig` draws it.
 
-Body lighting, including rim sheen, is capped at the authored sprite colour so
-nearby torches cannot bleach its highlights. Emission and hit flashes remain separate.
-Slime bodies, reflections and shadows share a slight translucency. Slimes and both
-bloat kinds have faint emission in their body color and a small local cosmetic
-light, gated by presented visibility; neither light changes gameplay sight.
-Shadow casters sample light independently of fog; receiver visibility fades the
-landed mask. Culling includes silhouettes and blur beyond the camera, and actor
-birth/death timing follows presentation. Bind the receiver shader's light-map
-sampler after changing blend mode: raylib flushes auxiliary texture bindings on
-a blend change. Water reflections separate live bodies/effects from remembered
-scenery, preserve source visibility and compensate for the terrain lighting pass.
-
-Runtime imports in `play/`, `map/`, `game/sim.zig`, `game/attacks.zig`,
-`game/rewards.zig`, `game/foe_rules.zig`, `edit/plot_fields.zig` and `edit/preview.zig` are limited to core, play and map modules. The game rule
-modules may also depend on each other, except `attacks.zig` can import only
-`sim.zig` from that group: rewards and foe-turn coordination remain outside attack
-resolution. They cannot import raylib, UI, rendering,
-editor coordination or the application. Use `core/wording.zig` for display names,
-`core/text.zig` for bounded text and `play/log.zig` for event history;
-`ui/journal.zig` only renders that history.
-
-Editor widgets, thumbnails, tool metadata and naming fields cannot import Editor,
-Game or the application. Character view, layout, card and stats modules cannot
-import Book navigation, Editor, Game or the application.
-Editor interaction may import Editor, but cannot import Game or the application.
-The build checks actual Zig import tokens and normalizes relative paths. Test
-bodies may import other layers to verify integration contracts. These are direct
-source dependency checks; `core/input.zig` still owns device access and its shared
-input types. Every rostered module must parse and contain a declaration; there is
-no byte minimum. Syntax and empty-module validation catch incomplete source without
-requiring padding in small modules; the compiler checks references and types.
-
-Sprite asset selection and shader definitions cannot import the sprite renderer.
-Effect payloads and the impact queue cannot import the particle-effects coordinator.
-These helpers also cannot import Game, Presentation or the application.
-`game/turn_schedule.zig` accepts explicit motion and visibility facts; its direct
-imports are limited to standard-library, core and play modules. It cannot read
-Simulation, Game, Presentation or rendering state. `game/combat_impacts.zig` is
-an adapter between rules and presentation; it cannot directly import the combat,
-skill or foe-rule coordinators. Reaction and landing callbacks remain explicit
-through `tactics_exec.zig`.
-`gfx/status_marks.zig` cannot import the effects coordinator; its renderer reads
-only elapsed cosmetic time and explicit mark inputs. `game/projectile_motion.zig`
-cannot import Game or Presentation. Presentation supplies pictured visibility to its
-motion view and trail emission. The view retains its last visible position during
-a fade. `recordBurst` keeps only pictured visible cells in the cosmetic burst while
-preserving the simulation area and per-cell particle density.
 ## Lifetimes
 
-`ui/keywords.zig` owns underlined keyword text, screen-space hit regions and one
-definition layer. Hosts call `resized` then `step` before handling input, `beginFrame` before
-drawing, register terms through `text` with the actual `menu.Surface`, then draw
-the definition last. Term strings come from stable definitions. Game menus and
-title menus share this routing; HUD cards retain their source while the pointer
-crosses into the card or definition. Keyword state is unsaved and clears with
-screen, window-size and run/turn resets. Gameplay rules never read it.
+A new run resolves a vacant landing on the seeded floor before replacing live state. Idle frames and free actions spend no turn. Simulation resets transient turn data through `resetTransientTurn`. Presentation clears pending work on a new run and settles a loaded picture without replay. Preserve actor IDs across visits. Use `ActorId` for identity and `ActorSlot` for pool indices.
 
-`game/sim.zig` (Simulation)
-- Owns run data, the seeded RNG and consumed turn ticks.
-- A new run stamps its seeded starting floor and resolves a vacant landing before
-  replacing the current run.
-- Free actions and idle frames do not age it.
-- Saved integer actor references stay stable; typed adapters change neither the legacy fingerprint nor portable save identities.
-- Pool replacement keeps the initialized `var` copy of a carried actor (Zig 0.14.1).
-- `resetTransientTurn` owns its scene reset.
+Travel carries queued commands, the mouse skill set, facing and level-up effects across node replacement. Same-node doors move followers in place. Followers without a landing keep their positions, identities and statuses. An in-flight hurl outlives its thrower and freezes with its level until a revisit.
 
-`game/presentation.zig` (Presentation)
-- Snapshot a resolution immediately, before a later blow changes that body.
-- A missed reaction still owns animation time.
-- New runs discard pending presentation; travel keeps only explicitly carried state; resume settles the loaded picture without replaying effects.
-- Mutation APIs take `ActorId` for identity or `ActorSlot` for storage; callers convert integer identities at their boundary.
-- `freshTurn` owns its scene reset.
-- `stepGlide` owns a local `turn_schedule.Turn`, including the hero's pictured cell after each knockback.
-- Each body's schedule runs motion/projectile timing, blows and mending, reactions, knockback, then status harm.
-- `turn_schedule.Body.impact_in` and `finishes_in` are seconds from the current frame; `starts_at` and `Turn.next_at` keep the turn origin; `late` converts.
-- New effects record their resolved snapshot once and join a stage; gameplay never writes the queue's landed state or timers.
-- Death consequences keep a snapshot per source and affected body, so successive explosions land their status changes independently.
+`Game.mode.aim` owns the whole targeting session. A barrier has separate start and endpoint stages. Snapshot the confirmed target before closing aim. Preview uses only information available to the hero. Confirmation checks the live level before movement, placement or spending. [Terrain and targeting](TERRAIN.md)
 
-`game/turn_schedule.zig`
-- Owns motion deadlines, projectile completion, reaction timing, knockback ordering and the recovery deadline.
-- Presentation supplies visibility, motion and occupancy-clearance facts, applies the resulting motion and delivers effects in stage order.
-- Timing state is local to scheduling; no saved state or simulation RNG enters this module.
+Screen-space inspection shares the inverse lens projection for world picking and uses projected body bounds for focus and tooltips. HUD targets use screen coordinates. `ui/keywords.zig` takes input before its host, records terms with their drawing surface and draws definitions last. Clear its unsaved state on screen, size or run transitions. [Presentation](DATA_PRESENTATION.md)
 
-`game/combat_impacts.zig`
-- Owns complete chosen/reaction wounds, incoming strikes, status harm, body strikes and bolt impacts through snapshot capture.
-- Split, death, thorns and recovery helpers stay inside this owner. Combat selects targets and advances turns; it consumes completed outcomes or captured impacts.
-- Incoming strikes capture the hero before thorns or counters. Combat applies surviving knockback afterward, including when thorns killed the attacker.
-- Public `combat` entry points forward to this owner so existing skill and tactical callers retain their contracts.
+### Rendering and visibility
 
-`gfx/fx.zig`, `gfx/impact_queue.zig`
-- `Fx.step` ages existing visuals before delivering ready events.
-- The queue keeps swap-removal delivery order and picks body snapshots by simulation sequence, even when several deadlines pass in one frame.
-- Every event releases its mana debt once, a superseded snapshot included.
-- `Fx` renders delivered events and owns cosmetic RNG; the queue does not.
+Strict gameplay sight controls interaction and dynamic emitters. A fading body, projectile, NPC, hazard or loot pile retains its last visible picture. Clip hook chains to visible cells and cosmetic bursts to pictured cells. Motion, health changes or drops out of sight must not update the remembered picture.
 
-`game/attacks.zig`
-- `resolve` returns null for an absent target, otherwise `.miss` or `.hit` carrying damage, statuses, culling and recovery.
-- Combat consumes the outcome once: damage consequences, log, snapshot/split, death rewards, then impact and recovery.
-- Hero rolls and weapon status resolution stay here; animation, input and death transitions stay in their adapters.
-- `chosenBlow` rolls armour and status before damage, preserving opportunity bonuses and split inheritance.
-- `strikeHero` returns blocked, dodged, or a hit with resolved damage and applied
-  statuses. It rolls block before hit/damage, applies guard/bide and consumes shock
-  through `foeBlow`, then resolves health/mana damage before bleed, stun and chill in that
-  order. Lethal or fully absorbed hits roll no statuses. It cannot award deaths or
-  schedule presentation.
+`gfx/light_visibility.zig` supplies the smooth visibility field for lighting, water and weather. Exploration feathering stays inside known terrain. Memory grading darkens and desaturates explored ground. Reflections distinguish remembered scenery from live bodies and effects. Shadow casters sample light independently of fog and receiver visibility fades the mask. Bind the receiver light-map sampler **after** changing blend mode because raylib flushes auxiliary texture bindings.
 
-`game/foe_rules.zig`
-- Owns enemy turn ordering, target queries, path-distance caching and ranged reposition selection from Simulation alone.
-- Net throws return flight, facing and whether the throw landed; a resisted net still lands and consumes its cooldown. Healing returns the healed slot, or a successful rouse with no slot.
-- Combat records the returned outcome immediately, before another actor changes the body. Rules cannot access presentation, input or application modes.
-- Hurls (`actor.Hurl`: firebolts, chaos orbs) share one in-flight record (`Actor.bolt`), one cooldown (`Actor.projectile_in`) and one impact schedule; the Hurl names its element, wording and burn chance, and `fx.hurlLook` picks how its element is drawn. A `careful` hurl is held while another foe stands on or beside its line (`crowded`). An orb's remaining path is drawn ahead of it, stopping where `firebolt.entry` stops the flight. Pib shamans mend or wake kin first; mending and hurling cool down apart.
-- `quickstep` returns where a netter darts while its net recovers, its cooldown set and the step said; it refuses while pinned or confused and never crosses blocked or shunned cells. A club beside the hero holds the net (`Quickstep.club_holds`).
+Cap sprite illumination at the authored colour. Emission and impact flashes are separate. Slime bodies, reflections and shadows share translucency. Cosmetic light from slimes and bloats follows presented visibility.
 
-`game/rewards.zig`
-- `defeat` resolves XP, drops, flask refills, gas, steam and witness fright from Simulation alone; Presentation holds dropped gold and schedules speech from its `Death`.
-- Already frightened witnesses refresh their timer without another speech.
-- Chest capacity failure leaves the chest and RNG untouched; the game adapter supplies the message.
-
-`game.zig`, `game/targeting.zig`
-- `Game.mode.aim` owns an `Aim`: opening creates all its fields together, `skills.closeAim` discards them, switching mode drops it.
-- Barrier targeting distinguishes choosing its start from its end.
-- Confirmation copies the target before closing and passes that value to execution.
-- `TravelCarry` keeps queued commands (Interact included), the mouse skill set, facing and the level-up effect across node replacement.
-- Same-node doors move followers in place; followers without a destination cell stay alive where they were, retaining identity and statuses.
-
-`game/combat.zig`
-- Turn order: recovery/cooldowns, hero post-action harm, gas spread, foe clocks, hurls in flight, each foe's action then its harm, waiting newborn harm, final ward/sight.
-- A braced foe (`Actor.braced`) acts down its locked line on its next action; any skipped action drops the brace. A hurl (`Actor.bolt`) flies on after its thrower dies and freezes with its level when the hero leaves; `Presentation.bolts` is rebuilt from it.
-- Consumed ticks and displacement clear even when hero death interrupts the turn.
-- Split children inherit consumed ticks, so they cannot repeat their parent's harm that turn.
+A node can override weather with map lines such as `location forest beams` and `location coast coastal`. On entry, climate identifies edge-connected coastal sand and water (including bridges and temporary ice), then forest within two tiles of trees. Coast takes priority. Save the derived field with the level. Rules read the occupied cell. Rendering blends neighboring locations and samples the hero's drawn position for the sky. Beam weather uses the eased clock for the 08:00–10:00 and 16:00–18:00 transitions. Bloom samples the viewport. Atmospheric shafts also read nearby off-screen terrain. Composite atmosphere over world objects before grading and UI.
 
 ## Resolution and picture ordering
 
-The adapter must finish recording one resolution before beginning another. Actor
-identities (`ActorId`, persisted as integers) name bodies; `ActorSlot` names pool
-storage. Neither snapshot sequencing nor a picture deadline may consume simulation
-RNG. Combat rolls use `Simulation.rng`; drops use `loot_rng`; particles use cosmetic
-RNG in `Fx`.
+Keep combat RNG, loot RNG and cosmetic RNG separate. Capture each resolution before the next can alter its actors. `passTurn` advances recovery and cooldowns, hero post-action harm, gas, foe clocks and in-flight hurls, then each foe's action and harm, newborn harm and final ward/sight. `finishTurn` clears consumed ticks and displacement even when death interrupts the turn.
 
-| Flow | State and RNG order | Snapshot and picture order | Regression coverage |
-| --- | --- | --- | --- |
-| Hero hit | `attacks.resolve`: hit check, armour/elements, statuses, `Simulation.resolveDamage`, recovery roll | `combat_impacts.woundAt`: damage debt/log, `afterBlow` split and snapshot, then recovery and `recordAttack` | `hero`: attack resolution isolation and recorded chosen/reaction/status outcomes; `picture`: each bite and arrow HP at impact |
-| Incoming strike | `combat.reach` resolves any sweep victims first, then `combat_impacts.incomingStrike` calls `attacks.strikeHero` for block, hit, damage and surviving-hit statuses | `incomingStrike` records damage debt/logs and the hero snapshot before melee thorns, then death or counter; `reach` applies surviving knockback. A thorn-killed attacker still knocks back; a blocked/dodged melee still permits a counter | `hero`: recorded incoming-strike RNG, isolated rule outcomes and frame-partition invariance; `foes`: thorns, status rates and thorn-killed shieldbearer knockback |
-| Killing hit | Damage removes the living body; `rewards.defeat` then applies XP, loot RNG, flask/mana recovery, burst terrain and fright | `landBlow` captures the dead body before `fell`; `beforeDeath` captures affected surroundings before rewards; `recordDeath` holds drops and burst effects until impact | `hero`: kill flask refill; `picture`: arrow death; `foes`: mimic loot and pyre neighbours at impact |
-| Chain or reaction | `chainHit` captures target identities before any hit; each target resolves in sequence. `tactics_exec.counter` rolls its chance before the reaction's attack rolls | Every `woundAt` captures its result before the next hit. Chain delays accumulate per jump; a missed reaction still occupies its animation time | `hero`: missed reaction attribution and projectile timing; `skills`: chain and area attacks; `tactics_exec`: reaction timing |
-| Status damage and splitting | `harmAfter` visits gas, steam, healing gas, ground fire, burn, bleed. Consumed ticks are marked before damage; split children inherit them before entry effects run | Each `harmTick` captures its own body/split before death rewards and the next tick. `Presentation.scheduleHarm` follows that body's action and reactions; newborn harm waits for its reveal | `picture`: burning/gassed halves and quarters; `foes`: sweep stun paid once by both halves |
-| Interrupted turn | `passTurn` always defers `Simulation.finishTurn`. Hero post-action death stops gas/clocks; a killing projectile stops foe actions; a killing foe stops even its own post-action harm | Already recorded impacts remain queued; death mode and epitaph are immediate, while the body and death veil wait for the pictured impact/turn | `hero`: post-action death clears turn tracking; `picture`: killer spared gas and only the lethal bite kills |
+| Event | Required order |
+| --- | --- |
+| Chosen hit | Resolve hit, armour/elements, statuses and damage. Capture health, split and attribution before death rewards or the next blow. A barrel and an actor have different impacts. A miss leaves a barrel intact. |
+| Incoming strike | Resolve sweep victims, then block, hit, damage and guard/bide/shock. On a surviving, unabsorbed hit, roll bleed, stun and chill in order. Capture the hero before thorns, death or counter. A thorn-killed attacker can still knock back. |
+| Death | Capture affected neighbors before rewards. Resolve XP, drops, recovery, burst terrain and fright once. Reveal drops, speech and burst consequences at their pictured impacts. Refreshing fright does not repeat speech. Chest capacity failure preserves the chest and RNG. |
+| Chain, sweep or reaction | Capture target identities before the first hit so splits are not struck twice. Resolve each target in sequence. Roll the counter chance before its attack. Missed reactions still take animation time. |
+| Status harm | Visit gas, steam, healing gas, ground fire, burn and bleed in order. Mark consumed ticks before damage so split children inherit them. Schedule newborn harm after reveal. |
+| Interrupted turn | Hero post-action death stops gas and clocks. A lethal projectile stops foe actions. A lethal foe attack skips that foe's remaining harm. Deliver already-recorded impacts and delay the pictured death veil until its scheduled point. |
 
-`Presentation.stepGlide` schedules motion, blows/mending, reactions, knockback,
-then status harm. Its `starts_at`/`next_at` are relative to the turn origin;
-`impact_in`/`finishes_in` are remaining seconds from the current frame. `late`
-converts between them. When one frame crosses several deadlines, the impact queue
-uses snapshot sequence to prevent old health/status from replacing newer state,
-and releases every event's mana debt once. This is covered by the queue's overdue
-impact test and `hero`'s multiple incoming impacts in one frame.
-The hero regressions also advance resolved turns in one, two and 120 frames,
-checking unchanged simulation state and RNG, final pictured bodies, released mana
-debt and no repeated death rewards.
+`Presentation.stepGlide` schedules motion/projectiles, blows and mending, reactions, knockback, then status harm. `starts_at` and `Turn.next_at` use the turn origin. `impact_in` and `finishes_in` use seconds from the current frame. `late` converts between them. Track the hero's pictured cell after knockback. Age existing effects before delivering newly ready events. If several deadlines pass together, snapshot sequence decides pictured state and each event releases its mana debt once.
+
+`foe_rules` owns turn order, path-distance caching, support and ranged repositioning. Resisted nets still land and consume cooldown. Slow hurls share the actor's bolt record and cooldown, and careful throwers wait for a clear lane. Shamans prioritize waking or mending kin. Netters can quickstep during recovery unless pinned or confused. A braced foe attacks along its locked line on its next action and drops its brace if that action is skipped.
 
 ## Adding a skill
 
-Follow the runtime path in `game/skills.zig`: `useSkill` checks presentation timing,
-then calls `useUnaimed` or `openTargeting`. Targeted actions resolve through
-`confirmAim`. Projectile execution goes through `loose`, `resolveProjectileHit`
-and `hitProjectileActor`; rush execution goes through `rushTo`. Each helper names
-one decision. Compile-time specialization stays at the calls that need a skill's
-module type; ordinary capability queries read the checked contract table.
-
-Start with [pinning](../src/play/pinning.zig) for a simple projectile,
-[nova](../src/play/nova.zig) for an area skill, or `Overwatch` in
-[tactics](../src/play/tactics.zig) plus its [execution](../src/game/tactics_exec.zig)
-for a reaction. Add the action and registry definition in
-[skillbar](../src/play/skillbar.zig), declaring attack delivery explicitly.
-[skill_contract](../src/play/skill_contract.zig) interprets the module once and
-validates its targeting, damage, status and special execution requirements. Registry
-errors identify the skill; the `invalid` diagnostic path is also tested with incomplete
-sample modules. An afflicting skill's `damage.AfflictionChance` supplies the displayed
-odds and the roll, including any elemental resistance. Specialized tactical execution
-stays explicit in `game/tactics_exec.zig`.
-
-Wire the class kit and defaults in skillbar, ranks/costs in
-[progress](../src/play/progress.zig), the icon in
-[line_icons](../src/gfx/line_icons.zig), and a behavior test in
-[skills tests](../src/game/tests/skills.zig) or `game/tactics_exec.zig`. Preview and
-execution both use `Act` accessors backed by the same contract. Keep area geometry
-in the skill module and capture targets before damage so splits are not hit twice.
+1. Define mechanics and geometry in `play/`. Examples include [Pinning Shot](../src/play/pinning.zig), [Nova](../src/play/nova.zig) and [Overwatch](../src/play/tactics.zig).
+2. Register the action and delivery in `play/skillbar.zig`. Its checked contract supplies targeting, damage, status and special-execution requirements. Use the same `AfflictionChance` for display and rolls.
+3. Wire class kit, ranks and costs through skillbar and progression. Add the icon in `gfx/line_icons.zig`. Route targeting through `openTargeting` and `confirmAim`. Keep specialized tactical resolution in `game/tactics_exec.zig`.
+4. Test preview and execution against the same geometry, costs and scaling. Cover hidden targets, split bodies and pictured impact timing where applicable. [Skills tests](../src/game/tests/skills.zig)
 
 ## Adding an editor tool
 
-Begin a gesture with `Editor.gesture`. Report actual map changes through `changed`
-(terrain and thumbnail invalidation), `relinked` (door issues), or `bank` for metadata.
-Brushes, placement, clipboard and paste previews live in `edit/placement.zig`.
-Shared drawing and layout live in `edit/widgets.zig`; pass `ed.controls()` and
-the font directly. Construct controls at each call so a newly opened modal takes
-effect immediately. Widgets have no access to Editor or Game.
-`edit/interaction.zig` handles keyboard commands and canvas gestures before drawing.
-It takes canvas bounds and screen height directly, preserving modal, rename and
-view-change priority before a click can paint or begin a graph drag.
-`Editor.scene` owns the derived level, preview actors and issues. Call `preview`
-before reading it; selection, edits and rerolls invalidate it through its owner.
-Scene generation takes a const map and cannot modify history or navigation.
-`Editor.thumbnails` owns graph texture lifetime and selective invalidation. Graph
-textures show the node's stamped terrain before creature placement. Canvas passes
-the map, derived scene and clipping rectangles without changing the map.
-`Game.art` tracks stale, play and editor graphics as one state. Scene changes and
-title assets invalidate it; the matching renderer prepares its required textures
-once. Editor does not keep a second graphics-stale flag.
+Start a gesture through `Editor.gesture`. Send terrain changes through `changed` and record link or metadata edits through `bank`. Brushes, paste and previews share placement geometry. `interaction.zig` routes modal, rename and view changes before canvas input. Pass current `ed.controls()` and font to widgets so a new modal takes effect immediately.
 
-History records the starting map on the first actual change and keeps later changes
-in that same step. A no-op gesture does not truncate redo. Graph movement uses
-`History.previewNode`, then `commitPreview` or `cancelPreview`: cancellation
-restores the starting map without modifying the history ring or saved position.
-Losing window focus cancels an unfinished shape, graph drag or door link and
-ends a freehand stroke at its last applied cell.
-Retained history copies active nodes and encodes only active script entries and text;
-it preserves unfinished authoring values without save validation. Gesture preparation
-and undo/redo allocate their snapshots before changing the map or history.
-Undo/redo swaps invalidate only affected thumbnails, or all thumbnails when node
-identity changes. Source wording and attribution remain separate transactions in
-`text_catalog.zig` and `text_panel.zig`; map undo never rewrites source files.
+The first real change records the gesture. A no-op preserves redo. Graph drags use `previewNode`, then `commitPreview` or `cancelPreview`. Focus loss cancels unfinished shapes, links and graph drags, and ends freehand painting at the last applied cell. Prepare undo/redo storage before mutating anything. Retained history copies active nodes and script entries, including unfinished authoring data.
+
+Invalidate derived scenes on selection, edits and rerolls. Call `preview` before reading them. Invalidate only affected thumbnails unless node identities change. Thumbnails show stamped terrain before creature placement. `Game.art` owns graphics readiness for play and editor. Text-view source edits and attribution are separate from map undo. [Text editor](TEXT_EDITOR.md)
 
 ## Landscape shapes and niches
 
-`map/biome/tee.zig` shapes Caravan with broad forest-edge bends, varying road
-shoulders and a winding river. Roads straighten toward the camp so carts and
-their merchant retain room. `topology`'s `encampment` layout follows linked,
-unequal clearings: two lower loops, a cross-route and a broad northern clearing
-with a small side pocket. Goblin Camp uses this layout; camp setpieces favor
-existing clearings rather than cutting separate rooms into the surrounding forest.
-
-Reusable refuges are ordinary setpieces: `feature setpiece`, then
-`piece chest_niche` or `piece light_niche`, with the usual `count` and `apart`.
-Their asymmetric templates rotate in four directions, prefer terrain edges,
-inherit the biome's ground/path/wall palette and open onto existing dry ground.
-Placement preserves props and reserved feature/painted lots. The normal procgen
-connectivity pass keeps their interiors and reward approaches reachable.
-They provide a chest or a glowing plant; they do not establish an enemy-free zone.
-`piece moat_camp` rings a small camp and its fire with water; the connectivity pass
-bridges it. Tee `goods`, `bedrolls` and `tents` dress the caravan camp with
-glyph-only props (crates and sacks by the carts, 3x2 tents at the camp's edge).
-An NPC spot `on <tile>` stands on the free cell of that ground nearest its middle.
-`--shot-landscapes` captures Caravan and Goblin Camp in native-scale tiles and
-detail views; run it from a temporary capture directory.
+Caravan uses `map/biome/tee.zig` for forest bends, roads and river. Goblin Camp's `encampment` topology links unequal clearings. Use `feature setpiece` with `piece chest_niche`, `light_niche` or `moat_camp`. Niches rotate, take the biome palette and open onto existing ground. Preserve props, painted sections and reserved lots. Connectivity bridges the moat. Caravan's `goods`, `bedrolls` and `tents` dress the camp. An NPC spot `on <tile>` chooses a free matching cell near its center. Inspect these with `--shot-landscapes`.
 
 ## Monster zoos
 
-`map/zoo.zig` owns a reusable encounter; either kind of atlas node can hold one
-optional `zoo`. `game/jail.zig` adapts its door interaction to turns,
-logging and presentation. The local gate blocks movement and sight and is separate
-from atlas travel doors. Opening it spends a turn and wakes the surviving room
-occupants; it stays open for retreat. A locked gate consumes one carried Small Key.
-Trying a locked gate without one spends no turn. Keys from any compatible source
-work; `game/rewards.zig` puts one in the encounter's outside chest.
-
-Author an encounter in that node's map text:
+Either kind of node can have one zoo. Author its outer box, entrance side, optional key chest and weighted inhabitants in the map text.
 
 ```text
 zoo 40 18 8 6 w
@@ -343,54 +93,14 @@ zoo_foe 2 pib
 zoo_foe 1 bandit_netter
 ```
 
-The first line is x, y, outer width, outer height and entrance side (`n/e/s/w`).
-`zoo_key` positions the Small Key chest; omitting it leaves the closed door unlocked.
-Each `zoo_foe` supplies a positive
-relative weight and a stocked enemy kind; the pool is independent of ordinary
-packs. Dimensions are 5–10 cells, with one clear inner threshold and two chests
-against the far wall. Every remaining inner cell gets a weighted enemy while actor
-capacity permits, including reserves for slime splitting. Swimmers receive shallow
-water under their cells; mimics reveal and restore their ground when released.
+Dimensions are 5–10 cells and sides are `n/e/s/w`. Without a key chest, the gate is unlocked. Reserve one inner threshold and two far-wall chests. Fill other interior cells by positive foe weights while reserving actor capacity for slime splits. Swimmers receive shallows and mimics restore their ground on release.
 
-The room is stamped after terrain generation, with a walkable perimeter and
-short connections for its approach and key chest that stay outside its walls. These
-connections and the key chest's bypass preserve painted section walls wherever a
-route around them exists, breaking the fewest painted solid cells, chests and glow plants when enclosed.
-Connections also avoid water occupied by authored swimmers. If a crossing must
-use one of their cells, shallows keep the route walkable and the swimmer in place.
-Connections target the arriving hero's floor component (in standalone node previews the
-start cell on the start node, else the first travel door; the largest component if no
-entrance is known).
-Unrelated sealed rooms remain sealed; components touching the encounter or its key
-remain available for their connections. The chest is outside the perimeter and is
-connected before the door is sealed. Ordinary packs and derived NPC placements
-avoid the encounter. Authored foes, travel doors and fixed painted sections cannot
-overlap it; roaming painted sections cannot share its node. The editor previews
-the encounter and counts its interior as reachable through the unlockable door.
-Placement and pool editing currently use map text.
-Editor door, foe and start placement preserves these encounter reservations,
-including the replacement start chosen when its node is removed.
+Stamp the room after terrain generation. Connect its perimeter and exterior chest to the arriving hero's floor component. Editor previews and thumbnails use the map start on its node, otherwise the first travel door or, if there are no doors, the grid centre. Stamping without an entrance uses the largest floor component. Preserve unrelated sealed areas. Route around painted walls, chests, glow plants and authored swimmers where possible. Cross a swimmer's cell with shallows if necessary.
 
-The Caravan node places this 21-monster room east of the northbound route, with
-the key chest to its southwest. `--shot-zoo` captures the chest, key loot, carried key, closed gate, release and
-packed interior using the real map. Tests cover generation, visibility, all enemy
-kinds, input, map parsing, portable saves and revisits.
+The editor keeps new barrels, doors and foes out of reserved cells and prevents starts inside the room or on its key chest. Fixed painted sections cannot overlap the room and a roaming section cannot share the node. Derived NPCs and ordinary packs avoid the encounter. Reachability checks treat its gate as unlockable.
+
+`game/jail.zig` opens the gate for a turn and wakes survivors. A locked gate uses one interchangeable Small Key. A failed attempt spends no turn. The gate stays open. `--shot-zoo` covers the Caravan encounter from key chest through release.
 
 ## Verification
 
-Dialogue layout lives in `ui/talk.zig` and never paginates; authored `then` lines are
-the only page breaks. `game/talking.zig` drives the conversation.
-The editor previews the same layout. Long-form writing limits, independent editor
-scrolling and the source text concern tree are documented in [TEXT_EDITOR.md](TEXT_EDITOR.md).
-Map saving rejects serialized text beyond the reader's `atlas_text.TEXT_CAP` before replacing the file.
-`core/wire.zig` traverses aggregate save values by reference, so large authored
-dialogue buffers do not create recursive stack copies during encoding.
-
-Run `check.cmd` and affected test filters for each change, then the full suite
-after combat, scheduling or lifecycle changes. Preserve seeded outcomes and the
-legacy reader fingerprint and portable save identities. Tests use in-memory saves and maps. Run actual headless
-captures for presentation/editor changes, inspect PNGs, benchmark, and finish with
-`build.cmd`. All generated captures, timing logs and temporary scripts live in `%TEMP%`.
-The full test command also runs the source-boundary checker's own tests. The
-Windows CI workflow runs the same check/test/build scripts and packaging tests;
-[README.md](../README.md) describes setup on a fresh machine.
+Run the repository checks and headless captures listed in [AGENTS.md](../AGENTS.md#verification). Combat, scheduling and lifecycle changes require the full suite. Use in-memory saves and maps for tests.

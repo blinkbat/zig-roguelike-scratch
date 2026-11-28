@@ -8,7 +8,7 @@ pub const DONE = "raises a mana shield";
 pub const STATUS = "Damage drains mana before life.";
 pub const DESCRIPTION = std.fmt.comptimePrint("For {d} turns, harm is taken from mana before life, a point for a point.", .{TURNS});
 
-/// Its turns left: the turn it is raised in is the first, the foes' blows in it already turned.
+/// Protection starts with foe attacks on the casting turn.
 pub const Ward = struct {
     turns: u8 = 0,
 

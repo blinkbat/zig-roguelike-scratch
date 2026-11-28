@@ -44,7 +44,7 @@ pub const Spec = struct {
         return s.room().grown(1);
     }
 
-    /// What `reserves` holds, as boxes: the ring, and the key's cell.
+    /// The encounter ring and optional key cell.
     pub fn reservedBoxes(s: *const Spec, buf: *[RESERVED_BOXES]grid.Box) []const grid.Box {
         buf[0] = s.reserved();
         const k = s.key orelse return buf[0..1];

@@ -1,4 +1,3 @@
--- A ground template's painting, its 4x4 block alone, as the game's sheet: assets/ground/<name>-ground.png, which src/gfx/ground.zig reads.
 -- params: name=grass|cobble|dirt|water|shallows|bridge [source=<sheet.aseprite>] [out=<png>] [from=underdrawing, a stand-in, only with out=]
 local root=app.params.root or assert(debug.getinfo(1,'S').source:gsub('\\','/'):match('^@(.*)tools/[^/]+/[^/]+$'),'root=<repo with trailing slash>')
 local sourceFiles=dofile(root..'tools/tile_art/source_files.lua')

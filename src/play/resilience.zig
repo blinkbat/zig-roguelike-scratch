@@ -46,7 +46,7 @@ pub const GAIN: u8 = 25;
 pub const EXPIRY: u8 = 5;
 pub const ABOUT = std.fmt.comptimePrint("Repeated harmful statuses build resistance. Each successful application adds {d}%; it expires after {d} turns without another successful application.", .{ GAIN, EXPIRY });
 
-/// The module owning `k`'s turns, `TAKES` and `STATUS`; stun lives on the clock and fright on the actor.
+/// Stun lives on the clock and fright on the actor. Other statuses own their duration and text.
 pub fn module(comptime k: Kind) ?type {
     return switch (k) {
         .burn => @import("burning.zig"),
@@ -76,7 +76,7 @@ pub const Meter = struct {
     fresh: bool = false,
 };
 
-/// A status's turns left, worn one a turn; started again, it never runs shorter than it had.
+/// Refresh keeps the longer duration.
 pub fn Turns(comptime N: u8) type {
     return struct {
         turns: u8 = 0,

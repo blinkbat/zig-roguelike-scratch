@@ -191,6 +191,21 @@ class ReleaseTests(unittest.TestCase):
                     release.package(b'new executable', root, {'source_sha256': source}, 'linux', 'x86_64')
             self.assertEqual(before, {path: path.read_bytes() for path in root.iterdir()})
 
+    def test_incomplete_archive_is_rejected_before_publication(self):
+        addfile = tarfile.TarFile.addfile
+
+        def omit_launcher(archive, entry, stream):
+            if not entry.name.endswith('/run.sh'):
+                addfile(archive, entry, stream)
+
+        with tempfile.TemporaryDirectory(prefix='cistern-release-test-') as temporary:
+            root = pathlib.Path(temporary)
+            metadata = {'source_sha256': release.source_hash()}
+            with patch.object(tarfile.TarFile, 'addfile', omit_launcher):
+                with self.assertRaisesRegex(ValueError, 'Missing archive members: .*run.sh'):
+                    release.package(b'test executable', root, metadata, 'linux', 'x86_64')
+            self.assertEqual([], list(root.iterdir()))
+
     def test_failed_archive_replacement_restores_previous_checksum(self):
         with tempfile.TemporaryDirectory(prefix='cistern-release-test-') as temporary:
             root = pathlib.Path(temporary)

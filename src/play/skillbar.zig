@@ -142,7 +142,7 @@ pub const Act = enum {
     pub const Reticle = contracts.Reticle;
 
     pub fn contract(a: Act) *const contracts.Contract {
-        // Callers ask this of every act at comptime in one function; each ask is a chain of calls.
+        // Checking every action contract at comptime exceeds the default branch quota.
         @setEvalBranchQuota(10_000);
         return CONTRACTS.getPtrConst(a);
     }
@@ -250,7 +250,7 @@ pub const Act = enum {
         return a.contract().done;
     }
 
-    /// Its physical and elemental rolls before its attribute; an arrow's physical is the bow's.
+    /// Unscaled skill rolls. Equipped ranged weapons replace the physical roll in `equippedBases`.
     pub fn bases(a: Act) Bases {
         return a.contract().bases;
     }
@@ -455,14 +455,7 @@ pub const Set = enum {
 
 pub const SETS = std.enums.values(Set);
 
-/// PoE2's bind screen groups, less LT and the d-pad, which lean and move here.
-pub const GROUPS = [_][]const Button{ &.{.lb}, &.{ .a, .x, .y, .b }, &.{ .rb, .rt } };
-
-pub const SLOTS = blk: {
-    var s: []const Button = &.{};
-    for (GROUPS) |g| s = s ++ g;
-    break :blk s[0..s.len].*;
-};
+pub const SLOTS = input.SLOT_ORDER;
 
 pub const Slot = struct { set: Set, button: Button };
 
@@ -499,7 +492,7 @@ pub const Bar = struct {
         return if (down.contains(m)) .secondary else .primary;
     }
 
-    /// The secondary set's modifier moves by swapping whole columns; bound with none set, it clears its button's column.
+    /// Moving the modifier swaps whole columns. Assigning the first modifier clears its column.
     pub fn bind(self: *Bar, s: Slot, a: Act) void {
         if (a == .secondary) {
             if (self.modifier) |m| {
@@ -631,7 +624,6 @@ pub const INSPECT = Button.inspect;
 const NOT_SLOTS = [_]Button{ Button.character, Button.pause, INSPECT };
 
 comptime {
-    if (!std.mem.eql(Button, &SLOTS, &input.SLOT_ORDER)) @compileError("the keyboard numbers the slots out of their order");
     for (std.enums.values(Button)) |b| {
         var n: usize = 0;
         for (SLOTS ++ NOT_SLOTS) |s| {

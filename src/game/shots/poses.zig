@@ -873,7 +873,7 @@ pub fn shadowMask(g: *game.Game, target: rl.RenderTexture2D, c: game.scene.Cam, 
     {
         drawOver(target, rl.Color.white);
         defer rl.endTextureMode();
-        if (!game.scene.shadowPass(g, c, g.pic.groundShown(&g.sim), cast, &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
+        if (!game.scene.shadowPass(g, c, g.pic.groundShown(&g.sim), cast, &.{ .contents = game.scene.bagCells(g) }, target.id)) return error.ShadowShaderMissing;
     }
     return readTarget(target);
 }

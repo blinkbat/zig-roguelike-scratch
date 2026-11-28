@@ -142,14 +142,12 @@ function files.savePng(image,path,message)
 end
 
 function files.stage(name)
-  local staged=app.fs.joinPath(files.work(app.fs.joinPath(app.fs.tempPath,'tile-art-stage')),name)
-  os.remove(staged)
-  assert(not app.fs.isFile(staged) and not app.fs.isDirectory(staged),'Stale staged file: '..staged)
-  return staged
+  local folder=files.work(app.fs.joinPath(app.fs.tempPath,'tile-art-stage'))
+  return app.fs.joinPath(folder,tostring(Uuid())..'-'..name)
 end
 
 function files.staged(path,staged)
-  return {path=path,bytes=bytesOf(staged)}
+  return {path=path,bytes=bytesOf(staged),temporary=staged}
 end
 
 function files.stagePng(image,path,message)
@@ -165,6 +163,9 @@ local function restore(path,bytes)
 end
 
 function files.publish(staged)
+  for _,item in ipairs(staged) do
+    if item.temporary then os.remove(item.temporary) end
+  end
   local before={}
   for i,item in ipairs(staged) do before[i]=app.fs.isFile(item.path) and bytesOf(item.path) end
   for i,item in ipairs(staged) do
@@ -244,11 +245,15 @@ function files.checkBlankTemplate(old,want,label)
   for i,guide in ipairs(want.guides) do
     local l=old.layers[i]
     assert(l.isImage and l.name==guide.name and l.opacity==guide.opacity,'Preserving changed guide: '..l.name)
+    assert(l.isVisible and l.isEditable==(not want.lockedGuides) and l.blendMode==BlendMode.NORMAL,'Preserving changed guide settings: '..l.name)
     local cel=assert(l:cel(1),'Preserving missing guide: '..l.name)
     assert(cel.opacity==255,'Preserving changed guide opacity: '..l.name)
-    for pixel in cel.image:pixels() do
-      local x,y=pixel.x+cel.position.x,pixel.y+cel.position.y
-      assert((x>=0 and x<old.width and y>=0 and y<old.height) or pc.rgbaA(pixel())==0,'Preserving off-canvas guide pixels: '..l.name)
+    local origin,image=cel.position,cel.image
+    if origin.x<0 or origin.y<0 or origin.x+image.width>old.width or origin.y+image.height>old.height then
+      for pixel in image:pixels() do
+        local x,y=pixel.x+origin.x,pixel.y+origin.y
+        assert((x>=0 and x<old.width and y>=0 and y<old.height) or pc.rgbaA(pixel())==0,'Preserving off-canvas guide pixels: '..l.name)
+      end
     end
     assert(files.canvas(old,cel):isEqual(guide.image),'Preserving changed guide pixels: '..l.name)
   end
@@ -260,12 +265,14 @@ function files.checkBlankTemplate(old,want,label)
     end
   end
   assert(paint.isImage and paint.name==files.LAYER.draw and blank,'Preserving owner painting: '..label)
+  assert(paint.isVisible and paint.isEditable and paint.opacity==255 and paint.blendMode==BlendMode.NORMAL,'Preserving changed drawing layer: '..label)
   local bounds={}
   for _,slice in ipairs(want.slices) do bounds[slice.name]=slice.bounds end
   for _,slice in ipairs(old.slices) do
     local b,expected=slice.bounds,bounds[slice.name]
     assert(expected,'Preserving unknown slice: '..slice.name)
     assert(b.x==expected.x and b.y==expected.y and b.width==expected.width and b.height==expected.height,'Preserving changed slice: '..slice.name)
+    assert(not slice.center and not slice.pivot and slice.data=='','Preserving changed slice metadata: '..slice.name)
     bounds[slice.name]=nil
   end
 end

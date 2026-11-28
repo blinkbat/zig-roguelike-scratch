@@ -51,7 +51,7 @@ pub const Turn = struct {
     next_at: f32,
     hero_cell: P,
     pace: Pace,
-    /// The hero only walked and no foe is in sight: allies that only walk keep step with it instead of following in turn.
+    /// On a quiet hero step, walking allies animate alongside the hero.
     quiet: bool = false,
 
     pub fn begin(late: f32, lead_in: ?f32, hero_cell: P, pace: Pace) Turn {

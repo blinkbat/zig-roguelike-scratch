@@ -181,7 +181,7 @@ fn conduct(g: *game.Game, at: P, s: Stroke) void {
 
 const Wet = struct { bodies: rewards.Caught, struck: ?usize = null, born: usize = 0, shocked: bool = false };
 
-/// The grounded bodies in the water joined to `at`, taken before a blow so a half it splits off is not shocked apart from its parent.
+/// Snapshot connected, grounded victims before damage can split them.
 fn wading(sim: *const game.simulation.Simulation, at: P) ?rewards.Caught {
     const water = shock.conducted(&sim.lv, at);
     if (water.n == 0) return null;
@@ -214,7 +214,7 @@ fn conductTo(g: *game.Game, at: P, wet: ?Wet, s: Stroke) void {
     }
 }
 
-/// Rolled once and scaled per body, as an area blow; each is struck as the arrow reaches its cell.
+/// Roll once for the line, then scale and land each hit separately.
 pub fn pierceHit(g: *game.Game, comptime act: skillbar.Act, pierced: bow.Pierced, s: Stroke) void {
     const M = skillbar.Act.skill(act);
     const Each = struct {
@@ -331,12 +331,11 @@ pub fn arrive(g: *game.Game, at: P) void {
     rewards.noticeItems(&g.sim, at);
 }
 
-/// The hero's action is spent: a turn passes unless haste spares it.
+/// Haste can spare the action's turn.
 pub fn endTurn(g: *game.Game) void {
     if (!hastened(g)) passTurn(g);
 }
 
-/// As a free action: nothing ages, no foe acts.
 fn hastened(g: *game.Game) bool {
     const h = g.sim.heroActor() orelse return false;
     if (!g.sim.hastens()) return false;
@@ -486,7 +485,7 @@ fn scorch(g: *game.Game, id: u16) void {
     } else if (caught) g.pic.recordWear(&g.sim, .fromInt(id));
 }
 
-/// Mark a tick consumed; split halves inherit the parent's consumed ticks.
+/// Split halves inherit their parent's consumed ticks.
 fn ranAlready(g: *game.Game, id: u16, comptime tick: game.simulation.Tick) bool {
     const r = &g.sim.ran[actor.Pool.slot(id)];
     defer r.insert(tick);
@@ -524,7 +523,7 @@ fn wearTurn(g: *game.Game, id: u16) Worn {
     return w;
 }
 
-/// The hero's own action is spent: so is a turn of what afflicts, holds or chills it; a chill's skipped action is its next turn.
+/// Chill consumes the hero's next action.
 fn wearHero(g: *game.Game) void {
     const h = g.sim.heroActor() orelse return;
     if (!wearTurn(g, g.sim.hero).skips) return;
@@ -622,7 +621,6 @@ fn brace(g: *game.Game, id: u16, d: mathx.Dir, comptime said: []const u8) void {
     g.sim.sayOf(r, said, .{actor.row(r.kind).name});
 }
 
-/// Braces at a hero on an open straight line in reach; the turn after, rushes the braced way whatever the hero did.
 fn chargeTurn(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, braced: ?mathx.Dir, held: bool, af: actor.Afflicted, sight: i32) bool {
     if (held) return false;
     if (braced) |d| {
@@ -635,7 +633,6 @@ fn chargeTurn(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, braced: ?
     return true;
 }
 
-/// Runs until the next cell is blocked: a hero there takes the charge's blow; anything else leaves it stuck.
 fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, af: actor.Afflicted) void {
     const r = g.sim.pool.get(id).?;
     r.ready_in = c.every;
@@ -664,7 +661,6 @@ fn rush(g: *game.Game, id: u16, row: actor.Row, c: actor.Charge, d: mathx.Dir, a
     g.sim.sayOf(crab, "The {s} is stuck fast.", .{row.name});
 }
 
-/// Braces at a hero on a straight line in reach; the turn after, flings its hook the braced way.
 fn hookTurn(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, braced: ?mathx.Dir, af: actor.Afflicted, sight: i32) bool {
     if (braced) |d| {
         fling(g, id, row, hk, d, af);
@@ -678,7 +674,6 @@ fn hookTurn(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, braced: ?mat
     return true;
 }
 
-/// The first body or barrel down the line takes the hook; only a hero is struck and dragged a cell closer.
 fn fling(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, d: mathx.Dir, af: actor.Afflicted) void {
     const r = g.sim.pool.get(id).?;
     r.ready_in = hk.every;
@@ -713,7 +708,6 @@ fn fling(g: *game.Game, id: u16, row: actor.Row, hk: actor.Hook, d: mathx.Dir, a
     g.pic.recordFoeAttack(.fromInt(id), .miss, flight);
 }
 
-/// A hurl at the hero along a clear shot, once its last has come down; the turn after it moves.
 fn hurlerTurn(g: *game.Game, id: u16, hu: actor.Hurl, held: bool, af: actor.Afflicted) bool {
     const r = g.sim.pool.get(id).?;
     if (r.bolt == null and r.projectile_in == 0 and hurl(g, id, hu)) return true;
@@ -735,7 +729,6 @@ fn hurl(g: *game.Game, id: u16, hu: actor.Hurl) bool {
     return true;
 }
 
-/// A step to another cell it keeps its distance from and still has a clear shot from.
 fn reposition(g: *game.Game, id: u16, projectile: actor.Hurl, afflictions: actor.Afflicted) bool {
     const direction = foes.repositionStep(&g.sim, id, projectile) orelse return false;
     const from = g.sim.pool.get(id).?.at;
@@ -743,7 +736,7 @@ fn reposition(g: *game.Game, id: u16, projectile: actor.Hurl, afflictions: actor
     return true;
 }
 
-/// Every hurl in the air flies on, its thrower living or not; false once one kills the hero.
+/// Bolts outlive their thrower. Stop processing once one kills the hero.
 fn flyBolts(g: *game.Game) bool {
     const wait = boltsWait(g);
     for (0..g.sim.pool.n) |i| {
@@ -853,7 +846,6 @@ fn keepAway(g: *game.Game, id: u16, row: actor.Row, held: bool, af: actor.Afflic
     if (!held) closeIn(g, id, row.keeps, af);
 }
 
-/// Its blow at a hero beside it.
 fn club(g: *game.Game, id: u16, row: actor.Row, af: actor.Afflicted) bool {
     const d = foes.besideWay(&g.sim, g.sim.pool.get(id).?.at, g.sim.heroAt().?) orelse return false;
     _ = reach(g, id, row, d.delta().x, null, af);
@@ -877,7 +869,6 @@ fn closeIn(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) void {
     foeStep(g, id, r.at, d, af);
 }
 
-/// Thrown along a clear flight at a hero not already held; a dodge or resistance spends it all the same.
 fn throwNet(g: *game.Game, id: u16, net: actor.Net) bool {
     const result = foes.throwNet(&g.sim, id, net) orelse return false;
     g.pic.turnLater(.fromInt(id), result.facing_delta);
@@ -949,7 +940,6 @@ fn knockHero(g: *game.Game, by: u16) void {
     shove(g, by, mathx.dirTo(striker, h.at) orelse return, "{s} is knocked back.");
 }
 
-/// The hero a cell `d`, unless held or the cell is taken or a door.
 fn shove(g: *game.Game, by: u16, d: mathx.Dir, comptime said: []const u8) void {
     const h = g.sim.heroActor() orelse return;
     if (g.sim.inventory.gear.anchored()) return;
@@ -975,7 +965,7 @@ fn sweepReady(g: *game.Game, id: u16, row: actor.Row) bool {
     return true;
 }
 
-/// Every body and barrel round the sweeper but the hero, snapshot before any blow so newborn halves are spared.
+/// Snapshot sweep victims before damage can create new slime halves.
 fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike, weak: bool) void {
     const from = g.sim.pool.get(id).?.at;
     const cells = actor.sweep(&g.sim.lv, from);
@@ -989,7 +979,6 @@ fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike, weak: boo
     g.pic.owe(.fromInt(id), .swept, swept);
 }
 
-/// The barrel at `p` broken by `name`, or by its `with` when it threw one.
 fn smashedBy(g: *game.Game, p: P, name: []const u8, with: ?[]const u8) ?fx.Impact {
     const gold = rewards.barrelLoot(&g.sim, p) orelse return null;
     if (with) |noun| {

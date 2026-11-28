@@ -1,87 +1,25 @@
 # Player-facing text editor
 
-The editor's Text view reads production Zig source under the project's `src` directory.
-Browse an expandable tree by concern, text type, then skill, item, screen or source owner.
-For example, Items contains Name and Description branches; Log lines contains gameplay
-subgroups and individual message owners. Branches show matching passage counts and
-stay in the tree when another branch expands. Passages identify their
-purpose, such as Name, Description, Title or Tooltip, before showing the wording. The
-inspector keeps the owner, purpose, exact source declaration and file/line visible above
-the draft. Search matches wording, concern, owner, purpose and source identifiers. Clear
-the query or select All text to broaden the results. The tree, passage list and writing
-field scroll independently; writing fields show a scrollbar and reveal the caret after navigation.
+Open **Text** in the map editor. Browse by concern, text type and owner, or search wording, purpose and source identifiers. Select a passage to see its declaration and file location. Selecting **All text** and clearing the query restores the full list. The tree, passage list and draft scroll independently. Drafts support selection, clipboard editing, undo/redo and navigation across wrapped lines.
 
-Selecting a passage focuses its wording; selecting the search field focuses filtering.
-The editing text is 24px, with 20px supporting labels. The Written by controls set an
-authorship tag: Unknown, You, AI or Mixed. Existing text starts Unknown unless a matching saved tag exists.
-Edits default to You; the tag is an attribution choice, not an automatic authorship detector.
+| Passage | Where a save goes |
+| --- | --- |
+| Quoted source text | The selected literal in `src/**/*.zig`. A shared literal changes every use. The catalog tokenizes production code and skips technical strings, test bodies, shaders and asset paths. |
+| Registered enum caption | A single-line alias in `assets/data/player-labels.txt`. The chosen spelling applies in every display context. Input glyphs, the name-entry keyboard and unregistered or explicitly excluded enum fields are read-only. |
+| Named map node | Read-only in Text. Use **Rename** in the map editor to include the change in map undo. |
 
-Saving replaces that one quoted literal in its source file. Other bytes, including UTF-8
-encoding, an existing BOM and line endings, stay intact. Rebuild the game to see the change
-in play. Text editing does not change the open map or its undo history.
+[The wording registry](../src/core/wording.zig) owns eligible fields, default casing and alias keys. When moving a registered enum, set `saved_name` to its original name so existing aliases still resolve.
 
-Before writing, the catalog compares the entire current file with the version it loaded.
-If another editor changed it, reload the catalog before editing again. Source files use the
-project's temporary-sibling-and-rename write path. Tags are stored separately in
-`text-tags.json` at the project root. If the source saves but its tag file cannot be written,
-the editor reports that separately; the source edit has still succeeded.
+## Saving and attribution
 
-Tags match the source path, the literal's position in the token stream and its decoded
-content. Unrelated code movement can therefore make an old attribution Unknown instead of
-assigning it to a different passage. There is no persistent revision history. The current
-draft supports undo/redo, selection, clipboard editing and navigation through wrapped lines.
+Enter nonempty ASCII text up to 32,768 bytes. Preserve format arguments such as `{s}` and `{d}`, escaped braces and inline control glyphs in their original order. The editor escapes quotes, backslashes and line breaks when writing a source literal. Rebuild with `build.cmd` to apply source and alias changes. Inspect the affected layout if the wording grew.
 
-The catalog uses Zig's tokenizer to omit test bodies, imports, reflection arguments,
-console diagnostics, shaders and asset paths. It discovers text throughout gameplay,
-skills, items, UI, editor and map display modules, including pieces concatenated into a
-larger sentence. Display-looking literals are selected by their surrounding names and
-content, so this is source discovery rather than a translation database. Small punctuation
-fragments and generated/computed strings are not independently editable passages.
-Context comes from enclosing source declarations, functions, named table rows and skill
-registrations. When a runtime use cannot be determined, the browser shows the source owner
-and call instead of claiming a particular screen. A literal reused in several places still
-edits that shared source. Level-up text and fright speech are included under Effects.
-Named nodes in `maps/**/*.map` are listed with their map-file provenance. They are read-only
-here: use the map editor's existing Rename action so its open map and undo state remain
-authoritative.
+The catalog checks the loaded source or alias file and the root `text-tags.json` for external changes before saving. Reload after a conflict. It replaces source files through a temporary sibling, preserving bytes outside the literal, including line endings and any BOM. Map undo operates independently.
 
-Enums used by display helpers can have editable display aliases. These save to
-`assets/data/player-labels.txt`, keyed by the full enum type and field; their declaration stays
-the source provenance. The aliases are embedded at rebuild and change captions without
-renaming code or changing save identities. Default generated casing follows `menu.named`;
-title and sentence uses can have different default casing. An explicit alias uses the exact
-chosen text in each of those contexts. Internal, anonymous and explicitly overridden enum
-labels remain read-only, as do input glyph identifiers and the name-entry keyboard.
-Changing only an authorship tag does not create or alter a display alias.
-`core/wording.zig` owns the shared alias format, display helpers and registration of editable
-enum labels, including their default casing and excluded fields. When moving a registered
-enum, update its registration name and retain the original key through `saved_name`;
-the catalog and runtime display helpers use that same mapping.
-
-Editable text is nonempty ASCII, up to 32,768 bytes, matching the game's text rendering
-contract. Display aliases
-are single-line text. Quotes, backslashes and newlines are escaped safely. Format placeholders such as
-`{s}` and `{d}`, escaped braces and inline control glyph markers must remain unchanged and
-in the same order. Layout remains the author's responsibility; long replacements can need
-an in-game layout check after rebuilding.
-
-The tag file is also checked for changes made since loading. A malformed tag file produces
-a warning and is preserved: source edits can still save, but attribution cannot be updated
-until that file is repaired. Unknown tags are never inferred from existing prose.
+**Written by** offers Unknown, You, AI and Mixed. Edits default to You. A tag-only change to an enum caption leaves the alias file alone. Tags match a source path, literal ordinal (or alias key hash) and decoded text hash. A mismatch displays Unknown. A malformed tag file is preserved. If attribution fails after a successful text save, the editor reports both outcomes.
 
 ## Map dialogue
 
-The Dialog editor edits the open map. Speech holds 32,768 ASCII characters, replies
-8,192 and speaker names 128. Speech and replies accept paragraphs with Enter; Escape
-leaves the writing field. Their larger text wells show character counts and scroll
-independently of the surrounding details. The line list has its own scroll area and
-keeps Add, Up and Delete available at its foot.
+Use **Dialog** for speech and replies in the open map. Speech holds 32,768 ASCII characters, replies 8,192 and speaker names 128. Enter inserts a paragraph break in speech or a reply. Escape leaves the field. Speech, replies and the line list scroll independently.
 
-Map serialization retains paragraph breaks and spaces through `say_more |...` and
-`ask_more |...` continuation records. Single-line content retains the existing
-`say` and `ask` syntax. The map file ceiling is 32 MiB.
-
-In-game dialogue sits above the bottom HUD, with a fixed speaker header, wrapped
-replies and a fixed action row. A line is one panel: the game never splits it into
-pages. The author breaks a long passage by chaining lines with `then`; text past the
-panel's height is clipped, and the editor preview shows the same clip.
+Single-line text uses `say` and `ask`. Multiline text uses `say_more |…` and `ask_more |…` records to preserve breaks and spaces. Maps have a 32 MiB serialized limit. The game and editor preview clip each line to one dialogue panel above the HUD. Chain lines with `then` when the full passage needs several panels.

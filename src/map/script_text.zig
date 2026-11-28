@@ -25,7 +25,6 @@ const PARKED = [2][]const u8{ "live", "parked" };
 const ON = [2][]const u8{ "off", "on" };
 const DONE = [2][]const u8{ "running", "done" };
 
-/// Earlier spellings of a word, still read.
 const FORMER_WORDS = .{.{ "folk", Word.npc }};
 
 pub fn wordOf(text: []const u8) ?Word {
@@ -379,7 +378,6 @@ pub const Reader = struct {
         return &l.choice[r.choice orelse return error.BadLine];
     }
 
-    /// `end` is none.
     fn lineNamed(r: *const Reader, name: []const u8) Error!?u8 {
         if (std.mem.eql(u8, name, script.END)) return null;
         return r.index.findLine(r.dialog.?, name) orelse error.BadLink;
@@ -535,7 +533,7 @@ pub fn value(comptime T: type, f: *Tokens) Error!T {
     return std.meta.stringToEnum(T, f.next() orelse return error.BadLine) orelse error.BadLine;
 }
 
-/// Written plainly, as `{d}` writes it: no sign but a minus, no leading zero.
+/// Require canonical decimal spelling.
 pub fn int(comptime T: type, f: *Tokens) Error!T {
     const word = f.next() orelse return error.BadLine;
     const n = std.fmt.parseInt(T, word, 10) catch return error.BadLine;

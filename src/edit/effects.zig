@@ -102,7 +102,7 @@ pub const Sample = union(enum) {
         };
     }
 
-    /// Seconds between showings, a missile's from its landing; null for one that never stops.
+    /// Seconds between showings, measured from landing for missiles. Null plays continuously.
     fn period(s: Sample) ?f32 {
         return switch (s) {
             .mark, .torch, .fire_wall => null,
@@ -419,7 +419,6 @@ fn drawPools(v: *const Viewer, s: Sample, o: [2]f32, cell: f32) void {
     }
 }
 
-/// DEV ONLY.
 pub fn pose(ed: *editor.Editor, want: Sample, seconds: f32) !void {
     const v = try viewer(ed);
     v.at = mathx.indexOfEql(Sample, &SAMPLES, want).?;

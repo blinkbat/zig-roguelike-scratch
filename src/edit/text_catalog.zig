@@ -426,7 +426,6 @@ const SAVE_CATEGORY = "Save";
 const DIALOGUE_CATEGORY = "Dialogue";
 const QUESTS_CATEGORY = "Quests";
 const EDITOR_CATEGORY = "Editor";
-/// The character sheet's words, apart from `ACTORS_CATEGORY`'s bodies.
 const SHEET_CATEGORY = "Character";
 const ACTORS_CATEGORY = "Characters";
 const HUD_CATEGORY = "HUD";

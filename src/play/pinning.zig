@@ -16,7 +16,7 @@ pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. Pins for {d} - {d} 
 pub const Pin = struct {
     turns: u8 = 0,
 
-    /// Held now: no step, leap or rush of its own, and no knock or pull moves it.
+    /// Blocks voluntary movement and forced displacement.
     pub fn holding(self: Pin) bool {
         return self.turns > 0;
     }
@@ -25,7 +25,7 @@ pub const Pin = struct {
         return resilience.wearTurn(&self.turns);
     }
 
-    /// Pinned again, it is held for the longer of the two.
+    /// Reapplication keeps the longer duration.
     pub fn extend(self: *Pin, turns: u8) void {
         resilience.lengthen(&self.turns, turns);
     }

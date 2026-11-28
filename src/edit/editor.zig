@@ -35,7 +35,7 @@ const raster = @import("../gfx/raster.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
 const knobs = @import("knobs.zig");
-const canvas = @import("canvas.zig");
+const canvas_draw = @import("canvas.zig");
 const modals = @import("modals.zig");
 const panel = @import("panel.zig");
 const text_panel = @import("text_panel.zig");
@@ -168,12 +168,11 @@ pub const Editor = struct {
         for (FAMILIES) |f| tools.set(f, f.first());
         break :blk tools;
     },
-    /// null lists every foe.
     foe_type: ?actor.FoeType = null,
     inspect: Inspect = .things,
     pane: std.EnumArray(Pane, widgets.Scrolled) = .initFill(.{}),
     popup_top: usize = 0,
-    /// Set while a scrolled area is drawn: nothing outside it is hot.
+    /// The scroll clip also bounds pointer hits.
     clip: ?rl.Rectangle = null,
     /// The map's top-left, in cells.
     cam: [2]f32 = .{ 0, 0 },
@@ -184,6 +183,7 @@ pub const Editor = struct {
     reveal_box: bool = false,
     reveal_tool: bool = false,
     scene: previews.Scene = .{},
+    ground: canvas_draw.GroundView = .{},
     thumbnails: thumbnails.Thumbnails = .{},
     selection: ?grid.Box = null,
     board: placement.Board = .{},
@@ -203,13 +203,13 @@ pub const Editor = struct {
     span: ?placement.Span = null,
     drag: ?Drag = null,
     modal: Modal = .none,
-    /// A modal opened or closed this frame: no click lands until the next.
+    /// Ignore clicks until the frame after a modal transition.
     fresh: bool = false,
     pending: Pending = .leave,
     pending_path: Path = .{},
     naming: Naming = .new,
     renaming: bool = false,
-    /// The rename field consumes its closing click; newly exposed buttons must not receive it.
+    /// Consume the closing click before testing newly exposed buttons.
     renamed: bool = false,
     field: Field = .{},
     words: text_panel.State = .{},
@@ -253,7 +253,7 @@ pub const Editor = struct {
         return ed.open(keep.text());
     }
 
-    /// Loads `p`, or starts a map there when it is not yet; a file that does not parse is left alone.
+    /// A missing file starts a new map. A parse error preserves the current map.
     pub fn open(ed: *Editor, p: []const u8) !void {
         if (p.len > PATH_FIELD_MAX) return error.NameTooLong;
         const incoming = try ed.alloc.create(atlas.Atlas);
@@ -283,7 +283,7 @@ pub const Editor = struct {
         ed.restamp();
     }
 
-    /// With '/' between folders, as `listing.Listing` writes its paths.
+    /// Normalize separators to match Listing paths.
     pub fn setPath(ed: *Editor, p: []const u8) void {
         var q = p;
         while (q.len > 2 and q[0] == '.' and (q[1] == '/' or q[1] == '\\')) q = q[2..];
@@ -335,11 +335,6 @@ pub const Editor = struct {
     fn stale(ed: *Editor) void {
         ed.scene.invalidate();
         ed.paste_preview.ready = false;
-    }
-
-    pub fn relinked(ed: *Editor) void {
-        ed.bank();
-        ed.scene.relinked(ed.here());
     }
 
     fn restamp(ed: *Editor) void {
@@ -508,7 +503,7 @@ pub const Editor = struct {
         if (!ed.inspectable(ed.inspect)) ed.inspect = .things;
     }
 
-    /// Preserve paste across node selection; cancel pending links and gestures.
+    /// Node changes cancel gestures and preserve the clipboard paste.
     pub fn select(ed: *Editor, n: usize) void {
         if (ed.renaming) ed.commitRename();
         ed.drop();
@@ -530,7 +525,7 @@ pub const Editor = struct {
     }
 
     pub fn preview(ed: *Editor) void {
-        ed.scene.ensure(ed.map, ed.node);
+        if (ed.scene.ensure(ed.map, ed.node)) ed.ground.valid = false;
     }
 
     pub fn standable(ed: *Editor, from: atlas.Start) bool {
@@ -851,7 +846,7 @@ const FRESH_ROOM = P{ .x = 15, .y = 9 };
 
 const vec = raster.vec;
 
-/// Caller updates `desk` and `g.screen` first; `closing` is the window close request.
+/// Update desk and screen before calling.
 pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
     ed.action = .none;
     if (closing) {
@@ -934,8 +929,8 @@ fn draw(ed: *Editor, g: *game.Game) void {
     ed.tip = null;
     const c = Editor.canvas(g);
     switch (ed.view) {
-        .map => canvas.drawMap(ed, g, c),
-        .graph => canvas.drawGraph(ed, g, c),
+        .map => canvas_draw.drawMap(ed, g, c),
+        .graph => canvas_draw.drawGraph(ed, g, c),
     }
     panel.drawTop(ed, g);
     panel.drawSide(ed, g);
@@ -1039,7 +1034,6 @@ fn drawTip(ed: *const Editor, g: *game.Game) void {
 const SHOT_ZOOM = zoomOf(32);
 const SHOT_BRUSH = std.mem.indexOfScalar(i32, &BRUSHES, 3).?;
 
-/// DEV ONLY.
 pub fn capture(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8, objects_path: [:0]const u8) !void {
     const ed = try Editor.create(std.heap.c_allocator);
     defer ed.destroy();

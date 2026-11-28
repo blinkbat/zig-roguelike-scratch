@@ -10,11 +10,10 @@ pub const SCALE_MIN: u8 = 6;
 pub const SCALE_MAX: u8 = 64;
 pub const RIVERS_MAX: u8 = 6;
 const RIVER_STEPS: usize = 600;
-/// Up to this much added to each next cell's height, so a river wanders off the steepest way.
+/// Height noise lets rivers deviate from the steepest descent.
 const RIVER_WOBBLE: f32 = 0.5;
-/// The chance a cell beside a river's course is shallows.
 const RIVER_SHALLOWS: f32 = 0.3;
-/// Cold lowers with height above this elevation, a point of heat for every point of height, as DF biases it.
+/// DF elevation cooling subtracts one heat point per height point above this threshold.
 const LAPSE_FROM: f32 = 60;
 /// A river may start where the height is at least this share of the highest.
 const SOURCE_OVER: f32 = 0.75;
@@ -59,7 +58,6 @@ fn lerp(r: [2]u8, t: f32) f32 {
     return mathx.lerpF(@floatFromInt(r[0]), @floatFromInt(r[1]), t);
 }
 
-/// Below this height is sea or shore, where a river ends.
 const SHORE: f32 = 26;
 const SOURCE_TRIES: usize = 400;
 const SOURCE_MARGIN: i32 = 2;
@@ -75,7 +73,7 @@ const LOW = 33;
 const HIGH = 65;
 const TAIGA_HEAT = 25;
 
-/// DF v50's order: lake and mountain and ocean by height, then cold, then rain against drainage.
+/// DF v50 classifies by elevation, then heat, rainfall and drainage.
 pub fn classify(height: f32, rain: f32, drain: f32, heat: f32) Biome {
     if (height < SEA) return .ocean;
     if (height < COAST) return .coast;

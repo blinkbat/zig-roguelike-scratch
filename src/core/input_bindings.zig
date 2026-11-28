@@ -73,7 +73,7 @@ pub const DPAD = blk: {
     break :blk ds[0..ds.len].*;
 };
 
-/// One eighth clockwise: up is up-right, left is up-left.
+/// One eighth-turn clockwise.
 pub fn leanOf(d: mathx.Dir) mathx.Dir {
     if (d.diagonal()) return d;
     return d.turned(1);
@@ -89,7 +89,6 @@ pub const Button = enum {
     rt,
     character,
     pause,
-    /// The right stick pressed in.
     inspect,
 
     pub fn pad(b: Button) rl.GamepadButton {
@@ -187,7 +186,6 @@ pub const CharacterPage = enum {
 };
 
 pub const TreeKeys = struct {
-    /// The right stick pans past this deflection; the d-pad zooms; Inspect's button shows the whole tree.
     pub const PAN_DEADZONE: f32 = 0.18;
     pub const PAD_ZOOM_IN = walkPad(.n);
     pub const PAD_ZOOM_OUT = walkPad(.s);
@@ -227,7 +225,6 @@ pub const Desk = struct {
     };
     pub const TOOL_KEYS = namedKeys(TOOL_KEYS_BY);
     pub const TOOL_CAPTIONS = glyphCaptions(&TOOL_KEYS);
-    /// The editor's shapes, named and ordered as its `Shape` is.
     pub const SHAPE_KEYS_BY = .{ .brush = rl.KeyboardKey.b, .line = rl.KeyboardKey.l, .rect = rl.KeyboardKey.r, .box = rl.KeyboardKey.o, .fill = rl.KeyboardKey.f, .select = rl.KeyboardKey.m };
     pub const SHAPE_KEYS = namedKeys(SHAPE_KEYS_BY);
     pub const SHAPE_CAPTIONS = glyphCaptions(&SHAPE_KEYS);

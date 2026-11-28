@@ -40,7 +40,7 @@ pub const Talk = struct {
     npc: ?u8 = null,
 };
 
-/// A quest's place in the run; its stage stays when it is done.
+/// Completion preserves the quest's last stage.
 pub const Progress = struct {
     state: script.QuestState = .unstarted,
     stage: u8 = 0,
@@ -59,7 +59,7 @@ pub const Runtime = struct {
     talk: ?Talk = null,
     quests: [script.MAX_QUESTS]Progress = @splat(.{}),
     spots: script.Stood = @splat(null),
-    /// The NPC a spoken `trade` asked to deal with, taken the same frame.
+    /// Consumed in the frame the spoken trade action runs.
     trading: ?u8 = null,
     /// Each merchant's shelf, stocked the first time it trades.
     wares: [script.MAX_NPCS]?trade.Wares = @splat(null),
@@ -83,7 +83,7 @@ pub const Runtime = struct {
         return s.standsAt(i, &self.spots);
     }
 
-    /// A spent turn: timers and waits count down, then every trigger is looked at.
+    /// Advance timers and waits before evaluating triggers.
     pub fn turn(self: *Runtime, s: *const Script, w: World, l: *log.Log) void {
         self.turns +|= 1;
         for (&self.timers) |*t| {
@@ -206,7 +206,6 @@ pub const Runtime = struct {
         }
     }
 
-    /// A finished quest stays finished; a stage it already stands at says nothing.
     fn advanceQuest(self: *Runtime, s: *const Script, a: *const script.Act, l: *log.Log) void {
         const q = &self.quests[a.slot];
         const title = s.quest[a.slot].titled();
@@ -239,7 +238,7 @@ pub const Runtime = struct {
         return slot.*;
     }
 
-    /// Opens dialog `d` at its first line, its actions done; refused while one is up, or when a line it reaches has no way to an end.
+    /// Runs first-line actions on entry. Refuses concurrent dialogue and unreachable endings.
     pub fn open(self: *Runtime, s: *const Script, d: u8, npc: ?u8, l: *log.Log) bool {
         if (self.talk != null or !s.opens(d)) return false;
         self.talk = .{ .dialog = d, .npc = npc };
@@ -303,7 +302,7 @@ pub const Runtime = struct {
         self.enter(s, l);
     }
 
-    /// Left only through one of its endings, so `talked` means it was heard out; the lists it held go on.
+    /// Only reaching an ending counts as heard and releases the waiting triggers.
     fn close(self: *Runtime, s: *const Script, w: World, l: *log.Log) void {
         self.talked[self.talk.?.dialog] = true;
         self.talk = null;

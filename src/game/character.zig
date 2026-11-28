@@ -66,7 +66,6 @@ pub fn openCharacter(g: *game.Game) void {
     game.holdWalk(g);
 }
 
-/// What Interact can reach from `from`, as listed and as resolved alike.
 fn laidReached(g: *const game.Game, from: P, laid: anytype) bool {
     return withinReach(from, laid.at) and g.pic.laidShown(&g.sim, laid);
 }
@@ -199,7 +198,7 @@ fn dealerOf(g: *const game.Game) ?book.Dealer {
     return .{ .who = g.sim.script().?.npc[npc].called(), .shelf = &g.sim.plot.wares[npc].? };
 }
 
-/// The conversation stays open beneath, and is back once the trade is done.
+/// Returns to the underlying conversation if it remains open.
 pub fn openTrade(g: *game.Game, npc: u8) void {
     const s = g.sim.script() orelse return;
     if (npc >= s.npc_n) return;
@@ -276,7 +275,7 @@ pub fn openLoot(g: *game.Game, at: P) void {
     g.character.loot_at = at;
 }
 
-/// Waits for the turn to be drawn, so no gold a death has yet to drop is taken with it.
+/// Postpone collection until pictured deaths have released their gold.
 fn takeLootGold(g: *game.Game) void {
     const at = g.loot_gold orelse return;
     if (!g.pic.quiet()) return;

@@ -6,7 +6,7 @@ const menu = @import("ui/menu.zig");
 const contains = @import("core/text.zig").contains;
 const count = @import("core/text.zig").count;
 
-/// Where in the game a saved field lives, `game` or its field of that name; the file names it by its field name alone.
+/// Wire field names omit their owning game component.
 pub const Part = enum { game, sim, pic };
 
 fn Of(comptime p: Part) type {
@@ -20,7 +20,6 @@ pub fn part(g: *game.Game, comptime p: Part) *Of(p) {
 const HEAD_PART: Part = .sim;
 const Run = Of(HEAD_PART);
 
-/// The legacy header also classifies the run's separately stored map and visits.
 const Header = struct {
     seed: @FieldType(Run, "seed"),
     map: std.meta.Child(std.meta.Child(@FieldType(Run, "map"))),
@@ -35,9 +34,8 @@ pub const Visited = @FieldType(Header, "visited");
 pub const Visit = @FieldType(Header, "visits");
 const HEAD_FIELDS = std.meta.fieldNames(Header);
 
-/// The level's first field added since raw saves were written; every field from it on is newer.
+/// First level field absent from the raw format.
 const LEVEL_ADDED_FROM = "npc";
-/// What raw saves wrote before fields were added to the end of the level and the map; the legacy reader takes them in this shape.
 pub const LegacyLevel = blk: {
     const Level = @FieldType(Visit, "lv");
     const kept = std.meta.fieldIndex(Level, LEVEL_ADDED_FROM).?;
@@ -78,7 +76,7 @@ pub const TAIL_FIELDS = .{
     .{ .sim, "ground" },
     .{ .sim, "loot_rng" },
 };
-/// Saved by portable saves alone, each defaulted for a file written before it.
+/// Each portable-only field needs a default for older files.
 pub const PORTABLE_FIELDS = .{
     .{ .sim, "plot" },
     .{ .sim, "days" },
@@ -88,7 +86,6 @@ pub const PORTABLE_FIELDS = .{
 const PIC = game.presentation.Fields;
 const GAME = game.Fields;
 const SIM = game.simulation.Fields;
-/// Not saved: the picture but the facing, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
     .game = GAME.loot ++ GAME.run ++ GAME.resumed ++ GAME.turn ++ GAME.graphics ++ GAME.set ++ GAME.scratch,
     .sim = SIM.derived ++ SIM.rebuilt ++ SIM.resumed ++ SIM.turn ++ SIM.marks ++ SIM.scratch ++ SIM.kept,
@@ -215,7 +212,7 @@ fn Replaced(comptime T: type, comptime name: []const u8, comptime U: type) type 
     return Struct(fs);
 }
 
-/// Into `dest` whatever of `src` it shares, field by field; what `src` lacks takes its default.
+/// Copy common fields recursively and default missing destination fields.
 pub fn convert(dest: anytype, src: anytype) void {
     const D = std.meta.Child(@TypeOf(dest));
     const S = std.meta.Child(@TypeOf(src));
@@ -258,7 +255,7 @@ pub const Summary = struct {
     node: ?usize,
     place: atlas.Label = .{},
 
-    /// Null with no hero to describe.
+    /// Returns null without a living hero.
     pub fn of(g: *game.Game) ?Summary {
         const body = g.sim.heroActor() orelse return null;
         var s = Summary{ .name = g.sim.name, .hp = body.hp, .max = body.max, .gold = g.sim.gold, .node = null };

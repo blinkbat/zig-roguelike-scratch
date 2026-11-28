@@ -1,69 +1,15 @@
 # Active skill panel
 
-The panel follows Diablo II's compact prerequisite-tree layout, using simple
-graphics and Cistern's own rules. Allocation belongs to
-[`play/progress.zig`](../src/play/progress.zig), bindings to
-[`play/skillbar.zig`](../src/play/skillbar.zig), drawing to
-[`ui/trees.zig`](../src/ui/trees.zig), and navigation to
-[`ui/book.zig`](../src/ui/book.zig). Keep balance and authored paths in source.
+Each class has a compact prerequisite tree. `progress.skills(class)` owns each skill's position, prerequisite and initial rank. Preserve authored roots and positions when focus or ownership changes. Learning spends an active point through `State.learn`. Shoot is a fixed basic attack. [Skill definitions and allocation](../src/play/progress.zig)
 
-## Model and layout
-
-- `progress.skills(class)` owns each action, parent, initial flag and logical
-  `at` position. Preserve that geometry; learning or focusing a node never moves
-  the others. Independent roots remain independent.
-- `State.canLearn` and `State.learn` own eligibility and spending. Each class
-  has one tree; active and passive points are separate. Initial skills start
-  learned. Shoot is a fixed basic attack, not an upgradeable rank.
-- Draw compact square skill symbols, parent-to-child arrows and attached
-  `rank / RANKS` badges. Connections indicate prerequisites only. Do not add
-  category tabs, synergies, level gates or reset controls without gameplay support.
-- Center the authored graph on the left, with persistent inspection on the right
-  and the active-point balance visible once. Draw paths behind sockets and labels.
-  Use the existing icons, typography and muted-gold palette.
-- All nodes remain inspectable, including locked and maximum-rank skills.
-  Ownership, eligibility and focus are separate visual states.
-
-| State | Inspection/action |
+| Selected skill | Sidebar and action |
 | --- | --- |
-| Parent missing | Name the required skill; no allocation |
-| Parent met, no points | State that no active points remain |
-| Unlearned and eligible | Learn, with a first-rank preview |
-| Learned below maximum | Actual rank; Upgrade only when `canLearn` succeeds |
-| Maximum | Complete rank badge; no empty upgrade section or redundant reason |
-| Basic attack | Basic label; no upgrade action or redundant reason |
-| Focused | Independent outline and this node's details |
+| Unlearned | Show its first-rank effects, then Learn or the missing prerequisite or point. |
+| Learned | Show actual rank and properties, followed by the changes at the next rank. Enable Upgrade when eligible. |
+| Maximum or basic | Show its rank or Basic label and omit the upgrade preview. Binding remains available. |
 
-## Inspection and interaction
+Draw prerequisite arrows behind square skill icons, keep the point balance visible once, and give focus its own outline. Keep all nodes inspectable. For damage previews, use the hero's equipment, attributes, rank and active preparation before critical hits and defenses. If rounded endpoints hide an improvement, show the change in rank damage bonus. Use `State.writeUsage` for mana and cooldown. [Panel rendering](../src/ui/trees.zig) · [Data presentation](DATA_PRESENTATION.md)
 
-Follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md): effect first, current or
-first-rank properties together, then only the next rank's changes. Omit irrelevant
-zeroes and repeated core rules. Keep descriptions and wrapped properties above
-the action footer.
+Directional navigation follows the diagram. Clicking selects a node and preserves selection as the pointer approaches its action. One Learn or Upgrade spends one point and retains focus. Bind skill carries the learned skill to slot selection and returns to Skills. Browsing, allocation and binding take no game turn. [Book input](../src/ui/book.zig) · [Binding rules](../src/play/skillbar.zig) · [Controls](CONTROLLER.md)
 
-Use `Act.describe` with combined equipment and passive perks. Obtain mana and
-cooldown through `State.writeUsage`; use `State.preparedBlow` and
-`State.preparedHit` with the hero's current preparation for actual hit ranges.
-Those ranges include equipment, attributes and rank, before critical hits and
-defenses. When average damage improves but rounded endpoints do not, show the
-old/new rank damage bonus. Utility skills have no fictitious damage line.
-
-Directional navigation follows visible geometry and includes locked nodes.
-Clicking a skill selects it; pointer movement preserves selection while approaching
-an action. One deliberate Learn/Upgrade action spends one active point and keeps
-focus. Browsing, backing out, learning and binding spend no simulation turn.
-
-Bind skill passes the selected learned skill directly to the slot picker and
-returns to Skills. It remains available without spare active points. Utilities
-remain available through the binding picker. Page navigation and glyphs follow
-[CONTROLLER.md](CONTROLLER.md); panel scaling follows
-[DATA_PRESENTATION.md](DATA_PRESENTATION.md).
-
-## Verification
-
-Inspect all three classes with the skill-tree captures from `--shot-ui`,
-using [AGENTS.md](../AGENTS.md#verification). Check prerequisite edges, rank
-badges, blocked/no-point/maximum states, truthful damage and upgrade previews,
-and fitting text at the smallest supported size. Directional and pointer targets
-must match drawing. One deliberate allocation spends once; navigation and cancel
-change neither progression nor simulation time.
+Use the three class-tree captures in `--shot-ui` to check arrows, badges, locked and maximum-rank states and the smallest supported layout. Test directional and pointer selection against the drawn nodes and confirm a single allocation spends once. [Capture instructions](../AGENTS.md#verification)

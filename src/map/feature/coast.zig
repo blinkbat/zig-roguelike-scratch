@@ -11,7 +11,6 @@ pub const BEACH_MAX: u8 = 16;
 pub const ROUGH_MAX: u8 = 12;
 /// Cells along the coast over which a line wanders once.
 const WANDER: f32 = 9;
-/// Cells across a jag in that line, and its share of the line's `rough`.
 const JAG: f32 = 2;
 const JAG_SHARE: f32 = 0.5;
 const JAG_ROW: i32 = 1 << 12;

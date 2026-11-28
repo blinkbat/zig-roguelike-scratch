@@ -9,7 +9,7 @@ pub const PER_STACK: i32 = 10;
 pub const TAKES = "is sundered";
 pub const STATUS = std.fmt.comptimePrint("Physical damage reduction lowered by {d}% per stack, up to {d} stacks.", .{ PER_STACK, MOST });
 
-/// Its stacks, which all fall away when its turns run out.
+/// All stacks expire together.
 pub const Sunder = struct {
     stacks: u8 = 0,
     turns: u8 = 0,

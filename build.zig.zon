@@ -21,8 +21,12 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "_zig.cmd",
         "tools/source_rules.zig",
+        "tools/hud_art/export_border.lua",
+        "tools/tile_art",
         "src",
         "assets",
+        "maps",
     },
 }

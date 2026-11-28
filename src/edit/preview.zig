@@ -8,7 +8,6 @@ const P = mathx.P;
 const INITIAL_ROLL: u64 = 0x5EE;
 
 const Issues = struct {
-    unlinked: usize = 0,
     cut_off: usize = 0,
     foes_cut_off: usize = 0,
     start_walled: bool = false,
@@ -44,12 +43,8 @@ pub const Scene = struct {
         self.invalidate();
     }
 
-    pub fn relinked(self: *Scene, nd: *const atlas.Node) void {
-        self.issues.unlinked = nd.unlinked();
-    }
-
-    pub fn ensure(self: *Scene, map: *const atlas.Atlas, node: usize) void {
-        if (!self.stale and self.node == node) return;
+    pub fn ensure(self: *Scene, map: *const atlas.Atlas, node: usize) bool {
+        if (!self.stale and self.node == node) return false;
         self.node = node;
         const nd = &map.node[node];
         var laid: [atlas.MAX_FOES]atlas.Foe = undefined;
@@ -62,7 +57,7 @@ pub const Scene = struct {
         var rng = mathx.Rng.init(self.roll);
         const rolled = nd.unrolled();
         if (rolled or nd.zoo != null) {
-            const hero = if (rolled) atlas.landing(&self.lv, from, placing) orelse from else null;
+            const hero = atlas.landing(&self.lv, from, placing) orelse if (rolled) @as(?P, from) else null;
             if (hero) |at| _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
             nd.populate(&self.lv, &self.rolled_foes, &rng, hero orelse from, self.roll);
             if (hero) |at| self.lv.clear(at);
@@ -75,6 +70,7 @@ pub const Scene = struct {
         self.start_at = self.startOn(map, node, placing);
         self.issues = self.issuesOf(map, node, placing);
         self.stale = false;
+        return true;
     }
 
     /// null when it found no place on this roll.
@@ -98,7 +94,7 @@ pub const Scene = struct {
 
     fn issuesOf(self: *Scene, map: *const atlas.Atlas, node: usize, placing: []const atlas.Foe) Issues {
         const nd = &map.node[node];
-        var is = Issues{ .unlinked = nd.unlinked() };
+        var is = Issues{};
         const s = map.start;
         if (s.node == node) is.start_walled = !self.lv.walkable(s.at);
         var f = grid.Flood.empty(&self.lv, &self.reach_dist, &self.reach_queue);
@@ -134,7 +130,6 @@ pub const Scene = struct {
         return is;
     }
 
-    /// Reuses the walk's spent queue.
     fn swimReach(self: *Scene) grid.CellSet {
         var out = grid.CellSet.initEmpty();
         var spread = grid.Spread(*const grid.Level, grid.Level.wetAt){ .ctx = &self.lv, .steps = &grid.STEPS, .seen = &out, .queue = &self.reach_queue };
@@ -170,29 +165,29 @@ test "preview selection invalidation and rerolls never mutate the authored map" 
     defer alloc.destroy(scene);
     scene.* = .{};
 
-    scene.ensure(map, 0);
+    try std.testing.expect(scene.ensure(map, 0));
     try std.testing.expectEqual(@as(?P, room.centre()), scene.start_at);
     const painted = scene.lv.tile;
-    scene.ensure(map, other);
+    try std.testing.expect(scene.ensure(map, other));
     try std.testing.expect(scene.start_at == null);
     const first = scene.lv.tile;
     const foes = scene.shown_n;
-    scene.ensure(map, other);
+    try std.testing.expect(!scene.ensure(map, other));
     try std.testing.expectEqualSlices(grid.Tile, &first, &scene.lv.tile);
     try std.testing.expectEqual(foes, scene.shown_n);
     scene.reroll();
-    scene.ensure(map, other);
+    try std.testing.expect(scene.ensure(map, other));
     try std.testing.expect(!std.mem.eql(grid.Tile, &first, &scene.lv.tile));
     scene.reset();
-    scene.ensure(map, other);
+    try std.testing.expect(scene.ensure(map, other));
     try std.testing.expectEqualSlices(grid.Tile, &first, &scene.lv.tile);
-    scene.ensure(map, 0);
+    try std.testing.expect(scene.ensure(map, 0));
     try std.testing.expectEqualSlices(grid.Tile, &painted, &scene.lv.tile);
     try std.testing.expectEqualSlices(u8, std.mem.asBytes(before), std.mem.asBytes(map));
 
     map.node[0].plan.bespoke.tile[grid.Level.idx(room.centre())] = .water;
     scene.invalidate();
-    scene.ensure(map, 0);
+    try std.testing.expect(scene.ensure(map, 0));
     try std.testing.expectEqual(grid.Tile.water, scene.lv.at(room.centre()));
 }
 
@@ -206,7 +201,7 @@ test "zoo previews show the encounter without marking its locked interior unreac
     const scene = try alloc.create(Scene);
     defer alloc.destroy(scene);
     scene.* = .{};
-    scene.ensure(map, atlas.CARAVAN_NODE);
+    _ = scene.ensure(map, atlas.CARAVAN_NODE);
     const z = map.node[atlas.CARAVAN_NODE].zoo.?;
     var count: usize = 0;
     for (scene.shownFoes()) |f| if (z.inside().holds(f.at)) {
@@ -220,7 +215,20 @@ test "zoo previews show the encounter without marking its locked interior unreac
     _ = map.oneRoom(grid.INNER, .{ .x = 5, .y = 5 });
     map.node[0].zoo = .{};
     scene.invalidate();
-    scene.ensure(map, 0);
+    _ = scene.ensure(map, 0);
     try std.testing.expectEqual(@as(usize, 21), scene.shown_n);
     try std.testing.expectEqual(@as(usize, 0), scene.issues.cut_off);
+
+    const plan = &map.node[0].plan.bespoke;
+    var cells = grid.INNER.cells();
+    while (plan.foe_n < atlas.MAX_FOES) {
+        const p = cells.next().?;
+        if (p.eq(map.start.at) or map.node[0].zoo.?.reserves(p)) continue;
+        try std.testing.expect(plan.addFoe(.{ .kind = .rat, .at = p }));
+    }
+    scene.invalidate();
+    _ = scene.ensure(map, 0);
+    try std.testing.expectEqual(atlas.MAX_FOES, scene.shown_n);
+    for (scene.shownFoes()) |foe| try std.testing.expect(!map.node[0].zoo.?.inside().holds(foe.at));
+    try std.testing.expect(scene.lv.vacant(map.start.at));
 }

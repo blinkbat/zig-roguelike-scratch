@@ -65,7 +65,7 @@ pub const Tick = enum {
         };
     }
 };
-/// The ticks a body's turn has run, which a half split off it mid-turn has had too.
+/// Split halves inherit the parent's consumed ticks.
 pub const Ran = std.EnumSet(Tick);
 
 pub const DamageResult = struct {
@@ -78,20 +78,19 @@ pub const DamageResult = struct {
 pub const UNKILLABLE_HP: i32 = 1;
 
 pub const Fields = struct {
-    /// Defaulted as the hero is spawned: a run's first node and each node entered afresh.
+    /// Reset when spawning the hero on a fresh node.
     pub const hero = [_][]const u8{"pool"};
     pub const start = [_][]const u8{ "visited", "node", "hero", "clock", "days" };
-    /// Worked out from the map as a run starts, a node is entered and a saved run resumes.
+    /// Derived from the current node on entry or resume.
     pub const derived = [_][]const u8{"outdoors"};
-    /// Defaulted as a run starts, and again as a saved one resumes.
+    /// Reset on start and resume.
     pub const rebuilt = [_][]const u8{ "chronicle", "visits_changed" };
     pub const run = [_][]const u8{ "kills", "gold", "mana_recovery", "life_recovery", "flasks", "cooldown", "stepped", "log", "inventory", "ground", "plot" };
     pub const resumed = [_][]const u8{"unsaved"};
-    /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
+    /// Reset on node entry and resume.
     pub const turn = [_][]const u8{ "travel", "order_n", "flowed" };
-    /// Defaulted as each turn ends, and as a turn starts afresh.
+    /// Reset after each turn and on node entry or resume.
     pub const marks = [_][]const u8{ "ran", "displaced" };
-    /// Given their values by hand: by the app, as a run begins, or as a node is entered or left.
     pub const set = [_][]const u8{ "name", "class", "lv", "map", "visits", "rng", "seed", "mana", "growth", "loot_rng", "locations" };
     pub const scratch = [_][]const u8{ "order", "flow", "queue" };
     pub const kept = [_][]const u8{ "unkillable", "playground" };
@@ -119,7 +118,7 @@ pub const Simulation = struct {
     visited: std.StaticBitSet(atlas.MAX_NODES) = .initEmpty(),
     /// Visits written since the autosave last copied them.
     visits_changed: std.StaticBitSet(atlas.MAX_NODES) = .initFull(),
-    /// The door the hero stepped onto this turn, gone through once the turn is drawn.
+    /// Pending door traversal waits for the turn's picture.
     travel: ?atlas.Link = null,
     rng: mathx.Rng,
     seed: u64 = 0,
@@ -130,7 +129,7 @@ pub const Simulation = struct {
     life_recovery: i32 = 0,
     flasks: Flasks = .initFill(.{}),
     cooldown: std.EnumArray(skillbar.Act, u8) = .initFill(0),
-    /// The hero stepped, leapt or was knocked back since its last action, which tears a bleed wider.
+    /// Movement since the hero's last action increases the next bleed tick.
     stepped: bool = false,
     displaced: std.StaticBitSet(actor.MAX) = .initEmpty(),
     inventory: inventory.Inventory = .{ .gear = .flasks },
@@ -140,7 +139,7 @@ pub const Simulation = struct {
     log: log.Log = .{},
     plot: trigger.Runtime = .{},
     chronicle: chronicle.Chronicle = .{},
-    /// Living foes at turn start, nearest first; also their presentation order.
+    /// Nearest living non-hero actors first, shared with presentation.
     order: [actor.MAX]u16 = undefined,
     order_n: usize = 0,
     ran: [actor.MAX]Ran = @splat(Ran.initEmpty()),
@@ -340,7 +339,7 @@ pub const Simulation = struct {
         return damage.procs(&self.rng, effective) and a.resilience.takeResisted(kind, resistance, &self.rng);
     }
 
-    /// `a` held `turns` longer unless its pin resistance holds; true when it is.
+    /// Returns true when the pin is applied or extended.
     pub fn pinFor(self: *Simulation, a: *actor.Actor, turns: u8) bool {
         if (turns == 0 or !self.takeStatus(a, .pin)) return false;
         a.pin.extend(turns);
@@ -357,7 +356,6 @@ pub const Simulation = struct {
         return self.igniteFresh(slot, a, mathx.PERCENT);
     }
 
-    /// Fire that takes hold of `a` only `of` percent of the time, past its fire and burn resistance.
     fn igniteBy(self: *Simulation, a: *actor.Actor, of: u32) bool {
         if (!self.procResisted(a, .burn, of, .fire)) return false;
         a.burn.start();
@@ -447,7 +445,7 @@ pub const Simulation = struct {
         return mathx.percentCeil(v, mathx.PERCENT + self.inventory.gear.commander());
     }
 
-    /// A bleed the hero just opened takes Grievous's extra damage each turn its body moves.
+    /// Snapshot the hero's movement-damage bonus onto this bleed.
     pub fn grieve(self: *const Simulation, b: *bleeding.Bleed) void {
         b.move_bonus = @max(b.move_bonus, self.inventory.gear.grievous());
     }

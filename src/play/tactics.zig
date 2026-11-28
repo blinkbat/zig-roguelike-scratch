@@ -225,9 +225,9 @@ pub const RaiseSkeleton = struct {
     pub const COOLDOWN: u8 = 4;
     pub const RANGE: i32 = 2;
     pub const DESCRIPTION = "Raise a skeleton on visible open ground. It fights the foes you see and follows you through doors. Past your limit, the oldest crumbles.";
-    /// Cells from the hero a skeleton keeps to when there is nothing to fight.
+    /// Idle follow radius in cells.
     pub const FOLLOW: i32 = 2;
-    /// Cells from the hero a foe may stand and still be fought.
+    /// Pursuit radius around the hero, in cells.
     pub const LEASH: i32 = 6;
     pub fn most(rank: u8) usize {
         return ranked(rank);
@@ -248,13 +248,13 @@ pub const State = struct {
     imbue: u8 = 0,
     bide: u8 = 0,
     bided: i32 = 0,
-    /// A raised skeleton's place in rising order, its slot being reused.
+    /// Summoning order survives slot reuse.
     risen: u32 = 0,
 };
 
 const ADJACENT: i32 = 1;
 
-/// The turns a cell is laid with to last `turns`: the turn it is laid on wears one.
+/// The casting turn consumes one duration tick.
 fn laidFor(turns: u8) u8 {
     return turns + 1;
 }

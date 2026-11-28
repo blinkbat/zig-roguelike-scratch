@@ -26,7 +26,13 @@ const editor = @import("editor.zig");
 const Desk = input.Desk;
 
 pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *atlas.Procgen) void {
+    if (!ed.controls().pressed) return generatorRows(ed, g, box, pg);
     const was = pg.*;
+    generatorRows(ed, g, box, pg);
+    refit(ed, pg, &was);
+}
+
+fn generatorRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *atlas.Procgen) void {
     const fo = &pg.foes;
     const col = column(g);
     var y = panel.beginPane(ed, .inspector, box);
@@ -65,7 +71,6 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
     if (drop) |i| _ = fo.dropMakeup(i);
     if (editor.button(ed, g, col.row(y), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
     panel.closePane(ed, .inspector, y + widgets.ROW_H);
-    refit(ed, pg, &was);
 }
 
 fn locationRows(ed: *editor.Editor, g: *game.Game, y: *i32, live: bool) void {
@@ -89,21 +94,21 @@ pub fn choiceRows(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, which: e
         ed.popup = null;
         return;
     };
-    const was = pg.*;
     switch (which) {
-        .feature => |i| if (i < pg.feature_n) popupRows(ed, g, atlas.Feature, &pg.feature[i], box, which, top, shown),
-        .algo => popupRows(ed, g, atlas.Floor, &pg.floor, box, which, top, shown),
+        .feature => |i| if (i < pg.feature_n) popupRows(ed, g, pg, atlas.Feature, &pg.feature[i], box, which, top, shown),
+        .algo => popupRows(ed, g, pg, atlas.Floor, &pg.floor, box, which, top, shown),
         .node, .file => unreachable,
     }
-    if (ed.popup == null) refit(ed, pg, &was);
 }
 
-fn popupRows(ed: *editor.Editor, g: *game.Game, comptime U: type, v: *U, box: rl.Rectangle, which: editor.Which, top: usize, shown: usize) void {
+fn popupRows(ed: *editor.Editor, g: *game.Game, pg: *atlas.Procgen, comptime U: type, v: *U, box: rl.Rectangle, which: editor.Which, top: usize, shown: usize) void {
     const tags = std.enums.values(std.meta.Tag(U));
     for (tags[top..@min(tags.len, top + shown)], 0..) |t, k| {
         if (editor.modalButton(ed, g, editor.popupRow(box, which, k), @tagName(t), t == std.meta.activeTag(v.*), true, null)) {
+            const was = pg.*;
             retag(U, v, t);
             ed.popup = null;
+            refit(ed, pg, &was);
         }
     }
 }
@@ -115,7 +120,7 @@ fn retag(comptime U: type, v: *U, tag: std.meta.Tag(U)) void {
 fn refit(ed: *editor.Editor, pg: *atlas.Procgen, was: *const atlas.Procgen) void {
     pg.* = pg.fit();
     inline for (std.meta.fields(atlas.Procgen)) |f| {
-        // No knob edits the painted section; comparing its cells cost more than the whole pane.
+        // Knobs cannot change the painted section.
         if (comptime std.mem.eql(u8, f.name, "section")) continue;
         if (!std.meta.eql(@field(was, f.name), @field(pg, f.name))) return ed.changed();
     }

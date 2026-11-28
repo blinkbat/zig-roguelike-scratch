@@ -33,7 +33,7 @@ const MotionView = projectiles.MotionView;
 pub const flown = projectiles.flown;
 const TAKEN_MAX = 4;
 
-/// `snare`: a net, holding the hero as it lands, or dodged (null).
+/// A null snare snapshot denotes a dodge.
 pub const FoeHit = union(enum) { hurt: fx.After, kill: fx.After, burst: fx.After, snare: ?fx.After, miss };
 
 pub const Knock = struct { from: P, to: P };
@@ -58,7 +58,7 @@ const SightCells = struct {
     }
 };
 
-/// `before` is drawn for `left` seconds; `due` when it was taken ahead of the hold that will keep it.
+/// Hold `before` for `left` seconds. `due` marks a snapshot taken before its hold starts.
 pub fn Held(comptime T: type) type {
     return struct {
         before: T,
@@ -108,7 +108,6 @@ pub const Owed = struct {
     knock: ?Knock = null,
     mended: ?Mended = null,
     struck: ?Struck = null,
-    /// A hurl thrown at this cell, drawn leaving the hand as the throw lands.
     hurled: ?P = null,
 
     pub fn any(o: *const Owed) bool {
@@ -121,7 +120,7 @@ pub const Owed = struct {
 
 const NOTHING_OWED: Owed = .{};
 
-/// A blow one body lands on another, neither the hero; `impact` null is a miss.
+/// A non-hero strike. Null impact denotes a miss.
 pub const Struck = struct { at: P, impact: ?fx.Impact = null };
 
 pub const ReactionOutcome = union(enum) { miss, hit: fx.ActorImpact };
@@ -161,7 +160,7 @@ pub const SeenCell = struct {
     caltrops: bool = false,
 };
 
-/// When each `Presentation` field is reset, every field in exactly one list; `save_data.zig` checks it.
+/// Save validation requires exactly one reset category per field.
 pub const Fields = struct {
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
     pub const turn = [_][]const u8{ "shot", "foe_shots", "bolts", "knocked_from", "bursting", "sight_held", "lit_kindled", "tiles", "embers", "embers_lit", "burnt", "busy", "lead", "bolt_lands", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
@@ -169,11 +168,11 @@ pub const Fields = struct {
     pub const facing = [_][]const u8{"facing"};
     pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "seen_bodies", "seen_cells", "pictured", "flames_shown", "tiles_drawn", "barrier_shown", "caltrops_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "npc_shown", "quests_shown", "hour_shown", "weather_shown", "local_weather_shown" };
     pub const scratch = [_][]const u8{ "ground_shown", "burnt_ground", "burnt_box" };
-    /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
+    /// The sequence counter and occluder history survive turn resets. FX clears its own turn state.
     pub const kept = [_][]const u8{ "seq", "fx", "occluder" };
 };
 
-/// What is drawn of the run, lagging the simulation until each blow lands; nothing in the simulation reads it.
+/// Pictured run state follows simulation at impact time.
 pub const Presentation = struct {
     occlusion: [grid.CELLS]f32 = @splat(0),
     /// The middle of the body each occluding cell last fades around, cells.
@@ -186,15 +185,15 @@ pub const Presentation = struct {
     seen_bodies: [actor.MAX]?SeenBody = @splat(null),
     seen_cells: [grid.CELLS]SeenCell = @splat(.{}),
     pictured: [actor.MAX]fx.Body = undefined,
-    /// The blows dealt so far, so the picture takes them in the order they were dealt.
+    /// Breaks ties between impacts in resolution order.
     seq: u64 = 0,
     /// Indexed by pool slot: the slot a slime split off, until the blow that split it lands.
     split_from: [actor.MAX]?usize = @splat(null),
-    /// Indexed by pool slot: gold kept out of its drop until that death is drawn.
+    /// Gold withheld until this slot's death is pictured.
     dropped_gold: [actor.MAX]i32 = @splat(0),
     masked: std.StaticBitSet(actor.MAX) = .initEmpty(),
     under: std.StaticBitSet(actor.MAX) = .initEmpty(),
-    /// Indexed by pool slot: seconds until a body that surfaced or dived this turn is drawn so.
+    /// Seconds until a surface or dive becomes visible, by pool slot.
     dives: [actor.MAX]?f32 = @splat(null),
     befallen: [actor.MAX]Befallen = @splat(.{}),
     owed: [actor.MAX]Owed = @splat(.{}),
@@ -207,7 +206,7 @@ pub const Presentation = struct {
     bursting: ?Bursting = null,
     sight_held: Held(SightCells) = .{ .before = .{} },
     lit_kindled: bool = false,
-    /// The ground's flames, barrier and caltrops as drawn: the simulation's, but kept as they were while `tiles` holds.
+    /// While tiles are held, ground effects retain their pictured values.
     flames_shown: [grid.CELLS]u8 = @splat(0),
     tiles_drawn: [grid.CELLS]grid.Tile = @splat(.floor),
     embers: [grid.CELLS]f32 = @splat(0),
@@ -391,7 +390,7 @@ pub const Presentation = struct {
         self.owe(target, .worn, self.afterOf(sim, target.slot()));
     }
 
-    /// Drawn in the thrower's hand from `wait` seconds on, until its throw is staggered.
+    /// Show the bolt in hand after `wait` seconds until the throw begins.
     pub fn recordHurl(self: *Presentation, by: actor.ActorId, b: firebolt.Bolt, element: damage.Element, at: P, wait: f32) void {
         var shown = BoltShown.resting(b, element);
         shown.t = -wait;
@@ -400,7 +399,7 @@ pub const Presentation = struct {
         self.owe(by, .hurled, at);
     }
 
-    /// `was` flown on to `now` from `wait` seconds on, gone once there if it stopped; when it gets there.
+    /// Schedule this flight segment after `wait` seconds and return its arrival time.
     pub fn recordBolt(self: *Presentation, sim: *const Simulation, by: actor.ActorSlot, was: firebolt.Bolt, now: firebolt.Bolt, flew: firebolt.Flew, element: damage.Element, wait: f32) f32 {
         const old = self.bolts[by.index];
         const from = if (old) |b| b.to() else was.point();
@@ -694,7 +693,7 @@ pub const Presentation = struct {
         self.holdLit(lv, wait, false);
     }
 
-    /// Light gone with the ground stays lit while it holds; light a fire `kindles` stays dark too.
+    /// Held terrain retains its old lighting until impact.
     fn holdLit(self: *Presentation, lv: *const grid.Level, wait: f32, kindles: bool) void {
         if (!self.sight_held.on()) self.lit_kindled = false;
         self.sight_held.hold(&SightCells.of(lv), wait);
@@ -814,7 +813,7 @@ pub const Presentation = struct {
         return if (shown.amount > 0) shown else null;
     }
 
-    /// `laid` is an `ground_items.Drop` or `ground_items.Supply`.
+    /// Accepts either a ground item or a ground supply.
     pub fn laidShown(self: *const Presentation, sim: *const Simulation, laid: anytype) bool {
         return self.groundOpen(sim, laid.at) and self.laidDown(laid);
     }
@@ -1388,7 +1387,7 @@ pub const Presentation = struct {
     }
 };
 
-/// Where a blow came from, and how long until the picture reaches it.
+/// Originating cell and seconds until impact.
 pub const Stroke = struct {
     from: P,
     wait: f32,

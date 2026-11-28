@@ -103,7 +103,7 @@ def arial(size, bold=False):
 SHEET_INK = (50, 50, 50, 255)
 
 
-# Arial Bold 23 at (12, 8), matched pixel for pixel against cave-walls.aseprite's header.
+# Match the painted cave-walls.aseprite header.
 def sheet_title(draw, title):
     draw.text((12, 8), title, font=arial(23, True), fill=SHEET_INK)
 

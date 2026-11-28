@@ -3,7 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const day = @import("day.zig");
 const grid = @import("grid.zig");
 
-// Outdoor weather from the profile, run seed and minutes, and from a cell's location where a node overrides its weather; only its rain reaches the rules (`terrain.rained`, `fire.damped`).
+// Only rain from the weather profile affects simulation.
 
 pub const Light = enum {
     clear,
@@ -31,7 +31,6 @@ pub const Locations = std.EnumArray(Location, ?Weather);
 pub const Field = [grid.CELLS]Location;
 pub const Local = std.EnumArray(Location, Now);
 pub const CALM: Local = .initFill(.initFill(0));
-/// Cells round a tree that count as forest.
 const FOREST_REACH: i32 = 2;
 
 pub fn locations(lv: *const grid.Level) Field {
@@ -110,7 +109,7 @@ pub const Blend = struct {
         return result;
     }
 
-    /// `at` in cells, a cell spanning [p, p + 1).
+    /// Cell coordinates span [p, p + 1).
     pub fn at(self: *const Blend, weather: Local, c: [2]f32) Now {
         const shares = self.sharesAt(c);
         var result = Now.initFill(0);
@@ -288,7 +287,7 @@ pub const Climate = struct {
     light: Light = .clear,
     weather: Weather = .clear,
 
-    /// As it stands at `place`, whose weather `overrides` may set.
+    /// Location overrides apply only to weather.
     pub fn in(c: Climate, overrides: Locations, place: Location) Climate {
         return .{ .light = c.light, .weather = overrides.get(place) orelse c.weather };
     }

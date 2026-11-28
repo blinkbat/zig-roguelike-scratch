@@ -12,7 +12,6 @@ const SUPPLY_LEAST: i32 = 1;
 const SUPPLY_MOST: i32 = 5;
 /// Item rarity on a merchant's shelf, as the spoils affix counts it.
 const SHELF_RARITY: i32 = 100;
-/// A merchant pays this share of what it asks.
 const SELL_DIVISOR: i32 = 4;
 
 const RARITY_PRICE = std.EnumArray(items.Rarity, i32).init(.{ .normal = 15, .magic = 45, .rare = 120 });
@@ -86,7 +85,7 @@ pub const Wares = struct {
     }
 };
 
-/// The hero's goods as a merchant lists them: carried supplies, then the bag; worn gear is not for sale.
+/// Sale rows include carried supplies and bag items. Worn gear stays equipped.
 pub fn carried(inv: *const inventory.Inventory) usize {
     return inv.rowCount();
 }
@@ -145,8 +144,8 @@ pub fn sell(shelf: *Wares, row: usize, inv: *inventory.Inventory, gold: *i32) Fa
     const paid = worth(inv, w);
     const deal: Deal = switch (w) {
         .supply => |k| blk: {
+            if (!consumable.stock(&shelf.supplies, k)) return error.StackFull;
             inv.stacks.getPtr(k).* -= 1;
-            _ = consumable.stock(&shelf.supplies, k);
             break :blk .{ .ware = .{ .supply = k }, .gold = paid };
         },
         .item => |i| blk: {
@@ -225,6 +224,19 @@ test "selling pays a quarter of the asking price, at least a coin, and lists sup
     try std.testing.expectEqual(@divTrunc(RARITY_PRICE.get(.rare) + 2 * AFFIX_PRICE.get(.rare), SELL_DIVISOR), rare.gold);
     try std.testing.expectEqual(@as(usize, 0), inv.n);
     try std.testing.expectError(error.Gone, sell(&shelf, 0, &inv, &gold));
+}
+
+test "selling a supply into a full merchant stack preserves the supply and gold" {
+    var shelf = Wares{};
+    shelf.supplies.set(.bandage, consumable.STACK_MAX - 1);
+    var inv = inventory.Inventory{};
+    inv.stacks.set(.bandage, 2);
+    var gold: i32 = 0;
+    const sale = try sell(&shelf, 0, &inv, &gold);
+    try std.testing.expectError(error.StackFull, sell(&shelf, 0, &inv, &gold));
+    try std.testing.expectEqual(consumable.STACK_MAX, shelf.supplies.get(.bandage));
+    try std.testing.expectEqual(@as(u8, 1), inv.stacks.get(.bandage));
+    try std.testing.expectEqual(sale.gold, gold);
 }
 
 test "what is sold goes on that shelf at the asking price, and a full shelf lets its oldest item go" {

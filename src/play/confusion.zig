@@ -12,7 +12,7 @@ pub const STATUS = std.fmt.comptimePrint("{d}% of moves go a random way.", .{CHA
 
 pub const Confusion = resilience.Turns(TURNS);
 
-/// Whether a move goes astray; a body not confused draws nothing.
+/// An unaffected move consumes no RNG.
 pub fn strays(confused: bool, rng: *mathx.Rng) bool {
     return confused and rng.percent(CHANCE);
 }

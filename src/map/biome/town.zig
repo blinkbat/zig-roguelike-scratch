@@ -88,7 +88,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     }
 }
 
-/// `in` is the way into the town.
 const Gate = struct { at: P, in: mathx.Dir };
 
 fn wallBox() grid.Box {

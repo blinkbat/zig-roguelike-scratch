@@ -63,20 +63,24 @@ fn warCry(g: *game.Game, from: P, rank: u8) void {
 }
 
 pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
-    if (act.reticle() == .bow and !g.sim.lv.inLos(at)) return false;
-    if (!act.aimableIn(&g.sim.lv, from, at, g.sim.reachOf(act)) or strikesHidden(g, act, from, at)) return false;
-    const start = (if (g.mode == .aim) g.mode.aim.anchor() else null) orelse at;
-    if (act.consumes()) {
-        const a = g.sim.pool.getConst(g.sim.lv.who(at)) orelse return false;
-        return a.seenFoe(&g.sim.lv) and fuelOf(act, a) > 0;
-    }
-    if (act.spans()) return span(g, act, from, start, at) != null;
-    if (act == .raise_skeleton) return raisable(g, at);
-    return act != .overwatch or !from.eq(at);
+    return validOn(g, &g.sim.lv, act, from, at);
 }
 
-fn raisable(g: *const game.Game, at: P) bool {
-    return actor.standsOffDoor(.skeleton, &g.sim.lv, at) and canRise(g, .skeleton);
+pub fn validOn(g: *const game.Game, lv: *const grid.Level, act: skillbar.Act, from: P, at: P) bool {
+    return validWithReach(g, lv, act, from, at, g.sim.reachOf(act));
+}
+
+pub fn validWithReach(g: *const game.Game, lv: *const grid.Level, act: skillbar.Act, from: P, at: P, reach: i32) bool {
+    if (act.reticle() == .bow and !lv.inLos(at)) return false;
+    if (!act.aimableIn(lv, from, at, reach) or strikesHidden(g, lv, act, from, at)) return false;
+    const start = (if (g.mode == .aim) g.mode.aim.anchor() else null) orelse at;
+    if (act.consumes()) {
+        const a = g.sim.pool.getConst(lv.who(at)) orelse return false;
+        return a.seenFoe(lv) and fuelOf(act, a) > 0;
+    }
+    if (act.spans()) return span(g, lv, act, from, start, at) != null;
+    if (act == .raise_skeleton) return actor.standsOffDoor(.skeleton, lv, at) and canRise(g, .skeleton);
+    return act != .overwatch or !from.eq(at);
 }
 
 pub fn canRise(g: *const game.Game, kind: actor.Kind) bool {
@@ -91,7 +95,6 @@ pub fn spentSlot(g: *const game.Game) ?usize {
     return null;
 }
 
-/// The living skeletons, oldest first.
 fn skeletons(sim: *const game.simulation.Simulation) grid.Bounded(u16, actor.MAX) {
     var out = grid.Bounded(u16, actor.MAX){};
     for (sim.pool.constSlice(), 0..) |a, i| {
@@ -124,7 +127,7 @@ fn raise(g: *game.Game, at: P, rank: u8) void {
     landed(g, id);
 }
 
-/// `body` come into being in slot `over` or a new one, awake and acting from the next turn, drawn once `wait` has passed.
+/// The body appears after `wait` seconds and can act from the next turn.
 pub fn rise(g: *game.Game, body: actor.Actor, over: ?usize, wait: f32) u16 {
     var b = body;
     b.awake = true;
@@ -135,24 +138,24 @@ pub fn rise(g: *game.Game, body: actor.Actor, over: ?usize, wait: f32) u16 {
     return id;
 }
 
-pub fn span(g: *const game.Game, act: skillbar.Act, from: P, start: P, end: P) ?tactics.Wall {
+pub fn span(g: *const game.Game, lv: *const grid.Level, act: skillbar.Act, from: P, start: P, end: P) ?tactics.Wall {
     const rank = g.sim.growth.ranks.get(act);
     return switch (act) {
-        .arcane_barrier => tactics.wall(&g.sim.lv, from, start, end, rank),
-        .fire_wall => tactics.blaze(&g.sim.lv, from, start, end, rank),
+        .arcane_barrier => tactics.wall(lv, from, start, end, rank),
+        .fire_wall => tactics.blaze(lv, from, start, end, rank),
         inline else => |a| if (comptime a.spans()) @compileError(@tagName(a) ++ " spans with no wall") else null,
     };
 }
 
-fn strikesHidden(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
+fn strikesHidden(g: *const game.Game, lv: *const grid.Level, act: skillbar.Act, from: P, at: P) bool {
     switch (act.reticle() orelse return false) {
-        .rush => return g.sim.untargetableAt(at),
+        .rush => return lv.who(at) != grid.NO_ONE and g.sim.untargetableAt(at),
         .swing => switch (act) {
             inline else => |a| {
                 if (comptime !a.sweeps()) return g.sim.untargetableAt(at);
-                const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, at);
+                const arc = skillbar.Act.skill(a).arc(lv, from, at);
                 for (arc.slice()) |p| {
-                    if (g.sim.lv.taken(p) and !g.sim.untargetableAt(p)) return false;
+                    if (lv.taken(p) and !g.sim.untargetableAt(p)) return false;
                 }
                 return true;
             },
@@ -211,12 +214,12 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
             g.pic.fx.shimmer(mathx.centre(at), look.WARD);
         },
         .arcane_barrier => {
-            const area = span(g, act, from, aim.anchor().?, at).?;
+            const area = span(g, &g.sim.lv, act, from, aim.anchor().?, at).?;
             for (area.slice()) |p| g.sim.lv.barrier[grid.Level.idx(p)] = tactics.ArcaneBarrier.laid(rank);
             g.pic.holdFlames(&g.sim.lv, game.CAST_S);
         },
         .fire_wall => {
-            const area = span(g, act, from, aim.anchor().?, at).?;
+            const area = span(g, &g.sim.lv, act, from, aim.anchor().?, at).?;
             for (area.slice()) |p| fire.lay(&g.sim.lv, p, tactics.FireWall.laid(rank), tactics.FireWall.HEAT);
             g.pic.holdFire(&g.sim.lv, game.CAST_S);
             for (area.slice()) |p| {

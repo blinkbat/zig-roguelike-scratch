@@ -39,7 +39,7 @@ comptime {
     }
 }
 
-/// Printable ascii without its ends' spaces, `N` at most.
+/// Printable ASCII trimmed of leading and trailing spaces.
 pub fn Words(comptime N: usize) type {
     return Text(N, false);
 }
@@ -131,7 +131,7 @@ fn distinct(items: anytype) bool {
     return true;
 }
 
-/// One word the map file can read back: letters, digits, `_` and `-`, and never `end` or `-`.
+/// Map identifiers allow letters, digits, underscores and hyphens. The names end and - are reserved.
 pub fn token(s: []const u8) bool {
     if (s.len == 0 or s.len > NAME_MAX or std.mem.eql(u8, s, END) or std.mem.eql(u8, s, NONE)) return false;
     for (s) |c| {
@@ -254,7 +254,7 @@ pub const ActKind = enum {
         };
     }
 
-    /// Whether a trigger may do it: trading needs someone spoken to.
+    /// Trade requires an NPC conversation.
     pub fn scripted(k: ActKind) bool {
         return switch (k) {
             .dialog, .text, .flag, .counter, .timer, .wait, .preserve, .quest => true,
@@ -391,7 +391,7 @@ pub const Dialog = struct {
         return indexOfName(self.lines(), name);
     }
 
-    /// Every line reachable from its first offers a way to an end, taking every gate as one that may hold or not.
+    /// Every reachable line needs an exit for any combination of choice gates.
     pub fn ends(self: *const Dialog) bool {
         if (self.line_n == 0) return true;
         var ending = Lines.initEmpty();
@@ -524,7 +524,6 @@ pub const Stood = [MAX_NPCS]?P;
 pub const Npc = struct {
     node: u8 = 0,
     spot: Spot = .far,
-    /// Blank: `STRANGER`.
     name: Who = .{},
     dialog: ?u8 = null,
     shows: ?Cond = null,
@@ -565,7 +564,6 @@ pub const Quest = struct {
         return self.stage[@intCast(n - 1)].text();
     }
 
-    /// Blank: its name.
     pub fn titled(self: *const Quest) []const u8 {
         return if (self.title.n > 0) self.title.text() else self.name.text();
     }
@@ -648,7 +646,6 @@ pub const Script = struct {
 
     pub const Used = std.StaticBitSet(std.math.maxInt(u8) + 1);
 
-    /// Which of a table's slots any condition or action names.
     pub fn tableUsed(self: *const Script, t: Table) Used {
         var used = Used.initEmpty();
         var slots = self.refSlots(.{ .table = t });
@@ -688,7 +685,7 @@ pub const Script = struct {
         return self.npc[0..self.npc_n];
     }
 
-    /// The NPC painted at `p` on node `node`; one placed afresh on each roll is never there.
+    /// Only fixed painted positions participate in this lookup.
     pub fn npcAt(self: *const Script, node: usize, p: P) ?u8 {
         for (self.npcs(), 0..) |*f, i| {
             const at = f.cell() orelse continue;
@@ -701,7 +698,7 @@ pub const Script = struct {
         return self.npc[i].cell() orelse stood[i];
     }
 
-    /// Last first, so each index still names its NPC; whether any went.
+    /// Visit matching NPCs in reverse to preserve their indices during removal.
     pub fn dropNpcsWhere(self: *Script, which: anytype) bool {
         var dropped = false;
         var i: usize = self.npc_n;
@@ -1000,7 +997,7 @@ pub fn actTable(k: ActKind) ?Table {
     return tableIn(actRef(k));
 }
 
-/// Every condition in a script: the triggers', each dialog's choice gates, then what each NPC stands while.
+/// Iterates trigger conditions, choice gates and NPC visibility conditions in that order.
 pub fn CondIter(comptime S: type, comptime C: type) type {
     return struct {
         s: S,
@@ -1048,7 +1045,7 @@ pub fn CondIter(comptime S: type, comptime C: type) type {
     };
 }
 
-/// Every action in a script: the triggers', then each dialog line's and choice's.
+/// Iterates trigger actions, then dialog line and choice actions.
 pub fn ActIter(comptime S: type, comptime A: type) type {
     return struct {
         s: S,

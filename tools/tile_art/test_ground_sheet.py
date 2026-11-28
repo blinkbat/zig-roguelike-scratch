@@ -90,7 +90,11 @@ labels:saveAs(app.params.labels)
             'painted guide': 's:newCel(s.layers[2],1,paint,Point(0,0))',
             'off-canvas guide painting': 'local c=s.layers[2]:cel(1); local im=Image(GROUND_W+1,GROUND_H,ColorMode.RGB); im:drawImage(c.image,c.position); im:putPixel(GROUND_W,0,app.pixelColor.rgba(255,0,0,255)); s:newCel(s.layers[2],1,im,Point(0,0))',
             'changed guide opacity': 's.layers[2].opacity=128',
+            'hidden guide': 's.layers[2].isVisible=false',
+            'reblended guide': 's.layers[2].blendMode=BlendMode.MULTIPLY',
+            'locked drawing': 's.layers[5].isEditable=false',
             'moved slice': 's.slices[1].bounds=Rectangle(1,64,64,64)',
+            'slice center': 's.slices[1].center=Rectangle(8,8,48,48)',
         }
         for name, change in cases.items():
             with self.subTest(name=name):

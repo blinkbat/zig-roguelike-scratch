@@ -44,7 +44,7 @@ pub const Impact = union(enum) {
 
 pub const Blow = struct {
     impact: Impact,
-    /// Unit travel direction; null scatters a directionless hit such as gas.
+    /// Unit travel direction. Null scatters the hit.
     dir: ?[2]f32,
     matter: Matter,
     element: ?damage.Element = null,
@@ -55,7 +55,7 @@ const WARD_GLOW = light.Reach{ .radius = 1.5, .gain = 0.25 };
 const STUN_GLOW = light.Reach{ .radius = 1.3, .gain = 0.45 };
 pub const BODY_GLOW = light.Reach{ .radius = 1.6, .gain = 0.18 };
 pub const FLAMES_GLOW = light.Reach{ .radius = @as(f32, @floatFromInt(lume.FIRE_REACH)) + 0.5, .gain = 0.3 };
-/// What a body suffers for turns, in the order the hud names them.
+/// Declaration order determines HUD status order.
 pub const Status = enum {
     stunned,
     bleeding,
@@ -126,7 +126,7 @@ pub const Status = enum {
         };
     }
 
-    /// The first status a body has, in this order, that glows lights it.
+    /// Only the first active emissive status lights the body.
     pub fn glow(s: Status) ?light.Reach {
         return switch (s) {
             .stunned => STUN_GLOW,
@@ -204,7 +204,7 @@ pub const Status = enum {
     }
 };
 
-/// Presented body state; `seq` preserves simulation hit order.
+/// Sequence preserves simulation hit order.
 pub const Body = struct {
     kind: actor.Kind,
     hp: i32,
@@ -235,7 +235,7 @@ pub const Body = struct {
     }
 };
 
-/// State at impact; `reveals` is the newly visible split-half pool slot.
+/// Reveals identifies the split half made visible at impact.
 pub const After = struct { body: Body, reveals: ?actor.ActorSlot = null, mana: i32 = 0 };
 
 pub const Drip = struct { at: [2]f32, matter: Matter };

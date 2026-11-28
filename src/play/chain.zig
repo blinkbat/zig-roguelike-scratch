@@ -5,7 +5,7 @@ const actor = @import("actor.zig");
 const shock = @import("shock.zig");
 
 pub const COST: i32 = 4;
-/// Foes it leaps on to after the first, each the nearest unstruck foe to the last within `JUMP_RANGE`.
+/// Additional jumps after the first hit, each toward the nearest unstruck foe in range.
 pub const JUMPS: usize = 2;
 pub const JUMP_RANGE: i32 = 3;
 pub const VERB = "shocks";

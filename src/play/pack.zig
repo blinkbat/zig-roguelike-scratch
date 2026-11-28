@@ -86,7 +86,7 @@ pub const Lair = enum {
     hearth,
 };
 
-/// Wet cells joined together, at most, that are a pond rather than a river or a sea.
+/// Maximum connected wet cells in a pond.
 pub const POND_MOST: usize = 200;
 
 comptime {
@@ -102,12 +102,10 @@ comptime {
 
 pub const POND_REACH: i32 = 2;
 pub const HEARTH_REACH: i32 = 3;
-/// A nook's walk this many steps back reaches no more than `NOOK_CELLS`.
 const NOOK_STEPS: i32 = 6;
 const NOOK_CELLS: usize = 32;
-/// Open cells round a nook, at most.
 const NOOK_SIDES: usize = 3;
-/// Cells in from the map's edge a nook keeps, so a road's end at the rim is none.
+/// Rim clearance excludes road ends from nooks.
 const NOOK_RIM: i32 = 3;
 
 pub const Makeup = struct {
@@ -185,11 +183,11 @@ pub const Spec = struct {
     packs: usize = PER_FLOOR,
     /// Each kind any makeup holds has at least this many, while packs are left to place.
     few: usize = FEW,
-    /// Cells from its lead to the rest of a pack, at most.
+    /// Maximum cells from the pack leader.
     reach: i32 = REACH,
-    /// Cells from where the hero arrives to every foe, at least.
+    /// Minimum cells from the hero's arrival.
     gap: i32 = GAP,
-    /// Cells from every member of one pack to every member of another, at least.
+    /// Minimum cells between members of different packs.
     apart: i32 = 0,
     makeup: [MAKEUPS_MAX]Makeup = DEFAULT_MAKEUPS,
     makeup_n: usize = KINDS.len,
@@ -275,7 +273,7 @@ pub const Spec = struct {
         return &self.makeups()[rng.weighted(self.makeup_n, Holding{ .spec = self, .k = k, .bodies = bodies, .homeless = homeless }, Holding.weight) orelse return null];
     }
 
-    /// The foes in the fewest makeups first, so the packs that fill their quota fill the others' on the way.
+    /// Fill the rarest kind quotas first so overlapping packs also satisfy common quotas.
     fn quotaOrder(self: *const Spec) [actor.FOES.len]actor.Kind {
         var ks = actor.FOES;
         std.sort.insertion(actor.Kind, &ks, self, fewerHolders);
@@ -294,7 +292,7 @@ const Homeless = struct {
     by_door: Kinds = .initEmpty(),
     lairs: std.EnumArray(Lair, Kinds) = .initFill(.initEmpty()),
 
-    /// A lead found no room anywhere by roll may still find its lair, which is searched whole.
+    /// A failed random placement can still succeed in an exhaustively searched lair.
     fn refuses(h: Homeless, m: *const Makeup) bool {
         return h.of(m).contains(m.lead()) or (m.lair == .anywhere and h.anywhere.contains(m.lead()));
     }
@@ -377,7 +375,6 @@ fn walkReaches(lv: *const grid.Level, from: P, comptime steps: i32, most: usize)
     return true;
 }
 
-/// Wet cells in bodies of no more than `POND_MOST` joined cells that keep off the rim, as a river or sea does not.
 fn ponds(lv: *const grid.Level) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     var seen = grid.CellSet.initEmpty();
@@ -395,7 +392,7 @@ fn ponds(lv: *const grid.Level) grid.CellSet {
 
 const Water = grid.Spread(*const grid.Level, grid.Level.wetAt);
 
-/// Lava cells with no lava beside them: camp fires, not lava fields.
+/// Isolated lava cells serve as campfires.
 fn fires(lv: *const grid.Level) grid.CellSet {
     var out = grid.CellSet.initEmpty();
     for (0..grid.CELLS) |i| {
@@ -416,12 +413,12 @@ fn widened(cells: grid.CellSet, r: i32) grid.CellSet {
     return out;
 }
 
-/// At most what the pool holds once every slime placed splits to quarters; a makeup whose lead finds no ground of its own gives way to the rest.
+/// Reserve space for every slime to split fully. Skip makeups whose leader has no valid terrain.
 pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, given: *const Spec) void {
     placeOff(lv, pool, rng, start, exits, given, &grid.CellSet.initEmpty());
 }
 
-/// `place`, no pack standing on an `off` cell; bodies already in the pool count as they will once split.
+/// Exclude `off` cells and reserve split capacity for existing bodies.
 pub fn placeOff(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, given: *const Spec, off: *const grid.CellSet) void {
     const fitted = given.fit();
     const spec = &fitted;
@@ -459,7 +456,6 @@ pub fn placeOff(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, e
     }
 }
 
-/// An exit makeup's lead tries a door at random, then each other door in turn; a lair's, any cell of it.
 fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, spec: *const Spec, barred: *const grid.CellSet, lairs: *const Lairs, m: *const Makeup, bodies: *usize) bool {
     const ground = Ground{ .lv = lv, .pool = pool, .start = start, .spec = spec, .barred = barred, .others = pool.n };
     const lead = if (!m.exit) (if (m.lair == .anywhere) ground.leadSpot(rng, null, m.lead()) else ground.leadIn(rng, lairs.cells.getPtrConst(m.lair), m.lead())) orelse return false else lead: {

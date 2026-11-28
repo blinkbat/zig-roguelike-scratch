@@ -50,7 +50,6 @@ pub const Sprites = struct {
     small_coins: ?rl.Texture2D = null,
     large_coins: ?rl.Texture2D = null,
     tiles: std.EnumArray(grid.Tile, ?rl.Texture2D) = .initFill(null),
-    /// In the sheet's order, `WALL_MASKS`.
     wall: [sprite_assets.WALL_MASKS.len]?rl.Texture2D = @splat(null),
     forest: [sprite_assets.WALL_MASKS.len]?rl.Texture2D = @splat(null),
     grounds: std.EnumArray(ground.Ground, ?rl.Texture2D) = .initFill(null),
@@ -534,7 +533,7 @@ comptime {
 
 pub const HUD_BORDER_CUT: i32 = 9;
 pub const HUD_BORDER_RAIL: i32 = 3;
-/// Loaded with the hud border: `menu.border` draws boxes that hold no `Sprites`.
+/// Shared with menu.border, which draws without a Sprites instance.
 pub var small_border: ?rl.Texture2D = null;
 pub const SMALL_BORDER_CUT: f32 = 4;
 

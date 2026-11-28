@@ -95,7 +95,7 @@ pub fn blit(t: rl.Texture2D, src: rl.Rectangle, dest: rl.Rectangle, tint: rl.Col
     rl.drawTexturePro(t, src, dest, .{ .x = 0, .y = 0 }, 0, tint);
 }
 
-/// The edges of nine-slice `t`, tiled at native texel size between `x0..x1`/`y0..y1` drawn at `scale` screen pixels per unit. False, drawing nothing, when the box cannot hold the corners.
+/// Tile at native texel size for the given screen scale. Draw nothing if the corners cannot fit.
 pub fn frame(t: rl.Texture2D, cut: f32, x0: f32, y0: f32, x1: f32, y1: f32, scale: f32, tint: rl.Color) bool {
     const tex_w, const tex_h = sizeOf(t);
     const c = cut / scale;
@@ -135,7 +135,7 @@ pub fn rgba(px: *anyopaque, w: i32, h: i32) rl.Image {
     return image(px, w, h, .uncompressed_r8g8b8a8);
 }
 
-/// Borrows `px`, packed `w` to a row: nothing to unload.
+/// Borrows packed pixel rows. The caller owns px.
 pub fn image(px: *anyopaque, w: i32, h: i32, format: rl.PixelFormat) rl.Image {
     return .{ .data = px, .width = w, .height = h, .mipmaps = 1, .format = format };
 }
@@ -186,7 +186,7 @@ pub fn beginReplace() void {
     beginBlend(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
 }
 
-/// A render texture over the whole frame, flipped the right way up.
+/// Draw the full target with render-texture Y inversion.
 pub fn drawTarget(t: rl.Texture2D) void {
     drawTargetPart(t, whole(t), look.LIT);
 }
@@ -233,7 +233,7 @@ fn fieldOf(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f32
     return clamped(rgba(&img, w, h), .bilinear);
 }
 
-/// `img`'s texture, with `img` unloaded. Needs a live GL context.
+/// Consumes img. Requires a live GL context.
 pub fn adopt(img: rl.Image) ?rl.Texture2D {
     defer rl.unloadImage(img);
     return rl.loadTextureFromImage(img) catch null;

@@ -13,7 +13,6 @@ const skillbar = @import("../play/skillbar.zig");
 const terrain = @import("../play/terrain.zig");
 const enfeeble = @import("../play/enfeeble.zig");
 const shock = @import("../play/shock.zig");
-const burning = @import("../play/burning.zig");
 const glacial = @import("../play/glacial.zig");
 const tactics = @import("../play/tactics.zig");
 const simulation = @import("sim.zig");
@@ -28,7 +27,7 @@ pub const Roll = struct {
     hit_checked: bool = false,
     /// Opportunist's bonus as the target stood before this blow's own ailment.
     opportunity: ?i32 = null,
-    /// Imbue's fire, past armour, still to meet the target's fire resistance; not in `dmg` yet.
+    /// Imbue fire bypasses armour and still needs fire resistance applied.
     fire: i32 = 0,
 
     pub fn fixed(dmg: i32, opportunity: ?i32) Roll {
@@ -58,7 +57,7 @@ pub const Rolled = struct {
         return .{ .dmg = h.blow.physical, .physical = h.blow.physical, .crit = h.crit, .effect = h.effect, .fire = h.blow.elements.get(tactics.Imbue.IMBUES) };
     }
 
-    /// Its whole blow past `resists`, armour still to take its physical part.
+    /// Resistances applied, physical armour pending.
     pub fn against(h: Rolled, resists: damage.Resists) Roll {
         return .{ .dmg = h.blow.total(resists), .physical = h.blow.physical, .crit = h.crit, .effect = h.effect };
     }
@@ -191,7 +190,7 @@ pub fn opportune(sim: *const Simulation, a: *const actor.Actor) i32 {
     return bonus;
 }
 
-/// What `resolve` deals `target` past armour for a blow carrying `applied`, spending nothing.
+/// Takes post-armour damage. Preview preserves the target's shock.
 pub fn dealt(sim: *const Simulation, target: *const actor.Actor, dmg: i32, applied: ?resilience.Kind) i32 {
     return dealtWith(sim, target, opportune(sim, target), dmg, applied);
 }
@@ -206,10 +205,10 @@ pub fn foeRoll(rng: *mathx.Rng, attacker: terrain.Stats, defender: terrain.Stats
     return s.roll(rng);
 }
 
-/// `rolled` before the target's resistance or armour, its guard, an enfeebled striker and its shock; `dealt` after.
+/// Raw strike and final damage after offensive and defensive modifiers.
 pub const FoeBlow = struct { rolled: i32, dealt: i32 };
 
-/// A foe's strike `s` on `target`; null when it misses.
+/// Returns null on a miss.
 pub fn foeBlow(sim: *Simulation, attacker: *const actor.Actor, target: *actor.Actor, s: actor.Strike, weak: bool) ?FoeBlow {
     const defended = sim.combatStats(target);
     const rolled = foeRoll(&sim.rng, sim.combatStats(attacker), defended, s) orelse return null;
@@ -274,12 +273,12 @@ pub const Hit = struct {
     recovery: i32,
 };
 
-pub const IMBUED = .{ burning, glacial, shock };
+pub const IMBUED = blk: {
+    var modules: [affixes.IMBUES.len]type = undefined;
+    for (affixes.IMBUES, 0..) |element, i| modules[i] = resilience.module(affixes.imbued(element)).?;
+    break :blk modules;
+};
 pub const Imbued = std.EnumSet(resilience.Kind);
-
-comptime {
-    for (IMBUED, affixes.IMBUES) |M, e| std.debug.assert(M.AILMENT == affixes.imbued(e));
-}
 
 pub const Outcome = union(enum) { miss, hit: Hit };
 

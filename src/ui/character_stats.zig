@@ -139,7 +139,6 @@ fn quiet(n: i32, col: rl.Color) rl.Color {
 
 const Part = struct { [:0]const u8, rl.Color };
 
-/// One column of the sheet, top down; `dry` lays it out without drawing to check it fits.
 const Column = struct {
     face: *const font.Face,
     x: i32,
@@ -260,7 +259,7 @@ const Column = struct {
     }
 };
 
-/// Each ailment a hit may bring, the skill's own roll first and the weapon's only if that missed, as combat rolls them.
+/// Combat rolls the weapon effect only when the skill's own roll misses.
 fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: item_bases.WeaponEffect) std.EnumArray(resilience.Kind, u32) {
     var out = std.EnumArray(resilience.Kind, u32).initFill(0);
     if (act.ailment()) |ail| out.set(ail.kind, ail.chance);

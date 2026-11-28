@@ -76,7 +76,6 @@ fn opened(g: *game.Game) void {
     handOver(g);
 }
 
-/// A spoken `trade` opens the merchant's wares over the conversation.
 fn handOver(g: *game.Game) void {
     const npc = g.sim.plot.takeTrading() orelse return;
     game.character.openTrade(g, npc);

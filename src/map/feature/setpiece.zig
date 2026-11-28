@@ -151,7 +151,6 @@ const Niche = struct {
         };
     }
 
-    /// Just past the middle of the opening in its bottom row.
     fn mouth(n: Niche) P {
         const last = n.art[n.art.len - 1];
         const lo = std.mem.indexOfNone(u8, last, " ").?;
@@ -162,9 +161,7 @@ const Niche = struct {
 
 const SITE_TRIES: usize = 400;
 pub const SITE_BOX = buildings.SITE_BOX;
-/// Of a camp's own cells, the quarters that must be walkable.
 const CAMP_OPEN_QUARTERS = 3;
-/// Solid cells round a niche past which a site scores no better.
 const NICHE_SOLID_MAX: usize = 40;
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots: *buildings.Lots, p: Params) void {
@@ -200,7 +197,6 @@ fn campSpace(lots: *buildings.Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i
     return null;
 }
 
-/// The palette's own ground, with no barrel on it.
 fn plain(lv: *const grid.Level, q: P, pal: carve.Palette) bool {
     const t = lv.at(q);
     return (t == pal.open or t == pal.path or t == pal.solid) and !lv.hasBarrel(q);
@@ -268,7 +264,7 @@ fn gapFor(apart: u8) i32 {
     return @max(buildings.Lots.GAP, 2 * @as(i32, apart));
 }
 
-/// Stamped, its gaps and the ring round it opened, so no thicket or rock seals its ground in.
+/// Open gaps and clear a ring so surrounding terrain cannot seal the set piece.
 pub fn place(lv: *grid.Level, at: P, art: []const []const u8, pal: carve.Palette) void {
     stampOver(lv, at, art, pal);
     carve.clearRound(lv, grid.Box.sizedP(at, size(art)), pal);

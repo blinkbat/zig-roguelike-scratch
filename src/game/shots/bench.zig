@@ -19,7 +19,7 @@ const poseGas = @import("poses.zig").poseGas;
 const poseWaterMirrors = @import("poses.zig").poseWaterMirrors;
 const studyLit = @import("poses.zig").studyLit;
 
-/// Milliseconds a frame takes to draw, over `n` frames after `warm` unmeasured.
+/// Mean draw time in milliseconds after the warmup frames.
 pub fn meanDraw(g: *game.Game, target: rl.RenderTexture2D, warm: usize, n: usize) !f64 {
     for (0..warm) |_| drawInto(g, target);
     var timer = try std.time.Timer.start();

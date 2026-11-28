@@ -1,56 +1,17 @@
 # Terrain and character inspection
 
-Burning reeds and crops stop blocking sight immediately while alight. Hero and
-foe visibility, light propagation and projectile targeting share the level's
-current terrain-opacity rule. Dousing surviving foliage restores its cover;
-walls and other nonflammable cover still block. Smoke is drawn only: it never
-blocks sight, light or targeting.
+## Combat modifiers
 
-Locked jail gates consume one carried Small Key. Small Keys are interchangeable;
-the encounter's outside chest contains one, collected through ordinary chest loot.
+`Simulation.combatStats` combines actor stats, innate resistance and temporary buildup with the occupied tile and local outdoor rain. All occupants use this rule, including flying bodies. Compute modifiers at use so movement, displacement and travel take effect immediately. The terrain table supplies neutral defaults and inspection text. Add new terrain effects there. [Modifier table](../src/play/terrain.zig) · [Simulation resolver](../src/game/sim.zig)
 
-Terrain modifiers belong to `src/play/terrain.zig`. Its typed table covers hit chance,
-dodge, every elemental resistance and every harmful status resistance, with neutral defaults
-for tiles that have no effects. Tile balance values live only in that table; rain's live
-beside it (`RAIN_FIRE`, `RAIN_BURN`, `RAIN_STEP`).
+Hit chance and dodge roll separately. A missed direct attack applies no damage, status or buildup. Environmental impacts still resolve, including water conducting lightning to grounded occupants. Elemental resistance modifies damage, including burn ticks. Positive status resistance can prevent an application, and negative resistance increases its proc chance up to 100%. Both resistance types clamp to −100% through +100%. Only a successful application builds resistance. Moving off a tile leaves an existing status and its duration intact. [Attack resolution](../src/game/attacks.zig) · [Status rules](../src/play/resilience.zig)
 
-`Simulation.combatStats` resolves an actor's base resistances, hero dodge where applicable,
-innate status resistance and temporary buildup, then applies the occupied tile's modifiers
-summed with the rain's out of doors (`Stats.onRained`).
-The tile is queried when needed, so walking, knockback, pulls, leaps, splits and travel
-cannot leave a cached terrain bonus behind. All occupants use the same rule, including
-flying bodies. Terrain bonuses are never written into actor stats or saved buildup.
+## Visibility and targeting
 
-Hit chance and dodge use separate rolls; a missed attack stops at its collision and
-applies no direct damage, status or buildup. Environmental effects resolve separately:
-lightning landing in water still conducts to its grounded occupants. Dodge retains its
-attribute cap. Elemental
-resistances clamp to -100..100 and reduce damage, including burning ticks. Status
-resistances also clamp to -100..100 and affect application rather than damage: positive
-values can resist an application; negative values increase its proc chance, capped at 100%.
-Successful applications alone build temporary resistance. Leaving a tile changes resistance
-immediately without clearing an existing status or changing its duration.
+Burning reeds and crops lose cover while alight. Dousing surviving foliage restores it. Sight, light and projectiles share terrain opacity. Smoke affects only rendering. Arcane Barrier blocks movement and projectiles while preserving sight. [Grid](../src/map/grid.zig) · [Lighting](../src/map/lume.zig) · [Wall placement](../src/play/tactics.zig)
 
-New terrain effects should add typed fields and resolution here, with a neutral default,
-then route their consumers through the simulation resolver. Do not add tile checks to
-individual skills. Inspection lists modifiers from the same table used by combat.
+Projectile suggestions require a visible enemy on the preview flight. Free aim allows an in-range empty, dark or wall cell in line of sight. Previews hide unseen interceptors and their burst areas. Resolution stops a nonpiercing projectile at its first collision, including a missed attack. Combustion and Shatter strike an afflicted visible foe in deep water once even when its cell falls outside the walkable splash. [Projectile geometry](../src/play/bow.zig) · [Skill resolution](../src/game/tactics_exec.zig)
 
-Inspect navigation includes HUD parts and visible onscreen characters. Every unit card shows only
-its name (title case for foes, the hero's own name) and presented HP, followed by a divider and a separate terrain section:
-the tile name and its signed effects, also in title case. Status effects read as changes to
-application chance, such as "+15% Chance To Burn" on grass. Neutral terrain says "No Effects".
-The tile is the one beneath the presented body. Out of doors in rain, the card adds the rain
-(Drizzle, Rain or Downpour) and its effects beneath the tile: `terrain.rained` lends fire and burn
-resistance in steps of `RAIN_STEP`, up to `RAIN_FIRE` and `RAIN_BURN` in a downpour, stacking with the tile. Hidden, unborn and departed bodies have no inspect target.
-Long cards scroll through page controls or the mouse wheel. Inspection never spends a turn.
+## Character inspection
 
-Projectile target suggestions include only visible enemies reached by the preview flight,
-which ignores unseen bodies and barrels. Free aiming can choose any in-range cell in geometric line of sight, including empty,
-dark or wall cells, and opens without a visible target. The first body, barrel or blocking
-terrain intercepts a nonpiercing projectile, even if that attack misses. Preview rendering
-must not reveal hidden collisions or their surrounding burst areas; confirmed flight still
-hits unseen interceptors.
-
-Combustion and Shatter can consume an afflicted visible foe in deep water. Their
-direct target is struck once even when its cell lies outside the walkable splash
-patch; other ground skills retain their existing terrain restrictions.
+Inspection targets visible, pictured characters and costs no turn. The card shows the hero's name or foe title, pictured HP, and the tile beneath the pictured body. List signed terrain effects, or “No Effects.” Express status modifiers as application chances. Outdoors, show the local rain category and its stepped fire and burn resistance when they contribute. Long cards scroll by page controls or wheel. [Card implementation](../src/game/overlay.zig) · [Controls](CONTROLLER.md)

@@ -27,7 +27,7 @@ pub fn xpOf(xp: u32) u32 {
     return std.math.divCeil(u32, xp, XP_DIVISOR) catch unreachable;
 }
 
-/// How many raiders come in after the minute `from` up to and including `to`, both counted since the first day began.
+/// Count arrivals in (from, to], in minutes since day one.
 pub fn arriving(r: Raid, roll: u64, from: u64, to: u64) usize {
     if (to <= from) return 0;
     var n: usize = 0;
@@ -41,7 +41,6 @@ pub fn arriving(r: Raid, roll: u64, from: u64, to: u64) usize {
     return n;
 }
 
-/// The minute raider `i` of night `night` comes in, since the first day began.
 fn arrival(roll: u64, night: u64, i: usize) u64 {
     const key = [3]u64{ SALT, night, i };
     return night * day.MINUTES + DUSK + std.hash.Wyhash.hash(roll, std.mem.asBytes(&key)) % NIGHT;

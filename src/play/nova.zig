@@ -32,7 +32,7 @@ pub const CHANCE = glacial.CHANCE;
 pub const afflict = glacial.afflict;
 pub const AILMENT = glacial.AILMENT;
 
-/// Every cell within `RANGE` of `from` the burst reaches past the terrain, `from` aside.
+/// Reachable burst cells exclude the caster's cell.
 pub fn around(lv: *const grid.Level, from: P, wider: i32) areas.Burst {
     return areas.spread(lv, from, areas.expanded(RANGE, wider), from, notAt);
 }

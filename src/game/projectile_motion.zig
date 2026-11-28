@@ -146,13 +146,12 @@ test "missiles move continuously to the existing impact time in every direction"
     }
 }
 
-/// Seconds a hurl takes over each cell it flies.
 const BOLT_CELL_S: f32 = 0.09;
 
 pub fn boltFlown(n: usize) f32 {
     return flownAt(n, BOLT_CELL_S);
 }
-/// A hurl as drawn: from `from` to where `line` has flown over `span` seconds once `t` reaches 0; seen before then if `before`, and after if `after`.
+/// Interpolate over `span` seconds from `t == 0`. The flags control visibility before and after flight.
 pub const BoltShown = struct {
     element: damage.Element,
     line: firebolt.Bolt,

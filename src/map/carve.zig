@@ -14,7 +14,7 @@ const MEANDER: f32 = 0.55;
 const BEND_MAX: f32 = 1.1;
 const MEANDER_STEPS: usize = 4 * (grid.COLS + grid.ROWS);
 
-/// Each noise field's and RNG stream's own, so no two of one seed move together.
+/// Independent salts prevent correlated noise fields and rolls.
 pub const Salt = enum(u64) {
     /// Also the stride between features' seeds.
     features = 0xFEA7_0BE5,
@@ -470,7 +470,7 @@ pub fn closes(t: grid.Tile, pal: Palette) bool {
 pub const Laid = struct {
     lots: []const grid.Box = &.{},
     before: ?*const [grid.CELLS]grid.Tile = null,
-    /// Painted by hand: a join goes round their solid cells, and through one only to reach what they shut in.
+    /// Prefer routes around authored solid cells.
     authored: ?*const grid.CellSet = null,
 };
 
@@ -507,7 +507,7 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void 
     }
 }
 
-/// The trail if it crosses no painted solid or prize, else the way through fewest: false when that breaks one, so the pass relabels first.
+/// False means the caller must relabel after crossing a painted solid or prize.
 fn joinRound(lv: *grid.Level, rng: *mathx.Rng, st: *Stretches, from_r: u16, main: u16, a: P, b: P, path: grid.Tile, painted: *const grid.CellSet) bool {
     var way: [Trail.MOST]P = undefined;
     var n: usize = 0;
@@ -535,7 +535,7 @@ pub fn breaksLast(lv: *const grid.Level, painted: ?*const grid.CellSet, i: usize
     return walledBy(lv, painted, i) or lv.tile[i].prized();
 }
 
-/// Square steps from every cell of `from_r` to the nearest of `main` off the rim, through the fewest cells it `breaksLast`; how many.
+/// Returns the number of protected cells crossed by the cheapest route.
 fn route(lv: *grid.Level, st: *Stretches, from_r: u16, main: u16, path: grid.Tile, painted: *const grid.CellSet) ?usize {
     const Way = struct {
         lv: *const grid.Level,
@@ -597,7 +597,7 @@ pub const Fewest = struct {
         }
     };
 
-    /// `ON_TAKE` tests `done` on a cell as it is taken, else on a step's first reach, ending at the cell it stepped from; `LIT_LAST` holds lit cells behind unlit.
+    /// ON_TAKE tests a dequeued cell. Otherwise a matching neighbour ends the path at its predecessor. LIT_LAST defers lit cells.
     pub fn run(self: *Fewest, lv: *const grid.Level, way: anytype) ?Found {
         const Way = @TypeOf(way);
         var head: usize = 0;
@@ -839,7 +839,6 @@ const Trail = struct {
         return t.p;
     }
 
-    /// `step`, else the other way toward `b`, else aside: a trail passes a chest or glow plant by.
     fn round(t: *Trail, lv: *const grid.Level, step: P, other: P) P {
         if (!lv.at(t.p.add(step)).prized() or t.detours >= DETOURS_MAX) return step;
         if (!other.eq(.{ .x = 0, .y = 0 }) and !lv.at(t.p.add(other)).prized()) return other;
@@ -1092,7 +1091,6 @@ pub const Decor = struct {
     }
 };
 
-/// Each `t` with only `t` all round it becomes `heart`, judged on the tiles as they lay before.
 fn hearts(lv: *grid.Level, t: grid.Tile, heart: grid.Tile) void {
     const before = lv.tile;
     for (before, 0..) |here, i| {
@@ -1114,7 +1112,7 @@ fn capped(v: anytype, max: u16) @TypeOf(v) {
     return q;
 }
 
-/// In the rng's order: reordering changes every seed's floor.
+/// Dressing order is part of seeded generation.
 const DRESSES = [_]type{ Litter, Decor };
 
 fn dressOf(comptime T: type, comptime D: type) ?[:0]const u8 {

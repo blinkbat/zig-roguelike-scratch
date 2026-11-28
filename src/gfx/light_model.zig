@@ -47,11 +47,11 @@ pub const BODY_Z: f32 = 0.4;
 
 pub const CARRY: Rgb = .{ 0.92, 0.88, 0.80 };
 pub const MOON_CARRY: Rgb = .{ 0.52, 0.68, 1.0 };
-/// At night the carried light warms toward this at its carrier's feet, by up to `NIGHT_GLOW_SHARE`, and is moonlit again this many cells out.
+/// Night tint at the carrier's feet, fading to moonlight over NIGHT_GLOW_R cells.
 pub const NIGHT_GLOW: Rgb = .{ 0.85, 0.66, 0.45 };
 pub const NIGHT_GLOW_SHARE: f32 = 0.35;
 pub const NIGHT_GLOW_R: f32 = 3;
-/// A cell past what the hero's light lets it see, so its glow fades out on the edge of sight.
+/// One cell beyond sight allows the carried glow to fade.
 pub const CARRY_R: f32 = carryR(actor.row(actor.HERO).light);
 
 pub fn carryR(light: i32) f32 {
@@ -63,16 +63,16 @@ pub const CARRY_FACE_WRAP: f32 = 0.6;
 
 pub const MEMORY = rgbOf(look.MEMORY_LIGHT);
 const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
-/// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
+/// Per-channel flicker exponents whiten a flaring flame.
 const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
 const PLANT_LIGHT: Rgb = .{ 0.52, 0.68, 0.92 };
-/// Of its light, what a plant still casts in full day; all of it at night.
+/// Fraction of nocturnal plant light retained in full daylight.
 const PLANT_DAY: f32 = 0.2;
 
 pub fn plantShare(daylight: f32) f32 {
     return mathx.lerpF(1, PLANT_DAY, daylight);
 }
-/// A glowing plant breathes rather than flickers: its share either way, and breaths a second.
+/// Pulse amplitude and cycles per second.
 const PULSE: f32 = 0.08;
 const PULSE_HZ: f32 = 0.3;
 pub const FAINT: f32 = 0.002;
@@ -83,7 +83,6 @@ const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
     .{ .hz = 5.0, .weight = 0.3 },
     .{ .hz = 11.0, .weight = 0.1 },
 };
-/// Channels above the knee roll off toward the ceiling, the brightest any light makes the art, however many sources stack.
 const KNEE: f32 = 1.1;
 const CEILING: f32 = 1.4;
 const ROLL: f32 = CEILING - KNEE;
@@ -96,13 +95,12 @@ pub const BODY_LIGHTS: usize = 4;
 const FLASH_RGB: Rgb = look.FLASH_RGB;
 /// Texels toward the viewer, for the side-lighting of a body.
 pub const BODY_LIGHT_Z: f32 = 40.0;
-/// The rise is per texel out; the rim reach is in texels.
+/// Wrap rise per texel and rim reach in texels.
 pub const BODY_WRAP: f32 = 0.4;
 pub const BODY_RISE: f32 = 0.7;
 pub const BODY_RIM: f32 = 0.8;
 pub const BODY_RIM_REACH: f32 = 2.0;
 pub const BODY_SHEEN: f32 = 0.12;
-/// Overlapping shadows take the channelwise minimum.
 pub const SHADE_RGB = Rgb{ 0.42, 0.45, 0.54 };
 const MOON_SHADE_RGB = Rgb{ 0.34, 0.40, 0.62 };
 pub const SHADOW_MAX: f32 = 0.85;
@@ -123,7 +121,7 @@ const SUN_SHADOW_A: f32 = 0.4;
 const SKY_SHADOW = SHADOW_MAX * SUN_SHADOW_A;
 pub const SUN_LAMP_D: f32 = 3;
 
-/// Height and optional circular radius in cells; null radius fills a square cell.
+/// Height and radius in cells. Null radius fills the square.
 const Caster = struct { h: f32, r: ?f32 = null };
 
 pub const CASTERS = std.EnumArray(grid.Tile, ?Caster).initDefault(@as(?Caster, null), .{
@@ -218,7 +216,7 @@ const CellWalk = struct {
 const BANK_FOOT_SHADE: f32 = 0.35;
 const BANK_FOOT_PX: f32 = 3;
 
-/// `banks` reads `lv`'s terrain: a `ground.LiveBanks` or a `*const ground.Banks` synced to it. No rim shades ground north of it.
+/// Banks must match this terrain. Rims cast shade only to their south.
 pub fn bankSunlit(lv: *const grid.Level, banks: anytype, ray: SunRay, x: f32, y: f32, z: f32) f32 {
     if (z != 0 or sky.upright(ray.flat)) return 1;
     const cell = mathx.cellOf(.{ x, y });
@@ -521,7 +519,6 @@ pub fn memoryUnder(moon: f32) Rgb {
     return MEMORY * splat(mathx.lerpF(1, NIGHT_MEMORY, moon));
 }
 
-/// Windowed inverse square: exactly nothing at `REACH`.
 fn falloff(d2: f32) f32 {
     const r = d2 / REACH2;
     const w = std.math.clamp(1 - r * r, 0, 1);
@@ -651,7 +648,7 @@ pub const Shine = struct {
     n: usize = 0,
     lamp: [BODY_LIGHTS]Lamp = undefined,
 
-    /// The dimmest gives way when all are taken, but never the sky's: its shadow is as dark however dim its light.
+    /// Preserve the sky lamp when replacing the dimmest lamp, even at low sky intensity.
     pub fn add(self: *Shine, l: Lamp) void {
         var i = self.n;
         if (self.n == BODY_LIGHTS) {
@@ -720,7 +717,7 @@ pub const PATCH_CLOUD: f32 = 1.6;
 pub const DAPPLE_WAVE = [3]f32{ 2.1, 1.6, 1.2 };
 pub const DAPPLE_MIN: f32 = 0.07;
 pub const DAPPLE_SPAN: f32 = 0.10;
-/// Crowns within this many cells shade a cell's sun, each by this much over one plus its squared distance.
+/// Each crown within DAPPLE_REACH cells contributes DAPPLE_COVER / (1 + distance²).
 pub const DAPPLE_REACH = 2;
 pub const DAPPLE_COVER: f32 = 0.3;
 

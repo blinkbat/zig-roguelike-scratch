@@ -1,94 +1,40 @@
 # Tile artwork workflow
 
-Preserve owner pixels, native scale, authored layers and lighting direction.
-[ART_PROVENANCE.md](ART_PROVENANCE.md) records attribution and derived work;
-[HUD_LAYOUT.md](HUD_LAYOUT.md) covers HUD sources. Script parameters and sampling
-algorithms live in `tools/tile_art/`.
+1. Inspect the owner's working Aseprite file and identify the actual paint cel. Back up before editing. Use `%TEMP%/wall-mocks/` for working files and `assets/backup/` for owner-requested forest and grass backups.
+2. Preserve native pixels, cel positions, editable layers, palette and light direction. Copy whole pieces or translate painted strips and corners by integer pixels. Keep extensions on separate layers and record local repairs. Avoid generated pixels, smoothing and rescaling.
+3. Export only intended layers and cells. Reopen the layered source and PNG, compare the original paint with the backup, and compare the export with the intended composite. Keep Desktop and canonical `assets/source/` copies synchronized. Export the existing source after paint edits. Regeneration can discard later work.
+4. Register runtime PNGs in `src/gfx/sprite_assets.zig` under globally unique filenames. Rebuild embedded assets and inspect native-scale runs, joined-edge cores, exposed edges, corners, holes, ends and junctions in actual headless captures. Finish with `build.cmd`. [Verification](../AGENTS.md#verification) · [Art provenance](ART_PROVENANCE.md) · [HUD artwork](HUD_LAYOUT.md)
 
-## Editing and validation
+## Running Aseprite tools
 
-1. Inspect the file the owner is actually editing and its layers. A layer named
-   Draw here is not proof that it contains the paint. Back up before changes:
-   use `%TEMP%/wall-mocks/`, except owner-requested forest/grass backups in
-   `assets/backup/`.
-2. Export paint alone and inspect it at native resolution and integer zoom.
-   Preserve the original layer's pixels and position; extensions belong on their
-   own editable layer. Synchronize the working file and canonical
-   `assets/source/` copy deliberately.
-3. Copy whole pieces, then painted strips/corners at native size. Translate by
-   whole pixels; splice rather than stretch. Preserve uneven edge sequences,
-   highlights and palette. Keep unavoidable hand repairs local and recorded.
-   Do not use image generation, smoothing, antialiasing or rescaling. Rotation
-   and mirroring must respect the painted lighting and face direction.
-4. Export only intended art layers, excluding paper, labels, grids, guides and
-   unused cells. Reopen the saved Aseprite and PNG; compare originals with backups
-   and exports with the intended layers. Palette equality alone is not a shape test.
-5. Inspect connected runs, corners, holes, ends, junctions and narrow passages.
-   Check joined-edge cores separately from irregular exposed transparency.
-6. Register runtime body/tile PNGs in `gfx/sprite_assets.zig`; filenames must be
-   globally unique. Rebuild embedded assets and inspect actual headless captures
-   from TEMP using [AGENTS.md](../AGENTS.md#verification). Finish with
-   `build.cmd`; never launch interactive play to verify.
+From the repository root, run batch tools windowless. Supply each Lua parameter as `--script-param key=value` before `--script`. For example, to export the canonical grass sheet:
 
-Export existing art directly after edits. Port/template generators reconstruct
-derived work and must not overwrite later paint. Inspect their refusal checks and
-take a fresh backup before using an installation or replacement option.
-`ground_sheet.lua replace=yes` accepts only a blank template whose layers, guide
-pixels and slices still match the requested template. Changed artwork or template
-parameters require a new output path. Verify its preservation checks with
-`python -B tools/tile_art/test_ground_sheet.py --aseprite <aseprite.exe>`; fixtures
-and generated images stay in TEMP.
+```powershell
+$aseprite = 'C:/Users/DavidBennett/Desktop/projects/Aseprite/src/build/bin/aseprite.exe'
+$argsForArt = '--batch --script-param name=grass --script-param source=assets/source/grass.aseprite --script tools/tile_art/export_ground.lua'
+$process = Start-Process -FilePath $aseprite -ArgumentList $argsForArt -WindowStyle Hidden -PassThru -Wait
+if ($process.ExitCode -ne 0) { throw "Aseprite exited with $($process.ExitCode)" }
+```
+
+Check the script's validation report and reopened pixels. Aseprite can report a successful save even when writing failed. Keep drafts, previews, logs and reports in TEMP. Exporters stage each output under a unique temporary name, then publish the validated bytes. The port/install tools back up existing artwork before replacement. Ground, forest and bridge ports require a byte-identical existing canonical source before installation. Inspect each tool's overwrite checks before using replacement or `install=yes`.
 
 ## Walls and forest
 
-Walls use eight-neighbor masks: N=1, E=2, S=4, W=8, NE=16, SE=32, SW=64, NW=128.
-A diagonal counts only when both adjacent cardinal neighbors exist, yielding
-47 masks. `wall_masks.lua`, `sprite_assets.WALL_MASKS` and `grid.WallShape`
-must agree. Runtime atlases are 512x384: eight 64px cells per row, final cell empty.
+Wall masks use N=1, E=2, S=4, W=8, NE=16, SE=32, SW=64 and NW=128. A diagonal requires both adjacent cardinals. The resulting 47 masks occupy eight 64px cells per row in a 512×384 atlas. Leave the final cell empty. Keep `wall_masks.lua`, `sprite_assets.WALL_MASKS` and `grid.WallShape` in sync.
 
-| Material | Editable source and export |
+| Material | Working source and tools under `tools/tile_art/` |
 | --- | --- |
-| Regular wall | Desktop `regular-walls.aseprite`, original `Layer 1`; `export_walls.lua` builds `assets/source/walls.aseprite` and `assets/walls/walls.png` |
-| Forest | `assets/source/forest-tree-walls.aseprite`, `Draw here` plus `Forest extensions`; `export_forest.lua` writes `assets/walls/forest-tree-walls.png` |
-| Cave/forest guides | Desktop `cave-walls.aseprite` / `forest-tree-walls.aseprite`; `guide_walls.lua` supplies guides, `idea_walls.lua` supplies hidden assistant ideas |
-| New wall sheet | `new_sheet.lua out=<new.aseprite> title=<header.png>` copies the `cave-walls.aseprite` guides into an empty sheet; `sheet_title.py <header.png> <title>` draws the header |
-
-Regular-wall runtime cells fill the tile, unlike the thin cores in the Desktop
-reference sheet. `export_walls.lua` samples original painted edges, cap details,
-brick runs and face ends; `look.WALL_FACE_PX` must match the exporter's face height.
-`port_walls.lua` also regenerates the Desktop extension. Both sample the original
-layer, so incorporate later edits before regeneration.
-
-Wall export reopens the runtime PNG and checks its pixels before reporting success.
-Verify read-only destination failures with
-`python -B tools/tile_art/test_export_walls.py --aseprite <aseprite.exe>`; fixtures stay in TEMP.
-
-Forest export preserves native canopy/trunk geometry and the separate extension.
-`port_forest.lua` constructs connections from native canopy copies and refuses an
-existing extension. `tone_forest.lua` records the owner-requested forest palette
-change and grass darkening, and publishes the toned source, Desktop copy, grass and
-forest atlas (built by `forest_atlas.lua`, shared with `export_forest.lua`) together;
-do not apply transforms twice.
-Connected shrubs use the forest atlas; isolated shrubs retain stable visual
-variants without consuming gameplay RNG. Brick and shrub shape queries remain
-separate for lighting. Inspect `forest.png` and relevant `shadows-*.png` captures.
+| Regular wall | Desktop `regular-walls.aseprite`, original `Layer 1`. `export_walls.lua` builds `assets/source/walls.aseprite` and `assets/walls/walls.png` from painted edges, faces, cap details and brick runs. Match `look.WALL_FACE_PX` to the exported face. Review any later edits before rerunning `port_walls.lua`, which also rebuilds the Desktop extension. |
+| Forest | `export_forest.lua` exports `assets/source/forest-tree-walls.aseprite` to `assets/walls/forest-tree-walls.png`. Keep `Draw here` and `Forest extensions` separate. `port_forest.lua` derives connections from native canopy copies and refuses an existing extension. `tone_forest.lua` publishes the toned forest, grass and synchronized source copies together. Apply the tone once. Inspect `forest.png` and `shadows-*.png`. |
+| New sheets | `guide_walls.lua` and `idea_walls.lua` provide guides and hidden ideas for the Desktop cave/forest sheets. `sheet_title.py <header.png> <title>` renders a header. `new_sheet.lua out=<new.aseprite> title=<header.png>` copies the cave guides into an empty sheet. |
 
 ## Ground transitions
 
-Ground uses a dual grid: each 64px piece spans the corners of four map cells.
-Masks are NW=1, NE=2, SW=4, SE=8 (`ground_layout.lua`) in `ground_corners.lua` / `ground.ORDER` order.
-Each material overlays lower-ranked ground. Mask 15 is the wrapping fill;
-mask 0 is empty. Templates are 512x320 with a 64px header and a 4x4 art block;
-runtime exports crop that block to 256x256.
+Each 64px dual-grid piece represents four map-cell corners. Mask bits are NW=1, NE=2, SW=4, SE=8 in `ground_corners.lua` / `ground.ORDER` order. Mask 0 is empty and 15 wraps as fill. The 512×320 template includes a 64px header and a 256×256 runtime art block. Sheeted ground overlays unsheeted ground in material order, with bridges above water and shallows above deep water.
 
-`export_ground.lua name=<material> source=<canonical-file>` exports visible
-`Draw here` and the named extension layer in layer order, excluding guides.
-Use explicit canonical sources to avoid accidentally exporting an older Desktop
-copy. Optional `out=` selects output. The `from=underdrawing` batch export
-requires an explicit output outside assets and uses Python 3.9 or newer to
-resolve filesystem aliases before writing.
+Use `export_ground.lua name=<material> source=<canonical-file>`. It exports visible paint and extensions in layer order to `assets/ground/<material>-ground.png`. Without `source=` it reads Desktop files. Optional `out=` selects the output. `from=underdrawing` requires an explicit destination outside assets and Python 3.9+ for path resolution.
 
-| Runtime material | Canonical source under `assets/source/` | Extension |
+| Material | Canonical file under `assets/source/` | Extension |
 | --- | --- | --- |
 | grass | `grass.aseprite` | Grass extensions |
 | dirt | `dirt.aseprite` | Dirt extensions |
@@ -96,169 +42,35 @@ resolve filesystem aliases before writing.
 | water | `deep-water.aseprite` | Water extensions |
 | bridge | `bridge.aseprite` | Bridge extensions |
 
-Outputs are `assets/ground/<material>-ground.png`. Without `source=`, the
-exporter reads Desktop sources; water maps to deep-water and shallows to water.
-An absent ground sheet retains existing tile artwork. Sheeted grounds draw above
-unsheeted grounds, keeping `ground.Ground` order within each group; deep water
-lies below shallows and bridges cover other sheeted ground.
+- **Templates.** `ground_sheet.lua` and `ground_labels.py` create blank sheets. `replace=yes` requires matching guide pixels, layers, slices and an unpainted template. Use a new output path for changed parameters.
+- **Grass, dirt and shallow water.** `port_ground.lua name=grass|dirt|water` creates a TEMP draft. Preserve strokes across cell boundaries. Existing extensions and changed paint counts block regeneration. Inspect its connected preview alongside its 128 legal adjacent-pair, corner, fill, palette and alpha checks.
+- **Deep water.** `deepen_water.lua labels=<ground_labels.py PNG>` derives the initial source using 60% RGB with original alpha and geometry. Installation requires both editable destinations to be absent. `out=` selects the working destination. Re-export the painted deep source for subsequent edits.
+- **Bridge.** Keep the original `Draw here` hidden and the connected planks in `Bridge extensions`. `port_bridge.lua previous=<validated-source>` checks existing extension pixels and position before replacement. PNG export applies 70% RGB and lifts pure-black shadows to (42,33,25). Keep the editable palette intact and inspect `bridges.png`.
 
-`port_ground.lua name=grass|dirt|water` derives missing masks from owner paint.
-It writes a TEMP draft by default; `install=yes` backs up and updates working
-and canonical sources. Existing extensions and changed source pixel counts
-block regeneration. Keep original cels and strokes crossing cell boundaries intact.
-The port validates palette/alpha, empty mask 0, fill, corner cores and all 128
-legal adjacent pairs; inspect its connected preview as well.
+## Water cliffs and edges
 
-For `port_ground.lua`, `port_forest.lua` and `port_bridge.lua`, `install=yes`
-also requires any existing canonical source to match the input file byte for byte
-before either is changed. `source_files.lua` owns this shared check and the checked
-byte-copy backups used by the ground and bridge ports; read, write or close failures
-stop installation. Repeated backup names receive a numbered suffix. Verify with
-`python -B tools/tile_art/test_port_sources.py --aseprite <aseprite.exe>` and
-`python -B tools/tile_art/test_source_files.py --aseprite <aseprite.exe>`; fixtures stay in TEMP.
+The owner painted on layer 8, which shares a reference layer's name. `Draw here` is blank. Keep the shallow canonical source separate from the deep-only Desktop revision.
 
-Forest toning and HUD border export use the same checked reads and backups before
-overwriting artwork. Verify their failure paths with
-`python -B tools/tile_art/test_backup_failures.py --aseprite <aseprite.exe>`; all fixtures stay in TEMP.
-
-Ground, bridge and forest ports, deep-water installation, forest toning, the shallow-cliff
-pinch and the wall, ground, water-cliff, water-edge and HUD border exports stage their
-outputs and publish them through checked byte-copy I/O. A failed canonical or
-Desktop write aborts before the success report and restores every destination
-already written; the installed copy contains the exact validated source bytes.
-The water-cliff edit port verifies the reopened layered composite before exporting
-its preview or reporting that the edits were saved.
-Verify publication failures and exact copies with
-`python -B tools/tile_art/test_install_sources.py --aseprite <aseprite.exe>`;
-deep-water stale drafts are covered by `test_deepen_water.py` with the same argument.
-Draft generation preserves the input sheets even when a draft path resolves to an
-input. If the existing draft has the same bytes under another path, the tools
-write to the next available numbered draft path.
-Wall guides, ideas, wall extensions and both shallow-cliff updates also verify
-their generated layers after reopening; `test_saved_layers.py` exercises failed
-saves with the same argument.
-
-Wall guide/idea updates, wall and forest ports, and replacement ground/water-edge
-templates also use checked byte-copy backups. Aseprite's `saveAs` and `saveCopyAs`
-can return success after a failed save, so their return values cannot guard an overwrite. Verify these callers
-with `python -B tools/tile_art/test_legacy_backups.py --aseprite <aseprite.exe>`.
-
-Deep water is derived by `deepen_water.lua` from the shallow sheet with a 60% RGB
-transform, retaining alpha, geometry and positions. Export the existing deep
-source for later edits rather than repeating the derivation. `install=yes` requires
-both editable destinations to be absent; use `out=` to choose a new working path.
-
-Bridge's original `Draw here` remains hidden; `Bridge extensions` holds its
-connected plank field. `port_bridge.lua` protects existing extensions through
-`previous=<validated-source>` and exact image/position checks. The ground
-exporter applies 70% RGB and lifts pure-black shadows to (42,33,25) on the PNG
-only; editable sources keep their palette. Re-exporting must not compound tone.
-Inspect `bridges.png` for runs, wide crossings and junctions.
-
-`ground_sheet.lua` and `ground_labels.py` create new templates.
-Replacement requires an unpainted Draw here layer and a backup. Generated
-guides are never runtime artwork.
-
-## Water cliff sources and export
-
-The shallow and deep originals are separate canonical files. The owner painted
-on layer 8, despite its duplicate reference-layer name; Draw here is blank.
-Never replace the shallow source with the Desktop deep-only revision.
-
-| Depth | Canonical source | Export layer |
+| Depth | Canonical file under `assets/source/` | Face layer |
 | --- | --- | --- |
-| Shallow | `assets/source/water-cliff-edge.aseprite` | Shallow cliff - half height |
-| Deep | `assets/source/water-cliff-edge-deep.aseprite` | 8 |
+| Shallow | `water-cliff-edge.aseprite` | `Shallow cliff - half height` |
+| Deep | `water-cliff-edge-deep.aseprite` | `8` |
 
-`export_water_cliff.lua layer=<name-or-index> depth=shallow|deep source=<file>`
-copies the three named 64px left/repeat/right slices to
-`assets/water/shallows-cliff.png` or `water-cliff.png` (192x64).
-It excludes references and compares reopened crop pixels. Derived
-`*-cliff-cap.png` alpha masks fill above faces and taper outside ends;
-`*-cliff-lip.txt` and `*-cliff-foot.txt` anchor cast/contact shadows.
-An explicit `out=` must end in `.png` (case-insensitive); auxiliary files use
-the same stem. Verify with `python -B tools/tile_art/test_export_water_cliff.py --aseprite <aseprite.exe>`.
+`export_water_cliff.lua layer=<name-or-index> depth=shallow|deep source=<file>` crops the left/repeat/right slices into 192×64 face strips under `assets/water/`. It compares reopened pixels, emits cap alpha masks and writes lip/foot shadow profiles. Explicit `out=` must end in `.png` and sets the auxiliary stems. `pinch_shallow_cliff.lua` derived shallow columns from the original layer while retaining horizontal positions and lip rows. Preserve its original hidden layer.
 
-`pinch_shallow_cliff.lua` created the shallow half-height layer from original
-layer 8, which stays hidden and intact. Columns retain lip rows and horizontal
-positions, with native-palette endpoint sampling. It also moved corresponding
-border edits. Deep faces and reference strips remain unchanged. This is derived
-owner art, not new painting.
+`assets/source/water-cliff-connections.aseprite` contains three 4×4 transition blocks in ground order for dirt/shallows, dirt/deep and shallows/deep. Preserve `Owner flat border edits`, `Deep border extensions from shallow edits` and hidden `Before shallow pinch` layers. Layout, names and palette mapping live in `water_cliff_layout.lua`, `water_cliff_names.lua` and `water_cliff_materials.lua`.
 
-The connected source `assets/source/water-cliff-connections.aseprite` contains
-three 4x4 blocks in `ground.ORDER`: dirt/shallows, dirt/deep, shallows/deep.
-`water_cliff_layout.lua` owns their canvas dimensions, origins and spacing for
-template assembly, edit ports and edge export; `water_cliff_names.lua` owns the
-block and layer names they share.
-Preserve `Owner flat border edits`, the separate
-`Deep border extensions from shallow edits`, and hidden
-`Before shallow pinch` layers. Desktop working copies and PNG previews must
-stay synchronized with the canonical source.
+- **Import edits.** `port_water_cliff_edits.lua source=<edited.png> baseline=<unedited.png> original=<layered.aseprite> output=<updated.aseprite> preview=<updated.png> report=<TEMP-report>` ports shallow border edits to the deep block. The baseline must match the original. Reopened layers must reproduce the edited composite, including every pixel outside the deep block. Erasing an opaque original pixel cannot be represented by an overlay. Preserve the existing edited sheet.
+- **Export edges.** `export_water_edges.lua source=<edited.png> original=<canonical.aseprite> root=<repo-with-trailing-slash> report=<TEMP-report>` writes `dirt-shallows-edges.png`, `dirt-water-edges.png`, `shallows-water-edges.png` and `shallows-water-cap.png`. Each sparse edge atlas has five 256px bands for dry ground, shallow and deep surfaces, and shallow and deep faces. Unknown colors need an explicit material assignment.
+- **New templates.** `--shot-water-cliffs` produces the three native renders used by `water_cliff_connected.py <shot-folder>`. Use `--output` for a fresh destination. `--replace` backs up both the layered file and preview. `water_edge_template.py` provides the six-piece paint kit. Its `--replace-blank` verifies the original layers, guide pixels and slices.
+- **Runtime.** Inspect stepped banks, narrow pools, depth transitions, three-material joins and shadow toggles in `--shot-water-cliffs`. Play and editor share `ground.Corners.waterCliffFor`. Preserve face dimensions and direction, cap alignment and separate ends for each depth. Lighting, depth fade and reflections belong to the renderer. Use water mirror/memory/step captures and `--bench` when changing those paths.
 
-`export_water_edges.lua source=<edited-PNG> original=<canonical-Aseprite>
-root=<repo-with-trailing-slash> report=<TEMP-report>` compares edits against
-original layers, excluding edit overlays. It emits `dirt-shallows-edges.png`,
-`dirt-water-edges.png` and `shallows-water-edges.png`, plus
-`shallows-water-cap.png`. Each sparse edge atlas has five 256px bands:
-dry ground, shallow surface, deep surface, shallow face and deep face.
-Unchanged pixels remain transparent. `water_cliff_materials.lua` owns material
-classification and shallow-to-deep palette mapping; unknown colors stop export
-and require an explicit material assignment.
+## Tool verification
 
-`port_water_cliff_edits.lua` transfers changed shallow border pixels to the
-deep block while preserving taller faces and all pixels outside that block.
-Inspect `source`, `baseline`, `original`, `output`, `preview` and
-`report` inputs before using it. The baseline must match the layered original;
-the complete composite is checked before writing destinations. Edits that the
-added layers cannot reproduce, including erasing opaque original pixels, are
-rejected without replacing outputs. Do not regenerate templates over these edits.
-Verify with `python -B tools/tile_art/test_port_water_cliff_edits.py --aseprite <aseprite.exe>`.
+Run the matching Python test from the repository root, for example `python -B tools/tile_art/test_ground_sheet.py --aseprite <aseprite.exe>`. All tests below use that invocation with their own filename and temporary fixtures.
 
-For new templates, `--shot-water-cliffs` exports three native game renders.
-`water_cliff_connected.py <shot-folder>` prepares a TEMP Aseprite assembly;
-`--replace` backs up existing outputs through `source_files.copy` before changing
-either destination. Verify backup failure handling, native layer assembly and
-assembly/export alignment under a shifted layout with
-`python -B tools/tile_art/test_water_cliff_connected.py --aseprite <aseprite.exe>`.
-`water_edge_template.py` supplies the
-original six-piece paint kit; `--replace-blank` requires unchanged guide pixels,
-layers and slices as well as a blank paint layer. Use `--output` for a new path.
-Verify with `python -B tools/tile_art/test_water_edge_template.py --aseprite <aseprite.exe>`.
-Connected flat
-edits require export/porting; they are not automatically loaded by the game.
-Keep dimensions and tile positions fixed, and never bake lighting into art.
-
-## Runtime joins and visual checks
-
-`ground.Corners.waterCliffFor` selects known dry-north/wet-south and
-shallow-north/deep-south banks. Unknown corners, bridges, lava, chasms and deep
-water do not supply a dry bank. Faces retain native width and height, without
-mirroring; caps sample aligned neighboring ground. Different depths retain
-separate ends. Play and editor share the path.
-
-Faces use terrain lighting and the water camera/depth fade without reflections;
-shallow surface caps use the ordinary water shader. Lip and foot profiles control
-bank shadows independently of terrain solidity and sight. Inspect
-`--shot-water-cliffs` for straight/stepped shores, narrow pools, mixed grounds,
-both depths, three-material joins and shadow toggles.
-
-Water artwork keeps fixed pixels, alpha and texture coordinates. Reflections,
-glints and visibility are runtime effects, not source paint.
-Use water mirror/memory/step captures and `--bench` when changing those paths.
-Rendering must not expose hidden live bodies or effects.
-
-## Aseprite batch tooling
-
-Use native Aseprite operations for layered pixel ports. On this machine:
-
-```powershell
-$aseprite = 'C:/Users/DavidBennett/Desktop/projects/Aseprite/src/build/bin/aseprite.exe'
-$script = Join-Path (Get-Location) 'tools/tile_art/export_walls.lua'
-$process = Start-Process -FilePath $aseprite -ArgumentList @('--batch', '--script', $script) -WindowStyle Hidden -PassThru -Wait
-$process.ExitCode
-```
-
-Pass Lua parameters with `--script-param key=value` before `--script`.
-Check exit status and the script's validation report. Keep backups, drafts,
-previews and reports in TEMP. Rerun validation before citing an old report;
-successful export alone does not verify connected artwork in the game.
+| Change | Test scripts under `tools/tile_art/` |
+| --- | --- |
+| Backup, installation, publication and reopened layers | `test_source_files.py`, `test_port_sources.py`, `test_install_sources.py`, `test_backup_failures.py`, `test_legacy_backups.py`, `test_saved_layers.py` |
+| Wall atlas, ground template, deep-water derivation | `test_export_walls.py`, `test_ground_sheet.py`, `test_deepen_water.py` |
+| Water faces, overlays and templates | `test_export_water_cliff.py`, `test_port_water_cliff_edits.py`, `test_water_cliff_connected.py`, `test_water_edge_template.py` |

@@ -207,7 +207,7 @@ pub const Label = struct {
         return self.buf[0..self.n];
     }
 
-    /// Trimmed. Whether it changed; null when refused.
+    /// Null rejects the name. Otherwise reports whether the trimmed name changed.
     pub fn set(self: *Label, s: []const u8) ?bool {
         const t = script.fitted(s, NAME_MAX, false) orelse return null;
         if (std.mem.eql(u8, t, self.text())) return false;
@@ -335,7 +335,7 @@ pub const Node = struct {
     }
 
     pub fn barrelGoes(self: *const Node, b: *const Bespoke, p: P) bool {
-        return self.barrelFits(b, p) and b.foeAt(p) == null;
+        return !self.zooReserves(p) and self.barrelFits(b, p) and b.foeAt(p) == null;
     }
 
     fn zooReserves(self: *const Node, p: P) bool {
@@ -411,7 +411,7 @@ pub const Node = struct {
         return true;
     }
 
-    /// Authored foes, then zoo foes, then procedural guards and packs outside the painted section.
+    /// Authored foes spawn before the zoo, guards and packs.
     pub fn populate(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, roll: u64) void {
         const laid = self.sectionOn(roll);
         var buf: [MAX_FOES]Foe = undefined;
@@ -423,7 +423,6 @@ pub const Node = struct {
         }
     }
 
-    /// A procgen node's guards by its carts, then its packs round the hero arriving at `at`, exit packs by its doors, none on `off`.
     fn packsOff(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P, off: *const grid.CellSet) void {
         const cells = self.doorCells();
         var kept = off.*;
@@ -440,7 +439,7 @@ pub const Node = struct {
         };
     }
 
-    /// Where the plan stands its foes on `roll`: a bespoke node's as painted, a procgen node's section's where it landed.
+    /// Section foes use their positions on this roll.
     pub fn placedOn(self: *const Node, roll: u64, buf: *[MAX_FOES]Foe) []const Foe {
         switch (self.plan) {
             .bespoke => |*plan| return plan.foes(),
@@ -517,7 +516,7 @@ pub const Atlas = struct {
     node: [MAX_NODES]Node = undefined,
     node_n: usize = 0,
     start: Start = .{},
-    /// Last: the legacy save reader takes every field before it as the format it was.
+    /// Keep last for saves written before scripts existed.
     script: script.Script = .{},
 
     pub fn nodes(self: *Atlas) []Node {
@@ -553,7 +552,7 @@ pub const Atlas = struct {
         }{ .map = self, .node = n });
     }
 
-    /// Node `n`'s NPCs on its level as stamped by `roll`, off the cells its foes stand on.
+    /// Reserve authored foe positions before assigning NPC spots.
     pub fn stampNpcs(self: *const Atlas, n: usize, lv: *grid.Level, roll: u64, stood: *script.Stood, shown: anytype) void {
         lv.clearNpcs();
         const npcs = self.script.npcs();
@@ -920,9 +919,7 @@ pub fn testStart() !*Atlas {
     return a;
 }
 
-/// `START`'s node holding the caravan zoo.
 pub const CARAVAN_NODE: usize = 1;
-/// `START`'s goblin camp node.
 pub const GOBLIN_CAMP_NODE: usize = 2;
 
 test "removing a node unlinks the doors into it and renumbers the rest" {

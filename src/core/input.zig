@@ -194,7 +194,7 @@ const Typed = struct {
     }
 };
 
-/// Touchpads and smooth wheels report fractions of a notch; they add up to whole scrolls.
+/// Accumulate fractional touchpad notches across frames.
 const Wheel = struct {
     acc: f32 = 0,
 
@@ -262,31 +262,29 @@ pub const State = struct {
     step: Stepper = .{},
     radial: RadialStepper = .{},
     tree: TreeInput = .{},
-    /// A latched stick takes priority over digital movement.
     stick: bool = false,
-    /// Last frame's walk went to the tree's pan or zoom instead.
     muted: bool = false,
-    /// The walk is held because a tree pan ended under it, not carried in, so pan and zoom stay live.
+    /// A pan ending over a held walk must leave pan and zoom responsive.
     pan_hold: bool = false,
-    /// Set before each `update`, which clears it: typing keys then type, and press no button.
+    /// Set before update to route typing keys exclusively to text entry.
     typing: bool = false,
     was_typing: bool = false,
-    /// A typing key held into the field types nothing until every typing key is let go.
+    /// Suppress keys carried into a text field until all are released.
     held_into_typing: bool = false,
     typed: Typed = .{},
     rub: bool = false,
     context: Context = .menu,
-    /// Set before each `update`: Ctrl holds the modifier though the number keys press no slot.
+    /// Ctrl selects the modifier while slot keys are disabled.
     sets: bool = false,
-    /// Set before each `update`: the slot Ctrl holds, which the number keys skip.
+    /// Set before update. Number keys skip this slot.
     modifier: ?Button = null,
-    /// Set before each `update`: in targeting, the slot whose own number key confirms too.
+    /// During aiming, the selected slot key also confirms.
     aimed: ?Button = null,
     /// Retained for captions while unfocused.
     pad_at: ?i32 = null,
     /// Poll even unfocused so a held pull does not fire again on focus.
     triggers: [PADS]Triggers = @splat(.initFill(false)),
-    /// Where the mouse rests on the window, when focused and over it.
+    /// Window coordinates, present only while focused and under the pointer.
     pointer: ?mathx.P = null,
     click: bool = false,
     left_down: bool = false,
@@ -342,7 +340,7 @@ pub const State = struct {
         return SLOT_CAPTIONS[numberOf(self.modifier, b).?];
     }
 
-    /// Takes the triggers and stick as they lie now, for a screen entered from one that did not poll.
+    /// Resample held controls after entering from a screen that did not poll.
     pub fn resync(self: *State) void {
         self.pullTriggers();
         self.stick = false;
@@ -607,7 +605,7 @@ fn deviceOf(was: Device, pad: ?Device, pad_hit: bool, keyed: bool) Device {
     return if (was.pad()) kind else was;
 }
 
-/// The triggers are `pulled`'s: raylib's own press for them is its unlatched 55% line.
+/// Trigger presses use the hysteresis latches.
 fn padPressed(at: i32) bool {
     for (std.enums.values(rl.GamepadButton)) |b| {
         if (b != .unknown and Trigger.of(b) == null and rl.isGamepadButtonPressed(at, b)) return true;
@@ -869,7 +867,7 @@ fn dpadWalk(at: i32) ?mathx.P {
     return stepOf(p);
 }
 
-/// On the tree the d-pad zooms and Shift pans; they still latch the stepper so leaving the tree does not walk.
+/// Keep the stepper latched while the d-pad zooms or Shift pans.
 fn walkSource(on_tree: bool, pan_keys: bool, pad: ?mathx.P, keys: ?mathx.P) struct { p: ?mathx.P, muted: bool } {
     if (!on_tree) return .{ .p = pad orelse keys, .muted = false };
     if (!pan_keys) if (keys) |k| return .{ .p = k, .muted = false };

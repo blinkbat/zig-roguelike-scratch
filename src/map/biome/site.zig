@@ -181,7 +181,7 @@ fn agrees(a: Pattern, b: Pattern, dx: i32, dy: i32) bool {
 
 const CELLS_MAX: usize = @intCast(SECTION_W * SECTION_H);
 
-/// Each cell's pattern's top-left symbol into `out`; false on a contradiction.
+/// Writes each pattern's top-left symbol. False means a contradiction.
 fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]u8) bool {
     var wave: [CELLS_MAX]Bits = undefined;
     var all = Bits.initEmpty();

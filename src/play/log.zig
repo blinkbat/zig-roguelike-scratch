@@ -19,7 +19,7 @@ pub const Log = struct {
     head: usize = 0,
     n: usize = 0,
     scroll: usize = 0,
-    /// The newest lines, said as the turn resolved, kept back until its picture has caught up.
+    /// Newest lines withheld until the picture catches up.
     held: usize = 0,
 
     pub fn say(self: *Log, comptime fmt: []const u8, args: anytype) void {

@@ -33,7 +33,7 @@ pub const Clock = struct {
         self.stalled = true;
     }
 
-    /// Still paying for a stun: the hero, who keeps no pace, loses a turn to each one.
+    /// Hero stun debt in ticks. The hero pays a full turn per stun.
     pub fn owes(self: Clock) bool {
         return self.ticks > 0;
     }

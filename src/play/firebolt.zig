@@ -5,10 +5,10 @@ const damage = @import("damage.zig");
 
 const P = mathx.P;
 
-/// Of a cell, how far toward its first cell a bolt not yet flown is drawn.
+/// Unflown bolt position as a fraction of the first cell.
 const HAND: f32 = 0.35;
 
-/// Thrown every `every` turns once the last has come down; it flies `speed` cells a turn, `range` at most.
+/// Speed is cells per turn. The throw interval starts when the previous bolt lands.
 pub const Hurl = struct {
     name: []const u8,
     verb: []const u8,
@@ -22,7 +22,7 @@ pub const Hurl = struct {
     careful: bool = false,
 };
 
-/// What a hurl meets entering `c`, bodies aside: `barred` and `walled` stop it short, a body still draws it into `walled`; `barrel` and `halts` take it in and stop it.
+/// Barriers always stop a bolt short. Occupants can draw it into a walled cell.
 pub const Entry = enum { barred, walled, barrel, halts, open };
 
 pub fn entry(lv: *const grid.Level, c: P) Entry {
@@ -73,7 +73,7 @@ pub const Bolt = struct {
         return b.cell(b.flown);
     }
 
-    /// Where it is drawn, in cells: one not yet flown sits in the hand that threw it.
+    /// Draw position in cells, starting in the thrower's hand.
     pub fn point(b: Bolt) [2]f32 {
         if (b.flown > 0) return mathx.centre(b.at());
         return mathx.lerp2(mathx.centre(b.from), mathx.centre(b.cell(1)), HAND);
@@ -84,12 +84,12 @@ pub const Bolt = struct {
     }
 };
 
-/// What it came down on: a body or barrel in the cell it entered, a wall short of it, or the end of its range.
+/// Walls stop a bolt short. Bodies and barrels take the impact in their cell.
 pub const Stop = union(enum) { body: u16, barrel: P, wall, spent };
 
 pub const Flew = struct { cells: u8 = 0, stop: ?Stop = null };
 
-/// `speed` cells on, or fewer where it comes down; it enters a body's or barrel's cell, but not a wall's, and strikes a body that stepped into the cell it hangs in.
+/// Checks the current cell first so a body stepping into a suspended bolt takes the hit.
 pub fn fly(b: *Bolt, lv: *const grid.Level, h: Hurl) Flew {
     var out = Flew{};
     if (b.flown > 0) {

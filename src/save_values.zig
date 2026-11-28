@@ -118,7 +118,6 @@ const SavedProgress = struct {
     }
 };
 
-/// `nodes` is kept by identity in `allocations`.
 const BY_IDENTITY = "nodes";
 
 comptime {
@@ -130,7 +129,7 @@ comptime {
     keepsAllBut(SavedProgress, progress.State, BY_IDENTITY);
 }
 
-/// An NPC as kept: where it stands in `spot`, or, written before NPCs stood anywhere but a painted cell, in `at`.
+/// Older NPC records store a fixed cell in at.
 const SavedNpc = struct {
     node: u8 = 0,
     at: mathx.P = .{ .x = 0, .y = 0 },

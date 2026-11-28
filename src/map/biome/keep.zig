@@ -17,7 +17,7 @@ const TORCH_EVERY: i32 = 3;
 const TORCHES_MOST = grid.MAX_TORCHES / 2;
 const CURTAIN: i32 = 2;
 const GATE_W: i32 = 3;
-/// The keep's share of the courtyard, and the narrowest room it is cut into.
+/// Keep size as a fraction of the courtyard.
 const KEEP_OF: f32 = 0.5;
 const ROOM_LEAST: i32 = 4;
 const BERM: i32 = 2;

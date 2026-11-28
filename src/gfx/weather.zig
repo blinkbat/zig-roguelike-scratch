@@ -7,7 +7,7 @@ const look = @import("look.zig");
 const pixel = @import("pixel.zig");
 const window = @import("../core/window.zig");
 
-/// Drops per `AREA`; speed/drift in sprite pixels per second, lengths/widths in sprite pixels; alpha at full day.
+/// Drops per AREA, speed and drift in sprite px/s, dimensions in sprite px, alpha at full daylight.
 const Fall = struct { drops: f32, speed: f32, drift: f32, len: f32, width: f32, alpha: f32, splash_s: f32, ring: f32 };
 
 const LIGHTEST = Fall{ .drops = 40, .speed = 700, .drift = 90, .len = 14, .width = 1, .alpha = 0.26, .splash_s = 0.22, .ring = 4 };
@@ -38,7 +38,7 @@ const RETURN_S: f32 = 0.16;
 const RETURN_SHARE: f32 = 0.6;
 
 const Drop = struct {
-    /// Screen pixels from the wrapped origin, where it is now.
+    /// Screen pixels relative to the wrapped origin.
     x: f32,
     y: f32,
     land: f32,

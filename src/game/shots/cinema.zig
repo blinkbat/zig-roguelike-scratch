@@ -28,9 +28,7 @@ const neutralLens = shots.neutralLens;
 const drawInto = shots.drawInto;
 const dropAtlas = shots.dropAtlas;
 const heapAtlas = shots.heapAtlas;
-const readTarget = shots.readTarget;
 const captured = shots.captured;
-const drawnImage = shots.drawnImage;
 const redrawnDiff = shots.redrawnDiff;
 const renderTarget = shots.renderTarget;
 const sameRgb = shots.sameRgb;
@@ -237,14 +235,12 @@ fn captureLens(g: *game.Game) !void {
         defer shot.close(g);
         poseWaterMirrors(g, day.NOON, true);
         lens.options = .neutral;
-        const base = try drawnImage(g, shot.target);
+        const base = try shots.capturedf(g, shot.target, CINEMA_DIR ++ "/lens-{d}-off.png", .{size.y});
         defer rl.unloadImage(base);
-        try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-off.png", .{size.y});
         inline for (std.meta.fields(@TypeOf(lens.options))) |field| {
             lens.options = .neutral;
             @field(lens.options, field.name) = if (comptime std.mem.eql(u8, field.name, "saturation")) 0 else 1;
-            try capturef(g, shot.target, CINEMA_DIR ++ "/lens-{d}-{s}.png", .{ size.y, field.name });
-            const image = try readTarget(shot.target);
+            const image = try shots.capturedf(g, shot.target, CINEMA_DIR ++ "/lens-{d}-{s}.png", .{ size.y, field.name });
             defer rl.unloadImage(image);
             if (differentPixels(base, image) == 0) return error.LensDidNotChangeFrame;
             if (comptime std.mem.eql(u8, field.name, "lens_blur")) {

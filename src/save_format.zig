@@ -24,11 +24,10 @@ const P = @import("core/mathx.zig").P;
 
 pub const MAGIC = "cistern-save\n";
 const VERSION: u64 = 4;
-/// Runs saved before cells' climate locations were kept: they take them from the level they saved.
+/// Derive climate locations from the level through version 3.
 const PLACELESS: u64 = 3;
-/// Runs saved before heroes started holding their class arms, and the first builds after: see `armless`.
+/// Version 2 spans the introduction of class arms.
 const UNARMED: u64 = 2;
-/// Runs saved before flasks were worn as items.
 const FLASKLESS: u64 = 1;
 const LEGACY = [_]u64{ UNARMED, FLASKLESS };
 const READABLE = [_]u64{ VERSION, PLACELESS } ++ LEGACY;
@@ -79,7 +78,6 @@ comptime {
     }
 }
 
-/// Into an empty `out`, all but the sum `seal` ends it with, with room kept for that sum.
 fn encode(out: *std.ArrayList(u8), file: Encoded) !void {
     std.debug.assert(out.items.len == 0);
     try store.begin(out.writer(), MAGIC, VERSION);
@@ -104,7 +102,7 @@ pub fn capture(g: *game.Game, snapshot: *Snapshot) !void {
     return captureOver(g, snapshot, false, false);
 }
 
-/// `map_held` when `snapshot.map` already holds this run's map; `visits_held` when its visits are this run's as last captured.
+/// Reuse held map and visit data only for the same run.
 pub fn captureOver(g: *game.Game, snapshot: *Snapshot, map_held: bool, visits_held: bool) !void {
     snapshot.summary = data.Summary.of(g) orelse return error.Damaged;
     snapshot.seed = g.sim.seed;
@@ -366,7 +364,7 @@ pub fn placeFromLevel(snapshot: *Snapshot) void {
     snapshot.portable.locations = climate.locations(&snapshot.run.lv);
 }
 
-/// No hand held and no class arm carried: a version-2 run from before heroes started armed, not one that put its arms away.
+/// Version 2 needs this heuristic because it spans both starting loadouts.
 fn armless(inv: *const inventory.Inventory, class: hero.Class) bool {
     for (HANDS) |slot| if (inv.gear.slots.get(slot) != null) return false;
     for (inv.bag[0..inv.n]) |it| for (class.arms()) |k| if (it.kind == k) return false;
@@ -649,7 +647,7 @@ pub fn sealed(g: *game.Game, out: *std.ArrayList(u8)) !void {
     seal(out);
 }
 
-/// The live run and the map a refused read would have loaded into, as they stood before it.
+/// Expected live state after a rejected load.
 pub const Untouched = struct {
     g: *game.Game,
     map: *const data.Map,

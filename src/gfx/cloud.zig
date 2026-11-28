@@ -9,7 +9,7 @@ const sky = @import("sky.zig");
 
 const P = mathx.P;
 
-/// Texels per cell side: a cell is flat, and the step to the next blends over half a cell.
+/// Texels per cell side. Neighbor transitions span half a cell.
 const SUB: i32 = 2;
 const TEX_W: i32 = grid.W * SUB;
 const TEX_H: i32 = grid.H * SUB;
@@ -30,13 +30,14 @@ const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, origin: i32, cel
 
 pub const Cloud = struct {
     tint: std.EnumArray(grid.Gas, [grid.CELLS]f32),
-    /// Each texel's gases mixed, its colour premultiplied by its alpha.
+    /// Premultiplied gas color per texel.
     px: [TEXELS]rl.Color,
     stale: bool = true,
     baked: grid.Box = .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 0, .y = 0 } },
+    coverage: ?grid.Box = null,
     baked_tiles: [grid.CELLS]grid.Tile = undefined,
     t: mathx.Seconds = .{},
-    /// Seconds until the burst the newest gas came from lands; till then the cloud stays as drawn.
+    /// Seconds until impact releases the pictured gas.
     held: f32 = 0,
     tex: ?rl.Texture2D = null,
     shade: ?Shade = null,
@@ -52,7 +53,7 @@ pub const Cloud = struct {
         return c;
     }
 
-    /// The drift restarts too, as it does whenever no gas is drawn: the shader's hash loses its grain as `t` grows.
+    /// Restart drift before large shader times lose hash precision.
     pub fn clear(self: *Cloud) void {
         for (&self.tint.values) |*tint| @memset(tint, 0);
         self.stale = true;
@@ -73,7 +74,7 @@ pub const Cloud = struct {
         self.held = @max(self.held, s);
     }
 
-    /// `seen` is the lit the picture shows, which may lag `lv.lit`.
+    /// Use pictured sight, which can lag lv.lit.
     pub fn step(self: *Cloud, lv: *const grid.Level, seen: *const [grid.CELLS]bool, dt: f32) void {
         self.t.step(dt);
         self.held -= dt;
@@ -117,6 +118,14 @@ pub const Cloud = struct {
         self.visible = true;
         self.map_view = .of(ox, oy, cell, screen.x, screen.y);
         if (self.refresh(lv, view)) rl.updateTexture(tex, &self.px);
+        const coverage = self.coverage orelse return;
+        const origin = P{ .x = ox, .y = oy };
+        const lo = coverage.lo.scaled(cell).add(origin).max(.{ .x = 0, .y = 0 });
+        const hi = coverage.hi.scaled(cell).add(origin).min(screen);
+        if (lo.x >= hi.x or lo.y >= hi.y) return;
+        const clipped = lo.x > 0 or lo.y > 0 or hi.x < screen.x or hi.y < screen.y;
+        if (clipped) rl.beginScissorMode(lo.x, lo.y, hi.x - lo.x, hi.y - lo.y);
+        defer if (clipped) rl.endScissorMode();
         const s = self.shade orelse return raster.overFloor(tex, ox, oy, cell);
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
@@ -140,7 +149,7 @@ pub const Cloud = struct {
         return true;
     }
 
-    /// Once what `beginVeil` veils is drawn again: flushed while the veil is still bound.
+    /// Flush redraws while the veil shader is bound.
     pub fn endVeil() void {
         rl.gl.rlDrawRenderBatchActive();
         rl.endShaderMode();
@@ -150,7 +159,7 @@ pub const Cloud = struct {
         return self.visible and self.tinted(box.grown(1));
     }
 
-    /// Whether any gas is drawn over `box`, which must cover every cell a baked texel reads.
+    /// Box must cover all source cells sampled by the baked texels.
     fn tinted(self: *const Cloud, box: grid.Box) bool {
         const clip = box.clipped() orelse return false;
         const lo: usize = @intCast(clip.lo.x);
@@ -178,11 +187,22 @@ pub const Cloud = struct {
     fn refresh(self: *Cloud, lv: *const grid.Level, view: grid.Box) bool {
         const reads = view.grown(1);
         if (!self.stale and std.meta.eql(view, self.baked) and self.sameTiles(lv, reads)) return false;
+        var lo = view.hi;
+        var hi = view.lo.sub(.{ .x = 1, .y = 1 });
         var ty = view.lo.y * SUB;
         while (ty < view.hi.y * SUB) : (ty += 1) {
             var tx = view.lo.x * SUB;
-            while (tx < view.hi.x * SUB) : (tx += 1) self.px[@intCast(ty * TEX_W + tx)] = self.mixed(lv, tx, ty);
+            while (tx < view.hi.x * SUB) : (tx += 1) {
+                const pixel = self.mixed(lv, tx, ty);
+                self.px[@intCast(ty * TEX_W + tx)] = pixel;
+                if (pixel.a == 0) continue;
+                const p = P{ .x = @divFloor(tx, SUB), .y = @divFloor(ty, SUB) };
+                lo = lo.min(p);
+                hi = hi.max(p);
+            }
         }
+        // One cell covers bilinear filtering and the WARP and SOFT shader offsets.
+        self.coverage = if (lo.x <= hi.x) grid.Box.between(lo, hi).grown(1) else null;
         self.baked_tiles = lv.tile;
         self.baked = view;
         self.stale = false;
@@ -199,7 +219,7 @@ pub const Cloud = struct {
         return true;
     }
 
-    /// Premultiplied, so filtering mixes each gas's colour by its share, and none from where there is no gas.
+    /// Premultiplication prevents clear cells bleeding color during filtering.
     fn mixed(self: *const Cloud, lv: *const grid.Level, tx: i32, ty: i32) rl.Color {
         var rgb: sky.Rgb = @splat(0);
         var sum: f32 = 0;
@@ -227,7 +247,7 @@ fn anyOn(xs: []const f32) bool {
     return false;
 }
 
-/// A wall's texels take the tint of the open cell each faces, so gas meets a wall whole and none shows past it.
+/// Wall texels inherit the facing cell's tint to prevent gas bleeding through walls.
 fn texel(tint: *const [grid.CELLS]f32, lv: *const grid.Level, tx: i32, ty: i32) f32 {
     const c = P{ .x = @divFloor(tx, SUB), .y = @divFloor(ty, SUB) };
     if (lv.flat(c)) return openAt(tint, lv, c);
@@ -255,7 +275,7 @@ const FBM_MAX: f32 = FBM_GAIN * (1 - mathx.powi(FBM_GAIN, OCTAVES)) / (1 - FBM_G
 
 const DRIFT = [2]f32{ 0.21, 0.13 };
 
-/// The softened density weighs its own texel and the four `SOFT` round it with `look.FOCUS_WEIGHTS`, which must precede it.
+/// Requires look.FOCUS_WEIGHTS in the shader preamble.
 const CLOUD_NOISE = shaders.glslConsts(.{
     .TINT_HI = TINT_HI,
     .WARP = WARP,
@@ -357,6 +377,30 @@ test "gas remembered off screen leaves the view untinted, gas a wall away from i
     try std.testing.expect(!c.tinted(reads));
     c.tint.getPtr(.healing)[grid.Level.idx(.{ .x = view.hi.x + 1, .y = view.lo.y })] = 0.5;
     try std.testing.expect(c.tinted(reads));
+}
+
+test "gas draw bounds cover filtered edges and exclude texels left by a previous camera" {
+    const c = try Cloud.create(std.testing.allocator);
+    defer std.testing.allocator.destroy(c);
+    var lv = grid.openFloor();
+    @memset(&lv.tile, .floor);
+    const smoke = c.tint.getPtr(.smoke);
+    const near = grid.Box.sized(.{ .x = 0, .y = 0 }, 12, 12);
+    const at = P{ .x = 7, .y = 7 };
+    smoke[grid.Level.idx(at)] = 0.5;
+    try std.testing.expect(c.refresh(&lv, near));
+    try std.testing.expectEqual(grid.Box.around(at, 1), c.coverage.?);
+    try std.testing.expect(!c.refresh(&lv, near));
+    const far = grid.Box.sized(.{ .x = 40, .y = 17 }, 12, 12);
+    try std.testing.expect(c.refresh(&lv, far));
+    try std.testing.expect(c.coverage == null);
+    smoke[grid.Level.idx(at)] = 0;
+    smoke[0] = 0.5;
+    try std.testing.expect(c.refresh(&lv, near));
+    try std.testing.expectEqual(grid.Box.sized(near.lo, 2, 2), c.coverage.?);
+    @memset(smoke, 0.5);
+    try std.testing.expect(c.refresh(&lv, grid.MAP));
+    try std.testing.expectEqual(grid.MAP, c.coverage.?);
 }
 
 test "a texel mixes the gases by their shares, premultiplied, and holds no colour where there is no gas" {

@@ -23,7 +23,7 @@ pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     return mathx.adjacent(from, to) and lv.strikeable(to) and lv.taken(to);
 }
 
-/// The free landing behind a blow; the caller checks whether the body's feet or fins can stand there.
+/// The caller must validate the target's movement type at the landing.
 pub fn knocked(lv: *const grid.Level, at: P, d: mathx.Dir, id: u16) ?P {
     const to = at.add(d.delta());
     if (!grid.Level.inside(to) or lv.hasBarrier(to) or (lv.at(to).solid() and !lv.at(to).wet())) return null;

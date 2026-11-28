@@ -50,7 +50,7 @@ const FLAME_FILL_A: f32 = 0.24;
 const BARRIER_FILL_A: f32 = 0.28;
 const BARRIER_INSET: i32 = game.authored(5);
 const BARRIER_BARS = .{ game.authored(16), game.authored(48) };
-/// Each caltrop's middle, in authored cell pixels: a point above it, a foot either side below.
+/// Caltrop centers in authored cell pixels.
 const CALTROPS = [_]P{ .{ .x = 12, .y = 20 }, .{ .x = 29, .y = 32 }, .{ .x = 42, .y = 17 } };
 const CALTROP_HALF: i32 = game.authored(4);
 const CALTROP_UP: i32 = game.authored(5);
@@ -113,7 +113,7 @@ pub const Cam = struct {
         return .{ @floatFromInt(-c.x), @floatFromInt(-c.y) };
     }
 
-    /// Rounds the offset from the camera once, so a body keeping pace with it holds still on screen.
+    /// Round after subtracting the camera offset to avoid jitter during matched motion.
     pub fn px(c: Cam, v: rl.Vector2) P {
         return .{ .x = mathx.roundTiesUp(v.x - c.at.x), .y = mathx.roundTiesUp(v.y - c.at.y) };
     }
@@ -169,12 +169,12 @@ fn drawCoins(g: *const game.Game, c: Cam, pile: ground_items.Coins) void {
     }
 }
 
-fn looseBag(here: grid.Tile, bags: *const grid.CellSet, p: P) bool {
-    return here != .chest_open and grid.inSet(bags, p);
+fn looseBag(here: grid.Tile, bags: *const Bags, p: P) bool {
+    return here != .chest_open and bags.isSet(grid.Level.idx(p));
 }
 
-fn chestShines(here: grid.Tile, p: P, bags: *const grid.CellSet) bool {
-    return here == .chest or (here == .chest_open and grid.inSet(bags, p));
+fn chestShines(here: grid.Tile, p: P, bags: *const Bags) bool {
+    return here == .chest or (here == .chest_open and bags.isSet(grid.Level.idx(p)));
 }
 
 fn outline(c: Cam, p: P, col: rl.Color) void {
@@ -240,6 +240,7 @@ pub const Scratch = struct {
     beds: dual.Beds,
     burnt: dual.Beds,
     bodies: [actor.MAX]Shown,
+    aim_ground: grid.Level,
 };
 
 const Prop = struct {
@@ -367,24 +368,31 @@ pub fn bagCells(g: *const game.Game) grid.CellSet {
     return bags;
 }
 
-pub fn shownBags(g: *const game.Game, ground: *const grid.Level) grid.CellSet {
-    var bags = bagCells(g);
-    for (&g.pic.seen_cells, &ground.tile, 0..) |*cell, t, i| {
-        if (t != .chest_open) {
-            bags.setValue(i, cell.bag and cell.alpha > 0);
-        } else if (!g.pic.litShown(&g.sim, grid.Level.of(i))) bags.setValue(i, cell.bag or cell.coins > 0);
+pub const Bags = struct {
+    contents: grid.CellSet,
+    view: ?struct { g: *const game.Game, ground: *const grid.Level } = null,
+
+    pub fn isSet(bags: *const Bags, i: usize) bool {
+        if (bags.view) |view| {
+            const cell = &view.g.pic.seen_cells[i];
+            if (view.ground.tile[i] != .chest_open) return cell.bag and cell.alpha > 0;
+            if (!view.g.pic.litShown(&view.g.sim, grid.Level.of(i))) return cell.bag or cell.coins > 0;
+        }
+        return bags.contents.isSet(i);
     }
-    return bags;
+};
+
+pub fn shownBags(g: *const game.Game, ground: *const grid.Level) Bags {
+    return .{ .contents = bagCells(g), .view = .{ .g = g, .ground = ground } };
 }
 
-/// `here` is `ground.at(p)`.
-fn tileTexture(g: *const game.Game, ground: *const grid.Level, here: grid.Tile, p: P, bags: *const grid.CellSet) ?rl.Texture2D {
-    if (here == .chest_open and grid.inSet(bags, p)) return g.sprites.chest_item_bag;
+fn tileTexture(g: *const game.Game, ground: *const grid.Level, here: grid.Tile, p: P, bags: *const Bags) ?rl.Texture2D {
+    if (here == .chest_open and bags.isSet(grid.Level.idx(p))) return g.sprites.chest_item_bag;
     if (here == .chest and g.pic.mimicAt(&g.sim, p)) return g.sprites.mimic_closed;
     return g.sprites.tileAt(ground, p);
 }
 
-fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P, stood: *const grid.CellSet, bags: *const grid.CellSet) void {
+fn drawSolidPass(g: *game.Game, c: Cam, ground: *const grid.Level, lo: P, hi: P, stood: *const grid.CellSet, bags: *const Bags) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
         if (!terrainSeen(g, p)) continue;
@@ -426,7 +434,7 @@ fn beginFigureVeil(g: *game.Game, feet: P, tall: f32, ink: rl.Color, focus: look
     return g.cloud.veils(veilBox(feet, tall)) and g.cloud.beginVeil(ink, focus);
 }
 
-/// Every cell a figure standing at `feet` and `tall` pixels high can cover, a cell spare each way for a glide.
+/// Pad the figure's footprint by one cell for glide motion.
 fn veilBox(feet: P, tall: f32) grid.Box {
     const rows = cellsTall(tall);
     return .{ .lo = .{ .x = feet.x - 1, .y = feet.y - rows }, .hi = .{ .x = feet.x + 2, .y = feet.y + 2 } };
@@ -443,14 +451,14 @@ fn inkCell(g: *game.Game, c: Cam, p: P, here: grid.Tile, stood: *const grid.Cell
 }
 
 /// False with no shader for it.
-pub fn shadowPass(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.Box, bags: *const grid.CellSet, framebuffer: u32) bool {
+pub fn shadowPass(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.Box, bags: *const Bags, framebuffer: u32) bool {
     if (!g.light.beginShadows(g.screen, framebuffer)) return false;
     drawShadows(g, c, ground, view.grown(shadows.sceneryMargin(&g.sprites)), bags);
     g.light.endShadows(-c.x, -c.y, game.CELL);
     return true;
 }
 
-fn drawShadows(g: *game.Game, c: Cam, ground: *const grid.Level, cast: grid.Box, bags: *const grid.CellSet) void {
+fn drawShadows(g: *game.Game, c: Cam, ground: *const grid.Level, cast: grid.Box, bags: *const Bags) void {
     var props = cast.cells();
     while (props.next()) |p| {
         const kind = ground.at(p);
@@ -582,7 +590,7 @@ fn mirrorSprite(g: *const game.Game, c: Cam, ground: *const grid.Level, p: P, ki
     raster.stretch(t, rect, tint);
 }
 
-fn drawMirrorScenery(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.Box, bags: *const grid.CellSet, memory: bool) void {
+fn drawMirrorScenery(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.Box, bags: *const Bags, memory: bool) void {
     var cells = view.grown(game.CAST_MARGIN).cells();
     while (cells.next()) |p| {
         const kind = ground.at(p);
@@ -623,7 +631,7 @@ fn drawFlame(g: *game.Game, c: Cam, f: light.Flame, lit: f32) void {
     g.pic.fx.drawTorch(@floatFromInt(x), @floatFromInt(y), game.CELL_F, f.at[0] * FLAME_PHASE[0] + f.at[1] * FLAME_PHASE[1], lit, f.memory);
 }
 
-pub fn drawMirrors(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.Box, bags: *const grid.CellSet, bodies: []const Shown, flames: []const light.Flame) ?sprite.Mirrors {
+pub fn drawMirrors(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.Box, bags: *const Bags, bodies: []const Shown, flames: []const light.Flame) ?sprite.Mirrors {
     if (!g.sprites.beginMirror(g.screen, g.framebuffer, true)) return null;
     rl.gl.rlDisableBackfaceCulling();
     defer rl.gl.rlEnableBackfaceCulling();
@@ -652,7 +660,9 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     const hi = view.hi;
     g.light.bake(ground, lo, hi);
     const aim_from: ?P = if (g.mode != .aim) null else if (g.sim.heroActor()) |a| a.at else null;
-    const aim_legal = if (aim_from) |from| skills.aimable(g, from, g.mode.aim.mark) else false;
+    const aim_reach = if (aim_from != null) g.sim.reachOf(g.mode.aim.act()) else 0;
+    const aim_ground = if (aim_from) |from| skills.targetGround(g, from, g.mode.aim.act()) else &g.sim.lv;
+    const aim_legal = if (aim_from) |from| tactics_exec.validWithReach(g, aim_ground, g.mode.aim.act(), from, g.mode.aim.mark, aim_reach) else false;
 
     const shown = &g.drawn.bodies;
     const stood = stoodNow(g);
@@ -696,7 +706,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     var coin_cells = view.cells();
     while (coin_cells.next()) |p| {
         const cell = &g.pic.seen_cells[grid.Level.idx(p)];
-        if (cell.alpha <= 0 or cell.coins <= 0 or ground.at(p).isChest() or grid.inSet(&bags, p)) continue;
+        if (cell.alpha <= 0 or cell.coins <= 0 or ground.at(p).isChest() or bags.isSet(grid.Level.idx(p))) continue;
         drawCoins(g, c, .{ .at = p, .amount = cell.coins });
     }
     if (g.sim.heroSlot()) |hero| {
@@ -718,10 +728,10 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
     if (level_up_at) |at| g.pic.fx.level_up.drawBeam(at, o[0], o[1], game.CELL_F);
 
     if (aim_from) |from| {
-        const reach = grid.Box.around(from, g.sim.reachOf(g.mode.aim.act()));
+        const reach = grid.Box.around(from, aim_reach);
         var cells = grid.Cells.of(lo.max(reach.lo), hi.min(reach.hi));
         while (cells.next()) |p| {
-            if (g.sim.lv.isLit(p) and skills.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
+            if (aim_ground.isLit(p) and tactics_exec.validWithReach(g, aim_ground, g.mode.aim.act(), from, p, aim_reach)) fillCell(c, p, look.AIM_REACH);
         }
         if (g.mode.aim.act().reticle() == .bow and aim_legal) {
             const f = skills.shownFlight(g, from, g.mode.aim.act(), g.mode.aim.mark);
@@ -737,7 +747,7 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
         }
         const act = g.mode.aim.act();
         if (act.spans()) {
-            if (aim_legal) if (tactics_exec.span(g, act, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark)) |area| {
+            if (aim_legal) if (tactics_exec.span(g, aim_ground, act, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark)) |area| {
                 for (area.slice()) |p| fillCell(c, p, if (act == .fire_wall) look.aimElement(.fire) else look.AIM_PATH);
             };
         } else switch (act) {
@@ -748,8 +758,8 @@ pub fn drawMap(g: *game.Game, ground: *const grid.Level) void {
                 }
             },
             inline else => |a| if (comptime a.sweeps()) {
-                const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, g.mode.aim.mark);
-                for (arc.slice()) |p| if (!g.sim.lv.at(p).solid() or g.sim.lv.isLit(p) and !g.sim.untargetableAt(p)) fillCell(c, p, look.AIM_PATH);
+                const arc = skillbar.Act.skill(a).arc(aim_ground, from, g.mode.aim.mark);
+                for (arc.slice()) |p| if (aim_ground.isLit(p) and (!aim_ground.at(p).solid() or !g.sim.untargetableAt(p))) fillCell(c, p, look.AIM_PATH);
             } else if (comptime a.reticle() == .ground and @hasDecl(skillbar.Act.skill(a), "area")) {
                 const area = skillbar.Act.skill(a).area(&g.sim.lv, g.mode.aim.mark, g.sim.wider());
                 if (aim_legal) fillLit(g, c, area.slice(), look.AIM_PATH);
@@ -1026,7 +1036,6 @@ fn kinOf(g: *const game.Game, p: P) Kin {
     return kin;
 }
 
-/// The line each pictured braced foe will charge or hook down, faded with its cells and body.
 fn drawBraced(g: *game.Game, c: Cam, ground: *const grid.Level) void {
     var pictured = g.pic.shownBodies(&g.sim);
     while (pictured.next()) |shown| {
@@ -1043,7 +1052,6 @@ fn laneCell(g: *const game.Game, c: Cam, p: P, ink: rl.Color, alpha: f32) void {
     fillCell(c, p, look.fade(ink, g.pic.cellAlpha(p) * alpha));
 }
 
-/// The cells each pictured orb has yet to cross, out to its range or what stops it.
 fn drawOrbLanes(g: *game.Game, c: Cam, ground: *const grid.Level) void {
     for (0..g.sim.pool.n) |i| {
         const b = g.pic.bolts[i] orelse continue;
@@ -1119,7 +1127,7 @@ fn pips(x: i32, y: i32, w: i32, n: u8, of: u8, fill: rl.Color, back: rl.Color) v
 
 pub const EFFECT_SOURCES = fx.PULSES + 2;
 
-/// The light `effects` casts, then the level-up glow round `carrier` and `shot`'s missile, in emitting order.
+/// Emits effect lights first, then level-up and projectile lights.
 pub fn effectSources(effects: *const fx.Fx, carrier: ?[2]f32, shot: ?*const game.presentation.Shot, buf: *[EFFECT_SOURCES]light.Emission) []const light.Emission {
     var n = effects.pulseLights(buf[0..fx.PULSES]).len;
     if (carrier) |at| if (effects.level_up.emission(at)) |e| {
@@ -1172,7 +1180,7 @@ fn emitFaded(g: *game.Game, ground: *const grid.Level, source: light.Emission, a
     g.light.emit(ground, e);
 }
 
-/// A plant without its picture, over the light map, so each glows as its own light, but under the bodies that pass it.
+/// Composite emissive plants above the light map and behind bodies.
 fn drawPlants(g: *game.Game, c: Cam, flames: []const light.Flame) void {
     for (flames) |f| if (f.kind == .plant and f.live()) {
         const p = mathx.cellOf(f.at);
@@ -1183,7 +1191,6 @@ fn drawPlants(g: *game.Game, c: Cam, flames: []const light.Flame) void {
     };
 }
 
-/// Over the light map, so each flame is its own light.
 fn drawTorches(g: *game.Game, c: Cam, flames: []const light.Flame) void {
     for (flames) |f| if (f.kind == .wall) drawFlame(g, c, f, flameLit(f));
     const o = c.origin();
@@ -1233,7 +1240,7 @@ fn drawLean(g: *game.Game, c: Cam, ground: *const grid.Level, stood: *const grid
 pub const Minimap = struct {
     tex: ?rl.Texture2D = null,
     px: [grid.CELLS]rl.Color = undefined,
-    /// Set by `castSight` and `toggleReveal`; `drawMinimap` also rebakes when a pictured tile lands or while `fading`.
+    /// Sight changes invalidate the minimap. Pictured tile impacts and fades can also require rebaking.
     stale: bool = true,
     fading: bool = false,
     pictured: game.presentation.Pictured = .{},

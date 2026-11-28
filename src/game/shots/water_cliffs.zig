@@ -604,7 +604,7 @@ pub fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     const c = game.scene.Cam.of(g);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;
     const shown = g.pic.groundShown(&g.sim);
-    _ = game.scene.drawMirrors(g, c, shown, game.scene.viewBox(g, c), &game.scene.bagCells(g), &.{}, g.light.flames(shown, &flame_buf));
+    _ = game.scene.drawMirrors(g, c, shown, game.scene.viewBox(g, c), &.{ .contents = game.scene.bagCells(g) }, &.{}, g.light.flames(shown, &flame_buf));
     outOfTarget(g);
     for ([_]rl.RenderTexture2D{ g.sprites.mirror.?, g.sprites.mirror_memory.? }) |t| {
         const hidden = try readTarget(t);

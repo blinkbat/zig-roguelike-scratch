@@ -1,5 +1,4 @@
 @echo off
-REM Pass a filter: test.cmd fov
 setlocal
 call "%~dp0_zig.cmd" || exit /b 1
 if "%~1"=="" (

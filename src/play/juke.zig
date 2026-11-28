@@ -14,7 +14,7 @@ pub fn inReach(from: mathx.P, to: mathx.P, range: i32) bool {
     return mathx.dist(from, to) <= range;
 }
 
-/// Any leap's landings: visible vacant ground within `range`, whatever lies between.
+/// Checks the landing only, ignoring intervening terrain.
 pub fn aimable(lv: *const grid.Level, from: mathx.P, to: mathx.P, range: i32) bool {
     return !to.eq(from) and inReach(from, to, range) and lv.isLit(to) and lv.vacant(to);
 }

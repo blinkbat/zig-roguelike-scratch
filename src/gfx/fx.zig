@@ -37,7 +37,7 @@ const pixel = @import("pixel.zig");
 const light = @import("light.zig");
 const sky = @import("sky.zig");
 
-/// A body's, or a barrel's (null).
+/// Null denotes a barrel.
 pub fn matterOf(kind: ?actor.Kind) Matter {
     const k = kind orelse return .wood;
     return switch (k) {
@@ -51,16 +51,16 @@ pub fn matterOf(kind: ?actor.Kind) Matter {
 /// Cells, ground to where a blow lands on a body.
 const STRIKE_Z: f32 = 0.3;
 const STAIN_S: f32 = 1.8;
-/// Of a stain's life, the last part over which it fades.
+/// Fraction of stain lifetime spent fading.
 const STAIN_FADE: f32 = 0.6;
 /// Of a stain's own radius, flattened onto the floor.
 const STAIN_W: f32 = 1.5;
 const STAIN_H: f32 = 0.8;
-/// Of a flight that leaves no stain, the last part over which the mote fades.
+/// Fade fraction for motes that leave no stain.
 const FLY_FADE: f32 = 0.5;
 /// Maximum simulation step in seconds; prevents motes tunnelling through walls.
 const MOTE_STEP: f32 = 1.0 / 30.0;
-/// Of its speed along the ground a mote keeps through each bounce.
+/// Horizontal speed retained per bounce.
 const SKID: f32 = 0.6;
 const CONTACT_S: f32 = 0.09;
 /// Sprite pixels.
@@ -72,7 +72,7 @@ const Spray = struct {
     col: rl.Color,
     hit: usize,
     kill: usize,
-    /// Cells a second along the blow, and across it either way.
+    /// Along and transverse speeds in cells per second.
     along_lo: f32,
     along_hi: f32,
     fan: f32,
@@ -105,7 +105,7 @@ fn sprayOf(m: Matter) Spray {
 }
 
 const Mote = struct {
-    /// Cells: `x`, `y` on the ground and `z` up off it.
+    /// Ground x/y and upward z in cells.
     p: [3]f32,
     v: [3]f32,
     life: f32 = 0,
@@ -119,7 +119,7 @@ const Mote = struct {
     landed: bool = false,
     add: bool = false,
     terrain: bool = true,
-    /// Of its radius, how much wider it has grown by the end of its life.
+    /// Fractional radius growth over the mote's lifetime.
     grow: f32 = 0,
     shape: Shape = .fleck,
 };
@@ -143,13 +143,13 @@ fn claim(comptime T: type, ring: []T, head: *usize) *T {
 }
 
 const ARC_S: f32 = 0.18;
-/// An arc's kinks: cells apart along it and the most they stray across it, a fork every `ARC_FORK` kinks, and its light every `ARC_GLOW_EVERY` cells.
+/// Kink spacing, jitter and glow spacing use cells. ARC_FORK counts kinks.
 const ARC_STEP: f32 = 0.2;
 const ARC_JITTER: f32 = 0.16;
 const ARC_FORK = 6;
 const ARC_GLOW_EVERY: f32 = 2;
 const ARC_POINTS = 96;
-/// Seconds between re-jags, cells over which an arc's base fades in, and a fork's reach as a share of its kink.
+/// Base fade in cells, fork reach as a fraction of kink length.
 const ARC_FLICKER_S: f32 = 0.035;
 const ARC_BASE_FADE: f32 = 1;
 const FORK_REACH: f32 = 1.8;
@@ -168,7 +168,7 @@ fn forkTip(v: rl.Vector2, w: rl.Vector2, left: bool) rl.Vector2 {
     return .{ .x = w.x + (w.y - v.y) * FORK_REACH * side, .y = w.y - (w.x - v.x) * FORK_REACH * side };
 }
 
-/// A brief light an effect casts: reach in cells, peak gain, and seconds to fade.
+/// Glow life is in seconds.
 const Glow = struct { reach: light.Reach, life: f32 };
 pub const EMBER_GLOW = Glow{ .reach = .{ .radius = 2.2, .gain = 0.8 }, .life = 0.32 };
 const SHIMMER_GLOW = Glow{ .reach = .{ .radius = 2.2, .gain = 0.65 }, .life = 0.4 };
@@ -207,25 +207,25 @@ fn burstMotes(cells: usize) usize {
 const TRAIL_MOTES: usize = 20;
 const DUST_MOTES: usize = 24;
 const WHIRL_MOTES: usize = 36;
-/// A sweep's ring: cells out from the sweeper, cells a second its streaks race round, their longest life, and how flat the ring lies.
+/// Ring radius in cells, streak speed in cells/s and lifetime in seconds.
 const WHIRL_R: f32 = 0.7;
 const WHIRL_SPEED: f32 = 3.2;
 const WHIRL_S: f32 = 0.34;
 const WHIRL_FLAT: f32 = 0.6;
-/// Motes a cell of a zap's line.
+/// Motes per cell.
 const ZAP_MOTES: usize = 5;
-/// How far a zap's motes stray off its line, in cells.
+/// Maximum lateral jitter in cells.
 const ZAP_JITTER: f32 = 0.18;
 const EMBERS = Spray{ .col = look.FIRE, .hit = 18, .kill = 18, .along_lo = 0.4, .along_hi = 1.4, .fan = 0, .up_lo = 0.5, .up_hi = 1.5, .grav = 0, .drag = 2, .life_lo = 0.25, .life_hi = 0.55, .r_lo = 1, .r_hi = 2.5, .stains = false, .add = true };
 const SPARKS = Spray{ .col = look.LIGHTNING_CORE, .hit = 16, .kill = 16, .along_lo = 1.5, .along_hi = 3.5, .fan = 1.4, .up_lo = 0.6, .up_hi = 1.8, .grav = 7, .drag = 1.5, .life_lo = 0.16, .life_hi = 0.36, .r_lo = 0.8, .r_hi = 1.6, .stains = false, .bounce = 0.4, .add = true };
 const SPARK_GLOW = Glow{ .reach = .{ .radius = 1.6, .gain = 0.9 }, .life = 0.22 };
 const DRIP_MOTES: usize = 5;
 const WATER_MOTES = [2]u32{ 5, 9 };
-/// Cells below a body's middle its footfall rises from, and how far across and down it spreads.
+/// Footfall position and spread in cells below the body center.
 pub const SPLASH_FOOT: f32 = 0.32;
 pub const SPLASH_R: f32 = 0.26;
 pub const SPLASH_RY: f32 = 0.09;
-/// A footfall's rings: the outermost grows across `RIPPLE_R` sprite pixels in `RIPPLE_S`, the rest follow `RIPPLE_GAP` inside it, all `RIPPLE_FLAT` as tall as wide.
+/// Ripple radius and spacing in sprite pixels, duration in seconds.
 const RIPPLE_RINGS: usize = 4;
 const RIPPLE_GAP: f32 = 5;
 const RIPPLE_S: f32 = 0.9;
@@ -246,7 +246,7 @@ fn ringDir(rng: *mathx.Rng, i: usize, n: usize, jitter: f32) [2]f32 {
 pub const FRIGHT_WORDS = [_][:0]const u8{ "Eek!", "Ah!", "[snorts]", "[squeals]" };
 pub const SPEECH_S: f32 = 1.1;
 pub const SPEECH_FADE_S: f32 = 0.4;
-/// Cells over the body's head it starts, and how far it rises by its end.
+/// Start height above the head and rise in cells.
 const SPEECH_LIFT: f32 = 0.04;
 const SPEECH_RISE: f32 = 0.3;
 
@@ -258,17 +258,15 @@ const Speech = struct {
 
 pub const LEVEL_UP_S: f32 = 2;
 const LEVEL_UP_TEXT = "Level up!";
-/// Seconds the effect, and each glint, takes to show; and the effect, and the shaft, to fade.
 const LEVEL_IN_S: f32 = 0.12;
 const LEVEL_OUT_S: f32 = 0.65;
 const SHAFT_S: f32 = 1.55;
 const LEVEL_GLOW = light.Reach{ .radius = 2.5, .gain = 0.65 };
 const LEVEL_BODY_GAIN: f32 = 0.18;
 const LEVEL_GLINTS = 18;
-/// Spreads the glints evenly: the golden ratio's fraction, and the golden angle.
+/// Golden-angle spacing distributes the glints evenly.
 const GOLDEN_FRACTION: f32 = 0.618034;
 const GOLDEN_ANGLE: f32 = 2.399963;
-/// A glint this bright flashes a cross, at this share of its alpha.
 const GLINT_FLASH: f32 = 0.85;
 const GLINT_CROSS_A: f32 = 0.65;
 const GLINT_CROSS_PX: f32 = 3;
@@ -844,7 +842,7 @@ pub const Fx = struct {
         return slot;
     }
 
-    /// Draw before lighting/fog; stains precede airborne motes.
+    /// Draw before lighting and fog.
     pub fn draw(self: *const Fx, ox: f32, oy: f32, cell: f32) void {
         const k = pxScale(cell);
         for (&self.ripples) |r| {
@@ -926,7 +924,7 @@ fn ringSteps(r: f32) usize {
 }
 
 const RING_STEPS_MIN = ringSteps(RIPPLE_R[0]);
-/// Per step count, each step's cosine and sine, filled at run time so they match `@cos`/`@sin` there.
+/// Runtime trig values must match the uncached path.
 var ring_trig: [ringDotsMax() - RING_STEPS_MIN + 1][ringDotsMax()][2]f32 = undefined;
 var ring_trig_ready = false;
 
@@ -1026,7 +1024,6 @@ fn unprojected(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
 
 const pxScale = look.pxScale;
 
-/// By element: a trailed missile's light, its motes' life and rise, its burst's glow, and whether its motes add light.
 const Flare = struct { reach: light.Reach, trail_s: f32, rise: f32, burst: Glow, add: bool };
 
 const Missile = struct { trail_r: [2]f32 = .{ 0.7, 1.7 }, reach: ?f32 = null, ball: bool = false, spark: bool = false };
@@ -1052,7 +1049,7 @@ fn missileOf(act: skillbar.Act) Missile {
     };
 }
 
-/// A spark flies itself; other lightning shows only as the arc it leaves.
+/// Only Spark renders a moving head.
 pub fn sparkFlies(act: skillbar.Act) bool {
     return missileOf(act).spark;
 }
@@ -1114,7 +1111,7 @@ fn flareOf(element: ?damage.Element) ?Flare {
     };
 }
 
-/// How a foe's hurl is drawn: as the hero's fireball, or as an orb whose path is telegraphed.
+/// Orbs telegraph the remaining flight path.
 pub const HurlLook = enum { fireball, orb };
 
 pub fn hurlLook(element: damage.Element) HurlLook {
@@ -1205,7 +1202,7 @@ pub fn drawMissileFaded(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: 
     drawArrow(p, dir, col, .{ ox, oy }, k);
 }
 
-/// A chain run out from `from` to a barbed head at `at`, pointing `dir`.
+/// Coordinates run from the thrower to the barbed head.
 pub fn drawHookFaded(from: [2]f32, at: [2]f32, dir: [2]f32, ox: f32, oy: f32, cell: f32, alpha: f32) void {
     drawHookChain(from, at, dir, ox, oy, cell, alpha);
     drawHookHead(at, dir, ox, oy, cell, alpha);

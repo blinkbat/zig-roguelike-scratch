@@ -12,7 +12,7 @@ pub const Params = struct {
     on: grid.Tile = .grass,
     /// Of the `on` cells, how many a thousand it takes.
     amount: u16 = 20,
-    /// Clumps about this many cells across; 0 lays it a cell at a time, where it closes no way if it is solid.
+    /// Clump width in cells. Zero scatters individual tiles, preserving passages around solid tiles.
     clump: u8 = 0,
     water_range: u8 = 0,
     water_clear: u8 = 0,

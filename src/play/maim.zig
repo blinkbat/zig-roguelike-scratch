@@ -15,7 +15,7 @@ pub const Maim = struct {
         resilience.lengthen(&self.turns, TURNS);
     }
 
-    /// A step taken on a turn it held, worn already or not: whether it costs the body its next turn.
+    /// Returns whether this step costs the next action.
     pub fn step(self: *Maim) bool {
         const costs = self.limp;
         self.limp = !self.limp and self.turns > 0;

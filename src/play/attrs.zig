@@ -66,7 +66,7 @@ pub fn only(s: Style) Scaling {
     return .initOne(s);
 }
 
-/// Formats as its attributes in style order: "Strength and Dexterity".
+/// Formats attribute names in scaling order.
 pub const Named = struct {
     scaling: Scaling,
 
@@ -268,7 +268,7 @@ test "spoils gold rounds fractional coins fairly and preserves baseline rng" {
     try std.testing.expectEqual(std.math.maxInt(i32), a.collectedGold(std.math.maxInt(i32), &rng));
 }
 
-/// A scaled amount: `whole`, and one more `part` times in `SHARE`.
+/// Round up with probability `part / SHARE`.
 pub const Dealt = struct {
     whole: i32,
     part: u32,
@@ -285,7 +285,7 @@ pub const Dealt = struct {
         return d.whole + @intFromBool(d.part > 0);
     }
 
-    /// Rounded up as often as its fraction, so a small roll keeps its bonus on average.
+    /// Stochastic rounding preserves the expected damage.
     pub fn roll(d: Dealt, rng: *mathx.Rng) i32 {
         return d.whole + @intFromBool(d.part > 0 and rng.below(SHARE) < d.part);
     }
